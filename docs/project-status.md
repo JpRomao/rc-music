@@ -31,11 +31,11 @@ Estas decisões vieram diretamente do mantenedor e são requisitos de produto/pr
 |---|---|---|
 | Linguagem/core | Rust | Proposto em ADR-0001 |
 | Shell/UI | Tauri 2 + Svelte/TypeScript/Vite | Proposto em ADR-0001 |
-| Áudio | Rodio/CPAL + features Symphonia testadas | Proposto em ADR-0002 |
+| Áudio | Rodio/CPAL + cadeia Symphonia compatível e testada, sem versão direta duplicada | Proposto em ADR-0002 |
 | Metadata | Lofty + filesystem | Proposto em ADR-0002 |
 | Estrutura | um pacote com módulos, extraindo crates só por necessidade | Proposto |
 | Persistência | JSON versionado e atômico; sem banco no MVP | Proposto |
-| Integração | tray/single-instance Tauri, SMTC Windows, MPRIS Linux | Proposto |
+| Integração | tray/single-instance Tauri, SMTC Windows, MPRIS Linux e NSIS customizado para associações | Proposto |
 | Windows package | NSIS por usuário | Proposto |
 | Linux package | `.deb` primeiro, AppImage depois | Proposto |
 | Remoto | porta isolada, desativada no MVP | Proposto em ADR-0003 |
@@ -61,14 +61,15 @@ Estes comportamentos tornam o produto consistente, mas não foram pedidos litera
 - “anterior” reinicia após 3 s;
 - pt-BR inicial com strings preparadas para tradução;
 - metas de startup, memória, CPU e latência;
+- limites iniciais de arte/metadata/IPC, a validar no M0;
 - NSIS e `.deb` como primeiros formatos de pacote.
 
-Revisar `product/requirements.md` e `product/ux-specification.md` antes de aceitá-los como detalhe final.
+Revisar [requisitos](product/requirements.md) e [UX](product/ux-specification.md) antes de aceitá-los como detalhe final.
 
 ## 4. Decisões em aberto
 
 1. aceitar Rust/Tauri/Svelte para o spike M0 ou pedir spike comparativo diferente;
-2. aceitar Rodio/Symphonia/Lofty como candidato de áudio/metadata;
+2. aceitar Rodio com sua cadeia Symphonia compatível e Lofty como candidato de áudio/metadata;
 3. nome e identidade visual do aplicativo;
 4. licença do repositório e modelo de distribuição;
 5. distribuição Linux de referência;
@@ -93,20 +94,20 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 | Área | Documento | Estado |
 |---|---|---|
-| Contrato de trabalho | `../agents.md` | Concluído |
+| Contrato de trabalho | [agents.md](../agents.md) | Concluído |
 | Visão | `product/vision.md` | Baseline |
-| Requisitos | `product/requirements.md` | Para revisão |
-| UX | `product/ux-specification.md` | Proposta para protótipo |
-| Stack | `architecture/stack-analysis.md` | Recomendação |
-| Arquitetura | `architecture/architecture.md` | Proposta |
-| ADRs | `architecture/decisions/` | Propostos |
-| TDD | `quality/testing-strategy.md` | Contrato inicial |
-| Gates | `quality/quality-gates.md` | Contrato inicial |
-| Corpus | `quality/test-corpus.md` | Especificação |
-| Roadmap | `roadmap.md` | Proposto |
-| Workflow | `development-workflow.md` | Contrato inicial |
-| Segurança | `security/threat-model.md` | Baseline local |
-| Release | `delivery/release-process.md` | Proposta |
+| Requisitos | [Requisitos](product/requirements.md) | Para revisão |
+| UX | [UX](product/ux-specification.md) | Proposta para protótipo |
+| Stack | [Análise](architecture/stack-analysis.md) | Recomendação |
+| Arquitetura | [Arquitetura](architecture/architecture.md) | Proposta |
+| ADRs | [Índice](architecture/decisions/README.md) | Propostos |
+| TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
+| Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
+| Corpus | [Corpus](quality/test-corpus.md) | Especificação |
+| Roadmap | [Roadmap](roadmap.md) | Proposto |
+| Workflow | [Workflow](development-workflow.md) | Contrato inicial |
+| Segurança | [Threat model](security/threat-model.md) | Baseline local |
+| Release | [Processo](delivery/release-process.md) | Proposta |
 
 ## 7. Próximo passo recomendado
 
@@ -114,8 +115,8 @@ O próximo passo seguro é o mantenedor revisar este arquivo e os três ADRs. Co
 
 1. aceitar apenas o escopo do spike, não a stack definitiva;
 2. criar branch/commits de protótipo Tauri/Svelte e backend falso;
-3. criar spike separado Rodio/Symphonia/Lofty com corpus mínimo;
+3. criar spike separado Rodio/Symphonia/Lofty com corpus mínimo, árvore de dependências e medição de underruns;
 4. medir e testar NVDA/tray/single-instance;
 5. voltar aos ADRs com evidência e escolher.
 
-Até essa decisão, não iniciar implementação de produto conforme `agents.md`.
+Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

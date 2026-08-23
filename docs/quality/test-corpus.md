@@ -49,7 +49,8 @@ O teste valida hash antes de usar a fixture. Mudança intencional exige atualiza
 | `truncated-*` | cópia truncada de cada contêiner | erro sem crash |
 | `wrong-extension` | conteúdo válido com extensão enganosa | sniffing/diagnóstico |
 | `invalid-art` | tag aponta para bytes inválidos | resiliência |
-| `oversized-art` | gerada no limite e acima dele | limite de memória |
+| `oversized-art` | casos exatamente em/fora de 10 MiB, 4.096 px/eixo e 16 MP | NFR-LIMIT-001 e memória |
+| `oversized-tags` | 16 KiB/campo e 256 KiB total, em/fora do limite | NFR-LIMIT-002, sanitização e UI |
 | `empty` | zero bytes | erro básico |
 
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
@@ -93,7 +94,7 @@ Arquivos longos são gerados/encadeados fora do Git. Registrar hash da receita, 
 
 ## 6. Matriz publicada
 
-O resultado atualiza a tabela de `../product/requirements.md` com:
+O resultado atualiza a tabela de [requisitos](../product/requirements.md) com:
 
 - versão do engine;
 - plataforma;
@@ -107,7 +108,7 @@ Não marcar um formato como suportado apenas porque a biblioteca declara feature
 ## 7. Segurança
 
 - arquivos hostis são tratados como entrada não confiável;
-- limites de tamanho e timeout são aplicados a metadata/arte;
+- limites NFR-LIMIT de tamanho, dimensões, pixels e budget são aplicados a metadata/arte;
 - fuzzing futuro pode usar fixtures mutadas sem redistribuir corpus de terceiros;
 - crashes geram caso mínimo de regressão, quando legalmente redistribuível;
 - paths de fixtures são construídos por APIs de path, nunca por shell.

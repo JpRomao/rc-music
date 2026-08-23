@@ -53,7 +53,7 @@ Vantagens:
 
 - WebView2 no Windows e WebKitGTK no Linux, sem distribuir um Chromium completo;
 - ecossistema de CSS, animação, tipografia, acessibilidade e teste visual maduro;
-- APIs oficiais de tray, eventos, diálogo, associação de arquivos, single-instance e bundles;
+- APIs oficiais de tray, eventos, diálogo, single-instance e bundles; associações básicas existem, mas o contrato de Default Apps deste projeto exige customização do NSIS;
 - Rust mantém arquivos, áudio, estado persistente e integrações sensíveis fora da UI;
 - Svelte/Vite evita framework de servidor e reduz a camada frontend.
 
@@ -67,7 +67,9 @@ Riscos:
 
 Mitigação principal: a UI recebe snapshots em baixa frequência e interpola o progresso; nunca trafega PCM nem consulta o backend a cada frame.
 
-Fontes: [arquitetura do Tauri](https://v2.tauri.app/concept/architecture/), [WebViews por plataforma](https://v2.tauri.app/reference/webview-versions/), [tray](https://v2.tauri.app/learn/system-tray/), [single-instance](https://v2.tauri.app/plugin/single-instance/) e [file associations](https://v2.tauri.app/reference/config/#bundleconfig).
+O `bundle.fileAssociations` do Tauri não deve ser tratado como suficiente para FR-035: o template padrão pode escrever handlers por extensão, mas não materializa sozinho o registro completo de `Capabilities`/`RegisteredApplications` e o fluxo de escolha desejado. O M0 deve usar template/hook NSIS próprio, inspecionar o registro resultante e testar instalação, upgrade e remoção.
+
+Fontes: [arquitetura do Tauri](https://v2.tauri.app/concept/architecture/), [WebViews por plataforma](https://v2.tauri.app/reference/webview-versions/), [tray](https://v2.tauri.app/learn/system-tray/), [single-instance](https://v2.tauri.app/plugin/single-instance/), [file associations](https://v2.tauri.app/reference/config/#bundleconfig) e [customização do instalador Windows](https://v2.tauri.app/distribute/windows-installer/).
 
 ### 3.2 C++20 + Qt Quick/QML
 
@@ -82,7 +84,7 @@ Riscos:
 
 - segurança de memória e concorrência depende de disciplina C++;
 - bundle e runtime podem superar os orçamentos;
-- LGPL exige link dinâmico, avisos, possibilidade de relink e auditoria dos módulos; builds FFmpeg podem alterar obrigações;
+- link dinâmico é o caminho LGPL mais simples; link estático pode ser possível se o distribuidor cumprir relink e demais obrigações. Ambos exigem avisos/auditoria, e builds FFmpeg podem alterar obrigações;
 - testar domínio isolado é possível, mas a separação tende a exigir mais vigilância;
 - QML também introduz uma segunda linguagem.
 
@@ -120,7 +122,7 @@ Fontes: [Iced](https://github.com/iced-rs/iced) e [egui](https://docs.rs/egui/la
 
 | Camada | Escolha proposta | Observação |
 |---|---|---|
-| Linguagem central | Rust, edition estável vigente | `unsafe` somente isolado, justificado e testado |
+| Linguagem central | Rust stable, edition 2024 | MSRV pinada no bootstrap; `unsafe` somente isolado, justificado e testado |
 | Shell desktop | Tauri 2 | Capabilities mínimas; sem conteúdo remoto no WebView |
 | UI | Svelte + TypeScript `strict` + Vite | SPA local, sem SvelteKit, SSR ou backend JS |
 | Estilo | CSS variables/tokens + componentes locais | Sistema/claro/escuro; sem framework visual pesado no início |
@@ -139,11 +141,13 @@ Não adicionar runtime assíncrono, ORM, banco, container de DI, gerador de cód
 
 ### 5.1 Escolha inicial
 
-Rodio fornece API de reprodução, posição e seek; CPAL cuida da saída por plataforma e Symphonia dos contêineres/codecs habilitados. Lofty lê tags e propriedades sem precisar inicializar o player.
+Rodio fornece API de reprodução, posição e seek; CPAL cuida da saída por plataforma e a versão Symphonia trazida por Rodio cuida dos contêineres/codecs habilitados. Lofty lê tags e propriedades sem precisar inicializar o player.
 
 Fontes: [Rodio e `Player`](https://docs.rs/rodio/latest/rodio/struct.Player.html), [Symphonia](https://github.com/pdeljanov/Symphonia), [CPAL](https://github.com/RustAudio/cpal), [Lofty](https://github.com/Serial-ATA/lofty-rs) e [`FileProperties`](https://docs.rs/lofty/latest/lofty/file/struct.FileProperties.html).
 
-As versões encontradas durante a pesquisa — Rodio 0.22.x, Symphonia 0.6.x e Lofty 0.25.x — são fotografia da data, não pin de implementação. O lockfile e a versão mínima do compilador serão definidos no bootstrap.
+Na fotografia consultada, Rodio 0.22.2 depende de Symphonia 0.5.5. Symphonia 0.6.1 era a release direta mais recente, mas adicioná-la separadamente não faria o `Player` do Rodio usá-la e poderia duplicar versões no bundle. O M0 deve pinçar uma única cadeia compatível e verificar `cargo tree -d -e features`; uma migração para Symphonia 0.6 exige nova versão do Rodio ou adapter direto deliberado. Lofty 0.25.x é outra fotografia, não pin de implementação. Rodio e Lofty usam `MIT OR Apache-2.0`, enquanto Symphonia usa `MPL-2.0`; as obrigações da MPL e a composição transitiva entram no gate antes da aceitação.
+
+Há também um risco de tempo real: Rodio pode consumir o decoder/arquivo enquanto o callback CPAL solicita amostras. Portanto, “worker dono do engine” não prova que todo I/O saiu do callback. O spike deve medir underruns e stalls com arquivos locais/lentos. Se necessário, o adapter introduz prefetch/ring buffer limitado; se isso crescer demais, a escolha do backend é reavaliada.
 
 ### 5.2 Recursos a habilitar
 
@@ -175,7 +179,7 @@ Não empacotar dois motores de áudio. Uma troca substitui o adapter e requer te
 - tray pelo shell;
 - instância única encaminhando argumentos para a janela existente;
 - SMTC via `ISystemMediaTransportControlsInterop::GetForWindow(HWND)` em adapter próprio;
-- ProgID, extensions e `Capabilities` declarados no instalador;
+- ProgID, extensions, `Capabilities` e `RegisteredApplications` declarados por template/hook NSIS próprio, sem depender apenas de `bundle.fileAssociations`;
 - botão “Definir como padrão” abre Configurações; não altera `UserChoice`;
 - NSIS por usuário primeiro, assinatura quando houver distribuição pública.
 
@@ -211,7 +215,7 @@ Antes de aceitar a stack:
 
 - registrar a licença de toda dependência direta e transitiva;
 - validar a licença royalty-free do Slint apenas se ele virar candidato final;
-- se Qt for escolhido, cumprir LGPL com link dinâmico e materiais de redistribuição;
+- se Qt for escolhido, usar preferencialmente link dinâmico e cumprir LGPL; link estático só após validar mecanismo de relink e todas as demais obrigações;
 - se FFmpeg/mpv/GStreamer entrar, registrar opções do build e componentes GPL/nonfree;
 - verificar patentes/royalties de codecs para os territórios de distribuição;
 - manter `LICENSES/` e notices no pacote quando a implementação começar;
@@ -221,7 +225,7 @@ Referência: [checklist de licença do FFmpeg](https://ffmpeg.org/legal.html).
 
 ## 9. Spike de decisão M0
 
-A stack só passa de `Proposto` para `Aceito` quando um vertical slice comprovar no Windows:
+A stack só passa de `Proposto` para `Aceito` quando o vertical slice comprovar o fluxo Tier 1 no Windows e ao menos build/smoke Tier 2 no Linux de referência:
 
 1. janela Tauri/Svelte com estado vazio, tocando, painel de fila, tema e slider acessível;
 2. MP3 e M4A/AAC tocando, pausando e buscando com Rodio/Symphonia;
@@ -231,6 +235,9 @@ A stack só passa de `Proposto` para `Aceito` quando um vertical slice comprovar
 6. build Release e instalador NSIS reproduzíveis;
 7. cold start, working set, CPU e latência dentro das metas ou com desvio aceito;
 8. CSP/capabilities revisadas e nenhum acesso remoto implícito.
+9. build Linux reproduzível, abertura/playback de fixture e smoke de integração disponível no ambiente de referência.
+
+O spike de áudio também deve registrar `cargo tree -d -e features`, provar que não há duas versões Symphonia acidentais e medir underruns/stalls do caminho decoder → callback. O spike de associação deve demonstrar `Capabilities`/`RegisteredApplications`, ausência de tomada silenciosa de `UserChoice` e limpeza escopada no uninstall.
 
 ### Fallbacks predefinidos
 
@@ -247,4 +254,3 @@ A stack só passa de `Proposto` para `Aceito` quando um vertical slice comprovar
 - escolher a distribuição Linux de referência;
 - decidir se a versão portátil é requisito ou somente conveniência;
 - aprovar ou reajustar os orçamentos após as primeiras medições.
-

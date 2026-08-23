@@ -1,16 +1,16 @@
 # Threat model
 
-**Estado:** baseline do MVP local  
+**Estado:** baseline de ameaças do MVP local; controles Tauri condicionados ao ADR-0001
 **Última revisão:** 2026-08-23  
-**Revisar quando:** entrar rede, sidecar, auto-update, plugin, biblioteca indexada ou credencial
+**Revisar quando:** mudar a stack, ou entrar rede, sidecar, auto-update, plugin, biblioteca indexada ou credencial
 
 ## 1. Escopo e objetivo
 
-O player processa arquivos e metadados potencialmente não confiáveis, possui uma UI WebView privilegiada por IPC e integra-se ao shell. O objetivo é impedir que um arquivo, path, página remota ou segunda instância consiga executar código, ler dados fora do necessário, travar o processo de forma persistente ou expor a biblioteca do usuário.
+O player processa arquivos e metadados potencialmente não confiáveis e integra-se ao shell. No candidato Tauri, uma UI WebView cruza uma fronteira IPC privilegiada. O objetivo é reduzir e testar o risco de que arquivo, path, conteúdo remoto futuro ou segunda instância execute código, leia dados fora do necessário, cause indisponibilidade reproduzível ou exponha a biblioteca do usuário. O MVP não alega isolamento absoluto contra OOM/falha nativa de decoder em processo.
 
 Este modelo cobre:
 
-- app Tauri local e seu WebView;
+- shell/UI desktop; os controles específicos abaixo mapeiam o candidato Tauri/WebView;
 - backend Rust, áudio, metadata e persistência;
 - arquivos/paths recebidos pelo usuário ou shell;
 - IPC da UI e da instância secundária;
@@ -26,7 +26,7 @@ Não cobre ainda servidor, conta, nuvem ou auto-update, pois não fazem parte do
 - privacidade de paths, nomes, tags, fila e histórico de sessão;
 - preferências e estado recuperável;
 - dispositivo de áudio e controles do sistema;
-- permissões concedidas ao WebView;
+- permissões concedidas à UI/bridge; no candidato Tauri, capabilities do WebView;
 - integridade do executável, instalador e dependências;
 - credenciais/cookies futuros, caso um requisito separado os introduza.
 
@@ -37,13 +37,13 @@ Não confiável                     Fronteira                     Privilegiado
 
 arquivo/tag/capa ───────────────► parser/limites ─────────────► metadata DTO
 path do shell ──────────────────► validação/canonicalização ──► MediaSource
-UI WebView ─────────────────────► commands + capabilities ────► application
+UI (WebView no candidato) ──────► commands + capabilities ────► application
 segunda instância ──────────────► IPC local + schema/limites ─► controller
 SO/tray/media keys ─────────────► adapter tipado ──────────────► commands
 URL futura ─────────────────────► resolver/policy/timeout ─────► descriptor
 ```
 
-O WebView é menos confiável que o backend, mesmo carregando assets locais. Um bug de frontend/XSS não deve oferecer comando genérico de filesystem, shell ou rede.
+A UI é menos confiável que o backend. No candidato Tauri, o WebView continua nessa posição mesmo carregando assets locais: um bug de frontend/XSS não deve oferecer comando genérico de filesystem, shell ou rede.
 
 ## 4. Atores e falhas consideradas
 
@@ -63,9 +63,9 @@ Um adversário com controle administrativo total da máquina está fora do escop
 
 | ID | Ameaça | Controles de desenho | Evidência esperada |
 |---|---|---|---|
-| SEC-001 | Parser entra em panic/crash com mídia corrompida | APIs fallible, worker isolado, limites, corpus hostil, panic tratado como bug | testes por contêiner e regressão de cada crash |
-| SEC-002 | Capa causa consumo excessivo/decompression bomb | limite de bytes antes de decode, dimensões/pixels máximos, thumbnail e cancelamento | fixtures no/fora do limite e medição de memória |
-| SEC-003 | Tags enormes/inválidas travam UI ou injetam markup | limite/sanitização, texto como texto, truncamento visual, sem HTML arbitrário | testes Unicode, markup e payload grande |
+| SEC-001 | Parser entra em panic/crash com mídia corrompida | APIs fallible, worker fora da UI, limites e corpus hostil; crash vira bloqueador. Isolamento de processo não é alegado no MVP | testes por contêiner e regressão de cada crash reproduzível |
+| SEC-002 | Capa causa consumo excessivo/decompression bomb | NFR-LIMIT-001: bytes, dimensões, pixels e thumbnail limitados antes/ao decodificar quando a biblioteca permitir | fixtures exatamente no/fora de cada limite e medição de memória |
+| SEC-003 | Tags enormes/inválidas travam UI ou injetam markup | NFR-LIMIT-002/003, sanitização, texto como texto, truncamento visual, sem HTML arbitrário | testes Unicode, markup, payload grande e timeout/cancelamento |
 | SEC-004 | Path vira comando de shell | APIs tipadas de path/processo, nenhum `shell -c`, argumentos separados | testes com espaços, aspas, metacaracteres e Unicode |
 | SEC-005 | Symlink/TOCTOU troca arquivo durante probe/play | abrir handle quando aplicável, tolerar mudança, não escrever fonte, verificar erros | teste controlado de remoção/troca |
 | SEC-006 | UI invoca filesystem/shell arbitrário | allowlist de commands, DTOs específicos, Tauri capabilities mínimas | revisão de manifest e testes de command rejeitado |
@@ -82,7 +82,9 @@ Um adversário com controle administrativo total da máquina está fora do escop
 | SEC-017 | URL futura acessa localhost/arquivos ou rede interna | allowlist de esquemas, política SSRF, DNS/IP checks quando aplicável, sem `file:` | suite de resolver antes de habilitar rede |
 | SEC-018 | Sidecar futuro permite command injection/update comprometido | argumentos tipados, hash/assinatura, versão pinada, diretório controlado | ADR, teste e verificação de artefato |
 
-## 6. Política de Tauri/WebView
+## 6. Política condicional de Tauri/WebView
+
+Esta seção só vira contrato de implementação se o ADR-0001 for aceito. Se outra UI vencer o M0, substituí-la por controles equivalentes e atualizar este threat model no mesmo commit.
 
 - somente janelas e commands necessários;
 - nenhuma capability global curinga;
@@ -106,6 +108,10 @@ Um adversário com controle administrativo total da máquina está fora do escop
 - evitar hash integral na abertura normal;
 - atualizar decoder/tag reader com gates de corpus e advisories;
 - manter casos mínimos de regressão legalmente redistribuíveis.
+
+### Limites iniciais
+
+Os valores normativos estão nos [requisitos](../product/requirements.md) (NFR-LIMIT-001–004): arte até 10 MiB codificados/4.096 px por eixo/16 MP, thumbnail até 1.024 px, metadata retida até 256 KiB e 16 KiB por campo, budget interativo de probe de 2 s e IPC de até 1.000 paths/1 MiB. O M0 deve confirmar que as bibliotecas permitem aplicar os limites antes de alocações perigosas; quando não permitirem, registrar o risco ou trocar/isolar o parser.
 
 Fuzzing é desejável nos wrappers e parsers próprios. Não prometer que fuzzing de uma biblioteca externa elimina o risco dela.
 
@@ -177,4 +183,3 @@ Antes de habilitar qualquer rede:
 6. gerar release corretiva e hashes;
 7. documentar impacto e mitigação sem expor dados do usuário;
 8. atualizar este modelo se a classe de ameaça não estava coberta.
-

@@ -39,11 +39,11 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 3. D0 — Baseline documental
 
-**Estado:** Concluído nesta etapa, aguardando revisão do mantenedor.
+**Estado:** Em revisão. A autoria está concluída; o gate fecha após commit final e revisão do mantenedor.
 
 ### Entregas
 
-- contrato operacional em `agents.md`;
+- contrato operacional em [agents.md](../agents.md);
 - visão, requisitos rastreáveis e UX;
 - análise Rust/C++ e recomendação de stack;
 - arquitetura, fronteiras e ADRs propostos;
@@ -91,8 +91,10 @@ Usando UI mínima/CLI de teste:
 - Lofty lê tags, arte e propriedades;
 - posição/seek medidos em MP3 CBR/VBR e M4A/AAC;
 - cancelamento e troca rápida não publicam estado antigo;
-- arquivo corrompido não derruba processo;
-- sessão curta e soak exploratório verificam handles/memória.
+- fixtures corrompidas/hostis do corpus retornam erro controlado sem derrubar processo;
+- sessão curta e soak exploratório verificam handles/memória;
+- `cargo tree -d -e features` confirma uma cadeia Symphonia deliberada, sem duplicação acidental;
+- arquivos em armazenamento local/lento controlado medem underruns; prefetch/ring buffer ou fallback é decidido se necessário.
 
 Publicar a primeira matriz de formatos.
 
@@ -102,14 +104,14 @@ Provar:
 
 - instância única e encaminhamento de vários paths Unicode;
 - tray incluindo saída real;
-- associação registrada pelo NSIS e abertura da tela de apps padrão;
+- associação registrada por template/hook NSIS próprio, com ProgID, `Capabilities` e `RegisteredApplications`, além da tela oficial de apps padrão;
 - SMTC e teclas de mídia;
 - suspend/resume e reinício do Explorer;
 - install, upgrade e uninstall em ambiente descartável.
 
 ### M0.4 — Decisão
 
-Comparar resultados com `docs/architecture/stack-analysis.md`:
+Comparar resultados com a [análise de stack](architecture/stack-analysis.md):
 
 - aprovar ADR-0001/0002 e registrar medidas; ou
 - spike Slint se somente WebView for pesado; ou
@@ -151,7 +153,7 @@ Comparar resultados com `docs/architecture/stack-analysis.md`:
 
 ### Gate de saída
 
-- ciclo Red–Green–Refactor demonstrado no histórico;
+- ciclo Red–Green–Refactor evidenciado pelo teste e motivo de falha registrados no handoff; commits finais permanecem verdes;
 - domínio roda sem Tauri/audio;
 - UI roda contra fake;
 - gates rápidos verdes em Windows e Linux;
@@ -264,7 +266,7 @@ Comparar resultados com `docs/architecture/stack-analysis.md`:
 
 ### Gate de saída
 
-Todos os critérios em `docs/product/requirements.md` seção 6 e `docs/quality/quality-gates.md` seção 9 passam, ou exceções são aceitas e documentadas antes da tag.
+Todos os critérios nos [requisitos](product/requirements.md), seção 6, e nos [gates de qualidade](quality/quality-gates.md), seção 9, passam, ou exceções são aceitas e documentadas antes da tag.
 
 ## 10. M6 — Organização 0.2
 
@@ -326,4 +328,3 @@ Até a release 0.1, rejeitar por padrão:
 - formatos sem fixture/teste.
 
 Uma exceção requer necessidade real, requisito rastreável, impacto nos marcos e commit documental antes da implementação.
-

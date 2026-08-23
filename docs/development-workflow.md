@@ -1,11 +1,11 @@
 # Workflow de desenvolvimento
 
-**Estado:** contrato complementar a `../agents.md`  
+**Estado:** contrato complementar a [agents.md](../agents.md)
 **Última revisão:** 2026-08-23
 
 ## 1. Antes de trabalhar
 
-1. ler `agents.md` e os documentos relevantes;
+1. ler [agents.md](../agents.md) e os documentos relevantes;
 2. executar `git status --short --branch`;
 3. identificar alterações preexistentes e não tocá-las sem necessidade;
 4. escolher um requisito/caso pequeno e seu critério de aceitação;
@@ -54,7 +54,7 @@ Evite unidades como “fazer o player” ou “implementar configurações”. D
 
 ### Verificar
 
-- executar gates proporcionais de `quality/quality-gates.md`;
+- executar os [gates de qualidade](quality/quality-gates.md) proporcionais;
 - revisar diff completo e `git diff --check`;
 - checar que arquivos gerados/cache não entraram;
 - registrar checks não executados.
@@ -145,6 +145,8 @@ Não instalar ferramenta global como solução do projeto. Piná-la em manifest,
 
 Spikes respondem uma pergunta e possuem limite explícito.
 
+Harness descartável de medição pode não precisar de teste próprio, mas o spike não está autorizado a implementar comportamento de produto fora de TDD. Qualquer código promovido ao baseline recebe primeiro teste Red e passa pelo ciclo completo.
+
 Cada spike começa com:
 
 - hipótese;
@@ -159,7 +161,7 @@ Termina com:
 - evidência reproduzível;
 - commit(s) identificáveis;
 - ADR atualizado como Aceito/Rejeitado ou ainda Proposto com motivo;
-- código promovido com testes ou removido por commit;
+- código promovido após TDD ou removido por commit;
 - nenhuma dependência experimental esquecida.
 
 ## 9. Trabalho com mudanças preexistentes
@@ -196,7 +198,7 @@ Ao pausar:
 
 ## 12. Definição de pronto
 
-Além de `agents.md`, confirmar:
+Além de [agents.md](../agents.md), confirmar:
 
 - requisito e critério satisfeitos;
 - Red–Green–Refactor aplicado quando há comportamento;

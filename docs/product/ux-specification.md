@@ -1,7 +1,7 @@
 # Especificação de UX e interface
 
 **Estado:** proposta para protótipo e teste  
-**Relaciona-se a:** `requirements.md`  
+**Relaciona-se a:** [requisitos](requirements.md)
 **Última revisão:** 2026-08-23
 
 ## 1. Direção
@@ -174,7 +174,7 @@ Categorias iniciais:
 
 - segundos para retroceder;
 - segundos para avançar;
-- dispositivo de saída, quando suportado;
+- em 0.2, dispositivo de saída quando suportado;
 - comportamento ao terminar a fila.
 
 ### Aparência
@@ -195,7 +195,7 @@ O instalador registra apenas formatos efetivamente validados. A versão portáti
 
 ## 10. Atalhos e foco
 
-Os atalhos padrão são definidos em `requirements.md`. Regras adicionais:
+Os atalhos padrão são definidos nos [requisitos](requirements.md). Regras adicionais:
 
 - `Tab` segue topo → conteúdo → transporte → painéis;
 - abrir um painel move o foco para seu título/primeira ação;

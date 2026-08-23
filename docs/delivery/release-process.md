@@ -3,6 +3,8 @@
 **Estado:** proposta operacional; ainda não há executável  
 **Última revisão:** 2026-08-23
 
+NSIS, WebView2, manifests Rust/frontend/Tauri e demais detalhes desse candidato só viram contrato após o ADR-0001. As regras de evidência, consentimento, assinatura e validação de pacote valem para qualquer stack escolhida.
+
 ## 1. Princípios
 
 - release é resultado reproduzível de um commit/tag verde;
@@ -90,6 +92,7 @@ Em VM/máquina descartável para cada caminho relevante:
 - iniciar pelo menu e por arquivo;
 - verificar ícone, versão, WebView2 e diretórios;
 - validar que nenhuma extensão virou default sem escolha;
+- inspecionar que o template/hook NSIS registrou apenas o ProgID, `Capabilities` e `RegisteredApplications` do app; não usar `bundle.fileAssociations` isoladamente como prova;
 - abrir página oficial de defaults;
 - escolher o app e abrir MP3/M4A com paths Unicode/espaços;
 - validar tray, SMTC e saída real.
@@ -199,4 +202,3 @@ Hotfix passa pelos gates afetados e smoke completo de pacote; urgência não aut
 [ ] autorização explícita para publicar
 [ ] smoke do artefato publicado
 ```
-

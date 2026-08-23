@@ -3,11 +3,13 @@
 **Estado:** contrato inicial; comandos de frontend serão ativados no bootstrap  
 **Última revisão:** 2026-08-23
 
+Gates de comportamento, segurança e plataforma são invariantes. Comandos e itens nomeando Tauri/Svelte são condicionais ao ADR-0001 e devem ser substituídos, não acumulados, se outro candidato vencer.
+
 ## 1. Regra geral
 
 O gate é proporcional ao risco, mas nenhuma mudança fica sem validação. Se um comando não existir ainda ou o ambiente impedir a execução, registre “não executado” e o risco; não converta ausência em sucesso.
 
-Todos os gates usam arquivos commitados e lockfiles. CI e ambiente local devem chamar os mesmos scripts de alto nível.
+Gates locais validam o working tree que será commitado. CI e release validam commit identificável, manifests e lockfiles commitados. Todos devem chamar os mesmos scripts de alto nível quando existirem.
 
 ## 2. Gates por tipo de mudança
 
@@ -118,7 +120,7 @@ Um commit/release não está pronto se houver:
 
 ## 6. Performance gates
 
-As metas vêm de `../product/requirements.md`. Protocolo:
+As metas vêm dos [requisitos](../product/requirements.md). Protocolo:
 
 1. build Release limpo e identificável pelo commit;
 2. máquina e versão do SO registradas;
@@ -187,4 +189,3 @@ Todo handoff informa:
 - checks não executados e motivo;
 - riscos residuais;
 - próximo passo seguro.
-

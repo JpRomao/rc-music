@@ -17,7 +17,7 @@ O ciclo obrigatório para qualquer comportamento novo ou correção é:
 5. **Refactor:** remover duplicação, melhorar nomes/fronteiras e manter testes verdes;
 6. executar os gates proporcionais e commitar a unidade concluída.
 
-O registro do estado Red aparece no histórico de desenvolvimento ou na saída local, mas não exige um commit quebrado na branch principal. O commit final deve estar verde.
+O estado Red é observado na execução local/CI focada e seu teste + motivo de falha são registrados no handoff do marco quando isso for relevante. Não exige commit quebrado na branch principal: o commit final contém teste e implementação e deve estar verde.
 
 ## 2. Princípios
 
@@ -85,7 +85,7 @@ O registro do estado Red aparece no histórico de desenvolvimento ou na saída l
 | Fake | Controla |
 |---|---|
 | `FakePlaybackBackend` | ready, duração, posição, ended, device lost, erro e confirmação de seek |
-| `FakeMetadataReader` | resultado imediato, atraso, cancelamento, tag hostil e arte excessiva |
+| `FakeMetadataReader` | resultado imediato, atraso, cancelamento, tag hostil e arte acima dos limites NFR-LIMIT |
 | `InMemorySessionStore` | load/save, versão, corrupção e falhas programáveis |
 | `FakePlatformIntegration` | tray presente/ausente, close, media keys, suspend/resume |
 | `FakeMediaSourceResolver` | local válido, não suportado e resultado remoto futuro |
@@ -190,7 +190,7 @@ O fake e o adapter Rodio precisam satisfazer o contrato. Precisão, latência e 
 - tags presentes/ausentes;
 - fallback de título;
 - encoding inválido;
-- capa corrompida/gigante;
+- capa corrompida e nos limites/fora dos limites NFR-LIMIT;
 - cancelamento e resultado atrasado;
 - propriedades por formato;
 - extensão enganosa.
@@ -221,7 +221,7 @@ Corpus mínimo:
 - arquivo truncado por contêiner;
 - extensão trocada;
 - tags Unicode e vazias;
-- capa ausente, inválida e acima do limite;
+- capa ausente, inválida e nos limites/fora dos limites NFR-LIMIT;
 - arquivo sem permissão quando o SO permitir fixture controlada.
 
 Arquivos grandes/longos para performance podem ser gerados sob demanda por script determinístico e não precisam estar no Git.
@@ -320,10 +320,9 @@ Antes de commitar comportamento:
 - revisar o teste Red e o motivo de falha;
 - executar o teste focado durante Green/Refactor;
 - executar o conjunto do módulo;
-- executar os gates definidos em `quality-gates.md` conforme o risco;
+- executar os [gates definidos](quality-gates.md) conforme o risco;
 - revisar `git diff --check` e o diff completo;
 - atualizar requisito/ADR quando o contrato mudou;
 - registrar validação não executada e risco residual no handoff.
 
-Commits devem conter teste e implementação juntos, salvo spike descartável explicitamente isolado. Nunca commitar uma suíte deliberadamente quebrada na branch principal.
-
+Commits devem conter teste e implementação juntos. Um spike pode usar harness exploratório sem teste apenas para medir uma API/ambiente e não pode implementar comportamento de produto; qualquer código promovido segue TDD antes de entrar no baseline. Nunca commitar uma suíte deliberadamente quebrada na branch principal.

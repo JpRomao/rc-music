@@ -12,8 +12,8 @@ Cada requisito possui um identificador estável para testes, ADRs e roadmap.
 |---|---|
 | Confirmado | Pedido explícito do mantenedor |
 | Derivado | Necessário para tornar o pedido completo e testável; pode ser ajustado |
-| P0 | Obrigatório para o MVP |
-| P1 | Importante após o núcleo do MVP |
+| P0 | Bloqueador para a release MVP 0.1 |
+| P1 | Planejado para completar/polir o 0.1, mas adiável com ajuste explícito de escopo |
 | P2 | Evolução futura |
 
 Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve ser expresso como combinação de contêiner, codec e capacidades observadas no corpus de teste.
@@ -43,7 +43,7 @@ Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve se
 | FR-015 | P0 | Derivado | Durante o arraste, mostrar a posição pretendida sem a atualização do engine “puxar” o controle. Ao soltar, enviar um único comando de seek. |
 | FR-016 | P0 | Derivado | Manter uma fila ordenada com adicionar, tocar agora, reordenar, remover e limpar. Itens duplicados são permitidos e possuem IDs próprios. |
 | FR-017 | P1 | Derivado | “Anterior” reinicia a faixa quando a posição passou de 3 s; antes disso, navega para o item anterior. O limiar poderá virar preferência somente se houver necessidade real. |
-| FR-018 | P1 | Derivado | Permitir escolher um dispositivo de saída quando o backend e a plataforma oferecerem essa capacidade. Mudanças e desconexões devem ser recuperáveis. |
+| FR-018 | P2 | Derivado | Em evolução futura, permitir escolher um dispositivo de saída quando o backend e a plataforma oferecerem essa capacidade. Mudanças e desconexões devem ser recuperáveis. |
 | FR-019 | P2 | Derivado | Shuffle, repeat e velocidade de reprodução são evoluções separadas; não fazem parte do núcleo inicial. |
 
 ### 2.3 Metadados
@@ -53,7 +53,7 @@ Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve se
 | FR-020 | P0 | Confirmado | Exibir tamanho e duração do arquivo. |
 | FR-021 | P0 | Derivado | Exibir, quando disponíveis, título, artista, álbum, número da faixa, ano e capa. Sem título, usar nome do arquivo. |
 | FR-022 | P0 | Derivado | Disponibilizar detalhes: nome, caminho, modificação, contêiner, codec, bitrate, sample rate, canais e bit depth quando conhecido. |
-| FR-023 | P0 | Derivado | Tags ausentes ou inválidas não podem impedir reprodução. Texto é sanitizado e arte corrompida ou excessiva é descartada em favor do placeholder. |
+| FR-023 | P0 | Derivado | Tags ausentes ou inválidas não podem impedir reprodução. Texto é sanitizado e arte corrompida ou acima dos limites NFR-LIMIT é descartada em favor do placeholder. |
 | FR-024 | P0 | Derivado | Leitura de tags, arte e propriedades ocorre de forma assíncrona e cancelável. Resultado atrasado de uma faixa antiga não pode sobrescrever a atual. |
 | FR-025 | P2 | Derivado | Editar tags e capa fica fora do MVP. |
 
@@ -67,9 +67,9 @@ Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve se
 | FR-033 | P0 | Derivado | Executar como instância única. Novas invocações encaminham os arquivos para a instância existente sem disputar o dispositivo de áudio. |
 | FR-034 | P0 | Confirmado | Declarar os tipos suportados no instalador/pacote e permitir que o usuário escolha o app como padrão. |
 | FR-035 | P0 | Derivado | No Windows, registrar ProgID e capabilities por usuário e abrir a tela oficial de Aplicativos Padrão; nunca alterar `UserChoice` à força. |
-| FR-036 | P1 | Derivado | No Linux, fornecer arquivo `.desktop`, ícones e MIME types para os formatos validados, respeitando XDG. |
+| FR-036 | P0 | Derivado | No Linux, fornecer arquivo `.desktop`, ícones e MIME types para os formatos validados, respeitando XDG. |
 | FR-037 | P0 | Derivado | Suportar atalhos de teclado e controles de mídia do sistema. As ações provenientes de UI, bandeja, teclado e sistema usam os mesmos casos de uso. |
-| FR-038 | P1 | Derivado | Suspensão, retomada, reinício do Explorer e troca/desconexão do dispositivo não devem deixar processo zumbi ou estado impossível. |
+| FR-038 | P0 | Derivado | Suspensão, retomada, reinício do Explorer e troca/desconexão do dispositivo não devem deixar processo zumbi ou estado impossível. |
 
 ### 2.5 Aparência, preferências e sessão
 
@@ -128,12 +128,21 @@ As metas são orçamentos de engenharia, não alegações antes da medição. Se
 
 | ID | Requisito |
 |---|---|
-| NFR-REL-001 | Arquivo inválido, tag hostil, arte gigante ou codec não suportado nunca encerra o processo. |
-| NFR-REL-002 | Callback de áudio não realiza I/O, alocação evitável, logging, locks longos ou trabalho bloqueante. |
+| NFR-REL-001 | Entradas inválidas do corpus e dentro dos limites publicados retornam erro controlado sem encerrar o processo. Todo crash reproduzível descoberto é bloqueador de release; isolamento absoluto contra falha/OOM de decoder exigiria processo separado e não é alegado no MVP. |
+| NFR-REL-002 | Código próprio executado no callback de saída não realiza logging, lock longo, chamada de UI nem I/O adicional. Como Rodio pode puxar decode/leitura no callback CPAL, o M0 deve medir underruns; se houver bloqueio relevante, adicionar prefetch/ring buffer ou rejeitar o backend. |
 | NFR-REL-003 | Preferências e sessão são escritas de modo atômico e recuperável. |
 | NFR-REL-004 | Paths são tratados como dados; nunca concatenados em comandos de shell. |
 | NFR-REL-005 | Arquivos removidos, drives desconectados e dispositivos perdidos geram recuperação ou erro acionável. |
 | NFR-REL-006 | Dependências e fixtures possuem licença conhecida; codecs e distribuição passam por revisão específica. |
+
+Limites iniciais, revisáveis somente com corpus e medição:
+
+| ID | Limite/resultado |
+|---|---|
+| NFR-LIMIT-001 | Arte embutida: até 10 MiB codificados, no máximo 4.096 px por eixo e 16 megapixels; gerar thumbnail de até 1.024 × 1.024. Acima disso, usar placeholder sem impedir playback. |
+| NFR-LIMIT-002 | Metadata retida, sem arte: até 256 KiB no total e 16 KiB por campo usado pelo produto. Campos acima do limite são ignorados/truncados com diagnóstico. |
+| NFR-LIMIT-003 | Probe de metadata tem budget interativo inicial de 2 s. Ao trocar de faixa ou estourar o budget, o resultado fica cancelado/descartado; o M0 deve provar que trabalho subjacente não acumula. |
+| NFR-LIMIT-004 | Um comando IPC aceita no máximo 1.000 paths e 1 MiB serializado. Lotes maiores são divididos/rejeitados com mensagem, sem bloquear a UI. |
 
 ### 4.3 Privacidade e rede
 
@@ -212,4 +221,3 @@ Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração of
 | Progresso arrastável | FR-012, FR-014–015 |
 | Saltos ±5 configuráveis | FR-013 |
 | Temas claro/escuro e possível edição | FR-040–041 |
-

@@ -12,11 +12,13 @@ O MVP precisa tocar e buscar MP3, M4A/AAC e formatos locais comuns, exibir tags/
 
 - usar Rodio como API de reprodução e controle;
 - usar CPAL como camada de saída trazida pelo stack;
-- habilitar somente features Symphonia correspondentes ao corpus aprovado;
+- usar a versão Symphonia resolvida pelo Rodio e habilitar somente features correspondentes ao corpus aprovado; não adicionar uma segunda versão direta sem decisão;
 - usar Lofty para tags, arte e propriedades, e filesystem para tamanho/mtime;
 - executar áudio em owner/worker único atrás de `PlaybackBackend`;
 - executar metadata em tarefas canceláveis separadas;
 - não empacotar GStreamer, libmpv, libVLC ou segundo engine no MVP.
+
+O owner/worker não garante, por si só, que Rodio deixe o callback CPAL livre de leitura/decode. O M0 deve medir underruns e stalls; se relevantes, o adapter adiciona prefetch/ring buffer limitado ou o backend é rejeitado.
 
 ## Motivos
 
@@ -38,6 +40,7 @@ Positivas:
 Negativas:
 
 - nem todo perfil dentro de M4A/Opus será coberto;
+- Rodio pode puxar decoder/arquivo no callback de saída; tempo real precisa de medição e talvez buffering próprio;
 - dispositivos e backends Linux variam;
 - streams HTTP avançados podem exigir engine diferente;
 - fixtures e matriz por codec são obrigatórias antes de anunciar suporte.
@@ -54,9 +57,11 @@ Negativas:
 - corpus MP3 CBR/VBR, M4A/AAC-LC, FLAC, WAV e Ogg/Vorbis passa play, duração, seek e fim;
 - Opus e ALAC recebem resultado explícito;
 - seek satisfaz precisão/latência publicadas;
-- arquivo corrompido e arte/tag hostil não derrubam processo;
+- fixtures corrompidas e arte/tag nos limites publicados retornam erro controlado sem derrubar processo;
 - sessão de oito horas não apresenta crescimento sustentado;
-- bundle e licenças das features são registrados.
+- bundle e licenças das features são registrados;
+- `cargo tree -d -e features` não mostra duplicação Symphonia acidental;
+- arquivos em armazenamento lento não produzem underruns além do budget aceito, ou prefetch/fallback é decidido.
 
 ## Gatilhos de revisão
 
@@ -65,4 +70,3 @@ Negativas:
 - troca de dispositivo ou suspensão não recuperável;
 - fontes HTTP tornam-se P0/P1;
 - custo de manter decode/output separado excede benefício.
-

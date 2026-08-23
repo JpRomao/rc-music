@@ -1,14 +1,16 @@
 # Arquitetura do sistema
 
-**Estado:** proposta de referência  
+**Estado:** proposta de referência; mapeamento Tauri condicionado ao ADR-0001
 **Stack de exemplo:** Rust + Tauri 2 + Svelte  
 **Última revisão:** 2026-08-23
+
+As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities são independentes da stack. Nomes, diretórios e controles de WebView/Tauri neste documento descrevem somente o candidato do M0 e deixam de valer se o ADR-0001 for rejeitado.
 
 ## 1. Objetivos arquiteturais
 
 A arquitetura deve:
 
-- manter a thread de UI e o callback de áudio livres de trabalho bloqueante;
+- manter a thread de UI livre de trabalho bloqueante e impedir trabalho adicional do código próprio no callback de saída;
 - permitir TDD do comportamento sem WebView, dispositivo ou arquivo real;
 - isolar Windows, Linux, codecs, metadados, armazenamento e fontes remotas;
 - preservar um único estado autoritativo de reprodução;
@@ -32,9 +34,9 @@ Não é objetivo criar framework de plugins, microserviços, servidor local púb
                            resolver de fonte remota
 ```
 
-O aplicativo é um processo desktop de instância única. O WebView é apresentação local; não hospeda o domínio nem abre páginas remotas.
+O aplicativo é um processo desktop de instância única. **No candidato Tauri**, o WebView é somente apresentação local; não hospeda o domínio nem abre páginas remotas.
 
-## 3. Componentes
+## 3. Componentes no candidato Tauri
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
@@ -79,7 +81,7 @@ O aplicativo é um processo desktop de instância única. O WebView é apresenta
 
 ## 4. Estrutura inicial do repositório
 
-O projeto deve começar como uma aplicação Tauri com módulos internos, não um workspace de muitos crates:
+Se o ADR-0001 for aceito, o projeto deve começar como uma aplicação Tauri com módulos internos, não um workspace de muitos crates:
 
 ```text
 /
@@ -242,6 +244,8 @@ Regras:
 
 ## 9. Modelo de concorrência
 
+O desenho de workers é invariante; os nomes WebView/Tauri no diagrama são o mapeamento do candidato atual.
+
 ```text
 WebView/UI thread
     │ commands                     snapshots/eventos
@@ -254,7 +258,7 @@ Tauri command boundary / application coordinator
 ```
 
 - exatamente um worker é dono do dispositivo/engine de áudio;
-- callback de áudio não lê arquivo por API bloqueante fora do buffering do decoder, não loga e não chama UI;
+- código próprio chamado no callback de saída não loga, não chama UI, não toma lock longo e não adiciona I/O. Rodio pode puxar o decoder e o arquivo no callback CPAL; M0 mede underruns e latência. Se a biblioteca bloquear de modo relevante, o adapter ganha prefetch/ring buffer limitado ou o backend é rejeitado;
 - metadata, arte, diretórios e hash/cache nunca rodam na thread visual;
 - comandos usam canal limitado; posição pode ser coalescida;
 - operações carregam cancellation token/geração;
@@ -334,7 +338,7 @@ Cobrir paths Unicode, aspas, múltiplos arquivos, chamadas simultâneas e diret�
 - SMTC/metadata/teclas de mídia;
 - eventos de sessão/power;
 - página oficial de default apps;
-- associações por instalador NSIS e ProgID por usuário;
+- associações por template/hook NSIS próprio, com ProgID, `Capabilities` e `RegisteredApplications` por usuário; não confiar apenas em `bundle.fileAssociations`;
 - high contrast, reduced motion e UI Automation via WebView2;
 - assinatura futura do executável/instalador.
 
@@ -349,6 +353,8 @@ Cobrir paths Unicode, aspas, múltiplos arquivos, chamadas simultâneas e diret�
 Cada adapter publica capabilities. A aplicação não finge que uma integração indisponível funcionou.
 
 ## 15. Segurança e privacidade
+
+Os princípios de input não confiável, privilégio mínimo e ausência de rede são invariantes. CSP, capabilities e protocolo local abaixo são controles condicionais ao candidato Tauri.
 
 - WebView carrega assets locais, com CSP restrita e sem navegação remota;
 - capabilities Tauri concedem somente comandos/janelas necessários;
@@ -384,7 +390,7 @@ Métricas de performance são produzidas por benchmarks locais/CI e comandos dia
 
 - release x64 primeiro;
 - instalador NSIS por usuário;
-- file associations somente para matriz aprovada;
+- file associations somente para matriz aprovada, por template/hook que cumpra o modelo de apps padrão do Windows;
 - runtime WebView2 por bootstrapper quando necessário;
 - versão portátil é artefato separado e declara limitações;
 - assinatura é requisito antes de distribuição pública, não para builds locais.
@@ -413,7 +419,7 @@ ResolvedStream { url, headers, expiry, seek_capability, metadata }
 PlaybackBackend
 ```
 
-O resolver não entra no domínio local nem no WebView. URLs expiradas podem ser resolvidas novamente de modo limitado. Cache possui cota e política de limpeza. Lives e streams sem duração publicam capabilities correspondentes.
+O resolver não entra no domínio local nem, no candidato Tauri, no WebView. URLs expiradas podem ser resolvidas novamente de modo limitado. Cache possui cota e política de limpeza. Lives e streams sem duração publicam capabilities correspondentes.
 
 YouTube só recebe implementação após ADR específico; o caminho oficialmente permitido pode exigir player visível e, portanto, ser incompatível com a proposta audio-only/tray.
 
@@ -437,7 +443,7 @@ Permanecem propostos:
 
 - ADR-0001: Rust + Tauri + Svelte;
 - ADR-0002: Rodio/Symphonia + Lofty;
-- ADR-0003: local-first e resolver remoto isolado.
+- requisito confirmado: player local-first e offline no MVP;
+- ADR-0003: mecanismo proposto para isolar um resolver remoto futuro.
 
 O M0 deve provar UI, codecs, acessibilidade, integração e orçamentos antes de aceitá-los. Até lá, esta arquitetura descreve a direção recomendada, não uma alegação de implementação.
-

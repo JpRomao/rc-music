@@ -108,8 +108,7 @@ A distribuição Linux de referência será escolhida no spike de empacotamento.
 ## Hipóteses e decisões em aberto
 
 - Rust é a recomendação inicial, mas a linguagem e o toolkit permanecem propostos até o ADR ser aceito.
-- Uma UI nativa declarativa parece alinhar melhor leveza e UX, mas precisa passar por spike visual e de acessibilidade.
+- Uma UI declarativa com núcleo nativo parece alinhar melhor velocidade de desenvolvimento e UX; Tauri, Slint e Qt ainda precisam dos spikes comparativos de footprint, integração e acessibilidade.
 - O backend de áudio deve priorizar simplicidade e formatos comuns; o corpus determinará se uma solução Rust pura é suficiente.
 - YouTube depende de viabilidade técnica, termos do serviço, licenças e estratégia de distribuição; não é compromisso do MVP.
 - Nome, identidade visual, licença do código e canal de distribuição ainda serão definidos pelo mantenedor.
-

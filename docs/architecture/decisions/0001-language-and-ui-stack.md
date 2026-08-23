@@ -8,7 +8,7 @@
 
 O produto precisa de UI consumer moderna e minimalista, resposta rápida, baixo consumo relativo, Windows excelente e Linux real. Deve continuar simples para uma pessoa e permitir TDD do núcleo.
 
-Foram avaliados Rust/Tauri/Svelte, C++/Qt Quick, Rust/Slint e Rust/Iced. A análise completa está em `../stack-analysis.md`.
+Foram avaliados Rust/Tauri/Svelte, C++/Qt Quick, Rust/Slint e Rust/Iced. A comparação completa está na [análise de stack](../stack-analysis.md).
 
 ## Decisão proposta
 
@@ -26,7 +26,7 @@ Usar:
 - prioridade explícita de UX favorece o ecossistema web de apresentação;
 - Tauri usa WebView do sistema, evitando Chromium empacotado;
 - Rust melhora segurança e TDD nas áreas que processam arquivos não confiáveis;
-- tray, single-instance, bundles e associações possuem suporte oficial;
+- tray, single-instance e bundles possuem suporte oficial; o NSIS permite customização, necessária para o contrato de associações deste projeto;
 - Svelte/Vite é menor e mais direto que um framework full-stack.
 
 ## Consequências positivas
@@ -63,6 +63,7 @@ Não entregam vantagem suficiente para o perfil consumer e o acabamento esperado
 - spike M0 reproduz MP3 e M4A com seek;
 - UI protótipo passa por NVDA, teclado e escala de 200%;
 - tray, single-instance e argumento Unicode funcionam em build empacotado;
+- template/hook NSIS registra ProgID, `Capabilities` e `RegisteredApplications` sem tomar `UserChoice`;
 - performance respeita metas ou desvios são explicitamente aprovados;
 - build Windows e Linux de referência é reproduzível;
 - revisão de CSP, capabilities e licenças concluída.
@@ -74,4 +75,3 @@ Não entregam vantagem suficiente para o perfil consumer e o acabamento esperado
 - acessibilidade do WebView falha em jornada principal;
 - bridge/IPC causa complexidade ou bugs persistentes;
 - distribuição exige WebView2 offline excessivo.
-
