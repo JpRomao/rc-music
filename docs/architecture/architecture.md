@@ -443,7 +443,7 @@ Métricas de performance são produzidas por benchmarks locais/CI e comandos dia
 ### Windows
 
 - release x64 primeiro;
-- instalador NSIS por usuário;
+- instalador NSIS por usuário como baseline experimental até a decisão M0;
 - file associations somente para matriz aprovada, por template/hook que cumpra o modelo de apps padrão do Windows;
 - dependências do candidato são declaradas e medidas separadamente da RAM: WebView2/bootstrapper no Tauri ou DLLs, plugins QML e componentes Qt/FFmpeg no Qt;
 - versão portátil é artefato separado e declara limitações;

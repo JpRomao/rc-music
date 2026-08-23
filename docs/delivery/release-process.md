@@ -41,7 +41,7 @@ Não implementar auto-update no MVP. Download/instalação são manuais até exi
 
 | Plataforma | Artefato inicial | Futuro/condicional |
 |---|---|---|
-| Windows x64 | NSIS por usuário | portátil `.zip`; MSI somente se houver caso real |
+| Windows x64 | NSIS por usuário, baseline a confirmar no M0 | portátil `.zip`; MSI somente se houver caso real |
 | Linux x64 | `.deb` da distribuição de referência | AppImage; `.rpm` após demanda |
 
 Cada artefato acompanha:
@@ -167,7 +167,7 @@ Devem conter:
 - limitações e bugs conhecidos;
 - hashes e estado de assinatura;
 - instrução de upgrade/uninstall quando mudou;
-- checks omitidos, se excepcionalmente aceitos.
+- checks não bloqueadores omitidos, se excepcionalmente aceitos; nunca usar omissão para declarar P0 vigente como aprovado.
 
 Não anunciar “suporte a Linux”, “M4A” ou “app padrão” de forma ampla se somente parte da matriz foi testada.
 

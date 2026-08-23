@@ -26,7 +26,8 @@ Antes de alterar o projeto, consulte nesta ordem:
 4. `docs/architecture/architecture.md` — arquitetura vigente;
 5. `docs/architecture/decisions/` — decisões arquiteturais (ADRs);
 6. `docs/quality/testing-strategy.md` — estratégia de TDD e qualidade;
-7. `docs/roadmap.md` — fases e limites de escopo.
+7. `docs/development-plan.md` — sequência executável, checks e checkpoint atual;
+8. `docs/roadmap.md` — fases e limites de escopo.
 
 Em caso de conflito, a fonte mais específica prevalece, desde que não contradiga este contrato. Requisitos aceitos não devem ser tratados como opcionais. Recomendações e ADRs propostos não devem ser apresentados como decisões finais.
 
@@ -121,6 +122,7 @@ Os comandos executáveis exatos de cada scaffold, além de UI, empacotamento e s
 - Registre decisões significativas em ADRs com estado `Proposto`, `Aceito`, `Substituído` ou `Rejeitado`.
 - Inclua contexto, decisão, alternativas, consequências e critérios de revisão.
 - Não marque uma escolha como aceita sem decisão explícita do mantenedor ou adoção inequívoca no código.
+- Não marque uma etapa do plano como concluída sem commit e evidência dos checks indicados.
 - Roadmaps descrevem ordem e limites, não garantias de data.
 
 ## 9. Definição de pronto

@@ -176,7 +176,7 @@ Qt Multimedia e Rodio são candidatos mutuamente exclusivos do M0, não dois eng
 - SMTC via `ISystemMediaTransportControlsInterop::GetForWindow(HWND)` em adapter próprio C++/WinRT ou windows-rs;
 - ProgID, extensions, `Capabilities` e `RegisteredApplications` declarados por template/hook NSIS próprio, sem depender apenas de `bundle.fileAssociations`;
 - botão “Definir como padrão” abre Configurações; não altera `UserChoice`;
-- NSIS por usuário primeiro, com Qt deployment ou bundle Tauri conforme o candidato; assinatura quando houver distribuição pública.
+- NSIS por usuário como baseline experimental, com Qt deployment ou bundle Tauri conforme o candidato; a tecnologia final é decidida no M0 e recebe assinatura quando houver distribuição pública.
 
 Fontes: [SMTC para desktop](https://learn.microsoft.com/en-us/windows/win32/api/systemmediatransportcontrolsinterop/nf-systemmediatransportcontrolsinterop-isystemmediatransportcontrolsinterop-getforwindow), [modelo de associações](https://learn.microsoft.com/en-us/windows/compatibility/file-type-and-protocol-associations-model), [plataforma de apps padrão](https://learn.microsoft.com/en-us/windows/apps/develop/windows-integration/default-apps-platform) e [instalador Tauri no Windows](https://v2.tauri.app/distribute/windows-installer/).
 

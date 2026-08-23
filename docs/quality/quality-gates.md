@@ -5,6 +5,8 @@
 
 Gates de comportamento, segurança e plataforma são invariantes. Durante o M0, cada candidato executa seus checks nativos e o protocolo comum NFR-STACK. Depois do ADR, os comandos definitivos pertencem apenas à stack vencedora; toolchains experimentais não são acumulados no produto.
 
+O catálogo de IDs `CHK-*`, a ordem de execução e a evidência mínima por incremento ficam no [plano de desenvolvimento](../development-plan.md). Este documento continua sendo o contrato técnico de cada gate.
+
 ## 1. Regra geral
 
 O gate é proporcional ao risco, mas nenhuma mudança fica sem validação. Se um comando não existir ainda ou o ambiente impedir a execução, registre “não executado” e o risco; não converta ausência em sucesso.
@@ -28,6 +30,12 @@ Gates locais validam o working tree que será commitado. CI e release validam co
 ## 3. Comandos previstos
 
 Enquanto não houver scaffold, estes comandos são contrato de desenho e podem ser ajustados no primeiro commit de build. A raiz deve oferecer scripts equivalentes e documentados.
+
+O check documental já é executável:
+
+```powershell
+& .\scripts\validate-docs.ps1
+```
 
 ### C++/Qt no M0
 
@@ -162,7 +170,7 @@ Verificar:
 - comandos correspondem ao repositório atual;
 - formatos e plataformas não são alegados sem validação;
 - riscos residuais e checks pulados aparecem no handoff;
-- `git diff --check` está limpo.
+- `scripts/validate-docs.ps1` passa, incluindo `git diff --check` do conteúdo rastreado e staged.
 
 ## 9. Gate de release
 
@@ -170,7 +178,8 @@ Uma release exige:
 
 - tag/versionamento consistente em todos os manifests, executáveis e metadados do bundle vencedor;
 - changelog e lista de mudanças/riscos conhecidos;
-- todos os critérios P0 rastreados para testes;
+- todos os critérios P0 vigentes rastreados e verdes; falha exige alteração/repriorização explícita antes do RC, não exceção genérica;
+- P1 adiado retirado formalmente do escopo antes do RC;
 - corpus e matriz atualizados;
 - Windows Tier 1 completo; Linux Tier 2 sem alegação além do testado;
 - instalador/pacote instalado, atualizado e removido em ambiente limpo;

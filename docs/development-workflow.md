@@ -1,5 +1,7 @@
 # Workflow de desenvolvimento
 
+O checkpoint, a ordem e os checks obrigatórios de cada incremento são definidos no [plano de desenvolvimento](development-plan.md); este documento descreve como executar uma unidade de trabalho.
+
 **Estado:** contrato complementar a [agents.md](../agents.md)
 **Última revisão:** 2026-08-23
 

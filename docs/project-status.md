@@ -41,7 +41,7 @@ Os dois últimos itens confirmam a direção do experimento, não a aceitação 
 | Estrutura | uma unidade de build e distribuição com módulos internos; extrações só por necessidade demonstrada | Proposto |
 | Persistência | JSON versionado e atômico; sem banco no MVP | Proposto |
 | Integração | portas comuns com adapters do toolkit escolhido, SMTC Windows, MPRIS Linux e associações nativas | Proposto |
-| Windows package | instalador por usuário que comprove o fluxo de Default Apps; tecnologia definida no M0 | Proposto |
+| Windows package | NSIS como baseline experimental por usuário para provar Default Apps; tecnologia final definida no M0 | Proposto |
 | Linux package | `.deb` primeiro, AppImage depois | Proposto |
 | Remoto | porta isolada, desativada no MVP | Proposto em ADR-0003 |
 
@@ -66,7 +66,7 @@ Estes comportamentos tornam o produto consistente, mas não foram pedidos litera
 - pt-BR inicial com strings preparadas para tradução;
 - metas de startup, memória, CPU e latência;
 - limites iniciais de arte/metadata/IPC, a validar no M0;
-- instalador Windows por usuário e `.deb` como primeiros formatos de pacote; a tecnologia do instalador Windows será escolhida no M0.
+- NSIS como baseline experimental Windows por usuário e `.deb` como primeiro pacote Linux; a tecnologia Windows final será escolhida no M0.
 
 Revisar [requisitos](product/requirements.md) e [UX](product/ux-specification.md) antes de aceitá-los como detalhe final.
 
@@ -108,6 +108,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
 | Corpus | [Corpus](quality/test-corpus.md) | Especificação |
+| Plano executável | [Plano](development-plan.md) | Baseline de execução |
 | Roadmap | [Roadmap](roadmap.md) | Proposto |
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
@@ -118,9 +119,10 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 O próximo passo seguro é o mantenedor revisar este arquivo e os três ADRs. Com autorização para M0:
 
 1. aceitar apenas o escopo do experimento, não a stack definitiva;
-2. criar shells Qt e Tauri equivalentes, ambos com backend falso;
-3. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
-4. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
-5. voltar aos ADRs com evidência reproduzível e escolher.
+2. fechar M0.0 e criar a fixture/protocolo comum M0.1 antes de qualquer coleta;
+3. criar shells Qt e Tauri equivalentes, ambos com backend falso;
+4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
+5. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
+6. voltar aos ADRs com evidência reproduzível e escolher.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

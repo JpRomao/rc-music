@@ -8,6 +8,8 @@
 
 TDD neste projeto não significa apenas escrever testes antes do commit. O teste é a primeira expressão executável do comportamento, orienta o desenho das portas e impede que a UI ou o backend concreto se tornem o domínio.
 
+O [plano de desenvolvimento](../development-plan.md) atribui este ciclo, os checks e a evidência a cada incremento; este documento define como os testes devem ser desenhados e executados.
+
 O ciclo obrigatório para qualquer comportamento novo ou correção é:
 
 1. **Red:** escrever o menor teste que descreve uma regra observável;

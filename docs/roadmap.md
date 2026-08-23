@@ -13,6 +13,8 @@
 
 Cada marco termina em commits verdes, documentação atualizada e demonstração do critério de saída. Datas serão definidas somente se o mantenedor desejar; ordem e gates são mais importantes para este projeto pessoal.
 
+Os incrementos, checks e evidências de cada passo estão no [plano de desenvolvimento executável](development-plan.md). Este arquivo permanece como visão macro de escopo e dependências.
+
 ## 2. Visão dos marcos
 
 ```text
@@ -48,6 +50,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 - análise Rust/C++ e recomendação de stack;
 - arquitetura, fronteiras e ADRs propostos;
 - estratégia TDD, corpus e gates;
+- plano executável com checks e rastreabilidade;
 - roadmap, segurança, workflow e processo de release;
 - README como índice e estado do projeto.
 
@@ -63,7 +66,9 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 **Estado:** Próximo após aprovação para implementar spikes.  
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
-### M0.1 — UI e shell A/B
+Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o mesmo trabalho como M0.0–M0.10: `M0-A` = M0.0–M0.4, `M0-B` = M0.5–M0.8, `M0-C` = M0.9 e `M0-D` = M0.10. Os dois namespaces não devem ser intercambiados em evidências.
+
+### M0-A — UI e shell A/B
 
 Construir dois shells descartáveis em Release, C++/Qt Quick e Rust/Tauri/Svelte, com os mesmos assets, dados e roteiro. Não usar áudio nem rede reais nesta etapa.
 
@@ -81,7 +86,7 @@ Antes de medir, versionar a fixture de estado, o roteiro, o marcador externo de 
 
 Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movimento reduzido, escala e smoke Linux. No Tauri, revisar CSP/capabilities e a árvore WebView2; no Qt, revisar nomes/roles acessíveis, bindings/animations contínuos e plugins distribuídos.
 
-### M0.2 — Áudio e metadata A/B
+### M0-B — Áudio e metadata A/B
 
 Usando harness mínimo e o mesmo corpus:
 
@@ -97,7 +102,9 @@ Usando harness mínimo e o mesmo corpus:
 
 Publicar a primeira matriz de formatos por candidato. Somente caminhos viáveis avançam; o produto final não empacota os dois engines.
 
-### M0.3 — Integração e pacote comparáveis
+Sessões curtas eliminam problemas cedo, mas cada ramo ainda viável executa o soak de oito horas definido no ADR-0002 antes da decisão M0-D. O aplicativo integrado repete o soak em M5.
+
+### M0-C — Integração e pacote comparáveis
 
 Provar, para cada candidato ainda viável:
 
@@ -107,9 +114,9 @@ Provar, para cada candidato ainda viável:
 - build/smoke na distribuição Linux de referência;
 - caminho demonstrável para SMTC/MPRIS e associações sem vazar plataforma para o domínio.
 
-No candidato finalista, completar a prova NSIS com ProgID, `Capabilities`, `RegisteredApplications`, tela oficial de apps padrão, SMTC/teclas de mídia, suspend/resume, reinício do Explorer, upgrade e uninstall. Se esse aprofundamento revelar custo estrutural, executar a mesma prova no outro candidato antes da decisão.
+No candidato finalista, usar NSIS como baseline experimental para completar a prova com ProgID, `Capabilities`, `RegisteredApplications`, tela oficial de apps padrão, SMTC/teclas de mídia, suspend/resume, reinício do Explorer, upgrade e uninstall. A tecnologia final do instalador só é aceita após a evidência. Se esse aprofundamento revelar custo estrutural, executar a mesma prova no outro candidato antes da decisão.
 
-### M0.4 — Decisão
+### M0-D — Decisão
 
 Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e comparar com a [análise de stack](architecture/stack-analysis.md):
 
@@ -166,10 +173,10 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ### Escopo
 
-- seletor nativo e abertura por path;
+- seletor nativo com multiseleção e abertura por path;
 - load async, play/pause, duração e posição;
 - seek clicável/arrastável;
-- saltos padrão ±5 s e preferências;
+- saltos padrão ±5 s e validação dos valores; a persistência real fecha em M3;
 - volume/mudo;
 - metadata essencial, capa e fallback;
 - erro recuperável;
@@ -185,7 +192,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ### Gate de saída
 
-- critérios FR-001/002/010/012–015/020–024 demonstrados;
+- critérios de abertura/playback/seek/metadata de M2 demonstrados; FR-013 só fecha após persistência em M3 e FR-022 após o painel visual;
 - nenhum I/O pesado bloqueia UI;
 - formatos publicados refletem apenas testes verdes;
 - instalável de preview interno no Windows.
@@ -201,8 +208,9 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 - anterior/próxima e fim da fila;
 - drag-and-drop de arquivos/diretórios;
 - painel de detalhes técnicos;
-- preferências completas do MVP;
+- preferências atômicas do MVP para tema, movimento, volume, mudo, saltos, fechar, restauração, início minimizado e fim da fila;
 - temas sistema/claro/escuro;
+- strings centralizadas em pt-BR, preparadas para tradução;
 - todos os estados e microcopy;
 - atalhos e foco;
 - layout/escala/alto contraste/movimento reduzido.
@@ -228,6 +236,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 - ProgID/capabilities/associações;
 - página oficial de defaults;
 - persistência atômica e restauração pausada;
+- restauração de janela somente em monitor visível;
 - suspend/resume/device lost/Explorer restart;
 - instalador, upgrade e uninstall.
 
@@ -266,7 +275,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ### Gate de saída
 
-Todos os critérios nos [requisitos](product/requirements.md), seção 6, e nos [gates de qualidade](quality/quality-gates.md), seção 9, passam, ou exceções são aceitas e documentadas antes da tag.
+Todos os critérios vigentes nos [requisitos](product/requirements.md), seção 6, e nos [gates de qualidade](quality/quality-gates.md), seção 9, passam. P0 falho exige alteração/repriorização explícita antes do RC; P1 adiado exige ajuste formal de escopo. Somente desvios que o próprio requisito permite podem seguir por ADR prévio.
 
 ## 10. M6 — Organização 0.2
 
@@ -275,7 +284,9 @@ Todos os critérios nos [requisitos](product/requirements.md), seção 6, e nos 
 Candidatos independentes:
 
 - playlists nomeadas e M3U8;
-- shuffle/repeat;
+- shuffle;
+- repeat;
+- velocidade de reprodução;
 - biblioteca opcional por pastas e busca;
 - mini-player;
 - escolha de dispositivo;

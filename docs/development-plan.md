@@ -1,0 +1,574 @@
+# Plano de desenvolvimento executável
+
+**Estado:** baseline para execução e acompanhamento
+**Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
+**Última revisão:** 2026-08-23
+**Marco atual:** D0 com autoria concluída; revisão do mantenedor e autorização do M0 pendentes
+
+Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
+
+## 1. Regras de uso
+
+### 1.1 Hierarquia
+
+1. `agents.md` define como trabalhar.
+2. Os requisitos definem o que o produto deve fazer.
+3. Arquitetura e ADRs definem fronteiras e decisões aceitas/propostas.
+4. A estratégia de testes e os gates definem como provar qualidade.
+5. Este plano define a ordem executável e o checkpoint atual.
+6. O roadmap resume os marcos e limites de escopo.
+
+Conflito com requisito ou ADR aceito é resolvido antes de implementar. Nenhum checkbox deste plano altera sozinho um requisito ou o estado de um ADR.
+
+### 1.2 Estados
+
+| Estado | Significado |
+|---|---|
+| `[x]` | Entrega presente, validada no escopo indicado e commitada |
+| `[ ]` | Não iniciada ou sem evidência suficiente |
+| Em andamento | Existe trabalho local; não pode ser tratado como concluído |
+| Bloqueado | Falta decisão, ambiente ou autoridade identificada |
+| Rejeitado | Experimento realizado e não promovido, com evidência preservada |
+
+Um item só recebe `[x]` quando o commit, os checks e os riscos residuais estão registrados. Datas não são usadas como substituto de critério de saída.
+
+### 1.3 Unidade de trabalho
+
+Cada incremento deve caber em um commit coerente sempre que possível e conter:
+
+1. requisito(s) e resultado observável;
+2. teste Red, quando houver comportamento;
+3. implementação Green mínima;
+4. refactor com testes verdes;
+5. checks proporcionais ao risco;
+6. rastreabilidade atualizada;
+7. revisão do diff;
+8. commit atômico e working tree limpa;
+9. handoff com checks executados, omitidos e risco residual.
+
+Mudança exclusivamente documental não recebe teste artificial, mas executa `CHK-DOC` e `CHK-CLOSE`.
+
+## 2. Estado consolidado do projeto
+
+### 2.1 Trabalho já concluído
+
+| Entrega | Estado | Evidência |
+|---|---|---|
+| Contrato operacional e exigência de commits/TDD | `[x]` | `f2c3088` |
+| Requisitos rastreáveis e especificação de UX | `[x]` | `4367721` |
+| Análise de stack, arquitetura e ADRs propostos | `[x]` | `c708c1b` |
+| Estratégia TDD e gates de qualidade | `[x]` | `1792b49` |
+| Roadmap e workflow de desenvolvimento | `[x]` | `1b3bbb4` |
+| Threat model e processo de release | `[x]` | `83e9bd5` |
+| Hardening dos contratos e critérios | `[x]` | `5d9c847` |
+| README e índice documental | `[x]` | `94735e4` |
+| Qt como hipótese principal e Tauri como desafiante A/B | `[x]` | `66d179e` |
+| Plano executável com checks por incremento | `[x]` | commit que introduz este documento |
+
+### 2.2 Estado que não pode ser inferido
+
+- Não existe código do produto, scaffold, instalador ou fixture de áudio.
+- Nenhum formato foi comprovado.
+- Nenhuma stack ou engine foi aceita.
+- ADR-0001, ADR-0002 e ADR-0003 continuam `Proposto`.
+- Os budgets são metas, não medições.
+- Windows e Linux ainda não possuem builds do aplicativo.
+- YouTube continua pesquisa futura sem promessa de implementação.
+
+### 2.3 Checkpoint D0 atual
+
+A autoria documental está concluída e commitada. D0 só fecha quando o mantenedor revisar os requisitos derivados, as decisões abertas e autorizar apenas o escopo experimental do M0. Essa autorização não aceita Qt, Tauri ou qualquer backend.
+
+## 3. Check obrigatório de todo incremento
+
+### 3.1 Antes de alterar
+
+1. Executar `git status --short --branch`.
+2. Ler os requisitos, ADRs e a etapa deste plano afetados.
+3. Declarar o resultado observável e os IDs cobertos.
+4. Identificar fixture, fake e boundary necessários.
+5. Revisar licença e manutenção antes de adicionar dependência.
+6. Confirmar que a tarefa não implementa como definitiva uma decisão ainda `Proposto`. A única exceção é um spike explicitamente autorizado cujo objetivo seja produzir evidência para resolver essa proposta.
+
+### 3.2 Red–Green–Refactor
+
+1. **Red:** executar o teste focado e confirmar falha pelo motivo correto.
+2. **Green:** executar o mesmo teste e confirmar sucesso após a menor implementação.
+3. **Refactor:** executar a suíte do módulo antes/depois da melhoria.
+4. Não commitar estado Red na branch principal.
+5. Registrar no handoff o teste Red e o motivo relevante da falha.
+
+### 3.3 Antes do commit
+
+1. Executar format, análise estática e testes focados.
+2. Executar a suíte do módulo e o gate proporcional.
+3. Atualizar requisito, ADR, matriz de formatos e evidência quando aplicável.
+4. Executar `git diff --check`.
+5. Revisar o diff integral e os arquivos staged.
+6. Criar commit atômico.
+7. Executar `git show --check --stat HEAD`.
+8. Confirmar `git status --short --branch` sem mudanças próprias.
+
+## 4. Catálogo de checks
+
+Os nomes abaixo são contratos lógicos. Hoje `CHK-DOC` e a parcela Git de `CHK-CLOSE` são executáveis pelo validador versionado. M0 cria runners separados por candidato; M1 cria o comando raiz `validate` da stack vencedora. Um comando futuro nunca pode ser relatado como executado antes de existir no repositório.
+
+| ID | Check | Evidência mínima |
+|---|---|---|
+| `CHK-PREFLIGHT` | Estado Git, IDs/requisitos, ADRs, escopo e dependências | comando, branch/commit e decisão de escopo |
+| `CHK-DOC` | Links relativos, arquivos indexados, IDs únicos, estados ADR e `git diff --check` | zero link quebrado, zero ID duplicado/desconhecido, diff limpo |
+| `CHK-TRACE` | requisito → etapa → teste → evidência | linha por requisito afetado, sem P0 órfão |
+| `CHK-TDD` | Red–Green–Refactor | nome/comando do teste Red, Green e suíte após refactor |
+| `CHK-FAST` | format, lint/análise, unitários, contratos rápidos e build/check | runner da stack com exit code zero |
+| `CHK-ARCH` | domínio/application independentes de toolkit/backend; boundaries estreitos | build/test do core isolado e revisão de dependências |
+| `CHK-CORPUS` | manifesto, SHA-256, licença/receita, capacidades e tolerâncias | fixture validada e matriz por candidato/commit |
+| `CHK-UI` | estados, foco, layout, temas, fila e estabilidade visual | testes de componente e roteiro visual identificado |
+| `CHK-A11Y` | teclado, leitor de tela, alto contraste, escala e movimento reduzido | formulário manual com build, SO, tecnologia assistiva e resultado |
+| `CHK-PERF` | Release, ambiente controlado, amostras, CPU/memória/latência e regressão | dados brutos ou hash, P50/P95, baseline e método |
+| `CHK-SEC` | threat model, input hostil, boundary, advisories e licenças | controles aplicáveis SEC-001–018, inventário e exceções |
+| `CHK-WIN` | single-instance, tray, SMTC, defaults, lifecycle e pacote Windows | smoke em build empacotado/ambiente descartável |
+| `CHK-LINUX` | build, MPRIS, MIME, tray/fallback, Wayland/X11 e `.deb` | ambiente de referência e matriz sem extrapolação |
+| `CHK-PACKAGE` | instalação, upgrade, uninstall e dependências reais | manifesto do pacote, diff de sistema escopado e dados preservados |
+| `CHK-E2E` | jornadas críticas empacotadas | cenário, fixture, ambiente e resultado |
+| `CHK-RELEASE` | escopo, bugs, rastreabilidade, SBOM, assinatura, hashes e tag | checklist de release completo e autorização explícita |
+| `CHK-CLOSE` | diff, commit, working tree e handoff | commit, `git show --check --stat`, status limpo e riscos |
+
+### 4.1 Check documental executável agora
+
+```powershell
+git status --short --branch
+& .\scripts\validate-docs.ps1
+```
+
+O runner valida arquivos contratuais, links relativos, IDs e contagens de requisitos, matriz 83/83, catálogo de checks, etapas com `CHK-CLOSE`, estados ADR e whitespace do diff rastreado/staged. M1 deve incorporá-lo ao comando raiz `validate`, sem duplicar sua lógica.
+
+### 4.2 Regras de performance
+
+Os budgets dos requisitos são vigentes. Tolerâncias operacionais que ainda não aparecem nos requisitos ou em ADR aceito são **proposta inicial de protocolo**: M0.0 precisa congelá-las em commit antes da coleta, e qualquer alteração posterior invalida a comparação já iniciada.
+
+- Build Release identificado por commit e toolchain.
+- Máquina, SO, energia, display scale e dispositivos registrados.
+- Primeira execução, cold start e execução aquecida separados.
+- Pelo menos 20 amostras válidas por candidato e cenário curto.
+- Descarte de amostra somente por regra pré-registrada, com motivo; limite inicial proposto de 10%.
+- Métrica primária de RAM multiprocesso: soma de private working set; private bytes e memória compartilhada relatados separadamente.
+- CPU medida por intervalo e para toda a árvore do app.
+- Alerta inicial de regressão em 5%; bloqueio após confirmação em 10% ou ao violar teto absoluto.
+- Proposta para NFR-PERF-007: após 30 minutos de estabilização, amostrar a soma de private bytes da árvore a cada 60 s por oito horas. Não pode haver crash/deadlock; underrun atribuível ao app tem meta zero, ou tolerância por dispositivo/backend congelada antes da coleta. “Sem crescimento sustentado” exige estimativa de slope ≤ 1 MiB/h, limite inferior do intervalo de confiança de 95% ≤ 0 **e** limite superior ≤ 1 MiB/h; intervalo mais amplo é inconclusivo/no-go, e crescimento positivo estatisticamente sustentado falha. A mediana dos 30 minutos finais deve satisfazer `final_median <= initial_median + max(initial_median * 0.10, 10 MiB)`; handles e threads não podem ter tendência monotônica. Esses números tratam ruído de medição, não autorizam leak, e só passam a valer após aprovação M0.0.
+
+### 4.3 Evidência e exceções
+
+Cada resumo de marco registra:
+
+```text
+step_id
+requirements
+commit
+environment
+red_test_and_expected_failure
+checks_run
+manual_checks
+artifacts_or_hashes
+checks_skipped_and_reason
+residual_risk
+decision
+next_step
+```
+
+Uma exceção de gate possui ID, requisito afetado, aprovador, justificativa, mitigação e expiração. “Risco aceito” sem esses campos não fecha etapa. Exceção não transforma requisito funcional P0 falho em concluído; o requisito precisa passar ou ser alterado/repriorizado explicitamente antes do RC.
+
+## 5. Dependências e pontos de decisão
+
+| Decisão | Prazo máximo | Bloqueia |
+|---|---|---|
+| Aprovar requisitos derivados usados no M0 e autorizar o experimento | fim de D0 | todo M0 |
+| Escolher distribuição Linux de referência e versões Wayland/X11 | M0.0 | `CHK-LINUX`, decisão da stack |
+| Registrar matriz Windows 10/11 e máquina Windows 11 de benchmark | M0.0 | comparação justa e suporte declarado |
+| Definir licença do repositório e modelo local/público | antes de distribuir protótipo | licenças, pacote e release |
+| Tratar NSIS como baseline experimental; aceitar tecnologia final após M0 | M0.9 | associação, upgrade e uninstall |
+| Decidir se versão portátil entra no 0.1 | antes de M4 | pacote Windows |
+| Confirmar fila e restauração de sessão como P0 | fim de D0 | escopo M1–M4 |
+| Aprovar inventário e opções de todas as preferências do MVP | D0.9 | schema M1.9 e experiência M3/M4 |
+| Congelar método, tolerâncias e descarte de benchmark | M0.0, antes de M0.1 | qualquer coleta comparativa |
+| Registrar resultado/vencedor nos ADR-0001 e ADR-0002 ou criar ADR final | M0.10 | bootstrap M1 |
+| Nome e identidade visual | antes do acabamento M3 | ícones, strings e pacote final |
+
+NSIS é o baseline experimental para provar o modelo de Default Apps no Windows; não é decisão final do empacotador antes do M0. O tray/pacote básico de M0.2/M0.3 comprova paridade do shell; M0.9 executa a prova nativa aprofundada apenas nos candidatos ainda viáveis.
+
+## 6. D0 — Fechamento documental
+
+**Objetivo:** assegurar que o experimento começa com contrato revisado, sem confundir recomendação com decisão.
+
+| ID | Entrega | Estado | Checks | Critério de saída |
+|---|---|---|---|---|
+| D0.1 | `agents.md`, commits e TDD como contrato | `[x]` | `CHK-DOC`, `CHK-CLOSE` | contrato foi o primeiro commit |
+| D0.2 | visão, 83 requisitos e UX | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | 41 FR, 10 UX e 32 NFR definidos sem duplicata |
+| D0.3 | análise Qt/Tauri, arquitetura e ADRs propostos | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | revisão documental coerente; nenhum gate de implementação alegado e nenhuma stack apresentada como aceita |
+| D0.4 | estratégia TDD, gates e corpus especificado | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | checks e fixtures esperados documentados |
+| D0.5 | roadmap, workflow, segurança e release | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | marcos e gates macro presentes |
+| D0.6 | README, estado e índice | `[x]` | `CHK-DOC`, `CHK-CLOSE` | navegação documental válida |
+| D0.7 | Qt principal no M0; Tauri desafiante A/B | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | NFR-STACK-001–006 e contratos alinhados |
+| D0.8 | plano executável e matriz completa | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | todos os requisitos possuem destino explícito |
+| D0.9 | revisão dos derivados e decisões abertas pelo mantenedor | `[ ]` | ata/commit documental, `CHK-DOC`, `CHK-CLOSE` | autorização explícita apenas para M0 |
+
+### Gate D0
+
+**Go:** D0.9 concluído; todos os documentos commitados; ADRs de stack continuam `Proposto`; decisões M0.0 possuem responsável/critério.
+
+**No-go:** criar scaffold de produto ou aceitar stack por preferência antes da evidência M0.
+
+## 7. M0 — Spikes comparativos e decisão de stack
+
+**Objetivo:** escolher uma combinação coerente de shell, UI, áudio, metadata e distribuição com evidência reproduzível.
+
+Os IDs abaixo são o namespace executável. No roadmap macro, `M0-A` corresponde a M0.0–M0.4, `M0-B` a M0.5–M0.8, `M0-C` a M0.9 e `M0-D` a M0.10.
+
+Código M0 é experimental, mas comportamento observável de shell, adapter, tray ou pacote continua seguindo TDD nos dois candidatos. Somente instrumentação descartável que mede API/ambiente, sem comportamento de produto, pode trocar `CHK-TDD` por validação determinística do próprio harness. Código promovido ao produto mantém seus testes e volta a passar pelo ciclo TDD do baseline; harness de medição não vira arquitetura por acidente.
+
+### 7.1 Sequência
+
+| ID | Entrega | Requisitos/decisões | Checks obrigatórios | Go/No-go |
+|---|---|---|---|---|
+| M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | Go somente com decisões/protocolo commitados |
+| M0.1 | Fixture comum de estado, fila de 1.000 itens, assets, roteiro, marcadores externos, templates de evidência e harness de coleta | NFR-STACK-002–003 | `CHK-TDD` para lógica versionada, `CHK-TRACE`, `CHK-PERF`, `CHK-DOC`, `CHK-CLOSE` | Piloto repetível; nenhum candidato recebe cenário diferente |
+| M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
+| M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
+| M0.4 | Comparação cega ao resultado dos shells | NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | `CHK-PERF`, `CHK-A11Y`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-TRACE`, `CHK-CLOSE` | Eliminar candidato com P0, build ausente ou budget sem exceção |
+| M0.5 | Corpus licenciado, manifesto, receitas, hashes e catálogo canônico de casos `PlaybackBackend`/`MetadataReader` | FR-002, FR-005, FR-020–024; NFR-LIMIT-001–003, NFR-REL-001, NFR-REL-006 | `CHK-CORPUS`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | Expectativas e tolerâncias versionadas; nenhum arquivo pessoal/comercial |
+| M0.6 | Adapter Qt Multimedia/FFmpeg + TagLib no harness comum | FR-002, FR-010, FR-012, FR-014, FR-020–024; NFR-STACK-005 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Pacote usa backend/plugins esperados; erros controlados |
+| M0.7 | Adapter Rodio/CPAL/Symphonia + Lofty no mesmo harness | mesmos IDs de M0.6 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Uma cadeia Symphonia; sem bloqueio inaceitável do callback |
+| M0.8 | Comparação de áudio, 500 trocas/seeks, armazenamento lento e soak de oito horas nos ramos viáveis | NFR-PERF-002–003, NFR-PERF-007; NFR-REL-001–002; NFR-STACK-002–003, NFR-STACK-005–006 | `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-TRACE`, `CHK-CLOSE` | Formatos P0, estabilidade e cancelamento passam |
+| M0.9 | Integração/pacote comparável e prova aprofundada do finalista | FR-004, FR-030–038; NFR-LIMIT-004, NFR-PRIV-001 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Single-instance, tray, pacote e caminho nativo viáveis |
+| M0.10 | Combinar UI+áudio, reexecutar budgets e decidir | NFR-PERF-001–007, NFR-STACK-001–006 | todos os checks M0, `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | ADR registra vencedor, ambiente, números, riscos e alternativas |
+
+### 7.2 Checks específicos do shell
+
+- Qt: CMake Release reproduzível, format/check C++/QML, Catch2/CTest, Qt Test/Quick Test aplicável, `qmllint`, plugins/DLLs inventariados, nomes/roles acessíveis e nenhuma dependência Qt em domain/application.
+- Tauri: `cargo fmt`, Clippy com warnings negados, testes Rust, install congelado do frontend, format/lint/typecheck/test/build, CSP/capabilities mínimas, IPC estreito/coalescido, nenhuma navegação remota e árvore WebView2 completa nas métricas.
+- Ambos: janela acionável P95 ≤ 800 ms, CPU pausada média < 0,5%, private working set ocioso < 80 MiB, fila de 1.000 itens sem bloqueio > 100 ms, jornada NVDA/teclado/contraste/100–200%/movimento reduzido e smoke Linux. Input-to-visible é registrado como diagnóstico do componente visual; NFR-PERF-003 só fecha no ensaio de áudio/combinação.
+
+### 7.3 Checks específicos de áudio
+
+- Mesmo manifesto, fixtures, IDs, dispositivo e método para ambos.
+- MP3 CBR/VBR, M4A/AAC-LC, FLAC, WAV e Ogg/Vorbis recebem resultado explícito; Opus/ALAC permanecem candidatos.
+- Open-to-audible P95 ≤ 750 ms.
+- Seek-to-audible P95 ≤ 250 ms ou exceção por codec documentada antes da aceitação.
+- Zero crash reproduzível com truncados, extensão enganosa, tags/capas inválidas e limites abaixo/no/acima.
+- Evento `ended` uma vez, unload/shutdown idempotentes e resultado antigo descartado.
+- Toda leitura síncrona não cancelável é limitada e não acumula jobs/handles.
+- Underrun em reprodução estável é sempre diagnosticado. Depois de M0.0 congelar a meta zero ou uma tolerância explícita por dispositivo/backend, qualquer violação elimina o backend ou exige prefetch/ring buffer limitado e nova medição completa.
+
+### 7.4 Decisão M0
+
+1. Se apenas um candidato passa, combinar e medir novamente antes de aceitar.
+2. Se os dois passam dentro das tolerâncias, decidir por UX comprovada, acessibilidade, manutenção pessoal, segurança, licenciamento e integração.
+3. Se ambos falham por footprint do shell, solicitar autorização para spike Slint equivalente.
+4. Se a falha é apenas do áudio, revisar o backend sem trocar automaticamente a UI.
+5. Se um requisito é inviável, voltar ao mantenedor; não relaxar orçamento silenciosamente.
+6. Atualizar ADR-0001 e ADR-0002 com seção de resultados e vencedor, ou criar ADR final que os substitua.
+7. Remover o protótipo perdedor ou preservá-lo fora do produto com motivo explícito; não manter dois toolchains/engines na release.
+
+### Gate M0
+
+**Go:** uma combinação cumpre UX, acessibilidade, formatos P0, Windows Tier 1, smoke Linux, segurança/licenças e budgets vigentes ou exceções aprovadas; ADR final commitado.
+
+**No-go:** iniciar M1 com ADR ainda `Proposto`, evidência incomparável ou protótipos misturados.
+
+## 8. M1 — Fundação TDD da stack vencedora
+
+**Objetivo:** criar a menor unidade de build/distribuição sustentável, com domínio puro, fakes e validação automatizada antes das features reais.
+
+ADR-0003 não autoriza implementar `MediaSourceResolver` ou seu fake no MVP. M1 usa `LocalFile` tipado; a porta remota só entra após decisão específica em R1.
+
+| ID | Incremento TDD | Requisitos principais | Checks obrigatórios | Critério de saída |
+|---|---|---|---|---|
+| M1.1 | Scaffold da stack vencedora, versões pinadas, lockfiles/manifests e uma unidade de build | NFR-MAINT-003 | `CHK-PREFLIGHT`, `CHK-FAST`, `CHK-SEC`, `CHK-CLOSE` | configure/build em Windows e Linux; nenhum pacote prematuro |
+| M1.2 | Scripts raiz `format`, `lint`, `check`, `test`, `build`, `validate` e check documental | NFR-MAINT-001, NFR-MAINT-004–005 | `CHK-TDD` para o runner quando aplicável, `CHK-DOC`, `CHK-FAST`, `CHK-CLOSE` | um entrypoint `validate` executa checks rápidos reais |
+| M1.3 | CI Windows/Linux para checks rápidos e artefatos diagnósticos | NFR-MAINT-004–005 | `CHK-FAST`, `CHK-DOC`, `CHK-CLOSE` | mesmos scripts locais/CI; commit identificável |
+| M1.4 | Tipos `TrackId`, `Position`, `Duration`, `Volume`, saltos e erros tipados | FR-013–014, NFR-REL-001 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | invariantes/clamps/property tests verdes |
+| M1.5 | Máquina de estados de playback e descarte por geração | FR-010, FR-014–015, FR-024 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-CLOSE` | transições válidas/inválidas e eventos antigos cobertos |
+| M1.6 | Fila por ID, duplicatas, anterior/próxima e fim | FR-011, FR-016–017 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | property tests e navegação determinística verdes |
+| M1.7 | Portas `PlaybackBackend`, `MetadataReader`, `SessionStore`, `PlatformIntegration`, relógio e IDs; fakes mínimos | FR-020–024, FR-030–038, FR-042–044 | `CHK-TDD`, `CHK-ARCH`, `CHK-FAST`, `CHK-CLOSE` | core compila/testa sem toolkit, SO, arquivo ou áudio real |
+| M1.8 | Controller, comandos comuns, snapshots e coalescing | FR-012–016, FR-037, NFR-LIMIT-004 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | UI/tray/plataforma podem usar os mesmos casos de uso |
+| M1.9 | Esquema versionado de preferências/sessão e política de redação, rotação e retenção de logs | FR-042–044, NFR-PRIV-002–003 | `CHK-TDD`, `CHK-SEC`, `CHK-FAST`, `CHK-CLOSE` | round-trip de todo o inventário; formatter sem conteúdo/path/URL sensível; limites de idade/bytes/arquivos declarados e testados abaixo/no/acima |
+| M1.10 | Boundary/presenter e shell real consumindo somente fakes | UX-001–008, UX-010 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-ARCH`, `CHK-E2E`, `CHK-CLOSE` | jornada visual falsa; sem regra de negócio na UI |
+
+### Gate M1
+
+- `validate` verde localmente e na CI.
+- Domain/application cobertos inicialmente por ≥ 90% lines/85% branches e ≥ 85%/80%, respectivamente; utilities de presentation atingem ≥ 85%/80% quando M1.10 as introduzir. Ferramenta e formato do relatório são registrados no bootstrap.
+- Testes não usam sleeps, rede, arquivos pessoais ou dispositivo real.
+- UI roda contra fake e o core roda sem toolkit/backend.
+- Rastreabilidade bidirecional existe para todo requisito iniciado.
+- Working tree limpa e documentação corresponde à estrutura real.
+
+## 9. M2 — Vertical slice de reprodução local
+
+**Objetivo:** abrir um arquivo local real e concluir a jornada abrir → tocar → seek → pausar com uma faixa.
+
+FR-013 só fica completo quando os valores configuráveis forem persistidos em M3. M2 prova defaults, validação e comportamento. FR-022 prova extração em M2 e só fecha visualmente com o painel de detalhes em M3.
+
+| ID | Incremento TDD | Requisitos principais | Checks obrigatórios | Critério de saída |
+|---|---|---|---|---|
+| M2.1 | Seletor nativo com multiseleção, filtros validados, `LocalFile`, detecção por conteúdo e erro por extensão/arquivo inválido | FR-001–002, FR-005–006 | `CHK-TDD`, `CHK-CORPUS`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | um e vários arquivos válidos abrem/entram na fila; inválido preserva contexto; filtros refletem matriz |
+| M2.2 | Adapter real load/play/pause/unload e capacidades | FR-010, NFR-REL-001–002 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-CLOSE` | MP3/M4A P0 do corpus passam no pacote de preview |
+| M2.3 | Posição/duração, snapshots e progresso sem polling excessivo | FR-012, NFR-PERF-003–004 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE` | UI difere do engine ≤ 250 ms sem loop desnecessário |
+| M2.4 | Click/drag seek, preview, confirmação única e saltos ±5 s | FR-013–015 | `CHK-TDD`, `CHK-UI`, `CHK-CORPUS`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE` | seek pausa/limites/non-seekable corretos; latência dentro do budget |
+| M2.5 | Volume/mudo e restauração lógica do último volume | FR-010–011 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE` | 0–100%, mute idempotente e sem amplificação |
+| M2.6 | Metadata/propriedades/capa, limites e descarte de resultado antigo | FR-020–024, NFR-LIMIT-001–003 | `CHK-TDD`, `CHK-CORPUS`, `CHK-SEC`, `CHK-PERF`, `CHK-CLOSE` | abaixo/no/acima dos limites; UI nunca bloqueia nem recebe estado antigo |
+| M2.7 | Estados vazio/loading/ready/playing/paused/error e preview instalável Windows | UX-001–003, UX-008–009 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-E2E`, `CHK-PACKAGE`, `CHK-CLOSE` | jornada principal empacotada, erro acionável e geometria estável |
+
+### Gate M2
+
+- `CHK-E2E`: abrir → tocar → buscar → pausar em build empacotado.
+- Open-to-audible e seek-to-audible dentro dos budgets no hardware de referência.
+- Nenhum I/O pesado na thread visual; detector de stall sem violação.
+- Matriz publica apenas capacidades comprovadas por fixture/commit.
+- Nenhum item M2 declara persistência ou painel técnico concluído antes de M3.
+
+## 10. M3 — Experiência completa do player
+
+**Objetivo:** transformar o slice em um player agradável e completo para o uso diário local.
+
+| ID | Incremento TDD | Requisitos principais | Checks obrigatórios | Critério de saída |
+|---|---|---|---|---|
+| M3.1 | Fila visual: adicionar, tocar agora, reordenar, remover, limpar e duplicatas por ID | FR-016 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE` | operações e foco após reordenação/remoção cobertos |
+| M3.2 | Múltiplos arquivos, drag-and-drop e enumeração incremental de diretórios | FR-003, FR-006 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | válidos continuam com inválidos; nenhum bloqueio > 100 ms |
+| M3.3 | Anterior/próxima, regra de 3 s, ended, salto de indisponíveis e comportamento aprovado para fim da fila | FR-011, FR-017, FR-042 | `CHK-TDD`, `CHK-CORPUS`, `CHK-E2E`, `CHK-CLOSE` | limites `≤3 s`/`>3 s`, cada opção de fim e erros cobertos |
+| M3.4 | Painel de detalhes e diagnóstico copiável | FR-020–023 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-CLOSE` | FR-022 completo na UI; desconhecido nunca aparece como zero falso |
+| M3.5 | Preferências reais e atômicas: tema, movimento, volume, mudo, saltos, fechar, restaurar sessão, iniciar minimizado e fim da fila | FR-013, FR-040, FR-042, FR-044 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | teste parametrizado cobre todo o inventário aprovado; 7 s/20 s persistem; corrupção usa backup/default; troca de tema sem flash/restart |
+| M3.6 | Strings centralizadas, pt-BR, microcopy e erros acionáveis | UX-008–010 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-DOC`, `CHK-CLOSE` | nenhuma string essencial espalhada; layout suporta texto longo |
+| M3.7 | Teclado/foco, atalhos, leitor de tela, escala, contraste e movimento reduzido | FR-037, UX-004–007 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-E2E`, `CHK-CLOSE` | zero controle P0 mouse-only, sem nome ou sem foco visível |
+| M3.8 | Revisão UX, desempenho de 1.000 itens e convergência visual | UX-001–010, NFR-PERF-004, NFR-PERF-006 | `CHK-UI`, `CHK-A11Y`, `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | jornadas 1–4, 8–9 e decisão visual registradas |
+
+### Gate M3
+
+- Jornadas UX 1–4, 8 e 9 passam; jornada adicional prova troca de tema sem flash e persistência.
+- NVDA manual identifica build, SO, versão, executor e resultado.
+- Escalas 100/150/200%, high contrast e reduced motion sem bloqueador.
+- 1.000 itens respeitam NFR-PERF-006.
+- FR-013, FR-022, FR-040 e FR-042 possuem teste/evidência completos.
+
+## 11. M4 — Desktop, sessão e recuperação
+
+**Objetivo:** tornar o player um cidadão confiável do Windows e um aplicativo honestamente suportado no Linux de referência.
+
+| ID | Incremento TDD | Requisitos principais | Checks obrigatórios | Critério de saída |
+|---|---|---|---|---|
+| M4.1 | Persistência atômica de fila/item/posição e restauração opcional sempre pausada | FR-042–044, NFR-REL-003 | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | restore ligado/desligado, kill/crash/corrupção/replace falho recuperam sem áudio inesperado |
+| M4.2 | Posição/tamanho da janela somente em monitor visível | FR-045 | `CHK-TDD`, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` | monitor removido/DPI alterado não deixam janela inacessível |
+| M4.3 | Instância única, CLI/shell e IPC limitado com paths Unicode/longos/múltiplos | FR-004, FR-033, NFR-LIMIT-004, NFR-REL-004 | `CHK-TDD`, `CHK-SEC`, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` | 0/1/1.000/1.001 paths; espaços/aspas/metacaracteres; payload abaixo/no/acima de 1 MiB; dividir/rejeitar sem stall e sem shell concatenado |
+| M4.4 | Tray, close/start behavior, menu e saída real; fallback Linux visível | FR-030–032, FR-042 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-A11Y`, `CHK-E2E`, `CHK-CLOSE` | fechar/iniciar minimizado respeitam capacidade/preferência; Sair salva, encerra e restaura pausado; Linux nunca fica invisível |
+| M4.5 | SMTC/teclas de mídia no Windows e MPRIS no Linux usando casos de uso comuns | FR-037 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE` | UI/tray/teclado/SO produzem a mesma semântica |
+| M4.6 | ProgID/capabilities/Default Apps e `.desktop`/MIME/ícones | FR-034–036 | `CHK-TDD`, `CHK-SEC`, `CHK-WIN`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-CLOSE` | apenas formatos validados; nenhuma escrita em `UserChoice` |
+| M4.7 | Suspend/resume, device/drive lost, arquivo removido e Explorer restart | FR-038, NFR-REL-005 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE` | zero zumbi/estado impossível; cada falha oferece recuperação/ação |
+| M4.8 | Install, upgrade e uninstall Windows; `.deb` install/remove Linux | NFR-REL-006, NFR-PRIV-001–003 | `CHK-TDD` para templates/helpers, `CHK-PACKAGE`, `CHK-WIN`, `CHK-LINUX`, `CHK-SEC`, `CHK-CLOSE` | mídia intocada; dados preservados/removidos conforme política; zero processo, serviço, tarefa, binário ou registro do ProgID próprio residual |
+
+### Gate M4
+
+- Jornadas UX 5–7 passam no Windows empacotado.
+- Fault injection cobre antes/depois do replace e todas as versões de schema.
+- Instância única e associações são testadas após instalação real.
+- Matriz Tier 1/Tier 2 registra exatamente ambiente e limitações.
+- Smoke offline comprova funcionamento sem rede. Captura ou deny de egress durante as jornadas, somada à inspeção de configuração/dependências, comprova ausência de tentativa de telemetria; testes de redação/retenção verificam que logs não expõem conteúdo, path ou URL completa por padrão.
+
+## 12. M5 — Hardening e release 0.1
+
+**Objetivo:** transformar o aplicativo integrado em uma release local confiável e, se autorizado, distribuível.
+
+| ID | Incremento | Requisitos principais | Checks obrigatórios | Critério de saída |
+|---|---|---|---|---|
+| M5.1 | Congelar escopo 0.1, zerar bugs bloqueadores e completar requirement → test → evidence | todos P0/P1 vigentes | `CHK-TRACE`, `CHK-DOC`, `CHK-CLOSE` | cada P0 passa ou foi alterado/repriorizado em commit explícito antes do RC; cada P1 incluído passa e qualquer P1 adiado saiu formalmente do escopo |
+| M5.2 | Corpus/matriz final e regressões de cada crash/bug encontrado | FR-002, FR-005, NFR-REL-001, NFR-REL-006 | `CHK-TDD`, `CHK-CORPUS`, `CHK-SEC`, `CHK-CLOSE` | cada correção inicia por regressão Red; formatos publicados por plataforma/backend/commit |
+| M5.3 | Property, fuzz e mutation orientados a fila/seek/parsers/boundaries | NFR-REL-001–005 | `CHK-TDD`, `CHK-FAST`, `CHK-SEC`, `CHK-CLOSE` | zero crash conhecido; mutantes relevantes mortos/justificados |
+| M5.4 | 500 trocas/seeks, soak integrado de oito horas e regressão de recursos | NFR-PERF-002–007 | `CHK-PERF`, `CHK-CORPUS`, `CHK-CLOSE` | budgets/tendência/handles/threads dentro do protocolo |
+| M5.5 | Performance completa de cold start, áudio, UI e fila | NFR-PERF-001–006 | `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | P50/P95 publicados; regressão ≥10% confirmada bloqueia |
+| M5.6 | Acessibilidade final Windows e smoke Linux | UX-001–010 | `CHK-UI`, `CHK-A11Y`, `CHK-E2E`, `CHK-CLOSE` | zero bloqueador P0; formulário manual completo |
+| M5.7 | Advisories, licenças, Qt/FFmpeg ou Rust/JS, notices, SBOM e política final de logs | NFR-REL-006, NFR-PRIV-003 | `CHK-FAST`, `CHK-SEC`, `CHK-PACKAGE`, `CHK-CLOSE` | zero Critical/High explorável sem waiver; zero obrigação/licença não atendida; redação e retenção abaixo/no/acima dos limites verdes |
+| M5.8 | Changelog, manual, troubleshooting, versão, pacote e RC | critérios MVP 1–11 | `CHK-PACKAGE`, `CHK-RELEASE`, `CHK-DOC`, `CHK-CLOSE` | RC instalada/atualizada/removida em ambiente limpo |
+| M5.9 | Tag e artefatos finais; publicação somente após autorização | todos os gates | `CHK-RELEASE`, `CHK-CLOSE` | tag aponta ao commit validado; hashes após assinatura/pacote final |
+
+### Gate M5 / release
+
+- Bugs P0/P1 bloqueadores abertos: zero.
+- Todos os critérios de aceitação vigentes 1–11 passam. P0 não recebe exceção genérica: qualquer inviabilidade exige alterar/repriorizar o requisito em commit explícito antes do RC; P1 adiado exige ajuste formal de escopo. Somente desvios de budget expressamente permitidos pelos requisitos usam ADR prévio.
+- Windows Tier 1 completo; Linux Tier 2 limitado ao testado.
+- Instalação, upgrade e uninstall validados em ambiente limpo.
+- SBOM/notices/licenças e manifesto de artefato completos.
+- Assinatura e malware scan quando a distribuição for pública.
+- Rebuild duplo compara manifesto de conteúdo; diferenças fora da allowlist falham. Não alegar bit-for-bit sem medir.
+- Redownload do artefato publicado, hash/assinatura e smoke, somente se o mantenedor autorizar publicação externa.
+
+## 13. M6 — Evoluções opcionais 0.2
+
+M6 não é um pacote único. Cada item exige necessidade após uso real, requisito refinado, UX, TDD, checks proporcionais e commit/ADR quando alterar arquitetura.
+
+| ID | Candidato | Requisito | Checks mínimos |
+|---|---|---|---|
+| M6.1 | Escolha de dispositivo e recuperação de troca | FR-018 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE`; capabilities e device lost |
+| M6.2 | Shuffle | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; property tests de ordem/IDs |
+| M6.3 | Repeat | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; modos off/faixa/fila e fim |
+| M6.4 | Velocidade de reprodução | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE`; precisão, áudio/CPU e reset |
+| M6.5 | Editor de tema limitado a tokens | FR-041 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE`; contraste e recovery |
+| M6.6 | Playlists M3U8 | novo requisito | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE`; round-trip, Unicode e erro parcial |
+| M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
+| M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
+
+FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entra após pedido explícito, requisito, segurança de escrita e estratégia de backup.
+
+## 14. R1 — Fontes remotas e YouTube
+
+**Pré-condição:** release local estável ou decisão explícita de pesquisa isolada. ADR-0003 continua `Proposto` até essa autorização.
+
+| ID | Pesquisa/experimento | Requisitos | Checks | Saída possível |
+|---|---|---|---|---|
+| R1.1 | Streams HTTP/podcasts autorizados | FR-051, NFR-PRIV-004 | `CHK-TDD`, `CHK-SEC`, `CHK-PERF`, `CHK-CLOSE` | adapter isolado ou rejeição |
+| R1.2 | Threat model de rede, cache, redirects, SSRF e privacidade | FR-051–053 | `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | controles/limites aceitos |
+| R1.3 | Revisão jurídica/políticas do provedor | FR-050, FR-052 | fontes oficiais, licença, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | implementar, usar player oficial ou rejeitar |
+| R1.4 | Comparar resolver próprio, libmpv e sidecar | FR-050–053 | `CHK-TDD` para comportamento do protótipo, `CHK-SEC`, `CHK-PERF`, `CHK-PACKAGE`, `CHK-CLOSE` | um candidato ou nenhum |
+| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek | FR-053 | `CHK-TDD`, `CHK-E2E`, `CHK-SEC`, `CHK-CLOSE` | falhas remotas controladas |
+| R1.6 | ADR final e protótipo sem distribuição | FR-050–053 | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | feature planejada, player oficial visível ou pesquisa encerrada |
+
+Regras invariantes:
+
+- Nenhuma URL é concatenada em shell.
+- Falha remota nunca altera a disponibilidade de arquivos locais.
+- Rede é explícita e cancelável.
+- URL completa não aparece em log por padrão.
+- YouTube audio-only em background/tray pode ser incompatível com políticas e pode ser rejeitado.
+
+## 15. Matriz de rastreabilidade por marco
+
+Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos, M2–M4 implementam e M5 revalida o produto empacotado.
+
+| Marco | Requisitos sob responsabilidade | Evidência dominante |
+|---|---|---|
+| D0 | NFR-MAINT-004–005 | IDs, links, commits e plano |
+| M0 shell | FR-012, FR-014–015, FR-030, FR-040; UX-001–010; NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | builds equivalentes, a11y e benchmark; resposta visual de NFR-PERF-003 é apenas diagnóstico |
+| M0 áudio | FR-002, FR-005, FR-010, FR-012, FR-014, FR-020–024; NFR-PERF-002–003, NFR-PERF-007; NFR-STACK-002–003, NFR-STACK-005–006; NFR-REL-001–002, NFR-REL-006; NFR-LIMIT-001–003 | contrato comum, corpus, soak e licenças |
+| M0 plataforma | FR-004, FR-030–038; NFR-REL-004–006; NFR-LIMIT-004; NFR-PRIV-001 | smokes empacotados Windows/Linux |
+| M1 | FR-010–017, FR-020–024, FR-042–044; NFR-REL-001–005; NFR-LIMIT-001–004; NFR-PRIV-001–003; NFR-MAINT-001–005; base de UX-010 | TDD do core/ports/fakes e CI |
+| M2 | FR-001–002, FR-005–006, FR-010–015, FR-020–024; UX-001–003, UX-008–009 e NFRs locais aplicáveis | adapters reais, corpus e E2E principal |
+| M3 | FR-003, FR-011, FR-013, FR-016–017, FR-020–023, FR-040, FR-042, FR-044; UX-001–010; NFR-PERF-004, NFR-PERF-006 | fila, preferências, UX e acessibilidade |
+| M4 | FR-004, FR-030–038, FR-042–045; NFR-REL-003–006; NFR-LIMIT-004; NFR-PRIV-001–003 | lifecycle, persistência e pacote real |
+| M5 | todos os P0/P1 e NFRs do MVP | matriz individual teste/evidência e RC |
+| M6 | FR-018–019, FR-041 e novos requisitos autorizados | incrementos independentes |
+| Backlog | FR-025 | exclusão intencional documentada |
+| R1 | FR-050–053, NFR-PRIV-004 | threat model, política, harness e ADR |
+
+### 15.1 Destino individual dos 83 requisitos
+
+Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica onde o requisito é primeiro provado ou deliberadamente descartado; não significa que o teste já exista. A partir de M1.2, o runner de rastreabilidade deve usar um manifesto legível por máquina com uma linha por ID, links para testes/evidências e estado (`planejado`, `em andamento`, `comprovado`, `excepcionado` ou `fora de escopo`). `Excepcionado` vale somente para gates/desvios que o contrato permita; P0 funcional falho precisa ser corrigido ou alterado/repriorizado antes do RC.
+
+| Requisito | Destino responsável | Prova/decisão dominante |
+|---|---|---|
+| `FR-001` | M2.1 | `CHK-TDD`, seletor nativo e E2E com um/vários arquivos |
+| `FR-002` | M0.5–M0.8, M2.1–M2.2, M5.2 | corpus e matriz de formatos por backend/commit |
+| `FR-003` | M3.2 | drag-and-drop de arquivos/diretórios, erro parcial e stall |
+| `FR-004` | M0.9, M4.3 | CLI/shell empacotado com Unicode, espaços, aspas, longos e metacaracteres |
+| `FR-005` | M0.5–M0.8, M2.1, M5.2 | corpus corrompido/extensão enganosa sem crash |
+| `FR-006` | M2.1, M3.2 | filtros derivados da matriz validada |
+| `FR-010` | M1.5, M2.2, M2.5 | contratos e E2E play/pause/volume |
+| `FR-011` | M1.6, M2.5, M3.3 | unitários/property e navegação/fim de faixa |
+| `FR-012` | M0.2–M0.8, M1.8, M2.3–M2.4 | slider acessível, snapshot e seek real |
+| `FR-013` | M1.4, M2.4, M3.5 | defaults/clamp e persistência 7 s/20 s |
+| `FR-014` | M1.4–M1.5, M2.4 | limites, pausa e mídia não seekable |
+| `FR-015` | M1.5, M2.4 | preview estável e um comando no release |
+| `FR-016` | M1.6, M1.8, M3.1 | property tests e fila visual por IDs |
+| `FR-017` | M1.6, M3.3 | casos em 3 s e transições anterior/reinício |
+| `FR-018` | M6.1 | requisito refinado, capabilities e smoke por plataforma |
+| `FR-019` | M6.2–M6.4 | incrementos separados para shuffle/repeat/velocidade |
+| `FR-020` | M0.5–M0.8, M1.7, M2.6, M3.4 | corpus e painel com tamanho/duração |
+| `FR-021` | M0.5–M0.8, M1.7, M2.6, M3.4 | tags/fallbacks contra corpus |
+| `FR-022` | M0.5–M0.8, M2.6, M3.4 | extração e painel técnico sem zeros falsos |
+| `FR-023` | M0.5–M0.8, M2.6, M3.4 | tags/arte hostis, sanitização e placeholder |
+| `FR-024` | M0.5–M0.8, M1.5, M2.6 | geração/cancelamento e jobs limitados |
+| `FR-025` | Backlog | exclusão intencional; nova autorização e estratégia de escrita |
+| `FR-030` | M0.2–M0.4, M0.9, M4.4 | tray comparativo e E2E empacotado |
+| `FR-031` | M0.9, M4.4 | menu completo, salvamento e saída real sem processo residual |
+| `FR-032` | M0.9, M4.4 | tray/fallback Linux nunca invisível |
+| `FR-033` | M0.9, M4.3 | instância única e encaminhamento de lote |
+| `FR-034` | M0.9, M4.6 | tipos validados declarados no pacote |
+| `FR-035` | M0.9, M4.6 | registry diff, ProgID/capabilities e zero `UserChoice` |
+| `FR-036` | M0.9, M4.6 | `.desktop`, MIME e ícones no Linux de referência |
+| `FR-037` | M1.8, M3.7, M4.5 | mesmos casos de uso em teclado/SMTC/MPRIS |
+| `FR-038` | M0.9, M4.7 | fault injection de lifecycle/dispositivos/Explorer |
+| `FR-040` | M0.2–M0.4, M3.5 | sistema/claro/escuro, sem restart/flash e com contraste |
+| `FR-041` | M6.5 | editor limitado a tokens, contraste e recovery |
+| `FR-042` | M1.7–M1.9, M3.3, M3.5, M3.7, M4.1, M4.4 | round-trip parametrizado de todo inventário e efeitos integrados |
+| `FR-043` | M1.7–M1.9, M4.1 | fila/item/posição restaurados em pausa |
+| `FR-044` | M1.7–M1.9, M3.5, M4.1 | migração, corrupção, backup e defaults |
+| `FR-045` | M4.2 | monitor removido, DPI e janela sempre visível |
+| `FR-050` | R1.3–R1.6 | revisão técnica/política e ADR; implementação pode ser rejeitada |
+| `FR-051` | R1.1–R1.2, R1.4–R1.6 | adapter remoto isolado e falha sem efeito local |
+| `FR-052` | R1.2–R1.4, R1.6 | fontes oficiais, licença/distribuição e ADR |
+| `FR-053` | R1.2, R1.4–R1.6 | harness remoto, timeout/cancelamento e zero concatenação shell |
+| `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
+| `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
+| `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
+| `UX-004` | M0.2–M0.4, M1.10, M3.7–M3.8, M5.6 | teclado, foco e nomes acessíveis |
+| `UX-005` | M0.2–M0.4, M1.10, M3.7–M3.8, M5.6 | NVDA e política de anúncios sem spam |
+| `UX-006` | M0.2–M0.4, M1.10, M3.7–M3.8, M5.6 | contraste, 100–200%, high contrast e reduced motion |
+| `UX-007` | M0.2–M0.4, M1.10, M3.7–M3.8, M5.6 | semântica além de cor e estados dos controles |
+| `UX-008` | M0.2–M0.4, M1.10, M2.7, M3.6, M3.8 | erro preserva contexto e oferece ação |
+| `UX-009` | M0.2–M0.4, M2.7, M3.6, M3.8 | geometria estável e textos longos |
+| `UX-010` | M0.2–M0.4, M1.10, M3.6, M3.8 | strings centralizadas em pt-BR e estrutura traduzível |
+| `NFR-PERF-001` | M0.1–M0.4, M0.10, M5.5 | cold start externo P50/P95 do produto completo |
+| `NFR-PERF-002` | M0.5–M0.8, M2.2, M5.4–M5.5 | open-to-audible P95 no corpus |
+| `NFR-PERF-003` | M0.8, M0.10, M2.3–M2.4, M5.4–M5.5 | seek no áudio e resposta visual no produto combinado |
+| `NFR-PERF-004` | M0.1–M0.4, M2.3, M3.8, M5.5 | CPU pausada e cadence do progresso |
+| `NFR-PERF-005` | M0.1–M0.4, M0.10, M5.5 | private working set da árvore em 5 s/60 s/pico |
+| `NFR-PERF-006` | M0.1–M0.4, M3.2, M3.8, M5.5 | 1.000 itens e bloqueio visual máximo |
+| `NFR-PERF-007` | M0.8, M0.10, M5.4 | soak de oito horas pelo protocolo proposto em 4.2 e aprovado em M0.0 |
+| `NFR-STACK-001` | M0.0–M0.4, M0.10 | A/B Qt/Tauri sem aceitação por linguagem |
+| `NFR-STACK-002` | M0.0–M0.8, M0.10 | fixture/roteiro iguais e áudio separado do shell |
+| `NFR-STACK-003` | M0.0–M0.10 | protocolo congelado, árvore completa e combinação final |
+| `NFR-STACK-004` | M0.2–M0.4, M0.9–M0.10 | a11y/tray/Linux bloqueiam candidato |
+| `NFR-STACK-005` | M0.5–M0.10 | baselines reais, boundaries e licenças inventariados |
+| `NFR-STACK-006` | M0.4, M0.8–M0.10 | budgets/exceções e ADR com desempate explícito |
+| `NFR-REL-001` | M0.5–M0.8, M1.4–M1.7, M2.1–M2.6, M5.2–M5.3 | corpus/fuzz e zero crash reproduzível conhecido |
+| `NFR-REL-002` | M0.6–M0.8, M2.2, M5.4 | auditoria do callback e underrun controlado |
+| `NFR-REL-003` | M1.9, M3.5, M4.1 | fault injection e escrita atômica recuperável |
+| `NFR-REL-004` | M4.3, R1.5 | argumentos tipados e zero concatenação shell |
+| `NFR-REL-005` | M4.7 | falhas de arquivo/drive/dispositivo acionáveis |
+| `NFR-REL-006` | M0.5–M0.9, M4.8, M5.7 | licença de fixtures/dependências/codecs e SBOM |
+| `NFR-LIMIT-001` | M0.5–M0.8, M2.6 | arte abaixo/no/acima e placeholder |
+| `NFR-LIMIT-002` | M0.5–M0.8, M2.6 | metadata abaixo/no/acima e diagnóstico |
+| `NFR-LIMIT-003` | M0.5–M0.8, M2.6 | timeout/cancelamento e nenhum acúmulo de jobs |
+| `NFR-LIMIT-004` | M1.8, M4.3 | boundary com 0/1/1.000/1.001 paths e bytes abaixo/no/acima de 1 MiB |
+| `NFR-PRIV-001` | M0.9, M4.8 | smoke offline, deny/captura de egress e inspeção de dependências |
+| `NFR-PRIV-002` | M1.9, M4.1, M4.8 | persistência somente local e inspeção do pacote |
+| `NFR-PRIV-003` | M1.9, M4.8, M5.7 | conteúdo/path/URL redigidos e rotação/retenção abaixo/no/acima |
+| `NFR-PRIV-004` | R1.1–R1.6 | rede explícita/cancelável e threat model |
+| `NFR-MAINT-001` | M1.2 e todo comportamento posterior | evidência Red–Green–Refactor em `CHK-TDD` |
+| `NFR-MAINT-002` | M1.4–M1.10 e revisões M2–M5 | core isolado provado por `CHK-ARCH` |
+| `NFR-MAINT-003` | M1.1 | uma unidade de build/distribuição e módulos internos |
+| `NFR-MAINT-004` | D0.1–D0.9 e `CHK-CLOSE` de toda etapa | commit atômico, `git show --check` e status limpo |
+| `NFR-MAINT-005` | D0.8, M1.2, M5.1 | matriz bidirecional e validador de IDs/evidências |
+
+## 16. Lacunas que o plano fecha explicitamente
+
+- FR-006: filtros do seletor entram em M2.1.
+- FR-019: velocidade de reprodução aparece em M6.
+- FR-025: permanece backlog intencional.
+- FR-045: monitor removido/DPI entra em M4.2.
+- UX-010: strings centralizadas entram em M1.10/M3.6.
+- NFR-PRIV-003: redação, rotação e retenção de logs entram em M1.9 e são inspecionadas em M4/M5.
+- NFR-MAINT-003: unidade única é verificada em M1.1.
+- NFR-MAINT-005: matriz requisito → etapa → teste → evidência é obrigatória desde M1.
+- FR-003, FR-004, FR-005, FR-011, FR-016, FR-017, FR-032, FR-037, FR-038, FR-040 e FR-053 recebem cenários explícitos.
+- NFR-LIMIT-001–004 exigem casos abaixo, exatamente no limite e acima.
+- Preferências reais saem de M4 e entram em M3; M4 mantém sessão completa e recuperação.
+- Soak exploratório elimina cedo; oito horas é obrigatório em cada ramo M0 ainda viável e novamente no produto integrado M5.
+- Tray/pacote básico compara shells; a integração nativa aprofundada ocorre em M0.9/M4.
+- NSIS é baseline experimental, não decisão final antes do M0.
+
+## 17. Próxima sequência segura
+
+1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.
+2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
+3. Criar M0.1 antes de qualquer shell, para impedir benchmark enviesado.
+4. Construir/validar M0.2 e M0.3 com o mesmo recorte.
+5. Só então coletar M0.4 e avançar ao corpus/áudio.
+
+Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.

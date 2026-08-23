@@ -49,6 +49,7 @@ Comece por:
 | [TDD e testes](docs/quality/testing-strategy.md) | Red–Green–Refactor, fakes, contratos, E2E e performance |
 | [Gates](docs/quality/quality-gates.md) | Checks por risco, CI e release |
 | [Corpus](docs/quality/test-corpus.md) | Fixtures, manifesto e matriz de codecs |
+| [Plano executável](docs/development-plan.md) | Incrementos, checks, evidência, rastreabilidade e checkpoint atual |
 | [Roadmap](docs/roadmap.md) | D0, spikes M0, MVP 0.1 e evoluções |
 | [Workflow](docs/development-workflow.md) | Unidade de trabalho, commits, bugs, deps e handoff |
 | [Threat model](docs/security/threat-model.md) | Fronteiras, ameaças, controles e supply chain |
@@ -67,23 +68,23 @@ Comece por:
 
 ## Estado do repositório
 
-Por enquanto não há manifests/toolchains de implementação nem comandos de build. Os comandos planejados e gates estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o M0 e o bootstrap criarem e validarem os scripts correspondentes.
+Por enquanto não há manifests/toolchains de implementação nem comandos de build. O validador documental já existe; comandos planejados de produto estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o M0 e o bootstrap criarem e validarem os runners correspondentes.
 
 Validações documentais atuais:
 
 ```powershell
-git diff --check
+& .\scripts\validate-docs.ps1
 git status --short --branch
 ```
 
-Links relativos, IDs de requisitos e consistência entre estados devem ser revisados em toda mudança documental.
+O validador cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. O status confirma que a mudança terminou no commit esperado.
 
 ## Próximo passo
 
 1. revisar [estado e decisões](docs/project-status.md);
 2. ajustar requisitos derivados que não combinem com o uso pessoal desejado;
 3. autorizar o M0 comparativo, sem aceitar antecipadamente qualquer stack;
-4. comparar Qt e Tauri no mesmo recorte de UI e avaliar os backends de áudio separadamente no corpus;
+4. seguir o [plano executável](docs/development-plan.md), começando pelo protocolo comum antes dos shells;
 5. medir e então aceitar/rejeitar os ADRs;
 6. somente depois iniciar o MVP guiado por TDD.
 
