@@ -23,7 +23,7 @@ O estado Red é observado na execução local/CI focada e seu teste + motivo de 
 
 - testar comportamento público, não detalhes de implementação;
 - preferir testes pequenos e determinísticos a grandes testes frágeis;
-- manter domínio testável sem Tauri, WebView, dispositivo, clock real ou arquivos pessoais;
+- manter domínio testável sem Qt, QML, Tauri, WebView, dispositivo, clock real ou arquivos pessoais;
 - toda correção começa por um teste de regressão que falha;
 - não afrouxar expectativa para fazer uma implementação incorreta passar;
 - não usar snapshot como substituto de assertions semânticas;
@@ -48,29 +48,38 @@ O estado Red é observado na execução local/CI focada e seu teste + motivo de 
 | Unitário de domínio | milissegundos | processo puro | invariantes de fila, estado, tempo, preferências e erros |
 | Application | milissegundos | fakes em memória | orquestração, comandos, cancelamento e recuperação |
 | Contrato de porta | rápido/médio | adapter ou fake | mesma semântica para todo `PlaybackBackend`, store e metadata reader |
-| Integração | médio | filesystem/backend real | decode, tags, persistência atômica, IPC e capabilities |
-| Componente UI | rápido | DOM/WebView simulado | estados, teclado, foco, acessibilidade e mensagens |
+| Integração | médio | filesystem/backend real | decode, tags, persistência atômica, boundary/IPC e capabilities |
+| Componente UI | rápido | harness Qt/QML ou DOM/WebView simulado | estados, teclado, foco, acessibilidade e mensagens |
 | E2E desktop | lento | app empacotado/nativo | abrir → tocar, seek, fila, preferências e ciclo de janela |
 | Plataforma/pacote | lento/manual | Windows/Linux | tray, associação, SMTC/MPRIS, instalação, upgrade e uninstall |
 | Performance/soak | longo | máquina controlada | budgets, leaks, latência e estabilidade |
 
 ## 4. Organização proposta
 
-### Rust
+O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos candidatos. Cada linguagem pode ter seu harness idiomático, mas não pode omitir um caso porque sua API concreta o torna inconveniente.
 
-- testes unitários próximos ao módulo em `#[cfg(test)]` quando ajudam a leitura;
-- testes de casos de uso e contratos em `src-tauri/tests/`;
-- fixtures compartilhadas por helper explícito;
-- nomes em inglês descrevendo resultado: `skip_forward_clamps_at_track_end`;
-- padrão Arrange–Act–Assert ou Given–When–Then, sem comentários redundantes.
+### C++20 + Qt 6 Quick/QML — hipótese principal
 
-### Svelte/TypeScript
+- usar Catch2 como runner único para domínio, application e contratos C++ puros; não adicionar uma segunda suite equivalente;
+- registrar os executáveis no CTest e manter testes independentes de `QCoreApplication` quando o código exercitado pertence ao núcleo;
+- usar Qt Test para presenters, adapters Qt e integrações de sinais/slots; usar Qt Quick Test somente onde renderização/comportamento QML for necessário;
+- injetar factories C++ nas suites de contrato para executar os mesmos casos contra fakes e contra Qt Multimedia/FFmpeg, TagLib e persistência concreta;
+- confirmar que testes de `domain`, `application` e `ports` compilam sem headers, tipos, event loop ou plugins Qt.
 
-- testes de componente próximos ao feature ou em `tests/` consistente;
-- Vitest + Testing Library consultando por role/nome, como o usuário/leitor de tela;
-- evitar selecionar classes, estrutura de DOM ou `data-testid` quando existe semântica;
-- lógica de interpolação e reducers testados sem render quando forem funções puras;
-- snapshots limitados a estruturas pequenas e revisáveis.
+### Rust + Tauri 2 + Svelte — desafiante A/B
+
+- manter testes unitários Rust próximos ao módulo em `#[cfg(test)]` quando ajudam a leitura;
+- manter casos de uso e contratos Rust no diretório de testes definido pelo bootstrap, sem exigir WebView/Tauri para o núcleo;
+- executar a mesma matriz de contratos contra fakes e contra Rodio/CPAL/Symphonia, Lofty e persistência concreta;
+- testar componentes Svelte com Vitest + Testing Library, consultando por role/nome como o usuário ou leitor de tela;
+- evitar selecionar classes, estrutura de DOM ou `data-testid` quando existe semântica; testar funções puras sem render e limitar snapshots a estruturas pequenas e revisáveis.
+
+### Convenções comuns
+
+- fixtures são compartilhadas por helper explícito e pelo mesmo manifesto versionado;
+- nomes em inglês descrevem resultado, por exemplo `skip_forward_clamps_at_track_end`;
+- usar Arrange–Act–Assert ou Given–When–Then, sem comentários redundantes;
+- diferenças inevitáveis de harness ficam documentadas, mas resultado, tolerância e semântica esperados permanecem iguais.
 
 ### E2E e plataforma
 
@@ -159,7 +168,7 @@ Testes baseados em propriedades são recomendados para sequências aleatórias d
 
 ## 8. Testes de contrato
 
-Uma suite reutilizável deve receber factories/adapters e validar semântica consistente.
+Uma suite reutilizável deve receber factories/adapters e validar semântica consistente. Os harnesses C++ e Rust implementam a mesma lista versionada de casos, com os mesmos IDs, fixtures e resultados; cada candidato executa o contrato contra seu fake e seu adapter real. A paridade é semântica, não compartilhamento artificial de binários entre linguagens.
 
 ### `PlaybackBackend`
 
@@ -172,7 +181,7 @@ Uma suite reutilizável deve receber factories/adapters e validar semântica con
 - callbacks/eventos mantêm ordem documentada;
 - chamadas após shutdown falham de forma tipada.
 
-O fake e o adapter Rodio precisam satisfazer o contrato. Precisão, latência e formatos pertencem à suite de integração do corpus.
+Em C++/Qt, `FakePlaybackBackend` e o adapter Qt Multimedia/FFmpeg precisam satisfazer o contrato. Em Rust/Tauri, o fake e o adapter Rodio/CPAL/Symphonia precisam satisfazer os mesmos casos. Precisão, latência e formatos pertencem à suite de integração do corpus e não podem ser inferidos dos testes com fake.
 
 ### `SessionStore`
 
@@ -286,7 +295,17 @@ Tray, associações, SMTC/MPRIS e install/uninstall devem ter smoke tests espec�
 - reprodução contínua por oito horas;
 - 500 trocas de faixa/seek para procurar leak ou deadlock.
 
-Não executar benchmark confiável junto de jobs concorrentes ou build debug. Registrar hardware, SO, energia, versão/commit, amostra e método.
+### Comparação A/B do M0
+
+- congelar antes da coleta o protocolo, os cenários, marcadores, tolerâncias e critérios de descarte;
+- comparar shells Release com o mesmo recorte de UX, assets, dados, roteiro e baseline de máquina, usando backend falso e sem áudio ou rede reais;
+- separar primeira execução, cold start e execução aquecida, com pelo menos 20 lançamentos válidos por cenário e candidato;
+- medir externamente processo iniciado → janela acionável e agregar private working set/private bytes/CPU da árvore de processos; relatar memória compartilhada, pacote e pré-requisitos offline separadamente da métrica primária de RAM;
+- executar a mesma jornada com NVDA, somente teclado, alto contraste, escalas 100/150/200%, movimento reduzido, bandeja e smoke Linux de referência;
+- comparar Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty separadamente dos shells, usando o mesmo corpus, ambiente de áudio e casos de contrato;
+- cobrir NFR-PERF-001–007 e tratar falha de acessibilidade P0 como bloqueadora, independentemente do resultado de recursos.
+
+Não executar benchmark confiável junto de jobs concorrentes ou build debug. Registrar hardware, SO, energia, versão/commit, amostra, processo/árvore observada e método. Resultado dentro das tolerâncias pré-registradas é empate e segue os critérios de NFR-STACK-006, não preferência de linguagem.
 
 ## 13. Cobertura e mutação
 
@@ -294,9 +313,9 @@ Metas iniciais após bootstrap:
 
 | Área | Lines | Branches | Observação |
 |---|---:|---:|---|
-| Domain Rust | ≥ 90% | ≥ 85% | regras puras devem ser densamente cobertas |
-| Application Rust | ≥ 85% | ≥ 80% | fakes cobrem falhas e cancelamento |
-| UI state/utilities | ≥ 85% | ≥ 80% | componentes também exigem assertions semânticas |
+| Domain | ≥ 90% | ≥ 85% | regras puras devem ser densamente cobertas em qualquer candidato |
+| Application | ≥ 85% | ≥ 80% | fakes cobrem falhas e cancelamento em qualquer candidato |
+| Estado/presentation utilities | ≥ 85% | ≥ 80% | componentes também exigem assertions semânticas |
 | Adapters/plataforma | sem quota cega | — | contratos, corpus e smoke tests valem mais que mocks de FFI |
 
 Exclusões precisam ser justificadas. Não adicionar testes sem valor apenas para elevar percentual.

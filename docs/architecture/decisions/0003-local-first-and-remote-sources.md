@@ -22,7 +22,7 @@ Local-first, funcionamento offline no MVP e independência de rede já são requ
 - uma porta `MediaSourceResolver` permite adapters futuros;
 - resolver remoto produz descriptor efêmero com URL, headers, validade, metadata e capabilities;
 - YouTube exige ADR próprio e revisão de termos antes de código/distribuição;
-- no candidato Tauri, conteúdo remoto nunca é carregado no WebView privilegiado;
+- conteúdo remoto nunca é carregado na camada visual privilegiada; no ramo Tauri, isso inclui o WebView;
 - falhas remotas nunca mudam a disponibilidade do player local.
 
 ## Consequências positivas

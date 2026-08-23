@@ -1,17 +1,17 @@
 # Threat model
 
-**Estado:** baseline de ameaças do MVP local; controles Tauri condicionados ao ADR-0001
+**Estado:** baseline de ameaças do MVP local; controles específicos condicionados ao candidato do ADR-0001
 **Última revisão:** 2026-08-23  
 **Revisar quando:** mudar a stack, ou entrar rede, sidecar, auto-update, plugin, biblioteca indexada ou credencial
 
 ## 1. Escopo e objetivo
 
-O player processa arquivos e metadados potencialmente não confiáveis e integra-se ao shell. No candidato Tauri, uma UI WebView cruza uma fronteira IPC privilegiada. O objetivo é reduzir e testar o risco de que arquivo, path, conteúdo remoto futuro ou segunda instância execute código, leia dados fora do necessário, cause indisponibilidade reproduzível ou exponha a biblioteca do usuário. O MVP não alega isolamento absoluto contra OOM/falha nativa de decoder em processo.
+O player processa arquivos e metadados potencialmente não confiáveis e integra-se ao shell. No desafiante Tauri, uma UI WebView cruza uma fronteira IPC privilegiada; no candidato Qt, QML cruza um boundary de objetos e operações C++ deliberadamente expostos. O objetivo é reduzir e testar o risco de que arquivo, path, conteúdo remoto futuro ou segunda instância execute código, leia dados fora do necessário, cause indisponibilidade reproduzível ou exponha a biblioteca do usuário. O MVP não alega isolamento absoluto contra OOM/falha nativa de decoder em processo.
 
 Este modelo cobre:
 
-- shell/UI desktop; os controles específicos abaixo mapeiam o candidato Tauri/WebView;
-- backend Rust, áudio, metadata e persistência;
+- shell/UI desktop em Qt/QML ou Tauri/WebView durante o M0;
+- núcleo C++ ou Rust, áudio, metadata e persistência;
 - arquivos/paths recebidos pelo usuário ou shell;
 - IPC da UI e da instância secundária;
 - tray, SMTC/MPRIS, associações e instalador;
@@ -26,7 +26,7 @@ Não cobre ainda servidor, conta, nuvem ou auto-update, pois não fazem parte do
 - privacidade de paths, nomes, tags, fila e histórico de sessão;
 - preferências e estado recuperável;
 - dispositivo de áudio e controles do sistema;
-- permissões concedidas à UI/bridge; no candidato Tauri, capabilities do WebView;
+- operações concedidas à UI/boundary; capabilities no Tauri e objetos/tipos expostos ao QML no Qt;
 - integridade do executável, instalador e dependências;
 - credenciais/cookies futuros, caso um requisito separado os introduza.
 
@@ -37,20 +37,20 @@ Não confiável                     Fronteira                     Privilegiado
 
 arquivo/tag/capa ───────────────► parser/limites ─────────────► metadata DTO
 path do shell ──────────────────► validação/canonicalização ──► MediaSource
-UI (WebView no candidato) ──────► commands + capabilities ────► application
+UI (QML ou WebView) ────────────► boundary + commands ────────► application
 segunda instância ──────────────► IPC local + schema/limites ─► controller
 SO/tray/media keys ─────────────► adapter tipado ──────────────► commands
 URL futura ─────────────────────► resolver/policy/timeout ─────► descriptor
 ```
 
-A UI é menos confiável que o backend. No candidato Tauri, o WebView continua nessa posição mesmo carregando assets locais: um bug de frontend/XSS não deve oferecer comando genérico de filesystem, shell ou rede.
+A UI é menos confiável que o núcleo. Um bug de frontend/XSS no Tauri ou uma API QML exposta em excesso no Qt não pode oferecer operação genérica de filesystem, shell, processo ou rede.
 
 ## 4. Atores e falhas consideradas
 
 - arquivo baixado, malformado ou deliberadamente hostil;
 - tags/capas com tamanho, encoding ou estrutura maliciosos;
 - path elaborado para explorar quoting, Unicode, symlink ou caminho longo;
-- conteúdo frontend comprometido por dependência ou injeção;
+- apresentação comprometida por dependência, injeção ou objeto exposto em excesso;
 - processo local enviando mensagem à instância única;
 - pacote/dependência comprometida;
 - falha de energia/crash durante persistência;
@@ -63,12 +63,12 @@ Um adversário com controle administrativo total da máquina está fora do escop
 
 | ID | Ameaça | Controles de desenho | Evidência esperada |
 |---|---|---|---|
-| SEC-001 | Parser entra em panic/crash com mídia corrompida | APIs fallible, worker fora da UI, limites e corpus hostil; crash vira bloqueador. Isolamento de processo não é alegado no MVP | testes por contêiner e regressão de cada crash reproduzível |
+| SEC-001 | Parser encerra o processo com mídia corrompida | APIs de erro, worker fora da UI, limites e corpus hostil; crash vira bloqueador. Isolamento de processo não é alegado no MVP | testes por contêiner e regressão de cada crash reproduzível |
 | SEC-002 | Capa causa consumo excessivo/decompression bomb | NFR-LIMIT-001: bytes, dimensões, pixels e thumbnail limitados antes/ao decodificar quando a biblioteca permitir | fixtures exatamente no/fora de cada limite e medição de memória |
 | SEC-003 | Tags enormes/inválidas travam UI ou injetam markup | NFR-LIMIT-002/003, sanitização, texto como texto, truncamento visual, sem HTML arbitrário | testes Unicode, markup, payload grande e timeout/cancelamento |
 | SEC-004 | Path vira comando de shell | APIs tipadas de path/processo, nenhum `shell -c`, argumentos separados | testes com espaços, aspas, metacaracteres e Unicode |
 | SEC-005 | Symlink/TOCTOU troca arquivo durante probe/play | abrir handle quando aplicável, tolerar mudança, não escrever fonte, verificar erros | teste controlado de remoção/troca |
-| SEC-006 | UI invoca filesystem/shell arbitrário | allowlist de commands, DTOs específicos, Tauri capabilities mínimas | revisão de manifest e testes de command rejeitado |
+| SEC-006 | UI invoca filesystem/shell arbitrário | allowlist de commands/objetos, DTOs específicos, capabilities Tauri mínimas e superfície QML estreita | revisão da superfície exposta e testes de operação rejeitada |
 | SEC-007 | WebView navega/carrega conteúdo remoto e ganha bridge | CSP restrita, assets locais, navigation handler, sem iframe/script remoto | teste de navegação bloqueada e revisão CSP |
 | SEC-008 | Custom protocol expõe path arbitrário | IDs opacos, cache dedicado, path resolvido no backend, MIME fixo, limites | testes de traversal, ID inválido e arquivo ausente |
 | SEC-009 | IPC de segunda instância aceita payload hostil | canal local restrito, schema/tamanho, somente comando OpenSources, ativação sem privilégio | fuzz/schema tests e payload excessivo |
@@ -77,14 +77,26 @@ Um adversário com controle administrativo total da máquina está fora do escop
 | SEC-012 | DLL/plugin hijacking no pacote Windows | paths de busca seguros, dependências no diretório esperado, assinatura pública | smoke em instalação limpa e análise do bundle |
 | SEC-013 | Associação toma controle indevido ou deixa registro | ProgID próprio, por usuário, escolha final do Windows, uninstall escopado | install/upgrade/uninstall em VM |
 | SEC-014 | Dependência vulnerável/licença incompatível | lockfiles, advisories, revisão de features/licença, SBOM/notices | gate security-and-licenses |
-| SEC-015 | FFI/`unsafe` viola memória | módulo estreito, invariantes, wrappers seguros, testes plataforma | revisão explícita de cada bloco `unsafe` |
+| SEC-015 | FFI, `unsafe` ou código nativo viola memória | módulo estreito, ownership explícito, invariantes, wrappers seguros e testes de plataforma | revisão explícita de cada bloco `unsafe`, FFI e boundary nativo crítico |
 | SEC-016 | Shutdown/suspend deixa lock, processo zumbi ou arquivo parcial | lifecycle idempotente, timeout, ordem de shutdown, persistência atômica | testes suspend/resume/exit/kill |
 | SEC-017 | URL futura acessa localhost/arquivos ou rede interna | allowlist de esquemas, política SSRF, DNS/IP checks quando aplicável, sem `file:` | suite de resolver antes de habilitar rede |
 | SEC-018 | Sidecar futuro permite command injection/update comprometido | argumentos tipados, hash/assinatura, versão pinada, diretório controlado | ADR, teste e verificação de artefato |
 
-## 6. Política condicional de Tauri/WebView
+## 6. Políticas condicionais por candidato
 
-Esta seção só vira contrato de implementação se o ADR-0001 for aceito. Se outra UI vencer o M0, substituí-la por controles equivalentes e atualizar este threat model no mesmo commit.
+O ramo escolhido transforma somente sua subseção em contrato de implementação e remove o harness descartado. A aceitação do ADR atualiza este threat model com o pacote e as dependências reais.
+
+### C++/Qt/QML
+
+- domínio, application e ports não importam Qt nem expõem `QObject`;
+- registrar e revisar cada tipo, propriedade, signal, slot e invokable exposto ao QML;
+- não expor filesystem, processo, shell, rede ou ponteiros/ownership arbitrários à camada visual;
+- validar lifetime, thread affinity e conexão assíncrona de objetos Qt nos testes de presenter/adapters;
+- configurar busca de DLLs/plugins de forma escopada e inspecionar o pacote contra hijacking;
+- tratar TagLib, Qt Multimedia e FFmpeg como parsers nativos não confiáveis, com corpus hostil, limites e advisories;
+- registrar link dinâmico/obrigações LGPL do Qt e configuração/licenças do FFmpeg antes da distribuição.
+
+### Rust/Tauri/WebView
 
 - somente janelas e commands necessários;
 - nenhuma capability global curinga;

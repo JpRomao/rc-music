@@ -19,8 +19,8 @@ Cada marco termina em commits verdes, documentação atualizada e demonstração
 D0 Documentação
       │
       ▼
-M0 Spikes de decisão ──── reprovar ──► fallback Slint ou Qt
-      │ aprovar
+M0 Spikes A/B Qt ↔ Tauri ── nenhum atende ─► revisar/Slint
+      │ escolher e aprovar
       ▼
 M1 Fundação TDD
       ▼
@@ -63,60 +63,60 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 **Estado:** Próximo após aprovação para implementar spikes.  
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
-### M0.1 — UI e shell Tauri/Svelte
+### M0.1 — UI e shell A/B
 
-Construir somente:
+Construir dois shells descartáveis em Release, C++/Qt Quick e Rust/Tauri/Svelte, com os mesmos assets, dados e roteiro. Não usar áudio nem rede reais nesta etapa.
 
-- estados vazio/tocando/erro;
-- player bar com slider e seek preview usando backend falso;
-- painel de fila e preferências;
-- temas sistema/claro/escuro;
-- teclado, foco, 100–200% e movimento reduzido;
+O recorte comum contém:
+
+- janela 960 × 640 e estados vazio/tocando/erro;
+- player bar com slider acessível e seek preview;
+- snapshots falsos a 5 Hz com interpolação visual local;
+- fila com 1.000 itens, painel de preferências e temas sistema/claro/escuro;
+- teclado, foco, alto contraste, 100/150/200% e movimento reduzido;
 - tray e close/restore básicos;
-- build Release e instalador de teste.
+- build Release e pacote de teste.
 
-Validar:
+Antes de medir, versionar a fixture de estado, o roteiro, o marcador externo de janela acionável, o baseline da máquina e as tolerâncias. Registrar a primeira execução separadamente e coletar pelo menos 20 lançamentos válidos por candidato em cada cenário cold e aquecido. Agregar private working set/private bytes e CPU da árvore completa de processos, registrar memória estável em 5 s/60 s, pico, resposta de entrada e stall da fila; working set compartilhado fica como dado complementar para evitar dupla contagem. Tamanho instalado e pré-requisitos offline são métricas separadas.
 
-- NVDA/UI Automation;
-- cold start, working set e CPU idle;
-- ausência de flash e estabilidade visual;
-- CSP/capabilities mínimas;
-- WebView2 em Windows 10/11 e build Linux de referência.
+Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movimento reduzido, escala e smoke Linux. No Tauri, revisar CSP/capabilities e a árvore WebView2; no Qt, revisar nomes/roles acessíveis, bindings/animations contínuos e plugins distribuídos.
 
-### M0.2 — Áudio e metadata
+### M0.2 — Áudio e metadata A/B
 
-Usando UI mínima/CLI de teste:
+Usando harness mínimo e o mesmo corpus:
 
-- Rodio/Symphonia abre, toca, pausa, busca e termina cada fixture;
-- Lofty lê tags, arte e propriedades;
-- posição/seek medidos em MP3 CBR/VBR e M4A/AAC;
+- Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty satisfazem a mesma suite `PlaybackBackend`/`MetadataReader`;
+- cada fixture abre, toca, pausa, busca e termina, com duração e capacidades registradas;
+- posição/seek são medidos em MP3 CBR/VBR e M4A/AAC;
+- open-to-audible, seek-to-audible, CPU, memória e underruns usam o mesmo método;
 - cancelamento e troca rápida não publicam estado antigo;
-- fixtures corrompidas/hostis do corpus retornam erro controlado sem derrubar processo;
-- sessão curta e soak exploratório verificam handles/memória;
-- `cargo tree -d -e features` confirma uma cadeia Symphonia deliberada, sem duplicação acidental;
-- arquivos em armazenamento local/lento controlado medem underruns; prefetch/ring buffer ou fallback é decidido se necessário.
+- fixtures corrompidas/hostis retornam erro controlado sem derrubar processo;
+- sessão curta, soak exploratório e armazenamento lento controlado verificam handles, crescimento e stalls;
+- o ramo Qt registra módulos/plugins, configuração e licença do FFmpeg e obrigações Qt/TagLib;
+- o ramo Rust registra `cargo tree -d -e features` e confirma uma cadeia Symphonia deliberada, sem duplicação acidental.
 
-Publicar a primeira matriz de formatos.
+Publicar a primeira matriz de formatos por candidato. Somente caminhos viáveis avançam; o produto final não empacota os dois engines.
 
-### M0.3 — Integração e pacote Windows
+### M0.3 — Integração e pacote comparáveis
 
-Provar:
+Provar, para cada candidato ainda viável:
 
 - instância única e encaminhamento de vários paths Unicode;
 - tray incluindo saída real;
-- associação registrada por template/hook NSIS próprio, com ProgID, `Capabilities` e `RegisteredApplications`, além da tela oficial de apps padrão;
-- SMTC e teclas de mídia;
-- suspend/resume e reinício do Explorer;
-- install, upgrade e uninstall em ambiente descartável.
+- pacote instalável/desinstalável em ambiente descartável;
+- build/smoke na distribuição Linux de referência;
+- caminho demonstrável para SMTC/MPRIS e associações sem vazar plataforma para o domínio.
+
+No candidato finalista, completar a prova NSIS com ProgID, `Capabilities`, `RegisteredApplications`, tela oficial de apps padrão, SMTC/teclas de mídia, suspend/resume, reinício do Explorer, upgrade e uninstall. Se esse aprofundamento revelar custo estrutural, executar a mesma prova no outro candidato antes da decisão.
 
 ### M0.4 — Decisão
 
-Comparar resultados com a [análise de stack](architecture/stack-analysis.md):
+Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e comparar com a [análise de stack](architecture/stack-analysis.md):
 
-- aprovar ADR-0001/0002 e registrar medidas; ou
-- spike Slint se somente WebView for pesado; ou
-- spike C++/Qt se a combinação falhar em múltiplas integrações/codec/acessibilidade; ou
-- revisar requisito/orçamento com o mantenedor.
+- aceitar ADR-0001/0002 e registrar medidas, ambiente, tolerâncias, licenças e riscos; ou
+- declarar empate de medição e escolher por UX comprovada, acessibilidade, manutenção pessoal, segurança e licenciamento; ou
+- considerar spike Slint equivalente se nenhum candidato atender por footprint da UI; ou
+- revisar backend, requisito ou orçamento com o mantenedor quando nenhum caminho for viável.
 
 ### Gate de saída
 
@@ -138,7 +138,7 @@ Comparar resultados com a [análise de stack](architecture/stack-analysis.md):
 4. fila por ID e regras anterior/próxima;
 5. portas e fakes mínimos;
 6. controller de aplicação e snapshots;
-7. boundary IPC com validação;
+7. boundary UI/aplicação com validação;
 8. shell UI consumindo fake.
 
 ### Entregas
@@ -147,14 +147,14 @@ Comparar resultados com a [análise de stack](architecture/stack-analysis.md):
 - scripts `format`, `lint`, `check`, `test`, `build`, `validate`;
 - CI Windows/Linux básica;
 - cobertura do core;
-- configuração de segurança Tauri;
+- configuração de segurança e privilégios própria da stack aceita;
 - fixtures iniciais e manifesto;
 - primeiro executável ainda sem alegação de player completo.
 
 ### Gate de saída
 
 - ciclo Red–Green–Refactor evidenciado pelo teste e motivo de falha registrados no handoff; commits finais permanecem verdes;
-- domínio roda sem Tauri/audio;
+- domínio roda sem toolkit de UI ou backend de áudio concreto;
 - UI roda contra fake;
 - gates rápidos verdes em Windows e Linux;
 - arquitetura real corresponde aos documentos ou ADR é atualizado.

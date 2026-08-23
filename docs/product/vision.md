@@ -107,8 +107,9 @@ A distribuição Linux de referência será escolhida no spike de empacotamento.
 
 ## Hipóteses e decisões em aberto
 
-- Rust é a recomendação inicial, mas a linguagem e o toolkit permanecem propostos até o ADR ser aceito.
-- Uma UI declarativa com núcleo nativo parece alinhar melhor velocidade de desenvolvimento e UX; Tauri, Slint e Qt ainda precisam dos spikes comparativos de footprint, integração e acessibilidade.
-- O backend de áudio deve priorizar simplicidade e formatos comuns; o corpus determinará se uma solução Rust pura é suficiente.
+- C++20 + Qt 6 Quick/QML é a hipótese principal de desempenho para o M0, especialmente para cold start e memória no Windows; Rust + Tauri 2 + Svelte é o desafiante A/B direto.
+- A ordem dos candidatos não aceita linguagem ou toolkit antecipadamente. O mesmo recorte de UX deve provar desempenho, acessibilidade, integração e sustentabilidade antes da decisão por ADR, nos termos de NFR-STACK-001–006.
+- Shell/UI e backend de áudio serão avaliados separadamente. O corpus determinará qual engine atende formatos, seek, estabilidade e consumo sem atribuir ao toolkit o custo do decoder ou da saída.
+- Rust + Slint permanece uma alternativa possível caso a evidência justifique outro experimento, sem ampliar prematuramente o M0.
 - YouTube depende de viabilidade técnica, termos do serviço, licenças e estratégia de distribuição; não é compromisso do MVP.
 - Nome, identidade visual, licença do código e canal de distribuição ainda serão definidos pelo mantenedor.

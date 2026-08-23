@@ -13,8 +13,8 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 
 | ADR | Estado | Assunto |
 |---|---|---|
-| [0001](0001-language-and-ui-stack.md) | Proposto | Rust, Tauri 2 e Svelte |
-| [0002](0002-audio-and-metadata-stack.md) | Proposto | Rodio/Symphonia e Lofty |
+| [0001](0001-language-and-ui-stack.md) | Proposto | Comparação A/B entre C++/Qt e Rust/Tauri/Svelte |
+| [0002](0002-audio-and-metadata-stack.md) | Proposto | Comparação de áudio e metadados por stack |
 | [0003](0003-local-first-and-remote-sources.md) | Proposto | Mecanismo para isolar fontes remotas; local-first já é requisito |
 
 ## Processo

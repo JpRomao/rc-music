@@ -105,7 +105,7 @@ Testes não devem depender de internet, YouTube, dispositivos específicos ou ar
 
 ## 7. Qualidade e validação
 
-Quando a base Rust existir, a validação mínima deverá incluir, conforme aplicável:
+Durante o M0, cada candidato executa seus checks nativos e o protocolo comparativo comum; validar somente um ramo não comprova o A/B. Se o candidato Qt existir, a validação inclui format/check de C++ e QML, build CMake Release reproduzível, Catch2/CTest e Qt Test aplicável. Se o candidato Rust/Tauri existir, a validação mínima inclui, conforme aplicável:
 
 ```powershell
 cargo fmt --all -- --check
@@ -113,7 +113,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-Comandos adicionais de UI, empacotamento e smoke tests serão mantidos no `README.md`. Se uma validação não puder ser executada, registre claramente o que faltou e o risco residual; nunca declare que passou.
+Os comandos executáveis exatos de cada scaffold, além de UI, empacotamento e smoke tests, serão mantidos no `README.md`. Depois da decisão por ADR, os checks do protótipo descartado não permanecem como dependências do produto. Se uma validação não puder ser executada, registre claramente o que faltou e o risco residual; nunca declare que passou.
 
 ## 8. Documentação e decisões
 

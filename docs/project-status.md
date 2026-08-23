@@ -23,27 +23,31 @@ Estas decisões vieram diretamente do mantenedor e são requisitos de produto/pr
 - áudio de YouTube por URL é possibilidade futura, se viável;
 - desenvolvimento seguirá TDD;
 - `agents.md` deveria ser o primeiro arquivo;
-- mudanças devem ser sempre commitadas.
+- mudanças devem ser sempre commitadas;
+- o M0 usará C++20 + Qt 6 Quick/QML como hipótese principal de desempenho e Rust + Tauri 2 + Svelte como desafiante A/B direto;
+- shell/UI e backend de áudio serão comparados separadamente antes da escolha da stack.
+
+Os dois últimos itens confirmam a direção do experimento, não a aceitação de uma stack.
 
 ## 2. O que é recomendado, mas ainda proposto
 
 | Decisão | Recomendação | Estado |
 |---|---|---|
-| Linguagem/core | Rust | Proposto em ADR-0001 |
-| Shell/UI | Tauri 2 + Svelte/TypeScript/Vite | Proposto em ADR-0001 |
-| Áudio | Rodio/CPAL + cadeia Symphonia compatível e testada, sem versão direta duplicada | Proposto em ADR-0002 |
-| Metadata | Lofty + filesystem | Proposto em ADR-0002 |
-| Estrutura | um pacote com módulos, extraindo crates só por necessidade | Proposto |
+| Hipótese principal de shell/UI | C++20 + Qt 6 Quick/QML, com domínio e aplicação em C++ puro | Baseline experimental; ADR-0001 comparativo ainda proposto |
+| Desafiante direto de shell/UI | Rust + Tauri 2 + Svelte/TypeScript/Vite | Baseline experimental; ADR-0001 comparativo ainda proposto |
+| Áudio no candidato Qt | Qt Multimedia/FFmpeg atrás de `PlaybackBackend` | Ramo do ADR-0002 comparativo; não aceito |
+| Áudio no candidato Tauri | Rodio/CPAL + cadeia Symphonia compatível e testada, sem versão direta duplicada | Ramo do ADR-0002 comparativo; não aceito |
+| Metadata | TagLib no baseline Qt; Lofty + filesystem no baseline Tauri | Candidatos do M0; não aceitos |
+| Estrutura | uma unidade de build e distribuição com módulos internos; extrações só por necessidade demonstrada | Proposto |
 | Persistência | JSON versionado e atômico; sem banco no MVP | Proposto |
-| Integração | tray/single-instance Tauri, SMTC Windows, MPRIS Linux e NSIS customizado para associações | Proposto |
-| Windows package | NSIS por usuário | Proposto |
+| Integração | portas comuns com adapters do toolkit escolhido, SMTC Windows, MPRIS Linux e associações nativas | Proposto |
+| Windows package | instalador por usuário que comprove o fluxo de Default Apps; tecnologia definida no M0 | Proposto |
 | Linux package | `.deb` primeiro, AppImage depois | Proposto |
 | Remoto | porta isolada, desativada no MVP | Proposto em ADR-0003 |
 
 Alternativas preservadas:
 
-- Rust + Slint se footprint do WebView for o único bloqueio;
-- C++20 + Qt Quick/QML + Qt Multimedia se Tauri falhar em múltiplos critérios;
+- Rust + Slint somente se a evidência justificar um experimento adicional de footprint;
 - GStreamer/libmpv apenas como substituição de engine quando requisitos futuros justificarem.
 
 ## 3. Requisitos derivados para revisão
@@ -62,14 +66,14 @@ Estes comportamentos tornam o produto consistente, mas não foram pedidos litera
 - pt-BR inicial com strings preparadas para tradução;
 - metas de startup, memória, CPU e latência;
 - limites iniciais de arte/metadata/IPC, a validar no M0;
-- NSIS e `.deb` como primeiros formatos de pacote.
+- instalador Windows por usuário e `.deb` como primeiros formatos de pacote; a tecnologia do instalador Windows será escolhida no M0.
 
 Revisar [requisitos](product/requirements.md) e [UX](product/ux-specification.md) antes de aceitá-los como detalhe final.
 
 ## 4. Decisões em aberto
 
-1. aceitar Rust/Tauri/Svelte para o spike M0 ou pedir spike comparativo diferente;
-2. aceitar Rodio com sua cadeia Symphonia compatível e Lofty como candidato de áudio/metadata;
+1. autorizar o M0 A/B com Qt como hipótese principal e Tauri como desafiante, sem aceitar antecipadamente qualquer stack;
+2. escolher shell/UI e backend de áudio somente após as comparações separadas e a decisão explícita por ADR;
 3. nome e identidade visual do aplicativo;
 4. licença do repositório e modelo de distribuição;
 5. distribuição Linux de referência;
@@ -113,10 +117,10 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O próximo passo seguro é o mantenedor revisar este arquivo e os três ADRs. Com autorização para M0:
 
-1. aceitar apenas o escopo do spike, não a stack definitiva;
-2. criar branch/commits de protótipo Tauri/Svelte e backend falso;
-3. criar spike separado Rodio/Symphonia/Lofty com corpus mínimo, árvore de dependências e medição de underruns;
-4. medir e testar NVDA/tray/single-instance;
-5. voltar aos ADRs com evidência e escolher.
+1. aceitar apenas o escopo do experimento, não a stack definitiva;
+2. criar shells Qt e Tauri equivalentes, ambos com backend falso;
+3. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
+4. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
+5. voltar aos ADRs com evidência reproduzível e escolher.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

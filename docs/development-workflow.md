@@ -91,7 +91,7 @@ Exemplos:
 feat(playback): clamp skip at track boundaries
 fix(queue): ignore stale ended event
 test(audio): add AAC seek contract fixture
-docs(adr): accept Tauri desktop stack
+docs(adr): accept measured desktop stack
 ```
 
 Regras:

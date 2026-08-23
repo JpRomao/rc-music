@@ -118,18 +118,31 @@ Metas iniciais para Windows x64, SSD e máquina de referência a ser registrada 
 | NFR-PERF-002 | Arquivo local audível em até 750 ms no P95 com o app aberto. |
 | NFR-PERF-003 | Ação visual reconhecida em até 100 ms; seek audível em até 250 ms ou limite documentado do codec. |
 | NFR-PERF-004 | CPU média pausada abaixo de 0,5%; progresso não usa loop de atualização desnecessariamente rápido. |
-| NFR-PERF-005 | Working set abaixo de 80 MiB ocioso e 120 MiB durante reprodução comum. |
+| NFR-PERF-005 | Soma do private working set da árvore do app abaixo de 80 MiB ocioso e 120 MiB durante reprodução comum. Working set compartilhado e memória comprometida são registrados separadamente, sem dupla contagem como métrica primária. |
 | NFR-PERF-006 | Adicionar 1.000 itens não bloqueia a UI por mais de 100 ms; processamento é incremental/cancelável. |
 | NFR-PERF-007 | Oito horas de reprodução contínua sem crescimento sustentado de memória. |
 
 As metas são orçamentos de engenharia, não alegações antes da medição. Se o spike provar que uma meta conflita com compatibilidade ou acessibilidade, a alteração exige ADR e números reproduzíveis.
 
-### 4.2 Confiabilidade e segurança
+### 4.2 Seleção de stack e comprovação no M0
+
+A direção abaixo foi confirmada pelo mantenedor para orientar o experimento, mas não aceita antecipadamente uma stack. Medições reproduzíveis, UX e acessibilidade prevalecem sobre pressupostos baseados somente na linguagem.
+
+| ID | Requisito |
+|---|---|
+| NFR-STACK-001 | O M0 trata C++20 + Qt 6 Quick/QML como hipótese principal para menor cold start e memória no Windows, com Tauri 2 + Svelte como desafiante A/B direto. Qt não é aceito apenas por ser C++, e Tauri não é rejeitado apenas por usar WebView. |
+| NFR-STACK-002 | Os shells são comparados em build Release com o mesmo recorte de UX, assets, dados, roteiro e baseline de máquina. O ensaio de shell não usa áudio ou rede reais; os backends são comparados separadamente no mesmo corpus para não atribuir à linguagem custos do decoder ou da saída. |
+| NFR-STACK-003 | O protocolo, cenários, métricas e tolerâncias são registrados antes da coleta e medem o candidato completo, incluindo processos auxiliares. O ensaio de shell cobre NFR-PERF-001/004–006; o ensaio de áudio cobre NFR-PERF-002/003/007; a combinação final revalida NFR-PERF-001–007. Tamanho do pacote e pré-requisitos offline são relatados separadamente da RAM. |
+| NFR-STACK-004 | Os dois candidatos passam pelos mesmos gates UX-004–007, integração de bandeja e build/smoke Linux de referência. Falha de acessibilidade P0 bloqueia o candidato mesmo que ele vença em recursos. |
+| NFR-STACK-005 | O candidato Qt usa como baseline C++20, Qt 6 Quick/QML com estilo Basic customizado, Qt Multimedia/FFmpeg e TagLib. Domínio e aplicação permanecem C++ puro, sem dependência de `QObject`/QML; o motor implementa a porta `PlaybackBackend`, e o pacote passa pelos gates de Qt LGPL e configuração/licença do FFmpeg. O desafiante usa o baseline Tauri/Rust documentado nos ADRs propostos. |
+| NFR-STACK-006 | Somente candidatos que atendam aos budgets vigentes de UI e áudio, ou a desvios explicitamente aprovados por ADR, podem ser aceitos. Resultado dentro das tolerâncias pré-registradas é empate; nesse caso, decidir por UX comprovada, acessibilidade, manutenção para uma pessoa, segurança e licenciamento. A escolha final exige ADR explícito com números e ambiente reproduzível. |
+
+### 4.3 Confiabilidade e segurança
 
 | ID | Requisito |
 |---|---|
 | NFR-REL-001 | Entradas inválidas do corpus e dentro dos limites publicados retornam erro controlado sem encerrar o processo. Todo crash reproduzível descoberto é bloqueador de release; isolamento absoluto contra falha/OOM de decoder exigiria processo separado e não é alegado no MVP. |
-| NFR-REL-002 | Código próprio executado no callback de saída não realiza logging, lock longo, chamada de UI nem I/O adicional. Como Rodio pode puxar decode/leitura no callback CPAL, o M0 deve medir underruns; se houver bloqueio relevante, adicionar prefetch/ring buffer ou rejeitar o backend. |
+| NFR-REL-002 | Código próprio executado no callback de saída não realiza logging, lock longo, chamada de UI nem I/O adicional. O M0 mede underruns e verifica se o backend faz decode ou leitura bloqueante no caminho de tempo real; se houver impacto relevante, adicionar prefetch/ring buffer limitado ou rejeitar o backend. |
 | NFR-REL-003 | Preferências e sessão são escritas de modo atômico e recuperável. |
 | NFR-REL-004 | Paths são tratados como dados; nunca concatenados em comandos de shell. |
 | NFR-REL-005 | Arquivos removidos, drives desconectados e dispositivos perdidos geram recuperação ou erro acionável. |
@@ -144,7 +157,7 @@ Limites iniciais, revisáveis somente com corpus e medição:
 | NFR-LIMIT-003 | Probe de metadata tem budget interativo inicial de 2 s. Ao trocar de faixa ou estourar o budget, o resultado fica cancelado/descartado; o M0 deve provar que trabalho subjacente não acumula. |
 | NFR-LIMIT-004 | Um comando IPC aceita no máximo 1.000 paths e 1 MiB serializado. Lotes maiores são divididos/rejeitados com mensagem, sem bloquear a UI. |
 
-### 4.3 Privacidade e rede
+### 4.4 Privacidade e rede
 
 | ID | Requisito |
 |---|---|
@@ -153,13 +166,13 @@ Limites iniciais, revisáveis somente com corpus e medição:
 | NFR-PRIV-003 | Logs locais não incluem conteúdo de arquivos ou URL completa por padrão e possuem limite de retenção. |
 | NFR-PRIV-004 | Qualquer rede futura é explícita, cancelável e limitada à ação solicitada. |
 
-### 4.4 Manutenibilidade
+### 4.5 Manutenibilidade
 
 | ID | Requisito |
 |---|---|
 | NFR-MAINT-001 | Mudanças de comportamento seguem Red–Green–Refactor. |
 | NFR-MAINT-002 | Domínio e casos de uso não dependem do toolkit, sistema operacional ou decoder concreto. |
-| NFR-MAINT-003 | O projeto começa como pacote simples e só é dividido em múltiplos crates quando houver benefício medido. |
+| NFR-MAINT-003 | O projeto começa como uma única unidade de build e distribuição, organizada internamente em módulos. Bibliotecas ou pacotes separados só são extraídos quando houver benefício demonstrável. |
 | NFR-MAINT-004 | Todas as mudanças terminam em commit atômico após validação proporcional. |
 | NFR-MAINT-005 | Requisitos, testes e ADRs usam identificadores estáveis e links bidirecionais quando aplicável. |
 
@@ -214,7 +227,7 @@ Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração of
 | Windows e Linux, com prioridade para Windows | FR-030–038, plataforma e NFRs |
 | MP3, M4A e outros | FR-001–006 e matriz de formatos |
 | YouTube por URL no futuro | FR-050–053 |
-| UI/UX moderna, leve e minimalista | UX-001–010, NFR-PERF-001–007 |
+| UI/UX moderna, leve e minimalista | UX-001–010, NFR-PERF-001–007, NFR-STACK-001–006 |
 | Bandeja | FR-030–032 |
 | Metadados, tamanho e duração | FR-020–024 |
 | App padrão | FR-033–036 |

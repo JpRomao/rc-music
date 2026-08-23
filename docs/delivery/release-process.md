@@ -3,7 +3,7 @@
 **Estado:** proposta operacional; ainda não há executável  
 **Última revisão:** 2026-08-23
 
-NSIS, WebView2, manifests Rust/frontend/Tauri e demais detalhes desse candidato só viram contrato após o ADR-0001. As regras de evidência, consentimento, assinatura e validação de pacote valem para qualquer stack escolhida.
+NSIS e os detalhes de runtime/toolchain de Qt/C++ ou Tauri/Rust só viram contrato definitivo após o ADR-0001. As regras de evidência, consentimento, assinatura e validação de pacote valem para qualquer stack escolhida.
 
 ## 1. Princípios
 
@@ -25,7 +25,7 @@ Usar SemVer:
 - mudança incompatível durante 0.x precisa ser destacada no changelog;
 - `1.0.0` somente após estabilidade real de formato de configuração, comportamento e atualização.
 
-Versão deve coincidir em manifests Rust, frontend, Tauri, bundle e metadata dos artefatos. Um script/check deve impedir divergência.
+Versão deve coincidir em todos os manifests, executáveis, bundle e metadata dos artefatos da stack escolhida. Um script/check deve impedir divergência.
 
 ## 3. Canais
 
@@ -73,7 +73,7 @@ Cada artefato acompanha:
 
 - usar ambiente limpo e toolchains pinados;
 - restore apenas por lockfiles;
-- gerar frontend Release e host Rust Release;
+- gerar todos os componentes da stack aceita em Release;
 - empacotar com configuração commitada;
 - gerar SBOM/notices e manifesto;
 - assinar executável/instalador Windows quando público;
@@ -90,7 +90,7 @@ Em VM/máquina descartável para cada caminho relevante:
 
 - instalar por usuário sem admin quando possível;
 - iniciar pelo menu e por arquivo;
-- verificar ícone, versão, WebView2 e diretórios;
+- verificar ícone, versão, diretórios e runtime distribuído: WebView2 no Tauri ou DLLs/plugins Qt/FFmpeg no candidato Qt;
 - validar que nenhuma extensão virou default sem escolha;
 - inspecionar que o template/hook NSIS registrou apenas o ProgID, `Capabilities` e `RegisteredApplications` do app; não usar `bundle.fileAssociations` isoladamente como prova;
 - abrir página oficial de defaults;
@@ -124,7 +124,7 @@ Em VM/máquina descartável para cada caminho relevante:
 ## 8. Validação Linux
 
 - instalar `.deb` na versão mínima e atual da distribuição de referência;
-- validar dependências WebKitGTK/áudio;
+- validar dependências Qt ou WebKitGTK e o backend de áudio efetivamente distribuído;
 - abrir por menu, CLI e MIME;
 - testar MPRIS e media keys;
 - testar tray ou fallback visível no ambiente;

@@ -1,9 +1,9 @@
 # Gates de qualidade
 
-**Estado:** contrato inicial; comandos de frontend serão ativados no bootstrap  
+**Estado:** contrato inicial; comandos definitivos serão ativados após o M0
 **Última revisão:** 2026-08-23
 
-Gates de comportamento, segurança e plataforma são invariantes. Comandos e itens nomeando Tauri/Svelte são condicionais ao ADR-0001 e devem ser substituídos, não acumulados, se outro candidato vencer.
+Gates de comportamento, segurança e plataforma são invariantes. Durante o M0, cada candidato executa seus checks nativos e o protocolo comum NFR-STACK. Depois do ADR, os comandos definitivos pertencem apenas à stack vencedora; toolchains experimentais não são acumulados no produto.
 
 ## 1. Regra geral
 
@@ -19,7 +19,7 @@ Gates locais validam o working tree que será commitado. CI e release validam co
 | Domínio/application | format, lint, unitários focados, workspace tests, cobertura afetada |
 | UI/componente | format/lint/typecheck, testes do componente, acessibilidade automatizada, build |
 | Adapter de áudio/metadata | unitários, contrato, corpus afetado, leak/error paths |
-| IPC/segurança | schema/limites, input hostil, capabilities/CSP, integração |
+| Boundary/IPC/segurança | schema/limites, input hostil, superfície QML/objetos expostos ou capabilities/CSP, integração |
 | Plataforma | testes não-plataforma + build nativo + smoke específico |
 | Persistência/migração | round-trip, versões anteriores, corrupção, falhas atômicas |
 | Dependência | todos os testes afetados, advisories, licença, bundle e changelog upstream |
@@ -29,7 +29,14 @@ Gates locais validam o working tree que será commitado. CI e release validam co
 
 Enquanto não houver scaffold, estes comandos são contrato de desenho e podem ser ajustados no primeiro commit de build. A raiz deve oferecer scripts equivalentes e documentados.
 
-### Rust
+### C++/Qt no M0
+
+- format/check de C++ e QML;
+- configuração e build CMake Release reproduzíveis;
+- Catch2 via CTest e Qt Test/Qt Quick Test onde aplicável;
+- inspeção dos módulos, plugins, DLLs Qt e configuração FFmpeg distribuídos.
+
+### Rust/Tauri no M0
 
 ```powershell
 cargo fmt --all -- --check
@@ -37,7 +44,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-### Frontend
+### Svelte no M0
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -48,13 +55,9 @@ pnpm test
 pnpm build
 ```
 
-### Gate agregado desejado
+### Gate agregado após a decisão
 
-```powershell
-pnpm validate
-```
-
-`validate` deve executar apenas checks determinísticos e adequados a todo commit. E2E, packaging, soak e benchmarks usam comandos separados.
+O bootstrap da stack aceita deve expor na raiz um comando `validate` documentado. O runner concreto pode ser PowerShell/CMake/CTest no ramo Qt ou o gerenciador adotado no ramo Tauri. Ele executa apenas checks determinísticos e adequados a todo commit; E2E, packaging, soak e benchmarks usam comandos separados.
 
 ## 4. Pipeline recomendado
 
@@ -63,10 +66,10 @@ pnpm validate
 Em todo commit/PR:
 
 - verificação documental;
-- Rust fmt/clippy/test;
-- frontend format/lint/typecheck/unit;
-- build frontend e debug/release check proporcional;
-- auditoria de capabilities quando manifest mudar.
+- format, análise estática e testes nativos da stack em escopo;
+- testes do domínio/application e da apresentação afetada;
+- build/check proporcional;
+- auditoria de boundary, capabilities ou objetos expostos à UI quando a superfície privilegiada mudar.
 
 ### `windows-integration`
 
@@ -91,10 +94,10 @@ Em mudanças relevantes e antes de merge/release:
 
 ### `security-and-licenses`
 
-- advisories Rust/JS;
+- advisories C++/Qt/FFmpeg ou Rust/JS conforme o candidato;
 - dependências duplicadas e features inesperadas;
 - licenças permitidas/negadas;
-- CSP e capabilities;
+- Qt LGPL/configuração FFmpeg ou CSP/capabilities Tauri;
 - SBOM/notices no release.
 
 ### `performance`
@@ -109,8 +112,8 @@ Um commit/release não está pronto se houver:
 
 - teste, lint, typecheck ou build obrigatório falhando;
 - formato declarado sem corpus aprovado;
-- panic/crash em entrada inválida conhecida;
-- capability Tauri mais ampla sem justificativa;
+- crash, panic ou exceção não tratada em entrada inválida conhecida;
+- capability Tauri ou objeto/operação Qt exposto à UI além do necessário sem justificativa;
 - regressão de teclado/leitor de tela em fluxo P0;
 - corrupção/perda de sessão em teste de falha;
 - associação de arquivo que toma default sem consentimento;
@@ -165,7 +168,7 @@ Verificar:
 
 Uma release exige:
 
-- tag/versionamento consistente em Rust, frontend, Tauri e bundle;
+- tag/versionamento consistente em todos os manifests, executáveis e metadados do bundle vencedor;
 - changelog e lista de mudanças/riscos conhecidos;
 - todos os critérios P0 rastreados para testes;
 - corpus e matriz atualizados;

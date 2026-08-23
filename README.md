@@ -24,21 +24,13 @@ O MVP planejado concentra-se em abrir e ouvir arquivos locais:
 
 YouTube por URL é somente uma linha de pesquisa futura. O modo audio-only em background pode conflitar com políticas oficiais, além de exigir um resolver frágil; não faz parte do MVP e pode ser rejeitado após análise.
 
-## Stack recomendada — ainda proposta
+## Hipóteses de stack para o M0 — nenhuma aceita
 
-O primeiro spike recomendado usa:
+O M0 tratará **C++20 + Qt 6 Quick/QML** como hipótese principal de desempenho no Windows. O baseline usa estilo Basic customizado, Qt Multimedia/FFmpeg e TagLib, mantendo domínio e aplicação em C++ puro, independentes de Qt e QML.
 
-- Rust para domínio, áudio, arquivos, persistência e integrações;
-- Tauri 2 como shell desktop;
-- Svelte + TypeScript + Vite para a UI;
-- Rodio/CPAL com a cadeia Symphonia compatível para reprodução e decode;
-- Lofty para tags e propriedades;
-- adapters próprios para Windows SMTC e Linux MPRIS;
-- NSIS customizado para o modelo de Default Apps no Windows e `.deb` no Linux.
+**Rust + Tauri 2 + Svelte/TypeScript/Vite** será o desafiante A/B direto, com o baseline de áudio Rodio/CPAL, Symphonia e Lofty já descrito nos ADRs propostos. Os shells serão avaliados com o mesmo recorte de UX; os backends de áudio serão comparados separadamente no mesmo corpus para distinguir o custo da UI do custo de decode e saída.
 
-Essa direção prioriza UX sem empacotar Chromium. Ela ainda precisa provar memória, cold start, M4A/seek, underruns do caminho Rodio/CPAL, árvore de dependências, acessibilidade, tray, instância única, associações e empacotamento no M0. Rust + Slint é o fallback de footprint; C++20 + Qt Quick/QML é a alternativa madura se o conjunto Tauri falhar em múltiplos critérios.
-
-Nenhum ADR está aceito neste momento.
+Esta ordem expressa uma hipótese mensurável, não uma escolha definitiva. Desempenho, UX, acessibilidade, manutenção, segurança e licenciamento decidirão a stack por ADR explícito, conforme os [requisitos NFR-STACK-001–006](docs/product/requirements.md). Nenhum ADR está aceito neste momento.
 
 ## Documentação
 
@@ -75,7 +67,7 @@ Comece por:
 
 ## Estado do repositório
 
-Por enquanto não há manifests Rust/Node nem comandos de build. Os comandos planejados e gates estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o bootstrap criar e validar os scripts correspondentes.
+Por enquanto não há manifests/toolchains de implementação nem comandos de build. Os comandos planejados e gates estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o M0 e o bootstrap criarem e validarem os scripts correspondentes.
 
 Validações documentais atuais:
 
@@ -90,8 +82,8 @@ Links relativos, IDs de requisitos e consistência entre estados devem ser revis
 
 1. revisar [estado e decisões](docs/project-status.md);
 2. ajustar requisitos derivados que não combinem com o uso pessoal desejado;
-3. autorizar o M0 e a hipótese Rust/Tauri/Svelte, sem aceitá-la definitivamente;
-4. executar spikes separados de UI, áudio/corpus e integração Windows;
+3. autorizar o M0 comparativo, sem aceitar antecipadamente qualquer stack;
+4. comparar Qt e Tauri no mesmo recorte de UI e avaliar os backends de áudio separadamente no corpus;
 5. medir e então aceitar/rejeitar os ADRs;
 6. somente depois iniciar o MVP guiado por TDD.
 
