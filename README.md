@@ -77,6 +77,7 @@ Validações atuais:
 & .\scripts\validate-docs.ps1
 & .\scripts\m0\Invoke-M0HarnessTests.ps1
 & .\scripts\m0\Test-M0Fixture.ps1
+& .\scripts\m0\Test-M0Statistics.ps1
 & .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```

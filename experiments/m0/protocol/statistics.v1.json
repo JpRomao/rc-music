@@ -1,0 +1,57 @@
+{
+  "$schema": "schemas/statistics.schema.json",
+  "schema_id": "m0.statistics.v1",
+  "schema_version": 1,
+  "statistics_id": "M0-STATISTICS-1",
+  "protocol_id": "M0-P1",
+  "seed": 20260823,
+  "quantile": {
+    "method": "Hyndman-Fan-type-7",
+    "type": 7,
+    "probability_domain": "closed-0-1"
+  },
+  "bootstrap": {
+    "method": "independent-percentile-bootstrap",
+    "resamples": 10000,
+    "confidence_level": 0.95,
+    "candidates": ["A", "B"],
+    "resample_origin": 1,
+    "slot_origin": 1,
+    "index_hash_template": "M0-P1|bootstrap|20260823|<metric>|<candidate>|<resample>|<slot>",
+    "uint64_encoding": "first-8-bytes-big-endian",
+    "index_reduction": "unsigned-modulo-n",
+    "ci_quantile_type": 7,
+    "difference": "P95_A-minus-P95_B"
+  },
+  "tie_bands": {
+    "relative_fraction": 0.05,
+    "latency_ms_floor": 20,
+    "visual_response_frame_hz": 165,
+    "memory_bytes_floor": 2097152,
+    "cpu_percentage_points_floor": 0.05
+  },
+  "comparison_policy": {
+    "lower_is_better": true,
+    "inside_band": "tie",
+    "outside_band_sign_consistent_ci": ["advantage_a", "advantage_b"],
+    "outside_band_other": "inconclusive"
+  },
+  "status_policy": {
+    "planned": 22,
+    "minimum_valid": 20,
+    "maximum_discarded": 2,
+    "attempt_statuses": ["valid", "discarded", "failed", "inconclusive"],
+    "budget_violation_decision": "fail",
+    "decision_precedence": ["fail", "inconclusive", "pass"]
+  },
+  "artifacts": {
+    "schedule": {
+      "relative_path": "schedule.v1.json",
+      "sha256": "aba171c3a2da46e7b9a28dd3293689e21794cb8bdb9dfb02778e9b6dd10ecae4"
+    },
+    "golden": {
+      "relative_path": "goldens/statistics.v1.json",
+      "sha256": "20761505cbe3f326c892d4885874819ba2f1aa7b27f337b81ce729a3a40c6367"
+    }
+  }
+}

@@ -156,6 +156,8 @@ Quantis usam Hyndman–Fan tipo 7. Raw preserva inteiros em bytes/nanossegundos;
 - média/desvio apenas como diagnóstico;
 - bootstrap percentil 95% com 10.000 reamostragens independentes por candidato. Para cada índice, usar os 64 bits iniciais big-endian de SHA-256 UTF-8 de `M0-P1|bootstrap|20260823|<metric>|<candidate>|<resample>|<slot>`, módulo `n`; M0.1 fixa golden vectors.
 
+`resample` e `slot` começam em 1; o índice resultante começa em 0. A diferença é sempre `P95_A - P95_B`, e os limites 2,5%/97,5% do bootstrap também usam Hyndman–Fan tipo 7. Inteiros e diferenças são calculados com aritmética decimal capaz de preservar exatamente valores de 64 bits acima de `2^53`.
+
 CI não pode esconder violação do ponto P95. Teto absoluto violado é no-go. Em regressão contra baseline da mesma máquina: ≥5% alerta e exige uma segunda bateria completa; ≥10% nas duas baterias bloqueia; qualquer teto absoluto bloqueia diretamente.
 
 Bandas de empate por métrica:
@@ -163,11 +165,11 @@ Bandas de empate por métrica:
 | Métrica | Banda |
 |---|---|
 | startup/open/seek | `max(0,05 * min(P95_A, P95_B), 20 ms)` |
-| resposta visual | `max(0,05 * min(P95_A, P95_B), 1 frame a 165 Hz)` |
+| resposta visual | `max(0,05 * min(P95_A, P95_B), 1000/165 ms)` |
 | memória | `max(0,05 * min(P95_A, P95_B), 2 MiB)` |
 | CPU | `max(0,05 * min(P95_A, P95_B), 0,05 ponto percentual)` |
 
-Uma diferença absoluta de P95 dentro da banda é empate. Fora dela, só é vantagem confirmada quando o bootstrap independente de 95% de `P95_A - P95_B` exclui zero. Resultados conflitantes não viram score: ambos primeiro precisam passar todos os gates; empate global segue UX comprovada, acessibilidade, manutenção pessoal, segurança, licenças e integração, na ordem do ADR-0001.
+Uma diferença absoluta de P95 dentro da banda é empate. A fração `1000/165 ms` permanece decimal exata no resumo e não é arredondada para um número inteiro de nanossegundos. Fora da banda, só é vantagem confirmada quando o bootstrap independente de 95% de `P95_A - P95_B` exclui zero com sinal coerente com o ponto; caso contrário o resultado da métrica é inconclusivo. Resultados conflitantes não viram score: ambos primeiro precisam passar todos os gates; empate global segue UX comprovada, acessibilidade, manutenção pessoal, segurança, licenças e integração, na ordem do ADR-0001.
 
 ## 9. Acessibilidade, UX e plataforma
 

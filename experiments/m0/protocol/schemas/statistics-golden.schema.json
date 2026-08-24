@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 deterministic statistics golden vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "golden_id", "protocol_id", "seed",
+    "quantile_vectors", "quantile_decimal_vectors", "bootstrap_index_vectors", "bootstrap_difference_vector",
+    "tie_band_vectors", "comparison_vectors", "status_vectors"
+  ],
+  "properties": {
+    "$schema": { "const": "../schemas/statistics-golden.schema.json" },
+    "schema_id": { "const": "m0.statistics-golden.v1" },
+    "schema_version": { "const": 1 },
+    "golden_id": { "const": "M0-STATISTICS-GOLDEN-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "seed": { "const": 20260823 },
+    "quantile_vectors": {
+      "type": "array", "minItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "values", "probability", "expected"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "values": { "$ref": "#/definitions/integer_values" },
+          "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "expected": { "type": "number" }
+        }
+      }
+    },
+    "quantile_decimal_vectors": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "values_decimal", "probability_decimal", "expected_decimal"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "values_decimal": {
+            "type": "array", "minItems": 1, "maxItems": 22,
+            "items": { "type": "string", "pattern": "^-?(?:0|[1-9][0-9]*)$" }
+          },
+          "probability_decimal": { "type": "string", "pattern": "^(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)$" },
+          "expected_decimal": { "type": "string", "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$" }
+        }
+      }
+    },
+    "bootstrap_index_vectors": {
+      "type": "array", "minItems": 10,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "metric", "candidate", "sample_count", "resample", "slot", "sha256", "expected_index_zero_based"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "metric": { "const": "cold_start_ns" },
+          "candidate": { "enum": ["A", "B"] },
+          "sample_count": { "type": "integer", "minimum": 1, "maximum": 22 },
+          "resample": { "type": "integer", "minimum": 1, "maximum": 10000 },
+          "slot": { "type": "integer", "minimum": 1, "maximum": 22 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "expected_index_zero_based": { "type": "integer", "minimum": 0, "maximum": 21 }
+        }
+      }
+    },
+    "bootstrap_difference_vector": {
+      "type": "object", "additionalProperties": false,
+      "required": ["case_id", "metric", "candidate_a_values", "candidate_b_values", "expected"],
+      "properties": {
+        "case_id": { "$ref": "#/definitions/case_id" },
+        "metric": { "const": "cold_start_ns" },
+        "candidate_a_values": { "$ref": "#/definitions/integer_values" },
+        "candidate_b_values": { "$ref": "#/definitions/integer_values" },
+        "expected": {
+          "type": "object", "additionalProperties": false,
+          "required": ["candidate_a_p95", "candidate_b_p95", "difference_p95_a_minus_b", "ci_lower", "ci_upper", "excludes_zero"],
+          "properties": {
+            "candidate_a_p95": { "type": "number" },
+            "candidate_b_p95": { "type": "number" },
+            "difference_p95_a_minus_b": { "type": "number" },
+            "ci_lower": { "type": "number" },
+            "ci_upper": { "type": "number" },
+            "excludes_zero": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "tie_band_vectors": {
+      "type": "array", "minItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "metric_family", "p95_a", "p95_b", "expected_band", "expected_within_band"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "metric_family": { "enum": ["latency_ms", "visual_response_ms", "memory_bytes", "cpu_percentage_points"] },
+          "p95_a": { "type": "number", "minimum": 0 },
+          "p95_b": { "type": "number", "minimum": 0 },
+          "expected_band": { "type": "number", "minimum": 0 },
+          "expected_within_band": { "type": "boolean" }
+        }
+      }
+    },
+    "comparison_vectors": {
+      "type": "array", "minItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "metric_family", "p95_a", "p95_b", "ci_lower", "ci_upper", "expected_classification"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "metric_family": { "enum": ["latency_ms", "visual_response_ms", "memory_bytes", "cpu_percentage_points"] },
+          "p95_a": { "type": "number", "minimum": 0 },
+          "p95_b": { "type": "number", "minimum": 0 },
+          "ci_lower": { "type": "number" },
+          "ci_upper": { "type": "number" },
+          "expected_classification": { "enum": ["tie", "advantage_a", "advantage_b", "inconclusive"] }
+        }
+      }
+    },
+    "status_vectors": {
+      "type": "array", "minItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "statuses", "budget_violated", "expected_decision", "expected_counts"],
+        "properties": {
+          "case_id": { "$ref": "#/definitions/case_id" },
+          "statuses": {
+            "type": "array", "minItems": 22, "maxItems": 22,
+            "items": { "enum": ["valid", "discarded", "failed", "inconclusive"] }
+          },
+          "budget_violated": { "type": "boolean" },
+          "expected_decision": { "enum": ["pass", "fail", "inconclusive"] },
+          "expected_counts": {
+            "type": "object", "additionalProperties": false,
+            "required": ["valid", "discarded", "failed", "inconclusive"],
+            "properties": {
+              "valid": { "type": "integer", "minimum": 0, "maximum": 22 },
+              "discarded": { "type": "integer", "minimum": 0, "maximum": 22 },
+              "failed": { "type": "integer", "minimum": 0, "maximum": 22 },
+              "inconclusive": { "type": "integer", "minimum": 0, "maximum": 22 }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "case_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+    "integer_values": {
+      "type": "array", "minItems": 1, "maxItems": 22,
+      "items": { "type": "integer" }
+    }
+  }
+}

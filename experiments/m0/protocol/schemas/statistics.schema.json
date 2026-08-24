@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 deterministic statistics contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "statistics_id", "protocol_id", "seed",
+    "quantile", "bootstrap", "tie_bands", "comparison_policy", "status_policy", "artifacts"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/statistics.schema.json" },
+    "schema_id": { "const": "m0.statistics.v1" },
+    "schema_version": { "const": 1 },
+    "statistics_id": { "const": "M0-STATISTICS-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "seed": { "const": 20260823 },
+    "quantile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "type", "probability_domain"],
+      "properties": {
+        "method": { "const": "Hyndman-Fan-type-7" },
+        "type": { "const": 7 },
+        "probability_domain": { "const": "closed-0-1" }
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method", "resamples", "confidence_level", "candidates", "resample_origin", "slot_origin",
+        "index_hash_template", "uint64_encoding", "index_reduction", "ci_quantile_type", "difference"
+      ],
+      "properties": {
+        "method": { "const": "independent-percentile-bootstrap" },
+        "resamples": { "const": 10000 },
+        "confidence_level": { "const": 0.95 },
+        "candidates": { "const": ["A", "B"] },
+        "resample_origin": { "const": 1 },
+        "slot_origin": { "const": 1 },
+        "index_hash_template": { "const": "M0-P1|bootstrap|20260823|<metric>|<candidate>|<resample>|<slot>" },
+        "uint64_encoding": { "const": "first-8-bytes-big-endian" },
+        "index_reduction": { "const": "unsigned-modulo-n" },
+        "ci_quantile_type": { "const": 7 },
+        "difference": { "const": "P95_A-minus-P95_B" }
+      }
+    },
+    "tie_bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_fraction", "latency_ms_floor", "visual_response_frame_hz", "memory_bytes_floor", "cpu_percentage_points_floor"],
+      "properties": {
+        "relative_fraction": { "const": 0.05 },
+        "latency_ms_floor": { "const": 20 },
+        "visual_response_frame_hz": { "const": 165 },
+        "memory_bytes_floor": { "const": 2097152 },
+        "cpu_percentage_points_floor": { "const": 0.05 }
+      }
+    },
+    "comparison_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lower_is_better", "inside_band", "outside_band_sign_consistent_ci", "outside_band_other"],
+      "properties": {
+        "lower_is_better": { "const": true },
+        "inside_band": { "const": "tie" },
+        "outside_band_sign_consistent_ci": { "const": ["advantage_a", "advantage_b"] },
+        "outside_band_other": { "const": "inconclusive" }
+      }
+    },
+    "status_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "minimum_valid", "maximum_discarded", "attempt_statuses", "budget_violation_decision", "decision_precedence"],
+      "properties": {
+        "planned": { "const": 22 },
+        "minimum_valid": { "const": 20 },
+        "maximum_discarded": { "const": 2 },
+        "attempt_statuses": { "const": ["valid", "discarded", "failed", "inconclusive"] },
+        "budget_violation_decision": { "const": "fail" },
+        "decision_precedence": { "const": ["fail", "inconclusive", "pass"] }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schedule", "golden"],
+      "properties": {
+        "schedule": { "$ref": "#/definitions/artifact" },
+        "golden": { "$ref": "#/definitions/artifact" }
+      }
+    }
+  },
+  "definitions": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": { "type": "string", "pattern": "^[a-z0-9./-]+\\.json$" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

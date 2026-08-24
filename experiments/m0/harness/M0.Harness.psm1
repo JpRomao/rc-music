@@ -162,6 +162,8 @@ function Assert-M0ProtocolContract {
     Assert-M0FileHash -LiteralPath $fixtureManifest -ExpectedHash $Protocol.fixture_manifest_sha256
     $shellScenario = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\scenarios\shell.v1.json'
     Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $Protocol.shell_scenario_sha256
+    $statisticsDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\statistics.v1.json'
+    Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $Protocol.statistics_descriptor_sha256
 }
 
 function Assert-M0EnvironmentContract {
@@ -294,6 +296,14 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schemas\fixture-manifest.schema.json',
         'experiments\m0\protocol\schemas\shell-fixture.schema.json',
         'experiments\m0\protocol\schemas\shell-queue.schema.json',
+        'experiments\m0\protocol\schemas\schedule.schema.json',
+        'experiments\m0\protocol\schemas\statistics.schema.json',
+        'experiments\m0\protocol\schemas\statistics-golden.schema.json',
+        'experiments\m0\protocol\schedule.v1.json',
+        'experiments\m0\protocol\schedule.v1.sha256',
+        'experiments\m0\protocol\statistics.v1.json',
+        'experiments\m0\protocol\statistics.v1.sha256',
+        'experiments\m0\protocol\goldens\statistics.v1.json',
         'experiments\m0\candidates\qt\README.md',
         'experiments\m0\candidates\qt\candidate.v1.json',
         'experiments\m0\candidates\tauri\README.md',
@@ -301,7 +311,9 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Harness.psd1',
         'experiments\m0\harness\M0.Harness.psm1',
         'experiments\m0\harness\M0.Fixture.psm1',
+        'experiments\m0\harness\M0.Statistics.psm1',
         'experiments\m0\harness\tests\Fixture.Tests.ps1',
+        'experiments\m0\harness\tests\Statistics.Tests.ps1',
         'experiments\m0\shared\shell-fixture\LICENSE.assets.txt',
         'experiments\m0\shared\shell-fixture\assets\cover-placeholder.svg',
         'experiments\m0\shared\shell-fixture\assets\cover-track.svg',
@@ -312,6 +324,7 @@ function Assert-M0Layout {
         'scripts\m0\New-M0ShellFixture.ps1',
         'scripts\m0\Invoke-M0HarnessTests.ps1',
         'scripts\m0\Test-M0Fixture.ps1',
+        'scripts\m0\Test-M0Statistics.ps1',
         'scripts\m0\Test-M0Layout.ps1'
     )
     foreach ($relative in $required) {

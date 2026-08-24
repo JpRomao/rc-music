@@ -1,0 +1,316 @@
+{
+  "$schema": "../schemas/statistics-golden.schema.json",
+  "schema_id": "m0.statistics-golden.v1",
+  "schema_version": 1,
+  "golden_id": "M0-STATISTICS-GOLDEN-1",
+  "protocol_id": "M0-P1",
+  "seed": 20260823,
+  "quantile_vectors": [
+    {
+      "case_id": "singleton",
+      "values": [42],
+      "probability": 0.95,
+      "expected": 42
+    },
+    {
+      "case_id": "median-even",
+      "values": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "probability": 0.5,
+      "expected": 5.5
+    },
+    {
+      "case_id": "p95-interpolated",
+      "values": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "probability": 0.95,
+      "expected": 9.55
+    },
+    {
+      "case_id": "unsorted-duplicates-lower-quartile",
+      "values": [9, 1, 5, 5, 7],
+      "probability": 0.25,
+      "expected": 5
+    },
+    {
+      "case_id": "unsorted-duplicates-upper-quartile",
+      "values": [9, 1, 5, 5, 7],
+      "probability": 0.75,
+      "expected": 7
+    },
+    {
+      "case_id": "closed-domain-minimum",
+      "values": [9, 1, 5, 5, 7],
+      "probability": 0,
+      "expected": 1
+    },
+    {
+      "case_id": "closed-domain-maximum",
+      "values": [9, 1, 5, 5, 7],
+      "probability": 1,
+      "expected": 9
+    }
+  ],
+  "quantile_decimal_vectors": [
+    {
+      "case_id": "above-2pow53-median",
+      "values_decimal": ["9007199254740992", "9007199254740994"],
+      "probability_decimal": "0.5",
+      "expected_decimal": "9007199254740993"
+    }
+  ],
+  "bootstrap_index_vectors": [
+    {
+      "case_id": "a-r1-s1",
+      "metric": "cold_start_ns",
+      "candidate": "A",
+      "sample_count": 20,
+      "resample": 1,
+      "slot": 1,
+      "sha256": "1a94cf315369df810cea0aea6d6a0f464bce86dae7e0f5f27219eaf651393bb7",
+      "expected_index_zero_based": 5
+    },
+    {
+      "case_id": "a-r1-s2",
+      "metric": "cold_start_ns",
+      "candidate": "A",
+      "sample_count": 20,
+      "resample": 1,
+      "slot": 2,
+      "sha256": "2e3cdbc45e41dc37305833d1d900522ab914aa3f7eb4e1d4bf147e36f36b5ebe",
+      "expected_index_zero_based": 15
+    },
+    {
+      "case_id": "a-r1-s3",
+      "metric": "cold_start_ns",
+      "candidate": "A",
+      "sample_count": 20,
+      "resample": 1,
+      "slot": 3,
+      "sha256": "3dd39ea18ac521a2e2807ede14ded26c55fed7575e54a43d64cc6fc40d3c9c8f",
+      "expected_index_zero_based": 6
+    },
+    {
+      "case_id": "a-r2-s1",
+      "metric": "cold_start_ns",
+      "candidate": "A",
+      "sample_count": 20,
+      "resample": 2,
+      "slot": 1,
+      "sha256": "a922f4d6eda7238702839de6d45f8742e2f186a5b8fead4715249ff2a2a0ab9b",
+      "expected_index_zero_based": 15
+    },
+    {
+      "case_id": "a-r10000-s20",
+      "metric": "cold_start_ns",
+      "candidate": "A",
+      "sample_count": 20,
+      "resample": 10000,
+      "slot": 20,
+      "sha256": "5cd2b895de44bbc334764752c5338e5859f62dccf9cb6bec3978796adbada116",
+      "expected_index_zero_based": 7
+    },
+    {
+      "case_id": "b-r1-s1",
+      "metric": "cold_start_ns",
+      "candidate": "B",
+      "sample_count": 21,
+      "resample": 1,
+      "slot": 1,
+      "sha256": "a52b942463f441cd5df47c9d574777437d97aa1016dfeb93577ed3ae73ea8aa2",
+      "expected_index_zero_based": 18
+    },
+    {
+      "case_id": "b-r1-s2",
+      "metric": "cold_start_ns",
+      "candidate": "B",
+      "sample_count": 21,
+      "resample": 1,
+      "slot": 2,
+      "sha256": "dae84e5ea76ad8f85fcf18a1b7ee7cd99d71385c42f7c8fc34a301346d3be80a",
+      "expected_index_zero_based": 12
+    },
+    {
+      "case_id": "b-r1-s3",
+      "metric": "cold_start_ns",
+      "candidate": "B",
+      "sample_count": 21,
+      "resample": 1,
+      "slot": 3,
+      "sha256": "3c1efa6b0429d8206a53ca466610616ab0e1fa6a3510b6f105ab271814af3a88",
+      "expected_index_zero_based": 17
+    },
+    {
+      "case_id": "b-r2-s1",
+      "metric": "cold_start_ns",
+      "candidate": "B",
+      "sample_count": 21,
+      "resample": 2,
+      "slot": 1,
+      "sha256": "3c61e5745c9ef8f39aeceb01468dae0d487a7b556c5e2c1b0456dc13a60504df",
+      "expected_index_zero_based": 4
+    },
+    {
+      "case_id": "b-r10000-s21",
+      "metric": "cold_start_ns",
+      "candidate": "B",
+      "sample_count": 21,
+      "resample": 10000,
+      "slot": 21,
+      "sha256": "ca196d7aa0338a907a3f8415a7885742d820a3e72d8fa96bf9bfd7c453cc4afa",
+      "expected_index_zero_based": 12
+    }
+  ],
+  "bootstrap_difference_vector": {
+    "case_id": "independent-delta-p95",
+    "metric": "cold_start_ns",
+    "candidate_a_values": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 150],
+    "candidate_b_values": [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 80, 90],
+    "expected": {
+      "candidate_a_p95": 119.6,
+      "candidate_b_p95": 80,
+      "difference_p95_a_minus_b": 39.6,
+      "ci_lower": 26.05,
+      "ci_upper": 83,
+      "excludes_zero": true
+    }
+  },
+  "tie_band_vectors": [
+    {
+      "case_id": "latency-outside-floor-band",
+      "metric_family": "latency_ms",
+      "p95_a": 400,
+      "p95_b": 500,
+      "expected_band": 20,
+      "expected_within_band": false
+    },
+    {
+      "case_id": "latency-inside-floor-band",
+      "metric_family": "latency_ms",
+      "p95_a": 395,
+      "p95_b": 410,
+      "expected_band": 20,
+      "expected_within_band": true
+    },
+    {
+      "case_id": "visual-one-frame-floor",
+      "metric_family": "visual_response_ms",
+      "p95_a": 80,
+      "p95_b": 90,
+      "expected_band": 6.06060606060606,
+      "expected_within_band": false
+    },
+    {
+      "case_id": "memory-relative-band",
+      "metric_family": "memory_bytes",
+      "p95_a": 52428800,
+      "p95_b": 62914560,
+      "expected_band": 2621440,
+      "expected_within_band": false
+    },
+    {
+      "case_id": "cpu-floor-band",
+      "metric_family": "cpu_percentage_points",
+      "p95_a": 0.4,
+      "p95_b": 0.44,
+      "expected_band": 0.05,
+      "expected_within_band": true
+    }
+  ],
+  "comparison_vectors": [
+    {
+      "case_id": "inside-band-is-tie",
+      "metric_family": "latency_ms",
+      "p95_a": 400,
+      "p95_b": 415,
+      "ci_lower": -25,
+      "ci_upper": -5,
+      "expected_classification": "tie"
+    },
+    {
+      "case_id": "outside-band-advantage-a",
+      "metric_family": "latency_ms",
+      "p95_a": 400,
+      "p95_b": 500,
+      "ci_lower": -120,
+      "ci_upper": -80,
+      "expected_classification": "advantage_a"
+    },
+    {
+      "case_id": "outside-band-advantage-b",
+      "metric_family": "latency_ms",
+      "p95_a": 500,
+      "p95_b": 400,
+      "ci_lower": 80,
+      "ci_upper": 120,
+      "expected_classification": "advantage_b"
+    },
+    {
+      "case_id": "outside-band-ci-crosses-zero",
+      "metric_family": "latency_ms",
+      "p95_a": 500,
+      "p95_b": 400,
+      "ci_lower": -5,
+      "ci_upper": 105,
+      "expected_classification": "inconclusive"
+    },
+    {
+      "case_id": "outside-band-ci-conflicts-with-delta",
+      "metric_family": "latency_ms",
+      "p95_a": 500,
+      "p95_b": 400,
+      "ci_lower": -120,
+      "ci_upper": -80,
+      "expected_classification": "inconclusive"
+    }
+  ],
+  "status_vectors": [
+    {
+      "case_id": "all-valid-pass",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid"],
+      "budget_violated": false,
+      "expected_decision": "pass",
+      "expected_counts": { "valid": 22, "discarded": 0, "failed": 0, "inconclusive": 0 }
+    },
+    {
+      "case_id": "twenty-valid-two-discarded-pass",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "discarded", "discarded"],
+      "budget_violated": false,
+      "expected_decision": "pass",
+      "expected_counts": { "valid": 20, "discarded": 2, "failed": 0, "inconclusive": 0 }
+    },
+    {
+      "case_id": "three-discards-inconclusive",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "discarded", "discarded", "discarded"],
+      "budget_violated": false,
+      "expected_decision": "inconclusive",
+      "expected_counts": { "valid": 19, "discarded": 3, "failed": 0, "inconclusive": 0 }
+    },
+    {
+      "case_id": "explicit-inconclusive",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "inconclusive"],
+      "budget_violated": false,
+      "expected_decision": "inconclusive",
+      "expected_counts": { "valid": 21, "discarded": 0, "failed": 0, "inconclusive": 1 }
+    },
+    {
+      "case_id": "failed-precedes-insufficient-valid",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "discarded", "discarded", "failed"],
+      "budget_violated": false,
+      "expected_decision": "fail",
+      "expected_counts": { "valid": 19, "discarded": 2, "failed": 1, "inconclusive": 0 }
+    },
+    {
+      "case_id": "failed-precedes-explicit-inconclusive",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "inconclusive", "failed"],
+      "budget_violated": false,
+      "expected_decision": "fail",
+      "expected_counts": { "valid": 20, "discarded": 0, "failed": 1, "inconclusive": 1 }
+    },
+    {
+      "case_id": "budget-violation-precedes-valid-count",
+      "statuses": ["valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid", "valid"],
+      "budget_violated": true,
+      "expected_decision": "fail",
+      "expected_counts": { "valid": 22, "discarded": 0, "failed": 0, "inconclusive": 0 }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 deterministic paired schedule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "schedule_id", "protocol_id", "seed",
+    "algorithm", "block_count", "ab_blocks", "ba_blocks", "blocks"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/schedule.schema.json" },
+    "schema_id": { "const": "m0.paired-schedule.v1" },
+    "schema_version": { "const": 1 },
+    "schedule_id": { "const": "M0-SCHEDULE-22" },
+    "protocol_id": { "const": "M0-P1" },
+    "seed": { "const": 20260823 },
+    "algorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input_template", "ranking", "lower_rank_order", "upper_rank_order"],
+      "properties": {
+        "id": { "const": "sha256-ranked-balanced-v1" },
+        "input_template": { "const": "M0-P1|20260823|block:<1..22>" },
+        "ranking": { "const": "unsigned-byte-lexicographic" },
+        "lower_rank_order": { "const": "AB" },
+        "upper_rank_order": { "const": "BA" }
+      }
+    },
+    "block_count": { "const": 22 },
+    "ab_blocks": { "const": 11 },
+    "ba_blocks": { "const": 11 },
+    "blocks": {
+      "type": "array",
+      "minItems": 22,
+      "maxItems": 22,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["block", "input", "ordering_sha256", "rank", "order", "candidate_order"],
+        "properties": {
+          "block": { "type": "integer", "minimum": 1, "maximum": 22 },
+          "input": { "type": "string", "pattern": "^M0-P1\\|20260823\\|block:(?:[1-9]|1[0-9]|2[0-2])$" },
+          "ordering_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "rank": { "type": "integer", "minimum": 1, "maximum": 22 },
+          "order": { "enum": ["AB", "BA"] },
+          "candidate_order": {
+            "oneOf": [
+              { "const": ["A", "B"] },
+              { "const": ["B", "A"] }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
