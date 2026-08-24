@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 canonical collection harness manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "manifest_id",
+    "hash_algorithm",
+    "runtime_files",
+    "schema_files"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.harness-manifest.v1" },
+    "schema_version": { "const": 1 },
+    "manifest_id": { "const": "M0-HARNESS-1" },
+    "hash_algorithm": { "const": "sha256" },
+    "runtime_files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/file" }
+    },
+    "schema_files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/file" }
+    }
+  },
+  "definitions": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "size_bytes"],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)[A-Za-z0-9._/-]+$"
+        },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 33554432 }
+      }
+    }
+  }
+}

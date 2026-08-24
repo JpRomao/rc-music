@@ -1,0 +1,110 @@
+{
+  "schema_id": "m0.harness-manifest.v1",
+  "schema_version": 1,
+  "manifest_id": "M0-HARNESS-1",
+  "hash_algorithm": "sha256",
+  "runtime_files": [
+    {
+      "relative_path": "experiments/m0/harness/M0.Evidence.psm1",
+      "sha256": "775bd0d894fb2d71dc5717f78e45ce50c8761a4b15ff8c2af7fd890caac60755",
+      "size_bytes": 50792
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Fixture.psm1",
+      "sha256": "75e3c45b31d7c64c9150bf77dec850ff74a6b4c19f0cb524adf9a38c0b5ee7ec",
+      "size_bytes": 25857
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Harness.psd1",
+      "sha256": "93d6d91feccc53c6bd9614f006fa45fbfef943c8d002c0ad18d5d376121ad774",
+      "size_bytes": 905
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Harness.psm1",
+      "sha256": "b08eeae5465297b0f20b26071813f37d5329b99c3ca9de4a9df48b8ebdf13476",
+      "size_bytes": 41203
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Statistics.psm1",
+      "sha256": "a0e6d7bd3609eec1e75088a29abaecfe3e499a352fdcbd9ba4cb6f7edb89300c",
+      "size_bytes": 21369
+    },
+    {
+      "relative_path": "scripts/m0/Test-M0Evidence.ps1",
+      "sha256": "603ac9c83bd0606251076ff05bc319c740257566a27555d01dd2b52eae345d52",
+      "size_bytes": 2082
+    }
+  ],
+  "schema_files": [
+    {
+      "relative_path": "experiments/m0/protocol/schemas/batch.schema.json",
+      "sha256": "1c9c337034673c453a5bfa9b37ac0c2040d263f6899d9f404c42f94202bc8c3e",
+      "size_bytes": 2548
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/environment-bundle.schema.json",
+      "sha256": "fe0f48016d90ea8f2fe8d1f3920cd9b86d6d995331c97348eafce1a9fdfa7ab3",
+      "size_bytes": 1205
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/environment.schema.json",
+      "sha256": "0f42acfa52d27b3feefad16690f8776674352f1239ff5b8d478cef525f93412f",
+      "size_bytes": 3541
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/event.schema.json",
+      "sha256": "61a95d6c172fa7726cd671ff0d443997e3c2bd9ddcb9c91df3d784f2647416b0",
+      "size_bytes": 12058
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/fixture-manifest.schema.json",
+      "sha256": "14601275f353f1ea9e51cd36a209748858d3ddd15c90003b7bed85e841897a35",
+      "size_bytes": 1467
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/harness-manifest.schema.json",
+      "sha256": "e3f7d526a8368b0effaf46af2888023373441a6b58ef2e53fc1434bb7642370e",
+      "size_bytes": 1423
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/protocol.schema.json",
+      "sha256": "3dcd1aac72e5455afcc4368062f379867b9ece6152a343a53af676af8486b049",
+      "size_bytes": 6291
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/run.schema.json",
+      "sha256": "d0df7aa654cc4baa059b911d4489b82b3dfa5ebbd9c48d124e9fe7dcc4e0b774",
+      "size_bytes": 8621
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/scenario.schema.json",
+      "sha256": "064ef20b2e11378230730a9877b049d10049a9e7eaa8475f2fac0510412cd233",
+      "size_bytes": 1805
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/schedule.schema.json",
+      "sha256": "ad89bed9772b96173cba4629977f8f3396929214dc14d8f0a0f6b7fb8c523fc2",
+      "size_bytes": 2069
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/shell-fixture.schema.json",
+      "sha256": "1ccaa743c2520e59b782258a68155c8fb45963d7d95add56a4afeac997b0fdcc",
+      "size_bytes": 15289
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/shell-queue.schema.json",
+      "sha256": "c49240859c82e46441e83d7db04bd1a86ff696fdccbfe723f3b9e2a4b99ab194",
+      "size_bytes": 2350
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/statistics-golden.schema.json",
+      "sha256": "0b0f001ad9428868f3a8015656fff7b3deb70edd42071adb87589c4d4209e514",
+      "size_bytes": 6798
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/statistics.schema.json",
+      "sha256": "63845e2b663df7199c54a4fc6546fa4e3ec59e5d83689c4e82c77548ed408d99",
+      "size_bytes": 4156
+    }
+  ]
+}

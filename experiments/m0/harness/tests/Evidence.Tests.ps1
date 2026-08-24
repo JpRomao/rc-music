@@ -173,11 +173,11 @@ Test-Case 'JSONL evidence is chained, sealed and append-only' {
     Assert-Throws { Add-M0EvidenceEvent -LiteralPath $result.raw_path -Event $late -SchemaPath (Join-Path $evidenceSchemaRoot 'event.schema.json') } 'M0E004|sealed'
 }
 
-Test-Case 'Public runner fails closed for batch validation until a canonical harness manifest exists' {
+Test-Case 'Public runner fails closed for decisive batch validation until external candidate provenance exists' {
     $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
     Assert-Throws {
         & $runner -BatchPath 'not-used.json' -BatchRunPath @('not-used-A.json', 'not-used-B.json')
-    } 'M0E017|canonical harness manifest|fail.closed'
+    } 'M0E017|external candidate|provenance|fail.closed'
     Assert-Throws {
         & $runner -BatchRunPath @('orphan-A.json', 'orphan-B.json')
     } 'BatchRunPath.*unavailable'

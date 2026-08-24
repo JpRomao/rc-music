@@ -27,7 +27,8 @@ if ([string]::IsNullOrWhiteSpace($RawPath) -xor [string]::IsNullOrWhiteSpace($Ru
     throw [ArgumentException]::new('RawPath and RunPath must be provided together.')
 }
 if ($BatchPath) {
-    throw [IO.InvalidDataException]::new('M0E017 public batch validation is fail-closed until a canonical harness manifest can derive ExpectedCommonInputs from real repository files.')
+    $null = Get-M0TrustedCommonInputs -RepositoryRoot $repositoryRoot
+    throw [IO.InvalidDataException]::new('M0E017 public decisive batch validation remains fail-closed after trusted harness/common-input validation until external candidate artifact, toolchain and lockfile provenance exists.')
 }
 $outputRoot = Resolve-M0ScopedPath -BasePath $repositoryRoot -CandidatePath 'out\m0'
 $schemaRoot = Resolve-M0ScopedPath -BasePath $repositoryRoot -CandidatePath 'experiments\m0\protocol\schemas'

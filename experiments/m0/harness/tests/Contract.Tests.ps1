@@ -11,12 +11,15 @@ Test-Case 'The harness module manifest exposes only the approved contract API' {
     $expected = @(
         'Assert-M0EnvironmentContract',
         'Assert-M0FileHash',
+        'Assert-M0HarnessManifest',
         'Assert-M0JsonDocument',
         'Assert-M0Layout',
         'Assert-M0NoDynamicExecution',
         'Assert-M0ProtocolContract',
         'Get-M0CandidateRoot',
         'Get-M0Sha256',
+        'Get-M0TrustedCommonInputs',
+        'New-M0HarnessManifest',
         'Resolve-M0ScopedPath'
     )
     Assert-SequenceEqual -Actual @($manifest.ExportedFunctions.Keys | Sort-Object) -Expected $expected
@@ -79,9 +82,11 @@ Test-Case 'The protocol binds the common fixture and shell scenario bytes' {
     $protocolPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\protocol.v1.json'
     $protocol = Get-Content -LiteralPath $protocolPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
     $fixtureManifest = Join-Path $RepositoryRoot 'experiments\m0\shared\shell-fixture\manifest.v1.json'
+    $harnessManifest = Join-Path $RepositoryRoot 'experiments\m0\harness\manifest.v1.json'
     $shellScenario = Join-Path $RepositoryRoot 'experiments\m0\protocol\scenarios\shell.v1.json'
     $statisticsDescriptor = Join-Path $RepositoryRoot 'experiments\m0\protocol\statistics.v1.json'
     Assert-M0FileHash -LiteralPath $fixtureManifest -ExpectedHash $protocol.fixture_manifest_sha256
+    Assert-M0FileHash -LiteralPath $harnessManifest -ExpectedHash $protocol.harness_manifest_sha256
     Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $protocol.shell_scenario_sha256
     Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $protocol.statistics_descriptor_sha256
 }

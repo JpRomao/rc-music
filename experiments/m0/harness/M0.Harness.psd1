@@ -9,12 +9,15 @@
         'Resolve-M0ScopedPath',
         'Get-M0Sha256',
         'Assert-M0FileHash',
+        'Assert-M0HarnessManifest',
         'Assert-M0JsonDocument',
         'Assert-M0ProtocolContract',
         'Assert-M0EnvironmentContract',
         'Get-M0CandidateRoot',
         'Assert-M0NoDynamicExecution',
-        'Assert-M0Layout'
+        'Assert-M0Layout',
+        'Get-M0TrustedCommonInputs',
+        'New-M0HarnessManifest'
     )
     CmdletsToExport = @()
     VariablesToExport = @()
