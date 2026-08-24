@@ -50,6 +50,7 @@ Comece por:
 | [Gates](docs/quality/quality-gates.md) | Checks por risco, CI e release |
 | [Corpus](docs/quality/test-corpus.md) | Fixtures, manifesto e matriz de codecs |
 | [Plano executável](docs/development-plan.md) | Incrementos, checks, evidência, rastreabilidade e checkpoint atual |
+| [Registro M0](docs/m0/README.md) | Autorização D0.9, preferências aprovadas e índice experimental |
 | [Roadmap](docs/roadmap.md) | D0, spikes M0, MVP 0.1 e evoluções |
 | [Workflow](docs/development-workflow.md) | Unidade de trabalho, commits, bugs, deps e handoff |
 | [Threat model](docs/security/threat-model.md) | Fronteiras, ameaças, controles e supply chain |
@@ -81,11 +82,10 @@ O validador cobre links relativos, IDs/matriz de requisitos, checks, etapas, est
 
 ## Próximo passo
 
-1. revisar [estado e decisões](docs/project-status.md);
-2. ajustar requisitos derivados que não combinem com o uso pessoal desejado;
-3. autorizar o M0 comparativo, sem aceitar antecipadamente qualquer stack;
-4. seguir o [plano executável](docs/development-plan.md), começando pelo protocolo comum antes dos shells;
-5. medir e então aceitar/rejeitar os ADRs;
-6. somente depois iniciar o MVP guiado por TDD.
+1. seguir o [plano executável](docs/development-plan.md) a partir de M0.0;
+2. congelar ambiente e protocolo comum antes dos shells;
+3. construir e medir os dois candidatos sem aceitar stack antecipadamente;
+4. medir e então aceitar/rejeitar os ADRs;
+5. somente depois iniciar o MVP guiado por TDD.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

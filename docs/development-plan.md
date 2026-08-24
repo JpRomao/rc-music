@@ -3,7 +3,7 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-08-23
-**Marco atual:** D0 com autoria concluída; revisão do mantenedor e autorização do M0 pendentes
+**Marco atual:** D0 concluído; M0.0 em andamento
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -77,7 +77,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 
 ### 2.3 Checkpoint D0 atual
 
-A autoria documental está concluída e commitada. D0 só fecha quando o mantenedor revisar os requisitos derivados, as decisões abertas e autorizar apenas o escopo experimental do M0. Essa autorização não aceita Qt, Tauri ou qualquer backend.
+A autoria documental e a revisão do mantenedor estão concluídas. A [autorização D0.9](m0/README.md) aceita o baseline derivado e permite apenas o escopo experimental M0.0–M0.10; Qt, Tauri e os backends continuam candidatos.
 
 ## 3. Check obrigatório de todo incremento
 
@@ -209,11 +209,11 @@ NSIS é o baseline experimental para provar o modelo de Default Apps no Windows;
 | D0.6 | README, estado e índice | `[x]` | `CHK-DOC`, `CHK-CLOSE` | navegação documental válida |
 | D0.7 | Qt principal no M0; Tauri desafiante A/B | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | NFR-STACK-001–006 e contratos alinhados |
 | D0.8 | plano executável e matriz completa | `[x]` | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | todos os requisitos possuem destino explícito |
-| D0.9 | revisão dos derivados e decisões abertas pelo mantenedor | `[ ]` | ata/commit documental, `CHK-DOC`, `CHK-CLOSE` | autorização explícita apenas para M0 |
+| D0.9 | revisão dos derivados e decisões abertas pelo mantenedor | `[x]` | [registro M0](m0/README.md), `CHK-DOC`, `CHK-CLOSE` | autorização explícita apenas para M0 |
 
 ### Gate D0
 
-**Go:** D0.9 concluído; todos os documentos commitados; ADRs de stack continuam `Proposto`; decisões M0.0 possuem responsável/critério.
+**Go alcançado:** D0.9 concluído; documentos commitados; ADRs de stack continuam `Proposto`. M0.0 deve agora fechar responsáveis, ambientes e protocolo antes de qualquer coleta.
 
 **No-go:** criar scaffold de produto ou aceitar stack por preferência antes da evidência M0.
 

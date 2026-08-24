@@ -1,7 +1,7 @@
 # Estado e decisões do projeto
 
 **Atualizado em:** 2026-08-23  
-**Fase:** D0 — documentação inicial  
+**Fase:** M0.0 — decisões e protocolo experimental
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -26,6 +26,7 @@ Estas decisões vieram diretamente do mantenedor e são requisitos de produto/pr
 - mudanças devem ser sempre commitadas;
 - o M0 usará C++20 + Qt 6 Quick/QML como hipótese principal de desempenho e Rust + Tauri 2 + Svelte como desafiante A/B direto;
 - shell/UI e backend de áudio serão comparados separadamente antes da escolha da stack.
+- o baseline derivado, fila/sessão P0 e o experimento M0.0–M0.10 foram autorizados em 2026-08-23.
 
 Os dois últimos itens confirmam a direção do experimento, não a aceitação de uma stack.
 
@@ -72,16 +73,14 @@ Revisar [requisitos](product/requirements.md) e [UX](product/ux-specification.md
 
 ## 4. Decisões em aberto
 
-1. autorizar o M0 A/B com Qt como hipótese principal e Tauri como desafiante, sem aceitar antecipadamente qualquer stack;
-2. escolher shell/UI e backend de áudio somente após as comparações separadas e a decisão explícita por ADR;
-3. nome e identidade visual do aplicativo;
-4. licença do repositório e modelo de distribuição;
-5. distribuição Linux de referência;
-6. manter Windows 10 como Tier 1 pelo tempo proposto;
-7. exigir versão portátil no 0.1 ou depois;
-8. confirmar fila e restauração como P0;
-9. aprovar/recalibrar budgets após medições;
-10. decidir no futuro se YouTube será pesquisado, oferecido via player oficial ou rejeitado.
+1. escolher shell/UI e backend de áudio somente após as comparações separadas e a decisão explícita por ADR;
+2. nome e identidade visual do aplicativo;
+3. licença para eventual distribuição pública;
+4. distribuição Linux de referência;
+5. manter Windows 10 como Tier 1 pelo tempo proposto;
+6. exigir versão portátil no 0.1 ou depois;
+7. aprovar/recalibrar budgets após medições;
+8. decidir no futuro se YouTube será pesquisado, oferecido via player oficial ou rejeitado.
 
 Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de decisão ou evidência M0 antes do bootstrap definitivo.
 
@@ -116,10 +115,10 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 ## 7. Próximo passo recomendado
 
-O próximo passo seguro é o mantenedor revisar este arquivo e os três ADRs. Com autorização para M0:
+O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. aceitar apenas o escopo do experimento, não a stack definitiva;
-2. fechar M0.0 e criar a fixture/protocolo comum M0.1 antes de qualquer coleta;
+1. fechar ambiente, plataformas, toolchains e protocolo M0.0;
+2. criar a fixture/protocolo executável comum M0.1 antes de qualquer coleta;
 3. criar shells Qt e Tauri equivalentes, ambos com backend falso;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
 5. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
