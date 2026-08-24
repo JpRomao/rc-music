@@ -1,0 +1,8 @@
+/.tools/
+/out/m0/
+/experiments/m0/candidates/*/shell/node_modules/
+/experiments/m0/candidates/*/shell/target/
+/experiments/m0/candidates/*/shell/build/
+/experiments/m0/candidates/*/audio/target/
+/experiments/m0/candidates/*/audio/build/
+/experiments/m0/candidates/*/package/output/

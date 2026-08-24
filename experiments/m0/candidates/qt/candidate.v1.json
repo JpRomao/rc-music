@@ -1,0 +1,9 @@
+{
+  "$schema": "../../protocol/schemas/candidate.schema.json",
+  "schema_version": 1,
+  "candidate_id": "qt",
+  "display_name": "C++20 + Qt Quick/QML",
+  "root_relative_path": "experiments/m0/candidates/qt",
+  "status": "descriptor-only",
+  "network_allowed": false
+}

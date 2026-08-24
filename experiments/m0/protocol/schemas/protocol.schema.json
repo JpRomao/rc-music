@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 executable protocol",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "protocol_id",
+    "environment_id",
+    "environment_bundle_sha256",
+    "contract_sha256",
+    "candidate_codes",
+    "seed",
+    "attempt_policy",
+    "statuses",
+    "discard_reasons",
+    "launch_classes",
+    "preflight",
+    "sampling",
+    "visual_detection",
+    "statistics",
+    "budgets",
+    "timeouts_ms",
+    "network"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "protocol_id": { "const": "M0-P1" },
+    "environment_id": { "const": "M0-E1" },
+    "environment_bundle_sha256": { "$ref": "#/definitions/sha256" },
+    "contract_sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment_md", "protocol_md", "layout_md"],
+      "properties": {
+        "environment_md": { "$ref": "#/definitions/sha256" },
+        "protocol_md": { "$ref": "#/definitions/sha256" },
+        "layout_md": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "candidate_codes": {
+      "type": "array",
+      "const": ["A", "B"]
+    },
+    "seed": { "const": 20260823 },
+    "attempt_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_per_candidate_scenario",
+        "minimum_valid",
+        "maximum_discarded",
+        "block_count",
+        "ab_blocks",
+        "ba_blocks",
+        "ordering_hash_template"
+      ],
+      "properties": {
+        "planned_per_candidate_scenario": { "const": 22 },
+        "minimum_valid": { "const": 20 },
+        "maximum_discarded": { "const": 2 },
+        "block_count": { "const": 22 },
+        "ab_blocks": { "const": 11 },
+        "ba_blocks": { "const": 11 },
+        "ordering_hash_template": { "const": "M0-P1|20260823|block:<1..22>" }
+      }
+    },
+    "statuses": {
+      "type": "array",
+      "const": ["valid", "discarded", "failed", "inconclusive"]
+    },
+    "discard_reasons": {
+      "type": "array",
+      "const": [
+        "harness_failure",
+        "external_os_event",
+        "operator_protocol_breach",
+        "audio_endpoint_changed"
+      ]
+    },
+    "launch_classes": {
+      "type": "array",
+      "const": ["profile-first", "process-cold", "warm"]
+    },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quiet_window_seconds", "external_cpu_percent_max", "disk_active_percent_max"],
+      "properties": {
+        "quiet_window_seconds": { "const": 30 },
+        "external_cpu_percent_max": { "const": 3.0 },
+        "disk_active_percent_max": { "const": 5.0 }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_snapshot_ms", "memory_5s_ms", "memory_60s_window_ms", "paused_cpu_seconds"],
+      "properties": {
+        "process_snapshot_ms": { "const": 250 },
+        "memory_5s_ms": { "const": 5000 },
+        "memory_60s_window_ms": { "const": [55000, 60000] },
+        "paused_cpu_seconds": { "const": 60 }
+      }
+    },
+    "visual_detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "refresh_hz", "roi_expand_px", "baseline_frames", "changed_pixels_ratio", "mean_absolute_rgb_delta", "persistent_frames"],
+      "properties": {
+        "method": { "const": "dxgi-desktop-duplication" },
+        "refresh_hz": { "const": 165 },
+        "roi_expand_px": { "const": 4 },
+        "baseline_frames": { "const": 3 },
+        "changed_pixels_ratio": { "const": 0.02 },
+        "mean_absolute_rgb_delta": { "const": 0.0196078431372549 },
+        "persistent_frames": { "const": 2 }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantile_type", "bootstrap_resamples", "bootstrap_seed", "confidence_level"],
+      "properties": {
+        "quantile_type": { "const": 7 },
+        "bootstrap_resamples": { "const": 10000 },
+        "bootstrap_seed": { "const": 20260823 },
+        "confidence_level": { "const": 0.95 }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cold_start_p95_ms", "idle_private_ws_p95_bytes", "playing_private_ws_p95_bytes", "paused_cpu_p95_percent", "queue_stall_max_ms", "visual_response_p95_ms", "open_audio_p95_ms", "seek_audio_p95_ms"],
+      "properties": {
+        "cold_start_p95_ms": { "const": 800 },
+        "idle_private_ws_p95_bytes": { "const": 83886080 },
+        "playing_private_ws_p95_bytes": { "const": 125829120 },
+        "paused_cpu_p95_percent": { "const": 0.5 },
+        "queue_stall_max_ms": { "const": 100 },
+        "visual_response_p95_ms": { "const": 100 },
+        "open_audio_p95_ms": { "const": 750 },
+        "seek_audio_p95_ms": { "const": 250 }
+      }
+    },
+    "timeouts_ms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_actionable", "visual_action", "queue_load", "audio_load", "seek", "shutdown"],
+      "properties": {
+        "window_actionable": { "const": 10000 },
+        "visual_action": { "const": 2000 },
+        "queue_load": { "const": 30000 },
+        "audio_load": { "const": 10000 },
+        "seek": { "const": 5000 },
+        "shutdown": { "const": 10000 }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remote_sources", "timed_benchmark_egress", "privacy_smoke_separate"],
+      "properties": {
+        "remote_sources": { "const": false },
+        "timed_benchmark_egress": { "const": false },
+        "privacy_smoke_separate": { "const": true }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    }
+  }
+}

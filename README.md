@@ -71,14 +71,16 @@ Comece por:
 
 Por enquanto não há manifests/toolchains de implementação nem comandos de build. O validador documental já existe; comandos planejados de produto estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o M0 e o bootstrap criarem e validarem os runners correspondentes.
 
-Validações documentais atuais:
+Validações atuais:
 
 ```powershell
 & .\scripts\validate-docs.ps1
+& .\scripts\m0\Invoke-M0HarnessTests.ps1
+& .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
 
-O validador cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. O status confirma que a mudança terminou no commit esperado.
+O validador documental cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. Os runners M0 validam somente os contratos materializados até aqui; não fazem alegação de desempenho nem substituem os checks futuros dos candidatos. O status confirma que a mudança terminou no commit esperado.
 
 ## Próximo passo
 

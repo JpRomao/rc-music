@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/environment-bundle.schema.json",
+  "schema_version": 1,
+  "environment_id": "M0-E1",
+  "recorded_on": "2026-08-23",
+  "contract_sha256": "5DFCE71CC046481A352062F34B8CBF581F20060D7F5BFEFD1DA9F996149CB362",
+  "components": [
+    {
+      "component_id": "M0-E1-WIN",
+      "relative_path": "windows-benchmark.v1.json",
+      "sha256": "73C393F3D5A6CEB976A91532FD66BF8FD72523542D2FB5503FB7A49604090768"
+    },
+    {
+      "component_id": "M0-E1-LINUX",
+      "relative_path": "linux-reference.v1.json",
+      "sha256": "AAE4F57D5CFB2573E3AD266A8DAF2549A3EDE4539868D4435B5C851CE644D58C"
+    }
+  ]
+}

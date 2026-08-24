@@ -1,0 +1,39 @@
+{
+  "$schema": "../schemas/environment.schema.json",
+  "schema_version": 1,
+  "environment_id": "M0-E1",
+  "component_id": "M0-E1-LINUX",
+  "recorded_on": "2026-08-23",
+  "contract_sha256": "5DFCE71CC046481A352062F34B8CBF581F20060D7F5BFEFD1DA9F996149CB362",
+  "acceptance_ready": false,
+  "benchmark_host": null,
+  "platform_matrix": [
+    {
+      "id": "ubuntu-24.04-lts-amd64-gnome-wayland",
+      "tier": "tier-2",
+      "required": true,
+      "sessions": ["build", "package", "a11y", "mpris", "mime", "lifecycle"]
+    },
+    {
+      "id": "ubuntu-24.04-lts-amd64-gnome-xorg",
+      "tier": "tier-2",
+      "required": true,
+      "sessions": ["smoke", "tray-fallback"]
+    }
+  ],
+  "toolchains": [
+    { "name": "ubuntu", "target_version": "24.04 LTS updated snapshot", "installed_version": null, "ready": false },
+    { "name": "gnome", "target_version": "Ubuntu 24.04 supported version", "installed_version": null, "ready": false },
+    { "name": "qt", "target_version": "6.11.2", "installed_version": null, "ready": false },
+    { "name": "webkitgtk", "target_version": "Ubuntu patched 4.1 package", "installed_version": null, "ready": false },
+    { "name": "orca", "target_version": "Ubuntu 24.04 supported version", "installed_version": null, "ready": false }
+  ],
+  "provisioning_missing": [
+    "ubuntu-24.04-gnome-wayland-xorg-host",
+    "qt-linux-runtime",
+    "ffmpeg-7.1.3-runtime",
+    "webkitgtk-4.1-security-review",
+    "orca-at-spi",
+    "pipewire-audio-baseline"
+  ]
+}

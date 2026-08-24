@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 shell scenario descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "scenario_set_id",
+    "protocol_id",
+    "fixture_id",
+    "window",
+    "states",
+    "snapshot_hz",
+    "queue_count",
+    "primary_control",
+    "network_allowed",
+    "real_audio_allowed",
+    "scenarios"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "scenario_set_id": { "const": "M0-SHELL-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "fixture_id": { "const": "M0-SHELL-F1" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "const": 960 },
+        "height": { "const": 640 }
+      }
+    },
+    "states": { "const": ["empty", "playing", "error"] },
+    "snapshot_hz": { "const": 5 },
+    "queue_count": { "const": 1000 },
+    "primary_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "accessible_name"],
+      "properties": {
+        "role": { "const": "button" },
+        "accessible_name": { "const": "Abrir áudio" }
+      }
+    },
+    "network_allowed": { "const": false },
+    "real_audio_allowed": { "const": false },
+    "scenarios": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "profile-first",
+          "process-cold",
+          "warm",
+          "idle-memory",
+          "paused-cpu",
+          "active-progress",
+          "visual-response-diagnostic",
+          "queue-stall",
+          "a11y-manual",
+          "tray-basic",
+          "linux-smoke"
+        ]
+      }
+    }
+  }
+}

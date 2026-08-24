@@ -1,0 +1,9 @@
+{
+  "$schema": "../../protocol/schemas/candidate.schema.json",
+  "schema_version": 1,
+  "candidate_id": "tauri",
+  "display_name": "Rust + Tauri + Svelte",
+  "root_relative_path": "experiments/m0/candidates/tauri",
+  "status": "descriptor-only",
+  "network_allowed": false
+}

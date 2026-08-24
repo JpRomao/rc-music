@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 candidate descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "candidate_id",
+    "display_name",
+    "root_relative_path",
+    "status",
+    "network_allowed"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": 1 },
+    "candidate_id": { "enum": ["qt", "tauri"] },
+    "display_name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "root_relative_path": {
+      "type": "string",
+      "pattern": "^experiments/m0/candidates/(qt|tauri)$"
+    },
+    "status": { "enum": ["descriptor-only", "shell", "audio", "package", "retired"] },
+    "network_allowed": { "const": false }
+  }
+}

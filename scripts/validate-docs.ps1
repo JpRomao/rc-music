@@ -40,9 +40,14 @@ try {
         }
     }
 
+    $markdownRelativePaths = @(& git ls-files --cached --others --exclude-standard -- '*.md')
+    if ($LASTEXITCODE -ne 0) {
+        Add-ValidationError 'Não foi possível enumerar os Markdown versionados e não ignorados com git ls-files.'
+    }
     $markdownFiles = @(
-        Get-ChildItem -LiteralPath $repositoryRoot -Recurse -File -Filter '*.md' |
-            Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }
+        $markdownRelativePaths |
+            Sort-Object -Unique |
+            ForEach-Object { Get-Item -LiteralPath (Join-Path $repositoryRoot $_) }
     )
 
     $linkPattern = [regex]'\[[^\]]*\]\((?<target>[^)]+)\)'

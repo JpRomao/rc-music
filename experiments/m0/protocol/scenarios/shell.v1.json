@@ -1,0 +1,33 @@
+{
+  "$schema": "../schemas/scenario.schema.json",
+  "schema_version": 1,
+  "scenario_set_id": "M0-SHELL-1",
+  "protocol_id": "M0-P1",
+  "fixture_id": "M0-SHELL-F1",
+  "window": {
+    "width": 960,
+    "height": 640
+  },
+  "states": ["empty", "playing", "error"],
+  "snapshot_hz": 5,
+  "queue_count": 1000,
+  "primary_control": {
+    "role": "button",
+    "accessible_name": "Abrir áudio"
+  },
+  "network_allowed": false,
+  "real_audio_allowed": false,
+  "scenarios": [
+    "profile-first",
+    "process-cold",
+    "warm",
+    "idle-memory",
+    "paused-cpu",
+    "active-progress",
+    "visual-response-diagnostic",
+    "queue-stall",
+    "a11y-manual",
+    "tray-basic",
+    "linux-smoke"
+  ]
+}

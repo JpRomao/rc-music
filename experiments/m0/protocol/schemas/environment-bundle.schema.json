@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 environment root manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "environment_id",
+    "recorded_on",
+    "contract_sha256",
+    "components"
+  ],
+  "properties": {
+    "$schema": { "const": "../schemas/environment-bundle.schema.json" },
+    "schema_version": { "const": 1 },
+    "environment_id": { "const": "M0-E1" },
+    "recorded_on": { "type": "string", "format": "date" },
+    "contract_sha256": { "$ref": "#/definitions/sha256" },
+    "components": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["component_id", "relative_path", "sha256"],
+        "properties": {
+          "component_id": { "enum": ["M0-E1-WIN", "M0-E1-LINUX"] },
+          "relative_path": { "enum": ["windows-benchmark.v1.json", "linux-reference.v1.json"] },
+          "sha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[A-F0-9]{64}$" }
+  }
+}
