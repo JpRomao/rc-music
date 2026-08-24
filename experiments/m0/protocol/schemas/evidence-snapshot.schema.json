@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 committed evidence snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id", "schema_version", "transaction_id", "run_id", "state", "evidence_role", "decision_eligible",
+    "raw_relative_path", "run_relative_path", "intent_relative_path", "raw", "seal", "run"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.evidence-snapshot.v1" },
+    "schema_version": { "const": 1 },
+    "transaction_id": { "$ref": "#/definitions/sha256" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "state": { "const": "committed" },
+    "evidence_role": { "enum": ["candidate_run", "synthetic_pilot"] },
+    "decision_eligible": { "type": "boolean" },
+    "raw_relative_path": { "$ref": "#/definitions/leaf" },
+    "run_relative_path": { "$ref": "#/definitions/leaf" },
+    "intent_relative_path": { "$ref": "#/definitions/leaf" },
+    "raw": { "$ref": "#/definitions/raw_state" },
+    "seal": { "$ref": "#/definitions/digest" },
+    "run": { "$ref": "#/definitions/digest" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "evidence_role": { "const": "candidate_run" },
+        "decision_eligible": { "const": true }
+      }
+    },
+    {
+      "properties": {
+        "evidence_role": { "const": "synthetic_pilot" },
+        "decision_eligible": { "const": false }
+      }
+    }
+  ],
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "leaf": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!\\.)(?!.*\\.\\.)(?!.*[:/\\\\])[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size_bytes", "sha256"],
+      "properties": {
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 33554432 },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "raw_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size_bytes", "sha256", "event_count", "final_line_sha256"],
+      "properties": {
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "event_count": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "final_line_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

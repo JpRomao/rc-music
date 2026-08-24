@@ -39,6 +39,32 @@ function Get-M0CommittedHarnessHash {
     return [string]$protocol.harness_manifest_sha256
 }
 
+function Invoke-M0HarnessChildProcess {
+    param([Parameter(Mandatory)] [string] $ScriptPath)
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = (Get-Process -Id $PID).Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ScriptPath)) {
+        $null = $startInfo.ArgumentList.Add($argument)
+    }
+    $child = [Diagnostics.Process]::Start($startInfo)
+    try {
+        $output = $child.StandardOutput.ReadToEnd() + $child.StandardError.ReadToEnd()
+        $child.WaitForExit()
+        return [pscustomobject]@{
+            exit_code = $child.ExitCode
+            output = $output
+        }
+    }
+    finally {
+        $child.Dispose()
+    }
+}
+
 Test-Case 'The canonical harness trust contract exists before collection can use it' {
     foreach ($path in @(
         $harnessManifestSchemaPath,
@@ -54,7 +80,7 @@ Test-Case 'The committed harness manifest is canonical, anchored and complete' {
     $expectedHash = Get-M0CommittedHarnessHash
     $result = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $expectedHash
     Assert-Equal -Actual $result.runtime_file_count -Expected 8
-    Assert-Equal -Actual $result.schema_file_count -Expected 15
+    Assert-Equal -Actual $result.schema_file_count -Expected 18
     Assert-Equal -Actual $result.manifest_sha256 -Expected $expectedHash.ToLowerInvariant()
 }
 
@@ -222,4 +248,68 @@ Test-Case 'Canonical bytes and reparse-point paths fail closed' {
     $linkType = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
     New-Item -ItemType $linkType -Path (Join-Path $reparseRoot 'scripts\m0') -Target $outsideScripts | Out-Null
     Assert-Throws { Assert-M0HarnessManifest -RepositoryRoot $reparseRoot -ExpectedManifestSha256 (Get-M0CommittedHarnessHash) } 'M0H0|reparse|link'
+}
+
+Test-Case 'The public Evidence entrypoint rejects homonymous modules loaded outside the repository' {
+    $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
+    foreach ($moduleName in @('M0.Harness', 'M0.Evidence')) {
+        $fakeRoot = Join-Path $TestTempRoot "preloaded-$moduleName"
+        New-Item -ItemType Directory -Path $fakeRoot | Out-Null
+        $fakePath = Join-Path $fakeRoot "$moduleName.psm1"
+        $fakeSource = if ($moduleName -ceq 'M0.Harness') {
+            "function Get-M0TrustedCommonInputs { throw 'FAKE-HARNESS-CALLED' }`nExport-ModuleMember -Function Get-M0TrustedCommonInputs`n"
+        }
+        else {
+            "function Assert-M0EvidenceRun { throw 'FAKE-EVIDENCE-CALLED' }`nExport-ModuleMember -Function Assert-M0EvidenceRun`n"
+        }
+        [IO.File]::WriteAllText($fakePath, $fakeSource, [Text.UTF8Encoding]::new($false))
+        $childPath = Join-Path $TestTempRoot "preloaded-$moduleName.ps1"
+        $childSource = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module -Name '$($fakePath.Replace("'", "''"))' -ErrorAction Stop
+& '$($runner.Replace("'", "''"))' -BatchPath 'not-used.json' -SnapshotSetPath 'not-used.snapshot-set.json'
+"@
+        [IO.File]::WriteAllText($childPath, $childSource, [Text.UTF8Encoding]::new($false))
+        $result = Invoke-M0HarnessChildProcess -ScriptPath $childPath
+        Assert-True ($result.exit_code -ne 0) "The child with preloaded '$moduleName' unexpectedly succeeded."
+        Assert-True ($result.output -match 'M0E027') "The preloaded '$moduleName' was not rejected. Child output: $($result.output)"
+        Assert-True ($result.output -notmatch 'FAKE-(HARNESS|EVIDENCE)-CALLED') "The preloaded '$moduleName' executed before rejection. Child output: $($result.output)"
+    }
+}
+
+Test-Case 'The public Evidence entrypoint rejects an exact-path module whose in-memory commands are stale' {
+    $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
+    $harnessModulePath = Join-Path $RepositoryRoot 'experiments\m0\harness\M0.Harness.psd1'
+    $childPath = Join-Path $TestTempRoot 'stale-exact-path-entrypoint.ps1'
+    $childSource = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module -Name '$($harnessModulePath.Replace("'", "''"))' -ErrorAction Stop
+`$loadedHarness = Get-Module -Name 'M0.Harness' -ErrorAction Stop
+& `$loadedHarness {
+    Set-Item -LiteralPath Function:Get-M0TrustedCommonInputs -Value {
+        throw 'STALE-EXACT-PATH-MODULE-EXECUTED'
+    }
+}
+& '$($runner.Replace("'", "''"))' -BatchPath 'not-used.json' -SnapshotSetPath 'not-used.snapshot-set.json'
+"@
+    [IO.File]::WriteAllText($childPath, $childSource, [Text.UTF8Encoding]::new($false))
+
+    $result = Invoke-M0HarnessChildProcess -ScriptPath $childPath
+    Assert-True ($result.exit_code -ne 0) 'The stale exact-path child unexpectedly succeeded.'
+    Assert-True ($result.output -match 'M0E027') "The stale exact-path module was not rejected at the entrypoint boundary. Child output: $($result.output)"
+    Assert-True ($result.output -notmatch 'STALE-EXACT-PATH-MODULE-EXECUTED') "The stale exact-path module executed before rejection. Child output: $($result.output)"
+}
+
+Test-Case 'The public Evidence entrypoint imports only anchored modules in a clean child process' {
+    $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
+    $childPath = Join-Path $TestTempRoot 'clean-entrypoint.ps1'
+    $childSource = @"
+`$ErrorActionPreference = 'Stop'
+& '$($runner.Replace("'", "''"))' -BatchPath 'not-used.json' -SnapshotSetPath 'not-used.snapshot-set.json'
+"@
+    [IO.File]::WriteAllText($childPath, $childSource, [Text.UTF8Encoding]::new($false))
+    $result = Invoke-M0HarnessChildProcess -ScriptPath $childPath
+    Assert-True ($result.exit_code -ne 0) 'The decisive batch entrypoint unexpectedly opened before candidate provenance exists.'
+    Assert-True ($result.output -match 'M0E017') "The clean child did not reach the anchored candidate-provenance gate. Child output: $($result.output)"
+    Assert-True ($result.output -notmatch 'M0E027') "The clean child was mistaken for a preloaded-module conflict. Child output: $($result.output)"
 }

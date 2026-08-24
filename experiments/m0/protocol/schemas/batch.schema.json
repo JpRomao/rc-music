@@ -3,7 +3,7 @@
   "title": "M0 paired candidate evidence batch",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_id", "schema_version", "batch_id", "experiment_id", "scenario_id", "common_inputs", "candidate_results", "decision"],
+  "required": ["schema_id", "schema_version", "batch_id", "experiment_id", "scenario_id", "common_inputs", "snapshot_set_sha256", "candidate_results", "decision"],
   "properties": {
     "schema_id": { "const": "m0.batch.v1" },
     "schema_version": { "const": 1 },
@@ -11,6 +11,7 @@
     "experiment_id": { "$ref": "#/definitions/id" },
     "scenario_id": { "$ref": "#/definitions/id" },
     "common_inputs": { "$ref": "#/definitions/common_inputs" },
+    "snapshot_set_sha256": { "$ref": "#/definitions/sha256" },
     "candidate_results": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/definitions/candidate_result" } },
     "decision": { "enum": ["pass", "fail", "inconclusive"] }
   },

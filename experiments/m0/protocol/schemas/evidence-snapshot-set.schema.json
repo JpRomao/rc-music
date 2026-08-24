@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 closed decisive evidence snapshot set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "snapshot_set_id",
+    "hash_algorithm",
+    "experiment_id",
+    "scenario_id",
+    "common_inputs",
+    "schedule_sha256",
+    "entry_count",
+    "entries"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.evidence-snapshot-set.v1" },
+    "schema_version": { "const": 1 },
+    "snapshot_set_id": { "$ref": "#/definitions/id" },
+    "hash_algorithm": { "const": "sha256" },
+    "experiment_id": { "$ref": "#/definitions/id" },
+    "scenario_id": { "$ref": "#/definitions/id" },
+    "common_inputs": { "$ref": "#/definitions/common_inputs" },
+    "schedule_sha256": { "$ref": "#/definitions/sha256" },
+    "entry_count": { "const": 44 },
+    "entries": {
+      "type": "array",
+      "minItems": 44,
+      "maxItems": 44,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/entry" }
+    }
+  },
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[AB]-[a-z0-9][a-z0-9._-]{0,121}$"
+    },
+    "snapshot_leaf": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 142,
+      "pattern": "^run-[AB]-[a-z0-9][a-z0-9._-]{0,121}\\.snapshot\\.json$"
+    },
+    "common_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_sha256",
+        "environment_sha256",
+        "fixture_sha256",
+        "harness_sha256",
+        "scenario_sha256"
+      ],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" },
+        "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" },
+        "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "run_id",
+        "snapshot_relative_path",
+        "snapshot_sha256"
+      ],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 44 },
+        "run_id": { "$ref": "#/definitions/run_id" },
+        "snapshot_relative_path": { "$ref": "#/definitions/snapshot_leaf" },
+        "snapshot_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

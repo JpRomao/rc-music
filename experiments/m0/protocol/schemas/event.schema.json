@@ -19,7 +19,7 @@
     "scenario_sha256": { "$ref": "#/definitions/sha256" },
     "experiment_id": { "$ref": "#/definitions/id" },
     "run_id": { "$ref": "#/definitions/id" },
-    "candidate_code": { "enum": ["A", "B"] },
+    "candidate_code": { "enum": ["A", "B", "P"] },
     "scenario_id": { "$ref": "#/definitions/id" },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 22 },
     "event_seq": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
@@ -48,7 +48,20 @@
     { "if": { "properties": { "event": { "const": "noise_observation" } } }, "then": { "properties": { "payload": { "$ref": "#/definitions/noise_payload" } } } },
     { "if": { "properties": { "event": { "const": "artifact_recorded" } } }, "then": { "properties": { "payload": { "$ref": "#/definitions/artifact_payload" } } } },
     { "if": { "properties": { "event": { "const": "check_recorded" } } }, "then": { "properties": { "payload": { "$ref": "#/definitions/check_payload" } } } },
-    { "if": { "properties": { "event": { "const": "run_sealed" } } }, "then": { "properties": { "payload": { "$ref": "#/definitions/seal_payload" } } } }
+    { "if": { "properties": { "event": { "const": "run_sealed" } } }, "then": { "properties": { "payload": { "$ref": "#/definitions/seal_payload" } } } },
+    {
+      "if": {
+        "required": ["candidate_code"],
+        "properties": { "candidate_code": { "const": "P" } }
+      },
+      "then": {
+        "properties": {
+          "scenario_id": { "const": "synthetic-process-tree" },
+          "attempt": { "const": 1 },
+          "event": { "enum": ["run_started", "artifact_recorded", "check_recorded", "run_sealed"] }
+        }
+      }
+    }
   ],
   "definitions": {
     "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },

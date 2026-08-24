@@ -36,8 +36,11 @@ experiments/m0/
 │       ├── audio/
 │       └── package/
 └── harness/
+    ├── M0.Evidence.psm1
     ├── M0.Markers.psm1
     └── tests/
+        ├── EvidenceWriter.Tests.ps1
+        └── EvidenceSnapshotSet.Tests.ps1
 scripts/m0/
 out/m0/
 ├── builds/
@@ -92,7 +95,7 @@ Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence soment
 | `Test-M0Layout.ps1` | paths, arquivos esperados e isolamento |
 | `Test-M0Fixture.ps1` | schema, determinismo, 1.000 itens, licenças e hashes |
 | `Test-M0Markers.ps1` | catálogo confiável, cobertura dos cenários e policies temporais |
-| `Test-M0Evidence.ps1` | cadeia JSONL, schemas fechados, projeções raw/run, agenda e batch fail-closed |
+| `Test-M0Evidence.ps1` | cadeia JSONL, writer recuperável, snapshot commitado, projeções raw/run, agenda e batch fail-closed |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
 | `Invoke-M0Pilot.ps1` | processo sintético e evidência sem candidato real |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |

@@ -6,8 +6,8 @@
   "runtime_files": [
     {
       "relative_path": "experiments/m0/harness/M0.Evidence.psm1",
-      "sha256": "1e884370d1b05af7c77a94f6cc633368d2d8e0479e837daae055d8779fff0412",
-      "size_bytes": 52651
+      "sha256": "518cd3c37fff0c702d3e0275fbe46ad76fa69338ef2bb4a7fe31a418403c18c0",
+      "size_bytes": 140668
     },
     {
       "relative_path": "experiments/m0/harness/M0.Fixture.psm1",
@@ -21,8 +21,8 @@
     },
     {
       "relative_path": "experiments/m0/harness/M0.Harness.psm1",
-      "sha256": "71e7915c4cd80793ec7f59f75183ad33d3fd04b54bb130b6404ac3e5a460c329",
-      "size_bytes": 42341
+      "sha256": "45625bc1a9cfae502ef6271d80ed8d9c0df74a2a41a7ca781ba9fecfd4da43eb",
+      "size_bytes": 43053
     },
     {
       "relative_path": "experiments/m0/harness/M0.Markers.psm1",
@@ -36,8 +36,8 @@
     },
     {
       "relative_path": "scripts/m0/Test-M0Evidence.ps1",
-      "sha256": "603ac9c83bd0606251076ff05bc319c740257566a27555d01dd2b52eae345d52",
-      "size_bytes": 2082
+      "sha256": "b3969fcbce026152dcb0af518b00a3b025f635b67f74724dcfc3b7bd1ce03950",
+      "size_bytes": 4476
     },
     {
       "relative_path": "scripts/m0/Test-M0Markers.ps1",
@@ -48,8 +48,8 @@
   "schema_files": [
     {
       "relative_path": "experiments/m0/protocol/schemas/batch.schema.json",
-      "sha256": "1c9c337034673c453a5bfa9b37ac0c2040d263f6899d9f404c42f94202bc8c3e",
-      "size_bytes": 2548
+      "sha256": "47133cea16f40823f46dc22edcea3ffec97566474a691c780b178bbe11b3bf80",
+      "size_bytes": 2634
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/environment-bundle.schema.json",
@@ -63,8 +63,23 @@
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/event.schema.json",
-      "sha256": "1c1c4f992958a800c42172c37edc4679745bf88751d19c545833f1e2e081d276",
-      "size_bytes": 14651
+      "sha256": "aaae60092d42ffb3296b3555f9dbe29ae4950336e2d0f9eef3c1217974d233a8",
+      "size_bytes": 15052
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/evidence-intent.schema.json",
+      "sha256": "5995772b98aa1b24a717f6ad7eb2042dc99f21c471312b024731e0790d75e783",
+      "size_bytes": 2956
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/evidence-snapshot-set.schema.json",
+      "sha256": "fda1417f3e639cc330ac513cf9301bcf3f52a32ac664fdfac0fa0ad325c98f10",
+      "size_bytes": 2624
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/evidence-snapshot.schema.json",
+      "sha256": "4802633dfba9e10e7307dc75d1ff2fac8af1288f85eb47bbc8135861f4e63f3e",
+      "size_bytes": 2505
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/fixture-manifest.schema.json",
@@ -88,8 +103,8 @@
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/run.schema.json",
-      "sha256": "d222deeca0cba74f9db0323afeb1e8bba4f1238095468503cf5a22be132d3d23",
-      "size_bytes": 11996
+      "sha256": "6adb8a9ef3e9ccd7d848c5064c6601733f9ee8cdd62ab1f07ab820837a614b45",
+      "size_bytes": 13366
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/scenario.schema.json",
