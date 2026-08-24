@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 synthetic visual detector contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "visual_id", "protocol_id", "scenario_id",
+    "golden_relative_path", "golden_sha256", "frame_contract", "roi_contract",
+    "baseline_contract", "change_contract", "uia_contract", "diagnostic_contract"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/visual.schema.json" },
+    "schema_version": { "const": 1 },
+    "visual_id": { "const": "M0-VISUAL-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "scenario_id": { "const": "visual-response-diagnostic" },
+    "golden_relative_path": { "const": "goldens/visual.v1.json" },
+    "golden_sha256": { "$ref": "#/definitions/sha256" },
+    "frame_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pixel_format", "row_order", "pixel_order", "bytes_per_pixel",
+        "blue_offset", "green_offset", "red_offset", "alpha_offset",
+        "minimum_stride_formula", "buffer_length_formula", "alpha_policy",
+        "row_padding_policy"
+      ],
+      "properties": {
+        "pixel_format": { "const": "BGRA8_UNORM" },
+        "row_order": { "const": "top-down" },
+        "pixel_order": { "const": "left-to-right" },
+        "bytes_per_pixel": { "const": 4 },
+        "blue_offset": { "const": 0 },
+        "green_offset": { "const": 1 },
+        "red_offset": { "const": 2 },
+        "alpha_offset": { "const": 3 },
+        "minimum_stride_formula": { "const": "stride_bytes>=width*4" },
+        "buffer_length_formula": { "const": "stride_bytes*height" },
+        "alpha_policy": { "const": "ignored" },
+        "row_padding_policy": { "const": "ignored" }
+      }
+    },
+    "roi_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coordinate_space", "interval", "control_coordinate_representation",
+        "client_coordinate_representation", "minimum_rounding", "maximum_rounding",
+        "expand_px", "operation_order", "original_intersection_required", "empty_policy"
+      ],
+      "properties": {
+        "coordinate_space": { "const": "desktop-physical-pixels" },
+        "interval": { "const": "[left,top,right,bottom)" },
+        "control_coordinate_representation": { "const": "signed-rational-decimal-strings" },
+        "client_coordinate_representation": { "const": "integer-half-open" },
+        "minimum_rounding": { "const": "floor" },
+        "maximum_rounding": { "const": "ceil" },
+        "expand_px": { "const": 4 },
+        "operation_order": { "const": "round-expand-clamp" },
+        "original_intersection_required": { "const": true },
+        "empty_policy": { "const": "reject" }
+      }
+    },
+    "baseline_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame_count", "selection", "channel_aggregate", "all_frames_precede_input", "qpc_order"],
+      "properties": {
+        "frame_count": { "const": 3 },
+        "selection": { "const": "last-three-pre-input" },
+        "channel_aggregate": { "const": "median-bgr-per-pixel" },
+        "all_frames_precede_input": { "const": true },
+        "qpc_order": { "const": "strictly-increasing" }
+      }
+    },
+    "change_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rgb_absolute_sum_min", "changed_pixels_numerator", "changed_pixels_denominator",
+        "ratio_formula", "persistent_frames", "accumulated_frames_policy", "frame_ordinal_policy",
+        "frame_frequency_policy", "frame_qpc_policy", "gap_policy", "t1_policy", "qpc_value_ns_formula"
+      ],
+      "properties": {
+        "rgb_absolute_sum_min": { "const": 15 },
+        "changed_pixels_numerator": { "const": 2 },
+        "changed_pixels_denominator": { "const": 100 },
+        "ratio_formula": { "const": "changed_pixels*100>=total_pixels*2" },
+        "persistent_frames": { "const": 2 },
+        "accumulated_frames_policy": { "const": "greater-than-one-breaks-persistence" },
+        "frame_ordinal_policy": { "const": "unique-strictly-increasing" },
+        "frame_frequency_policy": { "const": "all-equal-root-qpc-frequency" },
+        "frame_qpc_policy": { "const": "baseline-strict-before-input-observed-strict-after-input" },
+        "gap_policy": { "const": "break-persistence" },
+        "t1_policy": { "const": "first-frame-of-earliest-qualifying-consecutive-pair" },
+        "qpc_value_ns_formula": { "const": "floor((t1_ticks-input_ticks)*1000000000/qpc_frequency)" }
+      }
+    },
+    "uia_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initial_state_id", "automation_id", "role", "before_name_key", "after_name_key",
+        "name_resolution", "string_comparison", "has_keyboard_focus", "confirmation_timeout_ns",
+        "timeout_inclusive", "toggle_pattern_policy"
+      ],
+      "properties": {
+        "initial_state_id": { "const": "playing" },
+        "automation_id": { "const": "play-pause" },
+        "role": { "const": "button" },
+        "before_name_key": { "const": "action_pause" },
+        "after_name_key": { "const": "action_play" },
+        "name_resolution": { "const": "fixture-string-value" },
+        "string_comparison": { "const": "ordinal-case-sensitive" },
+        "has_keyboard_focus": { "const": true },
+        "confirmation_timeout_ns": { "const": 2000000000 },
+        "timeout_inclusive": { "const": true },
+        "toggle_pattern_policy": { "const": "never-query-or-use" }
+      }
+    },
+    "diagnostic_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m0_shell_decision_role", "budget_exceeded_forbidden", "observation_buffer_order", "equal_qpc_order"],
+      "properties": {
+        "m0_shell_decision_role": { "const": "diagnostic_only" },
+        "budget_exceeded_forbidden": { "const": true },
+        "observation_buffer_order": { "const": "ascending-qpc-before-append" },
+        "equal_qpc_order": { "const": "visual-change-before-uia-change" }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

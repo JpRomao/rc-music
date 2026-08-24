@@ -1,6 +1,6 @@
 # Protocolo comparativo M0
 
-**Estado:** congelado para M0.0; nenhuma coleta comparativa executada
+**Estado:** congelado para os contratos materializados até M0.1; nenhuma coleta comparativa executada
 
 **Identificador:** `M0-P1`
 
@@ -139,7 +139,11 @@ Para resposta visual:
 4. encerrar no primeiro frame que exibe o estado alternado;
 5. registrar evento UIA da propriedade como diagnóstico secundário.
 
-Desktop Duplication captura no refresh nativo de 165 Hz. A ROI é o bounding rectangle UIA do controle expandido em 4 pixels e limitado ao cliente da janela. A referência é a mediana RGB de três frames estáveis antes do input. Mudança visível começa no primeiro frame em que ao menos 2% dos pixels têm diferença absoluta média ≥ 5/255 e persiste por dois frames; o estado UIA esperado precisa ser confirmado em até 2 s. M0.1 fixa golden images sintéticas para ROI, threshold e foco.
+Desktop Duplication captura no refresh nativo de 165 Hz. O contrato sintético M0.1 usa frames `BGRA8_UNORM` top-down, pixels da esquerda para a direita e `stride_bytes >= width*4`; alpha e bytes de padding no fim de cada linha são ignorados. A geometria vem do bounding rectangle UIA em pixels físicos de tela e intervalos half-open. Coordenadas racionais do controle recebem `floor` em left/top e `ceil` em right/bottom, depois expansão exata de 4 pixels e clamp ao cliente; retângulo original sem interseção ou resultado vazio é inválido.
+
+A referência é a mediana independente dos canais B, G e R dos três últimos frames de mesma geometria anteriores ao input. Um pixel muda se, e somente se, `abs(delta_B)+abs(delta_G)+abs(delta_R) >= 15`, equivalência inteira exata da antiga expressão “diferença absoluta média ≥ 5/255”; nenhuma implementação usa `float`, alpha ou padding nessa decisão. Um frame qualifica por `changed_pixels*100 >= total_pixels*2`. A confirmação requer o primeiro par de frames qualificados consecutivos, ambos com `AccumulatedFrames=1` e ordinais adjacentes; frame acumulado, gap ordinal ou frame não qualificado quebra a persistência. `t1` é o timestamp do primeiro frame do primeiro par e `value_ns = floor((t1_ticks-input_ticks)*1000000000/qpc_frequency)` usa `BigInteger`. Todos os frames repetem a frequência raiz, têm QPC/ordinal únicos e estritamente crescentes e obedecem `baseline QPC < input QPC < observed QPC`.
+
+O seed UIA é somente o estado `playing` da fixture: botão `play-pause`, role `button`, foco externo verdadeiro e `Name` resolvido ordinalmente de `action_pause` (`Pausar`) antes do Space para `action_play` (`Reproduzir`) em até 2 s inclusivos. `TogglePattern` nunca é consultado nem usado; o contrato não inventa um `state_id` formal posterior nesta subfatia. `visual.v1.json`, seu sidecar, schemas fechados e `goldens/visual.v1.json` ancoram esses vetores. `M0.Visual.psm1` executa apenas ROI, detector e validação UIA sintéticos: captura DXGI live e o buffer que ordenará observações antes do append pertencem à próxima subfatia de coleta. Esse coletor deverá ordenar QPC crescente e, em empate, `visual-change` antes de `uia-change`. Em M0.4 o resultado visual permanece `diagnostic_only`, e `budget_exceeded` é proibido.
 
 Cada uma das 22 tentativas usa um processo novo e exatamente uma ação, enviada após 500 ms de baseline visual estável. No shell M0.4, P50/P95/máximo são diagnósticos e não fecham NFR-PERF-003. Na combinação M0.10, o mesmo método vira gate do produto: P95 ≤ 100 ms.
 
@@ -298,7 +302,7 @@ O harness só fecha M0.1 depois de TDD Red/Green para:
 - rejeição de schema, hash, path, status, sequência ou evento inválido;
 - fixture com exatamente 1.000 IDs, hashes e licenças;
 - JSONL append-only, `event_seq`, tamper de hash e redação;
-- ROI/detector visual em frames sintéticos;
+- ROI/detector visual e transição UIA em frames/observações sintéticos, incluindo alpha, padding, mediana, thresholds inteiros, gaps e QPC grande;
 - árvore/processo sintético e cleanup limitado a PID + creation time;
 - summary golden byte-idêntico em duas execuções.
 

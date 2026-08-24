@@ -93,6 +93,13 @@ Test-Case 'The protocol binds the common fixture and shell scenario bytes' {
     Assert-M0FileHash -LiteralPath $markerCatalog -ExpectedHash $protocol.marker_catalog_sha256
 }
 
+Test-Case 'The protocol binds the closed visual descriptor bytes' {
+    $protocolPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\protocol.v1.json'
+    $protocol = Get-Content -LiteralPath $protocolPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
+    $visualPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\visual.v1.json'
+    Assert-Equal -Actual (Get-M0Sha256 -LiteralPath $visualPath) -Expected $protocol.visual_descriptor_sha256
+}
+
 Test-Case 'Candidate, environment and scenario descriptors satisfy their closed schemas' {
     $contracts = @(
         @('experiments\m0\candidates\qt\candidate.v1.json', 'candidate.schema.json'),

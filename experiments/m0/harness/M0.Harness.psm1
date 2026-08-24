@@ -10,8 +10,10 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/M0.Harness.psm1',
         'experiments/m0/harness/M0.Markers.psm1',
         'experiments/m0/harness/M0.Statistics.psm1',
+        'experiments/m0/harness/M0.Visual.psm1',
         'scripts/m0/Test-M0Evidence.ps1',
-        'scripts/m0/Test-M0Markers.ps1'
+        'scripts/m0/Test-M0Markers.ps1',
+        'scripts/m0/Test-M0Visual.ps1'
     )
     $schemaFiles = @(
         'experiments/m0/protocol/schemas/batch.schema.json',
@@ -31,7 +33,9 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/protocol/schemas/shell-fixture.schema.json',
         'experiments/m0/protocol/schemas/shell-queue.schema.json',
         'experiments/m0/protocol/schemas/statistics-golden.schema.json',
-        'experiments/m0/protocol/schemas/statistics.schema.json'
+        'experiments/m0/protocol/schemas/statistics.schema.json',
+        'experiments/m0/protocol/schemas/visual-golden.schema.json',
+        'experiments/m0/protocol/schemas/visual.schema.json'
     )
     $verificationFiles = @(
         'experiments/m0/harness/tests/Contract.Tests.ps1',
@@ -42,6 +46,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/tests/HarnessManifest.Tests.ps1',
         'experiments/m0/harness/tests/Markers.Tests.ps1',
         'experiments/m0/harness/tests/Statistics.Tests.ps1',
+        'experiments/m0/harness/tests/Visual.Tests.ps1',
         'scripts/m0/Invoke-M0HarnessTests.ps1',
         'scripts/m0/New-M0HarnessManifest.ps1',
         'scripts/m0/New-M0ShellFixture.ps1',
@@ -610,6 +615,8 @@ function Assert-M0ProtocolContract {
     Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $Protocol.statistics_descriptor_sha256
     $markerCatalog = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\markers.v1.json'
     Assert-M0FileHash -LiteralPath $markerCatalog -ExpectedHash $Protocol.marker_catalog_sha256
+    $visualDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\visual.v1.json'
+    Assert-M0FileHash -LiteralPath $visualDescriptor -ExpectedHash $Protocol.visual_descriptor_sha256
 }
 
 function Assert-M0EnvironmentContract {
@@ -670,12 +677,15 @@ function Get-M0TrustedCommonInputs {
         $fixtureModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Fixture.psm1'
         $markersModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Markers.psm1'
         $statisticsModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Statistics.psm1'
+        $visualModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Visual.psm1'
         Import-Module $fixtureModulePath -Force -ErrorAction Stop
         Import-Module $markersModulePath -Force -ErrorAction Stop
         Import-Module $statisticsModulePath -Force -ErrorAction Stop
+        Import-Module $visualModulePath -Force -ErrorAction Stop
         $fixtureResult = Assert-M0FixtureSet -FixtureRoot (Join-Path $root 'experiments/m0/shared/shell-fixture') -SchemaRoot $schemaRoot
         $markersResult = Assert-M0MarkerArtifacts -ProtocolRoot $protocolRoot
         $statisticsResult = Assert-M0StatisticsArtifacts -ProtocolRoot $protocolRoot
+        $visualResult = Assert-M0VisualArtifacts -ProtocolRoot $protocolRoot
 
         $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'scenarios/shell.v1.json'
         $scenario = Assert-M0JsonDocument -DocumentPath $scenarioPath -SchemaPath (Join-Path $schemaRoot 'scenario.schema.json')
@@ -686,8 +696,9 @@ function Get-M0TrustedCommonInputs {
         }
         if ($fixtureResult.fixture_sha256.ToUpperInvariant() -cne $protocol.fixture_manifest_sha256 -or
             $markersResult.catalog_sha256.ToUpperInvariant() -cne $protocol.marker_catalog_sha256 -or
-            $statisticsResult.descriptor_sha256.ToUpperInvariant() -cne $protocol.statistics_descriptor_sha256) {
-            throw [IO.InvalidDataException]::new('M0H010 transitive fixture/marker/statistics root hash differs from protocol anchors.')
+            $statisticsResult.descriptor_sha256.ToUpperInvariant() -cne $protocol.statistics_descriptor_sha256 -or
+            $visualResult.descriptor_sha256.ToUpperInvariant() -cne $protocol.visual_descriptor_sha256) {
+            throw [IO.InvalidDataException]::new('M0H010 transitive fixture/marker/statistics/visual root hash differs from protocol anchors.')
         }
 
         return [pscustomobject][ordered]@{
@@ -802,6 +813,8 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schemas\schedule.schema.json',
         'experiments\m0\protocol\schemas\statistics.schema.json',
         'experiments\m0\protocol\schemas\statistics-golden.schema.json',
+        'experiments\m0\protocol\schemas\visual-golden.schema.json',
+        'experiments\m0\protocol\schemas\visual.schema.json',
         'experiments\m0\protocol\schemas\event.schema.json',
         'experiments\m0\protocol\schemas\evidence-intent.schema.json',
         'experiments\m0\protocol\schemas\evidence-snapshot-set.schema.json',
@@ -815,6 +828,9 @@ function Assert-M0Layout {
         'experiments\m0\protocol\markers.v1.json',
         'experiments\m0\protocol\markers.v1.sha256',
         'experiments\m0\protocol\goldens\statistics.v1.json',
+        'experiments\m0\protocol\goldens\visual.v1.json',
+        'experiments\m0\protocol\visual.v1.json',
+        'experiments\m0\protocol\visual.v1.sha256',
         'experiments\m0\candidates\qt\README.md',
         'experiments\m0\candidates\qt\candidate.v1.json',
         'experiments\m0\candidates\tauri\README.md',
@@ -825,6 +841,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Statistics.psm1',
         'experiments\m0\harness\M0.Markers.psm1',
         'experiments\m0\harness\M0.Evidence.psm1',
+        'experiments\m0\harness\M0.Visual.psm1',
         'experiments\m0\harness\manifest.v1.json',
         'experiments\m0\harness\manifest.v1.sha256',
         'experiments\m0\harness\tests\Contract.Tests.ps1',
@@ -835,6 +852,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\tests\Evidence.Tests.ps1',
         'experiments\m0\harness\tests\EvidenceSnapshotSet.Tests.ps1',
         'experiments\m0\harness\tests\EvidenceWriter.Tests.ps1',
+        'experiments\m0\harness\tests\Visual.Tests.ps1',
         'experiments\m0\shared\shell-fixture\LICENSE.assets.txt',
         'experiments\m0\shared\shell-fixture\assets\cover-placeholder.svg',
         'experiments\m0\shared\shell-fixture\assets\cover-track.svg',
@@ -849,6 +867,7 @@ function Assert-M0Layout {
         'scripts\m0\Test-M0Statistics.ps1',
         'scripts\m0\Test-M0Markers.ps1',
         'scripts\m0\Test-M0Evidence.ps1',
+        'scripts\m0\Test-M0Visual.ps1',
         'scripts\m0\Test-M0Layout.ps1'
     )
     foreach ($relative in $required) {

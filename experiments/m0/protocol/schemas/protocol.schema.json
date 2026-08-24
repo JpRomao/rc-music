@@ -14,6 +14,7 @@
     "marker_catalog_sha256",
     "shell_scenario_sha256",
     "statistics_descriptor_sha256",
+    "visual_descriptor_sha256",
     "contract_sha256",
     "candidate_codes",
     "seed",
@@ -40,6 +41,7 @@
     "marker_catalog_sha256": { "$ref": "#/definitions/sha256" },
     "shell_scenario_sha256": { "$ref": "#/definitions/sha256" },
     "statistics_descriptor_sha256": { "$ref": "#/definitions/sha256" },
+    "visual_descriptor_sha256": { "$ref": "#/definitions/sha256" },
     "contract_sha256": {
       "type": "object",
       "additionalProperties": false,
@@ -118,15 +120,25 @@
     "visual_detection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["method", "refresh_hz", "roi_expand_px", "baseline_frames", "changed_pixels_ratio", "mean_absolute_rgb_delta", "persistent_frames"],
+      "required": [
+        "method", "refresh_hz", "pixel_format", "row_order", "alpha_ignored",
+        "row_padding_ignored", "roi_expand_px", "baseline_frames", "rgb_absolute_sum_min",
+        "changed_pixels_numerator", "changed_pixels_denominator", "persistent_frames", "t1_policy"
+      ],
       "properties": {
         "method": { "const": "dxgi-desktop-duplication" },
         "refresh_hz": { "const": 165 },
+        "pixel_format": { "const": "BGRA8_UNORM" },
+        "row_order": { "const": "top-down" },
+        "alpha_ignored": { "const": true },
+        "row_padding_ignored": { "const": true },
         "roi_expand_px": { "const": 4 },
         "baseline_frames": { "const": 3 },
-        "changed_pixels_ratio": { "const": 0.02 },
-        "mean_absolute_rgb_delta": { "const": 0.0196078431372549 },
-        "persistent_frames": { "const": 2 }
+        "rgb_absolute_sum_min": { "const": 15 },
+        "changed_pixels_numerator": { "const": 2 },
+        "changed_pixels_denominator": { "const": 100 },
+        "persistent_frames": { "const": 2 },
+        "t1_policy": { "const": "first-frame-of-earliest-qualifying-consecutive-pair" }
       }
     },
     "statistics": {

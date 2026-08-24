@@ -1,0 +1,75 @@
+{
+  "$schema": "schemas/visual.schema.json",
+  "schema_version": 1,
+  "visual_id": "M0-VISUAL-1",
+  "protocol_id": "M0-P1",
+  "scenario_id": "visual-response-diagnostic",
+  "golden_relative_path": "goldens/visual.v1.json",
+  "golden_sha256": "cfbe79176dbfceeb2cca3c201ea12d8a1e0cc2e22823b7a9b7ea9d3f173bdd18",
+  "frame_contract": {
+    "pixel_format": "BGRA8_UNORM",
+    "row_order": "top-down",
+    "pixel_order": "left-to-right",
+    "bytes_per_pixel": 4,
+    "blue_offset": 0,
+    "green_offset": 1,
+    "red_offset": 2,
+    "alpha_offset": 3,
+    "minimum_stride_formula": "stride_bytes>=width*4",
+    "buffer_length_formula": "stride_bytes*height",
+    "alpha_policy": "ignored",
+    "row_padding_policy": "ignored"
+  },
+  "roi_contract": {
+    "coordinate_space": "desktop-physical-pixels",
+    "interval": "[left,top,right,bottom)",
+    "control_coordinate_representation": "signed-rational-decimal-strings",
+    "client_coordinate_representation": "integer-half-open",
+    "minimum_rounding": "floor",
+    "maximum_rounding": "ceil",
+    "expand_px": 4,
+    "operation_order": "round-expand-clamp",
+    "original_intersection_required": true,
+    "empty_policy": "reject"
+  },
+  "baseline_contract": {
+    "frame_count": 3,
+    "selection": "last-three-pre-input",
+    "channel_aggregate": "median-bgr-per-pixel",
+    "all_frames_precede_input": true,
+    "qpc_order": "strictly-increasing"
+  },
+  "change_contract": {
+    "rgb_absolute_sum_min": 15,
+    "changed_pixels_numerator": 2,
+    "changed_pixels_denominator": 100,
+    "ratio_formula": "changed_pixels*100>=total_pixels*2",
+    "persistent_frames": 2,
+    "accumulated_frames_policy": "greater-than-one-breaks-persistence",
+    "frame_ordinal_policy": "unique-strictly-increasing",
+    "frame_frequency_policy": "all-equal-root-qpc-frequency",
+    "frame_qpc_policy": "baseline-strict-before-input-observed-strict-after-input",
+    "gap_policy": "break-persistence",
+    "t1_policy": "first-frame-of-earliest-qualifying-consecutive-pair",
+    "qpc_value_ns_formula": "floor((t1_ticks-input_ticks)*1000000000/qpc_frequency)"
+  },
+  "uia_contract": {
+    "initial_state_id": "playing",
+    "automation_id": "play-pause",
+    "role": "button",
+    "before_name_key": "action_pause",
+    "after_name_key": "action_play",
+    "name_resolution": "fixture-string-value",
+    "string_comparison": "ordinal-case-sensitive",
+    "has_keyboard_focus": true,
+    "confirmation_timeout_ns": 2000000000,
+    "timeout_inclusive": true,
+    "toggle_pattern_policy": "never-query-or-use"
+  },
+  "diagnostic_contract": {
+    "m0_shell_decision_role": "diagnostic_only",
+    "budget_exceeded_forbidden": true,
+    "observation_buffer_order": "ascending-qpc-before-append",
+    "equal_qpc_order": "visual-change-before-uia-change"
+  }
+}

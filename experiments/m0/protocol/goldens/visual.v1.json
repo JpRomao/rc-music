@@ -1,0 +1,95 @@
+{
+  "$schema": "../schemas/visual-golden.schema.json",
+  "schema_id": "m0.visual-golden.v1",
+  "schema_version": 1,
+  "golden_id": "M0-VISUAL-GOLDEN-1",
+  "visual_id": "M0-VISUAL-1",
+  "roi_vectors": [
+    {
+      "case_id": "fractional-expand-and-clamp",
+      "control_rect": {
+        "left": { "numerator": "21", "denominator": "2" },
+        "top": { "numerator": "41", "denominator": "4" },
+        "right": { "numerator": "381", "denominator": "4" },
+        "bottom": { "numerator": "301", "denominator": "4" }
+      },
+      "client_rect": { "left": 0, "top": 0, "right": 100, "bottom": 80 },
+      "expected": { "left": 6, "top": 6, "right": 100, "bottom": 80 }
+    },
+    {
+      "case_id": "negative-floor-and-half-open",
+      "control_rect": {
+        "left": { "numerator": "-1", "denominator": "2" },
+        "top": { "numerator": "1", "denominator": "2" },
+        "right": { "numerator": "7", "denominator": "2" },
+        "bottom": { "numerator": "9", "denominator": "2" }
+      },
+      "client_rect": { "left": 0, "top": 0, "right": 10, "bottom": 10 },
+      "expected": { "left": 0, "top": 0, "right": 8, "bottom": 9 }
+    }
+  ],
+  "detection_vectors": [
+    {
+      "case_id": "integer-threshold-cross-multiply-and-persistence",
+      "width": 49,
+      "height": 1,
+      "stride_bytes": 197,
+      "input_qpc_ticks": "3",
+      "qpc_frequency": "10",
+      "baseline": [
+        { "frame_ordinal": -2, "qpc_ticks": "0", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": -1, "qpc_ticks": "1", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": 0, "qpc_ticks": "2", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" }
+      ],
+      "observed": [
+        { "frame_ordinal": 1, "qpc_ticks": "4", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": 2, "qpc_ticks": "5", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": 3, "qpc_ticks": "6", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": 4, "qpc_ticks": "7", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        { "frame_ordinal": 5, "qpc_ticks": "8", "qpc_frequency": "10", "accumulated_frames": 1, "bgra8_hex": "0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" }
+      ],
+      "expected": { "detected": true, "t1_frame_ordinal": 4, "t1_qpc_ticks": "7", "value_ns": "400000000", "changed_pixel_count": 1 }
+    },
+    {
+      "case_id": "big-integer-qpc-floor",
+      "width": 1,
+      "height": 1,
+      "stride_bytes": 4,
+      "input_qpc_ticks": "10",
+      "qpc_frequency": "3",
+      "baseline": [
+        { "frame_ordinal": -2, "qpc_ticks": "0", "qpc_frequency": "3", "accumulated_frames": 1, "bgra8_hex": "00000000" },
+        { "frame_ordinal": -1, "qpc_ticks": "1", "qpc_frequency": "3", "accumulated_frames": 1, "bgra8_hex": "00000000" },
+        { "frame_ordinal": 0, "qpc_ticks": "2", "qpc_frequency": "3", "accumulated_frames": 1, "bgra8_hex": "00000000" }
+      ],
+      "observed": [
+        { "frame_ordinal": 1, "qpc_ticks": "10000000010", "qpc_frequency": "3", "accumulated_frames": 1, "bgra8_hex": "0f000000" },
+        { "frame_ordinal": 2, "qpc_ticks": "10000000011", "qpc_frequency": "3", "accumulated_frames": 1, "bgra8_hex": "0f000000" }
+      ],
+      "expected": { "detected": true, "t1_frame_ordinal": 1, "t1_qpc_ticks": "10000000010", "value_ns": "3333333333333333333", "changed_pixel_count": 1 }
+    }
+  ],
+  "uia_vectors": [
+    {
+      "case_id": "localized-name-at-inclusive-timeout",
+      "initial_state_id": "playing",
+      "input_qpc_ticks": "100",
+      "qpc_frequency": "10000000",
+      "before": {
+        "automation_id": "play-pause", "role": "button", "name": "Pausar", "has_keyboard_focus": true,
+        "toggle_pattern_queried": false, "toggle_pattern_used": false, "qpc_ticks": "99", "qpc_frequency": "10000000"
+      },
+      "after": [
+        {
+          "automation_id": "play-pause", "role": "button", "name": "Pausar", "has_keyboard_focus": true,
+          "toggle_pattern_queried": false, "toggle_pattern_used": false, "qpc_ticks": "101", "qpc_frequency": "10000000"
+        },
+        {
+          "automation_id": "play-pause", "role": "button", "name": "Reproduzir", "has_keyboard_focus": true,
+          "toggle_pattern_queried": false, "toggle_pattern_used": false, "qpc_ticks": "20000100", "qpc_frequency": "10000000"
+        }
+      ],
+      "expected_confirmation_qpc_ticks": "20000100"
+    }
+  ]
+}

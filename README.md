@@ -74,12 +74,14 @@ Por enquanto não há manifests/toolchains de implementação nem comandos de bu
 Validações atuais:
 
 ```powershell
-& .\scripts\validate-docs.ps1
-& .\scripts\m0\Invoke-M0HarnessTests.ps1
-& .\scripts\m0\Test-M0Fixture.ps1
-& .\scripts\m0\Test-M0Statistics.ps1
-& .\scripts\m0\Test-M0Evidence.ps1
-& .\scripts\m0\Test-M0Layout.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\validate-docs.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0HarnessTests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Fixture.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Statistics.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Markers.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Evidence.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Visual.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
 
@@ -87,7 +89,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. completar manifesto do harness, marcadores externos, coleta, resumo e piloto neutro em M0.1;
+1. completar coleta live, resumo e piloto neutro em M0.1 sobre os contratos, markers, evidência e detector sintético já materializados;
 2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
 3. medir e então aceitar/rejeitar os ADRs;
 4. somente depois iniciar o MVP guiado por TDD.

@@ -79,8 +79,8 @@ Test-Case 'The canonical harness trust contract exists before collection can use
 Test-Case 'The committed harness manifest is canonical, anchored and complete' {
     $expectedHash = Get-M0CommittedHarnessHash
     $result = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $expectedHash
-    Assert-Equal -Actual $result.runtime_file_count -Expected 8
-    Assert-Equal -Actual $result.schema_file_count -Expected 18
+    Assert-Equal -Actual $result.runtime_file_count -Expected 10
+    Assert-Equal -Actual $result.schema_file_count -Expected 20
     Assert-Equal -Actual $result.manifest_sha256 -Expected $expectedHash.ToLowerInvariant()
 }
 
@@ -108,12 +108,15 @@ Test-Case 'Trusted common inputs deep-validate every transitive common artifact'
         [pscustomobject]@{ name = 'statistics-schedule'; relative_path = 'experiments\m0\protocol\schedule.v1.json' },
         [pscustomobject]@{ name = 'statistics-golden'; relative_path = 'experiments\m0\protocol\goldens\statistics.v1.json' },
         [pscustomobject]@{ name = 'marker-catalog'; relative_path = 'experiments\m0\protocol\markers.v1.json' },
+        [pscustomobject]@{ name = 'visual-descriptor'; relative_path = 'experiments\m0\protocol\visual.v1.json' },
+        [pscustomobject]@{ name = 'visual-sidecar'; relative_path = 'experiments\m0\protocol\visual.v1.sha256' },
+        [pscustomobject]@{ name = 'visual-golden'; relative_path = 'experiments\m0\protocol\goldens\visual.v1.json' },
         [pscustomobject]@{ name = 'scenario'; relative_path = 'experiments\m0\protocol\scenarios\shell.v1.json' }
     )
     foreach ($mutation in $mutations) {
         $root = Copy-M0HarnessTrustTree -DestinationRoot (Join-Path $TestTempRoot "nested-$($mutation.name)")
         [IO.File]::AppendAllText((Join-Path $root $mutation.relative_path), "`n", [Text.UTF8Encoding]::new($false))
-        Assert-Throws { Get-M0TrustedCommonInputs -RepositoryRoot $root } 'hash|canonical|schema|M0F|M0S|scenario'
+        Assert-Throws { Get-M0TrustedCommonInputs -RepositoryRoot $root } 'hash|canonical|schema|M0F|M0S|M0V|scenario'
     }
 }
 

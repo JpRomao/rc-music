@@ -5,14 +5,15 @@
   "environment_id": "M0-E1",
   "environment_bundle_sha256": "8D72D601B6A32633EC397DFDFD0B8AF9461CB00652D78C2ED144FE88E08980C3",
   "fixture_manifest_sha256": "21A150477811AA62F59F4F958D594786BCEF4A7C2DFD2BFDA3EF9D29DEE7C8E5",
-  "harness_manifest_sha256": "3B2D8A146BFA36C6C2656F7DD084B97436C92A09F1276A2ABAA121C2BC8AB3EA",
+  "harness_manifest_sha256": "4F4136F0A9942160FEEFA49701349D6204BBACC9D014A8A13120D37C7CC86191",
   "marker_catalog_sha256": "60D73A785CFEB67C0CEC45FB2C77D1687EDF151E8D44A122D669B4800E345D4C",
   "shell_scenario_sha256": "3F3D33E89B4C38FA2673523FB3347BFDD7411F87EDE08696D7ECFE042CC5967C",
   "statistics_descriptor_sha256": "FDA650ADC45EE0C10A0BEAA2D69E75FE90F69539A587C05298C0D46793D5B7C3",
+  "visual_descriptor_sha256": "2A7AE4122EC454095E37AE8FB1C4A74553DEF0EA4467132EE9DB4072BAC40B6F",
   "contract_sha256": {
     "environment_md": "5DFCE71CC046481A352062F34B8CBF581F20060D7F5BFEFD1DA9F996149CB362",
-    "protocol_md": "D36AA740E71EDCC31459A970B1429EFC834E3F4E8306989D70B779D9753B79AF",
-    "layout_md": "154BB4FB4D645E043A11D86471BD35EE102D6A99065F17FE1F94B270DD582226"
+    "protocol_md": "0522209310564B8A99684D2B8CA55E87A31DE226D9AD7BAA8F15D7B5E1F80ADC",
+    "layout_md": "F19EB76597486DCBF5D2C5D8342A4BC51F4F55D6BAA260FB6DD5B040DF2E5833"
   },
   "candidate_codes": ["A", "B"],
   "seed": 20260823,
@@ -47,11 +48,17 @@
   "visual_detection": {
     "method": "dxgi-desktop-duplication",
     "refresh_hz": 165,
+    "pixel_format": "BGRA8_UNORM",
+    "row_order": "top-down",
+    "alpha_ignored": true,
+    "row_padding_ignored": true,
     "roi_expand_px": 4,
     "baseline_frames": 3,
-    "changed_pixels_ratio": 0.02,
-    "mean_absolute_rgb_delta": 0.0196078431372549,
-    "persistent_frames": 2
+    "rgb_absolute_sum_min": 15,
+    "changed_pixels_numerator": 2,
+    "changed_pixels_denominator": 100,
+    "persistent_frames": 2,
+    "t1_policy": "first-frame-of-earliest-qualifying-consecutive-pair"
   },
   "statistics": {
     "quantile_type": 7,

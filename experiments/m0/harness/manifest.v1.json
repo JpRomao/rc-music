@@ -21,8 +21,8 @@
     },
     {
       "relative_path": "experiments/m0/harness/M0.Harness.psm1",
-      "sha256": "45625bc1a9cfae502ef6271d80ed8d9c0df74a2a41a7ca781ba9fecfd4da43eb",
-      "size_bytes": 43053
+      "sha256": "a57ae4f1b9a655ca957d2f689d065871b90739a7164d34b5bf90bc22e102a7cf",
+      "size_bytes": 44372
     },
     {
       "relative_path": "experiments/m0/harness/M0.Markers.psm1",
@@ -35,6 +35,11 @@
       "size_bytes": 21369
     },
     {
+      "relative_path": "experiments/m0/harness/M0.Visual.psm1",
+      "sha256": "e890b7b85119b5e231f13e86a07c97bfefa3f9f850fb48d23eaba69c709dd437",
+      "size_bytes": 37378
+    },
+    {
       "relative_path": "scripts/m0/Test-M0Evidence.ps1",
       "sha256": "b3969fcbce026152dcb0af518b00a3b025f635b67f74724dcfc3b7bd1ce03950",
       "size_bytes": 4476
@@ -43,6 +48,11 @@
       "relative_path": "scripts/m0/Test-M0Markers.ps1",
       "sha256": "100103244015b69a74a6c3dca717a01ab8b718ef42d7b7e47c7c0a4ab5a04e9f",
       "size_bytes": 739
+    },
+    {
+      "relative_path": "scripts/m0/Test-M0Visual.ps1",
+      "sha256": "97e5212aa082d63377cdea23e6c57450fa460aeee4f73f77072c74b9182baa60",
+      "size_bytes": 3435
     }
   ],
   "schema_files": [
@@ -98,8 +108,8 @@
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/protocol.schema.json",
-      "sha256": "5c239a6e1211638f141da17add9389daae0d55a3c9a1071b37eb56acf48a66b2",
-      "size_bytes": 6385
+      "sha256": "87e377c70bd704ae95eebae8976be667cac4deb18833f90559af4814b769ab63",
+      "size_bytes": 6949
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/run.schema.json",
@@ -135,6 +145,16 @@
       "relative_path": "experiments/m0/protocol/schemas/statistics.schema.json",
       "sha256": "63845e2b663df7199c54a4fc6546fa4e3ec59e5d83689c4e82c77548ed408d99",
       "size_bytes": 4156
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/visual-golden.schema.json",
+      "sha256": "6399577f91384d3de1f522cb1d3fd30a401e4b9bc30df10128f155bc03b9c76d",
+      "size_bytes": 6222
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/visual.schema.json",
+      "sha256": "ac33aeeae785241d191a3c34c216848e61c29943b0d4c1204874b49a40c9dae6",
+      "size_bytes": 6237
     }
   ]
 }

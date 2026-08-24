@@ -21,7 +21,10 @@ experiments/m0/
 │   ├── protocol.v1.json
 │   ├── markers.v1.json
 │   ├── markers.v1.sha256
+│   ├── visual.v1.json
+│   ├── visual.v1.sha256
 │   ├── environments/
+│   ├── goldens/
 │   ├── scenarios/
 │   └── schemas/
 ├── shared/
@@ -38,10 +41,13 @@ experiments/m0/
 └── harness/
     ├── M0.Evidence.psm1
     ├── M0.Markers.psm1
+    ├── M0.Visual.psm1
     └── tests/
         ├── EvidenceWriter.Tests.ps1
-        └── EvidenceSnapshotSet.Tests.ps1
+        ├── EvidenceSnapshotSet.Tests.ps1
+        └── Visual.Tests.ps1
 scripts/m0/
+├── Test-M0Visual.ps1
 out/m0/
 ├── builds/
 ├── raw/
@@ -96,6 +102,7 @@ Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence soment
 | `Test-M0Fixture.ps1` | schema, determinismo, 1.000 itens, licenças e hashes |
 | `Test-M0Markers.ps1` | catálogo confiável, cobertura dos cenários e policies temporais |
 | `Test-M0Evidence.ps1` | cadeia JSONL, writer recuperável, snapshot commitado, projeções raw/run, agenda e batch fail-closed |
+| `Test-M0Visual.ps1` | descriptor/sidecar/golden visuais ancorados e API sintética de ROI, detecção e UIA; não captura DXGI live |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
 | `Invoke-M0Pilot.ps1` | processo sintético e evidência sem candidato real |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |
