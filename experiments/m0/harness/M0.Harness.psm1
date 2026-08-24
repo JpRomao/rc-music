@@ -299,6 +299,9 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schemas\schedule.schema.json',
         'experiments\m0\protocol\schemas\statistics.schema.json',
         'experiments\m0\protocol\schemas\statistics-golden.schema.json',
+        'experiments\m0\protocol\schemas\event.schema.json',
+        'experiments\m0\protocol\schemas\run.schema.json',
+        'experiments\m0\protocol\schemas\batch.schema.json',
         'experiments\m0\protocol\schedule.v1.json',
         'experiments\m0\protocol\schedule.v1.sha256',
         'experiments\m0\protocol\statistics.v1.json',
@@ -312,8 +315,10 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Harness.psm1',
         'experiments\m0\harness\M0.Fixture.psm1',
         'experiments\m0\harness\M0.Statistics.psm1',
+        'experiments\m0\harness\M0.Evidence.psm1',
         'experiments\m0\harness\tests\Fixture.Tests.ps1',
         'experiments\m0\harness\tests\Statistics.Tests.ps1',
+        'experiments\m0\harness\tests\Evidence.Tests.ps1',
         'experiments\m0\shared\shell-fixture\LICENSE.assets.txt',
         'experiments\m0\shared\shell-fixture\assets\cover-placeholder.svg',
         'experiments\m0\shared\shell-fixture\assets\cover-track.svg',
@@ -325,6 +330,7 @@ function Assert-M0Layout {
         'scripts\m0\Invoke-M0HarnessTests.ps1',
         'scripts\m0\Test-M0Fixture.ps1',
         'scripts\m0\Test-M0Statistics.ps1',
+        'scripts\m0\Test-M0Evidence.ps1',
         'scripts\m0\Test-M0Layout.ps1'
     )
     foreach ($relative in $required) {

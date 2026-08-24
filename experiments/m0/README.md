@@ -21,7 +21,8 @@ Na raiz do repositório:
 & .\scripts\m0\Invoke-M0HarnessTests.ps1
 & .\scripts\m0\Test-M0Fixture.ps1
 & .\scripts\m0\Test-M0Statistics.ps1
+& .\scripts\m0\Test-M0Evidence.ps1
 & .\scripts\m0\Test-M0Layout.ps1
 ```
 
-Esses checks cobrem layout, paths, descriptors, vínculo por hash, a fixture sintética determinística de 1.000 itens e a agenda/estatística golden. Templates de evidência, coleta e piloto ainda pertencem aos próximos incrementos de M0.1; nenhum check atual faz alegação de desempenho.
+Esses checks cobrem layout, paths, descriptors, vínculo por hash, a fixture sintética determinística de 1.000 itens, agenda/estatística golden e contratos estruturais de evidência selada. A validação pública de batch permanece fechada até o manifesto canônico derivar os inputs reais; writer durável, catálogo de marcadores, coleta, resumo e piloto ainda pertencem aos próximos incrementos de M0.1. Nenhum check atual faz alegação de desempenho.

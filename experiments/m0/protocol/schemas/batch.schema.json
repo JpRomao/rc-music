@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 paired candidate evidence batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "batch_id", "experiment_id", "scenario_id", "common_inputs", "candidate_results", "decision"],
+  "properties": {
+    "schema_id": { "const": "m0.batch.v1" },
+    "schema_version": { "const": 1 },
+    "batch_id": { "$ref": "#/definitions/id" },
+    "experiment_id": { "$ref": "#/definitions/id" },
+    "scenario_id": { "$ref": "#/definitions/id" },
+    "common_inputs": { "$ref": "#/definitions/common_inputs" },
+    "candidate_results": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/definitions/candidate_result" } },
+    "decision": { "enum": ["pass", "fail", "inconclusive"] }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "common_inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol_sha256", "environment_sha256", "fixture_sha256", "harness_sha256", "scenario_sha256"],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" }, "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" }, "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "candidate_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_code", "artifact_sha256", "toolchain_bundle_sha256", "lockfile_bundle_sha256", "runs_manifest_sha256", "planned", "valid", "discarded", "failed", "inconclusive", "result"],
+      "properties": {
+        "candidate_code": { "enum": ["A", "B"] },
+        "artifact_sha256": { "$ref": "#/definitions/sha256" },
+        "toolchain_bundle_sha256": { "$ref": "#/definitions/sha256" },
+        "lockfile_bundle_sha256": { "$ref": "#/definitions/sha256" },
+        "runs_manifest_sha256": { "$ref": "#/definitions/sha256" },
+        "planned": { "const": 22 },
+        "valid": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "discarded": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "failed": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "inconclusive": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "result": { "enum": ["pass", "fail", "inconclusive"] }
+      }
+    }
+  }
+}

@@ -88,6 +88,7 @@ Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence soment
 |---|---|
 | `Test-M0Layout.ps1` | paths, arquivos esperados e isolamento |
 | `Test-M0Fixture.ps1` | schema, determinismo, 1.000 itens, licenças e hashes |
+| `Test-M0Evidence.ps1` | cadeia JSONL, schemas fechados, projeções raw/run, agenda e batch fail-closed |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
 | `Invoke-M0Pilot.ps1` | processo sintético e evidência sem candidato real |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |

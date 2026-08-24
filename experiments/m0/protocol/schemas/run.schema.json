@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 sealed evidence run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id", "schema_version", "experiment_id", "run_id", "candidate_code",
+    "scenario_id", "attempt", "common_inputs", "candidate_input", "schedule",
+    "status", "status_reason", "error_code", "raw", "markers", "process_tree_sha256",
+    "metrics", "external_noise", "artifacts", "checks_omitted"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.run.v1" },
+    "schema_version": { "const": 1 },
+    "experiment_id": { "$ref": "#/definitions/id" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "candidate_code": { "enum": ["A", "B"] },
+    "scenario_id": { "$ref": "#/definitions/id" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 22 },
+    "common_inputs": { "$ref": "#/definitions/common_inputs" },
+    "candidate_input": { "$ref": "#/definitions/candidate_input" },
+    "schedule": { "$ref": "#/definitions/schedule" },
+    "status": { "enum": ["valid", "discarded", "failed", "inconclusive"] },
+    "status_reason": { "type": ["string", "null"] },
+    "error_code": { "type": ["string", "null"] },
+    "raw": { "$ref": "#/definitions/raw" },
+    "markers": { "type": "array", "maxItems": 256, "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
+    "process_tree_sha256": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/sha256" }] },
+    "metrics": { "type": "array", "maxItems": 512, "items": { "$ref": "#/definitions/metric" } },
+    "external_noise": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/noise" } },
+    "artifacts": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/artifact" } },
+    "checks_omitted": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/omitted_check" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "valid" } } },
+      "then": { "properties": { "status_reason": { "type": "null" }, "error_code": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "discarded" } } },
+      "then": { "properties": { "status_reason": { "enum": ["harness_failure", "external_os_event", "operator_protocol_breach", "audio_endpoint_changed"] } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } } },
+      "then": {
+        "properties": {
+          "status_reason": { "enum": ["candidate_crash", "candidate_hang", "scenario_timeout", "window_not_actionable", "budget_violated", "candidate_resource_excess", "helper_survived_shutdown", "queue_stall", "audio_underrun", "codec_error"] },
+          "error_code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "inconclusive" } } },
+      "then": { "properties": { "status_reason": { "enum": ["insufficient_valid_attempts", "too_many_discards", "incomplete_evidence", "confidence_interval_too_wide"] } } }
+    }
+  ],
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "relative_path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$" },
+    "common_inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol_sha256", "environment_sha256", "fixture_sha256", "harness_sha256", "scenario_sha256"],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" }, "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" }, "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "candidate_input": {
+      "type": "object", "additionalProperties": false,
+      "required": ["git_commit", "dirty", "artifact_sha256", "build_mode", "toolchains", "lockfiles"],
+      "properties": {
+        "git_commit": { "type": "string", "pattern": "^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$" },
+        "dirty": { "type": "boolean" }, "artifact_sha256": { "$ref": "#/definitions/sha256" },
+        "build_mode": { "const": "release" },
+        "toolchains": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/definitions/toolchain" } },
+        "lockfiles": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/lockfile" } }
+      }
+    },
+    "toolchain": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "sha256"],
+      "properties": { "name": { "$ref": "#/definitions/id" }, "version": { "type": "string", "minLength": 1, "maxLength": 80 }, "sha256": { "$ref": "#/definitions/sha256" } }
+    },
+    "lockfile": {
+      "type": "object", "additionalProperties": false, "required": ["relative_path", "sha256"],
+      "properties": { "relative_path": { "$ref": "#/definitions/relative_path" }, "sha256": { "$ref": "#/definitions/sha256" } }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false, "required": ["seed", "block", "block_order", "position_in_block"],
+      "properties": { "seed": { "const": 20260823 }, "block": { "type": "integer", "minimum": 1, "maximum": 22 }, "block_order": { "enum": ["AB", "BA"] }, "position_in_block": { "enum": [1, 2] } }
+    },
+    "raw": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative_path", "event_count", "final_line_sha256", "sealed_utc"],
+      "properties": {
+        "relative_path": { "type": "string", "pattern": "^[A-Za-z0-9._-]+\\.jsonl$", "maxLength": 160 },
+        "event_count": { "type": "integer", "minimum": 2 }, "final_line_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sealed_utc": { "type": "string", "format": "date-time", "maxLength": 32 }
+      }
+    },
+    "metric": {
+      "type": "object", "additionalProperties": false, "required": ["metric_id", "value_integer", "unit", "error_code"],
+      "properties": { "metric_id": { "$ref": "#/definitions/id" }, "value_integer": { "type": ["integer", "null"] }, "unit": { "enum": ["bytes", "nanoseconds", "ticks", "count", "basis_points"] }, "error_code": { "type": ["string", "null"], "maxLength": 64 } },
+      "oneOf": [
+        { "properties": { "value_integer": { "type": "integer" }, "error_code": { "type": "null" } } },
+        { "properties": { "value_integer": { "type": "null" }, "error_code": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "noise": {
+      "type": "object", "additionalProperties": false, "required": ["noise_code", "observed", "evidence_sha256", "discard_reason", "error_code"],
+      "properties": {
+        "noise_code": { "$ref": "#/definitions/id" },
+        "observed": { "type": "boolean" },
+        "evidence_sha256": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/sha256" }] },
+        "discard_reason": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["harness_failure", "external_os_event", "operator_protocol_breach", "audio_endpoint_changed"] }
+          ]
+        },
+        "error_code": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "observed": { "const": true },
+            "evidence_sha256": { "$ref": "#/definitions/sha256" },
+            "discard_reason": { "enum": ["harness_failure", "external_os_event", "operator_protocol_breach", "audio_endpoint_changed"] }
+          }
+        },
+        {
+          "properties": {
+            "observed": { "const": false },
+            "evidence_sha256": { "type": "null" },
+            "discard_reason": { "type": "null" },
+            "error_code": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false, "required": ["artifact_id", "relative_path", "sha256", "size_bytes"],
+      "properties": { "artifact_id": { "$ref": "#/definitions/id" }, "relative_path": { "$ref": "#/definitions/relative_path" }, "sha256": { "$ref": "#/definitions/sha256" }, "size_bytes": { "type": "integer", "minimum": 1 } }
+    },
+    "omitted_check": {
+      "type": "object", "additionalProperties": false, "required": ["check_id", "reason_code"],
+      "properties": {
+        "check_id": { "type": "string", "pattern": "^CHK-[A-Z0-9-]+$" },
+        "reason_code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+      }
+    }
+  }
+}

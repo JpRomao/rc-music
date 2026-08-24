@@ -78,6 +78,7 @@ Validações atuais:
 & .\scripts\m0\Invoke-M0HarnessTests.ps1
 & .\scripts\m0\Test-M0Fixture.ps1
 & .\scripts\m0\Test-M0Statistics.ps1
+& .\scripts\m0\Test-M0Evidence.ps1
 & .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
@@ -86,7 +87,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. completar agenda, evidência e piloto neutro do harness em M0.1;
+1. completar manifesto do harness, marcadores externos, coleta, resumo e piloto neutro em M0.1;
 2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
 3. medir e então aceitar/rejeitar os ADRs;
 4. somente depois iniciar o MVP guiado por TDD.
