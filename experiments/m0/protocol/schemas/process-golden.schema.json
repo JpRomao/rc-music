@@ -1,0 +1,220 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 process attribution and cleanup golden vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "golden_id", "process_id",
+    "attribution_vectors", "cleanup_vectors", "linux_vectors"
+  ],
+  "properties": {
+    "$schema": { "const": "../schemas/process-golden.schema.json" },
+    "schema_id": { "const": "m0.process-golden.v1" },
+    "schema_version": { "const": 1 },
+    "golden_id": { "const": "M0-PROCESS-GOLDEN-1" },
+    "process_id": { "const": "M0-PROCESS-1" },
+    "attribution_vectors": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 16,
+      "items": { "$ref": "#/definitions/attribution_vector" }
+    },
+    "cleanup_vectors": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 16,
+      "items": { "$ref": "#/definitions/cleanup_vector" }
+    },
+    "linux_vectors": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 16,
+      "items": { "$ref": "#/definitions/linux_vector" }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "decimal": { "type": "string", "pattern": "^(?:0|[1-9][0-9]{0,19})$" },
+    "positive_decimal": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "creation_time_filetime_utc"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "creation_time_filetime_utc": { "$ref": "#/definitions/positive_decimal" }
+      }
+    },
+    "nullable_identity": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/identity" }
+      ]
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_seq", "identity", "parent_identity", "executable_sha256", "job_member",
+        "etw_birth_observed", "nonce_argument_match", "external_attribution_required",
+        "observed_after_launch", "within_attempt_window", "birth_qpc_ticks", "observed_nonce"
+      ],
+      "properties": {
+        "observation_seq": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "identity": { "$ref": "#/definitions/identity" },
+        "parent_identity": { "$ref": "#/definitions/nullable_identity" },
+        "executable_sha256": { "$ref": "#/definitions/sha256" },
+        "job_member": { "type": "boolean" },
+        "etw_birth_observed": { "type": "boolean" },
+        "nonce_argument_match": { "type": "boolean" },
+        "external_attribution_required": { "type": "boolean" },
+        "observed_after_launch": { "type": "boolean" },
+        "within_attempt_window": { "type": "boolean" },
+        "birth_qpc_ticks": { "$ref": "#/definitions/decimal" }
+        ,
+        "observed_nonce": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+          ]
+        }
+      }
+    },
+    "expected_attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "error_code", "missing_capabilities", "identities", "sources"],
+      "properties": {
+        "state": { "enum": ["complete", "partial", "unavailable"] },
+        "error_code": { "type": ["string", "null"] },
+        "missing_capabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+          "uniqueItems": true
+        },
+        "identities": { "type": "array", "maxItems": 32, "items": { "$ref": "#/definitions/identity" } },
+        "sources": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "enum": ["root-handle", "job-membership", "etw-birth-descendant", "nonce-executable-match"] }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "complete" } } },
+          "then": {
+            "properties": {
+              "error_code": { "type": "null" },
+              "missing_capabilities": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["partial", "unavailable"] } } },
+          "then": {
+            "properties": {
+              "error_code": { "type": "string" },
+              "missing_capabilities": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "unavailable" } } },
+          "then": {
+            "properties": {
+              "identities": { "maxItems": 0 },
+              "sources": { "maxItems": 0 }
+            }
+          }
+        }
+      ]
+    },
+    "attribution_vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id", "root_identity", "expected_executable_sha256", "nonce",
+        "launch_qpc_ticks", "attempt_end_qpc_ticks", "records", "expected"
+      ],
+      "properties": {
+        "case_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "root_identity": { "$ref": "#/definitions/identity" },
+        "expected_executable_sha256": { "$ref": "#/definitions/sha256" },
+        "nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "launch_qpc_ticks": { "$ref": "#/definitions/decimal" },
+        "attempt_end_qpc_ticks": { "$ref": "#/definitions/decimal" },
+        "records": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/definitions/record" } },
+        "expected": { "$ref": "#/definitions/expected_attribution" }
+      }
+    },
+    "cleanup_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recorded_identity", "live_identity"],
+      "properties": {
+        "recorded_identity": { "$ref": "#/definitions/identity" },
+        "live_identity": { "$ref": "#/definitions/nullable_identity" }
+      }
+    },
+    "cleanup_expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "actions"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "enum": ["terminate-exact-identity", "already-exited", "skip-identity-mismatch"] }
+        }
+      }
+    },
+    "cleanup_vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "observations", "expected"],
+      "properties": {
+        "case_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "observations": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/definitions/cleanup_observation" } },
+        "expected": { "$ref": "#/definitions/cleanup_expected" }
+      }
+    },
+    "linux_vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id", "proc_stat", "expected_pid", "expected_start_ticks", "expected_boot_id_sha256",
+        "observed_boot_id_sha256", "pidfd_available", "expected"
+      ],
+      "properties": {
+        "case_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "proc_stat": { "type": "string", "minLength": 20, "maxLength": 2048 },
+        "expected_pid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "expected_start_ticks": { "$ref": "#/definitions/positive_decimal" },
+        "expected_boot_id_sha256": { "$ref": "#/definitions/sha256" },
+        "observed_boot_id_sha256": { "$ref": "#/definitions/sha256" },
+        "pidfd_available": { "type": "boolean" },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "error_code", "missing_capabilities", "comm", "start_ticks"],
+          "properties": {
+            "state": { "enum": ["partial", "unavailable"] },
+            "error_code": { "type": "string" },
+            "missing_capabilities": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+              "uniqueItems": true
+            },
+            "comm": { "type": ["string", "null"] },
+            "start_ticks": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}

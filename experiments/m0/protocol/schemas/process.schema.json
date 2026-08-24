@@ -1,0 +1,263 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 process attribution and cleanup contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_version", "process_id", "protocol_id", "scenario_id",
+    "golden_relative_path", "golden_sha256", "identity_contract",
+    "attribution_contract", "result_contract", "job_contract", "cleanup_contract", "pilot_contract"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/process.schema.json" },
+    "schema_version": { "const": 1 },
+    "process_id": { "const": "M0-PROCESS-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "golden_relative_path": { "const": "goldens/process.v1.json" },
+    "golden_sha256": { "$ref": "#/definitions/sha256" },
+    "identity_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "windows_identity", "pid_range", "creation_time_representation", "comparison",
+        "capture", "revalidation", "windows_birth_token_kind", "linux_identity",
+        "linux_mutation_capability", "linux_fallback", "linux_live_status",
+        "pid_only_forbidden", "name_only_forbidden", "path_only_forbidden",
+        "hash_only_forbidden", "process_group_only_forbidden", "session_only_forbidden"
+      ],
+      "properties": {
+        "windows_identity": { "const": "pid+creation-time-filetime-utc" },
+        "pid_range": { "const": "1..4294967295" },
+        "creation_time_representation": { "const": "unsigned-decimal-string" },
+        "comparison": { "const": "exact" },
+        "capture": { "const": "open-process-handle-then-get-process-times" },
+        "revalidation": { "const": "same-open-handle-before-termination" },
+        "windows_birth_token_kind": { "const": "windows-filetime-100ns" },
+        "linux_identity": { "const": "pid+proc-starttime-ticks+boot-id-sha256" },
+        "linux_mutation_capability": { "const": "pidfd" },
+        "linux_fallback": { "const": "diagnostic-identity-only-no-signal-without-pidfd" },
+        "linux_live_status": { "const": "not-proven" },
+        "pid_only_forbidden": { "const": true },
+        "name_only_forbidden": { "const": true },
+        "path_only_forbidden": { "const": true },
+        "hash_only_forbidden": { "const": true },
+        "process_group_only_forbidden": { "const": true },
+        "session_only_forbidden": { "const": true }
+      }
+    },
+    "attribution_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_order", "root_source", "accepted_sources", "etw_parent_identity",
+        "attributed_ancestor_identity_remains_in_resolver_ledger", "nonce_match_requires_expected_executable_sha256",
+        "nonce_match_requires_post_launch_birth", "nonce_match_requires_attempt_window",
+        "nonce_time_proof", "nonce_value_proof",
+        "unexpected_attributable_helper_policy", "unresolved_required_external_policy",
+        "pid-reuse-policy"
+      ],
+      "properties": {
+        "record_order": { "const": "strictly-increasing-observation-seq" },
+        "root_source": { "const": "root-handle" },
+        "accepted_sources": {
+          "type": "array",
+          "const": ["root-handle", "job-membership", "etw-birth-descendant", "nonce-executable-match"]
+        },
+        "etw_parent_identity": { "const": "pid+creation-time-filetime-utc" },
+        "attributed_ancestor_identity_remains_in_resolver_ledger": { "const": true },
+        "nonce_match_requires_expected_executable_sha256": { "const": true },
+        "nonce_match_requires_post_launch_birth": { "const": true },
+        "nonce_match_requires_attempt_window": { "const": true },
+        "nonce_time_proof": { "const": "birth-qpc-strictly-after-launch-and-at-or-before-attempt-end" },
+        "nonce_value_proof": { "const": "ordinal-exact-live-nonce-redacted-from-artifacts-fixed-golden-allowed" },
+        "unexpected_attributable_helper_policy": { "const": "include" },
+        "unresolved_required_external_policy": { "const": "harness-failure" },
+        "pid-reuse-policy": { "const": "distinct-birth-is-distinct-identity-never-merge" }
+      }
+    },
+    "result_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["states", "complete_policy", "partial_policy", "unavailable_policy", "etw_incomplete_causes"],
+      "properties": {
+        "states": { "type": "array", "const": ["complete", "partial", "unavailable"] },
+        "complete_policy": { "const": "error-null-and-no-missing-capabilities" },
+        "partial_policy": { "const": "safe-observations-only-never-decisive" },
+        "unavailable_policy": { "const": "no-nodes-no-cleanup-targets" },
+        "etw_incomplete_causes": {
+          "type": "array",
+          "const": ["lost-event", "buffer-overflow", "trace-started-after-launch", "identity-conflict", "parentage-conflict"]
+        }
+      }
+    },
+    "job_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform", "root_creation", "assignment_order", "limit", "breakaway_flags", "membership_query",
+        "pid_notifications", "shutdown_timeout_ms", "job_close_is_primary_cleanup"
+      ],
+      "properties": {
+        "platform": { "const": "windows" },
+        "root_creation": { "const": "create-process-suspended" },
+        "assignment_order": { "const": "assign-job-before-resume" },
+        "limit": { "const": "kill-on-job-close" },
+        "breakaway_flags": { "const": "none" },
+        "membership_query": { "const": "pid-list-hint-then-open-handle-get-process-times-and-is-process-in-job" },
+        "pid_notifications": { "const": "non-authoritative-hints-only" },
+        "shutdown_timeout_ms": { "const": 10000 },
+        "job_close_is_primary_cleanup": { "const": true }
+      }
+    },
+    "cleanup_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planner_input", "live_mutation_input", "allowed_actions", "job_member_boundary",
+        "future_breakaway_boundary", "breakaway_live_status",
+        "caller-reconstructed-token_forbidden", "result_replay", "generic-process-name_forbidden",
+        "unrecorded-pid_forbidden", "future_direct_termination_identity_mismatch_policy",
+        "job_revalidation_failure_policy", "already_exited_policy"
+      ],
+      "properties": {
+        "planner_input": { "const": "synthetic-recorded-and-live-identities-no-mutation-authority" },
+        "live_mutation_input": { "const": "opaque-module-registered-capability" },
+        "allowed_actions": {
+          "type": "array",
+          "const": ["terminate-exact-identity", "already-exited", "skip-identity-mismatch"]
+        },
+        "job_member_boundary": { "const": "close-last-job-handle-and-wait-retained-handles" },
+        "future_breakaway_boundary": { "const": "same-retained-handle-revalidate-terminate-wait" },
+        "breakaway_live_status": { "const": "not-implemented" },
+        "caller-reconstructed-token_forbidden": { "const": true },
+        "result_replay": { "const": "byte-identical-idempotent-without-new-native-action" },
+        "generic-process-name_forbidden": { "const": true },
+        "unrecorded-pid_forbidden": { "const": true },
+        "future_direct_termination_identity_mismatch_policy": { "const": "do-not-signal-and-fail-cleanup" },
+        "job_revalidation_failure_policy": { "const": "close-scoped-job-and-fail-cleanup" },
+        "already_exited_policy": { "const": "idempotent-success" }
+      }
+    },
+    "pilot_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible",
+        "tree_roles", "minimum_tree_size", "qpc_clock", "live_platform", "linux_policy",
+        "etw_live_collection", "helper_relative_path", "helper_sha256", "snapshot_schema_relative_path",
+        "snapshot_schema_sha256", "artifact_schema_relative_path", "artifact_schema_sha256",
+        "artifact_binding", "artifact_serialization", "future_outcome_mapping", "current_publication",
+        "decisive_snapshot_set_membership"
+      ],
+      "properties": {
+        "candidate_code": { "const": "P" },
+        "scenario_id": { "const": "synthetic-process-tree" },
+        "attempt": { "const": 1 },
+        "evidence_role": { "const": "synthetic_pilot" },
+        "decision_eligible": { "const": false },
+        "tree_roles": { "type": "array", "const": ["root", "child", "grandchild"] },
+        "minimum_tree_size": { "const": 3 },
+        "qpc_clock": { "const": "query-performance-counter" },
+        "live_platform": { "const": "windows-only" },
+        "linux_policy": { "const": "fail-closed-until-provisioned-adapter" },
+        "etw_live_collection": { "const": "not-implemented-in-job-cleanup-smoke" },
+        "helper_relative_path": { "const": "scripts/m0/Invoke-M0SyntheticProcessNode.ps1" },
+        "helper_sha256": { "$ref": "#/definitions/sha256" },
+        "snapshot_schema_relative_path": { "const": "schemas/process-tree.schema.json" },
+        "snapshot_schema_sha256": { "$ref": "#/definitions/sha256" },
+        "artifact_schema_relative_path": { "const": "schemas/process-tree-artifact.schema.json" },
+        "artifact_schema_sha256": { "$ref": "#/definitions/sha256" },
+        "artifact_binding": { "const": "caller-supplied-experiment-id+run-id-with-fixed-P-synthetic-role" },
+        "artifact_serialization": { "const": "ordered-compact-json-utf8-no-bom-single-lf" },
+        "future_outcome_mapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope", "precedence", "cleanup-survivor", "cleanup-incomplete", "complete", "partial",
+            "unavailable", "cleanup_incomplete_reason_codes", "cleanup_reason_projection",
+            "process_error_codes", "artifact_error_branch_policy", "trace_capability_policy", "completion_port_policy",
+            "missing_cause_precedence_policy",
+            "empty_topology_policy",
+            "process_artifact_states", "pre_snapshot_failure_artifact", "skipped_run_error_code"
+          ],
+          "properties": {
+            "scope": { "const": "synthetic-P-only;future-A-B-harness-policy-separate" },
+            "precedence": {
+              "type": "array",
+              "const": ["cleanup-survivor", "cleanup-incomplete", "process-state"]
+            },
+            "cleanup-survivor": { "const": "check-failed+run-failed+helper-survived-shutdown" },
+            "cleanup-incomplete": { "const": "check-skipped+specific-cleanup-reason+run-inconclusive+incomplete-evidence" },
+            "cleanup_incomplete_reason_codes": {
+              "type": "array",
+              "const": [
+                "snapshot_validation_failed",
+                "identity_revalidation_failed",
+                "job_close_failed",
+                "unsafe_run_root_contents"
+              ]
+            },
+            "cleanup_reason_projection": { "const": "check-reason+checks-omitted-reason" },
+            "complete": { "const": "check-passed+run-valid" },
+            "partial": { "const": "check-skipped+run-inconclusive+incomplete-evidence" },
+            "unavailable": { "const": "check-skipped+run-inconclusive+incomplete-evidence" },
+            "process_error_codes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["complete", "partial", "unavailable"],
+              "properties": {
+                "complete": { "type": "array", "const": [] },
+                "partial": {
+                  "type": "array",
+                  "const": [
+                    "etw_live_not_implemented",
+                    "etw_trace_incomplete",
+                    "root_identity_missing",
+                    "unresolved_external_attribution"
+                  ]
+                },
+                "unavailable": {
+                  "type": "array",
+                  "const": ["etw_trace_unavailable", "safe_identity_unavailable"]
+                }
+              }
+            },
+            "artifact_error_branch_policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete", "etw_live_not_implemented", "etw_trace_incomplete", "root_identity_missing",
+                "unresolved_external_attribution", "etw_trace_unavailable", "safe_identity_unavailable"
+              ],
+              "properties": {
+                "complete": { "const": "error-null+missing-empty+trace-complete+full-safe-topology" },
+                "etw_live_not_implemented": { "const": "trace-partial-not-collected+missing-etw+etw-capability-false" },
+                "etw_trace_incomplete": { "const": "trace-partial-collected+missing-etw+etw-capability-false" },
+                "root_identity_missing": { "const": "empty-topology+missing-root+no-mutation-authority" },
+                "unresolved_external_attribution": { "const": "safe-topology+missing-external-proof" },
+                "etw_trace_unavailable": { "const": "empty-topology+missing-etw+no-mutation-authority" },
+                "safe_identity_unavailable": { "const": "empty-topology+missing-etw-and-safe-identity+no-mutation-authority" }
+              }
+            },
+            "trace_capability_policy": { "const": "complete=etw-present-and-not-missing;partial-or-unavailable=etw-absent-and-missing" },
+            "completion_port_policy": { "const": "listed-missing=absent;partial-absent=listed-missing" },
+            "missing_cause_precedence_policy": { "const": "safe-identity=>safe-unavailable;root=>root-missing;external+root=>root-missing;external-without-root=>unresolved-external" },
+            "empty_topology_policy": { "const": "zero-counts+zero-auxiliary+no-job-or-mutation-authority" },
+            "process_artifact_states": {
+              "type": "array",
+              "const": ["complete", "partial", "unavailable"]
+            },
+            "pre_snapshot_failure_artifact": { "const": "canonical-unavailable-empty-topology" },
+            "skipped_run_error_code": { "type": "null" }
+          }
+        },
+        "current_publication": { "const": "smoke-only-no-evidence-artifact" },
+        "decisive_snapshot_set_membership": { "const": "forbidden" }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

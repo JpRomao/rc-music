@@ -2,7 +2,7 @@
 
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
-**Última revisão:** 2026-08-23
+**Última revisão:** 2026-08-24
 **Marco atual:** D0 e M0.0 concluídos; M0.1 em andamento
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
@@ -78,6 +78,8 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 ### 2.3 Checkpoint D0 atual
 
 A autoria documental e a revisão do mantenedor estão concluídas. A [autorização D0.9](m0/README.md) aceita o baseline derivado e permite apenas o escopo experimental M0.0–M0.10; Qt, Tauri e os backends continuam candidatos.
+
+M0.1 permanece em andamento. Já existem contratos e checks para fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético e árvore/identidade/cleanup sintéticos. O smoke de processo atual é local, Windows-only, `partial/etw_live_not_implemented`, não selado e não decisório; ele não substitui o futuro `Invoke-M0Pilot.ps1`, o summary golden nem qualquer coleta A/B. Linux live permanece `not_proven`.
 
 ## 3. Check obrigatório de todo incremento
 

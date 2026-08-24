@@ -1,0 +1,150 @@
+{
+  "$schema": "schemas/process.schema.json",
+  "schema_version": 1,
+  "process_id": "M0-PROCESS-1",
+  "protocol_id": "M0-P1",
+  "scenario_id": "synthetic-process-tree",
+  "golden_relative_path": "goldens/process.v1.json",
+  "golden_sha256": "28ba039a62d57b1bf1cfd76e214b53211ad662312e239fb8e5e0545e6ece3599",
+  "identity_contract": {
+    "windows_identity": "pid+creation-time-filetime-utc",
+    "pid_range": "1..4294967295",
+    "creation_time_representation": "unsigned-decimal-string",
+    "comparison": "exact",
+    "capture": "open-process-handle-then-get-process-times",
+    "revalidation": "same-open-handle-before-termination",
+    "windows_birth_token_kind": "windows-filetime-100ns",
+    "linux_identity": "pid+proc-starttime-ticks+boot-id-sha256",
+    "linux_mutation_capability": "pidfd",
+    "linux_fallback": "diagnostic-identity-only-no-signal-without-pidfd",
+    "linux_live_status": "not-proven",
+    "pid_only_forbidden": true,
+    "name_only_forbidden": true,
+    "path_only_forbidden": true,
+    "hash_only_forbidden": true,
+    "process_group_only_forbidden": true,
+    "session_only_forbidden": true
+  },
+  "attribution_contract": {
+    "record_order": "strictly-increasing-observation-seq",
+    "root_source": "root-handle",
+    "accepted_sources": [
+      "root-handle",
+      "job-membership",
+      "etw-birth-descendant",
+      "nonce-executable-match"
+    ],
+    "etw_parent_identity": "pid+creation-time-filetime-utc",
+    "attributed_ancestor_identity_remains_in_resolver_ledger": true,
+    "nonce_match_requires_expected_executable_sha256": true,
+    "nonce_match_requires_post_launch_birth": true,
+    "nonce_match_requires_attempt_window": true,
+    "nonce_time_proof": "birth-qpc-strictly-after-launch-and-at-or-before-attempt-end",
+    "nonce_value_proof": "ordinal-exact-live-nonce-redacted-from-artifacts-fixed-golden-allowed",
+    "unexpected_attributable_helper_policy": "include",
+    "unresolved_required_external_policy": "harness-failure",
+    "pid-reuse-policy": "distinct-birth-is-distinct-identity-never-merge"
+  },
+  "result_contract": {
+    "states": ["complete", "partial", "unavailable"],
+    "complete_policy": "error-null-and-no-missing-capabilities",
+    "partial_policy": "safe-observations-only-never-decisive",
+    "unavailable_policy": "no-nodes-no-cleanup-targets",
+    "etw_incomplete_causes": ["lost-event", "buffer-overflow", "trace-started-after-launch", "identity-conflict", "parentage-conflict"]
+  },
+  "job_contract": {
+    "platform": "windows",
+    "root_creation": "create-process-suspended",
+    "assignment_order": "assign-job-before-resume",
+    "limit": "kill-on-job-close",
+    "breakaway_flags": "none",
+    "membership_query": "pid-list-hint-then-open-handle-get-process-times-and-is-process-in-job",
+    "pid_notifications": "non-authoritative-hints-only",
+    "shutdown_timeout_ms": 10000,
+    "job_close_is_primary_cleanup": true
+  },
+  "cleanup_contract": {
+    "planner_input": "synthetic-recorded-and-live-identities-no-mutation-authority",
+    "live_mutation_input": "opaque-module-registered-capability",
+    "allowed_actions": [
+      "terminate-exact-identity",
+      "already-exited",
+      "skip-identity-mismatch"
+    ],
+    "job_member_boundary": "close-last-job-handle-and-wait-retained-handles",
+    "future_breakaway_boundary": "same-retained-handle-revalidate-terminate-wait",
+    "breakaway_live_status": "not-implemented",
+    "caller-reconstructed-token_forbidden": true,
+    "result_replay": "byte-identical-idempotent-without-new-native-action",
+    "generic-process-name_forbidden": true,
+    "unrecorded-pid_forbidden": true,
+    "future_direct_termination_identity_mismatch_policy": "do-not-signal-and-fail-cleanup",
+    "job_revalidation_failure_policy": "close-scoped-job-and-fail-cleanup",
+    "already_exited_policy": "idempotent-success"
+  },
+  "pilot_contract": {
+    "candidate_code": "P",
+    "scenario_id": "synthetic-process-tree",
+    "attempt": 1,
+    "evidence_role": "synthetic_pilot",
+    "decision_eligible": false,
+    "tree_roles": ["root", "child", "grandchild"],
+    "minimum_tree_size": 3,
+    "qpc_clock": "query-performance-counter",
+    "live_platform": "windows-only",
+    "linux_policy": "fail-closed-until-provisioned-adapter",
+    "etw_live_collection": "not-implemented-in-job-cleanup-smoke",
+    "helper_relative_path": "scripts/m0/Invoke-M0SyntheticProcessNode.ps1",
+    "helper_sha256": "e643e555d0f8dffe3a110d12f8703c8fe8f2700efe3a6e47f197d349fd104247",
+    "snapshot_schema_relative_path": "schemas/process-tree.schema.json",
+    "snapshot_schema_sha256": "604d13877a06bc13b234a26dbb3afad312b356cd820be0d128ef4721690cc88b",
+    "artifact_schema_relative_path": "schemas/process-tree-artifact.schema.json",
+    "artifact_schema_sha256": "339d73ee4e8e4f999b29b5326c8409930e9ec5658fc233d6954c50fff049a8fc",
+    "artifact_binding": "caller-supplied-experiment-id+run-id-with-fixed-P-synthetic-role",
+    "artifact_serialization": "ordered-compact-json-utf8-no-bom-single-lf",
+    "future_outcome_mapping": {
+      "scope": "synthetic-P-only;future-A-B-harness-policy-separate",
+      "precedence": ["cleanup-survivor", "cleanup-incomplete", "process-state"],
+      "cleanup-survivor": "check-failed+run-failed+helper-survived-shutdown",
+      "cleanup-incomplete": "check-skipped+specific-cleanup-reason+run-inconclusive+incomplete-evidence",
+      "cleanup_incomplete_reason_codes": [
+        "snapshot_validation_failed",
+        "identity_revalidation_failed",
+        "job_close_failed",
+        "unsafe_run_root_contents"
+      ],
+      "cleanup_reason_projection": "check-reason+checks-omitted-reason",
+      "complete": "check-passed+run-valid",
+      "partial": "check-skipped+run-inconclusive+incomplete-evidence",
+      "unavailable": "check-skipped+run-inconclusive+incomplete-evidence",
+      "process_error_codes": {
+        "complete": [],
+        "partial": [
+          "etw_live_not_implemented",
+          "etw_trace_incomplete",
+          "root_identity_missing",
+          "unresolved_external_attribution"
+        ],
+        "unavailable": ["etw_trace_unavailable", "safe_identity_unavailable"]
+      },
+      "artifact_error_branch_policy": {
+        "complete": "error-null+missing-empty+trace-complete+full-safe-topology",
+        "etw_live_not_implemented": "trace-partial-not-collected+missing-etw+etw-capability-false",
+        "etw_trace_incomplete": "trace-partial-collected+missing-etw+etw-capability-false",
+        "root_identity_missing": "empty-topology+missing-root+no-mutation-authority",
+        "unresolved_external_attribution": "safe-topology+missing-external-proof",
+        "etw_trace_unavailable": "empty-topology+missing-etw+no-mutation-authority",
+        "safe_identity_unavailable": "empty-topology+missing-etw-and-safe-identity+no-mutation-authority"
+      },
+      "trace_capability_policy": "complete=etw-present-and-not-missing;partial-or-unavailable=etw-absent-and-missing",
+      "completion_port_policy": "listed-missing=absent;partial-absent=listed-missing",
+      "missing_cause_precedence_policy": "safe-identity=>safe-unavailable;root=>root-missing;external+root=>root-missing;external-without-root=>unresolved-external",
+      "empty_topology_policy": "zero-counts+zero-auxiliary+no-job-or-mutation-authority",
+      "process_artifact_states": ["complete", "partial", "unavailable"],
+      "pre_snapshot_failure_artifact": "canonical-unavailable-empty-topology",
+      "skipped_run_error_code": null
+    },
+    "current_publication": "smoke-only-no-evidence-artifact",
+    "decisive_snapshot_set_membership": "forbidden"
+  }
+}

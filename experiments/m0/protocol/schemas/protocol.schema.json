@@ -15,6 +15,7 @@
     "shell_scenario_sha256",
     "statistics_descriptor_sha256",
     "visual_descriptor_sha256",
+    "process_descriptor_sha256",
     "contract_sha256",
     "candidate_codes",
     "seed",
@@ -42,6 +43,7 @@
     "shell_scenario_sha256": { "$ref": "#/definitions/sha256" },
     "statistics_descriptor_sha256": { "$ref": "#/definitions/sha256" },
     "visual_descriptor_sha256": { "$ref": "#/definitions/sha256" },
+    "process_descriptor_sha256": { "$ref": "#/definitions/sha256" },
     "contract_sha256": {
       "type": "object",
       "additionalProperties": false,

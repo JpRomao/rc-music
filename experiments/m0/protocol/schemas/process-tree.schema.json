@@ -1,0 +1,623 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 synthetic process-tree evidence snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "candidate_code", "scenario_id", "attempt", "platform",
+    "state", "error_code", "missing_capabilities", "trace", "capabilities", "roles", "nodes",
+    "auxiliary_job_members", "job_member_hint_count", "retained_identity_count",
+    "qpc_before_create_ticks", "qpc_after_resume_ticks", "qpc_frequency", "cleanup_authority",
+    "evidence_role", "decision_eligible"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/process-tree.schema.json" },
+    "schema_id": { "const": "m0.process-tree-smoke.v1" },
+    "candidate_code": { "const": "P" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "attempt": { "const": 1 },
+    "platform": { "const": "windows" },
+    "state": { "enum": ["complete", "partial", "unavailable"] },
+    "error_code": { "$ref": "#/definitions/nullable_error" },
+    "missing_capabilities": {
+      "type": "array",
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "etw-process-start-stop", "job-completion-port", "root-handle",
+          "external-attribution-proof", "safe-process-identity"
+        ]
+      }
+    },
+    "trace": { "$ref": "#/definitions/trace" },
+    "capabilities": { "$ref": "#/definitions/capabilities" },
+    "roles": {
+      "oneOf": [
+        { "type": "array", "const": [] },
+        { "type": "array", "const": ["root"] },
+        { "type": "array", "const": ["root", "child"] },
+        { "type": "array", "const": ["root", "child", "grandchild"] }
+      ]
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "items": { "$ref": "#/definitions/role_node" }
+    },
+    "auxiliary_job_members": {
+      "type": "array",
+      "maxItems": 253,
+      "items": { "$ref": "#/definitions/auxiliary_node" }
+    },
+    "job_member_hint_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "retained_identity_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+    "qpc_before_create_ticks": { "$ref": "#/definitions/nullable_positive_decimal" },
+    "qpc_after_resume_ticks": { "$ref": "#/definitions/nullable_positive_decimal" },
+    "qpc_frequency": { "$ref": "#/definitions/nullable_positive_decimal" },
+    "cleanup_authority": {
+      "enum": ["private-opaque-registry-only", "none-no-mutation-capability"]
+    },
+    "evidence_role": { "const": "synthetic_pilot" },
+    "decision_eligible": { "const": false }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "trace": { "properties": { "state": { "const": "complete" } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": {
+            "type": "array",
+            "not": { "contains": { "const": "etw-process-start-stop" } }
+          },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "etw_process_start_stop": { "const": true } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "trace": { "properties": { "state": { "const": "partial" } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "etw-process-start-stop" } },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "etw_process_start_stop": { "const": false } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "trace": { "properties": { "state": { "const": "unavailable" } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "etw-process-start-stop" } },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "etw_process_start_stop": { "const": false } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "missing_capabilities": { "contains": { "const": "job-completion-port" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "completion_port": { "const": false } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "partial" },
+          "capabilities": { "properties": { "completion_port": { "const": false } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "job-completion-port" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "missing_capabilities": { "contains": { "const": "safe-process-identity" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": { "const": "unavailable" },
+          "error_code": { "const": "safe_identity_unavailable" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "missing_capabilities": { "contains": { "const": "root-handle" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": { "const": "partial" },
+          "error_code": { "const": "root_identity_missing" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "missing_capabilities": { "contains": { "const": "external-attribution-proof" } }
+        }
+      },
+      "then": {
+        "properties": { "state": { "const": "partial" } },
+        "oneOf": [
+          {
+            "properties": {
+              "error_code": { "const": "root_identity_missing" },
+              "missing_capabilities": { "contains": { "const": "root-handle" } }
+            }
+          },
+          {
+            "properties": {
+              "error_code": { "const": "unresolved_external_attribution" },
+              "missing_capabilities": {
+                "not": { "contains": { "const": "root-handle" } }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "complete" } } },
+      "then": {
+        "properties": {
+          "error_code": { "type": "null" },
+          "missing_capabilities": { "type": "array", "const": [] },
+          "trace": { "$ref": "#/definitions/trace_complete" },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              {
+                "properties": {
+                  "job_object_kill_on_close": { "const": true },
+                  "membership_handles_revalidated": { "const": true },
+                  "helper_sha256_verified": { "const": true },
+                  "helper_file_locked_until_readiness": { "const": true },
+                  "completion_port": { "const": true },
+                  "etw_process_start_stop": { "const": true }
+                }
+              }
+            ]
+          },
+          "roles": { "type": "array", "const": ["root", "child", "grandchild"] },
+          "nodes": { "type": "array", "minItems": 3, "maxItems": 3 },
+          "job_member_hint_count": { "type": "integer", "minimum": 3 },
+          "retained_identity_count": { "type": "integer", "minimum": 3 },
+          "qpc_before_create_ticks": { "$ref": "#/definitions/positive_decimal" },
+          "qpc_after_resume_ticks": { "$ref": "#/definitions/positive_decimal" },
+          "qpc_frequency": { "$ref": "#/definitions/positive_decimal" },
+          "cleanup_authority": { "const": "private-opaque-registry-only" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "partial" } } },
+      "then": {
+        "properties": {
+          "error_code": {
+            "enum": [
+              "etw_live_not_implemented", "etw_trace_incomplete",
+              "root_identity_missing", "unresolved_external_attribution"
+            ]
+          },
+          "missing_capabilities": { "type": "array", "minItems": 1 },
+          "trace": {
+            "oneOf": [
+              { "$ref": "#/definitions/trace_complete" },
+              { "$ref": "#/definitions/trace_partial" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "partial" },
+          "error_code": { "const": "etw_live_not_implemented" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "etw-process-start-stop" } },
+          "trace": {
+            "allOf": [
+              { "$ref": "#/definitions/trace_partial" },
+              {
+                "properties": {
+                  "collected": { "const": false },
+                  "gap_codes": { "type": "array", "const": ["not-collected"] },
+                  "error_code": { "const": "etw_live_not_implemented" }
+                }
+              }
+            ]
+          },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "etw_process_start_stop": { "const": false } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "partial" },
+          "error_code": { "const": "etw_trace_incomplete" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "etw-process-start-stop" } },
+          "trace": {
+            "allOf": [
+              { "$ref": "#/definitions/trace_partial" },
+              {
+                "properties": {
+                  "collected": { "const": true },
+                  "error_code": { "const": "etw_trace_incomplete" }
+                }
+              }
+            ]
+          },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              { "properties": { "etw_process_start_stop": { "const": false } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "partial" },
+          "error_code": { "const": "root_identity_missing" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "root-handle" } },
+          "roles": { "type": "array", "const": [] },
+          "nodes": { "type": "array", "const": [] },
+          "auxiliary_job_members": { "type": "array", "const": [] },
+          "job_member_hint_count": { "const": 0 },
+          "retained_identity_count": { "const": 0 },
+          "cleanup_authority": { "const": "none-no-mutation-capability" },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              {
+                "properties": {
+                  "job_object_kill_on_close": { "const": false },
+                  "membership_handles_revalidated": { "const": false }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "partial" },
+          "error_code": { "const": "unresolved_external_attribution" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "external-attribution-proof" } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "unavailable" } } },
+      "then": {
+        "properties": {
+          "error_code": { "enum": ["etw_trace_unavailable", "safe_identity_unavailable"] },
+          "missing_capabilities": { "type": "array", "minItems": 1 },
+          "trace": { "$ref": "#/definitions/trace_unavailable" },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              {
+                "properties": {
+                  "job_object_kill_on_close": { "const": false },
+                  "membership_handles_revalidated": { "const": false },
+                  "helper_sha256_verified": { "const": false },
+                  "helper_file_locked_until_readiness": { "const": false },
+                  "completion_port": { "const": false },
+                  "etw_process_start_stop": { "const": false }
+                }
+              }
+            ]
+          },
+          "roles": { "type": "array", "const": [] },
+          "nodes": { "type": "array", "const": [] },
+          "auxiliary_job_members": { "type": "array", "const": [] },
+          "job_member_hint_count": { "const": 0 },
+          "retained_identity_count": { "const": 0 },
+          "qpc_before_create_ticks": { "type": "null" },
+          "qpc_after_resume_ticks": { "type": "null" },
+          "qpc_frequency": { "type": "null" },
+          "cleanup_authority": { "const": "none-no-mutation-capability" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "unavailable" },
+          "error_code": { "const": "safe_identity_unavailable" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "safe-process-identity" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "unavailable" },
+          "error_code": { "const": "etw_trace_unavailable" }
+        }
+      },
+      "then": {
+        "properties": {
+          "missing_capabilities": { "type": "array", "contains": { "const": "etw-process-start-stop" } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "nodes": { "type": "array", "maxItems": 0 } } },
+      "then": {
+        "properties": {
+          "roles": { "type": "array", "const": [] },
+          "auxiliary_job_members": { "type": "array", "const": [] },
+          "job_member_hint_count": { "const": 0 },
+          "retained_identity_count": { "const": 0 },
+          "cleanup_authority": { "const": "none-no-mutation-capability" },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              {
+                "properties": {
+                  "job_object_kill_on_close": { "const": false },
+                  "membership_handles_revalidated": { "const": false }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "nodes": { "type": "array", "minItems": 1 } } },
+      "then": {
+        "properties": {
+          "job_member_hint_count": { "type": "integer", "minimum": 1 },
+          "retained_identity_count": { "type": "integer", "minimum": 1 },
+          "qpc_before_create_ticks": { "$ref": "#/definitions/positive_decimal" },
+          "qpc_after_resume_ticks": { "$ref": "#/definitions/positive_decimal" },
+          "qpc_frequency": { "$ref": "#/definitions/positive_decimal" },
+          "cleanup_authority": { "const": "private-opaque-registry-only" },
+          "capabilities": {
+            "allOf": [
+              { "$ref": "#/definitions/capabilities" },
+              {
+                "properties": {
+                  "job_object_kill_on_close": { "const": true },
+                  "membership_handles_revalidated": { "const": true },
+                  "helper_sha256_verified": { "const": true },
+                  "helper_file_locked_until_readiness": { "const": true }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "auxiliary_job_members": { "type": "array", "minItems": 1 } } },
+      "then": {
+        "properties": {
+          "roles": { "type": "array", "const": ["root", "child", "grandchild"] },
+          "nodes": { "type": "array", "minItems": 3, "maxItems": 3 },
+          "cleanup_authority": { "const": "private-opaque-registry-only" }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "positive_decimal": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "nullable_positive_decimal": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/positive_decimal" }
+      ]
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "nullable_error": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "creation_time_filetime_utc"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "creation_time_filetime_utc": { "$ref": "#/definitions/positive_decimal" }
+      }
+    },
+    "trace": {
+      "oneOf": [
+        { "$ref": "#/definitions/trace_complete" },
+        { "$ref": "#/definitions/trace_partial" },
+        { "$ref": "#/definitions/trace_unavailable" }
+      ]
+    },
+    "trace_complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "adapter", "complete", "collected", "gap_codes", "error_code"],
+      "properties": {
+        "state": { "const": "complete" },
+        "adapter": { "const": "etw-process-start-stop" },
+        "complete": { "const": true },
+        "collected": { "const": true },
+        "gap_codes": { "type": "array", "const": [] },
+        "error_code": { "type": "null" }
+      }
+    },
+    "trace_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "adapter", "complete", "collected", "gap_codes", "error_code"],
+      "properties": {
+        "state": { "const": "partial" },
+        "adapter": { "const": "etw-process-start-stop" },
+        "complete": { "const": false },
+        "collected": { "type": "boolean" },
+        "gap_codes": { "type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true },
+        "error_code": { "enum": ["etw_live_not_implemented", "etw_trace_incomplete"] }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "collected": { "const": false },
+            "gap_codes": { "type": "array", "const": ["not-collected"] },
+            "error_code": { "const": "etw_live_not_implemented" }
+          }
+        },
+        {
+          "properties": {
+            "collected": { "const": true },
+            "gap_codes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "lost-event", "buffer-overflow", "trace-started-after-launch",
+                  "identity-conflict", "parentage-conflict"
+                ]
+              }
+            },
+            "error_code": { "const": "etw_trace_incomplete" }
+          }
+        }
+      ]
+    },
+    "trace_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "adapter", "complete", "collected", "gap_codes", "error_code"],
+      "properties": {
+        "state": { "const": "unavailable" },
+        "adapter": { "const": "etw-process-start-stop" },
+        "complete": { "const": false },
+        "collected": { "const": false },
+        "gap_codes": { "type": "array", "const": ["adapter-unavailable"] },
+        "error_code": { "const": "etw_trace_unavailable" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_object_kill_on_close", "breakaway_flags", "membership_handles_revalidated",
+        "helper_sha256_verified", "helper_file_locked_until_readiness", "completion_port",
+        "etw_process_start_stop", "linux_live_status"
+      ],
+      "properties": {
+        "job_object_kill_on_close": { "type": "boolean" },
+        "breakaway_flags": { "const": "none" },
+        "membership_handles_revalidated": { "type": "boolean" },
+        "helper_sha256_verified": { "type": "boolean" },
+        "helper_file_locked_until_readiness": { "type": "boolean" },
+        "completion_port": { "type": "boolean" },
+        "etw_process_start_stop": { "type": "boolean" },
+        "linux_live_status": { "const": "not_proven" }
+      }
+    },
+    "role_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "identity", "parent_identity", "executable_sha256", "job_membership_revalidated"],
+      "properties": {
+        "role": { "enum": ["root", "child", "grandchild"] },
+        "identity": { "$ref": "#/definitions/identity" },
+        "parent_identity": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/identity" }
+          ]
+        },
+        "executable_sha256": { "$ref": "#/definitions/sha256" },
+        "job_membership_revalidated": { "const": true }
+      }
+    },
+    "auxiliary_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "job_membership_revalidated", "role"],
+      "properties": {
+        "identity": { "$ref": "#/definitions/identity" },
+        "job_membership_revalidated": { "const": true },
+        "role": { "const": "job-auxiliary" }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 bound synthetic process-tree artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "experiment_id", "run_id", "artifact_id",
+    "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible", "snapshot"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/process-tree-artifact.schema.json" },
+    "schema_id": { "const": "m0.process-tree-artifact.v1" },
+    "schema_version": { "const": 1 },
+    "experiment_id": { "$ref": "#/definitions/id" },
+    "run_id": { "$ref": "#/definitions/id" },
+    "artifact_id": { "const": "process-tree" },
+    "candidate_code": { "const": "P" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "attempt": { "const": 1 },
+    "evidence_role": { "const": "synthetic_pilot" },
+    "decision_eligible": { "const": false },
+    "snapshot": { "$ref": "process-tree.schema.json" }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+  }
+}

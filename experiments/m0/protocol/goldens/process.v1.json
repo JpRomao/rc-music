@@ -1,0 +1,275 @@
+{
+  "$schema": "../schemas/process-golden.schema.json",
+  "schema_id": "m0.process-golden.v1",
+  "schema_version": 1,
+  "golden_id": "M0-PROCESS-GOLDEN-1",
+  "process_id": "M0-PROCESS-1",
+  "attribution_vectors": [
+    {
+      "case_id": "job-etw-synthetic-breakaway-nonce-and-unrelated",
+      "root_identity": { "pid": 101, "creation_time_filetime_utc": "1000" },
+      "expected_executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "launch_qpc_ticks": "100",
+      "attempt_end_qpc_ticks": "1000",
+      "records": [
+        {
+          "observation_seq": 1,
+          "identity": { "pid": 101, "creation_time_filetime_utc": "1000" },
+          "parent_identity": null,
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": true,
+          "etw_birth_observed": false,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "110"
+        },
+        {
+          "observation_seq": 2,
+          "identity": { "pid": 102, "creation_time_filetime_utc": "2000" },
+          "parent_identity": { "pid": 101, "creation_time_filetime_utc": "1000" },
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": true,
+          "etw_birth_observed": true,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "120"
+        },
+        {
+          "observation_seq": 3,
+          "identity": { "pid": 103, "creation_time_filetime_utc": "3000" },
+          "parent_identity": { "pid": 102, "creation_time_filetime_utc": "2000" },
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": false,
+          "etw_birth_observed": true,
+          "nonce_argument_match": false,
+          "observed_nonce": null,
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "130"
+        },
+        {
+          "observation_seq": 4,
+          "identity": { "pid": 104, "creation_time_filetime_utc": "4000" },
+          "parent_identity": null,
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": false,
+          "etw_birth_observed": false,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "140"
+        },
+        {
+          "observation_seq": 5,
+          "identity": { "pid": 105, "creation_time_filetime_utc": "5000" },
+          "parent_identity": null,
+          "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "job_member": false,
+          "etw_birth_observed": false,
+          "nonce_argument_match": false,
+          "observed_nonce": null,
+          "external_attribution_required": false,
+          "observed_after_launch": false,
+          "within_attempt_window": false,
+          "birth_qpc_ticks": "50"
+        }
+      ],
+      "expected": {
+        "state": "complete",
+        "error_code": null,
+        "missing_capabilities": [],
+        "identities": [
+          { "pid": 101, "creation_time_filetime_utc": "1000" },
+          { "pid": 102, "creation_time_filetime_utc": "2000" },
+          { "pid": 103, "creation_time_filetime_utc": "3000" },
+          { "pid": 104, "creation_time_filetime_utc": "4000" }
+        ],
+        "sources": ["root-handle", "job-membership", "etw-birth-descendant", "nonce-executable-match"]
+      }
+    },
+    {
+      "case_id": "pid-reuse-is-a-distinct-unrelated-identity",
+      "root_identity": { "pid": 201, "creation_time_filetime_utc": "1000" },
+      "expected_executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "launch_qpc_ticks": "100",
+      "attempt_end_qpc_ticks": "1000",
+      "records": [
+        {
+          "observation_seq": 1,
+          "identity": { "pid": 201, "creation_time_filetime_utc": "1000" },
+          "parent_identity": null,
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": true,
+          "etw_birth_observed": false,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "110"
+        },
+        {
+          "observation_seq": 2,
+          "identity": { "pid": 201, "creation_time_filetime_utc": "1001" },
+          "parent_identity": null,
+          "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "job_member": false,
+          "etw_birth_observed": false,
+          "nonce_argument_match": false,
+          "observed_nonce": null,
+          "external_attribution_required": false,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "200"
+        }
+      ],
+      "expected": {
+        "state": "complete",
+        "error_code": null,
+        "missing_capabilities": [],
+        "identities": [
+          { "pid": 201, "creation_time_filetime_utc": "1000" }
+        ],
+        "sources": ["root-handle"]
+      }
+    },
+    {
+      "case_id": "required-external-without-proof-fails",
+      "root_identity": { "pid": 301, "creation_time_filetime_utc": "1000" },
+      "expected_executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "launch_qpc_ticks": "100",
+      "attempt_end_qpc_ticks": "1000",
+      "records": [
+        {
+          "observation_seq": 1,
+          "identity": { "pid": 301, "creation_time_filetime_utc": "1000" },
+          "parent_identity": null,
+          "executable_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "job_member": true,
+          "etw_birth_observed": false,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "110"
+        },
+        {
+          "observation_seq": 2,
+          "identity": { "pid": 302, "creation_time_filetime_utc": "2000" },
+          "parent_identity": null,
+          "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "job_member": false,
+          "etw_birth_observed": false,
+          "nonce_argument_match": true,
+          "observed_nonce": "0123456789abcdef0123456789abcdef",
+          "external_attribution_required": true,
+          "observed_after_launch": true,
+          "within_attempt_window": true,
+          "birth_qpc_ticks": "120"
+        }
+      ],
+      "expected": {
+        "state": "partial",
+        "error_code": "unresolved_external_attribution",
+        "missing_capabilities": ["external-attribution-proof"],
+        "identities": [],
+        "sources": []
+      }
+    }
+  ],
+  "cleanup_vectors": [
+    {
+      "case_id": "exact-identity-terminates",
+      "observations": [
+        {
+          "recorded_identity": { "pid": 401, "creation_time_filetime_utc": "1000" },
+          "live_identity": { "pid": 401, "creation_time_filetime_utc": "1000" }
+        }
+      ],
+      "expected": { "complete": true, "actions": ["terminate-exact-identity"] }
+    },
+    {
+      "case_id": "pid-reuse-is-never-terminated",
+      "observations": [
+        {
+          "recorded_identity": { "pid": 402, "creation_time_filetime_utc": "1000" },
+          "live_identity": { "pid": 402, "creation_time_filetime_utc": "1001" }
+        }
+      ],
+      "expected": { "complete": false, "actions": ["skip-identity-mismatch"] }
+    },
+    {
+      "case_id": "already-exited-is-idempotent",
+      "observations": [
+        {
+          "recorded_identity": { "pid": 403, "creation_time_filetime_utc": "1000" },
+          "live_identity": null
+        }
+      ],
+      "expected": { "complete": true, "actions": ["already-exited"] }
+    }
+  ],
+  "linux_vectors": [
+    {
+      "case_id": "proc-stat-last-parenthesis-and-pidfd-present",
+      "proc_stat": "42 (worker name) with ) chars) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 12345",
+      "expected_pid": 42,
+      "expected_start_ticks": "12345",
+      "expected_boot_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "observed_boot_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pidfd_available": true,
+      "expected": {
+        "state": "partial",
+        "error_code": "linux_live_not_proven",
+        "missing_capabilities": ["linux-live-smoke", "exclusive-cgroup-v2"],
+        "comm": "worker name) with ) chars",
+        "start_ticks": "12345"
+      }
+    },
+    {
+      "case_id": "pidfd-unavailable-never-authorizes-signal-fallback",
+      "proc_stat": "42 (worker) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 12345",
+      "expected_pid": 42,
+      "expected_start_ticks": "12345",
+      "expected_boot_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "observed_boot_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pidfd_available": false,
+      "expected": {
+        "state": "partial",
+        "error_code": "linux_pidfd_unavailable",
+        "missing_capabilities": ["pidfd", "linux-live-smoke", "exclusive-cgroup-v2"],
+        "comm": "worker",
+        "start_ticks": "12345"
+      }
+    },
+    {
+      "case_id": "boot-id-mismatch-is-unavailable",
+      "proc_stat": "42 (worker) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 12345",
+      "expected_pid": 42,
+      "expected_start_ticks": "12345",
+      "expected_boot_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "observed_boot_id_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "pidfd_available": true,
+      "expected": {
+        "state": "unavailable",
+        "error_code": "linux_identity_mismatch",
+        "missing_capabilities": ["stable-linux-process-identity"],
+        "comm": null,
+        "start_ticks": null
+      }
+    }
+  ]
+}

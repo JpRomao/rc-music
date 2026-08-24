@@ -440,6 +440,19 @@ Test-Case 'The snapshot-set builder is a public evidence API with explicit trust
     foreach ($parameterName in @('EvidenceRoot', 'SnapshotSetId', 'RunIds', 'SchedulePath', 'SchemaRoot')) {
         Assert-True ($command.Parameters.ContainsKey($parameterName)) "M0E026 snapshot-set builder parameter '$parameterName' is missing."
     }
+    foreach ($exportName in @(
+        'Add-M0EvidenceEvent', 'Complete-M0EvidenceRun', 'Assert-M0EvidenceRun',
+        'Get-M0EvidenceCandidateDigests', 'Assert-M0EvidenceBatch'
+    )) {
+        $exportCommand = Get-Command $exportName -ErrorAction Stop
+        Assert-Equal -Actual $exportCommand.ModuleName -Expected 'M0.Evidence' `
+            "M0E026 command '$exportName' was shadowed by a test helper from another file."
+    }
+    foreach ($writerCommandName in @('Add-M0EvidenceEvent', 'Complete-M0EvidenceRun')) {
+        $writerCommand = Get-Command $writerCommandName -ErrorAction Stop
+        Assert-True ($writerCommand.Parameters.ContainsKey('Writer')) `
+            "M0E026 command '$writerCommandName' does not expose the real opaque Writer boundary."
+    }
 }
 
 Test-Case 'Builder publishes one flushed canonical set and its exact SHA-256 sidecar' {

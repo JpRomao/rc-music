@@ -17,9 +17,11 @@ $testsRoot = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'expe
 $testRunParent = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'out\m0\test-runs'
 $TestTempRoot = Resolve-M0ScopedPath -BasePath $testRunParent -CandidatePath ([Guid]::NewGuid().ToString('N'))
 
-$script:Passed = 0
-$script:Failed = 0
-$script:Failures = [Collections.Generic.List[string]]::new()
+$TestRunState = [pscustomobject]@{
+    Passed = 0
+    Failed = 0
+    Failures = [Collections.Generic.List[string]]::new()
+}
 
 function Test-Case {
     param(
@@ -29,13 +31,13 @@ function Test-Case {
 
     try {
         & $Body
-        $script:Passed++
+        $TestRunState.Passed++
         Write-Host "[PASS] $Name"
     }
     catch {
-        $script:Failed++
+        $TestRunState.Failed++
         $failure = "[FAIL] $Name :: $($_.Exception.Message)"
-        $script:Failures.Add($failure)
+        $TestRunState.Failures.Add($failure)
         Write-Host $failure
         throw
     }
@@ -140,14 +142,14 @@ try {
     }
 
     foreach ($file in $files) {
-        . $file
+        & $file
     }
 }
 catch {
-    if ($script:Failed -eq 0) {
-        $script:Failed++
+    if ($TestRunState.Failed -eq 0) {
+        $TestRunState.Failed++
         $failure = "[FAIL] harness load :: $($_.Exception.Message)"
-        $script:Failures.Add($failure)
+        $TestRunState.Failures.Add($failure)
         Write-Host $failure
     }
 }
@@ -158,7 +160,7 @@ finally {
     }
 }
 
-Write-Host "Tests: $($script:Passed) passed, $($script:Failed) failed."
-if ($script:Failed -gt 0) {
+Write-Host "Tests: $($TestRunState.Passed) passed, $($TestRunState.Failed) failed."
+if ($TestRunState.Failed -gt 0) {
     exit 1
 }
