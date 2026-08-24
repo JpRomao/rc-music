@@ -1,0 +1,54 @@
+{
+  "schema_id": "m0.fixture-manifest.v1",
+  "schema_version": 1,
+  "manifest_id": "M0-SHELL-F1-MANIFEST",
+  "fixture_id": "M0-SHELL-F1",
+  "hash_algorithm": "sha256",
+  "files": [
+    {
+      "relative_path": "LICENSE.assets.txt",
+      "role": "license",
+      "media_type": "text/plain",
+      "size_bytes": 366,
+      "sha256": "c77c86115e7da5fff31ab28c903e78a8a12f65f9b2792f7e0d137c458fae5b94",
+      "origin": "project-authored-synthetic",
+      "license_id": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "assets/cover-placeholder.svg",
+      "role": "asset",
+      "media_type": "image/svg+xml",
+      "size_bytes": 257,
+      "sha256": "3027bb88ca4503fc7206a58dd20ddbf460d8662300ec0e1f9321cf11c4acb0a6",
+      "origin": "project-authored-synthetic",
+      "license_id": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "assets/cover-track.svg",
+      "role": "asset",
+      "media_type": "image/svg+xml",
+      "size_bytes": 371,
+      "sha256": "9d07309f405b6b4d1c2acc9b97e8527eb2ccc295e992ed1b0ffce3aef0737312",
+      "origin": "project-authored-synthetic",
+      "license_id": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "fixture.v1.json",
+      "role": "descriptor",
+      "media_type": "application/json",
+      "size_bytes": 8615,
+      "sha256": "03fd2a762758c524e226296a63575df5e3972a9a0ea09c1109bb641089a58464",
+      "origin": "generated-from-repository-script",
+      "license_id": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "queue.v1.json",
+      "role": "queue",
+      "media_type": "application/json",
+      "size_bytes": 582271,
+      "sha256": "a3c2e890f08885af1de319ed330f71a4b657aeaecd7bf7c640dc633095d55ef3",
+      "origin": "generated-from-repository-script",
+      "license_id": "LicenseRef-MusicPlayer-M0-Private"
+    }
+  ]
+}

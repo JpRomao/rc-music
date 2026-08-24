@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0 e M0.0 concluídos; fixture/harness comparativo M0.1 é o próximo marco. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
+> **Estado atual:** D0 e M0.0 concluídos; M0.1 está em andamento, com o harness-base e a fixture sintética do shell materializados. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -76,6 +76,7 @@ Validações atuais:
 ```powershell
 & .\scripts\validate-docs.ps1
 & .\scripts\m0\Invoke-M0HarnessTests.ps1
+& .\scripts\m0\Test-M0Fixture.ps1
 & .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
@@ -84,7 +85,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. materializar fixture, schemas e harness comum em M0.1;
+1. completar agenda, evidência e piloto neutro do harness em M0.1;
 2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
 3. medir e então aceitar/rejeitar os ADRs;
 4. somente depois iniciar o MVP guiado por TDD.

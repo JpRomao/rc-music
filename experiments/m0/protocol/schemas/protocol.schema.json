@@ -9,6 +9,8 @@
     "protocol_id",
     "environment_id",
     "environment_bundle_sha256",
+    "fixture_manifest_sha256",
+    "shell_scenario_sha256",
     "contract_sha256",
     "candidate_codes",
     "seed",
@@ -30,6 +32,8 @@
     "protocol_id": { "const": "M0-P1" },
     "environment_id": { "const": "M0-E1" },
     "environment_bundle_sha256": { "$ref": "#/definitions/sha256" },
+    "fixture_manifest_sha256": { "$ref": "#/definitions/sha256" },
+    "shell_scenario_sha256": { "$ref": "#/definitions/sha256" },
     "contract_sha256": {
       "type": "object",
       "additionalProperties": false,

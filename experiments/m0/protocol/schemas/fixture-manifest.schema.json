@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 shell fixture manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "manifest_id", "fixture_id", "hash_algorithm", "files"],
+  "properties": {
+    "schema_id": { "const": "m0.fixture-manifest.v1" },
+    "schema_version": { "const": 1 },
+    "manifest_id": { "const": "M0-SHELL-F1-MANIFEST" },
+    "fixture_id": { "const": "M0-SHELL-F1" },
+    "hash_algorithm": { "const": "sha256" },
+    "files": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relative_path", "role", "media_type", "size_bytes", "sha256", "origin", "license_id"],
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+          },
+          "role": { "enum": ["descriptor", "queue", "asset", "license"] },
+          "media_type": { "enum": ["application/json", "image/svg+xml", "text/plain"] },
+          "size_bytes": { "type": "integer", "minimum": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "origin": { "enum": ["generated-from-repository-script", "project-authored-synthetic"] },
+          "license_id": { "const": "LicenseRef-MusicPlayer-M0-Private" }
+        }
+      }
+    }
+  }
+}

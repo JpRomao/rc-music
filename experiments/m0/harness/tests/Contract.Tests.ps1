@@ -75,6 +75,15 @@ Test-Case 'Protocol contract hashes bind the executable descriptor to the frozen
     Assert-Throws { Assert-M0ProtocolContract -Protocol $document -RepositoryRoot $isolatedRoot } 'hash'
 }
 
+Test-Case 'The protocol binds the common fixture and shell scenario bytes' {
+    $protocolPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\protocol.v1.json'
+    $protocol = Get-Content -LiteralPath $protocolPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
+    $fixtureManifest = Join-Path $RepositoryRoot 'experiments\m0\shared\shell-fixture\manifest.v1.json'
+    $shellScenario = Join-Path $RepositoryRoot 'experiments\m0\protocol\scenarios\shell.v1.json'
+    Assert-M0FileHash -LiteralPath $fixtureManifest -ExpectedHash $protocol.fixture_manifest_sha256
+    Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $protocol.shell_scenario_sha256
+}
+
 Test-Case 'Candidate, environment and scenario descriptors satisfy their closed schemas' {
     $contracts = @(
         @('experiments\m0\candidates\qt\candidate.v1.json', 'candidate.schema.json'),

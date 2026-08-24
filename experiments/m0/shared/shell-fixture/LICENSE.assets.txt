@@ -1,0 +1,8 @@
+LicenseRef-MusicPlayer-M0-Private
+
+Copyright (c) 2026, maintainer of the music-player project.
+
+These synthetic fixture files may be used, copied, and modified solely inside
+this private local project and its M0 experiments. No permission is granted for
+public redistribution. No third-party media, font, recording, or personal file
+is included in this fixture set.

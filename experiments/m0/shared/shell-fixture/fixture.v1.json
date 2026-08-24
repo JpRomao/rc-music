@@ -1,0 +1,344 @@
+{
+  "schema_id": "m0.shell-fixture.v1",
+  "schema_version": 1,
+  "fixture_id": "M0-SHELL-F1",
+  "locale": "pt-BR",
+  "default_state_id": "empty",
+  "window": {
+    "client_width_px": 960,
+    "client_height_px": 640,
+    "minimum_width_px": 720,
+    "minimum_height_px": 520
+  },
+  "layout_tokens": {
+    "queue_panel_min_width_px": 320,
+    "queue_panel_max_width_px": 380,
+    "control_target_min_px": 40,
+    "control_target_preferred_px": 44,
+    "radius_small_px": 8,
+    "radius_medium_px": 12,
+    "spacing_unit_px": 4
+  },
+  "strings": {
+    "app_name": "Player de música",
+    "action_open_audio": "Abrir áudio",
+    "empty_title": "Abra um áudio para começar",
+    "empty_hint": "ou arraste arquivos para esta janela",
+    "action_play": "Reproduzir",
+    "action_pause": "Pausar",
+    "action_previous": "Faixa anterior",
+    "action_next": "Próxima faixa",
+    "skip_backward_short": "−{seconds}",
+    "skip_forward_short": "+{seconds}",
+    "skip_backward_name": "Voltar {seconds} segundos",
+    "skip_forward_name": "Avançar {seconds} segundos",
+    "progress_name": "Posição da faixa",
+    "volume_name": "Volume",
+    "action_mute": "Silenciar",
+    "action_unmute": "Ativar som",
+    "queue_title": "Fila",
+    "preferences_title": "Preferências",
+    "details_title": "Detalhes da faixa",
+    "section_general": "Geral",
+    "section_playback": "Reprodução",
+    "section_appearance": "Aparência",
+    "theme_system": "Sistema",
+    "theme_light": "Claro",
+    "theme_dark": "Escuro",
+    "motion_system": "Sistema",
+    "motion_reduced": "Reduzido",
+    "error_title": "Não foi possível abrir esta faixa",
+    "error_body": "A faixa de teste está indisponível.",
+    "action_skip": "Pular",
+    "action_retry": "Tentar novamente",
+    "not_informed": "Não informado"
+  },
+  "controls": [
+    {
+      "control_id": "open-audio",
+      "role": "button",
+      "name_key": "action_open_audio"
+    },
+    {
+      "control_id": "play-pause",
+      "role": "button",
+      "name_key": "action_pause"
+    },
+    {
+      "control_id": "previous",
+      "role": "button",
+      "name_key": "action_previous"
+    },
+    {
+      "control_id": "next",
+      "role": "button",
+      "name_key": "action_next"
+    },
+    {
+      "control_id": "skip-backward",
+      "role": "button",
+      "name_key": "skip_backward_name"
+    },
+    {
+      "control_id": "skip-forward",
+      "role": "button",
+      "name_key": "skip_forward_name"
+    },
+    {
+      "control_id": "progress",
+      "role": "slider",
+      "name_key": "progress_name"
+    },
+    {
+      "control_id": "volume",
+      "role": "slider",
+      "name_key": "volume_name"
+    },
+    {
+      "control_id": "mute",
+      "role": "button",
+      "name_key": "action_mute"
+    },
+    {
+      "control_id": "queue",
+      "role": "button",
+      "name_key": "queue_title"
+    },
+    {
+      "control_id": "preferences",
+      "role": "button",
+      "name_key": "preferences_title"
+    }
+  ],
+  "themes": {
+    "available_modes": [
+      "system",
+      "light",
+      "dark"
+    ],
+    "palettes": {
+      "light": {
+        "canvas": "#F6F7F9",
+        "surface": "#FFFFFF",
+        "surface-raised": "#FFFFFF",
+        "text-primary": "#15171A",
+        "text-secondary": "#4F5660",
+        "accent": "#4F46E5",
+        "on-accent": "#FFFFFF",
+        "border": "#8A929E",
+        "focus": "#2457D6",
+        "error": "#B42318",
+        "warning": "#8A4B08",
+        "success": "#167344"
+      },
+      "dark": {
+        "canvas": "#111318",
+        "surface": "#181B21",
+        "surface-raised": "#21252D",
+        "text-primary": "#F5F7FA",
+        "text-secondary": "#BBC2CC",
+        "accent": "#8B83FF",
+        "on-accent": "#0B0C10",
+        "border": "#69717D",
+        "focus": "#A9C2FF",
+        "error": "#FF8A80",
+        "warning": "#FFC46B",
+        "success": "#6DDA9B"
+      }
+    }
+  },
+  "motion": {
+    "available_modes": [
+      "system",
+      "reduced"
+    ],
+    "normal": {
+      "panel_transition_ms": 160,
+      "feedback_transition_ms": 120,
+      "continuous_animation": false
+    },
+    "reduced": {
+      "panel_transition_ms": 0,
+      "feedback_transition_ms": 0,
+      "continuous_animation": false
+    }
+  },
+  "preferences": {
+    "defaults": {
+      "theme": "system",
+      "motion": "system",
+      "volume_percent": 80,
+      "muted": false,
+      "skip_backward_seconds": 5,
+      "skip_forward_seconds": 5,
+      "close_behavior": "minimize_to_tray",
+      "restore_last_session": true,
+      "start_minimized": false,
+      "queue_end_behavior": "stop_keep_selection"
+    },
+    "constraints": {
+      "volume_percent": {
+        "minimum": 0,
+        "maximum": 100
+      },
+      "skip_seconds": {
+        "minimum": 1,
+        "maximum": 300
+      },
+      "close_behavior": [
+        "minimize_to_tray",
+        "exit"
+      ],
+      "queue_end_behavior": [
+        "stop_keep_selection",
+        "stop_clear_selection"
+      ]
+    },
+    "rules": {
+      "close_without_tray": "minimize_window",
+      "start_minimized_requires_tray": true,
+      "restored_playback_state": "paused",
+      "unmute_restores_last_nonzero_volume": true
+    }
+  },
+  "fake_backend": {
+    "clock": {
+      "kind": "deterministic",
+      "initial_monotonic_ms": 0
+    },
+    "snapshots": {
+      "frequency_hz": 5,
+      "interval_ms": 200,
+      "start_position_ms": 84000,
+      "duration_ms": 248000,
+      "increment_ms": 200,
+      "end_behavior": "clamp_paused"
+    },
+    "seek": {
+      "target_ms": 124000,
+      "preview_immediate": true,
+      "ack_after_ticks": 1,
+      "ack_position_ms": 124000
+    }
+  },
+  "states": [
+    {
+      "state_id": "empty",
+      "playback_state": "unloaded",
+      "queue_loaded": false,
+      "current_occurrence_id": null,
+      "context_occurrence_id": null,
+      "position_ms": null,
+      "duration_ms": null,
+      "seekable": false,
+      "asset_id": "cover-placeholder",
+      "message_key": "empty_title",
+      "primary_action_id": "open-audio",
+      "error_code": null
+    },
+    {
+      "state_id": "playing",
+      "playback_state": "playing",
+      "queue_loaded": true,
+      "current_occurrence_id": "queue-0017",
+      "context_occurrence_id": null,
+      "position_ms": 84000,
+      "duration_ms": 248000,
+      "seekable": true,
+      "asset_id": "cover-track",
+      "message_key": null,
+      "primary_action_id": "play-pause",
+      "error_code": null
+    },
+    {
+      "state_id": "error",
+      "playback_state": "error",
+      "queue_loaded": true,
+      "current_occurrence_id": "queue-0999",
+      "context_occurrence_id": "queue-0017",
+      "position_ms": null,
+      "duration_ms": null,
+      "seekable": false,
+      "asset_id": "cover-track",
+      "message_key": "error_body",
+      "primary_action_id": "skip",
+      "error_code": "fixture_source_unavailable"
+    }
+  ],
+  "queue": {
+    "relative_path": "queue.v1.json",
+    "queue_id": "M0-SHELL-Q1000",
+    "expected_item_count": 1000,
+    "load_action_id": "load-queue-1000"
+  },
+  "fixed_cases": [
+    {
+      "case_id": "duplicate-exact",
+      "occurrence_ids": [
+        "queue-0007",
+        "queue-0707"
+      ],
+      "expectation": "distinct_occurrences_same_source"
+    },
+    {
+      "case_id": "unicode-normalization",
+      "occurrence_ids": [
+        "queue-0017",
+        "queue-0018"
+      ],
+      "expectation": "distinct_presentations_same_nfc_source"
+    },
+    {
+      "case_id": "unicode-non-bmp",
+      "occurrence_ids": [
+        "queue-0023"
+      ],
+      "expectation": "preserve_unicode_scalars"
+    },
+    {
+      "case_id": "literal-markup",
+      "occurrence_ids": [
+        "queue-0042"
+      ],
+      "expectation": "render_as_plain_text"
+    },
+    {
+      "case_id": "long-text",
+      "occurrence_ids": [
+        "queue-0512"
+      ],
+      "expectation": "512_unicode_scalars"
+    },
+    {
+      "case_id": "unavailable",
+      "occurrence_ids": [
+        "queue-0999"
+      ],
+      "expectation": "recoverable_error_preserves_queue"
+    }
+  ],
+  "track_details": {
+    "occurrence_id": "queue-0017",
+    "synthetic": true,
+    "size_bytes": 7483921,
+    "modified_utc": "2026-08-23T00:00:00Z",
+    "container": "M4A",
+    "codec": "AAC-LC",
+    "bitrate_bps": 256000,
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "bit_depth": null
+  },
+  "assets": [
+    {
+      "asset_id": "cover-placeholder",
+      "relative_path": "assets/cover-placeholder.svg",
+      "alt_key": "empty_title"
+    },
+    {
+      "asset_id": "cover-track",
+      "relative_path": "assets/cover-track.svg",
+      "alt_key": "details_title"
+    }
+  ]
+}
