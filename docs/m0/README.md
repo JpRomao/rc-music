@@ -57,7 +57,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | Evidência | Estado |
 |---|---|
 | D0.9 — autorização e preferências | concluído neste documento |
-| M0.0 — [ambiente](environment.md), [protocolo](protocol.md) e [layout](layout.md) | concluído neste marco |
+| M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | pendente |
 | M0.2/M0.3 — shells Qt/Tauri | pendente |
 | M0.4 — resultados de shell | pendente |

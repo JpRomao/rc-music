@@ -229,7 +229,7 @@ Código M0 é experimental, mas comportamento observável de shell, adapter, tra
 
 | ID | Entrega | Requisitos/decisões | Checks obrigatórios | Go/No-go |
 |---|---|---|---|---|
-| M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | `[x]` [ambiente](m0/environment.md), [protocolo](m0/protocol.md), [layout](m0/layout.md); NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | decisões/protocolo commitados; provisionamentos ausentes bloqueiam apenas a etapa dependente |
+| M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | `[x]` [evidência](m0/evidence/m0-0.md); NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | decisões/protocolo em `81f9f2f`; provisionamentos ausentes bloqueiam apenas a etapa dependente |
 | M0.1 | Fixture comum de estado, fila de 1.000 itens, assets, roteiro, marcadores externos, templates de evidência e harness de coleta | NFR-STACK-002–003 | `CHK-TDD` para lógica versionada, `CHK-TRACE`, `CHK-PERF`, `CHK-DOC`, `CHK-CLOSE` | Piloto repetível; nenhum candidato recebe cenário diferente |
 | M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
 | M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
