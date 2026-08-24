@@ -3,7 +3,7 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-08-23
-**Marco atual:** D0 concluído; M0.0 em andamento
+**Marco atual:** D0 e M0.0 concluídos; M0.1 em andamento
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -183,7 +183,7 @@ Uma exceção de gate possui ID, requisito afetado, aprovador, justificativa, mi
 |---|---|---|
 | Aprovar requisitos derivados usados no M0 e autorizar o experimento | fim de D0 | todo M0 |
 | Escolher distribuição Linux de referência e versões Wayland/X11 | M0.0 | `CHK-LINUX`, decisão da stack |
-| Registrar matriz Windows 10/11 e máquina Windows 11 de benchmark | M0.0 | comparação justa e suporte declarado |
+| Registrar matriz Windows 11, Windows 10 legado e máquina de benchmark | M0.0 | comparação justa e suporte declarado |
 | Definir licença do repositório e modelo local/público | antes de distribuir protótipo | licenças, pacote e release |
 | Tratar NSIS como baseline experimental; aceitar tecnologia final após M0 | M0.9 | associação, upgrade e uninstall |
 | Decidir se versão portátil entra no 0.1 | antes de M4 | pacote Windows |
@@ -229,7 +229,7 @@ Código M0 é experimental, mas comportamento observável de shell, adapter, tra
 
 | ID | Entrega | Requisitos/decisões | Checks obrigatórios | Go/No-go |
 |---|---|---|---|---|
-| M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | Go somente com decisões/protocolo commitados |
+| M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | `[x]` [ambiente](m0/environment.md), [protocolo](m0/protocol.md), [layout](m0/layout.md); NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | decisões/protocolo commitados; provisionamentos ausentes bloqueiam apenas a etapa dependente |
 | M0.1 | Fixture comum de estado, fila de 1.000 itens, assets, roteiro, marcadores externos, templates de evidência e harness de coleta | NFR-STACK-002–003 | `CHK-TDD` para lógica versionada, `CHK-TRACE`, `CHK-PERF`, `CHK-DOC`, `CHK-CLOSE` | Piloto repetível; nenhum candidato recebe cenário diferente |
 | M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
 | M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |

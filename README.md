@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** documentação e análise concluídas para revisão. Ainda não existe implementação, instalador ou formato de áudio comprovado pelo projeto.
+> **Estado atual:** D0 e M0.0 concluídos; fixture/harness comparativo M0.1 é o próximo marco. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -50,7 +50,7 @@ Comece por:
 | [Gates](docs/quality/quality-gates.md) | Checks por risco, CI e release |
 | [Corpus](docs/quality/test-corpus.md) | Fixtures, manifesto e matriz de codecs |
 | [Plano executável](docs/development-plan.md) | Incrementos, checks, evidência, rastreabilidade e checkpoint atual |
-| [Registro M0](docs/m0/README.md) | Autorização D0.9, preferências aprovadas e índice experimental |
+| [Registro M0](docs/m0/README.md) | Autorização, ambiente/protocolo congelados e índice de evidências |
 | [Roadmap](docs/roadmap.md) | D0, spikes M0, MVP 0.1 e evoluções |
 | [Workflow](docs/development-workflow.md) | Unidade de trabalho, commits, bugs, deps e handoff |
 | [Threat model](docs/security/threat-model.md) | Fronteiras, ameaças, controles e supply chain |
@@ -82,10 +82,9 @@ O validador cobre links relativos, IDs/matriz de requisitos, checks, etapas, est
 
 ## Próximo passo
 
-1. seguir o [plano executável](docs/development-plan.md) a partir de M0.0;
-2. congelar ambiente e protocolo comum antes dos shells;
-3. construir e medir os dois candidatos sem aceitar stack antecipadamente;
-4. medir e então aceitar/rejeitar os ADRs;
-5. somente depois iniciar o MVP guiado por TDD.
+1. materializar fixture, schemas e harness comum em M0.1;
+2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
+3. medir e então aceitar/rejeitar os ADRs;
+4. somente depois iniciar o MVP guiado por TDD.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

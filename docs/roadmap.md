@@ -41,7 +41,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 3. D0 — Baseline documental
 
-**Estado:** Em revisão. A autoria está concluída; o gate fecha após commit final e revisão do mantenedor.
+**Estado:** Concluído em D0.9; baseline autorizado apenas para o M0.
 
 ### Entregas
 
@@ -54,19 +54,22 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 - roadmap, segurança, workflow e processo de release;
 - README como índice e estado do projeto.
 
-### Gate de saída
+### Gate de saída — alcançado
 
 - links e estrutura verificados;
 - nenhuma proposta apresentada como decisão aceita;
 - todos os arquivos commitados;
-- mantenedor revisa os itens confirmados, derivados e em aberto.
+- mantenedor revisou os itens confirmados, derivados e em aberto sem aceitar antecipadamente uma stack.
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Próximo após aprovação para implementar spikes.  
+**Estado:** Em andamento; M0.0 concluído e M0.1 é o próximo incremento.
+
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
 Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o mesmo trabalho como M0.0–M0.10: `M0-A` = M0.0–M0.4, `M0-B` = M0.5–M0.8, `M0-C` = M0.9 e `M0-D` = M0.10. Os dois namespaces não devem ser intercambiados em evidências.
+
+Ambiente, protocolo e layout foram congelados em [M0-E1/M0-P1/M0-L1](m0/README.md). Provisionamentos ausentes bloqueiam a etapa dependente e não são apresentados como checks executados.
 
 ### M0-A — UI e shell A/B
 
@@ -82,7 +85,7 @@ O recorte comum contém:
 - tray e close/restore básicos;
 - build Release e pacote de teste.
 
-Antes de medir, versionar a fixture de estado, o roteiro, o marcador externo de janela acionável, o baseline da máquina e as tolerâncias. Registrar a primeira execução separadamente e coletar pelo menos 20 lançamentos válidos por candidato em cada cenário cold e aquecido. Agregar private working set/private bytes e CPU da árvore completa de processos, registrar memória estável em 5 s/60 s, pico, resposta de entrada e stall da fila; working set compartilhado fica como dado complementar para evitar dupla contagem. Tamanho instalado e pré-requisitos offline são métricas separadas.
+O [protocolo M0-P1](m0/protocol.md) versiona fixture, roteiro, marcador externo, baseline, 22 tentativas planejadas, descarte máximo, estatística e tolerâncias. Primeira execução, process-cold e warm ficam separados. Private working set/private bytes e CPU cobrem a árvore completa; memória em 5 s/60 s, pico, resposta de entrada e stall da fila são registrados sem contar páginas compartilhadas como métrica primária. Tamanho instalado e pré-requisitos offline são métricas separadas.
 
 Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movimento reduzido, escala e smoke Linux. No Tauri, revisar CSP/capabilities e a árvore WebView2; no Qt, revisar nomes/roles acessíveis, bindings/animations contínuos e plugins distribuídos.
 

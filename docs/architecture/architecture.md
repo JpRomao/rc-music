@@ -101,9 +101,9 @@ Application C++ puro → Domain/Ports C++ puro ← Adapters
 - UI nunca acessa arquivos ou APIs privilegiadas diretamente;
 - nenhum adapter chama componente visual.
 
-## 4. Estrutura inicial do repositório
+## 4. Estrutura do produto após a decisão
 
-Qualquer candidato começa como uma única unidade de build e distribuição, organizada em módulos internos. Se o candidato Qt vencer o M0, o mapeamento inicial é:
+Durante os spikes, ambos os candidatos ficam isolados pelo [layout M0-L1](../m0/layout.md) e não criam scaffold de produto na raiz. Após M0.10, a stack vencedora começa M1 como uma única unidade de build e distribuição organizada em módulos internos. Se o candidato Qt vencer, o mapeamento inicial é:
 
 ```text
 /

@@ -248,10 +248,9 @@ O protocolo e as tolerâncias são congelados antes da coleta. Resultados dentro
 
 ## 10. Decisões que ainda pertencem ao mantenedor
 
-- autorizar a execução dos spikes A/B definidos, sem aceitar antecipadamente a stack;
 - escolher licença e se o repositório será público;
 - definir nome e identidade visual;
-- confirmar suporte mínimo a Windows 10 além do ciclo do Qt/WebView2;
-- escolher a distribuição Linux de referência;
 - decidir se a versão portátil é requisito ou somente conveniência;
 - aprovar ou reajustar os orçamentos após as primeiras medições.
+
+A execução M0 foi autorizada em D0.9. Windows 11 Tier 1, Windows 10 legado e Ubuntu 24.04 LTS Tier 2 foram congelados no [ambiente M0-E1](../m0/environment.md), sem aceitar Qt ou Tauri.

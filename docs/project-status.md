@@ -1,12 +1,12 @@
 # Estado e decisões do projeto
 
 **Atualizado em:** 2026-08-23  
-**Fase:** M0.0 — decisões e protocolo experimental
+**Fase:** M0.1 — fixture, schemas e harness comparativo
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
 
-Estas decisões vieram diretamente do mantenedor e são requisitos de produto/processo:
+Os itens de produto/processo abaixo vieram diretamente do mantenedor:
 
 - player desktop pessoal, leve e rápido;
 - Windows é mais importante que Linux, mas ambos devem ser contemplados;
@@ -28,7 +28,12 @@ Estas decisões vieram diretamente do mantenedor e são requisitos de produto/pr
 - shell/UI e backend de áudio serão comparados separadamente antes da escolha da stack.
 - o baseline derivado, fila/sessão P0 e o experimento M0.0–M0.10 foram autorizados em 2026-08-23.
 
-Os dois últimos itens confirmam a direção do experimento, não a aceitação de uma stack.
+Os contratos experimentais derivados sob a autorização do M0 são:
+
+- Windows 11 x64 é Tier 1; Ubuntu 24.04 LTS amd64/GNOME é Tier 2; Windows 10 é somente legado/best effort;
+- ambiente `M0-E1`, protocolo `M0-P1` e layout `M0-L1` ficam congelados antes da coleta.
+
+Esses contratos confirmam a direção do experimento, não a aceitação de uma stack.
 
 ## 2. O que é recomendado, mas ainda proposto
 
@@ -51,9 +56,9 @@ Alternativas preservadas:
 - Rust + Slint somente se a evidência justificar um experimento adicional de footprint;
 - GStreamer/libmpv apenas como substituição de engine quando requisitos futuros justificarem.
 
-## 3. Requisitos derivados para revisão
+## 3. Baseline derivado aprovado para execução
 
-Estes comportamentos tornam o produto consistente, mas não foram pedidos literalmente e podem ser ajustados:
+Estes comportamentos não foram todos pedidos literalmente, mas foram autorizados em D0.9 como baseline. Alteração posterior exige atualização explícita dos requisitos/plano:
 
 - fila básica;
 - volume/mudo e anterior/próxima;
@@ -69,18 +74,16 @@ Estes comportamentos tornam o produto consistente, mas não foram pedidos litera
 - limites iniciais de arte/metadata/IPC, a validar no M0;
 - NSIS como baseline experimental Windows por usuário e `.deb` como primeiro pacote Linux; a tecnologia Windows final será escolhida no M0.
 
-Revisar [requisitos](product/requirements.md) e [UX](product/ux-specification.md) antes de aceitá-los como detalhe final.
+Os detalhes executáveis permanecem nos [requisitos](product/requirements.md), na [UX](product/ux-specification.md) e no inventário de preferências do [registro M0](m0/README.md).
 
 ## 4. Decisões em aberto
 
 1. escolher shell/UI e backend de áudio somente após as comparações separadas e a decisão explícita por ADR;
 2. nome e identidade visual do aplicativo;
 3. licença para eventual distribuição pública;
-4. distribuição Linux de referência;
-5. manter Windows 10 como Tier 1 pelo tempo proposto;
-6. exigir versão portátil no 0.1 ou depois;
-7. aprovar/recalibrar budgets após medições;
-8. decidir no futuro se YouTube será pesquisado, oferecido via player oficial ou rejeitado.
+4. exigir versão portátil no 0.1 ou depois;
+5. aprovar/recalibrar budgets após medições;
+6. decidir no futuro se YouTube será pesquisado, oferecido via player oficial ou rejeitado.
 
 Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de decisão ou evidência M0 antes do bootstrap definitivo.
 
@@ -112,16 +115,16 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0 concluído; M0.1 pendente |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. fechar ambiente, plataformas, toolchains e protocolo M0.0;
-2. criar a fixture/protocolo executável comum M0.1 antes de qualquer coleta;
-3. criar shells Qt e Tauri equivalentes, ambos com backend falso;
-4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
-5. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
-6. voltar aos ADRs com evidência reproduzível e escolher.
+1. criar a fixture/protocolo executável comum M0.1 antes de qualquer coleta;
+2. criar shells Qt e Tauri equivalentes, ambos com backend falso;
+3. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
+4. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
+5. voltar aos ADRs com evidência reproduzível e escolher.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

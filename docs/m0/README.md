@@ -4,7 +4,7 @@
 
 **Data:** 2026-08-23
 
-**Escopo:** D0.9 e índice das evidências experimentais
+**Escopo:** autorização, contratos M0.0 e índice das evidências experimentais
 
 ## 1. Autorização D0.9
 
@@ -37,12 +37,14 @@ M1 continua bloqueado até M0.10 produzir evidência comparável e uma decisão 
 
 O botão para abrir Aplicativos Padrão é uma ação, não preferência persistida. Escolha de dispositivo, shuffle, repeat, velocidade e editor de tema continuam M6.
 
-## 3. Decisões que permanecem abertas
+## 3. Contratos M0.0
 
-- distribuição e versões Linux de referência;
-- matriz Windows e máquina de benchmark;
-- protocolo/tolerâncias finais antes da coleta;
-- versões exatas dos toolchains experimentais;
+- [Ambiente `M0-E1`](environment.md): Windows 11 Tier 1, Ubuntu 24.04 LTS Tier 2, host, toolchains e distribuição privada.
+- [Protocolo `M0-P1`](protocol.md): amostras, métricas externas, descartes, estatística, áudio, soak e evidência.
+- [Layout `M0-L1`](layout.md): isolamento dos candidatos, inputs comuns, raw ignorado e runners previstos.
+
+Decisões que permanecem abertas:
+
 - tecnologia final de instalador;
 - versão portátil no 0.1;
 - nome e identidade visual;
@@ -55,7 +57,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | Evidência | Estado |
 |---|---|
 | D0.9 — autorização e preferências | concluído neste documento |
-| M0.0 — ambiente, plataformas, toolchains e protocolo | pendente |
+| M0.0 — [ambiente](environment.md), [protocolo](protocol.md) e [layout](layout.md) | concluído neste marco |
 | M0.1 — fixture comum, schemas, roteiro e harness | pendente |
 | M0.2/M0.3 — shells Qt/Tauri | pendente |
 | M0.4 — resultados de shell | pendente |

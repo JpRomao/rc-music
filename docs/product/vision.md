@@ -2,8 +2,9 @@
 
 **Estado:** baseline inicial  
 **Última revisão:** 2026-08-23  
-**Plataforma primária:** Windows 10/11 x64  
-**Plataforma secundária:** Linux desktop x64
+**Plataforma primária:** Windows 11 x64
+
+**Plataforma secundária:** Ubuntu 24.04 LTS desktop amd64
 
 ## Resumo
 
@@ -88,12 +89,12 @@ Esses itens não podem tornar o player local dependente de rede ou de ferramenta
 
 | Nível | Ambiente | Compromisso |
 |---|---|---|
-| Tier 1 | Windows 11 x64 | Desenvolvimento, testes funcionais, acessibilidade, instalador e performance antes de cada release |
-| Tier 1 | Windows 10 22H2 x64 | Compatibilidade e smoke test enquanto a versão for tecnicamente suportável |
-| Tier 2 | Linux x64 em distribuição de referência | Build, reprodução, atalhos, integração XDG e smoke test; limitações do shell/desktop são documentadas |
+| Tier 1 | Windows 11 25H2 x64; smoke em 24H2 enquanto suportado | Desenvolvimento, testes funcionais, acessibilidade, instalador e performance antes de cada release |
+| Tier 2 | Ubuntu 24.04 LTS amd64, GNOME/Wayland e Xorg | Build, reprodução, atalhos, integração XDG e smoke test; limitações do shell/desktop são documentadas |
+| Legado/best effort | Windows 10 22H2 x64 | Smoke somente quando houver VM; o SO não recebe alegação de suporte de release |
 | Não planejado no MVP | macOS, ARM, mobile e web | A arquitetura não deve bloquear deliberadamente, mas não existe compromisso de entrega |
 
-A distribuição Linux de referência será escolhida no spike de empacotamento. Wayland e X11 devem entrar na matriz, sem prometer bandeja quando o ambiente não oferece o protocolo necessário.
+A matriz foi congelada em [M0-E1](../m0/environment.md). Wayland e X11 entram nos checks, sem prometer bandeja quando o ambiente não oferece o protocolo necessário. WSLg não substitui a sessão GNOME de aceitação.
 
 ## Indicadores de sucesso
 
