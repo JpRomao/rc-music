@@ -1,0 +1,198 @@
+{
+  "$schema": "schemas/marker-catalog.schema.json",
+  "schema_version": 1,
+  "catalog_id": "M0-MARKERS-1",
+  "protocol_id": "M0-P1",
+  "scenario_set_id": "M0-SHELL-1",
+  "queue_probe_policy": {
+    "window_interval": "[t0,t0+5s)",
+    "window_duration_ns": 5000000000,
+    "minimum_input_interval_ns": 50000000,
+    "minimum_complete_pairs": 1,
+    "maximum_complete_pairs": 100,
+    "first_probe_at_window_start": true,
+    "next_input_requires_previous_ack": true,
+    "unique_occurrence_id": true,
+    "ack_after_window_closes_pair": true,
+    "input_at_or_after_window_end_forbidden": true,
+    "qpc_value_ns_formula": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)"
+  },
+  "visual_diagnostic_policy": {
+    "decision_role": "diagnostic_only",
+    "minimum_stable_baseline_ns": 500000000,
+    "baseline_frames": 3,
+    "uia_confirmation_timeout_ns": 2000000000,
+    "budget_exceeded_forbidden": true
+  },
+  "resource_sampling_policies": [
+    {
+      "scenario_id": "idle-memory",
+      "stabilization_start_marker_key": null,
+      "sampling_start_marker_key": "idle-sampling-window:begin",
+      "sampling_end_marker_key": "idle-sampling-window:end",
+      "minimum_stabilization_ns": 0,
+      "sampling_duration_ns": 60000000000,
+      "memory_sample_marker_key": "memory-5s-sample:instant",
+      "memory_sample_offset_ns": 5000000000,
+      "memory_sample_tolerance_ns": 125000000,
+      "required_metrics": [
+        { "metric_id": "memory_5s", "unit": "bytes", "anchor_marker_key": "memory-5s-sample:instant" },
+        { "metric_id": "memory_60s", "unit": "bytes", "anchor_marker_key": "idle-sampling-window:end" },
+        { "metric_id": "memory_peak", "unit": "bytes", "anchor_marker_key": "idle-sampling-window:end" }
+      ],
+      "qpc_duration_formula": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)"
+    },
+    {
+      "scenario_id": "paused-cpu",
+      "stabilization_start_marker_key": "paused-stabilization-window:begin",
+      "sampling_start_marker_key": "paused-sampling-window:begin",
+      "sampling_end_marker_key": "paused-sampling-window:end",
+      "minimum_stabilization_ns": 30000000000,
+      "sampling_duration_ns": 60000000000,
+      "memory_sample_marker_key": null,
+      "memory_sample_offset_ns": null,
+      "memory_sample_tolerance_ns": null,
+      "required_metrics": [
+        { "metric_id": "tree_cpu_percent", "unit": "basis_points", "anchor_marker_key": "paused-sampling-window:end" }
+      ],
+      "qpc_duration_formula": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)"
+    },
+    {
+      "scenario_id": "active-progress",
+      "stabilization_start_marker_key": "active-stabilization-window:begin",
+      "sampling_start_marker_key": "active-sampling-window:begin",
+      "sampling_end_marker_key": "active-sampling-window:end",
+      "minimum_stabilization_ns": 10000000000,
+      "sampling_duration_ns": 60000000000,
+      "memory_sample_marker_key": null,
+      "memory_sample_offset_ns": null,
+      "memory_sample_tolerance_ns": null,
+      "required_metrics": [
+        { "metric_id": "tree_cpu_percent", "unit": "basis_points", "anchor_marker_key": "active-sampling-window:end" }
+      ],
+      "qpc_duration_formula": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "profile-first",
+      "markers": [
+        { "marker_id": "launch-input", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "first-frame-externally-visible", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "window-actionable", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "candidate-ready-reported", "phase": "instant", "source": "candidate_reported", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 0, "maximum": 1, "required_statuses": [] }, "after": ["launch-input:instant"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["first-frame-externally-visible:instant", "window-actionable:instant"] }
+      ],
+      "measurements": [
+        { "metric_id": "window_actionable_ns", "source": "external_harness", "decision_role": "diagnostic_only", "attempt_limit_ns": null, "attempt_aggregate": "identity", "start_marker_key": "launch-input:instant", "end_marker_key": "window-actionable:instant", "correlated_occurrence": false }
+      ]
+    },
+    {
+      "scenario_id": "process-cold",
+      "markers": [
+        { "marker_id": "launch-input", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "first-frame-externally-visible", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "window-actionable", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "candidate-ready-reported", "phase": "instant", "source": "candidate_reported", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 0, "maximum": 1, "required_statuses": [] }, "after": ["launch-input:instant"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["first-frame-externally-visible:instant", "window-actionable:instant"] }
+      ],
+      "measurements": [
+        { "metric_id": "window_actionable_ns", "source": "external_harness", "decision_role": "batch_p95", "attempt_limit_ns": null, "attempt_aggregate": "identity", "start_marker_key": "launch-input:instant", "end_marker_key": "window-actionable:instant", "correlated_occurrence": false }
+      ]
+    },
+    {
+      "scenario_id": "warm",
+      "markers": [
+        { "marker_id": "launch-input", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "first-frame-externally-visible", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "window-actionable", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["launch-input:instant"] },
+        { "marker_id": "candidate-ready-reported", "phase": "instant", "source": "candidate_reported", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 0, "maximum": 1, "required_statuses": [] }, "after": ["launch-input:instant"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["first-frame-externally-visible:instant", "window-actionable:instant"] }
+      ],
+      "measurements": [
+        { "metric_id": "window_actionable_ns", "source": "external_harness", "decision_role": "diagnostic_only", "attempt_limit_ns": null, "attempt_aggregate": "identity", "start_marker_key": "launch-input:instant", "end_marker_key": "window-actionable:instant", "correlated_occurrence": false }
+      ]
+    },
+    {
+      "scenario_id": "idle-memory",
+      "markers": [
+        { "marker_id": "idle-sampling-window", "phase": "begin", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "memory-5s-sample", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["idle-sampling-window:begin"] },
+        { "marker_id": "idle-sampling-window", "phase": "end", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["idle-sampling-window:begin"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["idle-sampling-window:end"] }
+      ],
+      "measurements": []
+    },
+    {
+      "scenario_id": "paused-cpu",
+      "markers": [
+        { "marker_id": "paused-stabilization-window", "phase": "begin", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "paused-sampling-window", "phase": "begin", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["paused-stabilization-window:begin"] },
+        { "marker_id": "paused-sampling-window", "phase": "end", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["paused-sampling-window:begin"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["paused-sampling-window:end"] }
+      ],
+      "measurements": []
+    },
+    {
+      "scenario_id": "active-progress",
+      "markers": [
+        { "marker_id": "active-stabilization-window", "phase": "begin", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "active-sampling-window", "phase": "begin", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["active-stabilization-window:begin"] },
+        { "marker_id": "active-sampling-window", "phase": "end", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["active-sampling-window:begin"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["active-sampling-window:end"] }
+      ],
+      "measurements": []
+    },
+    {
+      "scenario_id": "visual-response-diagnostic",
+      "markers": [
+        { "marker_id": "visual-baseline-captured", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "visual-input", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["visual-baseline-captured:instant"] },
+        { "marker_id": "visual-change", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["visual-input:instant"] },
+        { "marker_id": "uia-change", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["visual-input:instant"] },
+        { "marker_id": "candidate-visual-reported", "phase": "instant", "source": "candidate_reported", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 0, "maximum": 1, "required_statuses": [] }, "after": ["visual-input:instant"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["visual-change:instant", "uia-change:instant"] }
+      ],
+      "measurements": [
+        { "metric_id": "visual_response_ns", "source": "external_harness", "decision_role": "diagnostic_only", "attempt_limit_ns": null, "attempt_aggregate": "identity", "start_marker_key": "visual-input:instant", "end_marker_key": "visual-change:instant", "correlated_occurrence": false }
+      ]
+    },
+    {
+      "scenario_id": "queue-stall",
+      "markers": [
+        { "marker_id": "queue-probe-window", "phase": "begin", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "focus-probe-input", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "required_unique", "cardinality": { "minimum": 1, "maximum": 100, "required_statuses": ["valid"] }, "after": ["queue-probe-window:begin"] },
+        { "marker_id": "focus-visible-ack", "phase": "instant", "source": "external_harness", "role": "measurement_boundary", "occurrence_id_policy": "required_unique", "cardinality": { "minimum": 1, "maximum": 100, "required_statuses": ["valid"] }, "after": ["focus-probe-input:instant"] },
+        { "marker_id": "queue-accessibility-verified", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["focus-visible-ack:instant"] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["queue-accessibility-verified:instant"] }
+      ],
+      "measurements": [
+        { "metric_id": "queue_focus_stall_ns", "source": "external_harness", "decision_role": "attempt_limit", "attempt_limit_ns": 100000000, "attempt_aggregate": "max", "start_marker_key": "focus-probe-input:instant", "end_marker_key": "focus-visible-ack:instant", "correlated_occurrence": true }
+      ]
+    },
+    {
+      "scenario_id": "a11y-manual",
+      "markers": [
+        { "marker_id": "accessibility-check-complete", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["accessibility-check-complete:instant"] }
+      ],
+      "measurements": []
+    },
+    {
+      "scenario_id": "tray-basic",
+      "markers": [
+        { "marker_id": "tray-check-complete", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["tray-check-complete:instant"] }
+      ],
+      "measurements": []
+    },
+    {
+      "scenario_id": "linux-smoke",
+      "markers": [
+        { "marker_id": "linux-smoke-complete", "phase": "instant", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": [] },
+        { "marker_id": "measurement-complete", "phase": "end", "source": "external_harness", "role": "diagnostic", "occurrence_id_policy": "forbidden", "cardinality": { "minimum": 1, "maximum": 1, "required_statuses": ["valid"] }, "after": ["linux-smoke-complete:instant"] }
+      ],
+      "measurements": []
+    }
+  ]
+}

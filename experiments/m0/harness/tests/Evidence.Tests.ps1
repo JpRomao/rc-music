@@ -15,6 +15,9 @@ Test-Case 'The secure evidence contract exists before raw evidence is written' {
 }
 
 Import-Module $evidenceModulePath -Force -ErrorAction Stop
+$evidenceMarkersModulePath = Join-Path $RepositoryRoot 'experiments\m0\harness\M0.Markers.psm1'
+Import-Module $evidenceMarkersModulePath -Force -ErrorAction Stop
+$evidenceMarkerCatalog = (Assert-M0MarkerArtifacts -ProtocolRoot (Split-Path $evidenceSchemaRoot -Parent)).catalog
 
 function Copy-EvidenceTestObject {
     param([Parameter(Mandatory)] $Value)
@@ -30,6 +33,7 @@ function New-EvidenceTestEvent {
         [AllowNull()] $PreviousHash,
         [Parameter(Mandatory)] [string] $EventName,
         [Parameter(Mandatory)] $Payload,
+        [string] $ScenarioId = 'process-cold',
         [ValidateRange(0, 2)] [int] $TemporalPositionOverride = 0,
         [ValidateRange(0, 22)] [int] $TemporalBlockOverride = 0
     )
@@ -52,7 +56,7 @@ function New-EvidenceTestEvent {
         experiment_id = 'exp-20260823-shell'
         run_id = $RunId
         candidate_code = $CandidateCode
-        scenario_id = 'process-cold'
+        scenario_id = $ScenarioId
         attempt = $Attempt
         event_seq = $Sequence
         previous_line_sha256 = $PreviousHash
@@ -69,6 +73,7 @@ function New-EvidenceTestRun {
         [Parameter(Mandatory)] [string] $RunId,
         [Parameter(Mandatory)] [ValidateSet('A', 'B')] [string] $CandidateCode,
         [Parameter(Mandatory)] [string] $ArtifactHash,
+        [string] $ScenarioId = 'process-cold',
         [int] $Attempt = 1,
         [string] $Status = 'valid',
         [AllowNull()] $StatusReason = $null,
@@ -85,7 +90,7 @@ function New-EvidenceTestRun {
         experiment_id = 'exp-20260823-shell'
         run_id = $RunId
         candidate_code = $CandidateCode
-        scenario_id = 'process-cold'
+        scenario_id = $ScenarioId
         attempt = $Attempt
         common_inputs = [ordered]@{
             protocol_sha256 = ('a' * 64); environment_sha256 = ('b' * 64)
@@ -106,9 +111,13 @@ function New-EvidenceTestRun {
         status_reason = $StatusReason
         error_code = $ErrorCode
         raw = $null
-        markers = @('run-started', 'measurement-complete')
+        markers = @('run-started', 'launch-input', 'first-frame-externally-visible', 'window-actionable', 'measurement-complete')
         process_tree_sha256 = ('4' * 64)
         metrics = @([ordered]@{ metric_id = 'window_actionable_ns'; value_integer = 125000000; unit = 'nanoseconds'; error_code = $null })
+        actions = @([ordered]@{
+            metric_id = 'window_actionable_ns'; value_ns = 200; outcome = 'observed'; source = 'external_harness'
+            start_marker_event_seq = 2; end_marker_event_seq = 4; reason_code = $null; error_code = $null
+        })
         external_noise = @()
         artifacts = @([ordered]@{ artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = $ArtifactHash; size_bytes = 1234 })
         checks_omitted = @()
@@ -135,18 +144,37 @@ function Complete-EvidenceTestRun {
     $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
     $started = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
     $first = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
-    $metric = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'resource_sample' -Payload ([ordered]@{
+    $launch = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'launch-input'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = $null
+    }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
+    $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $launch -SchemaPath $eventSchema
+    $frame = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'first-frame-externally-visible'; phase = 'instant'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
+    $third = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $frame -SchemaPath $eventSchema
+    $actionable = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 4 -PreviousHash $third.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'window-actionable'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = $null
+    }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
+    $fourth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $actionable -SchemaPath $eventSchema
+    $action = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 5 -PreviousHash $fourth.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
+        metric_id = 'window_actionable_ns'; value_ns = 200; outcome = 'observed'; source = 'external_harness'
+        start_marker_event_seq = 2; end_marker_event_seq = 4; reason_code = $null; error_code = $null
+    }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
+    $fifth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $action -SchemaPath $eventSchema
+    $metric = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 6 -PreviousHash $fifth.line_sha256 -EventName 'resource_sample' -Payload ([ordered]@{
         metric_id = 'window_actionable_ns'; value_integer = 125000000; unit = 'nanoseconds'; error_code = $null
     }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
-    $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $metric -SchemaPath $eventSchema
-    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'artifact_recorded' -Payload ([ordered]@{
+    $sixth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $metric -SchemaPath $eventSchema
+    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 7 -PreviousHash $sixth.line_sha256 -EventName 'artifact_recorded' -Payload ([ordered]@{
         artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = $ArtifactHash
         size_bytes = 1234; transient = $false; redacted = $true
     }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
-    $third = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
-    $marker = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 4 -PreviousHash $third.line_sha256 -EventName 'marker' -Payload ([ordered]@{ marker_id = 'measurement-complete'; phase = 'end' }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
-    $fourth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $marker -SchemaPath $eventSchema
-    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 5 -PreviousHash $fourth.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
+    $seventh = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
+    $marker = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 8 -PreviousHash $seventh.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'measurement-complete'; phase = 'end'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
+    $eighth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $marker -SchemaPath $eventSchema
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode $CandidateCode -Attempt $Attempt -Sequence 9 -PreviousHash $eighth.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
         status = $Status; status_reason = $StatusReason; error_code = $ErrorCode; checks_skipped = @()
     }) -TemporalPositionOverride $TemporalPositionOverride -TemporalBlockOverride $TemporalBlockOverride
     if ($SealDelayMilliseconds -gt 0) {
@@ -158,29 +186,412 @@ function Complete-EvidenceTestRun {
     return [pscustomobject]@{ raw_path = $rawPath; run_path = $runPath; completed = $completed }
 }
 
+function Complete-EvidenceCatalogScenario {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [string] $ScenarioId,
+        [ValidateRange(1, 100)] [int] $QueuePairCount = 1,
+        [switch] $CaseSpoofLaunchMarker,
+        [switch] $OmitRequiredResourceMetrics
+    )
+
+    $scenario = @($evidenceMarkerCatalog.scenarios | Where-Object scenario_id -CEQ $ScenarioId)[0]
+    $runId = "run-A-$ScenarioId-01"
+    $rawPath = Join-Path $Root "$runId.jsonl"
+    $runPath = Join-Path $Root "$runId.run.json"
+    $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
+    $markerEvents = [Collections.Generic.List[object]]::new()
+    $resourceMetricEvents = [Collections.Generic.List[object]]::new()
+    $actionEvents = [Collections.Generic.List[object]]::new()
+    $sequence = 1
+    $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' }) -ScenarioId $ScenarioId
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
+    $baseTicks = [long]$started.qpc_ticks
+    $lastTicks = $baseTicks
+    $sequence++
+
+    $markerSpecifications = [Collections.Generic.List[object]]::new()
+    $resourcePolicy = $null
+    if ($ScenarioId -ceq 'queue-stall') {
+        $markerSpecifications.Add([pscustomobject]@{ contract = $scenario.markers[0]; occurrence_id = $null; qpc_ticks = $baseTicks + 1L })
+        for ($pairIndex = 1; $pairIndex -le $QueuePairCount; $pairIndex++) {
+            $occurrenceId = 'probe-{0:D4}' -f $pairIndex
+            $inputTicks = $baseTicks + 1L + ([long]($pairIndex - 1) * 500000L)
+            $markerSpecifications.Add([pscustomobject]@{ contract = $scenario.markers[1]; occurrence_id = $occurrenceId; qpc_ticks = $inputTicks })
+            $markerSpecifications.Add([pscustomobject]@{ contract = $scenario.markers[2]; occurrence_id = $occurrenceId; qpc_ticks = $inputTicks + 100000L })
+        }
+        $lastQueueTicks = [long]$markerSpecifications[-1].qpc_ticks
+        $markerSpecifications.Add([pscustomobject]@{ contract = $scenario.markers[3]; occurrence_id = $null; qpc_ticks = $lastQueueTicks })
+        $markerSpecifications.Add([pscustomobject]@{ contract = $scenario.markers[4]; occurrence_id = $null; qpc_ticks = $lastQueueTicks })
+    }
+    else {
+        $plannedMarkerIndex = 1
+        $resourcePolicies = @($evidenceMarkerCatalog.resource_sampling_policies | Where-Object scenario_id -CEQ $ScenarioId)
+        $resourceOriginTicks = $baseTicks + 1L
+        $resourceSamplingStartTicks = $null
+        $resourceSamplingEndTicks = $null
+        if ($resourcePolicies.Count -eq 1) {
+            $resourcePolicy = $resourcePolicies[0]
+            $frequency = [Numerics.BigInteger]::Parse([string]$started.qpc_frequency)
+            $stabilizationTicks = [Numerics.BigInteger]::Divide(
+                [Numerics.BigInteger]::Parse([string]$resourcePolicy.minimum_stabilization_ns) * $frequency,
+                1000000000L
+            )
+            $samplingTicks = [Numerics.BigInteger]::Divide(
+                [Numerics.BigInteger]::Parse([string]$resourcePolicy.sampling_duration_ns) * $frequency,
+                1000000000L
+            )
+            $resourceSamplingStartTicks = $resourceOriginTicks + [long]$stabilizationTicks
+            $resourceSamplingEndTicks = $resourceSamplingStartTicks + [long]$samplingTicks
+        }
+        foreach ($marker in @($scenario.markers)) {
+            $count = if (@($marker.cardinality.required_statuses) -ccontains 'valid') { [int]$marker.cardinality.minimum } else { 0 }
+            for ($occurrenceIndex = 1; $occurrenceIndex -le $count; $occurrenceIndex++) {
+                $occurrenceId = if ($marker.occurrence_id_policy -ceq 'required_unique') { 'occurrence-{0:D4}' -f $occurrenceIndex } else { $null }
+                $markerKey = '{0}:{1}' -f $marker.marker_id, $marker.phase
+                $plannedTicks = $baseTicks + ([long]$plannedMarkerIndex * 10000000L)
+                if ($resourcePolicies.Count -eq 1) {
+                    if ($markerKey -ceq [string]$resourcePolicy.stabilization_start_marker_key) {
+                        $plannedTicks = $resourceOriginTicks
+                    }
+                    elseif ($markerKey -ceq [string]$resourcePolicy.sampling_start_marker_key) {
+                        $plannedTicks = [long]$resourceSamplingStartTicks
+                    }
+                    elseif ($markerKey -ceq [string]$resourcePolicy.sampling_end_marker_key -or $markerKey -ceq 'measurement-complete:end') {
+                        $plannedTicks = [long]$resourceSamplingEndTicks
+                    }
+                    elseif ($null -ne $resourcePolicy.memory_sample_marker_key -and $markerKey -ceq [string]$resourcePolicy.memory_sample_marker_key) {
+                        $sampleOffsetTicks = [Numerics.BigInteger]::Divide(
+                            [Numerics.BigInteger]::Parse([string]$resourcePolicy.memory_sample_offset_ns) * [Numerics.BigInteger]::Parse([string]$started.qpc_frequency),
+                            1000000000L
+                        )
+                        $plannedTicks = [long]$resourceSamplingStartTicks + [long]$sampleOffsetTicks
+                    }
+                }
+                $markerSpecifications.Add([pscustomobject]@{
+                    contract = $marker
+                    occurrence_id = $occurrenceId
+                    qpc_ticks = $plannedTicks
+                })
+                $plannedMarkerIndex++
+            }
+        }
+    }
+
+    foreach ($specification in $markerSpecifications) {
+        $observedMarkerId = if ($CaseSpoofLaunchMarker -and $specification.contract.marker_id -ceq 'launch-input') {
+            'Launch-input'
+        }
+        else {
+            $specification.contract.marker_id
+        }
+        $marker = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'marker' -ScenarioId $ScenarioId -Payload ([ordered]@{
+            marker_id = $observedMarkerId
+            phase = $specification.contract.phase
+            source = $specification.contract.source
+            role = $specification.contract.role
+            occurrence_id = $specification.occurrence_id
+        })
+        $marker.qpc_ticks = [long]$specification.qpc_ticks
+        $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $marker -SchemaPath $eventSchema
+        $markerEvents.Add($marker)
+        $lastTicks = [long]$marker.qpc_ticks
+        $sequence++
+        if ($null -ne $resourcePolicy -and -not $OmitRequiredResourceMetrics) {
+            $markerKey = '{0}:{1}' -f $marker.payload.marker_id, $marker.payload.phase
+            foreach ($requiredMetric in @($resourcePolicy.required_metrics | Where-Object anchor_marker_key -CEQ $markerKey)) {
+                $metric = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'resource_sample' -ScenarioId $ScenarioId -Payload ([ordered]@{
+                    metric_id = $requiredMetric.metric_id
+                    value_integer = 64 + $resourceMetricEvents.Count
+                    unit = $requiredMetric.unit
+                    error_code = $null
+                })
+                $metric.qpc_ticks = [long]$marker.qpc_ticks
+                $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $metric -SchemaPath $eventSchema
+                $resourceMetricEvents.Add($metric)
+                $lastTicks = [long]$metric.qpc_ticks
+                $sequence++
+            }
+        }
+    }
+
+    foreach ($measurement in @($scenario.measurements)) {
+        $starts = @($markerEvents | Where-Object {
+            ('{0}:{1}' -f $_.payload.marker_id, $_.payload.phase) -ceq $measurement.start_marker_key
+        })
+        foreach ($start in $starts) {
+            $ends = @($markerEvents | Where-Object {
+                ('{0}:{1}' -f $_.payload.marker_id, $_.payload.phase) -ceq $measurement.end_marker_key -and
+                (-not [bool]$measurement.correlated_occurrence -or $_.payload.occurrence_id -ceq $start.payload.occurrence_id)
+            })
+            Assert-Equal -Actual $ends.Count -Expected 1 "Scenario '$ScenarioId' test helper could not resolve one measurement endpoint."
+            $end = $ends[0]
+            $valueNs = [long](([Numerics.BigInteger]::Parse([string]$end.qpc_ticks) - [Numerics.BigInteger]::Parse([string]$start.qpc_ticks)) * 1000000000L / [Numerics.BigInteger]::Parse([string]$start.qpc_frequency))
+            $outcome = if ($measurement.decision_role -ceq 'attempt_limit' -and $valueNs -gt [long]$measurement.attempt_limit_ns) { 'budget_exceeded' } else { 'observed' }
+            $action = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'action_observation' -ScenarioId $ScenarioId -Payload ([ordered]@{
+                metric_id = $measurement.metric_id
+                value_ns = $valueNs
+                outcome = $outcome
+                source = 'external_harness'
+                start_marker_event_seq = [int]$start.event_seq
+                end_marker_event_seq = [int]$end.event_seq
+                reason_code = if ($outcome -ceq 'budget_exceeded') { 'budget_violated' } else { $null }
+                error_code = if ($outcome -ceq 'budget_exceeded') { 'attempt_limit_exceeded' } else { $null }
+            })
+            $action.qpc_ticks = $lastTicks
+            $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $action -SchemaPath $eventSchema
+            $actionEvents.Add($action)
+            $sequence++
+        }
+    }
+
+    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'artifact_recorded' -ScenarioId $ScenarioId -Payload ([ordered]@{
+        artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = ('f' * 64)
+        size_bytes = 1234; transient = $false; redacted = $true
+    })
+    $artifact.qpc_ticks = $lastTicks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
+    $sequence++
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'run_sealed' -ScenarioId $ScenarioId -Payload ([ordered]@{
+        status = 'valid'; status_reason = $null; error_code = $null; checks_skipped = @()
+    })
+    $seal.qpc_ticks = $lastTicks
+
+    $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -ScenarioId $ScenarioId
+    $run.metrics = @($resourceMetricEvents | ForEach-Object { $_.payload })
+    $run.actions = @($actionEvents | ForEach-Object { $_.payload })
+    $seenMarkers = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $markerInventory = [Collections.Generic.List[string]]::new()
+    foreach ($markerId in @('run-started') + @($markerEvents | ForEach-Object { $_.payload.marker_id })) {
+        if ($seenMarkers.Add([string]$markerId)) { $markerInventory.Add([string]$markerId) }
+    }
+    $run.markers = @($markerInventory)
+    $completed = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
+    return [pscustomobject]@{ raw_path = $rawPath; run_path = $runPath; completed = $completed }
+}
+
+function Complete-EvidencePendingQueueNonFailure {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [ValidateSet('discarded', 'inconclusive')] [string] $Status,
+        [switch] $CauseBeforeInput
+    )
+
+    $runId = "run-A-queue-$Status-01"
+    $rawPath = Join-Path $Root "$runId.jsonl"
+    $runPath = Join-Path $Root "$runId.run.json"
+    $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
+    $sequence = 1
+    $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $null -EventName 'run_started' -ScenarioId 'queue-stall' -Payload ([ordered]@{ phase = 'started' })
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
+    $sequence++
+    $windowTicks = [long]$started.qpc_ticks + 1L
+    $window = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'marker' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        marker_id = 'queue-probe-window'; phase = 'begin'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
+    $window.qpc_ticks = $windowTicks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $window -SchemaPath $eventSchema
+    $sequence++
+
+    $causeName = if ($Status -ceq 'discarded') { 'noise_observation' } else { 'check_recorded' }
+    $causePayload = if ($Status -ceq 'discarded') {
+        [ordered]@{
+            noise_code = 'external-os-event'; observed = $true; evidence_sha256 = ('7' * 64)
+            discard_reason = 'external_os_event'; error_code = $null
+        }
+    }
+    else {
+        [ordered]@{
+            check_id = 'CHK-QUEUE-PROBE'; status = 'skipped'; reason_code = 'queue_probe_interrupted'
+            status_reason = 'incomplete_evidence'; error_code = $null
+        }
+    }
+    $cause = $null
+    if ($CauseBeforeInput) {
+        $cause = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName $causeName -ScenarioId 'queue-stall' -Payload $causePayload
+        $cause.qpc_ticks = $windowTicks
+        $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $cause -SchemaPath $eventSchema
+        $sequence++
+    }
+
+    $input = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'marker' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        marker_id = 'focus-probe-input'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = "probe-$Status-0001"
+    })
+    $input.qpc_ticks = $windowTicks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $input -SchemaPath $eventSchema
+    $sequence++
+    if (-not $CauseBeforeInput) {
+        $cause = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName $causeName -ScenarioId 'queue-stall' -Payload $causePayload
+        $cause.qpc_ticks = $windowTicks + 1L
+        $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $cause -SchemaPath $eventSchema
+        $sequence++
+    }
+
+    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'artifact_recorded' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = ('f' * 64)
+        size_bytes = 1234; transient = $false; redacted = $true
+    })
+    $artifact.qpc_ticks = [long]$cause.qpc_ticks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
+    $sequence++
+    $statusReason = if ($Status -ceq 'discarded') { 'external_os_event' } else { 'incomplete_evidence' }
+    $checksSkipped = @()
+    if ($Status -ceq 'inconclusive') {
+        $checksSkipped = @([ordered]@{ check_id = $causePayload.check_id; reason_code = $causePayload.reason_code })
+    }
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'run_sealed' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        status = $Status; status_reason = $statusReason; error_code = $null; checks_skipped = $checksSkipped
+    })
+    $seal.qpc_ticks = [long]$cause.qpc_ticks
+
+    $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -ScenarioId 'queue-stall' -Status $Status -StatusReason $statusReason -ErrorCode $null
+    $run.markers = @('run-started', 'queue-probe-window', 'focus-probe-input')
+    $run.metrics = @()
+    $run.actions = @()
+    $run.external_noise = @()
+    if ($Status -ceq 'discarded') { $run.external_noise = @($cause.payload) }
+    $run.checks_omitted = $checksSkipped
+    $null = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
+    return Assert-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SchemaRoot $evidenceSchemaRoot
+}
+
 Test-Case 'JSONL evidence is chained, sealed and append-only' {
     $root = Join-Path $TestTempRoot 'evidence-chain'
     New-Item -ItemType Directory -Path $root | Out-Null
     $result = Complete-EvidenceTestRun -Root $root -CandidateCode A -ArtifactHash ('f' * 64)
     $validated = Assert-M0EvidenceRun -RawPath $result.raw_path -RunPath $result.run_path -SchemaRoot $evidenceSchemaRoot
-    Assert-Equal -Actual $validated.event_count -Expected 5
+    Assert-Equal -Actual $validated.event_count -Expected 9
     Assert-True ($validated.final_line_sha256 -match '^[a-f0-9]{64}$')
     $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
     $runnerResult = & $runner -RawPath $result.raw_path -RunPath $result.run_path
     Assert-Equal -Actual $runnerResult.run.run_id -Expected 'run-A-process-cold-01'
 
-    $late = New-EvidenceTestEvent -RunId 'run-A-process-cold-01' -CandidateCode A -Sequence 6 -PreviousHash $validated.final_line_sha256 -EventName 'marker' -Payload ([ordered]@{ marker_id = 'late'; phase = 'end' })
+    $late = New-EvidenceTestEvent -RunId 'run-A-process-cold-01' -CandidateCode A -Sequence 10 -PreviousHash $validated.final_line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'late'; phase = 'end'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
     Assert-Throws { Add-M0EvidenceEvent -LiteralPath $result.raw_path -Event $late -SchemaPath (Join-Path $evidenceSchemaRoot 'event.schema.json') } 'M0E004|sealed'
 }
 
-Test-Case 'Public runner fails closed for decisive batch validation until external candidate provenance exists' {
-    $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
-    Assert-Throws {
-        & $runner -BatchPath 'not-used.json' -BatchRunPath @('not-used-A.json', 'not-used-B.json')
-    } 'M0E017|external candidate|provenance|fail.closed'
-    Assert-Throws {
-        & $runner -BatchRunPath @('orphan-A.json', 'orphan-B.json')
-    } 'BatchRunPath.*unavailable'
+Test-Case 'Evidence completes and revalidates every frozen shell marker scenario' {
+    $root = Join-Path $TestTempRoot 'evidence-all-marker-scenarios'
+    New-Item -ItemType Directory -Path $root | Out-Null
+    foreach ($scenarioId in @($evidenceMarkerCatalog.scenarios.scenario_id)) {
+        $result = Complete-EvidenceCatalogScenario -Root $root -ScenarioId $scenarioId
+        $validated = Assert-M0EvidenceRun -RawPath $result.raw_path -RunPath $result.run_path -SchemaRoot $evidenceSchemaRoot
+        Assert-Equal -Actual $validated.status -Expected 'valid' "Scenario '$scenarioId' did not round-trip through Evidence."
+    }
+}
+
+Test-Case 'Valid resource evidence cannot omit its frozen anchored metrics' {
+    foreach ($scenarioId in @('idle-memory', 'paused-cpu', 'active-progress')) {
+        $root = Join-Path $TestTempRoot "evidence-missing-resource-$scenarioId"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        Assert-Throws { Complete-EvidenceCatalogScenario -Root $root -ScenarioId $scenarioId -OmitRequiredResourceMetrics } 'M0M007|required|resource|metric'
+    }
+}
+
+Test-Case 'A pending queue input can append one terminal action and round-trip as failed evidence' {
+    $root = Join-Path $TestTempRoot 'evidence-queue-pending-terminal'
+    New-Item -ItemType Directory -Path $root | Out-Null
+    $runId = 'run-A-queue-stall-01'
+    $rawPath = Join-Path $root "$runId.jsonl"
+    $runPath = Join-Path $root "$runId.run.json"
+    $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
+
+    $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -ScenarioId 'queue-stall' -Payload ([ordered]@{ phase = 'started' })
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
+    $windowTicks = [long]$started.qpc_ticks + 1L
+    $window = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $head.line_sha256 -EventName 'marker' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        marker_id = 'queue-probe-window'; phase = 'begin'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
+    $window.qpc_ticks = $windowTicks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $window -SchemaPath $eventSchema
+    $input = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $head.line_sha256 -EventName 'marker' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        marker_id = 'focus-probe-input'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = 'probe-terminal-0001'
+    })
+    $input.qpc_ticks = $windowTicks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $input -SchemaPath $eventSchema
+    $timeout = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 4 -PreviousHash $head.line_sha256 -EventName 'action_observation' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        metric_id = 'queue_focus_stall_ns'; value_ns = $null; outcome = 'timeout'; source = 'external_harness'
+        start_marker_event_seq = $null; end_marker_event_seq = $null; reason_code = 'scenario_timeout'; error_code = 'queue_focus_timeout'
+    })
+    $timeout.qpc_ticks = $windowTicks + 1L
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $timeout -SchemaPath $eventSchema
+    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 5 -PreviousHash $head.line_sha256 -EventName 'artifact_recorded' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = ('f' * 64)
+        size_bytes = 1234; transient = $false; redacted = $true
+    })
+    $artifact.qpc_ticks = $timeout.qpc_ticks
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 6 -PreviousHash $head.line_sha256 -EventName 'run_sealed' -ScenarioId 'queue-stall' -Payload ([ordered]@{
+        status = 'failed'; status_reason = 'scenario_timeout'; error_code = 'queue_focus_timeout'; checks_skipped = @()
+    })
+    $seal.qpc_ticks = $timeout.qpc_ticks
+
+    $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -ScenarioId 'queue-stall' -Status failed -StatusReason scenario_timeout -ErrorCode queue_focus_timeout
+    $run.markers = @('run-started', 'queue-probe-window', 'focus-probe-input')
+    $run.metrics = @()
+    $run.actions = @($timeout.payload)
+    $null = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
+    $validated = Assert-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SchemaRoot $evidenceSchemaRoot
+    Assert-Equal -Actual $validated.status -Expected 'failed'
+}
+
+Test-Case 'Pending queue interruption requires one causal discarded or inconclusive event after input' {
+    foreach ($status in @('discarded', 'inconclusive')) {
+        $root = Join-Path $TestTempRoot "evidence-queue-pending-$status"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $validated = Complete-EvidencePendingQueueNonFailure -Root $root -Status $status
+        Assert-Equal -Actual $validated.status -Expected $status
+
+        $beforeRoot = Join-Path $TestTempRoot "evidence-queue-cause-before-$status"
+        New-Item -ItemType Directory -Path $beforeRoot | Out-Null
+        Assert-Throws { Complete-EvidencePendingQueueNonFailure -Root $beforeRoot -Status $status -CauseBeforeInput } 'M0M008|causal|after'
+    }
+}
+
+Test-Case 'Evidence completion and assertion reject case-spoofed marker identities' {
+    $completeRoot = Join-Path $TestTempRoot 'evidence-case-spoof-complete'
+    New-Item -ItemType Directory -Path $completeRoot | Out-Null
+    Assert-Throws { Complete-EvidenceCatalogScenario -Root $completeRoot -ScenarioId 'process-cold' -CaseSpoofLaunchMarker } 'M0M005|unknown|case|identity'
+
+    $assertRoot = Join-Path $TestTempRoot 'evidence-case-spoof-assert'
+    New-Item -ItemType Directory -Path $assertRoot | Out-Null
+    $completed = Complete-EvidenceCatalogScenario -Root $assertRoot -ScenarioId 'process-cold'
+    $events = @((Get-Content -LiteralPath $completed.raw_path) | ForEach-Object { $_ | ConvertFrom-Json -Depth 100 -DateKind String })
+    $events[1].payload.marker_id = 'Launch-input'
+    $lines = [Collections.Generic.List[string]]::new()
+    $previousHash = $null
+    foreach ($event in $events) {
+        $event.previous_line_sha256 = $previousHash
+        $line = $event | ConvertTo-Json -Compress -Depth 100
+        $lines.Add($line)
+        $previousHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.UTF8Encoding]::new($false).GetBytes($line))).ToLowerInvariant()
+    }
+    [IO.File]::WriteAllText($completed.raw_path, (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+
+    $run = Get-Content -Raw -LiteralPath $completed.run_path | ConvertFrom-Json -Depth 100 -DateKind String
+    $run.markers[1] = 'Launch-input'
+    $run.raw.final_line_sha256 = $previousHash
+    [IO.File]::WriteAllText($completed.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
+    Assert-Throws { Assert-M0EvidenceRun -RawPath $completed.raw_path -RunPath $completed.run_path -SchemaRoot $evidenceSchemaRoot } 'M0M005|unknown|case|identity'
+}
+
+Test-Case 'Repeated queue evidence projects unique markers and ordered per-probe actions' {
+    $root = Join-Path $TestTempRoot 'evidence-queue-projection'
+    New-Item -ItemType Directory -Path $root | Out-Null
+    $result = Complete-EvidenceCatalogScenario -Root $root -ScenarioId 'queue-stall' -QueuePairCount 2
+    $run = Get-Content -Raw -LiteralPath $result.run_path | ConvertFrom-Json -Depth 100
+    Assert-SequenceEqual -Actual @($run.markers) -Expected @(
+        'run-started', 'queue-probe-window', 'focus-probe-input', 'focus-visible-ack',
+        'queue-accessibility-verified', 'measurement-complete'
+    )
+    Assert-Equal -Actual @($run.actions).Count -Expected 2
+    Assert-True ([int]$run.actions[0].start_marker_event_seq -lt [int]$run.actions[1].start_marker_event_seq)
+
+    $run.actions[0], $run.actions[1] = $run.actions[1], $run.actions[0]
+    [IO.File]::WriteAllText($result.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
+    Assert-Throws { Assert-M0EvidenceRun -RawPath $result.raw_path -RunPath $result.run_path -SchemaRoot $evidenceSchemaRoot } 'M0E015|action'
 }
 
 Test-Case 'Sequence, previous hash and byte tampering are rejected' {
@@ -190,7 +601,9 @@ Test-Case 'Sequence, previous hash and byte tampering are rejected' {
     $rawPath = Join-Path $root 'sequence.jsonl'
     $firstEvent = New-EvidenceTestEvent -RunId 'run-A-process-cold-01' -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
     $first = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $firstEvent -SchemaPath $eventSchema
-    $wrong = New-EvidenceTestEvent -RunId 'run-A-process-cold-01' -CandidateCode A -Sequence 3 -PreviousHash $first.line_sha256 -EventName 'marker' -Payload ([ordered]@{ marker_id = 'wrong'; phase = 'begin' })
+    $wrong = New-EvidenceTestEvent -RunId 'run-A-process-cold-01' -CandidateCode A -Sequence 3 -PreviousHash $first.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'wrong'; phase = 'begin'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
     Assert-Throws { Add-M0EvidenceEvent -LiteralPath $rawPath -Event $wrong -SchemaPath $eventSchema } 'M0E003'
 
     $completed = Complete-EvidenceTestRun -Root $root -CandidateCode B -ArtifactHash ('9' * 64)
@@ -371,6 +784,7 @@ Test-Case 'Each closed discard reason requires a matching classified raw observa
         $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status discarded -StatusReason $case.reason -ErrorCode $case.error_code
         $run.markers = @('run-started')
         $run.metrics = @()
+        $run.actions = @()
         $run.external_noise = @($noisePayload)
         $completed = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
         Assert-Equal -Actual $completed.status -Expected 'discarded'
@@ -386,22 +800,56 @@ Test-Case 'An invalid run record cannot orphan a valid append-only raw seal' {
     $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
     $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
     $first = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
-    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'artifact_recorded' -Payload ([ordered]@{
+    $launch = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'launch-input'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = $null
+    })
+    $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $launch -SchemaPath $eventSchema
+    $frame = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'first-frame-externally-visible'; phase = 'instant'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
+    $third = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $frame -SchemaPath $eventSchema
+    $actionable = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 4 -PreviousHash $third.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'window-actionable'; phase = 'instant'; source = 'external_harness'; role = 'measurement_boundary'; occurrence_id = $null
+    })
+    $fourth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $actionable -SchemaPath $eventSchema
+    $action = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 5 -PreviousHash $fourth.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
+        metric_id = 'window_actionable_ns'; value_ns = 200; outcome = 'observed'; source = 'external_harness'
+        start_marker_event_seq = 2; end_marker_event_seq = 4; reason_code = $null; error_code = $null
+    })
+    $fifth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $action -SchemaPath $eventSchema
+    $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 6 -PreviousHash $fifth.line_sha256 -EventName 'artifact_recorded' -Payload ([ordered]@{
         artifact_id = 'candidate-package'; relative_path = 'artifacts/candidate.zip'; sha256 = ('f' * 64)
         size_bytes = 1234; transient = $false; redacted = $true
     })
-    $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
-    $marker = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'marker' -Payload ([ordered]@{ marker_id = 'measurement-complete'; phase = 'end' })
-    $third = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $marker -SchemaPath $eventSchema
-    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 4 -PreviousHash $third.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{ status = 'valid'; status_reason = $null; error_code = $null; checks_skipped = @() })
+    $sixth = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $artifact -SchemaPath $eventSchema
+    $marker = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 7 -PreviousHash $sixth.line_sha256 -EventName 'marker' -Payload ([ordered]@{
+        marker_id = 'measurement-complete'; phase = 'end'; source = 'external_harness'; role = 'diagnostic'; occurrence_id = $null
+    })
+    $seventh = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $marker -SchemaPath $eventSchema
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 8 -PreviousHash $seventh.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{ status = 'valid'; status_reason = $null; error_code = $null; checks_skipped = @() })
     $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64)
     $run.metrics = @()
+    foreach ($mutation in @('value', 'outcome', 'reference', 'missing', 'extra')) {
+        $wrongProjection = Copy-EvidenceTestObject $run
+        switch ($mutation) {
+            'value' { $wrongProjection.actions[0].value_ns = 201 }
+            'outcome' {
+                $wrongProjection.actions[0].outcome = 'budget_exceeded'
+                $wrongProjection.actions[0].reason_code = 'budget_violated'
+                $wrongProjection.actions[0].error_code = 'invented_budget'
+            }
+            'reference' { $wrongProjection.actions[0].end_marker_event_seq = 3 }
+            'missing' { $wrongProjection.actions = @() }
+            'extra' { $wrongProjection.actions = @($wrongProjection.actions[0], (Copy-EvidenceTestObject $wrongProjection.actions[0])) }
+        }
+        Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $wrongProjection -SchemaRoot $evidenceSchemaRoot } 'M0E015|action'
+    }
     $invalid = Copy-EvidenceTestObject $run
     $invalid.candidate_input | Add-Member -NotePropertyName unexpected -NotePropertyValue 'forbidden'
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $invalid -SchemaRoot $evidenceSchemaRoot } 'M0E007'
 
     $completed = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
-    Assert-Equal -Actual $completed.event_count -Expected 4
+    Assert-Equal -Actual $completed.event_count -Expected 8
 }
 
 Test-Case 'A candidate failure event cannot be sealed as discarded' {
@@ -414,7 +862,8 @@ Test-Case 'A candidate failure event cannot be sealed as discarded' {
     $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
     $first = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
     $crash = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
-        metric_id = 'launch'; value_ns = $null; outcome = 'crash'; error_code = 'candidate_crash'
+        metric_id = 'window_actionable_ns'; value_ns = $null; outcome = 'crash'; source = 'external_harness'
+        start_marker_event_seq = $null; end_marker_event_seq = $null; reason_code = 'candidate_crash'; error_code = 'candidate_crash'
     })
     $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $crash -SchemaPath $eventSchema
     $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
@@ -423,6 +872,7 @@ Test-Case 'A candidate failure event cannot be sealed as discarded' {
     $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status discarded -StatusReason harness_failure
     $run.markers = @('run-started')
     $run.metrics = @()
+    $run.actions = @($crash.payload)
     $run.artifacts = @()
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E013'
 }
@@ -437,7 +887,8 @@ Test-Case 'An action failure error code must survive unchanged into run and seal
     $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
     $first = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
     $crash = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $first.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
-        metric_id = 'launch'; value_ns = $null; outcome = 'crash'; error_code = 'candidate_crash'
+        metric_id = 'window_actionable_ns'; value_ns = $null; outcome = 'crash'; source = 'external_harness'
+        start_marker_event_seq = $null; end_marker_event_seq = $null; reason_code = 'candidate_crash'; error_code = 'candidate_crash'
     })
     $second = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $crash -SchemaPath $eventSchema
     $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $second.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
@@ -446,6 +897,7 @@ Test-Case 'An action failure error code must survive unchanged into run and seal
     $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status failed -StatusReason candidate_crash -ErrorCode different_error
     $run.markers = @('run-started')
     $run.metrics = @()
+    $run.actions = @($crash.payload)
     $run.artifacts = @()
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E013|error.code'
 }
@@ -464,11 +916,15 @@ Test-Case 'Multiple action failures use the same severity order regardless of ev
         $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
         $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
         $sequence = 2
+        $rawActions = [Collections.Generic.List[object]]::new()
         foreach ($outcome in $order) {
+            $reasonCode = if ($outcome -ceq 'crash') { 'candidate_crash' } else { 'scenario_timeout' }
             $action = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
-                metric_id = "launch-$outcome"; value_ns = $null; outcome = $outcome; error_code = "${outcome}_error"
+                metric_id = 'window_actionable_ns'; value_ns = $null; outcome = $outcome; source = 'external_harness'
+                start_marker_event_seq = $null; end_marker_event_seq = $null; reason_code = $reasonCode; error_code = "${outcome}_error"
             })
             $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $action -SchemaPath $eventSchema
+            $rawActions.Add($action.payload)
             $sequence++
         }
         $artifact = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence $sequence -PreviousHash $head.line_sha256 -EventName 'artifact_recorded' -Payload ([ordered]@{
@@ -483,6 +939,7 @@ Test-Case 'Multiple action failures use the same severity order regardless of ev
         $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status failed -StatusReason candidate_crash -ErrorCode crash_error
         $run.markers = @('run-started')
         $run.metrics = @()
+        $run.actions = @($rawActions)
         $completed = Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot
         Assert-Equal -Actual $completed.status -Expected 'failed'
     }
@@ -507,6 +964,7 @@ Test-Case 'A failed check cannot be contradicted by a valid run seal' {
     $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64)
     $run.markers = @('run-started')
     $run.metrics = @()
+    $run.actions = @()
     $run.artifacts = @()
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E013|failed check'
 }
@@ -531,6 +989,7 @@ Test-Case 'A skipped check requires an inconclusive incomplete-evidence seal' {
     $run = New-EvidenceTestRun -RunId $runId -CandidateCode B -ArtifactHash ('9' * 64)
     $run.markers = @('run-started')
     $run.metrics = @()
+    $run.actions = @()
     $run.artifacts = @()
     $run.checks_omitted = $skipped
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E013|skipped check'
@@ -557,6 +1016,7 @@ Test-Case 'Non-valid terminal statuses require a deterministic adverse raw event
         $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status $case.status -StatusReason $case.status_reason -ErrorCode $case.error_code
         $run.markers = @('run-started')
         $run.metrics = @()
+        $run.actions = @()
         $run.artifacts = @()
         Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E013|unsupported|adverse raw'
     }
@@ -570,6 +1030,68 @@ Test-Case 'Run metric summaries must be the exact raw resource-sample projection
     $run.metrics[0].value_integer = 125000001
     [IO.File]::WriteAllText($completed.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
     Assert-Throws { Assert-M0EvidenceRun -RawPath $completed.raw_path -RunPath $completed.run_path -SchemaRoot $evidenceSchemaRoot } 'M0E015|metric'
+}
+
+Test-Case 'Run action summaries must be the exact ordered raw action projection' {
+    $mutations = @('value', 'outcome', 'reference', 'missing', 'extra')
+    foreach ($mutation in $mutations) {
+        $root = Join-Path $TestTempRoot "evidence-action-reconciliation-$mutation"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $completed = Complete-EvidenceTestRun -Root $root -CandidateCode A -ArtifactHash ('f' * 64)
+        $run = Get-Content -Raw -LiteralPath $completed.run_path | ConvertFrom-Json -Depth 100
+        switch ($mutation) {
+            'value' { $run.actions[0].value_ns = 201 }
+            'outcome' {
+                $run.actions[0].outcome = 'budget_exceeded'
+                $run.actions[0].reason_code = 'budget_violated'
+                $run.actions[0].error_code = 'invented_budget'
+            }
+            'reference' { $run.actions[0].end_marker_event_seq = 3 }
+            'missing' { $run.actions = @() }
+            'extra' { $run.actions = @($run.actions[0], (Copy-EvidenceTestObject $run.actions[0])) }
+        }
+        [IO.File]::WriteAllText($completed.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
+        Assert-Throws { Assert-M0EvidenceRun -RawPath $completed.raw_path -RunPath $completed.run_path -SchemaRoot $evidenceSchemaRoot } 'M0E015|action'
+    }
+}
+
+Test-Case 'Run action schema mirrors the closed event outcome conditionals' {
+    foreach ($mutation in @('candidate-source', 'observed-null-reference', 'timeout-with-value')) {
+        $root = Join-Path $TestTempRoot "evidence-run-action-schema-$mutation"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $completed = Complete-EvidenceTestRun -Root $root -CandidateCode A -ArtifactHash ('f' * 64)
+        $run = Get-Content -Raw -LiteralPath $completed.run_path | ConvertFrom-Json -Depth 100
+        switch ($mutation) {
+            'candidate-source' { $run.actions[0].source = 'candidate_reported' }
+            'observed-null-reference' { $run.actions[0].start_marker_event_seq = $null }
+            'timeout-with-value' {
+                $run.actions[0].outcome = 'timeout'
+                $run.actions[0].start_marker_event_seq = $null
+                $run.actions[0].end_marker_event_seq = $null
+                $run.actions[0].reason_code = 'scenario_timeout'
+                $run.actions[0].error_code = 'scenario_timeout'
+            }
+        }
+        [IO.File]::WriteAllText($completed.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
+        Assert-Throws { Assert-M0EvidenceRun -RawPath $completed.raw_path -RunPath $completed.run_path -SchemaRoot $evidenceSchemaRoot } 'M0E008|schema'
+    }
+}
+
+Test-Case 'Run marker inventory is deduplicated in first occurrence order and cannot be tampered' {
+    foreach ($mutation in @('missing', 'swap', 'extra', 'duplicate')) {
+        $root = Join-Path $TestTempRoot "evidence-marker-reconciliation-$mutation"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $completed = Complete-EvidenceTestRun -Root $root -CandidateCode A -ArtifactHash ('f' * 64)
+        $run = Get-Content -Raw -LiteralPath $completed.run_path | ConvertFrom-Json -Depth 100
+        switch ($mutation) {
+            'missing' { $run.markers = @($run.markers | Select-Object -Skip 1) }
+            'swap' { $run.markers[1], $run.markers[2] = $run.markers[2], $run.markers[1] }
+            'extra' { $run.markers += 'invented-marker' }
+            'duplicate' { $run.markers += $run.markers[1] }
+        }
+        [IO.File]::WriteAllText($completed.run_path, (($run | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
+        Assert-Throws { Assert-M0EvidenceRun -RawPath $completed.raw_path -RunPath $completed.run_path -SchemaRoot $evidenceSchemaRoot } 'M0E008|marker'
+    }
 }
 
 Test-Case 'Run external-noise summaries must be the exact raw noise projection' {
@@ -614,12 +1136,18 @@ Test-Case 'A sealed run must attest exactly one matching candidate package' {
     $eventSchema = Join-Path $evidenceSchemaRoot 'event.schema.json'
     $started = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 1 -PreviousHash $null -EventName 'run_started' -Payload ([ordered]@{ phase = 'started' })
     $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $started -SchemaPath $eventSchema
-    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $head.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
-        status = 'valid'; status_reason = $null; error_code = $null; checks_skipped = @()
+    $crash = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 2 -PreviousHash $head.line_sha256 -EventName 'action_observation' -Payload ([ordered]@{
+        metric_id = 'window_actionable_ns'; value_ns = $null; outcome = 'crash'; source = 'external_harness'
+        start_marker_event_seq = $null; end_marker_event_seq = $null; reason_code = 'candidate_crash'; error_code = 'candidate_crash'
     })
-    $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64)
+    $head = Add-M0EvidenceEvent -LiteralPath $rawPath -Event $crash -SchemaPath $eventSchema
+    $seal = New-EvidenceTestEvent -RunId $runId -CandidateCode A -Sequence 3 -PreviousHash $head.line_sha256 -EventName 'run_sealed' -Payload ([ordered]@{
+        status = 'failed'; status_reason = 'candidate_crash'; error_code = 'candidate_crash'; checks_skipped = @()
+    })
+    $run = New-EvidenceTestRun -RunId $runId -CandidateCode A -ArtifactHash ('f' * 64) -Status failed -StatusReason candidate_crash -ErrorCode candidate_crash
     $run.markers = @('run-started')
     $run.metrics = @()
+    $run.actions = @($crash.payload)
     $run.artifacts = @()
     Assert-Throws { Complete-M0EvidenceRun -RawPath $rawPath -RunPath $runPath -SealEvent $seal -RunRecord $run -SchemaRoot $evidenceSchemaRoot } 'M0E015|candidate.package'
 }
@@ -805,4 +1333,14 @@ Test-Case 'Batch evidence freezes common inputs and keeps candidate artifacts di
         [IO.File]::WriteAllText($wrongDigestPath, (($wrongDigest | ConvertTo-Json -Compress -Depth 100) + "`n"), [Text.UTF8Encoding]::new($false))
         Assert-Throws { Assert-M0EvidenceBatch -BatchPath $wrongDigestPath -RunPaths @($runPaths) -SchedulePath $evidenceSchedulePath -ExpectedCommonInputs $expectedCommonInputs -SchemaRoot $evidenceSchemaRoot } "M0E016|$digestField"
     }
+}
+
+Test-Case 'Public runner fails closed for decisive batch validation until external candidate provenance exists' {
+    $runner = Join-Path $RepositoryRoot 'scripts\m0\Test-M0Evidence.ps1'
+    Assert-Throws {
+        & $runner -BatchPath 'not-used.json' -BatchRunPath @('not-used-A.json', 'not-used-B.json')
+    } 'M0E017|external candidate|provenance|fail.closed'
+    Assert-Throws {
+        & $runner -BatchRunPath @('orphan-A.json', 'orphan-B.json')
+    } 'BatchRunPath.*unavailable'
 }

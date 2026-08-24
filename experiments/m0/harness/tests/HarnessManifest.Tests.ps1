@@ -53,8 +53,8 @@ Test-Case 'The canonical harness trust contract exists before collection can use
 Test-Case 'The committed harness manifest is canonical, anchored and complete' {
     $expectedHash = Get-M0CommittedHarnessHash
     $result = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $expectedHash
-    Assert-Equal -Actual $result.runtime_file_count -Expected 6
-    Assert-Equal -Actual $result.schema_file_count -Expected 14
+    Assert-Equal -Actual $result.runtime_file_count -Expected 8
+    Assert-Equal -Actual $result.schema_file_count -Expected 15
     Assert-Equal -Actual $result.manifest_sha256 -Expected $expectedHash.ToLowerInvariant()
 }
 
@@ -81,6 +81,7 @@ Test-Case 'Trusted common inputs deep-validate every transitive common artifact'
         [pscustomobject]@{ name = 'fixture-asset'; relative_path = 'experiments\m0\shared\shell-fixture\assets\cover-track.svg' },
         [pscustomobject]@{ name = 'statistics-schedule'; relative_path = 'experiments\m0\protocol\schedule.v1.json' },
         [pscustomobject]@{ name = 'statistics-golden'; relative_path = 'experiments\m0\protocol\goldens\statistics.v1.json' },
+        [pscustomobject]@{ name = 'marker-catalog'; relative_path = 'experiments\m0\protocol\markers.v1.json' },
         [pscustomobject]@{ name = 'scenario'; relative_path = 'experiments\m0\protocol\scenarios\shell.v1.json' }
     )
     foreach ($mutation in $mutations) {

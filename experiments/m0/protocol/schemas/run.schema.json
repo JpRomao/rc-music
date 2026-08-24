@@ -7,7 +7,7 @@
     "schema_id", "schema_version", "experiment_id", "run_id", "candidate_code",
     "scenario_id", "attempt", "common_inputs", "candidate_input", "schedule",
     "status", "status_reason", "error_code", "raw", "markers", "process_tree_sha256",
-    "metrics", "external_noise", "artifacts", "checks_omitted"
+    "metrics", "actions", "external_noise", "artifacts", "checks_omitted"
   ],
   "properties": {
     "schema_id": { "const": "m0.run.v1" },
@@ -27,6 +27,7 @@
     "markers": { "type": "array", "maxItems": 256, "items": { "$ref": "#/definitions/id" }, "uniqueItems": true },
     "process_tree_sha256": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/sha256" }] },
     "metrics": { "type": "array", "maxItems": 512, "items": { "$ref": "#/definitions/metric" } },
+    "actions": { "type": "array", "maxItems": 512, "items": { "$ref": "#/definitions/action" } },
     "external_noise": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/noise" } },
     "artifacts": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/artifact" } },
     "checks_omitted": { "type": "array", "maxItems": 64, "items": { "$ref": "#/definitions/omitted_check" } }
@@ -105,6 +106,86 @@
       "oneOf": [
         { "properties": { "value_integer": { "type": "integer" }, "error_code": { "type": "null" } } },
         { "properties": { "value_integer": { "type": "null" }, "error_code": { "type": "string", "minLength": 1 } } }
+      ]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id", "value_ns", "outcome", "source", "start_marker_event_seq",
+        "end_marker_event_seq", "reason_code", "error_code"
+      ],
+      "properties": {
+        "metric_id": { "$ref": "#/definitions/id" },
+        "value_ns": { "type": ["integer", "null"], "minimum": 0 },
+        "outcome": { "enum": ["observed", "timeout", "crash", "hang", "budget_exceeded", "control_unavailable"] },
+        "source": { "const": "external_harness" },
+        "start_marker_event_seq": { "type": ["integer", "null"], "minimum": 1 },
+        "end_marker_event_seq": { "type": ["integer", "null"], "minimum": 1 },
+        "reason_code": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "error_code": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": { "const": "observed" },
+            "value_ns": { "type": "integer", "minimum": 0 },
+            "start_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "end_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "reason_code": { "type": "null" },
+            "error_code": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "budget_exceeded" },
+            "value_ns": { "type": "integer", "minimum": 0 },
+            "start_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "end_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "reason_code": { "const": "budget_violated" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "timeout" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "scenario_timeout" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "crash" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "candidate_crash" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "hang" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "candidate_hang" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "control_unavailable" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "window_not_actionable" },
+            "error_code": { "type": "string" }
+          }
+        }
       ]
     },
     "noise": {

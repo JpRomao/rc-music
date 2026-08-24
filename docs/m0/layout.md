@@ -1,6 +1,6 @@
 # Layout temporário dos spikes M0
 
-**Estado:** congelado para M0.0
+**Estado:** congelado para M0.1
 
 **Identificador:** `M0-L1`
 
@@ -19,6 +19,8 @@ experiments/m0/
 ├── README.md
 ├── protocol/
 │   ├── protocol.v1.json
+│   ├── markers.v1.json
+│   ├── markers.v1.sha256
 │   ├── environments/
 │   ├── scenarios/
 │   └── schemas/
@@ -34,6 +36,7 @@ experiments/m0/
 │       ├── audio/
 │       └── package/
 └── harness/
+    ├── M0.Markers.psm1
     └── tests/
 scripts/m0/
 out/m0/
@@ -88,6 +91,7 @@ Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence soment
 |---|---|
 | `Test-M0Layout.ps1` | paths, arquivos esperados e isolamento |
 | `Test-M0Fixture.ps1` | schema, determinismo, 1.000 itens, licenças e hashes |
+| `Test-M0Markers.ps1` | catálogo confiável, cobertura dos cenários e policies temporais |
 | `Test-M0Evidence.ps1` | cadeia JSONL, schemas fechados, projeções raw/run, agenda e batch fail-closed |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
 | `Invoke-M0Pilot.ps1` | processo sintético e evidência sem candidato real |

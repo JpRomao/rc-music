@@ -74,10 +74,18 @@
     "marker_payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["marker_id", "phase"],
+      "required": ["marker_id", "phase", "source", "role", "occurrence_id"],
       "properties": {
         "marker_id": { "$ref": "#/definitions/id" },
-        "phase": { "enum": ["begin", "end", "instant"] }
+        "phase": { "enum": ["begin", "end", "instant"] },
+        "source": { "enum": ["external_harness", "candidate_reported"] },
+        "role": { "enum": ["measurement_boundary", "diagnostic"] },
+        "occurrence_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/id" }
+          ]
+        }
       }
     },
     "metric_payload": {
@@ -98,11 +106,28 @@
     "action_payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metric_id", "value_ns", "outcome", "error_code"],
+      "required": [
+        "metric_id", "value_ns", "outcome", "source", "start_marker_event_seq",
+        "end_marker_event_seq", "reason_code", "error_code"
+      ],
       "properties": {
         "metric_id": { "$ref": "#/definitions/id" },
         "value_ns": { "type": ["integer", "null"], "minimum": 0 },
         "outcome": { "enum": ["observed", "timeout", "crash", "hang", "budget_exceeded", "control_unavailable"] },
+        "source": { "const": "external_harness" },
+        "start_marker_event_seq": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+          ]
+        },
+        "end_marker_event_seq": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+          ]
+        },
+        "reason_code": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/reason_code" }] },
         "error_code": { "$ref": "#/definitions/nullable_error" }
       },
       "oneOf": [
@@ -110,6 +135,9 @@
           "properties": {
             "outcome": { "const": "observed" },
             "value_ns": { "type": "integer", "minimum": 0 },
+            "start_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "end_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "reason_code": { "type": "null" },
             "error_code": { "type": "null" }
           }
         },
@@ -117,13 +145,49 @@
           "properties": {
             "outcome": { "const": "budget_exceeded" },
             "value_ns": { "type": "integer", "minimum": 0 },
+            "start_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "end_marker_event_seq": { "type": "integer", "minimum": 1 },
+            "reason_code": { "const": "budget_violated" },
             "error_code": { "type": "string" }
           }
         },
         {
           "properties": {
-            "outcome": { "enum": ["timeout", "crash", "hang", "control_unavailable"] },
+            "outcome": { "const": "timeout" },
             "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "scenario_timeout" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "crash" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "candidate_crash" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "hang" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "candidate_hang" },
+            "error_code": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "control_unavailable" },
+            "value_ns": { "type": "null" },
+            "start_marker_event_seq": { "type": "null" },
+            "end_marker_event_seq": { "type": "null" },
+            "reason_code": { "const": "window_not_actionable" },
             "error_code": { "type": "string" }
           }
         }

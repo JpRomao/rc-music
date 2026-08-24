@@ -9,6 +9,19 @@ $script:M0EvidenceInvariantFields = @(
 )
 $script:M0EvidenceStatisticsModulePath = Join-Path $PSScriptRoot 'M0.Statistics.psm1'
 Import-Module $script:M0EvidenceStatisticsModulePath -Force -ErrorAction Stop
+$script:M0EvidenceMarkersModulePath = Join-Path $PSScriptRoot 'M0.Markers.psm1'
+Import-Module $script:M0EvidenceMarkersModulePath -Force -ErrorAction Stop
+$script:M0EvidenceMarkerCatalogCache = @{}
+
+function Get-M0EvidenceMarkerCatalog {
+    param([Parameter(Mandatory)] [string] $SchemaRoot)
+
+    $protocolRoot = [IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent))
+    if (-not $script:M0EvidenceMarkerCatalogCache.ContainsKey($protocolRoot)) {
+        $script:M0EvidenceMarkerCatalogCache[$protocolRoot] = (Assert-M0MarkerArtifacts -ProtocolRoot $protocolRoot).catalog
+    }
+    return $script:M0EvidenceMarkerCatalogCache[$protocolRoot]
+}
 
 function Get-M0EvidenceSha256Bytes {
     param([Parameter(Mandatory)] [byte[]] $Bytes)
@@ -221,7 +234,7 @@ function Read-M0EvidenceJsonDocument {
     if (-not (Test-Json -Json $json -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) {
         throw [IO.InvalidDataException]::new("$Code evidence JSON failed schema validation.")
     }
-    $value = $json | ConvertFrom-Json -Depth 100
+    $value = $json | ConvertFrom-Json -Depth 100 -DateKind String
     Assert-M0EvidenceRedactedValue -Value $value
     if ((ConvertTo-M0EvidenceJsonLine -Value $value) -cne $json) {
         throw [IO.InvalidDataException]::new("$Code evidence JSON is not canonical compact JSON.")
@@ -268,7 +281,7 @@ function Read-M0EvidenceRaw {
             -not (Test-Json -Json $line -SchemaFile $EventSchemaPath -ErrorAction SilentlyContinue)) {
             throw [IO.InvalidDataException]::new("M0E002 event schema rejected line $($index + 1).")
         }
-        $event = $line | ConvertFrom-Json -Depth 100
+        $event = $line | ConvertFrom-Json -Depth 100 -DateKind String
         Assert-M0EvidenceRedactedValue -Value $event -Location "line[$($index + 1)]"
         if ((ConvertTo-M0EvidenceJsonLine -Value $event) -cne $line) {
             throw [IO.InvalidDataException]::new("M0E002 event line $($index + 1) is not canonical compact JSON.")
@@ -417,6 +430,12 @@ function Assert-M0EvidenceRunProjection {
         throw [IO.InvalidDataException]::new('M0E015 run metric summary differs from raw resource_sample events.')
     }
 
+    $observedActions = @($Events | Where-Object event -ceq 'action_observation' | ForEach-Object { $_.payload })
+    if ((ConvertTo-M0EvidenceJsonLine -Value @($Run.actions)) -cne
+        (ConvertTo-M0EvidenceJsonLine -Value $observedActions)) {
+        throw [IO.InvalidDataException]::new('M0E015 run action summary differs from raw action_observation events.')
+    }
+
     $observedNoise = @($Events | Where-Object event -ceq 'noise_observation' | ForEach-Object { $_.payload })
     if ((ConvertTo-M0EvidenceJsonLine -Value @($Run.external_noise)) -cne
         (ConvertTo-M0EvidenceJsonLine -Value $observedNoise)) {
@@ -497,6 +516,13 @@ function Add-M0EvidenceEvent {
                     throw [IO.InvalidDataException]::new("M0E003 run invariant '$field' differs on append.")
                 }
             }
+
+            if ($Event.event -cin @('marker', 'action_observation')) {
+                $schemaRoot = Split-Path -Parent ([IO.Path]::GetFullPath($SchemaPath))
+                $catalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $schemaRoot
+                $candidateEvents = @($existing.events) + @($Event)
+                $null = Assert-M0MarkerSequence -Catalog $catalog -ScenarioId $Event.scenario_id -Events $candidateEvents
+            }
         }
 
         $null = $stream.Seek(0, [IO.SeekOrigin]::End)
@@ -550,7 +576,9 @@ function Complete-M0EvidenceRun {
     }
     $sealLine = Assert-M0EvidenceJsonSchema -Value $SealEvent -SchemaPath $eventSchema -Code 'M0E007'
     Assert-M0EvidenceDerivedStatus -Events @($rawBeforeSeal.events) -Status $SealEvent.payload.status -StatusReason $SealEvent.payload.status_reason -ErrorCode $SealEvent.payload.error_code
-    $record = $RunRecord | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100
+    $markerCatalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $SchemaRoot
+    $null = Assert-M0MarkerSequence -Catalog $markerCatalog -ScenarioId $rawBeforeSeal.first_event.scenario_id -Events @($rawBeforeSeal.events) -Status $SealEvent.payload.status
+    $record = $RunRecord | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100 -DateKind String
     $record.raw = [ordered]@{
         relative_path = Split-Path $RawPath -Leaf
         event_count = [int]$SealEvent.event_seq
@@ -571,7 +599,7 @@ function Complete-M0EvidenceRun {
             throw [IO.InvalidDataException]::new("M0E007 common input '$field' differs before seal.")
         }
     }
-    $observedMarkers = @('run-started') + @($rawBeforeSeal.events | Where-Object event -ceq 'marker' | ForEach-Object { $_.payload.marker_id })
+    $observedMarkers = @(Get-M0MarkerInventory -Events @($rawBeforeSeal.events))
     if ((ConvertTo-M0EvidenceJsonLine -Value @($record.markers)) -cne (ConvertTo-M0EvidenceJsonLine -Value $observedMarkers)) {
         throw [IO.InvalidDataException]::new('M0E007 marker inventory differs before seal.')
     }
@@ -609,6 +637,8 @@ function Assert-M0EvidenceRun {
     $first = $raw.first_event
     $seal = $raw.last_event
     Assert-M0EvidenceDerivedStatus -Events @($raw.events) -Status $run.status -StatusReason $run.status_reason -ErrorCode $run.error_code
+    $markerCatalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $SchemaRoot
+    $null = Assert-M0MarkerSequence -Catalog $markerCatalog -ScenarioId $first.scenario_id -Events @($raw.events) -Status $run.status
     foreach ($field in @('experiment_id', 'run_id', 'candidate_code', 'scenario_id', 'attempt')) {
         if ([string]$run.$field -cne [string]$first.$field) {
             throw [IO.InvalidDataException]::new("M0E008 run identity '$field' differs from raw evidence.")
@@ -632,7 +662,7 @@ function Assert-M0EvidenceRun {
         $run.raw.sealed_utc -cne $seal.utc) {
         throw [IO.InvalidDataException]::new('M0E008 run seal/hash metadata differs from raw evidence.')
     }
-    $observedMarkers = @('run-started') + @($raw.events | Where-Object event -ceq 'marker' | ForEach-Object { $_.payload.marker_id })
+    $observedMarkers = @(Get-M0MarkerInventory -Events @($raw.events))
     if ((ConvertTo-M0EvidenceJsonLine -Value @($run.markers)) -cne (ConvertTo-M0EvidenceJsonLine -Value $observedMarkers)) {
         throw [IO.InvalidDataException]::new('M0E008 run marker inventory differs from raw evidence.')
     }
@@ -689,7 +719,7 @@ function Read-M0EvidenceSchedule {
     if (-not (Test-Json -Json $json -SchemaFile $schemaPath -ErrorAction SilentlyContinue)) {
         throw [IO.InvalidDataException]::new('M0E014 paired schedule failed schema validation.')
     }
-    $schedule = $json | ConvertFrom-Json -Depth 100
+    $schedule = $json | ConvertFrom-Json -Depth 100 -DateKind String
     $generatedSchedule = New-M0PairedSchedule
     if ((ConvertTo-M0EvidenceJsonLine -Value $schedule) -cne
         (ConvertTo-M0EvidenceJsonLine -Value $generatedSchedule)) {

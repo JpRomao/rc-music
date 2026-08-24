@@ -8,8 +8,10 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/M0.Fixture.psm1',
         'experiments/m0/harness/M0.Harness.psd1',
         'experiments/m0/harness/M0.Harness.psm1',
+        'experiments/m0/harness/M0.Markers.psm1',
         'experiments/m0/harness/M0.Statistics.psm1',
-        'scripts/m0/Test-M0Evidence.ps1'
+        'scripts/m0/Test-M0Evidence.ps1',
+        'scripts/m0/Test-M0Markers.ps1'
     )
     $schemaFiles = @(
         'experiments/m0/protocol/schemas/batch.schema.json',
@@ -18,6 +20,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/protocol/schemas/event.schema.json',
         'experiments/m0/protocol/schemas/fixture-manifest.schema.json',
         'experiments/m0/protocol/schemas/harness-manifest.schema.json',
+        'experiments/m0/protocol/schemas/marker-catalog.schema.json',
         'experiments/m0/protocol/schemas/protocol.schema.json',
         'experiments/m0/protocol/schemas/run.schema.json',
         'experiments/m0/protocol/schemas/scenario.schema.json',
@@ -32,6 +35,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/tests/Evidence.Tests.ps1',
         'experiments/m0/harness/tests/Fixture.Tests.ps1',
         'experiments/m0/harness/tests/HarnessManifest.Tests.ps1',
+        'experiments/m0/harness/tests/Markers.Tests.ps1',
         'experiments/m0/harness/tests/Statistics.Tests.ps1',
         'scripts/m0/Invoke-M0HarnessTests.ps1',
         'scripts/m0/New-M0HarnessManifest.ps1',
@@ -599,6 +603,8 @@ function Assert-M0ProtocolContract {
     Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $Protocol.shell_scenario_sha256
     $statisticsDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\statistics.v1.json'
     Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $Protocol.statistics_descriptor_sha256
+    $markerCatalog = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\markers.v1.json'
+    Assert-M0FileHash -LiteralPath $markerCatalog -ExpectedHash $Protocol.marker_catalog_sha256
 }
 
 function Assert-M0EnvironmentContract {
@@ -657,10 +663,13 @@ function Get-M0TrustedCommonInputs {
         $null = Assert-M0EnvironmentContract -Environment $environment -RepositoryRoot $root
 
         $fixtureModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Fixture.psm1'
+        $markersModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Markers.psm1'
         $statisticsModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Statistics.psm1'
         Import-Module $fixtureModulePath -Force -ErrorAction Stop
+        Import-Module $markersModulePath -Force -ErrorAction Stop
         Import-Module $statisticsModulePath -Force -ErrorAction Stop
         $fixtureResult = Assert-M0FixtureSet -FixtureRoot (Join-Path $root 'experiments/m0/shared/shell-fixture') -SchemaRoot $schemaRoot
+        $markersResult = Assert-M0MarkerArtifacts -ProtocolRoot $protocolRoot
         $statisticsResult = Assert-M0StatisticsArtifacts -ProtocolRoot $protocolRoot
 
         $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'scenarios/shell.v1.json'
@@ -671,8 +680,9 @@ function Get-M0TrustedCommonInputs {
             throw [IO.InvalidDataException]::new('M0H010 trusted shell scenario identity differs from protocol/fixture.')
         }
         if ($fixtureResult.fixture_sha256.ToUpperInvariant() -cne $protocol.fixture_manifest_sha256 -or
+            $markersResult.catalog_sha256.ToUpperInvariant() -cne $protocol.marker_catalog_sha256 -or
             $statisticsResult.descriptor_sha256.ToUpperInvariant() -cne $protocol.statistics_descriptor_sha256) {
-            throw [IO.InvalidDataException]::new('M0H010 transitive fixture/statistics root hash differs from protocol anchors.')
+            throw [IO.InvalidDataException]::new('M0H010 transitive fixture/marker/statistics root hash differs from protocol anchors.')
         }
 
         return [pscustomobject][ordered]@{
@@ -780,6 +790,7 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schemas\candidate.schema.json',
         'experiments\m0\protocol\schemas\scenario.schema.json',
         'experiments\m0\protocol\schemas\harness-manifest.schema.json',
+        'experiments\m0\protocol\schemas\marker-catalog.schema.json',
         'experiments\m0\protocol\schemas\fixture-manifest.schema.json',
         'experiments\m0\protocol\schemas\shell-fixture.schema.json',
         'experiments\m0\protocol\schemas\shell-queue.schema.json',
@@ -793,6 +804,8 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schedule.v1.sha256',
         'experiments\m0\protocol\statistics.v1.json',
         'experiments\m0\protocol\statistics.v1.sha256',
+        'experiments\m0\protocol\markers.v1.json',
+        'experiments\m0\protocol\markers.v1.sha256',
         'experiments\m0\protocol\goldens\statistics.v1.json',
         'experiments\m0\candidates\qt\README.md',
         'experiments\m0\candidates\qt\candidate.v1.json',
@@ -802,6 +815,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Harness.psm1',
         'experiments\m0\harness\M0.Fixture.psm1',
         'experiments\m0\harness\M0.Statistics.psm1',
+        'experiments\m0\harness\M0.Markers.psm1',
         'experiments\m0\harness\M0.Evidence.psm1',
         'experiments\m0\harness\manifest.v1.json',
         'experiments\m0\harness\manifest.v1.sha256',
@@ -809,6 +823,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\tests\Fixture.Tests.ps1',
         'experiments\m0\harness\tests\HarnessManifest.Tests.ps1',
         'experiments\m0\harness\tests\Statistics.Tests.ps1',
+        'experiments\m0\harness\tests\Markers.Tests.ps1',
         'experiments\m0\harness\tests\Evidence.Tests.ps1',
         'experiments\m0\shared\shell-fixture\LICENSE.assets.txt',
         'experiments\m0\shared\shell-fixture\assets\cover-placeholder.svg',
@@ -822,6 +837,7 @@ function Assert-M0Layout {
         'scripts\m0\Invoke-M0HarnessTests.ps1',
         'scripts\m0\Test-M0Fixture.ps1',
         'scripts\m0\Test-M0Statistics.ps1',
+        'scripts\m0\Test-M0Markers.ps1',
         'scripts\m0\Test-M0Evidence.ps1',
         'scripts\m0\Test-M0Layout.ps1'
     )

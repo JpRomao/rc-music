@@ -11,6 +11,7 @@
     "environment_bundle_sha256",
     "fixture_manifest_sha256",
     "harness_manifest_sha256",
+    "marker_catalog_sha256",
     "shell_scenario_sha256",
     "statistics_descriptor_sha256",
     "contract_sha256",
@@ -36,6 +37,7 @@
     "environment_bundle_sha256": { "$ref": "#/definitions/sha256" },
     "fixture_manifest_sha256": { "$ref": "#/definitions/sha256" },
     "harness_manifest_sha256": { "$ref": "#/definitions/sha256" },
+    "marker_catalog_sha256": { "$ref": "#/definitions/sha256" },
     "shell_scenario_sha256": { "$ref": "#/definitions/sha256" },
     "statistics_descriptor_sha256": { "$ref": "#/definitions/sha256" },
     "contract_sha256": {

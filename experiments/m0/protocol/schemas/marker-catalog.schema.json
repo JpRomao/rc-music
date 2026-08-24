@@ -1,0 +1,236 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 trusted marker catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "catalog_id",
+    "protocol_id",
+    "scenario_set_id",
+    "queue_probe_policy",
+    "visual_diagnostic_policy",
+    "resource_sampling_policies",
+    "scenarios"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/marker-catalog.schema.json" },
+    "schema_version": { "const": 1 },
+    "catalog_id": { "const": "M0-MARKERS-1" },
+    "protocol_id": { "const": "M0-P1" },
+    "scenario_set_id": { "const": "M0-SHELL-1" },
+    "queue_probe_policy": { "$ref": "#/definitions/queue_probe_policy" },
+    "visual_diagnostic_policy": { "$ref": "#/definitions/visual_diagnostic_policy" },
+    "resource_sampling_policies": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/definitions/resource_sampling_policy" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/definitions/scenario" }
+    }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "marker_key": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}:(?:begin|end|instant)$" },
+    "queue_probe_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_interval",
+        "window_duration_ns",
+        "minimum_input_interval_ns",
+        "minimum_complete_pairs",
+        "maximum_complete_pairs",
+        "first_probe_at_window_start",
+        "next_input_requires_previous_ack",
+        "unique_occurrence_id",
+        "ack_after_window_closes_pair",
+        "input_at_or_after_window_end_forbidden",
+        "qpc_value_ns_formula"
+      ],
+      "properties": {
+        "window_interval": { "const": "[t0,t0+5s)" },
+        "window_duration_ns": { "const": 5000000000 },
+        "minimum_input_interval_ns": { "const": 50000000 },
+        "minimum_complete_pairs": { "const": 1 },
+        "maximum_complete_pairs": { "const": 100 },
+        "first_probe_at_window_start": { "const": true },
+        "next_input_requires_previous_ack": { "const": true },
+        "unique_occurrence_id": { "const": true },
+        "ack_after_window_closes_pair": { "const": true },
+        "input_at_or_after_window_end_forbidden": { "const": true },
+        "qpc_value_ns_formula": { "const": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)" }
+      }
+    },
+    "visual_diagnostic_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_role",
+        "minimum_stable_baseline_ns",
+        "baseline_frames",
+        "uia_confirmation_timeout_ns",
+        "budget_exceeded_forbidden"
+      ],
+      "properties": {
+        "decision_role": { "const": "diagnostic_only" },
+        "minimum_stable_baseline_ns": { "const": 500000000 },
+        "baseline_frames": { "const": 3 },
+        "uia_confirmation_timeout_ns": { "const": 2000000000 },
+        "budget_exceeded_forbidden": { "const": true }
+      }
+    },
+    "resource_sampling_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_id",
+        "stabilization_start_marker_key",
+        "sampling_start_marker_key",
+        "sampling_end_marker_key",
+        "minimum_stabilization_ns",
+        "sampling_duration_ns",
+        "memory_sample_marker_key",
+        "memory_sample_offset_ns",
+        "memory_sample_tolerance_ns",
+        "required_metrics",
+        "qpc_duration_formula"
+      ],
+      "properties": {
+        "scenario_id": { "enum": ["idle-memory", "paused-cpu", "active-progress"] },
+        "stabilization_start_marker_key": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/marker_key" }
+          ]
+        },
+        "sampling_start_marker_key": { "$ref": "#/definitions/marker_key" },
+        "sampling_end_marker_key": { "$ref": "#/definitions/marker_key" },
+        "minimum_stabilization_ns": { "type": "integer", "minimum": 0, "maximum": 30000000000 },
+        "sampling_duration_ns": { "const": 60000000000 },
+        "memory_sample_marker_key": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/marker_key" }
+          ]
+        },
+        "memory_sample_offset_ns": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 1 }
+          ]
+        },
+        "memory_sample_tolerance_ns": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0 }
+          ]
+        },
+        "required_metrics": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/definitions/required_resource_metric" }
+        },
+        "qpc_duration_formula": { "const": "floor((end_ticks-start_ticks)*1000000000/qpc_frequency)" }
+      }
+    },
+    "required_resource_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "unit", "anchor_marker_key"],
+      "properties": {
+        "metric_id": { "$ref": "#/definitions/id" },
+        "unit": { "enum": ["bytes", "basis_points"] },
+        "anchor_marker_key": { "$ref": "#/definitions/marker_key" }
+      }
+    },
+    "cardinality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum", "required_statuses"],
+      "properties": {
+        "minimum": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "maximum": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "required_statuses": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "enum": ["valid", "discarded", "failed", "inconclusive"] }
+        }
+      }
+    },
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "marker_id",
+        "phase",
+        "source",
+        "role",
+        "occurrence_id_policy",
+        "cardinality",
+        "after"
+      ],
+      "properties": {
+        "marker_id": { "$ref": "#/definitions/id" },
+        "phase": { "enum": ["begin", "end", "instant"] },
+        "source": { "enum": ["external_harness", "candidate_reported"] },
+        "role": { "enum": ["measurement_boundary", "diagnostic"] },
+        "occurrence_id_policy": { "enum": ["forbidden", "required_unique"] },
+        "cardinality": { "$ref": "#/definitions/cardinality" },
+        "after": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/marker_key" }
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_id", "source", "decision_role", "attempt_limit_ns", "attempt_aggregate", "start_marker_key", "end_marker_key", "correlated_occurrence"],
+      "properties": {
+        "metric_id": { "$ref": "#/definitions/id" },
+        "source": { "const": "external_harness" },
+        "decision_role": { "enum": ["attempt_limit", "batch_p95", "diagnostic_only"] },
+        "attempt_limit_ns": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 1 }
+          ]
+        },
+        "attempt_aggregate": { "enum": ["identity", "max"] },
+        "start_marker_key": { "$ref": "#/definitions/marker_key" },
+        "end_marker_key": { "$ref": "#/definitions/marker_key" },
+        "correlated_occurrence": { "type": "boolean" }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "markers", "measurements"],
+      "properties": {
+        "scenario_id": { "$ref": "#/definitions/id" },
+        "markers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/definitions/marker" }
+        },
+        "measurements": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/definitions/measurement" }
+        }
+      }
+    }
+  }
+}
