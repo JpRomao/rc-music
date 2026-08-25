@@ -1,6 +1,30 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:M0HarnessUtf8 = [Text.UTF8Encoding]::new($false, $true)
+$script:M0HarnessTrustedInputsTestHook = $null
+
+function Import-M0HarnessExactDependency {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $LiteralPath
+    )
+
+    $expectedPath = [IO.Path]::GetFullPath($LiteralPath)
+    $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $loaded = @(Get-Module -All -Name $Name)
+    if ($loaded.Count -gt 1 -or
+        ($loaded.Count -eq 1 -and -not [IO.Path]::GetFullPath($loaded[0].Path).Equals($expectedPath, $comparison))) {
+        throw [IO.InvalidDataException]::new("M0H010 refuses a foreign or ambiguous dependency module '$Name'.")
+    }
+    if ($loaded.Count -eq 0) {
+        Import-Module -Name $expectedPath -ErrorAction Stop
+        $loaded = @(Get-Module -All -Name $Name)
+    }
+    if ($loaded.Count -ne 1 -or -not [IO.Path]::GetFullPath($loaded[0].Path).Equals($expectedPath, $comparison)) {
+        throw [IO.InvalidDataException]::new("M0H010 could not bind dependency module '$Name' to its exact repository path.")
+    }
+    return $loaded[0]
+}
 
 function Get-M0HarnessTrustPolicy {
     $runtimeFiles = @(
@@ -11,11 +35,13 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/M0.Markers.psm1',
         'experiments/m0/harness/M0.Process.psm1',
         'experiments/m0/harness/M0.Statistics.psm1',
+        'experiments/m0/harness/M0.Summary.psm1',
         'experiments/m0/harness/M0.Visual.psm1',
         'scripts/m0/Invoke-M0SyntheticProcessNode.ps1',
         'scripts/m0/Test-M0Evidence.ps1',
         'scripts/m0/Test-M0Markers.ps1',
         'scripts/m0/Test-M0Process.ps1',
+        'scripts/m0/Test-M0Summary.ps1',
         'scripts/m0/Test-M0Visual.ps1'
     )
     $schemaFiles = @(
@@ -41,6 +67,9 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/protocol/schemas/shell-queue.schema.json',
         'experiments/m0/protocol/schemas/statistics-golden.schema.json',
         'experiments/m0/protocol/schemas/statistics.schema.json',
+        'experiments/m0/protocol/schemas/summary-contract.schema.json',
+        'experiments/m0/protocol/schemas/summary-input.schema.json',
+        'experiments/m0/protocol/schemas/summary.schema.json',
         'experiments/m0/protocol/schemas/visual-golden.schema.json',
         'experiments/m0/protocol/schemas/visual.schema.json'
     )
@@ -54,6 +83,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/tests/Markers.Tests.ps1',
         'experiments/m0/harness/tests/Process.Tests.ps1',
         'experiments/m0/harness/tests/Statistics.Tests.ps1',
+        'experiments/m0/harness/tests/Summary.Tests.ps1',
         'experiments/m0/harness/tests/Visual.Tests.ps1',
         'scripts/m0/Invoke-M0HarnessTests.ps1',
         'scripts/m0/New-M0HarnessManifest.ps1',
@@ -627,6 +657,8 @@ function Assert-M0ProtocolContract {
     Assert-M0FileHash -LiteralPath $visualDescriptor -ExpectedHash $Protocol.visual_descriptor_sha256
     $processDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\process.v1.json'
     Assert-M0FileHash -LiteralPath $processDescriptor -ExpectedHash $Protocol.process_descriptor_sha256
+    $summaryDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\summary.v1.json'
+    Assert-M0FileHash -LiteralPath $summaryDescriptor -ExpectedHash $Protocol.summary_descriptor_sha256
 }
 
 function Assert-M0EnvironmentContract {
@@ -669,7 +701,10 @@ function Assert-M0EnvironmentContract {
 
 function Get-M0TrustedCommonInputs {
     [CmdletBinding()]
-    param([Parameter(Mandatory)] [string] $RepositoryRoot)
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [switch] $LoadSummary
+    )
 
     $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\', '/')
     $trustTreeLocks = @(Get-M0HarnessTrustTreeReadLocks -RepositoryRoot $root)
@@ -678,6 +713,7 @@ function Get-M0TrustedCommonInputs {
         $schemaRoot = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'schemas'
         $protocolPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'protocol.v1.json'
         $protocol = Assert-M0JsonDocument -DocumentPath $protocolPath -SchemaPath (Join-Path $schemaRoot 'protocol.schema.json')
+        $null = Assert-M0HarnessManifest -RepositoryRoot $root -ExpectedManifestSha256 $protocol.harness_manifest_sha256
         $null = Assert-M0ProtocolContract -Protocol $protocol -RepositoryRoot $root
 
         $environmentRoot = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'environments'
@@ -689,16 +725,51 @@ function Get-M0TrustedCommonInputs {
         $statisticsModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Statistics.psm1'
         $visualModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Visual.psm1'
         $processModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Process.psm1'
-        Import-Module $fixtureModulePath -Force -ErrorAction Stop
-        Import-Module $markersModulePath -Force -ErrorAction Stop
-        Import-Module $statisticsModulePath -Force -ErrorAction Stop
-        Import-Module $visualModulePath -Force -ErrorAction Stop
-        Import-Module $processModulePath -Force -ErrorAction Stop
-        $fixtureResult = Assert-M0FixtureSet -FixtureRoot (Join-Path $root 'experiments/m0/shared/shell-fixture') -SchemaRoot $schemaRoot
-        $markersResult = Assert-M0MarkerArtifacts -ProtocolRoot $protocolRoot
-        $statisticsResult = Assert-M0StatisticsArtifacts -ProtocolRoot $protocolRoot
-        $visualResult = Assert-M0VisualArtifacts -ProtocolRoot $protocolRoot
-        $processResult = Assert-M0ProcessArtifacts -ProtocolRoot $protocolRoot
+        $summaryModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Summary.psm1'
+        $fixtureModule = Import-M0HarnessExactDependency -Name 'M0.Fixture' -LiteralPath $fixtureModulePath
+        $markersModule = Import-M0HarnessExactDependency -Name 'M0.Markers' -LiteralPath $markersModulePath
+        $statisticsModule = Import-M0HarnessExactDependency -Name 'M0.Statistics' -LiteralPath $statisticsModulePath
+        $visualModule = Import-M0HarnessExactDependency -Name 'M0.Visual' -LiteralPath $visualModulePath
+        $processModule = Import-M0HarnessExactDependency -Name 'M0.Process' -LiteralPath $processModulePath
+        if ($LoadSummary) {
+            if (@(Get-Module -All -Name 'M0.Summary').Count -ne 0) {
+                throw [IO.InvalidDataException]::new('M0H010 refuses a preloaded M0.Summary consumer before its manifest-locked import.')
+            }
+            if ($null -ne $script:M0HarnessTrustedInputsTestHook) {
+                $hook = $script:M0HarnessTrustedInputsTestHook
+                $script:M0HarnessTrustedInputsTestHook = $null
+                if ([string]$hook.stage -cne 'before-summary-import-rename' -or
+                    -not [IO.Path]::GetFullPath([string]$hook.target_path).Equals($summaryModulePath, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw [IO.InvalidDataException]::new('M0H011 invalid trusted-input test hook.')
+                }
+                $destination = [IO.Path]::GetFullPath([string]$hook.destination_path)
+                $renameSucceeded = $false
+                try {
+                    [IO.File]::Move($summaryModulePath, $destination)
+                    $renameSucceeded = $true
+                }
+                catch [IO.IOException] {
+                    # Expected on Windows: the outer trust-tree handle denies rename/delete.
+                }
+                finally {
+                    if ($renameSucceeded) {
+                        [IO.File]::Move($destination, $summaryModulePath)
+                    }
+                }
+                if ($renameSucceeded -or (Test-Path -LiteralPath $destination)) {
+                    throw [IO.InvalidDataException]::new('M0H011 summary source rename was not blocked by the retained trust lock.')
+                }
+            }
+            $null = Import-M0HarnessExactDependency -Name 'M0.Summary' -LiteralPath $summaryModulePath
+        }
+        $fixtureResult = & $fixtureModule {
+            param($fixtureRoot, $schemas)
+            Assert-M0FixtureSet -FixtureRoot $fixtureRoot -SchemaRoot $schemas
+        } (Join-Path $root 'experiments/m0/shared/shell-fixture') $schemaRoot
+        $markersResult = & $markersModule { param($contracts) Assert-M0MarkerArtifacts -ProtocolRoot $contracts } $protocolRoot
+        $statisticsResult = & $statisticsModule { param($contracts) Assert-M0StatisticsArtifacts -ProtocolRoot $contracts } $protocolRoot
+        $visualResult = & $visualModule { param($contracts) Assert-M0VisualArtifacts -ProtocolRoot $contracts } $protocolRoot
+        $processResult = & $processModule { param($contracts) Assert-M0ProcessArtifacts -ProtocolRoot $contracts } $protocolRoot
 
         $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'scenarios/shell.v1.json'
         $scenario = Assert-M0JsonDocument -DocumentPath $scenarioPath -SchemaPath (Join-Path $schemaRoot 'scenario.schema.json')
@@ -831,6 +902,9 @@ function Assert-M0Layout {
         'experiments\m0\protocol\schemas\schedule.schema.json',
         'experiments\m0\protocol\schemas\statistics.schema.json',
         'experiments\m0\protocol\schemas\statistics-golden.schema.json',
+        'experiments\m0\protocol\schemas\summary-contract.schema.json',
+        'experiments\m0\protocol\schemas\summary-input.schema.json',
+        'experiments\m0\protocol\schemas\summary.schema.json',
         'experiments\m0\protocol\schemas\visual-golden.schema.json',
         'experiments\m0\protocol\schemas\visual.schema.json',
         'experiments\m0\protocol\schemas\event.schema.json',
@@ -848,8 +922,12 @@ function Assert-M0Layout {
         'experiments\m0\protocol\goldens\statistics.v1.json',
         'experiments\m0\protocol\goldens\visual.v1.json',
         'experiments\m0\protocol\goldens\process.v1.json',
+        'experiments\m0\protocol\goldens\summary-input.v1.json',
+        'experiments\m0\protocol\goldens\summary.v1.json',
         'experiments\m0\protocol\process.v1.json',
         'experiments\m0\protocol\process.v1.sha256',
+        'experiments\m0\protocol\summary.v1.json',
+        'experiments\m0\protocol\summary.v1.sha256',
         'experiments\m0\protocol\visual.v1.json',
         'experiments\m0\protocol\visual.v1.sha256',
         'experiments\m0\candidates\qt\README.md',
@@ -862,6 +940,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Statistics.psm1',
         'experiments\m0\harness\M0.Markers.psm1',
         'experiments\m0\harness\M0.Process.psm1',
+        'experiments\m0\harness\M0.Summary.psm1',
         'experiments\m0\harness\M0.Evidence.psm1',
         'experiments\m0\harness\M0.Visual.psm1',
         'experiments\m0\harness\manifest.v1.json',
@@ -872,6 +951,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\tests\Statistics.Tests.ps1',
         'experiments\m0\harness\tests\Markers.Tests.ps1',
         'experiments\m0\harness\tests\Process.Tests.ps1',
+        'experiments\m0\harness\tests\Summary.Tests.ps1',
         'experiments\m0\harness\tests\Evidence.Tests.ps1',
         'experiments\m0\harness\tests\EvidenceSnapshotSet.Tests.ps1',
         'experiments\m0\harness\tests\EvidenceWriter.Tests.ps1',
@@ -891,6 +971,7 @@ function Assert-M0Layout {
         'scripts\m0\Test-M0Statistics.ps1',
         'scripts\m0\Test-M0Markers.ps1',
         'scripts\m0\Test-M0Process.ps1',
+        'scripts\m0\Test-M0Summary.ps1',
         'scripts\m0\Test-M0Evidence.ps1',
         'scripts\m0\Test-M0Visual.ps1',
         'scripts\m0\Test-M0Layout.ps1'

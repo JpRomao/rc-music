@@ -86,11 +86,13 @@ Test-Case 'The protocol binds the common fixture and shell scenario bytes' {
     $shellScenario = Join-Path $RepositoryRoot 'experiments\m0\protocol\scenarios\shell.v1.json'
     $statisticsDescriptor = Join-Path $RepositoryRoot 'experiments\m0\protocol\statistics.v1.json'
     $markerCatalog = Join-Path $RepositoryRoot 'experiments\m0\protocol\markers.v1.json'
+    $summaryDescriptor = Join-Path $RepositoryRoot 'experiments\m0\protocol\summary.v1.json'
     Assert-M0FileHash -LiteralPath $fixtureManifest -ExpectedHash $protocol.fixture_manifest_sha256
     Assert-M0FileHash -LiteralPath $harnessManifest -ExpectedHash $protocol.harness_manifest_sha256
     Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $protocol.shell_scenario_sha256
     Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $protocol.statistics_descriptor_sha256
     Assert-M0FileHash -LiteralPath $markerCatalog -ExpectedHash $protocol.marker_catalog_sha256
+    Assert-M0FileHash -LiteralPath $summaryDescriptor -ExpectedHash $protocol.summary_descriptor_sha256
 }
 
 Test-Case 'The protocol binds the closed visual descriptor bytes' {
@@ -105,6 +107,13 @@ Test-Case 'The protocol binds the closed process descriptor bytes' {
     $protocol = Get-Content -LiteralPath $protocolPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
     $processPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\process.v1.json'
     Assert-Equal -Actual (Get-M0Sha256 -LiteralPath $processPath) -Expected $protocol.process_descriptor_sha256
+}
+
+Test-Case 'The protocol binds the closed common summary descriptor bytes' {
+    $protocolPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\protocol.v1.json'
+    $protocol = Get-Content -LiteralPath $protocolPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
+    $summaryPath = Join-Path $RepositoryRoot 'experiments\m0\protocol\summary.v1.json'
+    Assert-Equal -Actual (Get-M0Sha256 -LiteralPath $summaryPath) -Expected $protocol.summary_descriptor_sha256
 }
 
 Test-Case 'Candidate, environment and scenario descriptors satisfy their closed schemas' {

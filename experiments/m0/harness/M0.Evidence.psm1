@@ -7,16 +7,89 @@ $script:M0EvidenceInvariantFields = @(
     'scenario_sha256', 'experiment_id', 'run_id', 'candidate_code', 'scenario_id',
     'attempt', 'qpc_frequency'
 )
+function Import-M0EvidenceExactDependency {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $LiteralPath
+    )
+
+    $expectedPath = [IO.Path]::GetFullPath($LiteralPath)
+    $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $loaded = @(Get-Module -All -Name $Name)
+    if ($loaded.Count -gt 1 -or
+        ($loaded.Count -eq 1 -and -not [IO.Path]::GetFullPath($loaded[0].Path).Equals($expectedPath, $comparison))) {
+        throw [IO.InvalidDataException]::new("M0E001 refuses a foreign or ambiguous dependency module '$Name'.")
+    }
+    if ($loaded.Count -eq 0) {
+        Import-Module -Name $expectedPath -ErrorAction Stop
+        $loaded = @(Get-Module -All -Name $Name)
+    }
+    if ($loaded.Count -ne 1 -or -not [IO.Path]::GetFullPath($loaded[0].Path).Equals($expectedPath, $comparison)) {
+        throw [IO.InvalidDataException]::new("M0E001 could not bind dependency module '$Name' to its exact repository path.")
+    }
+    return $loaded[0]
+}
+
 $script:M0EvidenceStatisticsModulePath = Join-Path $PSScriptRoot 'M0.Statistics.psm1'
-Import-Module $script:M0EvidenceStatisticsModulePath -Force -ErrorAction Stop
+$script:M0EvidenceStatisticsModule = Import-M0EvidenceExactDependency -Name 'M0.Statistics' -LiteralPath $script:M0EvidenceStatisticsModulePath
 $script:M0EvidenceMarkersModulePath = Join-Path $PSScriptRoot 'M0.Markers.psm1'
-Import-Module $script:M0EvidenceMarkersModulePath -Force -ErrorAction Stop
+$script:M0EvidenceMarkersModule = Import-M0EvidenceExactDependency -Name 'M0.Markers' -LiteralPath $script:M0EvidenceMarkersModulePath
 $script:M0EvidenceMarkerCatalogCache = @{}
 $script:M0EvidenceModuleInstanceId = [Guid]::NewGuid().ToString('N')
 $script:M0EvidenceWriterRegistry = @{}
 $script:M0EvidenceClosedWriterTokens = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $script:M0EvidenceLegacyWriters = @{}
 $script:M0EvidenceIdentityTestHook = $null
+
+function Assert-M0EvidenceStatisticsArtifactSet {
+    param([Parameter(Mandatory)] [string] $ProtocolRoot)
+    return & $script:M0EvidenceStatisticsModule {
+        param($root)
+        Assert-M0StatisticsArtifacts -ProtocolRoot $root
+    } $ProtocolRoot
+}
+
+function New-M0EvidencePairedSchedule {
+    return & $script:M0EvidenceStatisticsModule { New-M0PairedSchedule }
+}
+
+function Assert-M0EvidenceMarkerArtifactSet {
+    param([Parameter(Mandatory)] [string] $ProtocolRoot)
+    return & $script:M0EvidenceMarkersModule {
+        param($root)
+        Assert-M0MarkerArtifacts -ProtocolRoot $root
+    } $ProtocolRoot
+}
+
+function Assert-M0EvidenceMarkerSequence {
+    param(
+        [Parameter(Mandatory)] $Catalog,
+        [Parameter(Mandatory)] [string] $ScenarioId,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Events,
+        [string] $Status = ''
+    )
+
+    $request = [pscustomobject]@{
+        catalog = $Catalog
+        scenario_id = $ScenarioId
+        events = @($Events)
+        status = $Status
+    }
+    return & $script:M0EvidenceMarkersModule {
+        param($value)
+        Assert-M0MarkerSequence -Catalog $value.catalog -ScenarioId $value.scenario_id -Events @($value.events) -Status $value.status
+    } $request
+}
+
+function Get-M0EvidenceMarkerInventory {
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Events)
+
+    $request = [pscustomobject]@{ events = @($Events) }
+    return & $script:M0EvidenceMarkersModule {
+        param($value)
+        Get-M0MarkerInventory -Events @($value.events)
+    } $request
+}
 
 if ($IsWindows -and -not ('M0EvidenceNativeV1.WindowsFileIdentity' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -163,7 +236,7 @@ function Get-M0EvidenceMarkerCatalog {
 
     $protocolRoot = [IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent))
     if (-not $script:M0EvidenceMarkerCatalogCache.ContainsKey($protocolRoot)) {
-        $script:M0EvidenceMarkerCatalogCache[$protocolRoot] = (Assert-M0MarkerArtifacts -ProtocolRoot $protocolRoot).catalog
+        $script:M0EvidenceMarkerCatalogCache[$protocolRoot] = (Assert-M0EvidenceMarkerArtifactSet -ProtocolRoot $protocolRoot).catalog
     }
     return $script:M0EvidenceMarkerCatalogCache[$protocolRoot]
 }
@@ -1019,7 +1092,7 @@ function New-M0EvidenceTransactionPlan {
     }
     else {
         $markerCatalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $SchemaRoot
-        $null = Assert-M0MarkerSequence -Catalog $markerCatalog -ScenarioId $rawBeforeSeal.first_event.scenario_id -Events @($rawBeforeSeal.events) -Status $SealEvent.payload.status
+        $null = Assert-M0EvidenceMarkerSequence -Catalog $markerCatalog -ScenarioId $rawBeforeSeal.first_event.scenario_id -Events @($rawBeforeSeal.events) -Status $SealEvent.payload.status
     }
 
     $record = $RunRecord | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100 -DateKind String
@@ -1042,7 +1115,7 @@ function New-M0EvidenceTransactionPlan {
             throw [IO.InvalidDataException]::new("M0E007 common input '$field' differs before intent publication.")
         }
     }
-    $observedMarkers = @(Get-M0MarkerInventory -Events @($rawBeforeSeal.events))
+    $observedMarkers = @(Get-M0EvidenceMarkerInventory -Events @($rawBeforeSeal.events))
     if ((ConvertTo-M0EvidenceJsonLine -Value @($record.markers)) -cne (ConvertTo-M0EvidenceJsonLine -Value $observedMarkers)) {
         throw [IO.InvalidDataException]::new('M0E007 marker inventory differs before intent publication.')
     }
@@ -1594,7 +1667,7 @@ function Add-M0EvidenceEventWithEntry {
         if ($Event.event -cin @('marker', 'action_observation')) {
             $catalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $Entry.schema_root
             $candidateEvents = @($existing.events) + @($Event)
-            $null = Assert-M0MarkerSequence -Catalog $catalog -ScenarioId $Event.scenario_id -Events $candidateEvents
+            $null = Assert-M0EvidenceMarkerSequence -Catalog $catalog -ScenarioId $Event.scenario_id -Events $candidateEvents
         }
     }
 
@@ -1899,7 +1972,7 @@ function Assert-M0EvidenceRunCore {
     }
     else {
         $markerCatalog = Get-M0EvidenceMarkerCatalog -SchemaRoot $SchemaRoot
-        $null = Assert-M0MarkerSequence -Catalog $markerCatalog -ScenarioId $first.scenario_id -Events @($raw.events) -Status $run.status
+        $null = Assert-M0EvidenceMarkerSequence -Catalog $markerCatalog -ScenarioId $first.scenario_id -Events @($raw.events) -Status $run.status
     }
     foreach ($field in @('experiment_id', 'run_id', 'candidate_code', 'scenario_id', 'attempt')) {
         if ([string]$run.$field -cne [string]$first.$field) {
@@ -1924,7 +1997,7 @@ function Assert-M0EvidenceRunCore {
         $run.raw.sealed_utc -cne $seal.utc) {
         throw [IO.InvalidDataException]::new('M0E008 run seal/hash metadata differs from raw evidence.')
     }
-    $observedMarkers = @(Get-M0MarkerInventory -Events @($raw.events))
+    $observedMarkers = @(Get-M0EvidenceMarkerInventory -Events @($raw.events))
     if ((ConvertTo-M0EvidenceJsonLine -Value @($run.markers)) -cne (ConvertTo-M0EvidenceJsonLine -Value $observedMarkers)) {
         throw [IO.InvalidDataException]::new('M0E008 run marker inventory differs from raw evidence.')
     }
@@ -2083,7 +2156,7 @@ function Read-M0EvidenceSchedule {
         throw [IO.InvalidDataException]::new('M0E014 SchedulePath must be the schedule.v1.json anchored beside the supplied schema root.')
     }
     try {
-        $null = Assert-M0StatisticsArtifacts -ProtocolRoot $protocolRoot
+        $null = Assert-M0EvidenceStatisticsArtifactSet -ProtocolRoot $protocolRoot
     }
     catch {
         throw [IO.InvalidDataException]::new("M0E014 anchored schedule/statistics artifacts failed validation: $($_.Exception.Message)", $_.Exception)
@@ -2094,7 +2167,7 @@ function Read-M0EvidenceSchedule {
         throw [IO.InvalidDataException]::new('M0E014 paired schedule failed schema validation.')
     }
     $schedule = $json | ConvertFrom-Json -Depth 100 -DateKind String
-    $generatedSchedule = New-M0PairedSchedule
+    $generatedSchedule = New-M0EvidencePairedSchedule
     if ((ConvertTo-M0EvidenceJsonLine -Value $schedule) -cne
         (ConvertTo-M0EvidenceJsonLine -Value $generatedSchedule)) {
         throw [IO.InvalidDataException]::new('M0E014 anchored schedule differs from the fixed SHA-256 rank algorithm.')
@@ -2273,7 +2346,7 @@ function New-M0EvidenceSnapshotSet {
     $rootLock = Open-M0EvidenceRootLock -Paths $lockPaths
     try {
         $schedule = Read-M0EvidenceSchedule -SchedulePath $SchedulePath -SchemaRoot $SchemaRoot
-        $statistics = Assert-M0StatisticsArtifacts -ProtocolRoot ([IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent)))
+        $statistics = Assert-M0EvidenceStatisticsArtifactSet -ProtocolRoot ([IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent)))
         $records = @(Assert-M0EvidenceSnapshotSetInventoryNoLock -EvidenceRoot $lockPaths.root -RunIds $RunIds -Schedule $schedule -SchemaRoot $SchemaRoot)
         $listed = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($runId in $RunIds) { $null = $listed.Add($runId) }
@@ -2535,7 +2608,7 @@ function Assert-M0EvidenceBatch {
     $expectedInputs = ConvertTo-M0EvidenceExpectedCommonInputs -ExpectedCommonInputs $ExpectedCommonInputs
     $snapshotSetResult = Read-M0EvidenceSnapshotSetNoLock -EvidenceRoot $root -SnapshotSetPath $SnapshotSetPath -SchemaRoot $SchemaRoot
     $snapshotSet = $snapshotSetResult.document
-    $statistics = Assert-M0StatisticsArtifacts -ProtocolRoot ([IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent)))
+    $statistics = Assert-M0EvidenceStatisticsArtifactSet -ProtocolRoot ([IO.Path]::GetFullPath((Split-Path $SchemaRoot -Parent)))
     if ($snapshotSet.schedule_sha256 -cne $statistics.schedule_sha256) {
         throw [IO.InvalidDataException]::new('M0E026 snapshot-set schedule_sha256 differs from the anchored schedule sidecar.')
     }

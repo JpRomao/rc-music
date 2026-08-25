@@ -1,0 +1,259 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 common canonical summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_id", "schema_version", "protocol_id", "experiment_id", "scenario_id", "source", "common_inputs", "method", "candidates", "metrics", "decision", "evidence_inventory"],
+  "properties": {
+    "$schema": { "const": "schemas/summary.schema.json" },
+    "schema_id": { "const": "m0.summary.v1" },
+    "schema_version": { "const": 1 },
+    "protocol_id": { "const": "M0-P1" },
+    "experiment_id": { "$ref": "summary-input.schema.json#/definitions/id" },
+    "scenario_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "source": { "$ref": "#/definitions/sourceReceipt" },
+    "common_inputs": { "$ref": "#/definitions/commonInputs" },
+    "method": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantile", "bootstrap", "resamples", "confidence_level", "seed", "attempt_projection", "mean", "standard_deviation", "standard_deviation_decimal_places", "standard_deviation_rounding"],
+      "properties": {
+        "quantile": { "const": "Hyndman-Fan-type-7" },
+        "bootstrap": { "const": "independent-percentile-bootstrap" },
+        "resamples": { "const": 10000 },
+        "confidence_level": { "const": 0.95 },
+        "seed": { "const": 20260823 },
+        "attempt_projection": { "const": "max-within-attempt-before-cross-attempt-quantiles" },
+        "mean": { "const": "arithmetic-decimal" },
+        "standard_deviation": { "const": "sample-n-minus-one-decimal-newton" },
+        "standard_deviation_decimal_places": { "const": 12 },
+        "standard_deviation_rounding": { "const": "midpoint-to-even" }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": [
+        {
+          "allOf": [
+            { "$ref": "#/definitions/candidateSummary" },
+            { "properties": { "candidate_code": { "const": "A" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/definitions/candidateSummary" },
+            { "properties": { "candidate_code": { "const": "B" } } }
+          ]
+        }
+      ],
+      "additionalItems": false
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric_id", "metric_family", "unit", "candidate_a", "candidate_b", "difference_p95_a_minus_b", "ci_lower", "ci_upper", "tie_band", "within_band", "error_code", "classification"],
+        "properties": {
+          "metric_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+          "metric_family": { "enum": ["latency_ms", "visual_response_ms", "memory_bytes", "cpu_percentage_points"] },
+          "unit": { "enum": ["milliseconds", "mebibytes", "percentage_points"] },
+          "candidate_a": { "$ref": "#/definitions/metricCandidate" },
+          "candidate_b": { "$ref": "#/definitions/metricCandidate" },
+          "difference_p95_a_minus_b": { "type": ["number", "null"] },
+          "ci_lower": { "type": ["number", "null"] },
+          "ci_upper": { "type": ["number", "null"] },
+          "tie_band": { "type": ["number", "null"], "minimum": 0 },
+          "within_band": { "type": ["boolean", "null"] },
+          "error_code": { "type": ["string", "null"], "enum": [null, "insufficient_valid_attempts", "insufficient_decisive_attempts"] },
+          "classification": { "enum": ["advantage_a", "advantage_b", "tie", "inconclusive"] }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "error_code": { "const": "insufficient_valid_attempts" } }, "required": ["error_code"] },
+            "then": {
+              "properties": {
+                "difference_p95_a_minus_b": { "const": null },
+                "ci_lower": { "const": null },
+                "ci_upper": { "const": null },
+                "tie_band": { "const": null },
+                "within_band": { "const": null },
+                "classification": { "const": "inconclusive" }
+              }
+            },
+            "else": {
+              "properties": {
+                "difference_p95_a_minus_b": { "type": "number" },
+                "ci_lower": { "type": "number" },
+                "ci_upper": { "type": "number" },
+                "tie_band": { "type": "number", "minimum": 0 },
+                "within_band": { "type": "boolean" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "error_code": { "const": "insufficient_decisive_attempts" } }, "required": ["error_code"] },
+            "then": { "properties": { "classification": { "const": "inconclusive" } } }
+          }
+        ]
+      }
+    },
+    "decision": { "enum": ["pass", "fail", "inconclusive"] },
+    "evidence_inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_sha256", "raws", "traces"],
+      "properties": {
+        "manifest_sha256": { "$ref": "#/definitions/sha256" },
+        "raws": { "type": "array", "minItems": 44, "maxItems": 44, "items": { "$ref": "#/definitions/rawReceipt" } },
+        "traces": { "type": "array", "items": { "$ref": "#/definitions/traceReceipt" } }
+      }
+    }
+  },
+  "definitions": {
+    "candidateSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_code", "planned", "valid", "discarded", "failed", "inconclusive", "budget_violated", "decision", "soak", "artifact_sha256", "toolchain_bundle_sha256", "lockfile_bundle_sha256", "runs_manifest_sha256"],
+        "properties": {
+          "candidate_code": { "enum": ["A", "B"] },
+          "planned": { "const": 22 },
+          "valid": { "type": "integer", "minimum": 0, "maximum": 22 },
+          "discarded": { "type": "integer", "minimum": 0, "maximum": 22 },
+          "failed": { "type": "integer", "minimum": 0, "maximum": 22 },
+          "inconclusive": { "type": "integer", "minimum": 0, "maximum": 22 },
+          "budget_violated": { "type": "boolean" },
+          "decision": { "enum": ["pass", "fail", "inconclusive"] },
+          "soak": { "$ref": "summary-input.schema.json#/definitions/soak" },
+          "artifact_sha256": { "$ref": "#/definitions/sha256" },
+          "toolchain_bundle_sha256": { "$ref": "#/definitions/sha256" },
+          "lockfile_bundle_sha256": { "$ref": "#/definitions/sha256" },
+          "runs_manifest_sha256": { "$ref": "#/definitions/sha256" }
+        }
+      },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "commonInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_sha256", "environment_sha256", "fixture_sha256", "harness_sha256", "scenario_sha256"],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" },
+        "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" },
+        "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "sourceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_set_contract_id", "snapshot_set_id", "snapshot_set_sha256", "batch_contract_id", "batch_id", "batch_sha256", "schedule_sha256"],
+      "properties": {
+        "snapshot_set_contract_id": { "const": "m0.evidence-snapshot-set.v1" },
+        "snapshot_set_id": { "$ref": "summary-input.schema.json#/definitions/id" },
+        "snapshot_set_sha256": { "$ref": "#/definitions/sha256" },
+        "batch_contract_id": { "const": "m0.batch.v1" },
+        "batch_id": { "$ref": "summary-input.schema.json#/definitions/id" },
+        "batch_sha256": { "$ref": "#/definitions/sha256" },
+        "schedule_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "rawReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_ordinal", "run_id", "candidate_code", "attempt", "status", "raw_sha256", "raw_final_line_sha256", "run_record_sha256", "snapshot_sha256"],
+      "properties": {
+        "snapshot_ordinal": { "type": "integer", "minimum": 1, "maximum": 44 },
+        "run_id": { "type": "string", "pattern": "^run-[AB]-[a-z0-9][a-z0-9._-]{0,121}$" },
+        "candidate_code": { "enum": ["A", "B"] },
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 22 },
+        "status": { "enum": ["valid", "discarded", "failed", "inconclusive"] },
+        "raw_sha256": { "$ref": "#/definitions/sha256" },
+        "raw_final_line_sha256": { "$ref": "#/definitions/sha256" },
+        "run_record_sha256": { "$ref": "#/definitions/sha256" },
+        "snapshot_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "traceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_code", "run_id", "trace_id", "sha256"],
+      "properties": {
+        "candidate_code": { "enum": ["A", "B"] },
+        "run_id": { "type": "string", "pattern": "^run-[AB]-[a-z0-9][a-z0-9._-]{0,121}$" },
+        "trace_id": { "type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "metricCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "failures", "discards", "min", "p50", "p95", "max", "mean", "standard_deviation", "diagnostic_error_code", "error_code", "budget_operator", "budget", "budget_violated"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "failures": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "discards": { "type": "integer", "minimum": 0, "maximum": 22 },
+        "min": { "type": ["number", "null"], "minimum": 0 },
+        "p50": { "type": ["number", "null"], "minimum": 0 },
+        "p95": { "type": ["number", "null"], "minimum": 0 },
+        "max": { "type": ["number", "null"], "minimum": 0 },
+        "mean": { "type": ["number", "null"], "minimum": 0 },
+        "standard_deviation": { "type": ["number", "null"], "minimum": 0 },
+        "diagnostic_error_code": { "type": ["string", "null"], "enum": [null, "no_valid_attempts", "insufficient_samples_for_standard_deviation"] },
+        "error_code": { "type": ["string", "null"], "enum": [null, "no_valid_attempts"] },
+        "budget_operator": { "enum": ["less-than", "less-than-or-equal"] },
+        "budget": { "type": "number", "minimum": 0 },
+        "budget_violated": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "n": { "const": 0 } }, "required": ["n"] },
+          "then": {
+            "properties": {
+              "min": { "const": null },
+              "p50": { "const": null },
+              "p95": { "const": null },
+              "max": { "const": null },
+              "mean": { "const": null },
+              "standard_deviation": { "const": null },
+              "diagnostic_error_code": { "const": "no_valid_attempts" },
+              "error_code": { "const": "no_valid_attempts" },
+              "budget_violated": { "const": false }
+            }
+          },
+          "else": {
+            "properties": {
+              "min": { "type": "number", "minimum": 0 },
+              "p50": { "type": "number", "minimum": 0 },
+              "p95": { "type": "number", "minimum": 0 },
+              "max": { "type": "number", "minimum": 0 },
+              "mean": { "type": "number", "minimum": 0 },
+              "error_code": { "const": null }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "n": { "const": 1 } }, "required": ["n"] },
+          "then": {
+            "properties": {
+              "standard_deviation": { "const": null },
+              "diagnostic_error_code": { "const": "insufficient_samples_for_standard_deviation" }
+            }
+          },
+          "else": {
+            "if": { "properties": { "n": { "minimum": 2 } }, "required": ["n"] },
+            "then": {
+              "properties": {
+                "standard_deviation": { "type": "number", "minimum": 0 },
+                "diagnostic_error_code": { "const": null }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

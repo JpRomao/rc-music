@@ -79,7 +79,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 
 A autoria documental e a revisão do mantenedor estão concluídas. A [autorização D0.9](m0/README.md) aceita o baseline derivado e permite apenas o escopo experimental M0.0–M0.10; Qt, Tauri e os backends continuam candidatos.
 
-M0.1 permanece em andamento. Já existem contratos e checks para fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético e árvore/identidade/cleanup sintéticos. O smoke de processo atual é local, Windows-only, `partial/etw_live_not_implemented`, não selado e não decisório; ele não substitui o futuro `Invoke-M0Pilot.ps1`, o summary golden nem qualquer coleta A/B. Linux live permanece `not_proven`.
+M0.1 permanece em andamento. Já existem contratos e checks para fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos e o summary comum puro com golden canônico. Esse builder recebe uma fixture agregada previamente validada; ainda não lê nem publica Evidence A/B. O smoke de processo atual é local, Windows-only, `partial/etw_live_not_implemented`, não selado e não decisório; ele não substitui o futuro `Invoke-M0Pilot.ps1` nem qualquer coleta A/B. Linux live permanece `not_proven`.
 
 ## 3. Check obrigatório de todo incremento
 

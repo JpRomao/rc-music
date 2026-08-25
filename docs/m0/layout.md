@@ -25,15 +25,22 @@ experiments/m0/
 │   ├── visual.v1.sha256
 │   ├── process.v1.json
 │   ├── process.v1.sha256
+│   ├── summary.v1.json
+│   ├── summary.v1.sha256
 │   ├── environments/
 │   ├── goldens/
-│   │   └── process.v1.json
+│   │   ├── process.v1.json
+│   │   ├── summary-input.v1.json
+│   │   └── summary.v1.json
 │   ├── scenarios/
 │   └── schemas/
 │       ├── process.schema.json
 │       ├── process-golden.schema.json
 │       ├── process-tree.schema.json
-│       └── process-tree-artifact.schema.json
+│       ├── process-tree-artifact.schema.json
+│       ├── summary-contract.schema.json
+│       ├── summary-input.schema.json
+│       └── summary.schema.json
 ├── shared/
 │   └── shell-fixture/
 ├── candidates/
@@ -49,15 +56,18 @@ experiments/m0/
     ├── M0.Evidence.psm1
     ├── M0.Markers.psm1
     ├── M0.Process.psm1
+    ├── M0.Summary.psm1
     ├── M0.Visual.psm1
     └── tests/
         ├── EvidenceWriter.Tests.ps1
         ├── EvidenceSnapshotSet.Tests.ps1
         ├── Process.Tests.ps1
+        ├── Summary.Tests.ps1
         └── Visual.Tests.ps1
 scripts/m0/
 ├── Invoke-M0SyntheticProcessNode.ps1
 ├── Test-M0Process.ps1
+├── Test-M0Summary.ps1
 ├── Test-M0Visual.ps1
 out/m0/
 ├── builds/
@@ -96,7 +106,9 @@ A fixture do shell congela:
 
 Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence somente a M0.5.
 
-O contrato de processo M0.1 acrescenta descriptor/sidecar/golden e schemas fechados para identidade forte, atribuição, cleanup e artifact `process-tree`. `M0.Process.psm1` mantém a autoridade nativa em registry privado; o helper literal cria somente a topologia sintética root → child → grandchild. O runner público valida o smoke Windows e o artifact P canônico apenas em memória, remove sua leaf de `out/m0/process-pilot` e não publica Evidence. Linux permanece `not_proven`. `Invoke-M0Pilot.ps1`, raw/run/snapshot e summary continuam previstos, ainda ausentes.
+O contrato de processo M0.1 acrescenta descriptor/sidecar/golden e schemas fechados para identidade forte, atribuição, cleanup e artifact `process-tree`. `M0.Process.psm1` mantém a autoridade nativa em registry privado; o helper literal cria somente a topologia sintética root → child → grandchild. O runner público valida o smoke Windows e o artifact P canônico apenas em memória, remove sua leaf de `out/m0/process-pilot` e não publica Evidence. Linux permanece `not_proven`.
+
+O contrato de summary comum acrescenta descriptor/sidecar, input/golden e schemas fechados. `M0.Summary.psm1` transforma apenas input previamente validado e não acessa Evidence A/B; o golden prova cálculo e serialização canônicos em processos/roots independentes. `Assert-M0SummaryArtifacts` faz o check físico ancorado no Windows; a API pura permanece multiplataforma, enquanto o reader físico equivalente Linux continua `not_proven`. `Invoke-M0Pilot.ps1` e a publicação raw/run/snapshot P continuam previstos, ainda ausentes.
 
 ## 4. Artefatos e Git
 
@@ -117,6 +129,7 @@ O contrato de processo M0.1 acrescenta descriptor/sidecar/golden e schemas fecha
 | `Test-M0Evidence.ps1` | cadeia JSONL, writer recuperável, snapshot commitado, projeções raw/run, agenda e batch fail-closed |
 | `Test-M0Visual.ps1` | descriptor/sidecar/golden visuais ancorados e API sintética de ROI, detecção e UIA; não captura DXGI live |
 | `Test-M0Process.ps1` | descriptor/golden/process-tree ancorados, processo limpo, Job Windows root → child → grandchild, cleanup escopado e artifact P somente em memória; Linux não provado |
+| `Test-M0Summary.ps1` | descriptor/input/golden/schemas do summary comum, builder puro e trust físico Windows; não lê nem publica Evidence A/B |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
 | `Invoke-M0Pilot.ps1` *(previsto, ainda ausente)* | publicação recuperável da evidência P sem candidato real |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |

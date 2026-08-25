@@ -2,10 +2,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:M0ProcessUtf8 = [Text.UTF8Encoding]::new($false, $true)
 $script:M0ProcessModuleInstanceId = [Guid]::NewGuid().ToString('N')
+$script:M0ProcessModuleSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
 $script:M0ProcessPilotRegistry = @{}
 $script:M0ProcessRepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\', '/')
+$script:M0ProcessNativeTypeNames = @(
+    'M0ProcessNativeV1.PilotSession',
+    'M0ProcessNativeV1.ProcessCapability',
+    'M0ProcessNativeV1.TrustedFile'
+)
+$script:M0ProcessNativeAssembly = $null
+$existingNativeTypes = @($script:M0ProcessNativeTypeNames | ForEach-Object { $_ -as [type] } | Where-Object { $null -ne $_ })
+if ($IsWindows -and $existingNativeTypes.Count -gt 0) {
+    throw [IO.InvalidDataException]::new('M0P001 M0.Process refuses all preloaded native process types; reuse the already loaded exact module without Force or reload.')
+}
 
-if ($IsWindows -and -not ('M0ProcessNativeV1.PilotSession' -as [type])) {
+if ($IsWindows -and $existingNativeTypes.Count -eq 0) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -393,6 +404,35 @@ namespace M0ProcessNativeV1
     }
 }
 '@
+    $loadedNativeTypes = @($script:M0ProcessNativeTypeNames | ForEach-Object { $_ -as [type] } | Where-Object { $null -ne $_ })
+    if ($loadedNativeTypes.Count -ne $script:M0ProcessNativeTypeNames.Count -or
+        @($loadedNativeTypes | Where-Object { -not [object]::ReferenceEquals($_.Assembly, $loadedNativeTypes[0].Assembly) }).Count -ne 0) {
+        throw [IO.InvalidDataException]::new('M0P001 M0.Process native type compilation produced an incoherent assembly.')
+    }
+    $script:M0ProcessNativeAssembly = $loadedNativeTypes[0].Assembly
+}
+
+function Assert-M0ProcessNativeContract {
+    if (-not $IsWindows) {
+        throw [PlatformNotSupportedException]::new('M0P001 native process contract is unavailable outside Windows.')
+    }
+    $currentModuleSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    if ($currentModuleSha256 -cne $script:M0ProcessModuleSha256) {
+        throw [IO.InvalidDataException]::new('M0P001 loaded process runtime differs from its exact source bytes.')
+    }
+    $trustedNativeAssembly = $script:M0ProcessNativeAssembly
+    $types = @($script:M0ProcessNativeTypeNames | ForEach-Object { $_ -as [type] } | Where-Object { $null -ne $_ })
+    if ($types.Count -ne $script:M0ProcessNativeTypeNames.Count -or $null -eq $trustedNativeAssembly -or
+        @($types | Where-Object { -not [object]::ReferenceEquals($_.Assembly, $trustedNativeAssembly) }).Count -ne 0) {
+        throw [IO.InvalidDataException]::new('M0P001 native process types do not match the recorded M0.Process assembly identity.')
+    }
+    return [pscustomobject][ordered]@{
+        contract_id = 'm0-process-native-v1'
+        module_sha256 = $script:M0ProcessModuleSha256
+        module_instance_id = $script:M0ProcessModuleInstanceId
+        assembly_full_name = [string]$trustedNativeAssembly.FullName
+        type_count = $types.Count
+    }
 }
 
 function Get-M0ProcessSha256Bytes {

@@ -65,6 +65,26 @@ function Invoke-M0HarnessChildProcess {
     }
 }
 
+function Invoke-M0TrustedCommonInputsChild {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $modulePath = Join-Path $Root 'experiments\m0\harness\M0.Harness.psd1'
+    $scriptPath = Join-Path $TestTempRoot "trusted-common-$Name.ps1"
+    $escapedModule = $modulePath.Replace("'", "''")
+    $escapedRoot = $Root.Replace("'", "''")
+    $scriptText = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module -Name '$escapedModule' -ErrorAction Stop
+`$null = Get-M0TrustedCommonInputs -RepositoryRoot '$escapedRoot'
+throw 'TRUSTED-COMMON-MUTATION-UNEXPECTEDLY-ACCEPTED'
+"@
+    [IO.File]::WriteAllText($scriptPath, $scriptText, [Text.UTF8Encoding]::new($false))
+    return Invoke-M0HarnessChildProcess -ScriptPath $scriptPath
+}
+
 Test-Case 'The canonical harness trust contract exists before collection can use it' {
     foreach ($path in @(
         $harnessManifestSchemaPath,
@@ -79,8 +99,8 @@ Test-Case 'The canonical harness trust contract exists before collection can use
 Test-Case 'The committed harness manifest is canonical, anchored and complete' {
     $expectedHash = Get-M0CommittedHarnessHash
     $result = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $expectedHash
-    Assert-Equal -Actual $result.runtime_file_count -Expected 13
-    Assert-Equal -Actual $result.schema_file_count -Expected 24
+    Assert-Equal -Actual $result.runtime_file_count -Expected 15
+    Assert-Equal -Actual $result.schema_file_count -Expected 27
     Assert-Equal -Actual $result.manifest_sha256 -Expected $expectedHash.ToLowerInvariant()
 }
 
@@ -114,12 +134,18 @@ Test-Case 'Trusted common inputs deep-validate every transitive common artifact'
         [pscustomobject]@{ name = 'process-descriptor'; relative_path = 'experiments\m0\protocol\process.v1.json' },
         [pscustomobject]@{ name = 'process-sidecar'; relative_path = 'experiments\m0\protocol\process.v1.sha256' },
         [pscustomobject]@{ name = 'process-golden'; relative_path = 'experiments\m0\protocol\goldens\process.v1.json' },
+        [pscustomobject]@{ name = 'summary-descriptor'; relative_path = 'experiments\m0\protocol\summary.v1.json' },
         [pscustomobject]@{ name = 'scenario'; relative_path = 'experiments\m0\protocol\scenarios\shell.v1.json' }
     )
     foreach ($mutation in $mutations) {
         $root = Copy-M0HarnessTrustTree -DestinationRoot (Join-Path $TestTempRoot "nested-$($mutation.name)")
         [IO.File]::AppendAllText((Join-Path $root $mutation.relative_path), "`n", [Text.UTF8Encoding]::new($false))
-        Assert-Throws { Get-M0TrustedCommonInputs -RepositoryRoot $root } 'hash|canonical|schema|M0F|M0S|M0V|M0P|scenario'
+        $result = Invoke-M0TrustedCommonInputsChild -Root $root -Name $mutation.name
+        Assert-True ($result.exit_code -ne 0) "Trusted common mutation '$($mutation.name)' unexpectedly succeeded."
+        Assert-True ($result.output -match 'hash|canonical|schema|M0F|M0S|M0V|M0P|scenario') `
+            "Trusted common mutation '$($mutation.name)' failed for the wrong reason: $($result.output)"
+        Assert-True ($result.output -notmatch 'foreign or ambiguous dependency module') `
+            "Trusted common mutation '$($mutation.name)' was masked by parent-process module state."
     }
 }
 
@@ -172,7 +198,10 @@ Test-Case 'Runtime and transitive common inputs reject hardlinks outside the tru
     Copy-Item -LiteralPath $queuePath -Destination $outsideQueuePath
     Remove-Item -LiteralPath $queuePath -Force
     New-Item -ItemType HardLink -Path $queuePath -Target $outsideQueuePath | Out-Null
-    Assert-Throws { Get-M0TrustedCommonInputs -RepositoryRoot $fixtureRoot } 'M0H0|hardlink|link'
+    $hardlinkResult = Invoke-M0TrustedCommonInputsChild -Root $fixtureRoot -Name 'hardlink-fixture'
+    Assert-True ($hardlinkResult.exit_code -ne 0) 'Hardlinked trusted fixture unexpectedly succeeded.'
+    Assert-True ($hardlinkResult.output -match 'hardlink|link') "Hardlinked trusted fixture failed for the wrong reason: $($hardlinkResult.output)"
+    Assert-True ($hardlinkResult.output -notmatch 'foreign or ambiguous dependency module') 'Hardlink rejection was masked by parent-process module state.'
 }
 
 Test-Case 'Verification bytes stay outside the decisive digest but executable coverage stays closed' {

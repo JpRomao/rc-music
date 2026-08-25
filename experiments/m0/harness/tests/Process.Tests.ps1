@@ -218,8 +218,56 @@ Add-Type -TypeDefinition 'namespace M0ProcessNativeV1 { public class $nativeType
     }
 }
 
-Import-Module $processModulePath -Force -ErrorAction Stop
-$processModule = Get-Module -Name M0.Process
+$expectedProcessModulePath = [IO.Path]::GetFullPath($processModulePath)
+$processComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+$processModules = @(Get-Module -All -Name M0.Process)
+if ($processModules.Count -gt 1 -or
+    ($processModules.Count -eq 1 -and -not [IO.Path]::GetFullPath($processModules[0].Path).Equals($expectedProcessModulePath, $processComparison))) {
+    throw [IO.InvalidDataException]::new('Process.Tests refuses a foreign or ambiguous M0.Process module.')
+}
+if ($processModules.Count -eq 0) {
+    Import-Module $processModulePath -ErrorAction Stop
+    $processModules = @(Get-Module -All -Name M0.Process)
+}
+if ($processModules.Count -ne 1 -or -not [IO.Path]::GetFullPath($processModules[0].Path).Equals($expectedProcessModulePath, $processComparison)) {
+    throw [IO.InvalidDataException]::new('Process.Tests could not bind the exact M0.Process module.')
+}
+$processModule = $processModules[0]
+$nativeContractBeforeProjection = $null
+$nativeAssemblyBeforeProjection = $null
+if ($IsWindows) {
+    $nativeState = & $processModule {
+        [pscustomobject]@{
+            contract = Assert-M0ProcessNativeContract
+            assembly = $script:M0ProcessNativeAssembly
+        }
+    }
+    $nativeContractBeforeProjection = $nativeState.contract
+    $nativeAssemblyBeforeProjection = $nativeState.assembly
+}
+
+# The exact module may already be loaded as a nested dependency of M0.Harness.
+# Project that same ModuleInfo into this test-file scope without reloading its
+# source bytes, native assembly or private pilot registry.
+Import-Module -ModuleInfo $processModule -Scope Local -ErrorAction Stop
+$projectedProcessModules = @(Get-Module -All -Name M0.Process)
+if ($projectedProcessModules.Count -ne 1 -or
+    -not [object]::ReferenceEquals($projectedProcessModules[0], $processModule)) {
+    throw [IO.InvalidDataException]::new('Process.Tests changed the exact M0.Process module instance while projecting its exports.')
+}
+if ($IsWindows) {
+    $nativeStateAfterProjection = & $processModule {
+        [pscustomobject]@{
+            contract = Assert-M0ProcessNativeContract
+            assembly = $script:M0ProcessNativeAssembly
+        }
+    }
+    if ($nativeStateAfterProjection.contract.module_instance_id -cne $nativeContractBeforeProjection.module_instance_id -or
+        $nativeStateAfterProjection.contract.module_sha256 -cne $nativeContractBeforeProjection.module_sha256 -or
+        -not [object]::ReferenceEquals($nativeStateAfterProjection.assembly, $nativeAssemblyBeforeProjection)) {
+        throw [IO.InvalidDataException]::new('Process.Tests reloaded or replaced the native M0.Process contract while projecting its exports.')
+    }
+}
 
 Test-Case 'The process module exports only the approved safe API' {
     Assert-SequenceEqual -Actual @($processModule.ExportedFunctions.Keys | Sort-Object) -Expected @(

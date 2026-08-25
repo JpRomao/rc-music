@@ -1,0 +1,41 @@
+{
+  "$schema": "schemas/summary-contract.schema.json",
+  "schema_id": "m0.summary-contract.v1",
+  "schema_version": 1,
+  "protocol_id": "M0-P1",
+  "summary_id": "M0-SUMMARY-1",
+  "method": {
+    "quantile": "Hyndman-Fan-type-7",
+    "bootstrap": "independent-percentile-bootstrap",
+    "resamples": 10000,
+    "confidence_level": 0.95,
+    "seed": 20260823,
+    "attempt_projection": "max-within-attempt-before-cross-attempt-quantiles",
+    "mean": "arithmetic-decimal",
+    "standard_deviation": "sample-n-minus-one-decimal-newton",
+    "standard_deviation_decimal_places": 12,
+    "standard_deviation_rounding": "midpoint-to-even",
+    "input_boundary": "prevalidated-pure-input-no-evidence-io",
+    "runs_manifest_contract": "m0.runs-manifest.v1",
+    "evidence_inventory_contract": "m0.summary-evidence-inventory.v1",
+    "output_serialization": "ordered-json-utf8-no-bom-lf"
+  },
+  "artifacts": {
+    "input": {
+      "relative_path": "goldens/summary-input.v1.json",
+      "sha256": "de1355305080a422045a5933d6728e5e64af60d90e00e26104be84ef2538fbad"
+    },
+    "golden": {
+      "relative_path": "goldens/summary.v1.json",
+      "sha256": "de07cf662fff41048190a2ffc727c0a7ab11b4b2e6dcd021fd8dbf719554b47c"
+    },
+    "input_schema": {
+      "relative_path": "schemas/summary-input.schema.json",
+      "sha256": "ced8b554d63673cbfa445f4e3df245700e14e75b67d16e9806831a47913fe81f"
+    },
+    "summary_schema": {
+      "relative_path": "schemas/summary.schema.json",
+      "sha256": "aa3bbdc8ff3ba50647a42f13c0d99260879d94457ba59fc7e75a7e6f2a743f2f"
+    }
+  }
+}

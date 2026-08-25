@@ -6,8 +6,8 @@
   "runtime_files": [
     {
       "relative_path": "experiments/m0/harness/M0.Evidence.psm1",
-      "sha256": "518cd3c37fff0c702d3e0275fbe46ad76fa69338ef2bb4a7fe31a418403c18c0",
-      "size_bytes": 140668
+      "sha256": "8a8e25bf22fb0b55ae4441e2df698dad68a601a477c4bd0141e5ff8d291fa282",
+      "size_bytes": 143521
     },
     {
       "relative_path": "experiments/m0/harness/M0.Fixture.psm1",
@@ -21,8 +21,8 @@
     },
     {
       "relative_path": "experiments/m0/harness/M0.Harness.psm1",
-      "sha256": "dac354311a78b3c6d1b0c203869aa6c5219bdefa75c47e01b817acc6b497ca50",
-      "size_bytes": 46118
+      "sha256": "5f6e17130dfb24aa2e806e310db9567f70d30ab0aae62a321dcf995efa46cb96",
+      "size_bytes": 50968
     },
     {
       "relative_path": "experiments/m0/harness/M0.Markers.psm1",
@@ -31,13 +31,18 @@
     },
     {
       "relative_path": "experiments/m0/harness/M0.Process.psm1",
-      "sha256": "a48aa2dd209ae72063d9d5e7e6578ebcc83ffc500e316d0c41122a9fb13dfb4f",
-      "size_bytes": 102388
+      "sha256": "13c85b46c4be0a5211aab0c568ec4b1adfbba4123bba15e36f4bff47582292ee",
+      "size_bytes": 104964
     },
     {
       "relative_path": "experiments/m0/harness/M0.Statistics.psm1",
-      "sha256": "a0e6d7bd3609eec1e75088a29abaecfe3e499a352fdcbd9ba4cb6f7edb89300c",
-      "size_bytes": 21369
+      "sha256": "59c1e91db4069b8c977ada9e6a51f4addedac8eb480297d80109deab9426c1c7",
+      "size_bytes": 22387
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Summary.psm1",
+      "sha256": "79b49458bd701f553942e1706cf6f6f807e75e6d1a45d72a4beee497897e4838",
+      "size_bytes": 68185
     },
     {
       "relative_path": "experiments/m0/harness/M0.Visual.psm1",
@@ -63,6 +68,11 @@
       "relative_path": "scripts/m0/Test-M0Process.ps1",
       "sha256": "a45c50619e4a82c27e2c6c57e67791b67f9c5fb741432d1fa5e61a9c7142ec89",
       "size_bytes": 5903
+    },
+    {
+      "relative_path": "scripts/m0/Test-M0Summary.ps1",
+      "sha256": "e7ec2fc1147f9763843d5292b386a77103edbb6ec6da4ef50517400084145e88",
+      "size_bytes": 3950
     },
     {
       "relative_path": "scripts/m0/Test-M0Visual.ps1",
@@ -143,8 +153,8 @@
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/protocol.schema.json",
-      "sha256": "cef9e752dcf60256dd3c398f20b19d1360310b5ec2811d50a0142bfd8fb78668",
-      "size_bytes": 7051
+      "sha256": "dccd773ce77df4121cafeb20f7841c47f94f20b4396a8c480a75996f669fa4ed",
+      "size_bytes": 7153
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/run.schema.json",
@@ -180,6 +190,21 @@
       "relative_path": "experiments/m0/protocol/schemas/statistics.schema.json",
       "sha256": "63845e2b663df7199c54a4fc6546fa4e3ec59e5d83689c4e82c77548ed408d99",
       "size_bytes": 4156
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/summary-contract.schema.json",
+      "sha256": "ac4d9a034d20630707853d88b4ff23a4bd8f7a01ad5617c4258c4287f777e129",
+      "size_bytes": 3588
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/summary-input.schema.json",
+      "sha256": "ced8b554d63673cbfa445f4e3df245700e14e75b67d16e9806831a47913fe81f",
+      "size_bytes": 9081
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/summary.schema.json",
+      "sha256": "aa3bbdc8ff3ba50647a42f13c0d99260879d94457ba59fc7e75a7e6f2a743f2f",
+      "size_bytes": 12377
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/visual-golden.schema.json",

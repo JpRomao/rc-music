@@ -82,6 +82,7 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Markers.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Evidence.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Visual.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Process.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Summary.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
@@ -90,7 +91,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. completar coleta live, resumo e piloto neutro em M0.1 sobre os contratos, markers, evidência e detector sintético já materializados;
+1. completar coleta live e piloto neutro em M0.1 sobre os contratos, markers, evidência, detector sintético e summary comum puro já materializados;
 2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
 3. medir e então aceitar/rejeitar os ADRs;
 4. somente depois iniciar o MVP guiado por TDD.

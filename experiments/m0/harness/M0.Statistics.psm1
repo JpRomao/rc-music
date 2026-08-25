@@ -4,6 +4,24 @@ $ErrorActionPreference = 'Stop'
 $script:M0ProtocolId = 'M0-P1'
 $script:M0StatisticsSeed = 20260823
 $script:M0BootstrapResamples = 10000
+$script:M0StatisticsModuleInstanceId = [Guid]::NewGuid().ToString('N')
+$script:M0StatisticsModuleSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+
+function Assert-M0StatisticsRuntimeContract {
+    $currentSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    if ($currentSha256 -cne $script:M0StatisticsModuleSha256 -or
+        $script:M0ProtocolId -cne 'M0-P1' -or $script:M0StatisticsSeed -ne 20260823 -or
+        $script:M0BootstrapResamples -ne 10000) {
+        throw [IO.InvalidDataException]::new('M0S001 loaded statistics runtime differs from its exact source contract.')
+    }
+    return [pscustomobject][ordered]@{
+        contract_id = 'm0-statistics-runtime-v1'
+        module_instance_id = $script:M0StatisticsModuleInstanceId
+        module_sha256 = $script:M0StatisticsModuleSha256
+        seed = $script:M0StatisticsSeed
+        resamples = $script:M0BootstrapResamples
+    }
+}
 
 function Get-M0StatisticsSha256 {
     param([Parameter(Mandatory)] [string] $LiteralPath)

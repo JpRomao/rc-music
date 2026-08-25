@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 common summary contract descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_id", "schema_version", "protocol_id", "summary_id", "method", "artifacts"],
+  "properties": {
+    "$schema": { "const": "schemas/summary-contract.schema.json" },
+    "schema_id": { "const": "m0.summary-contract.v1" },
+    "schema_version": { "const": 1 },
+    "protocol_id": { "const": "M0-P1" },
+    "summary_id": { "const": "M0-SUMMARY-1" },
+    "method": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantile", "bootstrap", "resamples", "confidence_level", "seed", "attempt_projection", "mean", "standard_deviation", "standard_deviation_decimal_places", "standard_deviation_rounding", "input_boundary", "runs_manifest_contract", "evidence_inventory_contract", "output_serialization"],
+      "properties": {
+        "quantile": { "const": "Hyndman-Fan-type-7" },
+        "bootstrap": { "const": "independent-percentile-bootstrap" },
+        "resamples": { "const": 10000 },
+        "confidence_level": { "const": 0.95 },
+        "seed": { "const": 20260823 },
+        "attempt_projection": { "const": "max-within-attempt-before-cross-attempt-quantiles" },
+        "mean": { "const": "arithmetic-decimal" },
+        "standard_deviation": { "const": "sample-n-minus-one-decimal-newton" },
+        "standard_deviation_decimal_places": { "const": 12 },
+        "standard_deviation_rounding": { "const": "midpoint-to-even" },
+        "input_boundary": { "const": "prevalidated-pure-input-no-evidence-io" },
+        "runs_manifest_contract": { "const": "m0.runs-manifest.v1" },
+        "evidence_inventory_contract": { "const": "m0.summary-evidence-inventory.v1" },
+        "output_serialization": { "const": "ordered-json-utf8-no-bom-lf" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "golden", "input_schema", "summary_schema"],
+      "properties": {
+        "input": { "$ref": "#/definitions/inputFile" },
+        "golden": { "$ref": "#/definitions/goldenFile" },
+        "input_schema": { "$ref": "#/definitions/inputSchemaFile" },
+        "summary_schema": { "$ref": "#/definitions/summarySchemaFile" }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "inputFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": { "const": "goldens/summary-input.v1.json" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "goldenFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": { "const": "goldens/summary.v1.json" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "inputSchemaFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": { "const": "schemas/summary-input.schema.json" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "summarySchemaFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": { "const": "schemas/summary.schema.json" },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}
