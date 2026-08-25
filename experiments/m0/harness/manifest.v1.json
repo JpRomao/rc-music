@@ -6,8 +6,8 @@
   "runtime_files": [
     {
       "relative_path": "experiments/m0/harness/M0.Evidence.psm1",
-      "sha256": "8a8e25bf22fb0b55ae4441e2df698dad68a601a477c4bd0141e5ff8d291fa282",
-      "size_bytes": 143521
+      "sha256": "afd772405466895256dd6e052dd6d395f94d7daedb86bd5959953313c2889579",
+      "size_bytes": 145998
     },
     {
       "relative_path": "experiments/m0/harness/M0.Fixture.psm1",
@@ -21,18 +21,23 @@
     },
     {
       "relative_path": "experiments/m0/harness/M0.Harness.psm1",
-      "sha256": "5f6e17130dfb24aa2e806e310db9567f70d30ab0aae62a321dcf995efa46cb96",
-      "size_bytes": 50968
+      "sha256": "b6db3fc9fd44da2a4f8ac60f0fabc70cb872dc60f5ee4748abc57580630465ed",
+      "size_bytes": 56613
     },
     {
       "relative_path": "experiments/m0/harness/M0.Markers.psm1",
-      "sha256": "8efa5c12e68a152291e748af29d751d7afdd36133c8c66bd767e19d7d76068a8",
-      "size_bytes": 53433
+      "sha256": "b9c11b66c8aef28e77b488795fc529cc67cd8223675f4c3002e181f60767d53f",
+      "size_bytes": 54199
+    },
+    {
+      "relative_path": "experiments/m0/harness/M0.Pilot.psm1",
+      "sha256": "58b47a7efedca3cfce13bc01728372e9fdb2ff06509d072a82df8735fb9cfb3f",
+      "size_bytes": 155943
     },
     {
       "relative_path": "experiments/m0/harness/M0.Process.psm1",
-      "sha256": "13c85b46c4be0a5211aab0c568ec4b1adfbba4123bba15e36f4bff47582292ee",
-      "size_bytes": 104964
+      "sha256": "ffafdb88105b0ffd0115fa75a6a00dae65e2ac9c58101dcb59af1e7bed1e9917",
+      "size_bytes": 118405
     },
     {
       "relative_path": "experiments/m0/harness/M0.Statistics.psm1",
@@ -48,6 +53,11 @@
       "relative_path": "experiments/m0/harness/M0.Visual.psm1",
       "sha256": "e890b7b85119b5e231f13e86a07c97bfefa3f9f850fb48d23eaba69c709dd437",
       "size_bytes": 37378
+    },
+    {
+      "relative_path": "scripts/m0/Invoke-M0Pilot.ps1",
+      "sha256": "ffb4e534329ac527188efbd8de56e5e46e1bc4ec057160fd7aea7fb52787f710",
+      "size_bytes": 3970
     },
     {
       "relative_path": "scripts/m0/Invoke-M0SyntheticProcessNode.ps1",
@@ -66,8 +76,8 @@
     },
     {
       "relative_path": "scripts/m0/Test-M0Process.ps1",
-      "sha256": "a45c50619e4a82c27e2c6c57e67791b67f9c5fb741432d1fa5e61a9c7142ec89",
-      "size_bytes": 5903
+      "sha256": "18c9705cfb92c8a6e7a9fc3e39a2778b5f85c255aff3ea7cbaf45c6160a586e5",
+      "size_bytes": 5671
     },
     {
       "relative_path": "scripts/m0/Test-M0Summary.ps1",
@@ -132,19 +142,34 @@
       "size_bytes": 8229
     },
     {
+      "relative_path": "experiments/m0/protocol/schemas/pilot-intent.schema.json",
+      "sha256": "ceb169026d97c55e556448aa2fb66586ac7a2a0c199b35c4eeaa102e313cd7e1",
+      "size_bytes": 3331
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/pilot-summary-input.schema.json",
+      "sha256": "cd7d86d717b039ab332b9c8358b7c5fd24e0255f13f5f8fcfb0ac3c2f980784c",
+      "size_bytes": 40241
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/pilot-summary.schema.json",
+      "sha256": "1c3dc229a3f9f0283e5561c0a9bf5845310f4391c9bf51c6bfa015bd64c5b90e",
+      "size_bytes": 1614
+    },
+    {
       "relative_path": "experiments/m0/protocol/schemas/process-golden.schema.json",
       "sha256": "14cb133b93b07983f02819234c603bb26f29c5405e938ef50a1d447450ac0448",
       "size_bytes": 8420
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/process-tree-artifact.schema.json",
-      "sha256": "339d73ee4e8e4f999b29b5326c8409930e9ec5658fc233d6954c50fff049a8fc",
-      "size_bytes": 1101
+      "sha256": "02c112485f4a8a3b99c9902c9430df5a110ae14dd25f3df8c73939a31d9e1926",
+      "size_bytes": 6988
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/process-tree.schema.json",
-      "sha256": "604d13877a06bc13b234a26dbb3afad312b356cd820be0d128ef4721690cc88b",
-      "size_bytes": 21391
+      "sha256": "ca7dd20bbab973e9237a5cb5853410d995bdd5740420b8fcc05b5d3f868ec1ed",
+      "size_bytes": 21501
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/process.schema.json",
@@ -153,8 +178,8 @@
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/protocol.schema.json",
-      "sha256": "dccd773ce77df4121cafeb20f7841c47f94f20b4396a8c480a75996f669fa4ed",
-      "size_bytes": 7153
+      "sha256": "2b84d45664d50b603f4081fa2d6ca5d57a526fd8e786da24afb6181dc43ebc76",
+      "size_bytes": 7281
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/run.schema.json",
@@ -205,6 +230,11 @@
       "relative_path": "experiments/m0/protocol/schemas/summary.schema.json",
       "sha256": "aa3bbdc8ff3ba50647a42f13c0d99260879d94457ba59fc7e75a7e6f2a743f2f",
       "size_bytes": 12377
+    },
+    {
+      "relative_path": "experiments/m0/protocol/schemas/synthetic-process-tree-scenario.schema.json",
+      "sha256": "78302c698b1d4cdc9d3b80bfe5a3708e8fb732a4c545081624f16ca670b28c5f",
+      "size_bytes": 4399
     },
     {
       "relative_path": "experiments/m0/protocol/schemas/visual-golden.schema.json",

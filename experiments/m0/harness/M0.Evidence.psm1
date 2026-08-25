@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:M0EvidenceUtf8 = [Text.UTF8Encoding]::new($false, $true)
+$script:M0EvidenceModuleSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
 $script:M0EvidenceInvariantFields = @(
     'protocol_sha256', 'environment_sha256', 'fixture_sha256', 'harness_sha256',
     'scenario_sha256', 'experiment_id', 'run_id', 'candidate_code', 'scenario_id',
@@ -40,6 +41,26 @@ $script:M0EvidenceWriterRegistry = @{}
 $script:M0EvidenceClosedWriterTokens = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $script:M0EvidenceLegacyWriters = @{}
 $script:M0EvidenceIdentityTestHook = $null
+
+function Assert-M0EvidenceRuntimeContract {
+    $currentSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    $statisticsContract = & $script:M0EvidenceStatisticsModule { Assert-M0StatisticsRuntimeContract }
+    $markersContract = & $script:M0EvidenceMarkersModule { Assert-M0MarkersRuntimeContract }
+    if ($currentSha256 -cne $script:M0EvidenceModuleSha256 -or
+        [string]$statisticsContract.contract_id -cne 'm0-statistics-runtime-v1' -or
+        [string]$markersContract.contract_id -cne 'm0-markers-runtime-v1') {
+        throw [IO.InvalidDataException]::new('M0E001 loaded Evidence runtime dependency graph differs from its exact source contracts.')
+    }
+    return [pscustomobject][ordered]@{
+        contract_id = 'm0-evidence-runtime-v1'
+        module_instance_id = $script:M0EvidenceModuleInstanceId
+        module_sha256 = $script:M0EvidenceModuleSha256
+        statistics_module_instance_id = [string]$statisticsContract.module_instance_id
+        statistics_module_sha256 = [string]$statisticsContract.module_sha256
+        markers_module_instance_id = [string]$markersContract.module_instance_id
+        markers_module_sha256 = [string]$markersContract.module_sha256
+    }
+}
 
 function Assert-M0EvidenceStatisticsArtifactSet {
     param([Parameter(Mandatory)] [string] $ProtocolRoot)
@@ -773,23 +794,40 @@ function Assert-M0SyntheticPilotSequence {
         [switch] $RequireSeal
     )
 
-    if ($Events.Count -lt 3 -or $Events[0].event -cne 'run_started') {
-        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot must begin with run_started and include artifact/check evidence.')
+    $expectedSequence = @('run_started', 'artifact_recorded', 'check_recorded')
+    if ($RequireSeal) { $expectedSequence += 'run_sealed' }
+    if ($Events.Count -ne $expectedSequence.Count) {
+        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot requires the literal three-event pre-seal or four-event sealed sequence.')
     }
-    $allowed = @('run_started', 'artifact_recorded', 'check_recorded')
-    if ($RequireSeal) { $allowed += 'run_sealed' }
-    foreach ($event in $Events) {
+    for ($index = 0; $index -lt $expectedSequence.Count; $index++) {
+        $event = $Events[$index]
         if ($event.candidate_code -cne 'P' -or $event.scenario_id -cne 'synthetic-process-tree' -or
-            [int]$event.attempt -ne 1 -or $event.event -cnotin $allowed) {
-            throw [IO.InvalidDataException]::new('M0E015 synthetic pilot event identity or event type is outside the closed pilot branch.')
+            [int]$event.attempt -ne 1 -or $event.event -cne $expectedSequence[$index]) {
+            throw [IO.InvalidDataException]::new('M0E015 synthetic pilot identity or literal event sequence differs from the closed pilot branch.')
         }
     }
-    if (@($Events | Where-Object event -ceq 'artifact_recorded').Count -ne 1 -or
-        @($Events | Where-Object event -ceq 'check_recorded').Count -lt 1) {
-        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot requires exactly one artifact and at least one check event.')
+
+    $artifactEvent = $Events[1]
+    $artifactSizeIsInteger = $false
+    foreach ($type in @([byte], [int16], [uint16], [int32], [uint32], [int64])) {
+        if ($artifactEvent.payload.size_bytes -is $type) { $artifactSizeIsInteger = $true; break }
     }
-    if ($RequireSeal -and $Events[-1].event -cne 'run_sealed') {
-        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot must end with run_sealed.')
+    [int64]$artifactSize = 0
+    $expectedArtifactPath = "artifacts/$($artifactEvent.run_id).process-tree.json"
+    if ($artifactEvent.run_id -cnotmatch '^run-P-[A-Za-z0-9._-]{1,122}$' -or
+        $artifactEvent.payload.artifact_id -cne 'process-tree' -or
+        $artifactEvent.payload.relative_path -cne $expectedArtifactPath -or
+        $artifactEvent.payload.sha256 -isnot [string] -or
+        [string]$artifactEvent.payload.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        -not $artifactSizeIsInteger -or
+        -not [int64]::TryParse([string]$artifactEvent.payload.size_bytes, [ref]$artifactSize) -or
+        $artifactSize -lt 1 -or
+        $artifactEvent.payload.transient -isnot [bool] -or [bool]$artifactEvent.payload.transient -or
+        $artifactEvent.payload.redacted -isnot [bool] -or -not [bool]$artifactEvent.payload.redacted) {
+        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot artifact payload must bind the canonical process-tree path, bytes and flags.')
+    }
+    if ($Events[2].payload.check_id -cne 'CHK-PROCESS') {
+        throw [IO.InvalidDataException]::new('M0E015 synthetic pilot check payload must use the literal CHK-PROCESS identity.')
     }
 }
 

@@ -2,8 +2,22 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:M0MarkersUtf8 = [Text.UTF8Encoding]::new($false, $true)
+$script:M0MarkersModuleInstanceId = [Guid]::NewGuid().ToString('N')
+$script:M0MarkersModuleSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
 $script:M0MarkerStatuses = @('valid', 'discarded', 'failed', 'inconclusive')
 $script:M0MarkerCatalogSemanticSha256 = '1abda4d0e8b4383c33221c7ecf25ecf3c6337181c80d46c9879bcf84a5f2e148'
+
+function Assert-M0MarkersRuntimeContract {
+    $currentSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    if ($currentSha256 -cne $script:M0MarkersModuleSha256) {
+        throw [IO.InvalidDataException]::new('M0M001 loaded markers runtime differs from its exact source contract.')
+    }
+    return [pscustomobject][ordered]@{
+        contract_id = 'm0-markers-runtime-v1'
+        module_instance_id = $script:M0MarkersModuleInstanceId
+        module_sha256 = $script:M0MarkersModuleSha256
+    }
+}
 
 function Get-M0MarkerSha256Bytes {
     param([Parameter(Mandatory)] [byte[]] $Bytes)

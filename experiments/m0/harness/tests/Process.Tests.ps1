@@ -159,6 +159,33 @@ function New-M0ProcessSnapshotFixture {
     return $snapshot
 }
 
+function New-M0ProcessCleanupResultFixture {
+    param([Parameter(Mandatory)] $Snapshot)
+
+    $attempted = [string]$Snapshot.cleanup_authority -ceq 'private-opaque-registry-only'
+    return [pscustomobject][ordered]@{
+        schema_id = 'm0.process-tree-cleanup.v1'
+        cleanup_complete = $true
+        survivor_count = 0
+        retained_identity_count = [int]$Snapshot.retained_identity_count
+        native_cleanup_actions = $(if ($attempted) { 1 } else { 0 })
+        cleanup_action = $(if ($attempted) {
+                'close-last-job-handle-and-wait-retained-process-handles'
+            }
+            else {
+                'none-no-mutation-capability'
+            })
+        individual_terminate_process_calls = 0
+        candidate_code = 'P'
+        scenario_id = 'synthetic-process-tree'
+        attempt = 1
+        evidence_role = 'synthetic_pilot'
+        decision_eligible = $false
+        error_code = $null
+        failure_codes = @()
+    }
+}
+
 Test-Case 'The frozen process contract exists before attribution or cleanup is accepted' {
     foreach ($path in @(
         $processModulePath,
@@ -281,6 +308,196 @@ Test-Case 'The process module exports only the approved safe API' {
         'Resolve-M0ProcessCleanupPlan',
         'Resolve-M0ProcessPilotOutcome'
     )
+    $outcomeCommand = Get-Command -Name Resolve-M0ProcessPilotOutcome -Module M0.Process -ErrorAction Stop
+    Assert-True $outcomeCommand.Parameters.ContainsKey('ProcessArtifact') `
+        'The public outcome mapper must require the bound process-tree artifact.'
+    foreach ($legacyParameter in @(
+        'ProcessState', 'ProcessErrorCode', 'CleanupComplete', 'SurvivorCount', 'CleanupErrorCode'
+    )) {
+        Assert-True (-not $outcomeCommand.Parameters.ContainsKey($legacyParameter)) `
+            "The public outcome mapper exposed legacy caller-authoritative field '$legacyParameter'."
+    }
+}
+
+Test-Case 'The pure process-tree builder requires one canonical prevalidated cleanup projection' {
+    $snapshot = New-M0ProcessSnapshotFixture -Variant complete
+    Assert-Throws {
+        New-M0ProcessTreeArtifact -Snapshot $snapshot `
+            -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-red-01'
+    } 'M0P060|cleanup|required|closed'
+
+    $cleanup = [pscustomobject][ordered]@{
+        schema_id = 'm0.process-tree-cleanup.v1'
+        cleanup_complete = $true
+        survivor_count = 0
+        retained_identity_count = 3
+        native_cleanup_actions = 1
+        cleanup_action = 'close-last-job-handle-and-wait-retained-process-handles'
+        individual_terminate_process_calls = 0
+        candidate_code = 'P'
+        scenario_id = 'synthetic-process-tree'
+        attempt = 1
+        evidence_role = 'synthetic_pilot'
+        decision_eligible = $false
+        error_code = $null
+        failure_codes = @()
+    }
+    $artifact = New-M0ProcessTreeArtifact -Snapshot $snapshot -CleanupResult $cleanup `
+        -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-red-01'
+    Assert-Equal -Actual $artifact.document.cleanup.attempted -Expected $true
+    Assert-Equal -Actual $artifact.document.cleanup.completed -Expected $true
+    Assert-Equal -Actual $artifact.document.cleanup.survivor_count -Expected 0
+    Assert-Equal -Actual $artifact.document.cleanup.failure_code -Expected $null
+    Assert-Equal -Actual $artifact.document.cleanup.retained_identity_count -Expected 3
+    Assert-Equal -Actual $artifact.document.cleanup.native_cleanup_actions -Expected 1
+    Assert-Equal -Actual $artifact.document.cleanup.cleanup_action `
+        -Expected 'close-last-job-handle-and-wait-retained-process-handles'
+    Assert-Equal -Actual $artifact.document.cleanup.individual_terminate_process_calls -Expected 0
+    Assert-Equal -Actual @($artifact.document.cleanup.failure_codes).Count -Expected 0
+    Assert-Equal -Actual $artifact.document.cleanup.candidate_code -Expected 'P'
+    Assert-Equal -Actual $artifact.document.cleanup.scenario_id -Expected 'synthetic-process-tree'
+    Assert-Equal -Actual $artifact.document.cleanup.attempt -Expected 1
+    Assert-Equal -Actual $artifact.document.cleanup.evidence_role -Expected 'synthetic_pilot'
+    Assert-Equal -Actual $artifact.document.cleanup.decision_eligible -Expected $false
+    $artifactOutcome = Resolve-M0ProcessPilotOutcome -ProcessArtifact $artifact.document
+    Assert-Equal -Actual $artifactOutcome.check_payload.status -Expected 'passed'
+    Assert-Equal -Actual $artifactOutcome.run_status -Expected 'valid'
+    Assert-Equal -Actual $artifactOutcome.run_status_reason -Expected $null
+    Assert-Equal -Actual $artifactOutcome.run_error_code -Expected $null
+    $schemaValidDuplicateIdentity = $artifact.document | ConvertTo-Json -Compress -Depth 30 |
+        ConvertFrom-Json -Depth 30
+    $schemaValidDuplicateIdentity.snapshot.nodes[1].identity =
+        $schemaValidDuplicateIdentity.snapshot.nodes[0].identity
+    $duplicateIdentityJson = $schemaValidDuplicateIdentity | ConvertTo-Json -Compress -Depth 30
+    Assert-True (Test-Json -Json $duplicateIdentityJson -SchemaFile $processTreeArtifactSchemaPath `
+        -ErrorAction SilentlyContinue) `
+        'Artifact-level semantic Red must remain structurally schema-valid.'
+    Assert-Throws {
+        Resolve-M0ProcessPilotOutcome -ProcessArtifact $schemaValidDuplicateIdentity
+    } 'M0P06|duplicate identity|process-tree semantic'
+    Assert-True (Test-Json -Json $artifact.canonical_json -SchemaFile $processTreeArtifactSchemaPath `
+        -ErrorAction SilentlyContinue) 'Canonical process-tree artifact failed its closed schema.'
+
+    $fallbackOriginWithObservedSnapshot = $artifact.document | ConvertTo-Json -Compress -Depth 30 |
+        ConvertFrom-Json -Depth 30
+    $fallbackOriginWithObservedSnapshot.snapshot_origin = 'pre_snapshot_fallback'
+    $fallbackOriginJson = $fallbackOriginWithObservedSnapshot | ConvertTo-Json -Compress -Depth 30
+    Assert-True (-not (Test-Json -Json $fallbackOriginJson -SchemaFile $processTreeArtifactSchemaPath `
+        -ErrorAction SilentlyContinue)) 'Schema accepted fallback origin with an observed complete snapshot.'
+    Assert-Throws {
+        Resolve-M0ProcessPilotOutcome -ProcessArtifact $fallbackOriginWithObservedSnapshot
+    } 'M0P061|artifact|schema|origin|fallback'
+    Assert-Throws {
+        & $processModule {
+            param($cleanupDocument, $snapshotDocument)
+            Assert-M0CanonicalProcessCleanup -Cleanup $cleanupDocument -Snapshot $snapshotDocument `
+                -SnapshotOrigin pre_snapshot_fallback
+        } $artifact.document.cleanup $artifact.document.snapshot
+    } 'M0P060|origin|fallback|unavailable'
+
+    $rootMissingSnapshot = New-M0ProcessSnapshotFixture -Variant partial-root
+    $rootMissingCleanup = New-M0ProcessCleanupResultFixture -Snapshot $rootMissingSnapshot
+    $rootMissingArtifact = New-M0ProcessTreeArtifact -Snapshot $rootMissingSnapshot `
+        -CleanupResult $rootMissingCleanup -ExperimentId 'exp-process-cleanup-authority' `
+        -RunId 'run-P-cleanup-authority-root-01'
+    $forgedRootCleanup = $rootMissingArtifact.document | ConvertTo-Json -Compress -Depth 30 |
+        ConvertFrom-Json -Depth 30
+    $forgedRootCleanup.cleanup.attempted = $true
+    $forgedRootCleanup.cleanup.native_cleanup_actions = 1
+    $forgedRootCleanup.cleanup.cleanup_action = 'close-last-job-handle-and-wait-retained-process-handles'
+    Assert-True (-not (Test-Json -Json ($forgedRootCleanup | ConvertTo-Json -Compress -Depth 30) `
+        -SchemaFile $processTreeArtifactSchemaPath -ErrorAction SilentlyContinue)) `
+        'Artifact schema accepted attempted cleanup without observed mutation authority.'
+    Assert-Throws {
+        Resolve-M0ProcessPilotOutcome -ProcessArtifact $forgedRootCleanup
+    } 'M0P061|artifact|schema'
+    Assert-Throws {
+        & $processModule {
+            param($cleanupDocument, $snapshotDocument)
+            Assert-M0CanonicalProcessCleanup -Cleanup $cleanupDocument -Snapshot $snapshotDocument `
+                -SnapshotOrigin observed
+        } $forgedRootCleanup.cleanup $forgedRootCleanup.snapshot
+    } 'M0P060|authority|attempt'
+
+    $forgedPrivateCleanup = $artifact.document.cleanup | ConvertTo-Json -Compress -Depth 20 |
+        ConvertFrom-Json -Depth 20
+    $forgedPrivateCleanup.attempted = $false
+    $forgedPrivateCleanup.native_cleanup_actions = 0
+    $forgedPrivateCleanup.cleanup_action = 'none-no-mutation-capability'
+    Assert-Throws {
+        & $processModule {
+            param($cleanupDocument, $snapshotDocument)
+            Assert-M0CanonicalProcessCleanup -Cleanup $cleanupDocument -Snapshot $snapshotDocument `
+                -SnapshotOrigin observed
+        } $forgedPrivateCleanup $artifact.document.snapshot
+    } 'M0P060|authority|attempt'
+
+    $reorderedCleanup = [pscustomobject][ordered]@{}
+    foreach ($property in @($cleanup.PSObject.Properties | Sort-Object Name -Descending)) {
+        $reorderedCleanup | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
+    }
+    $reorderedArtifact = New-M0ProcessTreeArtifact -Snapshot $snapshot -CleanupResult $reorderedCleanup `
+        -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-red-01'
+    Assert-Equal -Actual $reorderedArtifact.canonical_json -Expected $artifact.canonical_json
+    Assert-Equal -Actual $reorderedArtifact.sha256 -Expected $artifact.sha256
+
+    $sameBirthDifferentPid = $snapshot | ConvertTo-Json -Compress -Depth 30 | ConvertFrom-Json -Depth 30
+    $sameBirthDifferentPid.nodes[1].identity.creation_time_filetime_utc = `
+        $sameBirthDifferentPid.nodes[0].identity.creation_time_filetime_utc
+    $sameBirthDifferentPid.nodes[2].parent_identity.creation_time_filetime_utc = `
+        $sameBirthDifferentPid.nodes[1].identity.creation_time_filetime_utc
+    $sameBirthArtifact = New-M0ProcessTreeArtifact -Snapshot $sameBirthDifferentPid -CleanupResult $cleanup `
+        -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-same-birth-01'
+    Assert-Equal -Actual @($sameBirthArtifact.document.snapshot.nodes).Count -Expected 3
+    Assert-Equal -Actual $sameBirthArtifact.document.snapshot.nodes[0].identity.creation_time_filetime_utc `
+        -Expected $sameBirthArtifact.document.snapshot.nodes[1].identity.creation_time_filetime_utc `
+        'Distinct PIDs with the same FILETIME token must remain valid strong identity pairs.'
+
+    $invalidCases = @(
+        [pscustomobject]@{ case_id = 'complete-with-survivor'; apply = { param($value) $value.survivor_count = 1 } },
+        [pscustomobject]@{ case_id = 'incomplete-without-primary'; apply = {
+                param($value) $value.cleanup_complete = $false
+            } },
+        [pscustomobject]@{ case_id = 'open-caller-error'; apply = {
+                param($value) $value.cleanup_complete = $false; $value.error_code = 'caller_supplied_reason'
+                $value.failure_codes = @('caller_supplied_reason')
+            } },
+        [pscustomobject]@{ case_id = 'identity-mismatch'; apply = { param($value) $value.candidate_code = 'A' } },
+        [pscustomobject]@{ case_id = 'schema-id-mismatch'; apply = { param($value) $value.schema_id = 'm0.process-tree-cleanup.v2' } },
+        [pscustomobject]@{ case_id = 'retained-count-mismatch'; apply = { param($value) $value.retained_identity_count = 2 } },
+        [pscustomobject]@{ case_id = 'native-action-count-mismatch'; apply = { param($value) $value.native_cleanup_actions = 0 } },
+        [pscustomobject]@{ case_id = 'cleanup-action-mismatch'; apply = { param($value) $value.cleanup_action = 'caller-supplied-action' } },
+        [pscustomobject]@{ case_id = 'individual-terminate-call'; apply = { param($value) $value.individual_terminate_process_calls = 1 } },
+        [pscustomobject]@{ case_id = 'duplicate-failure-code'; apply = {
+                param($value) $value.cleanup_complete = $false; $value.error_code = 'job_close_failed'
+                $value.failure_codes = @('job_close_failed', 'job_close_failed')
+            } },
+        [pscustomobject]@{ case_id = 'primary-failure-mismatch'; apply = {
+                param($value) $value.cleanup_complete = $false; $value.error_code = 'job_close_failed'
+                $value.failure_codes = @('unsafe_run_root_contents', 'job_close_failed')
+            } },
+        [pscustomobject]@{ case_id = 'secondary-failure-order'; apply = {
+                param($value) $value.cleanup_complete = $false; $value.error_code = 'snapshot_validation_failed'
+                $value.failure_codes = @('snapshot_validation_failed', 'unsafe_run_root_contents', 'job_close_failed')
+            } },
+        [pscustomobject]@{ case_id = 'survivor-error-with-zero-survivors'; apply = {
+                param($value) $value.cleanup_complete = $false; $value.error_code = 'helper_survived_shutdown'
+                $value.failure_codes = @('helper_survived_shutdown')
+            } }
+    )
+    foreach ($invalidCase in $invalidCases) {
+        $invalidCleanup = $cleanup | ConvertTo-Json -Compress -Depth 20 | ConvertFrom-Json -Depth 20
+        & $invalidCase.apply $invalidCleanup
+        Assert-Throws {
+            New-M0ProcessTreeArtifact -Snapshot $snapshot -CleanupResult $invalidCleanup `
+                -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-invalid-01'
+        } "M0P060|cleanup|survivor|failure|identity|$($invalidCase.case_id)"
+    }
+
+    Assert-Throws {
+        New-M0ProcessTreeArtifact -UnavailableErrorCode safe_identity_unavailable `
+            -ExperimentId 'exp-process-cleanup-red' -RunId 'run-P-cleanup-fallback-01'
+    } 'M0P060|cleanup|required|closed'
 }
 
 Test-Case 'The process descriptor, sidecar and golden form one anchored closed contract' {
@@ -667,6 +884,14 @@ Test-Case 'An unresolved ETW parent does not shadow valid nonce fallback and par
     Assert-Equal -Actual $rootMissing.trace_gap_code -Expected 'lost-event'
     Assert-SequenceEqual -Actual @($rootMissing.missing_capabilities) `
         -Expected @('etw-process-start-stop', 'root-handle')
+
+    $externalWithoutRoot = $rootlessRecord | ConvertTo-Json -Compress -Depth 20 | ConvertFrom-Json -Depth 20
+    $externalWithoutRoot.external_attribution_required = $true
+    $rootPrecedence = Resolve-M0ProcessAttribution -RootIdentity $root -Records @($externalWithoutRoot) `
+        -ExpectedExecutableSha256 $hash -Nonce $nonce -LaunchQpcTicks '100' -AttemptEndQpcTicks '1000' `
+        -TraceState complete
+    Assert-Equal -Actual $rootPrecedence.error_code -Expected 'root_identity_missing'
+    Assert-SequenceEqual -Actual @($rootPrecedence.missing_capabilities) -Expected @('root-handle')
 }
 
 Test-Case 'Name path hash process-group and session metadata never confer process ownership' {
@@ -800,7 +1025,8 @@ Test-Case 'Canonical process-tree artifacts are deterministic for every publisha
     $hashes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($variant in @('complete', 'partial-root', 'partial-unresolved', 'partial-trace', 'unavailable')) {
         $snapshot = New-M0ProcessSnapshotFixture -Variant $variant
-        $artifact = New-M0ProcessTreeArtifact -Snapshot $snapshot `
+        $cleanup = New-M0ProcessCleanupResultFixture -Snapshot $snapshot
+        $artifact = New-M0ProcessTreeArtifact -Snapshot $snapshot -CleanupResult $cleanup `
             -ExperimentId 'exp-process-states' -RunId "run-P-$variant-01"
         Assert-Equal -Actual @($artifact).Count -Expected 1
         Assert-Equal -Actual $artifact.artifact_id -Expected 'process-tree'
@@ -811,7 +1037,7 @@ Test-Case 'Canonical process-tree artifacts are deterministic for every publisha
         foreach ($property in @($snapshot.PSObject.Properties | Sort-Object Name -Descending)) {
             $reordered | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
         }
-        $artifactFromReordered = New-M0ProcessTreeArtifact -Snapshot $reordered `
+        $artifactFromReordered = New-M0ProcessTreeArtifact -Snapshot $reordered -CleanupResult $cleanup `
             -ExperimentId 'exp-process-states' -RunId "run-P-$variant-01"
         Assert-Equal -Actual $artifactFromReordered.canonical_json -Expected $artifact.canonical_json
         Assert-Equal -Actual $artifactFromReordered.sha256 -Expected $artifact.sha256
@@ -821,16 +1047,28 @@ Test-Case 'Canonical process-tree artifacts are deterministic for every publisha
 }
 
 Test-Case 'A pre-snapshot failure still produces one canonical unavailable process-tree artifact' {
-    $fallback = New-M0ProcessTreeArtifact -UnavailableErrorCode 'safe_identity_unavailable' `
+    $unavailableSnapshot = New-M0ProcessSnapshotFixture -Variant unavailable
+    $fallbackCleanup = New-M0ProcessCleanupResultFixture -Snapshot $unavailableSnapshot
+    $fallback = New-M0ProcessTreeArtifact -UnavailableErrorCode 'safe_identity_unavailable' -CleanupResult $fallbackCleanup `
         -ExperimentId 'exp-process-fallback' -RunId 'run-P-unavailable-01'
-    $replay = New-M0ProcessTreeArtifact -UnavailableErrorCode 'safe_identity_unavailable' `
+    $replay = New-M0ProcessTreeArtifact -UnavailableErrorCode 'safe_identity_unavailable' -CleanupResult $fallbackCleanup `
         -ExperimentId 'exp-process-fallback' -RunId 'run-P-unavailable-01'
-    $observedUnavailable = New-M0ProcessTreeArtifact -Snapshot (New-M0ProcessSnapshotFixture -Variant unavailable) `
+    $observedUnavailable = New-M0ProcessTreeArtifact -Snapshot $unavailableSnapshot -CleanupResult $fallbackCleanup `
         -ExperimentId 'exp-process-fallback' -RunId 'run-P-unavailable-01'
+    $realCloseCleanup = New-M0ProcessCleanupResultFixture -Snapshot (New-M0ProcessSnapshotFixture -Variant complete)
+    $fallbackAfterOpen = New-M0ProcessTreeArtifact -UnavailableErrorCode 'safe_identity_unavailable' `
+        -CleanupResult $realCloseCleanup -ExperimentId 'exp-process-fallback' -RunId 'run-P-unavailable-after-open-01'
 
     Assert-Equal -Actual @($fallback).Count -Expected 1
     Assert-Equal -Actual $fallback.canonical_json -Expected $replay.canonical_json
-    Assert-Equal -Actual $fallback.canonical_json -Expected $observedUnavailable.canonical_json
+    Assert-True ($fallback.canonical_json -cne $observedUnavailable.canonical_json) `
+        'Fallback and observed unavailable artifacts erased their distinct snapshot origins.'
+    Assert-Equal -Actual $fallback.document.snapshot_origin -Expected 'pre_snapshot_fallback'
+    Assert-Equal -Actual $observedUnavailable.document.snapshot_origin -Expected 'observed'
+    Assert-Equal -Actual $fallbackAfterOpen.document.snapshot_origin -Expected 'pre_snapshot_fallback'
+    Assert-Equal -Actual $fallbackAfterOpen.document.snapshot.retained_identity_count -Expected 0
+    Assert-Equal -Actual $fallbackAfterOpen.document.cleanup.retained_identity_count -Expected 3
+    Assert-Equal -Actual $fallbackAfterOpen.document.cleanup.attempted -Expected $true
     Assert-Equal -Actual $fallback.document.snapshot.state -Expected 'unavailable'
     Assert-Equal -Actual $fallback.document.snapshot.error_code -Expected 'safe_identity_unavailable'
     Assert-Equal -Actual @($fallback.document.snapshot.roles).Count -Expected 0
@@ -849,6 +1087,19 @@ Test-Case 'Process-tree state contradictions topology duplicates and QPC drift f
     $completeWithError.error_code = 'etw_trace_incomplete'
     Assert-True (-not (Test-Json -Json ($completeWithError | ConvertTo-Json -Compress -Depth 30) `
         -SchemaFile $processTreeSchemaPath -ErrorAction SilentlyContinue))
+
+    $unresolvedWithoutRoot = Copy-SnapshotFixture partial-unresolved
+    $unresolvedWithoutRoot.roles = @()
+    $unresolvedWithoutRoot.nodes = @()
+    $unresolvedWithoutRoot.retained_identity_count = 0
+    Assert-True (-not (Test-Json -Json ($unresolvedWithoutRoot | ConvertTo-Json -Compress -Depth 30) `
+        -SchemaFile $processTreeSchemaPath -ErrorAction SilentlyContinue)) `
+        'Schema accepted unresolved external attribution without a proven root identity.'
+    $unresolvedCleanup = New-M0ProcessCleanupResultFixture -Snapshot $unresolvedWithoutRoot
+    Assert-Throws {
+        New-M0ProcessTreeArtifact -Snapshot $unresolvedWithoutRoot -CleanupResult $unresolvedCleanup `
+            -ExperimentId 'exp-process-invalid' -RunId 'run-P-unresolved-without-root-01'
+    } 'M0P060|schema|external|root|topology'
 
     $completeMissingCapability = Copy-SnapshotFixture complete
     $completeMissingCapability.missing_capabilities = @('etw-process-start-stop')
@@ -901,22 +1152,25 @@ Test-Case 'Process-tree state contradictions topology duplicates and QPC drift f
 
     $roleMismatch = Copy-SnapshotFixture partial-unresolved
     $roleMismatch.roles = @('root', 'child')
+    $roleMismatchCleanup = New-M0ProcessCleanupResultFixture -Snapshot $roleMismatch
     Assert-Throws {
-        New-M0ProcessTreeArtifact -Snapshot $roleMismatch -ExperimentId 'exp-process-invalid' `
+        New-M0ProcessTreeArtifact -Snapshot $roleMismatch -CleanupResult $roleMismatchCleanup -ExperimentId 'exp-process-invalid' `
             -RunId 'run-P-role-mismatch-01'
     } 'M0P060|role'
 
     $duplicate = Copy-SnapshotFixture partial-trace
     $duplicate.nodes[1].identity = $duplicate.nodes[0].identity
+    $duplicateCleanup = New-M0ProcessCleanupResultFixture -Snapshot $duplicate
     Assert-Throws {
-        New-M0ProcessTreeArtifact -Snapshot $duplicate -ExperimentId 'exp-process-invalid' `
+        New-M0ProcessTreeArtifact -Snapshot $duplicate -CleanupResult $duplicateCleanup -ExperimentId 'exp-process-invalid' `
             -RunId 'run-P-duplicate-01'
     } 'M0P060|duplicate identity'
 
     $noncausal = Copy-SnapshotFixture partial-trace
     $noncausal.qpc_after_resume_ticks = $noncausal.qpc_before_create_ticks
+    $noncausalCleanup = New-M0ProcessCleanupResultFixture -Snapshot $noncausal
     Assert-Throws {
-        New-M0ProcessTreeArtifact -Snapshot $noncausal -ExperimentId 'exp-process-invalid' `
+        New-M0ProcessTreeArtifact -Snapshot $noncausal -CleanupResult $noncausalCleanup -ExperimentId 'exp-process-invalid' `
             -RunId 'run-P-qpc-01'
     } 'M0P060|QPC'
 }
@@ -1023,10 +1277,11 @@ Test-Case 'Contradictory process error branches cannot mint a process-tree artif
         $json = $vector.value | ConvertTo-Json -Compress -Depth 30
         Assert-True (-not (Test-Json -Json $json -SchemaFile $processTreeSchemaPath `
             -ErrorAction SilentlyContinue)) "Schema accepted contradictory branch '$($vector.id)'."
+        $cleanup = New-M0ProcessCleanupResultFixture -Snapshot $vector.value
         Assert-Throws {
-            New-M0ProcessTreeArtifact -Snapshot $vector.value -ExperimentId 'exp-process-branch' `
-                -RunId "run-P-$($vector.id)-01"
-        } 'M0P060|closed synthetic P process-tree snapshot'
+            New-M0ProcessTreeArtifact -Snapshot $vector.value -CleanupResult $cleanup `
+                -ExperimentId 'exp-process-branch' -RunId "run-P-$($vector.id)-01"
+        } 'closed synthetic P process-tree snapshot'
     }
 }
 
@@ -1051,6 +1306,15 @@ Test-Case 'Future synthetic-pilot outcome mapping is closed and respects cleanup
     else {
         Import-Module $expectedEvidencePath -PassThru -ErrorAction Stop
     }
+    $resolvePrivateFields = {
+        param($state, $processError, $cleanupComplete, $survivorCount, $cleanupError)
+        & $processModule {
+            param($innerState, $innerProcessError, $innerCleanupComplete, $innerSurvivorCount, $innerCleanupError)
+            Resolve-M0ProcessPilotOutcomeFields -ProcessState $innerState -ProcessErrorCode $innerProcessError `
+                -CleanupComplete $innerCleanupComplete -SurvivorCount $innerSurvivorCount `
+                -CleanupErrorCode $innerCleanupError
+        } $state $processError $cleanupComplete $survivorCount $cleanupError
+    }
     $matrix = @(
         [pscustomobject]@{ state = 'complete'; process_error = $null; cleanup = $true; survivors = 0; cleanup_error = $null; check = 'passed'; check_reason = $null; run = 'valid'; reason = $null; run_error = $null },
         [pscustomobject]@{ state = 'partial'; process_error = 'etw_live_not_implemented'; cleanup = $true; survivors = 0; cleanup_error = $null; check = 'skipped'; check_reason = 'process_tree_partial'; run = 'inconclusive'; reason = 'incomplete_evidence'; run_error = $null },
@@ -1066,8 +1330,7 @@ Test-Case 'Future synthetic-pilot outcome mapping is closed and respects cleanup
         [pscustomobject]@{ state = 'partial'; process_error = 'etw_live_not_implemented'; cleanup = $false; survivors = 1; cleanup_error = 'helper_survived_shutdown'; check = 'failed'; check_reason = 'helper_survived_shutdown'; run = 'failed'; reason = 'helper_survived_shutdown'; run_error = 'helper_survived_shutdown' }
     )
     foreach ($case in $matrix) {
-        $actual = Resolve-M0ProcessPilotOutcome -ProcessState $case.state -ProcessErrorCode $case.process_error `
-            -CleanupComplete $case.cleanup -SurvivorCount $case.survivors -CleanupErrorCode $case.cleanup_error
+        $actual = & $resolvePrivateFields $case.state $case.process_error $case.cleanup $case.survivors $case.cleanup_error
         Assert-Equal -Actual $actual.candidate_code -Expected 'P'
         Assert-Equal -Actual $actual.scenario_id -Expected 'synthetic-process-tree'
         Assert-Equal -Actual $actual.attempt -Expected 1
@@ -1095,32 +1358,25 @@ Test-Case 'Future synthetic-pilot outcome mapping is closed and respects cleanup
         } $actual.check_payload $actual.run_status $actual.run_status_reason $actual.run_error_code
     }
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState complete -ProcessErrorCode $null `
-            -CleanupComplete $false -SurvivorCount 0 -CleanupErrorCode $null
+        & $resolvePrivateFields complete $null $false 0 $null
     } 'M0P06|cleanup|error'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState complete -ProcessErrorCode $null `
-            -CleanupComplete $false -SurvivorCount 0 -CleanupErrorCode 'caller_supplied_reason'
+        & $resolvePrivateFields complete $null $false 0 caller_supplied_reason
     } 'M0P061|closed cleanup error'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState complete -ProcessErrorCode $null `
-            -CleanupComplete $false -SurvivorCount 0 -CleanupErrorCode 'helper_survived_shutdown'
+        & $resolvePrivateFields complete $null $false 0 helper_survived_shutdown
     } 'M0P061|survivor'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState complete -ProcessErrorCode $null `
-            -CleanupComplete $false -SurvivorCount 0 -CleanupErrorCode 'retained_handle_wait_failed'
+        & $resolvePrivateFields complete $null $false 0 retained_handle_wait_failed
     } 'M0P061|survivor'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState partial -ProcessErrorCode 'caller_supplied_reason' `
-            -CleanupComplete $true -SurvivorCount 0 -CleanupErrorCode $null
+        & $resolvePrivateFields partial caller_supplied_reason $true 0 $null
     } 'M0P061|closed process error'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState partial -ProcessErrorCode 'Etw_Trace_Incomplete' `
-            -CleanupComplete $true -SurvivorCount 0 -CleanupErrorCode $null
+        & $resolvePrivateFields partial Etw_Trace_Incomplete $true 0 $null
     } 'M0P061|closed process error'
     Assert-Throws {
-        Resolve-M0ProcessPilotOutcome -ProcessState Partial -ProcessErrorCode 'etw_live_not_implemented' `
-            -CleanupComplete $true -SurvivorCount 0 -CleanupErrorCode $null
+        & $resolvePrivateFields Partial etw_live_not_implemented $true 0 $null
     } 'M0P061|canonical|process state'
 }
 
@@ -1167,8 +1423,11 @@ Test-Case 'Windows synthetic Job smoke keeps opaque authority and retains every 
         Assert-Equal -Actual $grandchildNode[0].parent_identity.pid -Expected $childNode[0].identity.pid
         Assert-Equal -Actual $grandchildNode[0].parent_identity.creation_time_filetime_utc `
             -Expected $childNode[0].identity.creation_time_filetime_utc
+        $identityPairs = @($snapshot.nodes | ForEach-Object {
+                "$($_.identity.pid)|$($_.identity.creation_time_filetime_utc)"
+            })
+        Assert-Equal -Actual @($identityPairs | Sort-Object -Unique).Count -Expected 3
         $births = @($snapshot.nodes | ForEach-Object { $_.identity.creation_time_filetime_utc })
-        Assert-Equal -Actual @($births | Sort-Object -Unique).Count -Expected 3
         Assert-True (@($births | Where-Object { [uint64]$_ -eq 0 }).Count -eq 0) 'Birth tokens must be positive.'
         Assert-True ([uint64]$snapshot.qpc_after_resume_ticks -gt [uint64]$snapshot.qpc_before_create_ticks)
 
@@ -1191,15 +1450,38 @@ Test-Case 'Windows synthetic Job smoke keeps opaque authority and retains every 
         Assert-True (-not $snapshotJson.Contains([string]$pilot.opaque_id, [StringComparison]::Ordinal))
         Assert-True (-not $snapshotJson.Contains([string]$pilot.module_instance_id, [StringComparison]::Ordinal))
 
-        $artifact = New-M0ProcessTreeArtifact -Snapshot $freshSnapshot `
+        $firstClose = Close-M0SyntheticProcessPilot -Pilot $pilot
+        Assert-True $firstClose.cleanup_complete
+        Assert-Equal -Actual $firstClose.survivor_count -Expected 0
+        Assert-Equal -Actual $firstClose.native_cleanup_actions -Expected 1
+        Assert-Equal -Actual $firstClose.individual_terminate_process_calls -Expected 0
+        Assert-Equal -Actual $firstClose.candidate_code -Expected 'P'
+        Assert-Equal -Actual $firstClose.scenario_id -Expected 'synthetic-process-tree'
+        Assert-Equal -Actual $firstClose.attempt -Expected 1
+        $firstClose.survivor_count = 999
+        $secondClose = Close-M0SyntheticProcessPilot -Pilot $pilot
+        Assert-Equal -Actual $secondClose.survivor_count -Expected 0 `
+            'A caller mutation must not alter the private close result or idempotent replay.'
+        Assert-Equal -Actual $secondClose.native_cleanup_actions -Expected 1
+        $closeJson = $secondClose | ConvertTo-Json -Compress -Depth 20
+        Assert-True (-not $closeJson.Contains($RepositoryRoot, [StringComparison]::OrdinalIgnoreCase))
+        Assert-True (-not $closeJson.Contains([Environment]::UserName, [StringComparison]::OrdinalIgnoreCase))
+        Assert-True (-not $closeJson.Contains([string]$pilot.opaque_id, [StringComparison]::Ordinal))
+        Assert-True (-not $closeJson.Contains([string]$pilot.module_instance_id, [StringComparison]::Ordinal))
+
+        # New-M0ProcessTreeArtifact is a pure builder over prevalidated data. The live
+        # orchestration proof is the explicit Close above; the Pilot publisher must
+        # preserve this order and never accept caller-supplied cleanup data.
+        $artifact = New-M0ProcessTreeArtifact -Snapshot $freshSnapshot -CleanupResult $secondClose `
             -ExperimentId 'exp-process-smoke' -RunId 'run-P-synthetic-process-tree-01'
-        $artifactReplay = New-M0ProcessTreeArtifact -Snapshot $freshSnapshot `
+        $artifactReplay = New-M0ProcessTreeArtifact -Snapshot $freshSnapshot -CleanupResult $secondClose `
             -ExperimentId 'exp-process-smoke' -RunId 'run-P-synthetic-process-tree-01'
         $reorderedSnapshot = [pscustomobject][ordered]@{}
         foreach ($property in @($freshSnapshot.PSObject.Properties | Sort-Object Name -Descending)) {
             $reorderedSnapshot | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
         }
         $artifactFromReorderedSnapshot = New-M0ProcessTreeArtifact -Snapshot $reorderedSnapshot `
+            -CleanupResult $secondClose `
             -ExperimentId 'exp-process-smoke' -RunId 'run-P-synthetic-process-tree-01'
         Assert-Equal -Actual $artifact.canonical_json -Expected $artifactReplay.canonical_json
         Assert-Equal -Actual $artifact.canonical_json -Expected $artifactFromReorderedSnapshot.canonical_json `
@@ -1219,8 +1501,7 @@ Test-Case 'Windows synthetic Job smoke keeps opaque authority and retains every 
         Assert-Equal -Actual $artifact.document.decision_eligible -Expected $false
         Assert-Equal -Actual $artifact.relative_path -Expected 'artifacts/run-P-synthetic-process-tree-01.process-tree.json'
 
-        $outcome = Resolve-M0ProcessPilotOutcome -ProcessState $freshSnapshot.state `
-            -ProcessErrorCode $freshSnapshot.error_code -CleanupComplete $true -SurvivorCount 0 -CleanupErrorCode $null
+        $outcome = Resolve-M0ProcessPilotOutcome -ProcessArtifact $artifact.document
         $commonInputs = [ordered]@{
             protocol_sha256 = 'a' * 64; environment_sha256 = 'b' * 64; fixture_sha256 = 'c' * 64
             harness_sha256 = 'd' * 64; scenario_sha256 = 'e' * 64
@@ -1255,24 +1536,6 @@ Test-Case 'Windows synthetic Job smoke keeps opaque authority and retains every 
             -SchemaFile (Join-Path $protocolRoot 'schemas\run.schema.json') -ErrorAction SilentlyContinue) `
             'Future P run shape must remain compatible with exactly one bound process-tree artifact.'
 
-        $firstClose = Close-M0SyntheticProcessPilot -Pilot $pilot
-        Assert-True $firstClose.cleanup_complete
-        Assert-Equal -Actual $firstClose.survivor_count -Expected 0
-        Assert-Equal -Actual $firstClose.native_cleanup_actions -Expected 1
-        Assert-Equal -Actual $firstClose.individual_terminate_process_calls -Expected 0
-        Assert-Equal -Actual $firstClose.candidate_code -Expected 'P'
-        Assert-Equal -Actual $firstClose.scenario_id -Expected 'synthetic-process-tree'
-        Assert-Equal -Actual $firstClose.attempt -Expected 1
-        $firstClose.survivor_count = 999
-        $secondClose = Close-M0SyntheticProcessPilot -Pilot $pilot
-        Assert-Equal -Actual $secondClose.survivor_count -Expected 0 `
-            'A caller mutation must not alter the private close result or idempotent replay.'
-        Assert-Equal -Actual $secondClose.native_cleanup_actions -Expected 1
-        $closeJson = $secondClose | ConvertTo-Json -Compress -Depth 20
-        Assert-True (-not $closeJson.Contains($RepositoryRoot, [StringComparison]::OrdinalIgnoreCase))
-        Assert-True (-not $closeJson.Contains([Environment]::UserName, [StringComparison]::OrdinalIgnoreCase))
-        Assert-True (-not $closeJson.Contains([string]$pilot.opaque_id, [StringComparison]::Ordinal))
-        Assert-True (-not $closeJson.Contains([string]$pilot.module_instance_id, [StringComparison]::Ordinal))
     }
     finally {
         if ($null -ne $pilot) {

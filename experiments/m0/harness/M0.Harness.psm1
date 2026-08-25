@@ -33,10 +33,12 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/M0.Harness.psd1',
         'experiments/m0/harness/M0.Harness.psm1',
         'experiments/m0/harness/M0.Markers.psm1',
+        'experiments/m0/harness/M0.Pilot.psm1',
         'experiments/m0/harness/M0.Process.psm1',
         'experiments/m0/harness/M0.Statistics.psm1',
         'experiments/m0/harness/M0.Summary.psm1',
         'experiments/m0/harness/M0.Visual.psm1',
+        'scripts/m0/Invoke-M0Pilot.ps1',
         'scripts/m0/Invoke-M0SyntheticProcessNode.ps1',
         'scripts/m0/Test-M0Evidence.ps1',
         'scripts/m0/Test-M0Markers.ps1',
@@ -55,6 +57,9 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/protocol/schemas/fixture-manifest.schema.json',
         'experiments/m0/protocol/schemas/harness-manifest.schema.json',
         'experiments/m0/protocol/schemas/marker-catalog.schema.json',
+        'experiments/m0/protocol/schemas/pilot-intent.schema.json',
+        'experiments/m0/protocol/schemas/pilot-summary-input.schema.json',
+        'experiments/m0/protocol/schemas/pilot-summary.schema.json',
         'experiments/m0/protocol/schemas/process-golden.schema.json',
         'experiments/m0/protocol/schemas/process-tree-artifact.schema.json',
         'experiments/m0/protocol/schemas/process-tree.schema.json',
@@ -70,6 +75,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/protocol/schemas/summary-contract.schema.json',
         'experiments/m0/protocol/schemas/summary-input.schema.json',
         'experiments/m0/protocol/schemas/summary.schema.json',
+        'experiments/m0/protocol/schemas/synthetic-process-tree-scenario.schema.json',
         'experiments/m0/protocol/schemas/visual-golden.schema.json',
         'experiments/m0/protocol/schemas/visual.schema.json'
     )
@@ -81,6 +87,7 @@ function Get-M0HarnessTrustPolicy {
         'experiments/m0/harness/tests/Fixture.Tests.ps1',
         'experiments/m0/harness/tests/HarnessManifest.Tests.ps1',
         'experiments/m0/harness/tests/Markers.Tests.ps1',
+        'experiments/m0/harness/tests/Pilot.Tests.ps1',
         'experiments/m0/harness/tests/Process.Tests.ps1',
         'experiments/m0/harness/tests/Statistics.Tests.ps1',
         'experiments/m0/harness/tests/Summary.Tests.ps1',
@@ -649,6 +656,10 @@ function Assert-M0ProtocolContract {
     $null = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $Protocol.harness_manifest_sha256
     $shellScenario = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\scenarios\shell.v1.json'
     Assert-M0FileHash -LiteralPath $shellScenario -ExpectedHash $Protocol.shell_scenario_sha256
+    $syntheticProcessScenario = Resolve-M0ScopedPath -BasePath $RepositoryRoot `
+        -CandidatePath 'experiments\m0\protocol\scenarios\synthetic-process-tree.v1.json'
+    Assert-M0FileHash -LiteralPath $syntheticProcessScenario `
+        -ExpectedHash $Protocol.synthetic_process_tree_scenario_sha256
     $statisticsDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\statistics.v1.json'
     Assert-M0FileHash -LiteralPath $statisticsDescriptor -ExpectedHash $Protocol.statistics_descriptor_sha256
     $markerCatalog = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\markers.v1.json'
@@ -659,6 +670,27 @@ function Assert-M0ProtocolContract {
     Assert-M0FileHash -LiteralPath $processDescriptor -ExpectedHash $Protocol.process_descriptor_sha256
     $summaryDescriptor = Resolve-M0ScopedPath -BasePath $RepositoryRoot -CandidatePath 'experiments\m0\protocol\summary.v1.json'
     Assert-M0FileHash -LiteralPath $summaryDescriptor -ExpectedHash $Protocol.summary_descriptor_sha256
+}
+
+function Assert-M0TrustedSyntheticProcessScenario {
+    param(
+        [Parameter(Mandatory)] [string] $ScenarioPath,
+        [Parameter(Mandatory)] [string] $SchemaPath,
+        [Parameter(Mandatory)] [string] $SidecarPath,
+        [Parameter(Mandatory)] [string] $ExpectedSha256
+    )
+    Assert-M0FileHash -LiteralPath $ScenarioPath -ExpectedHash $ExpectedSha256
+    $scenario = Assert-M0JsonDocument -DocumentPath $ScenarioPath -SchemaPath $SchemaPath
+    $actualHash = (Get-M0Sha256 -LiteralPath $ScenarioPath).ToLowerInvariant()
+    $sidecar = [IO.File]::ReadAllText($SidecarPath, [Text.UTF8Encoding]::new($false, $true)).TrimEnd("`r", "`n")
+    if ($sidecar -cne "$actualHash  synthetic-process-tree.v1.json" -or
+        $scenario.protocol_id -cne 'M0-P1' -or $scenario.scenario_id -cne 'synthetic-process-tree' -or
+        $scenario.candidate_code -cne 'P' -or [int]$scenario.attempt -ne 1 -or
+        $scenario.evidence_role -cne 'synthetic_pilot' -or $scenario.decision_eligible -ne $false -or
+        (@($scenario.event_sequence) -join '|') -cne 'run_started|artifact_recorded|check_recorded|run_sealed') {
+        throw [IO.InvalidDataException]::new('M0H010 trusted synthetic-process-tree scenario identity, sequence or sidecar differs.')
+    }
+    return $scenario
 }
 
 function Assert-M0EnvironmentContract {
@@ -703,8 +735,24 @@ function Get-M0TrustedCommonInputs {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [string] $RepositoryRoot,
-        [switch] $LoadSummary
+        [AllowNull()] [string] $Scenario,
+        [switch] $LoadSummary,
+        [switch] $LoadPilot
     )
+
+    $scenarioSelector = if (-not $PSBoundParameters.ContainsKey('Scenario')) {
+        'shell'
+    }
+    elseif ($null -eq $Scenario -or ($Scenario -cne 'shell' -and $Scenario -cne 'synthetic-process-tree')) {
+        throw [IO.InvalidDataException]::new('M0H010 Scenario must be the ordinal closed value shell or synthetic-process-tree.')
+    }
+    else { $Scenario }
+    if ($LoadSummary -and $LoadPilot) {
+        throw [IO.InvalidDataException]::new('M0H010 trusted consumer selector permits only one manifest-locked consumer import.')
+    }
+    if ($LoadPilot -and $scenarioSelector -cne 'synthetic-process-tree') {
+        throw [IO.InvalidDataException]::new('M0H010 LoadPilot requires the ordinal synthetic-process-tree scenario selector.')
+    }
 
     $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\', '/')
     $trustTreeLocks = @(Get-M0HarnessTrustTreeReadLocks -RepositoryRoot $root)
@@ -726,6 +774,7 @@ function Get-M0TrustedCommonInputs {
         $visualModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Visual.psm1'
         $processModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Process.psm1'
         $summaryModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Summary.psm1'
+        $pilotModulePath = Resolve-M0ScopedPath -BasePath $root -CandidatePath 'experiments/m0/harness/M0.Pilot.psm1'
         $fixtureModule = Import-M0HarnessExactDependency -Name 'M0.Fixture' -LiteralPath $fixtureModulePath
         $markersModule = Import-M0HarnessExactDependency -Name 'M0.Markers' -LiteralPath $markersModulePath
         $statisticsModule = Import-M0HarnessExactDependency -Name 'M0.Statistics' -LiteralPath $statisticsModulePath
@@ -762,6 +811,37 @@ function Get-M0TrustedCommonInputs {
             }
             $null = Import-M0HarnessExactDependency -Name 'M0.Summary' -LiteralPath $summaryModulePath
         }
+        if ($LoadPilot) {
+            if (@(Get-Module -All -Name 'M0.Pilot').Count -ne 0) {
+                throw [IO.InvalidDataException]::new('M0H010 refuses a preloaded M0.Pilot consumer before its manifest-locked import.')
+            }
+            if ($null -ne $script:M0HarnessTrustedInputsTestHook) {
+                $hook = $script:M0HarnessTrustedInputsTestHook
+                $script:M0HarnessTrustedInputsTestHook = $null
+                if ([string]$hook.stage -cne 'before-pilot-import-rename' -or
+                    -not [IO.Path]::GetFullPath([string]$hook.target_path).Equals($pilotModulePath, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw [IO.InvalidDataException]::new('M0H011 invalid trusted-input Pilot test hook.')
+                }
+                $destination = [IO.Path]::GetFullPath([string]$hook.destination_path)
+                $renameSucceeded = $false
+                try {
+                    [IO.File]::Move($pilotModulePath, $destination)
+                    $renameSucceeded = $true
+                }
+                catch [IO.IOException] {
+                    # Expected on Windows: the outer trust-tree handle denies rename/delete.
+                }
+                finally {
+                    if ($renameSucceeded) {
+                        [IO.File]::Move($destination, $pilotModulePath)
+                    }
+                }
+                if ($renameSucceeded -or (Test-Path -LiteralPath $destination)) {
+                    throw [IO.InvalidDataException]::new('M0H011 Pilot source rename was not blocked by the retained trust lock.')
+                }
+            }
+            $null = Import-M0HarnessExactDependency -Name 'M0.Pilot' -LiteralPath $pilotModulePath
+        }
         $fixtureResult = & $fixtureModule {
             param($fixtureRoot, $schemas)
             Assert-M0FixtureSet -FixtureRoot $fixtureRoot -SchemaRoot $schemas
@@ -771,12 +851,25 @@ function Get-M0TrustedCommonInputs {
         $visualResult = & $visualModule { param($contracts) Assert-M0VisualArtifacts -ProtocolRoot $contracts } $protocolRoot
         $processResult = & $processModule { param($contracts) Assert-M0ProcessArtifacts -ProtocolRoot $contracts } $protocolRoot
 
-        $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'scenarios/shell.v1.json'
-        $scenario = Assert-M0JsonDocument -DocumentPath $scenarioPath -SchemaPath (Join-Path $schemaRoot 'scenario.schema.json')
-        if ($scenario.protocol_id -cne $protocol.protocol_id -or
-            $scenario.fixture_id -cne $fixtureResult.fixture_id -or
-            $scenario.scenario_set_id -cne 'M0-SHELL-1') {
-            throw [IO.InvalidDataException]::new('M0H010 trusted shell scenario identity differs from protocol/fixture.')
+        $scenarioSha256 = if ($scenarioSelector -ceq 'shell') {
+            $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot -CandidatePath 'scenarios/shell.v1.json'
+            $scenarioDocument = Assert-M0JsonDocument -DocumentPath $scenarioPath `
+                -SchemaPath (Join-Path $schemaRoot 'scenario.schema.json')
+            if ($scenarioDocument.protocol_id -cne $protocol.protocol_id -or
+                $scenarioDocument.fixture_id -cne $fixtureResult.fixture_id -or
+                $scenarioDocument.scenario_set_id -cne 'M0-SHELL-1') {
+                throw [IO.InvalidDataException]::new('M0H010 trusted shell scenario identity differs from protocol/fixture.')
+            }
+            $protocol.shell_scenario_sha256.ToLowerInvariant()
+        }
+        else {
+            $scenarioPath = Resolve-M0ScopedPath -BasePath $protocolRoot `
+                -CandidatePath 'scenarios/synthetic-process-tree.v1.json'
+            $scenarioDocument = Assert-M0TrustedSyntheticProcessScenario -ScenarioPath $scenarioPath `
+                -SchemaPath (Join-Path $schemaRoot 'synthetic-process-tree-scenario.schema.json') `
+                -SidecarPath (Join-Path $protocolRoot 'scenarios\synthetic-process-tree.v1.sha256') `
+                -ExpectedSha256 ([string]$protocol.synthetic_process_tree_scenario_sha256)
+            $protocol.synthetic_process_tree_scenario_sha256.ToLowerInvariant()
         }
         if ($fixtureResult.fixture_sha256.ToUpperInvariant() -cne $protocol.fixture_manifest_sha256 -or
             $markersResult.catalog_sha256.ToUpperInvariant() -cne $protocol.marker_catalog_sha256 -or
@@ -791,7 +884,7 @@ function Get-M0TrustedCommonInputs {
             environment_sha256 = $protocol.environment_bundle_sha256.ToLowerInvariant()
             fixture_sha256 = $protocol.fixture_manifest_sha256.ToLowerInvariant()
             harness_sha256 = $protocol.harness_manifest_sha256.ToLowerInvariant()
-            scenario_sha256 = $protocol.shell_scenario_sha256.ToLowerInvariant()
+            scenario_sha256 = $scenarioSha256
         }
     }
     finally {
@@ -940,6 +1033,7 @@ function Assert-M0Layout {
         'experiments\m0\harness\M0.Statistics.psm1',
         'experiments\m0\harness\M0.Markers.psm1',
         'experiments\m0\harness\M0.Process.psm1',
+        'experiments\m0\harness\M0.Pilot.psm1',
         'experiments\m0\harness\M0.Summary.psm1',
         'experiments\m0\harness\M0.Evidence.psm1',
         'experiments\m0\harness\M0.Visual.psm1',
@@ -966,6 +1060,7 @@ function Assert-M0Layout {
         'scripts\m0\New-M0ShellFixture.ps1',
         'scripts\m0\Invoke-M0SyntheticProcessNode.ps1',
         'scripts\m0\New-M0HarnessManifest.ps1',
+        'scripts\m0\Invoke-M0Pilot.ps1',
         'scripts\m0\Invoke-M0HarnessTests.ps1',
         'scripts\m0\Test-M0Fixture.ps1',
         'scripts\m0\Test-M0Statistics.ps1',

@@ -2,7 +2,7 @@
 
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
-**Última revisão:** 2026-08-24
+**Última revisão:** 2026-08-25
 **Marco atual:** D0 e M0.0 concluídos; M0.1 em andamento
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
@@ -79,7 +79,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 
 A autoria documental e a revisão do mantenedor estão concluídas. A [autorização D0.9](m0/README.md) aceita o baseline derivado e permite apenas o escopo experimental M0.0–M0.10; Qt, Tauri e os backends continuam candidatos.
 
-M0.1 permanece em andamento. Já existem contratos e checks para fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos e o summary comum puro com golden canônico. Esse builder recebe uma fixture agregada previamente validada; ainda não lê nem publica Evidence A/B. O smoke de processo atual é local, Windows-only, `partial/etw_live_not_implemented`, não selado e não decisório; ele não substitui o futuro `Invoke-M0Pilot.ps1` nem qualquer coleta A/B. Linux live permanece `not_proven`.
+M0.1 permanece em andamento. Já existem contratos e checks para fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos e o summary comum puro com golden canônico. Esse builder comum recebe uma fixture A/B agregada previamente validada; ainda não lê nem publica Evidence A/B. Separadamente, `Invoke-M0Pilot.ps1` materializa no Windows o piloto sintético `P`: abre o writer, publica o launch-intent e a primeira linha raw antes do processo, fecha a capability real antes de cunhar um único artifact `process-tree`, sela a sequência literal `run_started` → `artifact_recorded` → `check_recorded` → `run_sealed` e publica um summary `{semantic,receipt}` com sidecar por último. O caminho nominal atual é `partial/etw_live_not_implemented`; a regressão de falha de snapshot prova um único fallback `unavailable/pre_snapshot_fallback` após `Close`. Ambos terminam com cleanup completo e zero sobreviventes. `P` usa role `synthetic_pilot`, `decision_eligible=false` e nunca entra em snapshot-set, batch ou summary comum A/B. Isso não comprova ETW live, breakaway, Linux, desempenho de candidato nem durabilidade contra power loss; Linux live permanece `not_proven`.
 
 ## 3. Check obrigatório de todo incremento
 
@@ -569,7 +569,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.
 2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
-3. Criar M0.1 antes de qualquer shell, para impedir benchmark enviesado.
+3. Fechar os gates e commitar M0.1 antes de qualquer shell, para impedir benchmark enviesado.
 4. Construir/validar M0.2 e M0.3 com o mesmo recorte.
 5. Só então coletar M0.4 e avançar ao corpus/áudio.
 

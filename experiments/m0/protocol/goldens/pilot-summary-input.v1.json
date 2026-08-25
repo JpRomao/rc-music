@@ -1,0 +1,99 @@
+{
+  "$schema": "schemas/pilot-summary-input.schema.json",
+  "schema_id": "m0.synthetic-pilot-summary-input.v1",
+  "schema_version": 1,
+  "candidate_code": "P",
+  "scenario_id": "synthetic-process-tree",
+  "attempt": 1,
+  "evidence_role": "synthetic_pilot",
+  "decision_eligible": false,
+  "publication_state": "committed",
+  "run": {
+    "status": "inconclusive",
+    "status_reason": "incomplete_evidence",
+    "error_code": null
+  },
+  "process": {
+    "snapshot_origin": "observed",
+    "state": "partial",
+    "error_code": "etw_live_not_implemented",
+    "missing_capabilities": ["etw-process-start-stop", "job-completion-port"]
+  },
+  "cleanup": {
+    "attempted": true,
+    "completed": true,
+    "survivor_count": 0,
+    "failure_code": null,
+    "failure_codes": []
+  },
+  "check": {
+    "check_id": "CHK-PROCESS",
+    "status": "skipped",
+    "reason_code": "process_tree_partial",
+    "status_reason": "incomplete_evidence",
+    "error_code": null
+  },
+  "artifact_count": 1,
+  "receipt": {
+    "experiment_id": "exp-golden-synthetic-pilot",
+    "run_id": "run-P-golden-synthetic-process-tree-01",
+    "transaction_id": "1111111111111111111111111111111111111111111111111111111111111111",
+    "common_inputs": {
+      "protocol_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "environment_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "fixture_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "harness_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scenario_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "pilot_intent": {
+      "relative_path": "run-P-golden-synthetic-process-tree-01.pilot-intent.json",
+      "sha256": "7e2bc63a1dfef3e854bb0bb60b529a0b7205fe948bf2bab58d3f322a0d35ac3f",
+      "size_bytes": 2755
+    },
+    "raws": [
+      {
+        "relative_path": "run-P-golden-synthetic-process-tree-01.jsonl",
+        "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+        "size_bytes": 1000,
+        "event_count": 4,
+        "first_line_sha256": "173d33a7c41ba734ed3108513e806d31d7953aa9f39ffb7af0637d0a7f441d87",
+        "first_line_size_bytes": 816,
+        "final_line_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "traces": [],
+    "intent": {
+      "relative_path": "run-P-golden-synthetic-process-tree-01.intent.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 1500
+    },
+    "run": {
+      "relative_path": "run-P-golden-synthetic-process-tree-01.run.json",
+      "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+      "size_bytes": 2000
+    },
+    "snapshot": {
+      "relative_path": "run-P-golden-synthetic-process-tree-01.snapshot.json",
+      "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "size_bytes": 3000
+    },
+    "artifacts": [
+      {
+        "artifact_id": "process-tree",
+        "relative_path": "artifacts/run-P-golden-synthetic-process-tree-01.process-tree.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size_bytes": 4000
+      }
+    ],
+    "started_utc": "2026-08-24T12:00:00.0000000Z",
+    "sealed_utc": "2026-08-24T12:00:01.0000000Z",
+    "started_qpc_ticks": 1000000,
+    "sealed_qpc_ticks": 2000000,
+    "qpc_frequency": 10000000,
+    "process_identities": [
+      { "role": "root", "pid": 101, "creation_time_filetime_utc": "134000000000000001" },
+      { "role": "child", "pid": 102, "creation_time_filetime_utc": "134000000000000002" },
+      { "role": "grandchild", "pid": 103, "creation_time_filetime_utc": "134000000000000003" }
+    ]
+  }
+}

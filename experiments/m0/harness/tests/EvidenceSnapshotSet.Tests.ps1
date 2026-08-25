@@ -297,11 +297,11 @@ function New-SnapshotSetSyntheticPilotRun {
         $specifications = @(
             [pscustomobject]@{ name = 'run_started'; payload = [ordered]@{ phase = 'started' } },
             [pscustomobject]@{ name = 'artifact_recorded'; payload = [ordered]@{
-                artifact_id = 'process-tree'; relative_path = 'artifacts/process-tree.json'; sha256 = ('7' * 64)
+                artifact_id = 'process-tree'; relative_path = "artifacts/$runId.process-tree.json"; sha256 = ('7' * 64)
                 size_bytes = 321; transient = $false; redacted = $true
             } },
             [pscustomobject]@{ name = 'check_recorded'; payload = [ordered]@{
-                check_id = 'CHK-PROC-LINEAGE'; status = 'passed'; reason_code = $null; status_reason = $null; error_code = $null
+                check_id = 'CHK-PROCESS'; status = 'passed'; reason_code = $null; status_reason = $null; error_code = $null
             } }
         )
         $previousHash = $null
@@ -323,7 +323,7 @@ function New-SnapshotSetSyntheticPilotRun {
             common_inputs = [ordered]@{ protocol_sha256 = ('a' * 64); environment_sha256 = ('b' * 64); fixture_sha256 = ('c' * 64); harness_sha256 = ('d' * 64); scenario_sha256 = ('e' * 64) }
             candidate_input = $null; schedule = $null; status = 'valid'; status_reason = $null; error_code = $null; raw = $null
             markers = @('run-started'); process_tree_sha256 = ('7' * 64); metrics = @(); actions = @(); external_noise = @()
-            artifacts = @([ordered]@{ artifact_id = 'process-tree'; relative_path = 'artifacts/process-tree.json'; sha256 = ('7' * 64); size_bytes = 321 })
+            artifacts = @([ordered]@{ artifact_id = 'process-tree'; relative_path = "artifacts/$runId.process-tree.json"; sha256 = ('7' * 64); size_bytes = 321 })
             checks_omitted = @()
         }
         $null = Complete-M0EvidenceRun -Writer $writer -SealEvent $seal -RunRecord $run -EvidenceRole synthetic_pilot

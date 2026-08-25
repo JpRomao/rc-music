@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0 e M0.0 concluídos; M0.1 está em andamento, com o harness-base e a fixture sintética do shell materializados. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
+> **Estado atual:** D0 e M0.0 concluídos; M0.1 está em andamento, com o harness-base, a fixture sintética do shell, o summary comum puro e o piloto local sintético `P` materializados. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -87,12 +87,22 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Layout.ps1
 git status --short --branch
 ```
 
-O validador documental cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. Os runners M0 validam somente os contratos materializados até aqui; não fazem alegação de desempenho nem substituem os checks futuros dos candidatos. O status confirma que a mudança terminou no commit esperado.
+Uma publicação manual do piloto sintético usa um processo limpo, um root novo e vazio sob `out/m0` e IDs novos:
+
+```powershell
+$m0Out = Join-Path (Resolve-Path .) 'out\m0'
+New-Item -ItemType Directory -Path $m0Out -Force | Out-Null
+$pilotRoot = Join-Path $m0Out 'pilot-manual-01'
+New-Item -ItemType Directory -Path $pilotRoot -ErrorAction Stop | Out-Null
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0Pilot.ps1 -EvidenceRoot $pilotRoot -ExperimentId exp-pilot-local -RunId run-P-local-01
+```
+
+O validador documental cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. Os runners M0 validam somente os contratos materializados até aqui. `Invoke-M0Pilot.ps1` cria no Windows uma árvore sintética sem áudio, fecha o Job, publica Evidence recuperável e um summary separado com role `synthetic_pilot`; `P` é sempre não decisório e nunca entra no conjunto A/B. O comando não comprova ETW live, breakaway, Linux, desempenho de candidato nem durabilidade contra power loss. O status confirma que a mudança terminou no commit esperado.
 
 ## Próximo passo
 
-1. completar coleta live e piloto neutro em M0.1 sobre os contratos, markers, evidência, detector sintético e summary comum puro já materializados;
-2. construir e medir os dois candidatos sem aceitar stack antecipadamente;
+1. fechar os gates e o commit de M0.1 sobre os contratos, o piloto sintético não decisório e o summary comum já materializados;
+2. construir e medir os dois candidatos com o protocolo A/B, sem aceitar stack antecipadamente;
 3. medir e então aceitar/rejeitar os ADRs;
 4. somente depois iniciar o MVP guiado por TDD.
 

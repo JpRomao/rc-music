@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 synthetic pilot summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_id", "schema_version", "semantic", "receipt"],
+  "properties": {
+    "$schema": { "const": "schemas/pilot-summary.schema.json" },
+    "schema_id": { "const": "m0.synthetic-pilot-summary.v1" },
+    "schema_version": { "const": 1 },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        { "$ref": "pilot-summary-input.schema.json#/definitions/outcomeProjection" }
+      ],
+      "required": [
+        "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible",
+        "publication_state", "run", "process", "cleanup", "check", "artifact_count"
+      ],
+      "properties": {
+        "candidate_code": { "const": "P" },
+        "scenario_id": { "const": "synthetic-process-tree" },
+        "attempt": { "const": 1 },
+        "evidence_role": { "const": "synthetic_pilot" },
+        "decision_eligible": { "const": false },
+        "publication_state": { "const": "committed" },
+        "run": { "$ref": "pilot-summary-input.schema.json#/definitions/run" },
+        "process": { "$ref": "pilot-summary-input.schema.json#/definitions/process" },
+        "cleanup": { "$ref": "pilot-summary-input.schema.json#/definitions/cleanup" },
+        "check": { "$ref": "pilot-summary-input.schema.json#/definitions/check" },
+        "artifact_count": { "const": 1 }
+      }
+    },
+    "receipt": { "$ref": "pilot-summary-input.schema.json#/definitions/receipt" }
+  }
+}

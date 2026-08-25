@@ -185,8 +185,10 @@
         "state": "partial",
         "error_code": "unresolved_external_attribution",
         "missing_capabilities": ["external-attribution-proof"],
-        "identities": [],
-        "sources": []
+        "identities": [
+          { "pid": 301, "creation_time_filetime_utc": "1000" }
+        ],
+        "sources": ["root-handle"]
       }
     }
   ],

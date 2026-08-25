@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/synthetic-process-tree-scenario.schema.json",
+  "schema_id": "m0.synthetic-process-tree-scenario.v1",
+  "schema_version": 1,
+  "protocol_id": "M0-P1",
+  "scenario_id": "synthetic-process-tree",
+  "candidate_code": "P",
+  "attempt": 1,
+  "evidence_role": "synthetic_pilot",
+  "decision_eligible": false,
+  "event_sequence": ["run_started", "artifact_recorded", "check_recorded", "run_sealed"],
+  "artifact_id": "process-tree",
+  "check_id": "CHK-PROCESS",
+  "markers": ["run-started"],
+  "pilot_intent_contract": {
+    "schema_relative_path": "schemas/pilot-intent.schema.json",
+    "schema_sha256": "ceb169026d97c55e556448aa2fb66586ac7a2a0c199b35c4eeaa102e313cd7e1",
+    "event_schema_relative_path": "schemas/event.schema.json",
+    "event_schema_sha256": "aaae60092d42ffb3296b3555f9dbe29ae4950336e2d0f9eef3c1217974d233a8",
+    "golden_relative_path": "goldens/pilot-intent.v1.json",
+    "golden_sha256": "7e2bc63a1dfef3e854bb0bb60b529a0b7205fe948bf2bab58d3f322a0d35ac3f",
+    "relative_path_template": "{run_id}.pilot-intent.json",
+    "serialization": "canonical-json-utf8-no-bom-lf"
+  },
+  "summary_contract": {
+    "input_relative_path": "goldens/pilot-summary-input.v1.json",
+    "input_sha256": "e4910a016f2d9931310e37db876bdb41166073ddb4c75dd45299f251a9d8bc44",
+    "input_schema_relative_path": "schemas/pilot-summary-input.schema.json",
+    "input_schema_sha256": "cd7d86d717b039ab332b9c8358b7c5fd24e0255f13f5f8fcfb0ac3c2f980784c",
+    "golden_relative_path": "goldens/pilot-summary.v1.json",
+    "golden_sha256": "229f2c48bd7d4c60ba7ef266e8cb8793fc357b579a57ace8ac23fd727ba1d94f",
+    "schema_relative_path": "schemas/pilot-summary.schema.json",
+    "schema_sha256": "1c3dc229a3f9f0283e5561c0a9bf5845310f4391c9bf51c6bfa015bd64c5b90e"
+  },
+  "recovery_contract": {
+    "evidence_commit_point": "evidence-snapshot",
+    "summary_derivation": "post-commit-create-new-exact-replay",
+    "writer_open_without_pilot_intent": "fail-closed-require-new-evidence-root-and-run-id",
+    "pilot_intent_without_artifact": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id",
+    "raw_started_without_artifact": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id",
+    "artifact_before_evidence_intent": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id",
+    "same_run_recovery_starts_at": "evidence-intent-published",
+    "decisive_membership": "forbidden"
+  }
+}

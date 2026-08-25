@@ -99,8 +99,8 @@ Test-Case 'The canonical harness trust contract exists before collection can use
 Test-Case 'The committed harness manifest is canonical, anchored and complete' {
     $expectedHash = Get-M0CommittedHarnessHash
     $result = Assert-M0HarnessManifest -RepositoryRoot $RepositoryRoot -ExpectedManifestSha256 $expectedHash
-    Assert-Equal -Actual $result.runtime_file_count -Expected 15
-    Assert-Equal -Actual $result.schema_file_count -Expected 27
+    Assert-Equal -Actual $result.runtime_file_count -Expected 17
+    Assert-Equal -Actual $result.schema_file_count -Expected 31
     Assert-Equal -Actual $result.manifest_sha256 -Expected $expectedHash.ToLowerInvariant()
 }
 

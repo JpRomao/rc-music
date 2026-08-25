@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": [
     "$schema", "schema_id", "schema_version", "experiment_id", "run_id", "artifact_id",
-    "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible", "snapshot"
+    "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible", "snapshot_origin", "snapshot", "cleanup"
   ],
   "properties": {
     "$schema": { "const": "schemas/process-tree-artifact.schema.json" },
@@ -19,9 +19,150 @@
     "attempt": { "const": 1 },
     "evidence_role": { "const": "synthetic_pilot" },
     "decision_eligible": { "const": false },
-    "snapshot": { "$ref": "process-tree.schema.json" }
+    "snapshot_origin": { "enum": ["observed", "pre_snapshot_fallback"] },
+    "snapshot": { "$ref": "process-tree.schema.json" },
+    "cleanup": { "$ref": "#/definitions/cleanup" }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "snapshot_origin": { "const": "pre_snapshot_fallback" } }, "required": ["snapshot_origin"] },
+      "then": { "properties": { "snapshot": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "snapshot": { "properties": { "state": { "enum": ["complete", "partial"] } }, "required": ["state"] }
+        },
+        "required": ["snapshot"]
+      },
+      "then": { "properties": { "snapshot_origin": { "const": "observed" } } }
+    },
+    {
+      "if": {
+        "allOf": [
+          { "properties": { "snapshot_origin": { "const": "observed" } }, "required": ["snapshot_origin"] },
+          {
+            "properties": {
+              "snapshot": {
+                "properties": { "cleanup_authority": { "const": "none-no-mutation-capability" } },
+                "required": ["cleanup_authority"]
+              }
+            },
+            "required": ["snapshot"]
+          }
+        ]
+      },
+      "then": { "properties": { "cleanup": { "properties": { "attempted": { "const": false } } } } }
+    },
+    {
+      "if": {
+        "allOf": [
+          { "properties": { "snapshot_origin": { "const": "observed" } }, "required": ["snapshot_origin"] },
+          {
+            "properties": {
+              "snapshot": {
+                "properties": { "cleanup_authority": { "const": "private-opaque-registry-only" } },
+                "required": ["cleanup_authority"]
+              }
+            },
+            "required": ["snapshot"]
+          }
+        ]
+      },
+      "then": { "properties": { "cleanup": { "properties": { "attempted": { "const": true } } } } }
+    }
+  ],
   "definitions": {
-    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "failureCode": {
+      "enum": [
+        "snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed",
+        "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"
+      ]
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_id", "attempted", "completed", "survivor_count", "retained_identity_count",
+        "native_cleanup_actions", "cleanup_action", "individual_terminate_process_calls",
+        "candidate_code", "scenario_id", "attempt", "evidence_role", "decision_eligible",
+        "failure_code", "error_code", "failure_codes"
+      ],
+      "properties": {
+        "schema_id": { "const": "m0.process-tree-cleanup.v1" },
+        "attempted": { "type": "boolean" },
+        "completed": { "type": "boolean" },
+        "survivor_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "retained_identity_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "native_cleanup_actions": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "cleanup_action": { "enum": ["close-last-job-handle-and-wait-retained-process-handles", "none-no-mutation-capability"] },
+        "individual_terminate_process_calls": { "const": 0 },
+        "candidate_code": { "const": "P" },
+        "scenario_id": { "const": "synthetic-process-tree" },
+        "attempt": { "const": 1 },
+        "evidence_role": { "const": "synthetic_pilot" },
+        "decision_eligible": { "const": false },
+        "failure_code": { "anyOf": [{ "$ref": "#/definitions/failureCode" }, { "type": "null" }] },
+        "error_code": { "anyOf": [{ "$ref": "#/definitions/failureCode" }, { "type": "null" }] },
+        "failure_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/failureCode" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "attempted": { "const": false } }, "required": ["attempted"] },
+          "then": {
+            "properties": {
+              "completed": { "const": true },
+              "survivor_count": { "const": 0 },
+              "retained_identity_count": { "const": 0 },
+              "native_cleanup_actions": { "const": 0 },
+              "cleanup_action": { "const": "none-no-mutation-capability" },
+              "failure_code": { "type": "null" },
+              "error_code": { "type": "null" },
+              "failure_codes": { "maxItems": 0 }
+            }
+          },
+          "else": { "properties": { "cleanup_action": { "const": "close-last-job-handle-and-wait-retained-process-handles" } } }
+        },
+        {
+          "if": { "properties": { "completed": { "const": true } }, "required": ["completed"] },
+          "then": {
+            "properties": {
+              "survivor_count": { "const": 0 },
+              "failure_code": { "type": "null" },
+              "error_code": { "type": "null" },
+              "failure_codes": { "maxItems": 0 }
+            }
+          },
+          "else": {
+            "properties": {
+              "failure_code": { "$ref": "#/definitions/failureCode" },
+              "error_code": { "$ref": "#/definitions/failureCode" },
+              "failure_codes": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "failure_codes": { "contains": { "const": "job_close_failed" } } },
+            "required": ["failure_codes"]
+          },
+          "then": { "properties": { "native_cleanup_actions": { "const": 0 } } }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "attempted": { "const": true } }, "required": ["attempted"] },
+              { "properties": { "failure_codes": { "not": { "contains": { "const": "job_close_failed" } } } }, "required": ["failure_codes"] }
+            ]
+          },
+          "then": { "properties": { "native_cleanup_actions": { "const": 1 } } }
+        }
+      ]
+    }
   }
 }

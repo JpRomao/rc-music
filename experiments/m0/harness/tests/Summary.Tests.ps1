@@ -648,14 +648,30 @@ Import-Module -Name '$escapedPath' -ErrorAction Stop
 
     $escapedRunner = $summaryRunnerPath.Replace("'", "''")
     foreach ($nativeType in @('TrustedFile', 'ProcessCapability', 'PilotSession')) {
+        $expectedNativeType = "M0ProcessNativeV1.$nativeType"
+        $sentinel = "M0Q040_NATIVE_PRELOAD_REJECTED_$nativeType"
         $nativeScript = @"
 `$ErrorActionPreference = 'Stop'
 Add-Type 'namespace M0ProcessNativeV1 { public class $nativeType {} }'
-& '$escapedRunner'
+try {
+    & '$escapedRunner'
+    throw 'Summary runner unexpectedly accepted a preloaded native type.'
+}
+catch {
+    `$message = [string]`$_.Exception.Message
+    if (-not `$message.StartsWith('M0Q040 ', [StringComparison]::Ordinal) -or
+        -not `$message.Contains("preloaded native type '$expectedNativeType'", [StringComparison]::Ordinal)) {
+        throw
+    }
+    [Console]::Out.WriteLine('$sentinel')
+    exit 197
+}
 "@
         $nativeResult = Invoke-M0SummaryChildProcess -ScriptText $nativeScript -Name ("summary-preload-native-$nativeType")
-        Assert-True ($nativeResult.exit_code -ne 0) "Preloaded native type $nativeType unexpectedly reached the summary runner."
-        Assert-True ($nativeResult.output -match 'M0Q040.*native type') "Native preload $nativeType did not fail at the clean-process gate: $($nativeResult.output)"
+        Assert-Equal -Actual $nativeResult.exit_code -Expected 197 `
+            "Preloaded native type $nativeType did not exit through the clean-process sentinel: $($nativeResult.output)"
+        Assert-True ([string]$nativeResult.output -clike "*$sentinel*") `
+            "Native preload $nativeType did not emit the clean-process sentinel: $($nativeResult.output)"
     }
 }
 

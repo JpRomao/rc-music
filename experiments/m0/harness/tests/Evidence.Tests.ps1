@@ -120,6 +120,96 @@ function Copy-EvidenceTestObject {
     return ($Value | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 }
 
+function Invoke-M0SyntheticPilotSequenceAssertion {
+    param(
+        [Parameter(Mandatory)] [object[]] $Events,
+        [switch] $RequireSeal
+    )
+
+    $module = @(Get-Module -All -Name M0.Evidence)
+    if ($module.Count -ne 1) {
+        throw [IO.InvalidDataException]::new('Evidence.Tests requires exactly one M0.Evidence module instance.')
+    }
+    & $module[0] {
+        param([object[]] $ObservedEvents, [bool] $SealRequired)
+        Assert-M0SyntheticPilotSequence -Events $ObservedEvents -RequireSeal:$SealRequired
+    } $Events ([bool]$RequireSeal)
+}
+
+Test-Case 'Synthetic pilot Evidence accepts only the literal four-event sequence' {
+    $newEvent = {
+        param([Parameter(Mandatory)] [string] $Name)
+        $payload = switch ($Name) {
+            'run_started' { [pscustomobject][ordered]@{ phase = 'started' } }
+            'artifact_recorded' {
+                [pscustomobject][ordered]@{
+                    artifact_id = 'process-tree'
+                    relative_path = 'artifacts/run-P-sequence-01.process-tree.json'
+                    sha256 = 'a' * 64
+                    size_bytes = 100
+                    transient = $false
+                    redacted = $true
+                }
+            }
+            'check_recorded' {
+                [pscustomobject][ordered]@{
+                    check_id = 'CHK-PROCESS'
+                    status = 'skipped'
+                    reason_code = 'process_tree_partial'
+                    status_reason = 'incomplete_evidence'
+                    error_code = $null
+                }
+            }
+            'run_sealed' { [pscustomobject][ordered]@{ status = 'inconclusive'; status_reason = 'incomplete_evidence'; error_code = $null } }
+        }
+        [pscustomobject][ordered]@{
+            run_id = 'run-P-sequence-01'
+            candidate_code = 'P'
+            scenario_id = 'synthetic-process-tree'
+            attempt = 1
+            event = $Name
+            payload = $payload
+        }
+    }
+    $started = & $newEvent 'run_started'
+    $artifact = & $newEvent 'artifact_recorded'
+    $check = & $newEvent 'check_recorded'
+    $sealed = & $newEvent 'run_sealed'
+
+    Invoke-M0SyntheticPilotSequenceAssertion -Events @($started, $artifact, $check)
+    Invoke-M0SyntheticPilotSequenceAssertion -Events @($started, $artifact, $check, $sealed) -RequireSeal
+
+    $invalidCases = @(
+        [pscustomobject]@{ case_id = 'duplicate-run-started'; events = [object[]]@($started, $started, $artifact, $check) },
+        [pscustomobject]@{ case_id = 'duplicate-check'; events = [object[]]@($started, $artifact, $check, $check) },
+        [pscustomobject]@{ case_id = 'check-before-artifact'; events = [object[]]@($started, $check, $artifact) },
+        [pscustomobject]@{ case_id = 'sealed-check-before-artifact'; events = [object[]]@($started, $check, $artifact, $sealed) }
+    )
+    foreach ($invalidCase in $invalidCases) {
+        $requiresSeal = @($invalidCase.events | Where-Object event -CEQ 'run_sealed').Count -gt 0
+        Assert-Throws {
+            Invoke-M0SyntheticPilotSequenceAssertion -Events $invalidCase.events -RequireSeal:$requiresSeal
+        } "M0E015|literal|sequence|exact|$($invalidCase.case_id)"
+    }
+
+    $payloadCases = @(
+        [pscustomobject]@{ case_id = 'artifact-id'; apply = { param($events) $events[1].payload.artifact_id = 'trace' } },
+        [pscustomobject]@{ case_id = 'artifact-path'; apply = { param($events) $events[1].payload.relative_path = 'artifacts/foreign.process-tree.json' } },
+        [pscustomobject]@{ case_id = 'artifact-hash'; apply = { param($events) $events[1].payload.sha256 = 'A' * 64 } },
+        [pscustomobject]@{ case_id = 'artifact-size'; apply = { param($events) $events[1].payload.size_bytes = 0 } },
+        [pscustomobject]@{ case_id = 'artifact-transient'; apply = { param($events) $events[1].payload.transient = $true } },
+        [pscustomobject]@{ case_id = 'artifact-redacted'; apply = { param($events) $events[1].payload.redacted = $false } },
+        [pscustomobject]@{ case_id = 'check-id'; apply = { param($events) $events[2].payload.check_id = 'CHK-FOREIGN' } }
+    )
+    foreach ($payloadCase in $payloadCases) {
+        $events = @($started, $artifact, $check) | ConvertTo-Json -Compress -Depth 20 | ConvertFrom-Json -Depth 20
+        & $payloadCase.apply $events
+        Assert-Throws {
+            Invoke-M0SyntheticPilotSequenceAssertion -Events $events
+        } "M0E015|artifact|check|payload|$($payloadCase.case_id)"
+    }
+}
+
 function New-EvidenceTestEvent {
     param(
         [Parameter(Mandatory)] [string] $RunId,

@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 synthetic process-tree pilot scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_id",
+    "schema_version",
+    "protocol_id",
+    "scenario_id",
+    "candidate_code",
+    "attempt",
+    "evidence_role",
+    "decision_eligible",
+    "event_sequence",
+    "artifact_id",
+    "check_id",
+    "markers",
+    "pilot_intent_contract",
+    "summary_contract",
+    "recovery_contract"
+  ],
+  "properties": {
+    "$schema": { "const": "../schemas/synthetic-process-tree-scenario.schema.json" },
+    "schema_id": { "const": "m0.synthetic-process-tree-scenario.v1" },
+    "schema_version": { "const": 1 },
+    "protocol_id": { "const": "M0-P1" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "candidate_code": { "const": "P" },
+    "attempt": { "const": 1 },
+    "evidence_role": { "const": "synthetic_pilot" },
+    "decision_eligible": { "const": false },
+    "event_sequence": { "const": ["run_started", "artifact_recorded", "check_recorded", "run_sealed"] },
+    "artifact_id": { "const": "process-tree" },
+    "check_id": { "const": "CHK-PROCESS" },
+    "markers": { "const": ["run-started"] },
+    "pilot_intent_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_relative_path", "schema_sha256", "event_schema_relative_path", "event_schema_sha256",
+        "golden_relative_path", "golden_sha256",
+        "relative_path_template", "serialization"
+      ],
+      "properties": {
+        "schema_relative_path": { "const": "schemas/pilot-intent.schema.json" },
+        "schema_sha256": { "$ref": "#/definitions/sha256" },
+        "event_schema_relative_path": { "const": "schemas/event.schema.json" },
+        "event_schema_sha256": { "$ref": "#/definitions/sha256" },
+        "golden_relative_path": { "const": "goldens/pilot-intent.v1.json" },
+        "golden_sha256": { "$ref": "#/definitions/sha256" },
+        "relative_path_template": { "const": "{run_id}.pilot-intent.json" },
+        "serialization": { "const": "canonical-json-utf8-no-bom-lf" }
+      }
+    },
+    "summary_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_relative_path",
+        "input_sha256",
+        "input_schema_relative_path",
+        "input_schema_sha256",
+        "golden_relative_path",
+        "golden_sha256",
+        "schema_relative_path",
+        "schema_sha256"
+      ],
+      "properties": {
+        "input_relative_path": { "const": "goldens/pilot-summary-input.v1.json" },
+        "input_sha256": { "$ref": "#/definitions/sha256" },
+        "input_schema_relative_path": { "const": "schemas/pilot-summary-input.schema.json" },
+        "input_schema_sha256": { "$ref": "#/definitions/sha256" },
+        "golden_relative_path": { "const": "goldens/pilot-summary.v1.json" },
+        "golden_sha256": { "$ref": "#/definitions/sha256" },
+        "schema_relative_path": { "const": "schemas/pilot-summary.schema.json" },
+        "schema_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "recovery_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_commit_point", "summary_derivation", "writer_open_without_pilot_intent",
+        "pilot_intent_without_artifact", "raw_started_without_artifact", "artifact_before_evidence_intent",
+        "same_run_recovery_starts_at", "decisive_membership"
+      ],
+      "properties": {
+        "evidence_commit_point": { "const": "evidence-snapshot" },
+        "summary_derivation": { "const": "post-commit-create-new-exact-replay" },
+        "writer_open_without_pilot_intent": { "const": "fail-closed-require-new-evidence-root-and-run-id" },
+        "pilot_intent_without_artifact": { "const": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id" },
+        "raw_started_without_artifact": { "const": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id" },
+        "artifact_before_evidence_intent": { "const": "fail-closed-no-relaunch-require-new-evidence-root-and-run-id" },
+        "same_run_recovery_starts_at": { "const": "evidence-intent-published" },
+        "decisive_membership": { "const": "forbidden" }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

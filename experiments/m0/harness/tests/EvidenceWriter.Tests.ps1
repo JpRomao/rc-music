@@ -177,11 +177,11 @@ function New-WriterSyntheticPreparedRun {
     $specifications = @(
         [pscustomobject]@{ name = 'run_started'; payload = [ordered]@{ phase = 'started' } },
         [pscustomobject]@{ name = 'artifact_recorded'; payload = [ordered]@{
-            artifact_id = 'process-tree'; relative_path = 'artifacts/process-tree.json'; sha256 = ('9' * 64)
+            artifact_id = 'process-tree'; relative_path = "artifacts/$runId.process-tree.json"; sha256 = ('9' * 64)
             size_bytes = 321; transient = $false; redacted = $true
         } },
         [pscustomobject]@{ name = 'check_recorded'; payload = [ordered]@{
-            check_id = 'CHK-PROC-LINEAGE'; status = 'passed'; reason_code = $null; status_reason = $null; error_code = $null
+            check_id = 'CHK-PROCESS'; status = 'passed'; reason_code = $null; status_reason = $null; error_code = $null
         } }
     )
     for ($index = 0; $index -lt $specifications.Count; $index++) {
@@ -206,7 +206,7 @@ function New-WriterSyntheticPreparedRun {
     $run.actions = @()
     $run.external_noise = @()
     $run.artifacts = @([ordered]@{
-        artifact_id = 'process-tree'; relative_path = 'artifacts/process-tree.json'; sha256 = ('9' * 64); size_bytes = 321
+        artifact_id = 'process-tree'; relative_path = "artifacts/$runId.process-tree.json"; sha256 = ('9' * 64); size_bytes = 321
     })
     $run.checks_omitted = @()
     return [pscustomobject][ordered]@{

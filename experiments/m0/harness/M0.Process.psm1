@@ -798,17 +798,8 @@ function Resolve-M0ProcessAttribution {
 
         if ($null -eq $source) {
             if ([bool]$record.external_attribution_required) {
-                if ($TraceState -ceq 'partial') {
-                    $unresolvedExternal = $true
-                    continue
-                }
-                return [pscustomobject][ordered]@{
-                    state = 'partial'
-                    error_code = 'unresolved_external_attribution'
-                    missing_capabilities = @('external-attribution-proof')
-                    identities = @()
-                    sources = @()
-                }
+                $unresolvedExternal = $true
+                continue
             }
             continue
         }
@@ -852,6 +843,15 @@ function Resolve-M0ProcessAttribution {
             missing_capabilities = @('root-handle')
             identities = @()
             sources = @()
+        }
+    }
+    if ($unresolvedExternal) {
+        return [pscustomobject][ordered]@{
+            state = 'partial'
+            error_code = 'unresolved_external_attribution'
+            missing_capabilities = @('external-attribution-proof')
+            identities = @($attributed)
+            sources = @($sources)
         }
     }
     return [pscustomobject][ordered]@{
@@ -1365,7 +1365,8 @@ function ConvertTo-M0CanonicalProcessTreeSnapshot {
                 }
             }
             'unresolved_external_attribution' {
-                if (-not $missingSet.Contains('external-attribution-proof')) {
+                if (-not $missingSet.Contains('external-attribution-proof') -or $declaredRoles.Count -lt 1 -or
+                    $identityKeys.Count -lt 1) {
                     throw [IO.InvalidDataException]::new('M0P060 external-attribution process-tree cause lacks its missing proof capability.')
                 }
             }
@@ -1477,6 +1478,240 @@ function ConvertTo-M0CanonicalProcessTreeSnapshot {
     }
 }
 
+function ConvertTo-M0ProcessBoundedInteger {
+    param(
+        [Parameter(Mandatory)] $Value,
+        [Parameter(Mandatory)] [string] $Name,
+        [long] $Maximum = 256
+    )
+
+    $isInteger = $false
+    foreach ($type in @([byte], [sbyte], [int16], [uint16], [int32], [uint32], [int64])) {
+        if ($Value -is $type) { $isInteger = $true; break }
+    }
+    [int64]$parsed = 0
+    if (-not $isInteger -or -not [int64]::TryParse([string]$Value, [ref]$parsed) -or
+        $parsed -lt 0 -or $parsed -gt $Maximum) {
+        throw [ArgumentException]::new("M0P060 cleanup $Name must be a canonical integer between zero and $Maximum.")
+    }
+    return $parsed
+}
+
+function Assert-M0CanonicalProcessCleanup {
+    param(
+        [Parameter(Mandatory)] $Cleanup,
+        [Parameter(Mandatory)] $Snapshot,
+        [Parameter(Mandatory)]
+        [ValidateSet('observed', 'pre_snapshot_fallback')]
+        [string] $SnapshotOrigin
+    )
+
+    $snapshotState = [string]$Snapshot.state
+    if ($SnapshotOrigin -ceq 'pre_snapshot_fallback') {
+        if ($snapshotState -cne 'unavailable' -or @($Snapshot.roles).Count -ne 0 -or
+            @($Snapshot.nodes).Count -ne 0 -or @($Snapshot.auxiliary_job_members).Count -ne 0 -or
+            [int64]$Snapshot.job_member_hint_count -ne 0 -or [int64]$Snapshot.retained_identity_count -ne 0 -or
+            $null -ne $Snapshot.qpc_before_create_ticks -or $null -ne $Snapshot.qpc_after_resume_ticks -or
+            $null -ne $Snapshot.qpc_frequency -or $Snapshot.cleanup_authority -cne 'none-no-mutation-capability') {
+            throw [IO.InvalidDataException]::new(
+                'M0P060 pre-snapshot fallback origin is valid only for an unavailable empty-topology snapshot.'
+            )
+        }
+    }
+
+    $expectedNames = @(
+        'schema_id', 'attempted', 'completed', 'survivor_count', 'retained_identity_count',
+        'native_cleanup_actions', 'cleanup_action', 'individual_terminate_process_calls',
+        'candidate_code', 'scenario_id', 'attempt', 'evidence_role', 'decision_eligible',
+        'failure_code', 'error_code', 'failure_codes'
+    )
+    $observedNames = @($Cleanup.PSObject.Properties.Name)
+    if ($observedNames.Count -ne $expectedNames.Count) {
+        throw [IO.InvalidDataException]::new('M0P060 canonical cleanup has missing or extra properties.')
+    }
+    $expectedSet = [Collections.Generic.HashSet[string]]::new([string[]]$expectedNames, [StringComparer]::Ordinal)
+    foreach ($name in $observedNames) {
+        if (-not $expectedSet.Remove([string]$name)) {
+            throw [IO.InvalidDataException]::new('M0P060 canonical cleanup has duplicate or unknown properties.')
+        }
+    }
+    if ($expectedSet.Count -ne 0 -or $Cleanup.schema_id -cne 'm0.process-tree-cleanup.v1' -or
+        $Cleanup.attempted -isnot [bool] -or $Cleanup.completed -isnot [bool] -or
+        $Cleanup.candidate_code -cne 'P' -or $Cleanup.scenario_id -cne 'synthetic-process-tree' -or
+        [int]$Cleanup.attempt -ne 1 -or $Cleanup.evidence_role -cne 'synthetic_pilot' -or
+        $Cleanup.decision_eligible -isnot [bool] -or [bool]$Cleanup.decision_eligible) {
+        throw [IO.InvalidDataException]::new('M0P060 canonical cleanup identity differs from the closed synthetic P contract.')
+    }
+
+    $survivors = ConvertTo-M0ProcessBoundedInteger -Value $Cleanup.survivor_count -Name survivor_count
+    $retained = ConvertTo-M0ProcessBoundedInteger -Value $Cleanup.retained_identity_count -Name retained_identity_count
+    $nativeActions = ConvertTo-M0ProcessBoundedInteger -Value $Cleanup.native_cleanup_actions -Name native_cleanup_actions -Maximum 1
+    $directCalls = ConvertTo-M0ProcessBoundedInteger -Value $Cleanup.individual_terminate_process_calls `
+        -Name individual_terminate_process_calls -Maximum 0
+    $snapshotRetained = ConvertTo-M0ProcessBoundedInteger -Value $Snapshot.retained_identity_count `
+        -Name snapshot_retained_identity_count
+    $attempted = [bool]$Cleanup.attempted
+    if ($SnapshotOrigin -ceq 'observed') {
+        $hasPrivateAuthority = [string]$Snapshot.cleanup_authority -ceq 'private-opaque-registry-only'
+        if ($attempted -ne $hasPrivateAuthority) {
+            throw [IO.InvalidDataException]::new(
+                'M0P060 observed snapshot cleanup attempt must exactly match its private mutation authority.'
+            )
+        }
+    }
+    if (($SnapshotOrigin -ceq 'observed' -and $retained -ne $snapshotRetained) -or
+        $survivors -gt $retained -or $directCalls -ne 0) {
+        throw [IO.InvalidDataException]::new('M0P060 cleanup retained identities, survivors or direct calls contradict the snapshot.')
+    }
+
+    if ($attempted) {
+        if ($Cleanup.cleanup_action -cne 'close-last-job-handle-and-wait-retained-process-handles') {
+            throw [IO.InvalidDataException]::new('M0P060 attempted cleanup requires the scoped Job close action.')
+        }
+    }
+    elseif ($Cleanup.cleanup_action -cne 'none-no-mutation-capability' -or $retained -ne 0 -or
+        $nativeActions -ne 0 -or -not [bool]$Cleanup.completed) {
+        throw [IO.InvalidDataException]::new('M0P060 non-attempted cleanup is valid only for a completed zero-authority fallback.')
+    }
+
+    $failureOrder = [ordered]@{
+        snapshot_validation_failed = 0
+        identity_revalidation_failed = 1
+        retained_handle_wait_failed = 2
+        helper_survived_shutdown = 3
+        job_close_failed = 4
+        unsafe_run_root_contents = 5
+    }
+    $failureCodes = @($Cleanup.failure_codes)
+    $seenFailures = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $previousRank = -1
+    foreach ($failure in $failureCodes) {
+        if ($failure -isnot [string] -or -not $failureOrder.Contains([string]$failure) -or
+            -not $seenFailures.Add([string]$failure) -or [int]$failureOrder[[string]$failure] -le $previousRank) {
+            throw [IO.InvalidDataException]::new('M0P060 cleanup failure_codes must be unique and use canonical causal order.')
+        }
+        $previousRank = [int]$failureOrder[[string]$failure]
+    }
+    if ([bool]$Cleanup.completed) {
+        if ($survivors -ne 0 -or $null -ne $Cleanup.failure_code -or $null -ne $Cleanup.error_code -or
+            $failureCodes.Count -ne 0 -or ($attempted -and $nativeActions -ne 1)) {
+            throw [IO.InvalidDataException]::new('M0P060 completed cleanup must have zero survivors, one attempted Job close and no failure.')
+        }
+    }
+    else {
+        if (-not $attempted -or $Cleanup.failure_code -isnot [string] -or $Cleanup.error_code -isnot [string] -or
+            $Cleanup.failure_code -cne $Cleanup.error_code -or $failureCodes.Count -eq 0 -or
+            $Cleanup.failure_code -cne $failureCodes[0]) {
+            throw [IO.InvalidDataException]::new('M0P060 incomplete cleanup requires one canonical primary failure from its ordered failure list.')
+        }
+    }
+    $hasSurvivorFailure = $seenFailures.Contains('retained_handle_wait_failed') -or
+        $seenFailures.Contains('helper_survived_shutdown')
+    if (($survivors -gt 0) -ne $hasSurvivorFailure) {
+        throw [IO.InvalidDataException]::new('M0P060 cleanup survivor count and retained-handle failure causes disagree.')
+    }
+    $jobCloseFailed = $seenFailures.Contains('job_close_failed')
+    if (($jobCloseFailed -and $nativeActions -ne 0) -or
+        ($attempted -and -not $jobCloseFailed -and $nativeActions -ne 1)) {
+        throw [IO.InvalidDataException]::new('M0P060 cleanup native action count disagrees with the Job-close outcome.')
+    }
+    return $Cleanup
+}
+
+function ConvertTo-M0CanonicalProcessCleanup {
+    param(
+        [Parameter(Mandatory)] $CleanupResult,
+        [Parameter(Mandatory)] $Snapshot,
+        [Parameter(Mandatory)]
+        [ValidateSet('observed', 'pre_snapshot_fallback')]
+        [string] $SnapshotOrigin
+    )
+
+    $expectedInputNames = @(
+        'schema_id', 'cleanup_complete', 'survivor_count', 'retained_identity_count',
+        'native_cleanup_actions', 'cleanup_action', 'individual_terminate_process_calls',
+        'candidate_code', 'scenario_id', 'attempt', 'evidence_role', 'decision_eligible',
+        'error_code', 'failure_codes'
+    )
+    $observedNames = @($CleanupResult.PSObject.Properties.Name)
+    $expectedSet = [Collections.Generic.HashSet[string]]::new([string[]]$expectedInputNames, [StringComparer]::Ordinal)
+    if ($observedNames.Count -ne $expectedInputNames.Count) {
+        throw [IO.InvalidDataException]::new('M0P060 cleanup result has missing or extra properties.')
+    }
+    foreach ($name in $observedNames) {
+        if (-not $expectedSet.Remove([string]$name)) {
+            throw [IO.InvalidDataException]::new('M0P060 cleanup result has duplicate or unknown properties.')
+        }
+    }
+    if ($expectedSet.Count -ne 0 -or $CleanupResult.cleanup_complete -isnot [bool]) {
+        throw [IO.InvalidDataException]::new('M0P060 cleanup result is not a closed canonical result.')
+    }
+    $attempted = [string]$CleanupResult.cleanup_action -ceq 'close-last-job-handle-and-wait-retained-process-handles'
+    $canonical = [pscustomobject][ordered]@{
+        schema_id = [string]$CleanupResult.schema_id
+        attempted = $attempted
+        completed = [bool]$CleanupResult.cleanup_complete
+        survivor_count = $CleanupResult.survivor_count
+        retained_identity_count = $CleanupResult.retained_identity_count
+        native_cleanup_actions = $CleanupResult.native_cleanup_actions
+        cleanup_action = [string]$CleanupResult.cleanup_action
+        individual_terminate_process_calls = $CleanupResult.individual_terminate_process_calls
+        candidate_code = [string]$CleanupResult.candidate_code
+        scenario_id = [string]$CleanupResult.scenario_id
+        attempt = $CleanupResult.attempt
+        evidence_role = [string]$CleanupResult.evidence_role
+        decision_eligible = $CleanupResult.decision_eligible
+        failure_code = $CleanupResult.error_code
+        error_code = $CleanupResult.error_code
+        failure_codes = @($CleanupResult.failure_codes)
+    }
+    return Assert-M0CanonicalProcessCleanup -Cleanup $canonical -Snapshot $Snapshot -SnapshotOrigin $SnapshotOrigin
+}
+
+function ConvertTo-M0CanonicalProcessTreeArtifact {
+    param(
+        [Parameter(Mandatory)] $Artifact,
+        [Parameter(Mandatory)] [string] $ArtifactSchemaPath
+    )
+
+    $inputJson = ConvertTo-M0ProcessPublicJson -Value $Artifact
+    if (-not (Test-Json -Json $inputJson -SchemaFile $ArtifactSchemaPath -ErrorAction SilentlyContinue)) {
+        throw [IO.InvalidDataException]::new('M0P060 process-tree artifact is outside its closed schema.')
+    }
+    $snapshot = ConvertTo-M0CanonicalProcessTreeSnapshot -Snapshot $Artifact.snapshot
+    $snapshotOrigin = [string]$Artifact.snapshot_origin
+    $cleanup = Assert-M0CanonicalProcessCleanup -Cleanup $Artifact.cleanup -Snapshot $snapshot `
+        -SnapshotOrigin $snapshotOrigin
+    $document = [pscustomobject][ordered]@{
+        '$schema' = 'schemas/process-tree-artifact.schema.json'
+        schema_id = 'm0.process-tree-artifact.v1'
+        schema_version = 1
+        experiment_id = [string]$Artifact.experiment_id
+        run_id = [string]$Artifact.run_id
+        artifact_id = 'process-tree'
+        candidate_code = 'P'
+        scenario_id = 'synthetic-process-tree'
+        attempt = 1
+        evidence_role = 'synthetic_pilot'
+        decision_eligible = $false
+        snapshot_origin = $snapshotOrigin
+        snapshot = $snapshot
+        cleanup = $cleanup
+    }
+    $canonicalJson = (ConvertTo-M0ProcessPublicJson -Value $document) + "`n"
+    if (-not (Test-Json -Json $canonicalJson -SchemaFile $ArtifactSchemaPath -ErrorAction SilentlyContinue)) {
+        throw [IO.InvalidDataException]::new('M0P060 canonical process-tree artifact failed its closed schema.')
+    }
+    $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($canonicalJson)
+    return [pscustomobject][ordered]@{
+        document = $document
+        canonical_json = $canonicalJson
+        bytes = $bytes
+        sha256 = Get-M0ProcessSha256Bytes -Bytes $bytes
+        size_bytes = [long]$bytes.Length
+    }
+}
+
 function New-M0ProcessTreeArtifact {
     [CmdletBinding(DefaultParameterSetName = 'Snapshot')]
     param(
@@ -1484,9 +1719,14 @@ function New-M0ProcessTreeArtifact {
         [Parameter(Mandatory, ParameterSetName = 'Unavailable')]
         [ValidateSet('etw_trace_unavailable', 'safe_identity_unavailable')]
         [string] $UnavailableErrorCode,
+        [AllowNull()] $CleanupResult,
         [Parameter(Mandatory)] [string] $ExperimentId,
         [Parameter(Mandatory)] [string] $RunId
     )
+
+    if (-not $PSBoundParameters.ContainsKey('CleanupResult') -or $null -eq $CleanupResult) {
+        throw [ArgumentException]::new('M0P060 a closed CleanupResult is required before minting a process-tree artifact.')
+    }
 
     foreach ($binding in @(
         [pscustomobject]@{ name = 'experiment_id'; value = $ExperimentId },
@@ -1497,7 +1737,9 @@ function New-M0ProcessTreeArtifact {
         }
     }
     $artifacts = Assert-M0ProcessArtifacts -ProtocolRoot (Join-Path $script:M0ProcessRepositoryRoot 'experiments\m0\protocol')
+    $snapshotOrigin = 'observed'
     if ($PSCmdlet.ParameterSetName -ceq 'Unavailable') {
+        $snapshotOrigin = 'pre_snapshot_fallback'
         $unavailableErrors = [Collections.Generic.HashSet[string]]::new(
             [string[]]@('etw_trace_unavailable', 'safe_identity_unavailable'), [StringComparer]::Ordinal
         )
@@ -1558,6 +1800,8 @@ function New-M0ProcessTreeArtifact {
     $snapshotCopy = ConvertTo-M0CanonicalProcessTreeSnapshot -Snapshot (
         ConvertFrom-M0ProcessPublicJson -Json $snapshotJson
     )
+    $cleanupCopy = ConvertTo-M0CanonicalProcessCleanup -CleanupResult $CleanupResult -Snapshot $snapshotCopy `
+        -SnapshotOrigin $snapshotOrigin
     $document = [pscustomobject][ordered]@{
         '$schema' = 'schemas/process-tree-artifact.schema.json'
         schema_id = 'm0.process-tree-artifact.v1'
@@ -1570,30 +1814,29 @@ function New-M0ProcessTreeArtifact {
         attempt = 1
         evidence_role = 'synthetic_pilot'
         decision_eligible = $false
+        snapshot_origin = $snapshotOrigin
         snapshot = $snapshotCopy
+        cleanup = $cleanupCopy
     }
-    $canonicalJson = (ConvertTo-M0ProcessPublicJson -Value $document) + "`n"
-    if (-not (Test-Json -Json $canonicalJson -SchemaFile $artifacts.artifact_schema_path -ErrorAction SilentlyContinue)) {
-        throw [IO.InvalidDataException]::new('M0P060 bound process-tree artifact failed its closed schema.')
-    }
-    $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($canonicalJson)
-    $sha256 = Get-M0ProcessSha256Bytes -Bytes $bytes
+    $canonical = ConvertTo-M0CanonicalProcessTreeArtifact -Artifact $document `
+        -ArtifactSchemaPath $artifacts.artifact_schema_path
     return [pscustomobject][ordered]@{
         artifact_id = 'process-tree'
         relative_path = "artifacts/$RunId.process-tree.json"
-        sha256 = $sha256
-        size_bytes = [long]$bytes.Length
+        sha256 = [string]$canonical.sha256
+        size_bytes = [long]$canonical.size_bytes
         transient = $false
         redacted = $true
-        canonical_json = $canonicalJson
-        document = ConvertFrom-M0ProcessPublicJson -Json ($canonicalJson.TrimEnd("`n"))
+        canonical_json = [string]$canonical.canonical_json
+        document = ConvertFrom-M0ProcessPublicJson -Json ($canonical.canonical_json.TrimEnd("`n"))
     }
 }
 
-function Resolve-M0ProcessPilotOutcome {
+function Resolve-M0ProcessPilotOutcomeFields {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [ValidateSet('complete', 'partial', 'unavailable')] [string] $ProcessState,
+        [Parameter(Mandatory)]
+        [ValidateSet('complete', 'partial', 'unavailable')] [string] $ProcessState,
         [AllowNull()] $ProcessErrorCode,
         [Parameter(Mandatory)] $CleanupComplete,
         [Parameter(Mandatory)] $SurvivorCount,
@@ -1717,6 +1960,26 @@ function Resolve-M0ProcessPilotOutcome {
         run_error_code = $runError
         checks_omitted = $checksOmitted
     }
+}
+
+function Resolve-M0ProcessPilotOutcome {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] $ProcessArtifact)
+
+    $artifacts = Assert-M0ProcessArtifacts -ProtocolRoot (
+        Join-Path $script:M0ProcessRepositoryRoot 'experiments\m0\protocol'
+    )
+    $artifactJson = ConvertTo-M0ProcessPublicJson -Value $ProcessArtifact
+    if (-not (Test-Json -Json $artifactJson -SchemaFile $artifacts.artifact_schema_path -ErrorAction SilentlyContinue)) {
+        throw [IO.InvalidDataException]::new('M0P061 outcome artifact is outside the closed process-tree artifact schema.')
+    }
+    $artifactCopy = ConvertFrom-M0ProcessPublicJson -Json $artifactJson
+    $snapshotCopy = ConvertTo-M0CanonicalProcessTreeSnapshot -Snapshot $artifactCopy.snapshot
+    $null = Assert-M0CanonicalProcessCleanup -Cleanup $artifactCopy.cleanup -Snapshot $snapshotCopy `
+        -SnapshotOrigin ([string]$artifactCopy.snapshot_origin)
+    return Resolve-M0ProcessPilotOutcomeFields -ProcessState ([string]$snapshotCopy.state) `
+        -ProcessErrorCode $snapshotCopy.error_code -CleanupComplete ([bool]$artifactCopy.cleanup.completed) `
+        -SurvivorCount $artifactCopy.cleanup.survivor_count -CleanupErrorCode $artifactCopy.cleanup.failure_code
 }
 
 function Open-M0SyntheticProcessPilot {
@@ -1845,7 +2108,6 @@ function Get-M0SyntheticProcessPilotSnapshot {
     $nodes = [Collections.Generic.List[object]]::new()
     $auxiliaryJobMembers = [Collections.Generic.List[object]]::new()
     $identityByRole = @{}
-    $births = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $rolePidSet = [Collections.Generic.HashSet[uint32]]::new()
     $identityKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($role in $roles) {
@@ -1885,9 +2147,6 @@ function Get-M0SyntheticProcessPilotSnapshot {
         $capability = $state.native.Capture($markerPid)
         try {
             $birth = $capability.CreationTimeFileTimeUtc.ToString([Globalization.CultureInfo]::InvariantCulture)
-            if (-not $births.Add($birth)) {
-                throw [IO.InvalidDataException]::new('M0P042 synthetic Job members have duplicate birth identities.')
-            }
             if ($role -ceq 'root' -and
                 ($markerPid -ne $state.native.RootPid -or $birth -cne $state.native.RootCreationTimeFileTimeUtc.ToString())) {
                 throw [IO.InvalidDataException]::new('M0P042 retained root handle identity differs from CreateProcess.')

@@ -78,11 +78,6 @@ $cleanup = $null
 try {
     $pilot = & $processModule { param($root) Open-M0SyntheticProcessPilot -RepositoryRoot $root } $repositoryRoot
     $snapshot = & $processModule { param($capability) Get-M0SyntheticProcessPilotSnapshot -Pilot $capability } $pilot
-    $artifact = & $processModule {
-        param($tree)
-        New-M0ProcessTreeArtifact -Snapshot $tree `
-            -ExperimentId 'm0-local-process-smoke' -RunId 'run-P-synthetic-process-tree-01'
-    } $snapshot
 }
 finally {
     if ($null -ne $pilot) {
@@ -97,11 +92,15 @@ if (-not [bool]$cleanup.cleanup_complete -or [int]$cleanup.survivor_count -ne 0 
     [int]$cleanup.native_cleanup_actions -ne 1) {
     throw [IO.InvalidDataException]::new('M0P100 the Windows Job smoke did not prove one scoped Job close with zero survivors.')
 }
+$artifact = & $processModule {
+    param($tree, $closedCleanup)
+    New-M0ProcessTreeArtifact -Snapshot $tree -CleanupResult $closedCleanup `
+        -ExperimentId 'm0-local-process-smoke' -RunId 'run-P-synthetic-process-tree-01'
+} $snapshot $cleanup
 $outcome = & $processModule {
-    param($state, $processError, $cleanupComplete, $survivorCount, $cleanupError)
-    Resolve-M0ProcessPilotOutcome -ProcessState $state -ProcessErrorCode $processError `
-        -CleanupComplete $cleanupComplete -SurvivorCount $survivorCount -CleanupErrorCode $cleanupError
-} $snapshot.state $snapshot.error_code $cleanup.cleanup_complete $cleanup.survivor_count $cleanup.error_code
+    param($processArtifact)
+    Resolve-M0ProcessPilotOutcome -ProcessArtifact $processArtifact
+} $artifact.document
 if ($outcome.run_status -cne 'inconclusive' -or $outcome.run_status_reason -cne 'incomplete_evidence' -or
     $artifact.document.candidate_code -cne 'P' -or $artifact.document.decision_eligible -ne $false) {
     throw [IO.InvalidDataException]::new('M0P100 the in-memory synthetic P artifact/outcome violated its non-decision contract.')

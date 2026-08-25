@@ -5,7 +5,7 @@
   "protocol_id": "M0-P1",
   "scenario_id": "synthetic-process-tree",
   "golden_relative_path": "goldens/process.v1.json",
-  "golden_sha256": "28ba039a62d57b1bf1cfd76e214b53211ad662312e239fb8e5e0545e6ece3599",
+  "golden_sha256": "0ee2b9d7ad25da0ec57726bfcf2834c3fc43db0779a335b810e49c12fa1b006f",
   "identity_contract": {
     "windows_identity": "pid+creation-time-filetime-utc",
     "pid_range": "1..4294967295",
@@ -97,9 +97,9 @@
     "helper_relative_path": "scripts/m0/Invoke-M0SyntheticProcessNode.ps1",
     "helper_sha256": "e643e555d0f8dffe3a110d12f8703c8fe8f2700efe3a6e47f197d349fd104247",
     "snapshot_schema_relative_path": "schemas/process-tree.schema.json",
-    "snapshot_schema_sha256": "604d13877a06bc13b234a26dbb3afad312b356cd820be0d128ef4721690cc88b",
+    "snapshot_schema_sha256": "ca7dd20bbab973e9237a5cb5853410d995bdd5740420b8fcc05b5d3f868ec1ed",
     "artifact_schema_relative_path": "schemas/process-tree-artifact.schema.json",
-    "artifact_schema_sha256": "339d73ee4e8e4f999b29b5326c8409930e9ec5658fc233d6954c50fff049a8fc",
+    "artifact_schema_sha256": "02c112485f4a8a3b99c9902c9430df5a110ae14dd25f3df8c73939a31d9e1926",
     "artifact_binding": "caller-supplied-experiment-id+run-id-with-fixed-P-synthetic-role",
     "artifact_serialization": "ordered-compact-json-utf8-no-bom-single-lf",
     "future_outcome_mapping": {

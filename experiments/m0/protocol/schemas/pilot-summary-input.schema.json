@@ -1,0 +1,970 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 deterministic synthetic pilot summary input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "candidate_code", "scenario_id", "attempt",
+    "evidence_role", "decision_eligible", "publication_state", "run", "process", "cleanup",
+    "check", "artifact_count", "receipt"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/pilot-summary-input.schema.json" },
+    "schema_id": { "const": "m0.synthetic-pilot-summary-input.v1" },
+    "schema_version": { "const": 1 },
+    "candidate_code": { "const": "P" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "attempt": { "const": 1 },
+    "evidence_role": { "const": "synthetic_pilot" },
+    "decision_eligible": { "const": false },
+    "publication_state": { "const": "committed" },
+    "run": { "$ref": "#/definitions/run" },
+    "process": { "$ref": "#/definitions/process" },
+    "cleanup": { "$ref": "#/definitions/cleanup" },
+    "check": { "$ref": "#/definitions/check" },
+    "artifact_count": { "const": 1 },
+    "receipt": { "$ref": "#/definitions/receipt" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "cleanup": { "properties": { "attempted": { "const": false } }, "required": ["attempted"] }
+        },
+        "required": ["cleanup"]
+      },
+      "then": {
+        "properties": {
+          "process": {
+            "oneOf": [
+              {
+                "properties": {
+                  "snapshot_origin": { "const": "observed" },
+                  "state": { "const": "partial" },
+                  "error_code": { "const": "root_identity_missing" }
+                },
+                "required": ["snapshot_origin", "state", "error_code"]
+              },
+              {
+                "properties": { "state": { "const": "unavailable" } },
+                "required": ["state"]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "process": {
+            "properties": {
+              "state": { "enum": ["complete", "partial"] },
+              "error_code": { "enum": ["etw_live_not_implemented", "etw_trace_incomplete", null] }
+            },
+            "required": ["state", "error_code"]
+          }
+        },
+        "required": ["process"]
+      },
+      "then": {
+        "properties": {
+          "receipt": {
+            "properties": {
+              "process_identities": { "$ref": "#/definitions/threeRoleIdentities" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "process": {
+            "properties": {
+              "error_code": { "enum": ["root_identity_missing", "safe_identity_unavailable", "etw_trace_unavailable"] }
+            },
+            "required": ["error_code"]
+          }
+        },
+        "required": ["process"]
+      },
+      "then": {
+        "properties": {
+          "receipt": {
+            "properties": { "process_identities": { "maxItems": 0 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "process": {
+            "properties": { "error_code": { "const": "unresolved_external_attribution" } },
+            "required": ["error_code"]
+          }
+        },
+        "required": ["process"]
+      },
+      "then": {
+        "properties": {
+          "receipt": {
+            "properties": { "process_identities": { "$ref": "#/definitions/roleIdentityPrefix" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "process": {
+            "properties": {
+              "snapshot_origin": { "const": "observed" },
+              "error_code": { "enum": ["root_identity_missing", "etw_trace_unavailable", "safe_identity_unavailable"] }
+            },
+            "required": ["snapshot_origin", "error_code"]
+          }
+        },
+        "required": ["process"]
+      },
+      "then": {
+        "properties": {
+          "cleanup": { "properties": { "attempted": { "const": false } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "process": {
+            "properties": {
+              "snapshot_origin": { "const": "observed" },
+              "error_code": {
+                "enum": ["etw_live_not_implemented", "etw_trace_incomplete", "unresolved_external_attribution", null]
+              }
+            },
+            "required": ["snapshot_origin", "error_code"]
+          }
+        },
+        "required": ["process"]
+      },
+      "then": {
+        "properties": {
+          "cleanup": { "properties": { "attempted": { "const": true } } }
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "process": { "properties": { "state": { "const": "complete" } }, "required": ["state"] },
+            "cleanup": { "properties": { "completed": { "const": true } }, "required": ["completed"] },
+            "check": { "$ref": "#/definitions/passedCheck" },
+            "run": { "$ref": "#/definitions/validRun" }
+          },
+          "required": ["process", "cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "process": { "properties": { "state": { "const": "partial" } }, "required": ["state"] },
+            "cleanup": { "properties": { "completed": { "const": true } }, "required": ["completed"] },
+            "check": { "$ref": "#/definitions/partialCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["process", "cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "process": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] },
+            "cleanup": { "properties": { "completed": { "const": true } }, "required": ["completed"] },
+            "check": { "$ref": "#/definitions/unavailableCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["process", "cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "cleanup": {
+              "properties": {
+                "completed": { "const": false },
+                "survivor_count": { "const": 0 },
+                "failure_code": { "const": "snapshot_validation_failed" },
+                "failure_codes": {
+                  "not": { "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] } }
+                }
+              },
+              "required": ["completed", "survivor_count", "failure_code"]
+            },
+            "check": { "$ref": "#/definitions/snapshotFailureCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "cleanup": {
+              "properties": {
+                "completed": { "const": false },
+                "survivor_count": { "const": 0 },
+                "failure_code": { "const": "identity_revalidation_failed" },
+                "failure_codes": {
+                  "not": { "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] } }
+                }
+              },
+              "required": ["completed", "survivor_count", "failure_code"]
+            },
+            "check": { "$ref": "#/definitions/identityFailureCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "cleanup": {
+              "properties": {
+                "completed": { "const": false },
+                "survivor_count": { "const": 0 },
+                "failure_code": { "const": "job_close_failed" },
+                "failure_codes": {
+                  "not": { "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] } }
+                }
+              },
+              "required": ["completed", "survivor_count", "failure_code"]
+            },
+            "check": { "$ref": "#/definitions/jobCloseFailureCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "cleanup": {
+              "properties": {
+                "completed": { "const": false },
+                "survivor_count": { "const": 0 },
+                "failure_code": { "const": "unsafe_run_root_contents" },
+                "failure_codes": {
+                  "not": { "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] } }
+                }
+              },
+              "required": ["completed", "survivor_count", "failure_code"]
+            },
+            "check": { "$ref": "#/definitions/unsafeRootFailureCheck" },
+            "run": { "$ref": "#/definitions/inconclusiveRun" }
+          },
+          "required": ["cleanup", "check", "run"]
+        },
+        {
+          "properties": {
+            "cleanup": {
+              "properties": {
+                "completed": { "const": false },
+                "survivor_count": { "minimum": 1 },
+                "failure_code": { "$ref": "#/definitions/cleanupFailure" },
+                "failure_codes": {
+                  "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] }
+                }
+              },
+              "required": ["completed", "survivor_count", "failure_code"]
+            },
+            "check": { "$ref": "#/definitions/survivorCheck" },
+            "run": { "$ref": "#/definitions/failedRun" }
+          },
+          "required": ["cleanup", "check", "run"]
+        }
+      ]
+    }
+  ],
+  "definitions": {
+    "outcomeProjection": { "$ref": "#/allOf/6" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "runId": { "type": "string", "pattern": "^run-P-[A-Za-z0-9][A-Za-z0-9._-]{0,121}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "int64Nonnegative": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "int64Positive": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+    "canonicalUtc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}Z$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "processError": {
+      "enum": [
+        "etw_live_not_implemented", "etw_trace_incomplete", "root_identity_missing",
+        "unresolved_external_attribution", "etw_trace_unavailable", "safe_identity_unavailable"
+      ]
+    },
+    "cleanupFailure": {
+      "enum": [
+        "snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed",
+        "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"
+      ]
+    },
+    "canonicalCleanupFailureCodes": {
+      "type": "array",
+      "enum": [
+        [],
+        ["snapshot_validation_failed"],
+        ["identity_revalidation_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed"],
+        ["retained_handle_wait_failed"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed"],
+        ["helper_survived_shutdown"],
+        ["snapshot_validation_failed", "helper_survived_shutdown"],
+        ["identity_revalidation_failed", "helper_survived_shutdown"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "helper_survived_shutdown"],
+        ["retained_handle_wait_failed", "helper_survived_shutdown"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "helper_survived_shutdown"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown"],
+        ["job_close_failed"],
+        ["snapshot_validation_failed", "job_close_failed"],
+        ["identity_revalidation_failed", "job_close_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "job_close_failed"],
+        ["retained_handle_wait_failed", "job_close_failed"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "job_close_failed"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "job_close_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "job_close_failed"],
+        ["helper_survived_shutdown", "job_close_failed"],
+        ["snapshot_validation_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["identity_revalidation_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed"],
+        ["unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "unsafe_run_root_contents"],
+        ["retained_handle_wait_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "unsafe_run_root_contents"],
+        ["helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["retained_handle_wait_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "unsafe_run_root_contents"],
+        ["job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["retained_handle_wait_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "job_close_failed", "unsafe_run_root_contents"],
+        ["helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"],
+        ["snapshot_validation_failed", "identity_revalidation_failed", "retained_handle_wait_failed", "helper_survived_shutdown", "job_close_failed", "unsafe_run_root_contents"]
+      ]
+    },
+    "validRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "status_reason", "error_code"],
+      "properties": {
+        "status": { "const": "valid" }, "status_reason": { "type": "null" }, "error_code": { "type": "null" }
+      }
+    },
+    "inconclusiveRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "status_reason", "error_code"],
+      "properties": {
+        "status": { "const": "inconclusive" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "failedRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "status_reason", "error_code"],
+      "properties": {
+        "status": { "const": "failed" },
+        "status_reason": { "const": "helper_survived_shutdown" },
+        "error_code": { "const": "helper_survived_shutdown" }
+      }
+    },
+    "passedCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "passed" },
+        "reason_code": { "type": "null" }, "status_reason": { "type": "null" }, "error_code": { "type": "null" }
+      }
+    },
+    "partialCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "process_tree_partial" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "unavailableCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "process_tree_unavailable" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "snapshotFailureCheck": { "$ref": "#/definitions/skippedSnapshotFailureCheck" },
+    "identityFailureCheck": { "$ref": "#/definitions/skippedIdentityFailureCheck" },
+    "jobCloseFailureCheck": { "$ref": "#/definitions/skippedJobCloseFailureCheck" },
+    "unsafeRootFailureCheck": { "$ref": "#/definitions/skippedUnsafeRootFailureCheck" },
+    "survivorCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "failed" },
+        "reason_code": { "const": "helper_survived_shutdown" },
+        "status_reason": { "const": "helper_survived_shutdown" },
+        "error_code": { "const": "helper_survived_shutdown" }
+      }
+    },
+    "skippedSnapshotFailureCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "snapshot_validation_failed" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "skippedIdentityFailureCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "identity_revalidation_failed" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "skippedJobCloseFailureCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "job_close_failed" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "skippedUnsafeRootFailureCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" }, "status": { "const": "skipped" },
+        "reason_code": { "const": "unsafe_run_root_contents" },
+        "status_reason": { "const": "incomplete_evidence" }, "error_code": { "type": "null" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "status_reason", "error_code"],
+      "properties": {
+        "status": { "enum": ["valid", "failed", "inconclusive"] },
+        "status_reason": { "type": ["string", "null"] },
+        "error_code": { "type": ["string", "null"] }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": { "const": "valid" },
+            "status_reason": { "type": "null" },
+            "error_code": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "inconclusive" },
+            "status_reason": { "const": "incomplete_evidence" },
+            "error_code": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "failed" },
+            "status_reason": { "const": "helper_survived_shutdown" },
+            "error_code": { "const": "helper_survived_shutdown" }
+          }
+        }
+      ]
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_origin", "state", "error_code", "missing_capabilities"],
+      "properties": {
+        "snapshot_origin": { "enum": ["observed", "pre_snapshot_fallback"] },
+        "state": { "enum": ["complete", "partial", "unavailable"] },
+        "error_code": { "anyOf": [{ "$ref": "#/definitions/processError" }, { "type": "null" }] },
+        "missing_capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 5,
+          "items": {
+            "enum": [
+              "etw-process-start-stop", "job-completion-port", "root-handle",
+              "external-attribution-proof", "safe-process-identity"
+            ]
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "snapshot_origin": { "const": "observed" },
+            "state": { "const": "complete" },
+            "error_code": { "type": "null" },
+            "missing_capabilities": { "const": [] }
+          }
+        },
+        {
+          "properties": {
+            "snapshot_origin": { "const": "observed" },
+            "state": { "const": "partial" },
+            "error_code": {
+              "enum": [
+                "etw_live_not_implemented", "etw_trace_incomplete",
+                "root_identity_missing", "unresolved_external_attribution"
+              ]
+            },
+            "missing_capabilities": { "minItems": 1 }
+          }
+        },
+        {
+          "properties": {
+            "snapshot_origin": { "enum": ["observed", "pre_snapshot_fallback"] },
+            "state": { "const": "unavailable" },
+            "error_code": { "enum": ["etw_trace_unavailable", "safe_identity_unavailable"] },
+            "missing_capabilities": { "minItems": 1 }
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "error_code": { "enum": ["etw_live_not_implemented", "etw_trace_incomplete"] } },
+            "required": ["error_code"]
+          },
+          "then": {
+            "properties": {
+              "missing_capabilities": {
+                "contains": { "const": "etw-process-start-stop" },
+                "not": { "contains": { "enum": ["root-handle", "external-attribution-proof", "safe-process-identity"] } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "error_code": { "const": "root_identity_missing" } },
+            "required": ["error_code"]
+          },
+          "then": {
+            "properties": {
+              "missing_capabilities": {
+                "contains": { "const": "root-handle" },
+                "not": { "contains": { "const": "safe-process-identity" } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "error_code": { "const": "unresolved_external_attribution" } },
+            "required": ["error_code"]
+          },
+          "then": {
+            "properties": {
+              "missing_capabilities": {
+                "contains": { "const": "external-attribution-proof" },
+                "not": { "contains": { "enum": ["root-handle", "safe-process-identity"] } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "error_code": { "const": "etw_trace_unavailable" } },
+            "required": ["error_code"]
+          },
+          "then": {
+            "properties": {
+              "missing_capabilities": {
+                "oneOf": [
+                  { "const": ["etw-process-start-stop"] },
+                  { "const": ["etw-process-start-stop", "job-completion-port"] }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "error_code": { "const": "safe_identity_unavailable" } },
+            "required": ["error_code"]
+          },
+          "then": {
+            "properties": {
+              "missing_capabilities": {
+                "oneOf": [
+                  { "const": ["etw-process-start-stop", "safe-process-identity"] },
+                  { "const": ["etw-process-start-stop", "job-completion-port", "safe-process-identity"] }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "missing_capabilities": { "contains": { "const": "safe-process-identity" } } },
+            "required": ["missing_capabilities"]
+          },
+          "then": { "properties": { "error_code": { "const": "safe_identity_unavailable" } } }
+        },
+        {
+          "if": {
+            "properties": { "missing_capabilities": { "contains": { "const": "root-handle" } } },
+            "required": ["missing_capabilities"]
+          },
+          "then": { "properties": { "error_code": { "const": "root_identity_missing" } } }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": { "missing_capabilities": { "contains": { "const": "external-attribution-proof" } } },
+                "required": ["missing_capabilities"]
+              },
+              {
+                "properties": { "missing_capabilities": { "not": { "contains": { "const": "root-handle" } } } },
+                "required": ["missing_capabilities"]
+              }
+            ]
+          },
+          "then": { "properties": { "error_code": { "const": "unresolved_external_attribution" } } }
+        }
+      ]
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "completed", "survivor_count", "failure_code", "failure_codes"],
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "completed": { "type": "boolean" },
+        "survivor_count": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "failure_code": { "anyOf": [{ "$ref": "#/definitions/cleanupFailure" }, { "type": "null" }] },
+        "failure_codes": { "$ref": "#/definitions/canonicalCleanupFailureCodes" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "attempted": { "const": false } }, "required": ["attempted"] },
+          "then": {
+            "properties": {
+              "completed": { "const": true },
+              "survivor_count": { "const": 0 },
+              "failure_code": { "type": "null" },
+              "failure_codes": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "completed": { "const": true } }, "required": ["completed"] },
+          "then": {
+            "properties": {
+              "survivor_count": { "const": 0 },
+              "failure_code": { "type": "null" },
+              "failure_codes": { "maxItems": 0 }
+            }
+          },
+          "else": {
+            "properties": {
+              "attempted": { "const": true },
+              "failure_code": { "$ref": "#/definitions/cleanupFailure" },
+              "failure_codes": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "failure_codes": {
+                "contains": { "enum": ["retained_handle_wait_failed", "helper_survived_shutdown"] }
+              }
+            },
+            "required": ["failure_codes"]
+          },
+          "then": { "properties": { "survivor_count": { "minimum": 1 } } },
+          "else": { "properties": { "survivor_count": { "const": 0 } } }
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "failure_code": { "type": "null" },
+                "failure_codes": { "maxItems": 0 }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "snapshot_validation_failed" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "items": [{ "const": "snapshot_validation_failed" }],
+                  "additionalItems": { "$ref": "#/definitions/cleanupFailure" }
+                }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "identity_revalidation_failed" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "items": [{ "const": "identity_revalidation_failed" }],
+                  "additionalItems": { "$ref": "#/definitions/cleanupFailure" }
+                }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "retained_handle_wait_failed" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "items": [{ "const": "retained_handle_wait_failed" }],
+                  "additionalItems": { "$ref": "#/definitions/cleanupFailure" }
+                }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "helper_survived_shutdown" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "items": [{ "const": "helper_survived_shutdown" }],
+                  "additionalItems": { "$ref": "#/definitions/cleanupFailure" }
+                }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "job_close_failed" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "items": [{ "const": "job_close_failed" }],
+                  "additionalItems": { "$ref": "#/definitions/cleanupFailure" }
+                }
+              }
+            },
+            {
+              "properties": {
+                "failure_code": { "const": "unsafe_run_root_contents" },
+                "failure_codes": {
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": [{ "const": "unsafe_run_root_contents" }],
+                  "additionalItems": false
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "status", "reason_code", "status_reason", "error_code"],
+      "properties": {
+        "check_id": { "const": "CHK-PROCESS" },
+        "status": { "enum": ["passed", "failed", "skipped"] },
+        "reason_code": { "type": ["string", "null"] },
+        "status_reason": { "type": ["string", "null"] },
+        "error_code": { "type": ["string", "null"] }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": { "const": "passed" },
+            "reason_code": { "type": "null" },
+            "status_reason": { "type": "null" },
+            "error_code": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "failed" },
+            "reason_code": { "const": "helper_survived_shutdown" },
+            "status_reason": { "const": "helper_survived_shutdown" },
+            "error_code": { "const": "helper_survived_shutdown" }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "skipped" },
+            "reason_code": {
+              "enum": [
+                "process_tree_partial", "process_tree_unavailable", "snapshot_validation_failed",
+                "identity_revalidation_failed", "job_close_failed", "unsafe_run_root_contents"
+              ]
+            },
+            "status_reason": { "const": "incomplete_evidence" },
+            "error_code": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "commonInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_sha256", "environment_sha256", "fixture_sha256", "harness_sha256", "scenario_sha256"],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" },
+        "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" },
+        "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "fileReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "size_bytes"],
+      "properties": {
+        "relative_path": { "$ref": "#/definitions/relativePath" },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "size_bytes": { "$ref": "#/definitions/int64Positive" }
+      }
+    },
+    "rawReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path", "sha256", "size_bytes", "event_count", "first_line_sha256",
+        "first_line_size_bytes", "final_line_sha256"
+      ],
+      "properties": {
+        "relative_path": { "$ref": "#/definitions/relativePath" },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "size_bytes": { "$ref": "#/definitions/int64Positive" },
+        "event_count": { "const": 4 },
+        "first_line_sha256": { "$ref": "#/definitions/sha256" },
+        "first_line_size_bytes": { "$ref": "#/definitions/int64Positive" },
+        "final_line_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "artifactReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "relative_path", "sha256", "size_bytes"],
+      "properties": {
+        "artifact_id": { "const": "process-tree" },
+        "relative_path": { "$ref": "#/definitions/relativePath" },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "size_bytes": { "$ref": "#/definitions/int64Positive" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "pid", "creation_time_filetime_utc"],
+      "properties": {
+        "role": { "enum": ["root", "child", "grandchild"] },
+        "pid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "creation_time_filetime_utc": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" }
+      }
+    },
+    "threeRoleIdentities": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": [
+        { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "root" } } }] },
+        { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "child" } } }] },
+        { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "grandchild" } } }] }
+      ],
+      "additionalItems": false
+    },
+    "roleIdentityPrefix": {
+      "oneOf": [
+        {
+          "type": "array", "minItems": 1, "maxItems": 1,
+          "items": [
+            { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "root" } } }] }
+          ],
+          "additionalItems": false
+        },
+        {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": [
+            { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "root" } } }] },
+            { "allOf": [{ "$ref": "#/definitions/identity" }, { "properties": { "role": { "const": "child" } } }] }
+          ],
+          "additionalItems": false
+        },
+        { "$ref": "#/definitions/threeRoleIdentities" }
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id", "run_id", "transaction_id", "common_inputs", "pilot_intent", "raws", "traces",
+        "intent", "run", "snapshot", "artifacts", "started_utc", "sealed_utc", "started_qpc_ticks",
+        "sealed_qpc_ticks", "qpc_frequency", "process_identities"
+      ],
+      "properties": {
+        "experiment_id": { "$ref": "#/definitions/id" },
+        "run_id": { "$ref": "#/definitions/runId" },
+        "transaction_id": { "$ref": "#/definitions/sha256" },
+        "common_inputs": { "$ref": "#/definitions/commonInputs" },
+        "pilot_intent": { "$ref": "#/definitions/fileReceipt" },
+        "raws": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/definitions/rawReceipt" }
+        },
+        "traces": { "const": [] },
+        "intent": { "$ref": "#/definitions/fileReceipt" },
+        "run": { "$ref": "#/definitions/fileReceipt" },
+        "snapshot": { "$ref": "#/definitions/fileReceipt" },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/definitions/artifactReceipt" }
+        },
+        "started_utc": { "$ref": "#/definitions/canonicalUtc" },
+        "sealed_utc": { "$ref": "#/definitions/canonicalUtc" },
+        "started_qpc_ticks": { "$ref": "#/definitions/int64Nonnegative" },
+        "sealed_qpc_ticks": { "$ref": "#/definitions/int64Nonnegative" },
+        "qpc_frequency": { "$ref": "#/definitions/int64Positive" },
+        "process_identities": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/identity" }
+        }
+      }
+    }
+  }
+}

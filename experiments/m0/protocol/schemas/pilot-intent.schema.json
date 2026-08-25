@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 synthetic pilot once-only launch intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema", "schema_id", "schema_version", "state", "candidate_code", "scenario_id", "attempt",
+    "evidence_role", "decision_eligible", "experiment_id", "run_id", "common_inputs",
+    "evidence_writer_state", "live_launch_limit", "run_started", "expected_paths"
+  ],
+  "properties": {
+    "$schema": { "const": "schemas/pilot-intent.schema.json" },
+    "schema_id": { "const": "m0.synthetic-pilot-intent.v1" },
+    "schema_version": { "const": 1 },
+    "state": { "const": "launch-authorized-once" },
+    "candidate_code": { "const": "P" },
+    "scenario_id": { "const": "synthetic-process-tree" },
+    "attempt": { "const": 1 },
+    "evidence_role": { "const": "synthetic_pilot" },
+    "decision_eligible": { "const": false },
+    "experiment_id": { "$ref": "#/definitions/id" },
+    "run_id": { "$ref": "#/definitions/runId" },
+    "common_inputs": { "$ref": "#/definitions/commonInputs" },
+    "evidence_writer_state": { "const": "open-before-live" },
+    "live_launch_limit": { "const": 1 },
+    "run_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "canonical_line_sha256", "size_bytes"],
+      "properties": {
+        "event": { "$ref": "event.schema.json" },
+        "canonical_line_sha256": { "$ref": "#/definitions/sha256" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 }
+      }
+    },
+    "expected_paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw", "pilot_intent", "evidence_intent", "run", "snapshot", "process_tree",
+        "pilot_summary", "pilot_summary_sidecar"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/definitions/relativePath" },
+        "pilot_intent": { "$ref": "#/definitions/relativePath" },
+        "evidence_intent": { "$ref": "#/definitions/relativePath" },
+        "run": { "$ref": "#/definitions/relativePath" },
+        "snapshot": { "$ref": "#/definitions/relativePath" },
+        "process_tree": { "$ref": "#/definitions/relativePath" },
+        "pilot_summary": { "$ref": "#/definitions/relativePath" },
+        "pilot_summary_sidecar": { "$ref": "#/definitions/relativePath" }
+      }
+    }
+  },
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "runId": { "type": "string", "pattern": "^run-P-[A-Za-z0-9][A-Za-z0-9._-]{0,121}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "commonInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_sha256", "environment_sha256", "fixture_sha256", "harness_sha256", "scenario_sha256"],
+      "properties": {
+        "protocol_sha256": { "$ref": "#/definitions/sha256" },
+        "environment_sha256": { "$ref": "#/definitions/sha256" },
+        "fixture_sha256": { "$ref": "#/definitions/sha256" },
+        "harness_sha256": { "$ref": "#/definitions/sha256" },
+        "scenario_sha256": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

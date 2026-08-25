@@ -29,18 +29,27 @@ experiments/m0/
 │   ├── summary.v1.sha256
 │   ├── environments/
 │   ├── goldens/
+│   │   ├── pilot-intent.v1.json
+│   │   ├── pilot-summary-input.v1.json
+│   │   ├── pilot-summary.v1.json
 │   │   ├── process.v1.json
 │   │   ├── summary-input.v1.json
 │   │   └── summary.v1.json
 │   ├── scenarios/
+│   │   ├── synthetic-process-tree.v1.json
+│   │   └── synthetic-process-tree.v1.sha256
 │   └── schemas/
+│       ├── pilot-intent.schema.json
+│       ├── pilot-summary-input.schema.json
+│       ├── pilot-summary.schema.json
 │       ├── process.schema.json
 │       ├── process-golden.schema.json
 │       ├── process-tree.schema.json
 │       ├── process-tree-artifact.schema.json
 │       ├── summary-contract.schema.json
 │       ├── summary-input.schema.json
-│       └── summary.schema.json
+│       ├── summary.schema.json
+│       └── synthetic-process-tree-scenario.schema.json
 ├── shared/
 │   └── shell-fixture/
 ├── candidates/
@@ -55,16 +64,19 @@ experiments/m0/
 └── harness/
     ├── M0.Evidence.psm1
     ├── M0.Markers.psm1
+    ├── M0.Pilot.psm1
     ├── M0.Process.psm1
     ├── M0.Summary.psm1
     ├── M0.Visual.psm1
     └── tests/
         ├── EvidenceWriter.Tests.ps1
         ├── EvidenceSnapshotSet.Tests.ps1
+        ├── Pilot.Tests.ps1
         ├── Process.Tests.ps1
         ├── Summary.Tests.ps1
         └── Visual.Tests.ps1
 scripts/m0/
+├── Invoke-M0Pilot.ps1
 ├── Invoke-M0SyntheticProcessNode.ps1
 ├── Test-M0Process.ps1
 ├── Test-M0Summary.ps1
@@ -106,9 +118,11 @@ A fixture do shell congela:
 
 Cada asset recebe origem, licença e SHA-256. O corpus de áudio pertence somente a M0.5.
 
-O contrato de processo M0.1 acrescenta descriptor/sidecar/golden e schemas fechados para identidade forte, atribuição, cleanup e artifact `process-tree`. `M0.Process.psm1` mantém a autoridade nativa em registry privado; o helper literal cria somente a topologia sintética root → child → grandchild. O runner público valida o smoke Windows e o artifact P canônico apenas em memória, remove sua leaf de `out/m0/process-pilot` e não publica Evidence. Linux permanece `not_proven`.
+O contrato de processo M0.1 acrescenta descriptor/sidecar/golden e schemas fechados para identidade forte, atribuição, cleanup e artifact `process-tree`. `M0.Process.psm1` mantém a autoridade nativa em registry privado; o helper literal cria somente a topologia sintética root → child → grandchild. `Test-M0Process.ps1` valida o smoke Windows e o artifact P canônico apenas em memória, remove sua leaf de `out/m0/process-pilot` e não publica Evidence. Linux permanece `not_proven`.
 
-O contrato de summary comum acrescenta descriptor/sidecar, input/golden e schemas fechados. `M0.Summary.psm1` transforma apenas input previamente validado e não acessa Evidence A/B; o golden prova cálculo e serialização canônicos em processos/roots independentes. `Assert-M0SummaryArtifacts` faz o check físico ancorado no Windows; a API pura permanece multiplataforma, enquanto o reader físico equivalente Linux continua `not_proven`. `Invoke-M0Pilot.ps1` e a publicação raw/run/snapshot P continuam previstos, ainda ausentes.
+O contrato de summary comum acrescenta descriptor/sidecar, input/golden e schemas fechados. `M0.Summary.psm1` transforma apenas input previamente validado e não acessa Evidence A/B; o golden prova cálculo e serialização canônicos em processos/roots independentes. `Assert-M0SummaryArtifacts` faz o check físico ancorado no Windows; a API pura permanece multiplataforma, enquanto o reader físico equivalente Linux continua `not_proven`.
+
+O contrato separado do piloto ancora cenário, launch-intent, input/summary golden e schemas fechados. `Invoke-M0Pilot.ps1` publica no Windows uma Evidence `P` recuperável e não decisória sob um root novo de `out/m0`: writer e `run_started` precedem a árvore; `Close` precede o único artifact; intent/raw/run/snapshot precedem o summary; o sidecar do summary é a última publicação. O artifact canônico pós-cleanup é a fonte única das projeções. Nenhuma leaf P entra em snapshot-set, batch ou summary comum A/B. ETW live, breakaway, Linux, desempenho e power loss permanecem não provados.
 
 ## 4. Artefatos e Git
 
@@ -119,7 +133,7 @@ O contrato de summary comum acrescenta descriptor/sidecar, input/golden e schema
 - Evidências não contêm hostname, username, serial, biblioteca pessoal ou path absoluto.
 - O protótipo perdedor é removido em commit explícito após M0.10 ou preservado somente se o ADR justificar seu valor diagnóstico.
 
-## 5. Runners previstos
+## 5. Runners materializados e previstos
 
 | Runner | Responsabilidade |
 |---|---|
@@ -131,7 +145,7 @@ O contrato de summary comum acrescenta descriptor/sidecar, input/golden e schema
 | `Test-M0Process.ps1` | descriptor/golden/process-tree ancorados, processo limpo, Job Windows root → child → grandchild, cleanup escopado e artifact P somente em memória; Linux não provado |
 | `Test-M0Summary.ps1` | descriptor/input/golden/schemas do summary comum, builder puro e trust físico Windows; não lê nem publica Evidence A/B |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
-| `Invoke-M0Pilot.ps1` *(previsto, ainda ausente)* | publicação recuperável da evidência P sem candidato real |
+| `Invoke-M0Pilot.ps1` | publicação recuperável Windows-only da evidência sintética `P`, com Job fechado antes do artifact, summary separado e zero participação em A/B |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |
 | `Invoke-M0ShellComparison.ps1` | preflight, ordem balanceada, coleta e resumo comum |
 

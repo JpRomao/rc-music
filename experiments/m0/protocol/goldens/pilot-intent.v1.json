@@ -1,0 +1,59 @@
+{
+  "$schema": "schemas/pilot-intent.schema.json",
+  "schema_id": "m0.synthetic-pilot-intent.v1",
+  "schema_version": 1,
+  "state": "launch-authorized-once",
+  "candidate_code": "P",
+  "scenario_id": "synthetic-process-tree",
+  "attempt": 1,
+  "evidence_role": "synthetic_pilot",
+  "decision_eligible": false,
+  "experiment_id": "exp-golden-synthetic-pilot",
+  "run_id": "run-P-golden-synthetic-process-tree-01",
+  "common_inputs": {
+    "protocol_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "environment_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "fixture_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "harness_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "scenario_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "evidence_writer_state": "open-before-live",
+  "live_launch_limit": 1,
+  "run_started": {
+    "event": {
+      "schema_id": "m0.event.v1",
+      "schema_version": 1,
+      "protocol_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "environment_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "fixture_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "harness_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "scenario_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "experiment_id": "exp-golden-synthetic-pilot",
+      "run_id": "run-P-golden-synthetic-process-tree-01",
+      "candidate_code": "P",
+      "scenario_id": "synthetic-process-tree",
+      "attempt": 1,
+      "event_seq": 1,
+      "previous_line_sha256": null,
+      "utc": "2026-08-24T12:00:00.0000000Z",
+      "qpc_ticks": 1000000,
+      "qpc_frequency": 10000000,
+      "event": "run_started",
+      "payload": {
+        "phase": "started"
+      }
+    },
+    "canonical_line_sha256": "173d33a7c41ba734ed3108513e806d31d7953aa9f39ffb7af0637d0a7f441d87",
+    "size_bytes": 816
+  },
+  "expected_paths": {
+    "raw": "run-P-golden-synthetic-process-tree-01.jsonl",
+    "pilot_intent": "run-P-golden-synthetic-process-tree-01.pilot-intent.json",
+    "evidence_intent": "run-P-golden-synthetic-process-tree-01.intent.json",
+    "run": "run-P-golden-synthetic-process-tree-01.run.json",
+    "snapshot": "run-P-golden-synthetic-process-tree-01.snapshot.json",
+    "process_tree": "artifacts/run-P-golden-synthetic-process-tree-01.process-tree.json",
+    "pilot_summary": "run-P-golden-synthetic-process-tree-01.pilot-summary.json",
+    "pilot_summary_sidecar": "run-P-golden-synthetic-process-tree-01.pilot-summary.sha256"
+  }
+}

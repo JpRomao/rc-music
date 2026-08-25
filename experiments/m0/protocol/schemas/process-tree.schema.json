@@ -355,7 +355,9 @@
       },
       "then": {
         "properties": {
-          "missing_capabilities": { "type": "array", "contains": { "const": "external-attribution-proof" } }
+          "missing_capabilities": { "type": "array", "contains": { "const": "external-attribution-proof" } },
+          "roles": { "type": "array", "minItems": 1 },
+          "nodes": { "type": "array", "minItems": 1 }
         }
       }
     },
