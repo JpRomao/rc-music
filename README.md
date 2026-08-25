@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0 e M0.0 concluídos; M0.1 está em andamento, com o harness-base, a fixture sintética do shell, o summary comum puro e o piloto local sintético `P` materializados. Ainda não existe implementação de produto, instalador ou formato de áudio comprovado.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; M0.2 é o próximo marco e está bloqueado até o provisionamento Qt exigido. Ainda não existe implementação de produto, instalador, formato de áudio comprovado ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -101,9 +101,9 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. fechar os gates e o commit de M0.1 sobre os contratos, o piloto sintético não decisório e o summary comum já materializados;
-2. construir e medir os dois candidatos com o protocolo A/B, sem aceitar stack antecipadamente;
-3. medir e então aceitar/rejeitar os ADRs;
-4. somente depois iniciar o MVP guiado por TDD.
+1. provisionar Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML (`qmlformat`/`qmllint`/deployment/módulos), `clang-format` compatível e NVDA, registrando origem, hash e licença; depois executar M0.2 por TDD com shell C++20/Qt Quick e backend falso, usando a fixture e o roteiro comuns já fechados;
+2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
+3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
+4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

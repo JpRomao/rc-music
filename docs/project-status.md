@@ -1,7 +1,9 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-23  
-**Fase:** M0.1 — fixture, schemas e harness comparativo
+**Atualizado em:** 2026-08-25
+
+**Fase:** transição para M0.2; bloqueado até o provisionamento Qt exigido
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -32,6 +34,7 @@ Os contratos experimentais derivados sob a autorização do M0 são:
 
 - Windows 11 x64 é Tier 1; Ubuntu 24.04 LTS amd64/GNOME é Tier 2; Windows 10 é somente legado/best effort;
 - ambiente `M0-E1`, protocolo `M0-P1` e layout `M0-L1` ficam congelados antes da coleta.
+- M0.1 foi concluído em `24d12ea` com fixture, harness, summary comum e piloto sintético `P` não decisório; nenhuma coleta A/B foi executada.
 
 Esses contratos confirmam a direção do experimento, não a aceitação de uma stack.
 
@@ -115,16 +118,16 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0 concluído; M0.1 pendente |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0 e M0.1 concluídos; M0.2 é o próximo marco, bloqueado por provisionamento |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. criar a fixture/protocolo executável comum M0.1 antes de qualquer coleta;
-2. criar shells Qt e Tauri equivalentes, ambos com backend falso;
-3. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
-4. medir desempenho e testar acessibilidade e integrações críticas nos dois candidatos;
-5. voltar aos ADRs com evidência reproduzível e escolher.
+1. provisionar Qt 6.11.2 Desktop MSVC 2022 x64 e ferramentas QML, `clang-format` compatível e NVDA, registrando origem, hash e licença, e somente então criar em M0.2 o shell C++20/Qt Quick/QML com backend falso;
+2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
+3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
+4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
+5. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

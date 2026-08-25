@@ -63,13 +63,15 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 concluído e M0.1 é o próximo incremento.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos, M0.2 é o próximo marco e está bloqueado até o provisionamento Qt exigido.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
 Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o mesmo trabalho como M0.0–M0.10: `M0-A` = M0.0–M0.4, `M0-B` = M0.5–M0.8, `M0-C` = M0.9 e `M0-D` = M0.10. Os dois namespaces não devem ser intercambiados em evidências.
 
 Ambiente, protocolo e layout foram congelados em [M0-E1/M0-P1/M0-L1](m0/README.md). Provisionamentos ausentes bloqueiam a etapa dependente e não são apresentados como checks executados.
+
+M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), incluindo o piloto sintético `P` não decisório. Nenhum shell candidato foi construído, nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita. M0.2 começa pelo provisionamento registrado de Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML, `clang-format` e NVDA; o scaffold Qt só vem depois desse preflight.
 
 ### M0-A — UI e shell A/B
 
