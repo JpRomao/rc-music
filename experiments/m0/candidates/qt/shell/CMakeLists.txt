@@ -132,6 +132,7 @@ add_subdirectory(
 )
 
 add_library(m0_qt_core STATIC
+    src/adapters/DeterministicPlaybackBackend.cpp
     src/application/PlayerController.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
@@ -145,6 +146,7 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
+        tests/catch2/DeterministicPlaybackBackendTests.cpp
         tests/catch2/PlayerControllerTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)

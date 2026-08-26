@@ -12,12 +12,18 @@ namespace {
 
 class RecordingPlaybackBackend final : public PlaybackBackend {
   public:
+    void play() override { ++play_requests; }
+
+    void pause() override { ++pause_requests; }
+
     void seekTo(const std::int64_t position_ms) override { seek_requests.push_back(position_ms); }
 
     void setVolume(const double volume) override { volume_requests.push_back(volume); }
 
     void setMuted(const bool muted) override { mute_requests.push_back(muted); }
 
+    int play_requests{0};
+    int pause_requests{0};
     std::vector<std::int64_t> seek_requests{};
     std::vector<double> volume_requests{};
     std::vector<bool> mute_requests{};
