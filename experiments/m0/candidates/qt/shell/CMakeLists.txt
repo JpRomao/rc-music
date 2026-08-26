@@ -75,10 +75,11 @@ if(M0_QT_SHELL_SUPPORT)
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
+        src/adapters/fixture/FixtureDecoder.hpp
         src/adapters/fixture/FixtureRepository.cpp
         src/presentation/QueueListModel.cpp
     )
-    target_include_directories(m0_qt_shell_support PUBLIC include)
+    target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
     target_link_libraries(m0_qt_shell_support PUBLIC Qt6::Core)
     target_compile_features(m0_qt_shell_support PUBLIC cxx_std_20)
     target_compile_definitions(m0_qt_shell_support PRIVATE
@@ -97,6 +98,7 @@ if(M0_QT_SHELL_SUPPORT)
             tests/qtest/FixtureRepositoryTests.cpp
         )
         target_link_libraries(m0_qt_fixture_tests PRIVATE m0_qt_shell_support Qt6::Test)
+        target_include_directories(m0_qt_fixture_tests PRIVATE src)
         target_compile_features(m0_qt_fixture_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_fixture_tests PRIVATE
             M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"

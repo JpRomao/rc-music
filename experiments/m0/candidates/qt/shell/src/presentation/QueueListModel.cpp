@@ -41,7 +41,7 @@ QVariant QueueListModel::data(const QModelIndex& index, const int role) const {
     case AvailableRole:
         return item.available;
     case ErrorCodeRole:
-        return item.error_code;
+        return item.error_code.has_value() ? QVariant{*item.error_code} : QVariant{};
     default:
         return {};
     }
