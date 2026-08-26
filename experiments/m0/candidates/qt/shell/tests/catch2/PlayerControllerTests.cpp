@@ -59,6 +59,114 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
     };
 }
 
+TEST_CASE("toggle playback maps active states to exactly one backend command", "[m0][qt][core][transport]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, playingSnapshot()};
+
+    CHECK(controller.togglePlayback());
+    CHECK(backend.pause_requests == 1);
+    CHECK(backend.play_requests == 0);
+
+    controller.applyBackendSnapshot({PlaybackStatus::Paused, 84'000, 248'000, true});
+    CHECK(controller.togglePlayback());
+    CHECK(backend.play_requests == 1);
+
+    controller.applyBackendSnapshot({PlaybackStatus::Ready, 84'000, 248'000, true});
+    CHECK(controller.togglePlayback());
+    CHECK(backend.play_requests == 2);
+}
+
+TEST_CASE("toggle playback is inert for inactive states", "[m0][qt][core][transport]") {
+    for (const auto status : {PlaybackStatus::Empty, PlaybackStatus::Loading, PlaybackStatus::Error}) {
+        RecordingPlaybackBackend backend;
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform, {status, 0, 248'000, false}};
+
+        CHECK_FALSE(controller.togglePlayback());
+        CHECK(backend.play_requests == 0);
+        CHECK(backend.pause_requests == 0);
+        CHECK(controller.confirmedSnapshot().status == status);
+    }
+}
+
+TEST_CASE("skip actions use confirmed position preferences and publish one pending seek",
+          "[m0][qt][core][transport][seek]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController forward{backend, platform, playingSnapshot()};
+
+    CHECK(forward.setSkipForwardSeconds(7));
+    CHECK(forward.skipForward());
+    CHECK(forward.seekPreviewActive());
+    CHECK(forward.seekPending());
+    CHECK(forward.displayedPositionMs() == 91'000);
+    REQUIRE(backend.seek_requests.size() == 1);
+    CHECK(backend.seek_requests.front() == 91'000);
+
+    RecordingPlaybackBackend backward_backend;
+    PlayerController backward{backward_backend, platform, {PlaybackStatus::Playing, 2'000, 248'000, true}};
+    CHECK(backward.skipBackward());
+    CHECK(backward.displayedPositionMs() == 0);
+    REQUIRE(backward_backend.seek_requests.size() == 1);
+    CHECK(backward_backend.seek_requests.front() == 0);
+}
+
+TEST_CASE("skip clamps without overflow", "[m0][qt][core][transport][seek]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend,
+                                platform,
+                                {PlaybackStatus::Playing, std::numeric_limits<std::int64_t>::max() - 100,
+                                 std::numeric_limits<std::int64_t>::max(), true}};
+
+    CHECK(controller.skipForward());
+    REQUIRE(backend.seek_requests.size() == 1);
+    CHECK(backend.seek_requests.front() == std::numeric_limits<std::int64_t>::max());
+}
+
+TEST_CASE("skip is inert when seeking is unavailable or already active", "[m0][qt][core][transport][seek]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController unavailable{backend, platform, {PlaybackStatus::Playing, 84'000, 248'000, false}};
+
+    CHECK_FALSE(unavailable.skipForward());
+    CHECK_FALSE(unavailable.seekPreviewActive());
+    CHECK_FALSE(unavailable.seekPending());
+    CHECK(unavailable.displayedPositionMs() == 84'000);
+    CHECK(backend.seek_requests.empty());
+
+    PlayerController previewing{backend, platform, playingSnapshot()};
+    previewing.beginSeekPreview(100'000);
+    CHECK_FALSE(previewing.skipBackward());
+    CHECK(previewing.displayedPositionMs() == 100'000);
+    CHECK_FALSE(previewing.seekPending());
+    CHECK(backend.seek_requests.empty());
+
+    previewing.commitSeekPreview();
+    CHECK_FALSE(previewing.skipForward());
+    REQUIRE(backend.seek_requests.size() == 1);
+    CHECK(backend.seek_requests.front() == 100'000);
+}
+
+TEST_CASE("skip rejects inactive states even when a snapshot claims to be seekable",
+          "[m0][qt][core][transport][seek][regression]") {
+    for (const auto status : {PlaybackStatus::Empty, PlaybackStatus::Loading, PlaybackStatus::Error}) {
+        RecordingPlatformIntegration platform{true};
+        for (const bool forward : {false, true}) {
+            RecordingPlaybackBackend backend;
+            PlayerController controller{backend, platform, {status, 84'000, 248'000, true}};
+
+            const bool accepted = forward ? controller.skipForward() : controller.skipBackward();
+            CHECK_FALSE(accepted);
+            CHECK_FALSE(controller.seekPreviewActive());
+            CHECK_FALSE(controller.seekPending());
+            CHECK(controller.displayedPositionMs() == 84'000);
+            CHECK(backend.seek_requests.empty());
+        }
+    }
+}
+
 TEST_CASE("controller starts from the frozen M0 defaults", "[m0][qt][core][defaults]") {
     RecordingPlaybackBackend backend;
     RecordingPlatformIntegration platform{true};

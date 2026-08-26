@@ -19,6 +19,9 @@ class PlayerController final {
     [[nodiscard]] bool seekPreviewActive() const noexcept;
     [[nodiscard]] bool seekPending() const noexcept;
 
+    [[nodiscard]] bool togglePlayback();
+    [[nodiscard]] bool skipBackward();
+    [[nodiscard]] bool skipForward();
     void beginSeekPreview(std::int64_t position_ms);
     void updateSeekPreview(std::int64_t position_ms);
     void commitSeekPreview();

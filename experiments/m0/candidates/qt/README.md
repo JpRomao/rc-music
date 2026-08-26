@@ -4,7 +4,7 @@ Shell experimental C++20/Qt Quick de M0.2. A stack continua apenas como candidat
 
 ## Estado
 
-Os incrementos TDD materializados em `shell/` incluem o core C++20 puro, com portas para playback e integração de plataforma, o backend manual determinístico e o suporte Qt isolado para carregar a fixture congelada e expor a fila em um `QAbstractListModel`. O core cobre seek com preview/ack, preferências em memória e a decisão de close/tray. O backend reproduz os snapshots de 200 ms, transporte, clamp/pausa no fim e ack/rejeição de seek sem relógio ou áudio reais. O adapter Qt ancora os bytes de `fixture.v1.json` e `queue.v1.json` na cadeia protocolo → manifesto e preserva ordem, tipos e casos hostis da fila comum.
+Os incrementos TDD materializados em `shell/` incluem o core C++20 puro, com portas para playback e integração de plataforma, o backend manual determinístico e o suporte Qt isolado para carregar a fixture congelada e expor a fila em um `QAbstractListModel`. O core cobre toggle play/pause, saltos com clamp, seek com preview/ack, preferências em memória e a decisão de close/tray. O backend reproduz os snapshots de 200 ms, transporte, clamp/pausa no fim e ack/rejeição de seek sem relógio ou áudio reais. O adapter Qt ancora os bytes de `fixture.v1.json` e `queue.v1.json` na cadeia protocolo → manifesto e preserva ordem, tipos e casos hostis da fila comum.
 
 Ainda estão pendentes o presenter Qt, a UI QML, os temas, o tray concreto e as validações manuais. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
 

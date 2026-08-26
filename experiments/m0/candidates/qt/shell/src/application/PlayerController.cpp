@@ -13,6 +13,10 @@ namespace {
     return snapshot;
 }
 
+[[nodiscard]] bool supportsTransport(const PlaybackStatus status) noexcept {
+    return status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing;
+}
+
 } // namespace
 
 PlayerController::PlayerController(PlaybackBackend& playback_backend, PlatformIntegration& platform,
@@ -30,6 +34,52 @@ std::int64_t PlayerController::displayedPositionMs() const noexcept { return dis
 bool PlayerController::seekPreviewActive() const noexcept { return seek_preview_active_; }
 
 bool PlayerController::seekPending() const noexcept { return seek_pending_; }
+
+bool PlayerController::togglePlayback() {
+    switch (confirmed_snapshot_.status) {
+    case PlaybackStatus::Playing:
+        playback_backend_.pause();
+        return true;
+    case PlaybackStatus::Ready:
+    case PlaybackStatus::Paused:
+        playback_backend_.play();
+        return true;
+    case PlaybackStatus::Empty:
+    case PlaybackStatus::Loading:
+    case PlaybackStatus::Error:
+        return false;
+    }
+    return false;
+}
+
+bool PlayerController::skipBackward() {
+    if (!supportsTransport(confirmed_snapshot_.status) || !confirmed_snapshot_.seekable || seek_preview_active_ ||
+        seek_pending_) {
+        return false;
+    }
+
+    const auto delta_ms = static_cast<std::int64_t>(preferences_.skip_backward_seconds) * 1'000;
+    const auto target =
+        confirmed_snapshot_.position_ms <= delta_ms ? std::int64_t{0} : confirmed_snapshot_.position_ms - delta_ms;
+    beginSeekPreview(target);
+    commitSeekPreview();
+    return true;
+}
+
+bool PlayerController::skipForward() {
+    if (!supportsTransport(confirmed_snapshot_.status) || !confirmed_snapshot_.seekable || seek_preview_active_ ||
+        seek_pending_) {
+        return false;
+    }
+
+    const auto delta_ms = static_cast<std::int64_t>(preferences_.skip_forward_seconds) * 1'000;
+    const auto remaining_ms = confirmed_snapshot_.duration_ms - confirmed_snapshot_.position_ms;
+    const auto target =
+        remaining_ms <= delta_ms ? confirmed_snapshot_.duration_ms : confirmed_snapshot_.position_ms + delta_ms;
+    beginSeekPreview(target);
+    commitSeekPreview();
+    return true;
+}
 
 void PlayerController::beginSeekPreview(const std::int64_t position_ms) {
     if (!confirmed_snapshot_.seekable || confirmed_snapshot_.duration_ms <= 0 || seek_pending_) {
