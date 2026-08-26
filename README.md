@@ -69,7 +69,7 @@ Comece por:
 
 ## Estado do repositório
 
-O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental iniciado em `experiments/m0/candidates/qt/shell` contém apenas o core C++20 puro e seus testes; os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Ainda não há shell UI concluído nem scaffold do produto na raiz.
+O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental em `experiments/m0/candidates/qt/shell` contém o core C++20 puro e, atrás de uma opção separada, o adapter Qt da fixture e o modelo tipado da fila; os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Ainda não há shell UI concluído nem scaffold do produto na raiz.
 
 Validações atuais:
 
@@ -103,7 +103,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. continuar M0.2 por TDD a partir do core C++20 puro até o shell Qt Quick completo com backend falso, usando o preflight validado e a fixture/roteiro comuns já fechados;
+1. continuar M0.2 por TDD a partir do core puro e do loader/modelo Qt da fixture até o shell Qt Quick completo com backend falso, usando o preflight validado e o roteiro comum já fechado;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

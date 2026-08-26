@@ -71,7 +71,7 @@ Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o m
 
 Ambiente, protocolo e layout foram congelados em [M0-E1/M0-P1/M0-L1](m0/README.md). O [preflight Qt](m0/evidence/m0-2-preflight.md) fechou a toolchain necessária ao início de M0.2; provisionamentos ainda ausentes das etapas seguintes continuam bloqueando somente seus checks dependentes.
 
-M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), incluindo o piloto sintético `P` não decisório. O preflight M0.2 registrou Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML, `clang-format` e NVDA em contrato autenticado. O primeiro incremento TDD do core C++20 puro do candidato Qt foi iniciado, mas a UI ainda não está concluída, nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
+M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), incluindo o piloto sintético `P` não decisório. O preflight M0.2 registrou Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML, `clang-format` e NVDA em contrato autenticado. Os incrementos TDD atuais incluem o core C++20 puro, o loader Qt ancorado no manifesto e o modelo tipado da fila comum, mas a UI ainda não está concluída, nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
 
 ### M0-A — UI e shell A/B
 
