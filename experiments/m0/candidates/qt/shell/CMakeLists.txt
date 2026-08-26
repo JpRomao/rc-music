@@ -75,12 +75,14 @@ if(M0_QT_SHELL_SUPPORT)
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
+        include/m0/presentation/PlayerPresenter.hpp
         src/adapters/fixture/FixtureDecoder.hpp
         src/adapters/fixture/FixtureRepository.cpp
         src/presentation/QueueListModel.cpp
+        src/presentation/PlayerPresenter.cpp
     )
     target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
-    target_link_libraries(m0_qt_shell_support PUBLIC Qt6::Core)
+    target_link_libraries(m0_qt_shell_support PUBLIC m0_qt_core Qt6::Core)
     target_compile_features(m0_qt_shell_support PUBLIC cxx_std_20)
     target_compile_definitions(m0_qt_shell_support PRIVATE
         M0_FROZEN_FIXTURE_SHA256="${m0_expected_fixture_sha256}"
@@ -111,10 +113,28 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_fixture_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
+        add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
+        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support Qt6::Test)
+        target_compile_features(m0_qt_presenter_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_qt_presenter_tests PRIVATE
+            M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
+            M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
+        )
+        set_target_properties(m0_qt_presenter_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_presenter_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_presenter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.presenter.initial-load COMMAND m0_qt_presenter_tests)
         get_target_property(m0_qt_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)
         get_filename_component(m0_qt_runtime_dir "${m0_qt_core_runtime}" DIRECTORY)
         set_tests_properties(m0.qt.fixture.repository-and-model PROPERTIES
             LABELS "m0;qt;fixture;model"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.presenter.initial-load PROPERTIES
+            LABELS "m0;qt;presenter"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
     endif()
