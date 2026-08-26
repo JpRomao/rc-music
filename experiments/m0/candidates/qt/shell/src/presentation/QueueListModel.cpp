@@ -6,8 +6,20 @@ namespace music_player::m0 {
 
 QueueListModel::QueueListModel(QObject* parent) : QAbstractListModel(parent) {}
 
-QueueListModel::QueueListModel(QList<QueueItem> items, QObject* parent)
-    : QAbstractListModel(parent), items_(std::move(items)) {}
+bool QueueListModel::loaded() const noexcept { return loaded_; }
+
+bool QueueListModel::loadOnce(QList<QueueItem> items) {
+    if (loaded_ || items.isEmpty()) {
+        return false;
+    }
+
+    beginResetModel();
+    items_ = std::move(items);
+    loaded_ = true;
+    endResetModel();
+    emit loadedChanged();
+    return true;
+}
 
 int QueueListModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid() ? 0 : static_cast<int>(items_.size());

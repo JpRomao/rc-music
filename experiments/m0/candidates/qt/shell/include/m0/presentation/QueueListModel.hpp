@@ -14,6 +14,7 @@ namespace music_player::m0 {
 
 class QueueListModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(bool loaded READ loaded NOTIFY loadedChanged)
 
   public:
     enum Role {
@@ -32,14 +33,19 @@ class QueueListModel final : public QAbstractListModel {
     Q_ENUM(Role)
 
     explicit QueueListModel(QObject* parent = nullptr);
-    explicit QueueListModel(QList<QueueItem> items, QObject* parent = nullptr);
 
+    [[nodiscard]] bool loaded() const noexcept;
+    [[nodiscard]] bool loadOnce(QList<QueueItem> items);
     [[nodiscard]] int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
+  signals:
+    void loadedChanged();
+
   private:
     QList<QueueItem> items_;
+    bool loaded_{false};
 };
 
 } // namespace music_player::m0

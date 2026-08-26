@@ -2,18 +2,21 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
+#include <QAbstractItemModelTester>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaType>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
 #include <algorithm>
 #include <concepts>
 #include <optional>
+#include <type_traits>
 
 namespace music_player::m0::test {
 
@@ -29,6 +32,7 @@ class FixtureRepositoryTests final : public QObject {
     void loadsFrozenFixtureAndQueueReadOnly();
     void preservesHostileFixedCases();
     void queueModelExposesTypedRolesInSourceOrder();
+    void queueModelLoadsExactlyOnce();
     void rejectsSemanticFixtureDrift_data();
     void rejectsSemanticFixtureDrift();
     void rejectsQueueCountDrift();
@@ -173,6 +177,12 @@ concept HasNullableQueueItemError = requires(Bundle bundle) {
     { bundle.queue.at(0).error_code } -> std::same_as<const std::optional<QString>&>;
 };
 
+template <typename Model>
+concept HasSingleLoadModelApi = requires(Model model, QList<QueueItem> items) {
+    { model.loaded() } -> std::same_as<bool>;
+    { model.loadOnce(std::move(items)) } -> std::same_as<bool>;
+};
+
 template <typename Bundle>
 concept HasCompleteTypedPreferences = requires(Bundle bundle) {
     { bundle.preferences.defaults.theme } -> std::same_as<QString&>;
@@ -223,6 +233,54 @@ void expectSemanticDecodeFailure(const QJsonObject& fixture, const QJsonObject& 
         throw FixtureValidationError(QStringLiteral("missing test item"));
     }
     return *found;
+}
+
+template <typename Model> void verifySingleLoadModel(const QList<QueueItem>& items) {
+    if constexpr (!HasSingleLoadModelApi<Model>) {
+        QFAIL("QueueListModel is missing its empty-to-single-load API");
+    } else {
+        QVERIFY(!(std::is_constructible_v<Model, QList<QueueItem>>));
+        Model model;
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy about_to_reset(&model, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy reset(&model, &QAbstractItemModel::modelReset);
+        QSignalSpy rows_inserted(&model, &QAbstractItemModel::rowsInserted);
+        QSignalSpy loaded_changed(&model, &Model::loadedChanged);
+
+        QCOMPARE(model.rowCount(), 0);
+        QCOMPARE(model.loaded(), false);
+        QVERIFY(model.metaObject()->indexOfProperty("loaded") >= 0);
+        QCOMPARE(model.metaObject()->indexOfMethod("loadOnce(QList<QueueItem>)"), -1);
+
+        QVERIFY(!model.loadOnce({}));
+        QCOMPARE(about_to_reset.size(), 0);
+        QCOMPARE(reset.size(), 0);
+        QCOMPARE(rows_inserted.size(), 0);
+        QCOMPARE(loaded_changed.size(), 0);
+
+        QVERIFY(model.loadOnce(items));
+        QCOMPARE(model.loaded(), true);
+        QCOMPARE(model.rowCount(), 1000);
+        QCOMPARE(about_to_reset.size(), 1);
+        QCOMPARE(reset.size(), 1);
+        QCOMPARE(rows_inserted.size(), 0);
+        QCOMPARE(loaded_changed.size(), 1);
+        QCOMPARE(model.data(model.index(0, 0), Model::OrderIndexRole).toInt(), 0);
+        QCOMPARE(model.data(model.index(0, 0), Model::OccurrenceIdRole).toString(), QStringLiteral("queue-0001"));
+        QCOMPARE(model.data(model.index(999, 0), Model::OccurrenceIdRole).toString(), QStringLiteral("queue-1000"));
+        QVERIFY(!model.data(model.index(0, 0), Model::ErrorCodeRole).isValid());
+        QVERIFY(!model.data(model.index(998, 0), Model::DurationMsRole).isValid());
+        QCOMPARE(model.data(model.index(998, 0), Model::ErrorCodeRole).toString(),
+                 QStringLiteral("fixture_source_unavailable"));
+
+        QVERIFY(!model.loadOnce(QList<QueueItem>{items.first()}));
+        QCOMPARE(model.rowCount(), 1000);
+        QCOMPARE(about_to_reset.size(), 1);
+        QCOMPARE(reset.size(), 1);
+        QCOMPARE(rows_inserted.size(), 0);
+        QCOMPARE(loaded_changed.size(), 1);
+        QCOMPARE(model.data(model.index(999, 0), Model::OccurrenceIdRole).toString(), QStringLiteral("queue-1000"));
+    }
 }
 
 template <typename Bundle> void verifyTypedPresentationFixture() {
@@ -439,7 +497,8 @@ template <typename Bundle> void verifyQueueItemErrorCodeNullability() {
         QVERIFY(bundle.queue.at(998).error_code.has_value());
         QCOMPARE(*bundle.queue.at(998).error_code, QStringLiteral("fixture_source_unavailable"));
 
-        const QueueListModel model(bundle.queue);
+        QueueListModel model;
+        QVERIFY(model.loadOnce(bundle.queue));
         QVERIFY(!model.data(model.index(0, 0), QueueListModel::ErrorCodeRole).isValid());
         QCOMPARE(model.data(model.index(998, 0), QueueListModel::ErrorCodeRole).toString(),
                  QStringLiteral("fixture_source_unavailable"));
@@ -554,7 +613,8 @@ void FixtureRepositoryTests::preservesHostileFixedCases() {
 void FixtureRepositoryTests::queueModelExposesTypedRolesInSourceOrder() {
     const FixtureBundle bundle =
         FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
-    const QueueListModel model(bundle.queue);
+    QueueListModel model;
+    QVERIFY(model.loadOnce(bundle.queue));
 
     QCOMPARE(model.rowCount(), 1000);
     QCOMPARE(model.roleNames().value(QueueListModel::OccurrenceIdRole), QByteArray("occurrenceId"));
@@ -571,6 +631,12 @@ void FixtureRepositoryTests::queueModelExposesTypedRolesInSourceOrder() {
     const QModelIndex unavailable = model.index(998, 0);
     QCOMPARE(model.data(unavailable, QueueListModel::AvailableRole).toBool(), false);
     QVERIFY(!model.data(unavailable, QueueListModel::DurationMsRole).isValid());
+}
+
+void FixtureRepositoryTests::queueModelLoadsExactlyOnce() {
+    const FixtureBundle bundle =
+        FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
+    verifySingleLoadModel<QueueListModel>(bundle.queue);
 }
 
 void FixtureRepositoryTests::rejectsSemanticFixtureDrift_data() {
