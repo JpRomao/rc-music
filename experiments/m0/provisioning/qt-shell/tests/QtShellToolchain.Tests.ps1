@@ -13,9 +13,6 @@ $contractPath = Join-Path $contractRoot 'qt-shell-toolchain-contract.v1.json'
 $contractSidecarPath = "$contractPath.sha256"
 $modulePath = Join-Path $contractRoot 'M0.QtShellProvisioning.psm1'
 $validatorPath = Join-Path $contractRoot 'Test-M0QtShellToolchain.ps1'
-$candidateDescriptorPath = Join-Path $repositoryRoot 'experiments\m0\candidates\qt\candidate.v1.json'
-$candidateShellPath = Join-Path $repositoryRoot 'experiments\m0\candidates\qt\shell'
-$candidateDescriptorSha256 = 'ada293f2458636cf1460991a1ef6b70cbb77cbe53d377ef14d439b2df5a14128'
 $m01HarnessManifestSha256 = '3cc3889e84918d68f3ba72ded0c43d42eeeb7f2871874fdff38b45f43a8dd490'
 $expectedContractSha256 = 'ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952'
 $expectedContractLeafPaths = @(
@@ -512,7 +509,7 @@ function Assert-M0QtShellNonWindowsFailClosed {
         "The non-Windows fail-closed proof mutated root '$CaseId'."
 }
 
-Test-Case 'The Qt shell provisioning contract exists before any candidate scaffold' {
+Test-Case 'The Qt shell provisioning contract remains complete independently of candidate lifecycle' {
     Assert-True (Test-Path -LiteralPath $schemaPath -PathType Leaf) `
         'Expected closed Qt shell toolchain schema before provisioning validation.'
     Assert-True (Test-Path -LiteralPath $descriptorPath -PathType Leaf) `
@@ -529,19 +526,9 @@ Test-Case 'The Qt shell provisioning contract exists before any candidate scaffo
         'Expected the provisioning contract consequence sidecar.'
     Assert-True (Test-Path -LiteralPath $modulePath -PathType Leaf) `
         'Expected the provisioning validator implementation module.'
-    Assert-True (-not (Test-Path -LiteralPath $candidateShellPath)) `
-        'Provisioning must not create the Qt candidate shell scaffold.'
 }
 
-Test-Case 'Provisioning preserves the descriptor-only candidate and creates no product scaffold' {
-    Assert-Equal -Actual (Get-Sha256 -LiteralPath $candidateDescriptorPath) `
-        -Expected $candidateDescriptorSha256 `
-        -Message 'The frozen Qt candidate descriptor changed during provisioning.'
-    $candidate = Read-JsonDocument -LiteralPath $candidateDescriptorPath
-    Assert-Equal -Actual $candidate.status -Expected 'descriptor-only' `
-        -Message 'Provisioning advanced the Qt candidate status.'
-    Assert-True (-not (Test-Path -LiteralPath $candidateShellPath)) `
-        'Provisioning created the forbidden candidate shell directory.'
+Test-Case 'Provisioning preserves experiment root isolation and the frozen M0.1 harness manifest' {
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot 'CMakeLists.txt'))) `
         'Provisioning created a product CMake root.'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot 'src'))) `

@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; o preflight Qt do M0.2 está validado e o shell Qt é o próximo incremento. Ainda não existe implementação de produto, instalador, formato de áudio comprovado ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; o preflight Qt do M0.2 está validado e o primeiro incremento TDD do core experimental Qt está em andamento. Ainda não existe implementação de produto, shell UI concluído, instalador, formato de áudio comprovado ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -69,7 +69,7 @@ Comece por:
 
 ## Estado do repositório
 
-O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. Ainda não há scaffold ou comando de build do produto. Comandos planejados permanecem em [quality-gates.md](docs/quality/quality-gates.md) e só viram executáveis quando o incremento correspondente os materializa e valida.
+O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental iniciado em `experiments/m0/candidates/qt/shell` contém apenas o core C++20 puro e seus testes; os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Ainda não há shell UI concluído nem scaffold do produto na raiz.
 
 Validações atuais:
 
@@ -103,7 +103,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. executar M0.2 por TDD com shell C++20/Qt Quick e backend falso, usando o preflight Qt validado e a fixture/roteiro comuns já fechados;
+1. continuar M0.2 por TDD a partir do core C++20 puro até o shell Qt Quick completo com backend falso, usando o preflight validado e a fixture/roteiro comuns já fechados;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.
