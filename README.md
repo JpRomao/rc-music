@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; M0.2 é o próximo marco e está bloqueado até o provisionamento Qt exigido. Ainda não existe implementação de produto, instalador, formato de áudio comprovado ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; o preflight Qt do M0.2 está validado e o shell Qt é o próximo incremento. Ainda não existe implementação de produto, instalador, formato de áudio comprovado ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -69,7 +69,7 @@ Comece por:
 
 ## Estado do repositório
 
-Por enquanto não há manifests/toolchains de implementação nem comandos de build. O validador documental já existe; comandos planejados de produto estão em [quality-gates.md](docs/quality/quality-gates.md) e só devem ser apresentados como executáveis após o M0 e o bootstrap criarem e validarem os runners correspondentes.
+O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. Ainda não há scaffold ou comando de build do produto. Comandos planejados permanecem em [quality-gates.md](docs/quality/quality-gates.md) e só viram executáveis quando o incremento correspondente os materializa e valida.
 
 Validações atuais:
 
@@ -84,6 +84,8 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Visual.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Process.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Summary.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Layout.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\tests\QtShellToolchain.Tests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\Test-M0QtShellToolchain.ps1 -RepositoryRoot (Resolve-Path .).Path -ExpectedContractSha256 ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952
 git status --short --branch
 ```
 
@@ -97,11 +99,11 @@ New-Item -ItemType Directory -Path $pilotRoot -ErrorAction Stop | Out-Null
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0Pilot.ps1 -EvidenceRoot $pilotRoot -ExperimentId exp-pilot-local -RunId run-P-local-01
 ```
 
-O validador documental cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. Os runners M0 validam somente os contratos materializados até aqui. `Invoke-M0Pilot.ps1` cria no Windows uma árvore sintética sem áudio, fecha o Job, publica Evidence recuperável e um summary separado com role `synthetic_pilot`; `P` é sempre não decisório e nunca entra no conjunto A/B. O comando não comprova ETW live, breakaway, Linux, desempenho de candidato nem durabilidade contra power loss. O status confirma que a mudança terminou no commit esperado.
+O validador documental cobre links relativos, IDs/matriz de requisitos, checks, etapas, estados ADR e whitespace do diff. Os runners M0 validam somente os contratos materializados até aqui. `Invoke-M0Pilot.ps1` cria no Windows uma árvore sintética sem áudio, fecha o Job, publica Evidence recuperável e um summary separado com role `synthetic_pilot`; `P` é sempre não decisório e nunca entra no conjunto A/B. O preflight Qt valida bytes/proveniência, stage isolado e capabilities QML, mas não comprova shell, bundle, acessibilidade manual, Linux ou desempenho. O status confirma que a mudança terminou no commit esperado.
 
 ## Próximo passo
 
-1. provisionar Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML (`qmlformat`/`qmllint`/deployment/módulos), `clang-format` compatível e NVDA, registrando origem, hash e licença; depois executar M0.2 por TDD com shell C++20/Qt Quick e backend falso, usando a fixture e o roteiro comuns já fechados;
+1. executar M0.2 por TDD com shell C++20/Qt Quick e backend falso, usando o preflight Qt validado e a fixture/roteiro comuns já fechados;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

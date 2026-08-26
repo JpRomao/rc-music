@@ -1,8 +1,8 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-25
+**Atualizado em:** 2026-08-26
 
-**Fase:** transição para M0.2; bloqueado até o provisionamento Qt exigido
+**Fase:** M0.2 em andamento; preflight Qt concluído, shell experimental pendente
 
 **Código do produto:** ainda não iniciado
 
@@ -118,13 +118,13 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0 e M0.1 concluídos; M0.2 é o próximo marco, bloqueado por provisionamento |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 e preflight M0.2 concluídos; shell M0.2 em andamento |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. provisionar Qt 6.11.2 Desktop MSVC 2022 x64 e ferramentas QML, `clang-format` compatível e NVDA, registrando origem, hash e licença, e somente então criar em M0.2 o shell C++20/Qt Quick/QML com backend falso;
+1. criar em M0.2 o shell experimental C++20/Qt Quick/QML com backend falso por TDD, usando o [preflight autenticado](m0/evidence/m0-2-preflight.md);
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;

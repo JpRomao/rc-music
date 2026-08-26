@@ -2,8 +2,8 @@
 
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
-**Última revisão:** 2026-08-25
-**Marco atual:** M0.2 — próximo e bloqueado até o provisionamento Qt exigido
+**Última revisão:** 2026-08-26
+**Marco atual:** M0.2 — em andamento; preflight Qt concluído, shell Qt pendente
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -66,6 +66,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 | Plano executável com checks por incremento | `[x]` | commit que introduz este documento |
 | Ambiente, protocolo e layout M0.0 | `[x]` | [`M0.0`](m0/evidence/m0-0.md), `81f9f2f` |
 | Fixture, harness comparativo e piloto sintético M0.1 | `[x]` | [`M0.1`](m0/evidence/m0-1.md), `24d12ea` |
+| Preflight autenticado da toolchain Qt para M0.2 | `[x]` | [`M0.2-preflight`](m0/evidence/m0-2-preflight.md), contrato `ac00a565…1952` |
 
 ### 2.2 Estado que não pode ser inferido
 
@@ -83,7 +84,7 @@ A autoria documental e a revisão do mantenedor estão concluídas. A [autoriza�
 
 M0.1 foi concluído em `24d12ea`, com evidência consolidada em [`m0-1.md`](m0/evidence/m0-1.md). O marco fechou fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos, summary comum puro e o piloto Windows `P`. O caminho nominal do piloto permanece `partial/etw_live_not_implemented`; o fallback pós-falha de snapshot é `unavailable/pre_snapshot_fallback`. Ambos exigem cleanup completo e zero sobreviventes. `P` usa role `synthetic_pilot`, `decision_eligible=false` e nunca entra em snapshot-set, batch ou summary comum A/B. Nenhuma coleta comparativa A/B ocorreu e nenhuma stack ou engine foi aceita.
 
-O próximo marco é M0.2, ainda não iniciado. Antes de criar qualquer scaffold, o preflight deve provisionar Qt 6.11.2 Desktop MSVC 2022 x64, `qmlformat`, `qmllint`, deployment/módulos efetivos, `clang-format` compatível e NVDA, registrando origem, hash e licença conforme `M0-E1`; ausência de provisionamento bloqueia o check dependente e não pode ser apresentada como sucesso. M0.2 reutiliza a fixture e o roteiro comuns sem alterar o cenário depois de observar resultados.
+M0.2 está em andamento. O [preflight autenticado](m0/evidence/m0-2-preflight.md) provisionou e validou Qt 6.11.2 Desktop MSVC 2022 x64, `qmlformat`, `qmllint`, deployment/módulos efetivos, `clang-format` compatível e NVDA, com origem, hash, licença, stage isolado e contrato externo. Isso libera criar o scaffold experimental Qt, mas não comprova build Release, UI, acessibilidade, pacote ou qualquer requisito do shell. A fixture e o roteiro comuns permanecem congelados.
 
 ## 3. Check obrigatório de todo incremento
 
@@ -237,7 +238,7 @@ Código M0 é experimental, mas comportamento observável de shell, adapter, tra
 |---|---|---|---|---|
 | M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | `[x]` [evidência](m0/evidence/m0-0.md); NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | decisões/protocolo em `81f9f2f`; provisionamentos ausentes bloqueiam apenas a etapa dependente |
 | M0.1 | Fixture comum de estado, fila de 1.000 itens, assets, roteiro, marcadores externos, templates de evidência e harness de coleta | `[x]` [`evidência`](m0/evidence/m0-1.md); preparação parcial de NFR-STACK-002–003 | `CHK-TDD`, `CHK-TRACE`, `CHK-DOC`, `CHK-CLOSE`; `CHK-PERF` N/A/não executado por ausência de candidato/medição, contrato preparado e execução real adiada para M0.4 | concluído em `24d12ea`; piloto repetível e não decisório; nenhum candidato recebeu cenário diferente |
-| M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
+| M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | Em andamento; [preflight concluído](m0/evidence/m0-2-preflight.md); FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
 | M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
 | M0.4 | Comparação cega ao resultado dos shells | NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | `CHK-PERF`, `CHK-A11Y`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-TRACE`, `CHK-CLOSE` | Eliminar candidato com P0, build ausente ou budget sem exceção |
 | M0.5 | Corpus licenciado, manifesto, receitas, hashes e catálogo canônico de casos `PlaybackBackend`/`MetadataReader` | FR-002, FR-005, FR-020–024; NFR-LIMIT-001–003, NFR-REL-001, NFR-REL-006 | `CHK-CORPUS`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | Expectativas e tolerâncias versionadas; nenhum arquivo pessoal/comercial |
@@ -574,7 +575,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.
 2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
 3. M0.1 fechou gates e commit antes de qualquer shell, preservando um cenário comum contra benchmark enviesado.
-4. Provisionar Qt 6.11.2 Desktop MSVC 2022 x64/QML, `clang-format` e NVDA com origem, hash e licença; então construir/validar M0.2 e M0.3 com o mesmo recorte.
+4. O preflight Qt/QML, `clang-format` e NVDA foi fechado em `M0.2-preflight`; construir e validar o shell M0.2, depois o M0.3 com o mesmo recorte.
 5. Só então coletar M0.4 e avançar ao corpus/áudio.
 
 Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.

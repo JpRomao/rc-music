@@ -1,10 +1,10 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído; stack e engines não escolhidos
+**Estado:** M0 autorizado; M0.1 e o preflight de M0.2 concluídos; stack e engines não escolhidos
 
-**Data:** 2026-08-23
+**Data:** 2026-08-26
 
-**Escopo:** autorização, contratos M0.0–M0.1 e índice das evidências experimentais
+**Escopo:** autorização, contratos M0.0–M0.1, preflight M0.2 e índice das evidências experimentais
 
 ## 1. Autorização D0.9
 
@@ -59,7 +59,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | D0.9 — autorização e preferências | concluído neste documento |
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
-| M0.2 — shell C++20/Qt Quick/QML com backend falso | próximo; bloqueado até o provisionamento Qt exigido |
+| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), shell ainda pendente |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5–M0.8 — corpus e áudio | pendente |
