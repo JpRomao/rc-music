@@ -344,7 +344,7 @@ function Assert-M0QtBaseRefreshContract {
 function Assert-M0QtBaseRefreshReceipt { param() }
 function Invoke-M0QtBaseRefresh {
     param([string] $ContractPath, [string] $ExpectedContractSha256, [string] $RepositoryRoot, [string] $ToolRoot, [string] $RunRoot)
-    [IO.File]::WriteAllText((Join-Path $script:MarkerRoot 'invoked.marker'), 'invoked', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $script:MarkerRoot 'invoked.marker'), $RunRoot, [Text.UTF8Encoding]::new($false))
 }
 Export-ModuleMember -Function 'Assert-M0QtBaseRefreshContract', 'Assert-M0QtBaseRefreshReceipt', 'Invoke-M0QtBaseRefresh'
 '@
@@ -378,6 +378,7 @@ Export-ModuleMember -Function 'Assert-M0QtBaseRefreshContract', 'Assert-M0QtBase
         Contract = $contractPath
         Orchestrator = $orchestrator
         Runner = $runner
+        RunParent = $runParent
         ImportedMarker = Join-Path $recipeRoot 'imported.marker'
         InvokedMarker = Join-Path $recipeRoot 'invoked.marker'
     }
@@ -1413,6 +1414,11 @@ Test-Case 'production launcher authenticates contract and every recipe leaf befo
     Assert-Equal $LASTEXITCODE 0 "Nominal launcher fixture failed: $nominalOutput"
     Assert-True ([IO.File]::Exists($nominal.ImportedMarker)) 'The authenticated orchestrator was not imported.'
     Assert-True ([IO.File]::Exists($nominal.InvokedMarker)) 'The authenticated orchestrator was not invoked.'
+    $invokedRunRoot = [IO.File]::ReadAllText($nominal.InvokedMarker)
+    Assert-Equal ([IO.Path]::GetDirectoryName($invokedRunRoot)) $nominal.RunParent `
+        'The launcher did not create its RunRoot under the contract-pinned direct parent.'
+    Assert-True ([IO.Path]::GetFileName($invokedRunRoot) -cmatch '^[0-9a-f]{32}$') `
+        'The launcher RunRoot name must retain the full 128-bit GUID without timestamp or descriptive path overhead.'
 
     foreach ($kind in @('contract', 'orchestrator', 'runner', 'entrypoint')) {
         $fixture = New-TestLauncherFixture

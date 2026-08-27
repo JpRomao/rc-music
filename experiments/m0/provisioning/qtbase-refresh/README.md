@@ -7,7 +7,7 @@ Não há instalação global nesta etapa. A receita usa os pré-requisitos já a
 ## Identidades do contrato
 
 - `qtbase-refresh-contract.v1.json` é histórico e somente para verificação. Seus 15.475 bytes e SHA-256 `2023dd7621015906d86d5956474e828f4e1ef74bedda52907c5e827aa378c2c6` são imutáveis. A compatibilidade do formato v1 é coberta por fixture; nenhum replay de receipt v1 real é alegado.
-- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.513 bytes e SHA-256 `facc5626f7960e42e2dd33ae49a43a7a564002946bdb274ae2605a8f38e9f2f6` são autenticados pelo sidecar canônico adjacente.
+- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.513 bytes e SHA-256 `902cd8201d23b151257d25888e63e5df62ed6ce9168751b306765928db8c5363` são autenticados pelo sidecar canônico adjacente.
 - O contrato v2 fixa tamanho e hash do orquestrador, do runner nativo e do launcher. O launcher não aceita parâmetros, overrides de path, callbacks ou hashes fornecidos pelo chamador.
 
 O sidecar colocalizado não substitui a âncora externa: a execução real exige receita commitada e working tree limpa. Um adversário local concorrente com a mesma conta ou privilégios administrativos está fora do threat model; o workspace deve permanecer exclusivo durante o rebuild.
@@ -42,7 +42,7 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtba
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\tests\QtBaseRefreshNative.Tests.ps1
 ```
 
-Com a receita commitada e o working tree limpo, o launcher de produção inicia um `RunRoot` novo e aleatório sob `out/m0/qtbase-refresh-runs`:
+Com a receita commitada e o working tree limpo, o launcher de produção inicia um `RunRoot` novo sob `out/m0/qtbase-refresh-runs`. O nome usa os 32 hexadecimais do GUID completo, sem o overhead de path de prefixo ou timestamp:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\Invoke-M0QtBaseRefresh.ps1

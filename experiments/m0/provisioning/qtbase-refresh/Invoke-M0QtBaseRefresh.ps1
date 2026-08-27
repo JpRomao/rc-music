@@ -221,7 +221,7 @@ try {
     if (-not [IO.Directory]::Exists($runParent)) {
         throw "Pinned isolated RunRoot parent does not exist: $runParent"
     }
-    $runName = 'qtbase-refresh-' + [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [Guid]::NewGuid().ToString('N')
+    $runName = [Guid]::NewGuid().ToString('N')
     $runRoot = Join-Path $runParent $runName
     $windowsFolder = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
     $toolRoot = [IO.Path]::GetPathRoot($windowsFolder)
