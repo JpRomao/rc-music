@@ -1,6 +1,6 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com jornada Qt Quick vazia/tocando/erro, transporte, fila, navegação manual e preferências/temas implementados no candidato; checks automatizados da fatia verdes; stack e engines não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com jornada Qt Quick vazia/tocando/erro, transporte, fila, navegação manual, preferências/temas e alto contraste implementados no candidato; checks automatizados da fatia HC verdes; stack e engines não escolhidos
 
 **Data:** 2026-08-27
 
@@ -59,7 +59,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | D0.9 — autorização e preferências | concluído neste documento |
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
-| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas implementados sob a política comum da seção 6, com checks automatizados da fatia verdes; tray, pacote, alto contraste, acessibilidade nativa/NVDA e medições pendentes |
+| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas e alto contraste implementados sob as políticas comuns das seções 6–7, com checks automatizados da fatia HC verdes; tray, pacote, alto contraste nativo, acessibilidade nativa/NVDA e medições pendentes |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5–M0.8 — corpus e áudio | pendente |
@@ -127,7 +127,7 @@ No candidato Qt, o tema “Sistema” consulta `QStyleHints::colorScheme`; esque
 
 No Windows, movimento “Sistema” usa uma consulta somente leitura `SPI_GETCLIENTAREAANIMATION`. A [referência oficial de SystemParametersInfoW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfow) define essa ação como a consulta de um booleano que informa se animações na área cliente estão habilitadas; o candidato não usa a operação de alteração da preferência. Resultado desconhecido ou API indisponível usa movimento reduzido por segurança, como política do experimento; a opção “Reduzido” prevalece sobre a preferência do sistema. Os valores vêm da fixture: painel em 160 ms e feedback em 120 ms no modo normal, ambos em 0 ms no reduzido, sem animação contínua em nenhum modo. A mesma política de resultado/fallback vale para os dois candidatos; detalhes de plataforma não entram no core.
 
-### Evidência automatizada da fatia
+### Evidência automatizada de preferências/temas (`ab87803`)
 
 UI, presenter e adapter de sistema estão implementados no candidato Qt com Red/Green e testes de categorias exclusivas, semântica, foco modal, edição dos saltos e aparência. Os testes de `QtSystemAppearance` usam leitores, sinais e eventos controlados. O harness de `FixtureRepository` e `PlayerPresenter` passou a usar `QGuiApplication` offscreen: `QAbstractItemModelTester` exercitava papéis que geravam warnings de `QPixmap` com `QCoreApplication`. O core permanece sem Qt.
 
@@ -141,4 +141,51 @@ Dois Reds adicionais dos itens de seletor Basic reproduziram contraste 1:1 no it
 
 O smoke do build sem testes observou o default vivo por 1,5 s sem output; o alias normal `--m0-scenario=empty` também foi aceito. Os processos dos smokes foram encerrados por PID e não restaram processos de validação. Essa observação não comprova saída graciosa do default. Os fatores de escala offscreen não comprovam DPI nativo nem NVDA.
 
-Alto contraste continua explicitamente pendente para a próxima fatia; as paletas claras/escuras e os fallbacks não comprovam esse gate. Nenhuma validação manual nativa, NVDA, escala ou movimento reduzido foi executada nesta fatia; M0.2 permanece em andamento e sem alegação de aprovação integral de UX-006 ou desempenho.
+No fechamento de preferências/temas em `ab87803`, alto contraste permanecia pendente para a fatia seguinte; as paletas claras/escuras e os fallbacks não comprovavam esse gate. Nenhuma validação manual nativa, NVDA, escala ou movimento reduzido foi executada nessa fatia, que não encerrou M0.2 nem aprovou integralmente UX-006 ou desempenho. Seus resultados acima são históricos; a evidência de alto contraste é registrada separadamente a seguir.
+
+## 7. Política experimental de alto contraste do sistema
+
+Esta política define a fatia de alto contraste implementada no candidato M0.2 e a paridade exigida do candidato M0.3. Os checks automatizados e a revisão de código da fatia foram aprovados, com evidência abaixo. A fixture e o protocolo congelados permanecem inalterados.
+
+Quando o sistema solicita alto contraste, sua paleta prevalece temporariamente sobre “Sistema”, “Claro” e “Escuro”, sem alterar a preferência guardada em memória nem criar um quarto tema selecionável. Ao sair do alto contraste, reaplica-se a preferência atual, inclusive se ela tiver sido alterada enquanto o modo estava ativo. Movimento continua independente: alto contraste não muda a escolha “Sistema”/“Reduzido” nem os valores de duração definidos na seção 6.
+
+Enquanto o modo estiver ativo, o painel de preferências apresenta a nota “O alto contraste do sistema está ativo. O tema escolhido será usado quando ele for desativado.”, com ID de automação e `Accessible.id` iguais a `preferences-high-contrast-note`. Esse texto adicional é centralizado no candidato e comum ao A/B, sem alteração da fixture.
+
+### Cores e estados
+
+A projeção usa cinco papéis de cor do sistema, sempre em pares opacos:
+
+| Uso | Fundo | Primeiro plano |
+|---|---|---|
+| Conteúdo e controles em estado normal | `Window` | `WindowText` |
+| Realce de seleção ou interação | `Highlight` | `HighlightedText` |
+| Conteúdo e controles desabilitados | `Window` | `GrayText` |
+
+Foco, hover, pressionado, seleção e feedback devem respeitar esses pares; não se derivam cores com alpha ou `darker`. O estado desabilitado usa a cor mapeada, sem reduzir a opacidade do controle para indicá-lo. A orientação oficial da Microsoft para [alto contraste](https://learn.microsoft.com/en-us/windows/win32/winauto/high-contrast-parameter) recomenda consultar as cores escolhidas pelo usuário e preservar pares de primeiro plano/fundo. A referência de [GetSysColor](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor) identifica os pares de janela, realce e conteúdo desabilitado usados acima.
+
+Sliders e scrollbar controlados pelo candidato seguem a mesma paleta. Em alto contraste, a scrollbar mantém opacidade 1; fora dele, seu fade usa o tempo de feedback de 120 ms no modo normal e 0 ms no “Reduzido”, sem fade residual de aparecimento ou desaparecimento. Essa política não pressupõe cobertura dos componentes internos nativos do Qt.
+
+### Consulta e atualização por plataforma
+
+No candidato Qt, a detecção usa `QAccessibilityHints::contrastPreference`, acessível por `QStyleHints::accessibility`; a [documentação de QAccessibilityHints](https://doc.qt.io/qt-6/qaccessibilityhints.html#contrastPreference-prop) descreve a preferência de contraste como informação somente leitura do sistema. No Windows, as cinco cores vêm de `GetSysColor` (`COLOR_WINDOW`, `COLOR_WINDOWTEXT`, `COLOR_HIGHLIGHT`, `COLOR_HIGHLIGHTTEXT` e `COLOR_GRAYTEXT`), não de um accent WinRT. Essa escolha evita usar a cor de destaque comum como substituta da paleta de alto contraste. No Linux, `QPalette` é o fallback experimental, sem evidência de validação nativa; o candidato M0.3 deve preservar a mesma precedência e os mesmos pares por seu adapter. Nenhuma dessas consultas altera as configurações do sistema ou introduz dependência de plataforma no core.
+
+A primeira resolução ocorre antes da criação do QML. Em execução, notificações de contraste, esquema e paleta agendam uma atualização coalescida após o processamento do Qt, para ler o estado atualizado. A [documentação de QStyleHints](https://doc.qt.io/qt-6/qstylehints.html#colorScheme-prop) alerta que o sinal de mudança do esquema ainda pode observar a paleta anterior e orienta acompanhar eventos de paleta. No Windows, a atualização também considera `WM_SYSCOLORCHANGE`, que [notifica as janelas sobre mudanças nas cores do sistema](https://learn.microsoft.com/en-us/windows/win32/gdi/wm-syscolorchange). A coalescência é política do adapter, não garantia dessas APIs.
+
+### Evidência automatizada da fatia de alto contraste
+
+`HighContrastPalette` transporta as cinco cores tipadas entre adapter e apresentação, sem entrar no core. O contrato rejeita cores inválidas ou não opacas antes de publicar a aparência; a atualização é atômica e idempotente. `TransportSlider` reúne a apresentação controlada de progresso/volume, e `tst_high_contrast.qml` exercita paletas injetadas escuras/claras, foco, hover, seleção da fila, controles desabilitados, nota de precedência e saída do modo sem perder tema escolhido, modelo ou posição. A scrollbar controlada cobre opacidade 1 em alto contraste e transição imediata em movimento reduzido.
+
+A auditoria independente encontrou três P2, cada um reproduzido por um Red Quick de 9 passagens/1 falha: contorno do handle focado em `Highlight` (`#f8f800`) sobre `Window`, em vez de `WindowText` (`#fafafa`); `Accessible.id` vazio na nota HC; e anel de foco visível do ComboBox com contraste de aproximadamente 1,09:1 sobre o realce. As correções usam os pares correspondentes ao fundo e o ID acessível explícito, com regressões de foco/contraste/identidade. A revisão independente de código confirmou os três achados resolvidos; isso não constitui inspeção nativa.
+
+- Contrato C++ de apresentação: Red com 12 passagens/6 falhas; Green 18/18, repetido três vezes. Os testes cobrem precedência sobre os três temas, movimento independente, saída do modo, alterações de cada cor e rejeição sem mutação.
+- Adapter `QtSystemAppearance`: Red com 17 passagens/16 falhas; Green 33/33, com 30 repetições por CTest. Leitores, sinais Qt e mensagens injetadas verificam coalescência após o turno de eventos, snapshot coerente e cancelamento de atualização pendente na destruição.
+- Quick Test: o primeiro Red acusou o método de cenário ausente; após sua introdução, o Red mostrou HC ainda falso. A nova jornada ficou Green, com suíte completa 10/10 sem skips.
+- CTest Release estrito após as três correções da auditoria: 58/58 em 8,38 s; `qmllint` silencioso. Formato final aprovado para 36 arquivos C++ e 17 QML, com `git diff --check` limpo.
+- Quick estrito/offscreen reexecutado após as correções: 10/10 em `QT_SCALE_FACTOR=1.5` (2,748 s) e 10/10 em `QT_SCALE_FACTOR=2` (2,763 s). Quick e smoke `shell-executable.error-recovery` passaram dez vezes cada, 20 execuções finais por `--repeat until-fail:10` em 31,96 s.
+- Core Qt OFF: 51/51 por CTest em 1,50 s e execução direta com 51 casos/473 asserções; 113 comandos de compilação, cache e imports auditados sem Qt. Fixture e markers revalidados com hashes inalterados.
+
+O build Qt ON com `BUILD_TESTING=OFF` recebeu rebuild incremental após as três correções QML: 11 ações em 7,82 s, zero testes registrados pelo CTest, 153 comandos de compilação sem hooks ou fontes de teste, nenhum executável de teste e nenhuma DLL Qt Test. O default estrito permaneceu vivo por 1,5 s com stdout/stderr vazios; foi encerrado pelo próprio PID e não deixou processos residuais. Isso não comprova saída graciosa. O cenário indisponível, isolado e combinado com o smoke artificial, foi rejeitado com exit 1 no build HC anterior às três correções visuais; o parsing não mudou entre esses builds. Esta evidência é incremental, não um configure/build novo, e não reutiliza os resultados de preferências/temas da seção 6.
+
+Rastreabilidade de `CHK-CLOSE`: commit que introduz a fatia HC e este registro, com os checks acima e revisão do diff.
+
+As paletas e notificações injetadas comprovam a boundary e o QML do candidato, não a leitura real de `GetSysColor`, a alternância do Windows ou os ramos internos de alto contraste do estilo Qt Basic. Também não comprovam Linux, NVDA, DPI real ou a jornada nativa de movimento reduzido. Nenhuma nova inspeção manual da UI foi realizada. Alto contraste nativo requer evidência própria; UX-006 e M0.2 permanecem em andamento, sem novos requisitos funcionais declarados concluídos e sem aprovação de desempenho.

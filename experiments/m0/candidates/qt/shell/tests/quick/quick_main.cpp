@@ -38,7 +38,22 @@ class ScenarioDriver final : public QObject {
             music_player::m0::test::PlayerPresenterTestAccess::seekCommitAttemptCount(presenter_));
     }
     Q_INVOKABLE void setSystemAppearance(const bool dark, const bool reduced_motion) {
-        *appearance_state_ = {dark, reduced_motion};
+        appearance_state_->dark = dark;
+        appearance_state_->reduced_motion = reduced_motion;
+        appearance_.refresh();
+    }
+    Q_INVOKABLE void setHighContrast(const bool enabled, const bool light) {
+        if (!enabled) {
+            appearance_state_->high_contrast.reset();
+        } else if (light) {
+            appearance_state_->high_contrast = music_player::m0::HighContrastPalette{
+                QColor{QStringLiteral("#FCFCFD")}, QColor{QStringLiteral("#111115")}, QColor{QStringLiteral("#1A217A")},
+                QColor{QStringLiteral("#FCFCFD")}, QColor{QStringLiteral("#5A5A62")}};
+        } else {
+            appearance_state_->high_contrast = music_player::m0::HighContrastPalette{
+                QColor{QStringLiteral("#010102")}, QColor{QStringLiteral("#FAFAFA")}, QColor{QStringLiteral("#F8F800")},
+                QColor{QStringLiteral("#010101")}, QColor{QStringLiteral("#BBBBBB")}};
+        }
         appearance_.refresh();
     }
 

@@ -16,5 +16,6 @@ QtObject {
     readonly property string clearSelection: qsTr("Parar e limpar seleção")
     readonly property string theme: qsTr("Tema")
     readonly property string motion: qsTr("Movimento")
+    readonly property string highContrastActive: qsTr("O alto contraste do sistema está ativo. O tema escolhido será usado quando ele for desativado.")
     readonly property string memoryNote: qsTr("Neste experimento, preferências ficam apenas em memória. Sessão e fim da fila reais serão implementados no produto.")
 }

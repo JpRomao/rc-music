@@ -1,6 +1,7 @@
 #include "presentation/ShellUiContract.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 namespace music_player::m0 {
 namespace {
@@ -11,6 +12,14 @@ const FixtureAsset& assetById(const FixtureBundle& bundle, const QString& asset_
             return asset;
     }
     throw std::invalid_argument{"empty shell asset is missing"};
+}
+
+void validateHighContrastPalette(const HighContrastPalette& palette) {
+    for (const QColor& color :
+         {palette.window, palette.window_text, palette.highlight, palette.highlighted_text, palette.disabled_text}) {
+        if (!color.isValid() || color.alphaF() != 1.0F)
+            throw std::invalid_argument{"high contrast colors must be valid and fully opaque"};
+    }
 }
 
 } // namespace
@@ -57,8 +66,8 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
     }
 }
 
-void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark,
-                                       bool system_reduced_motion) {
+void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
+                                       std::optional<HighContrastPalette> high_contrast) {
     bool next_dark = false;
     switch (theme) {
     case ThemeMode::System:
@@ -85,11 +94,18 @@ void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool 
         throw std::invalid_argument{"unsupported motion mode"};
     }
 
-    if (dark_theme_ == next_dark && reduced_motion_ == next_reduced)
+    if (high_contrast) {
+        validateHighContrastPalette(*high_contrast);
+        // qGray estimates 8-bit brightness; 128 separates dark and light system backgrounds.
+        next_dark = qGray(high_contrast->window.rgb()) < 128;
+    }
+
+    if (dark_theme_ == next_dark && reduced_motion_ == next_reduced && high_contrast_ == high_contrast)
         return;
 
     dark_theme_ = next_dark;
     reduced_motion_ = next_reduced;
+    high_contrast_ = std::move(high_contrast);
     emit appearanceChanged();
 }
 
@@ -135,18 +151,46 @@ QString ShellUiContract::themeDark() const { return strings_.theme_dark; }
 QString ShellUiContract::motionSystem() const { return strings_.motion_system; }
 QString ShellUiContract::motionReduced() const { return strings_.motion_reduced; }
 const FixturePalette& ShellUiContract::palette() const noexcept { return dark_theme_ ? themes_.dark : themes_.light; }
-QString ShellUiContract::canvasColor() const { return palette().canvas; }
-QString ShellUiContract::surfaceColor() const { return palette().surface; }
-QString ShellUiContract::surfaceRaisedColor() const { return palette().surface_raised; }
-QString ShellUiContract::textPrimaryColor() const { return palette().text_primary; }
-QString ShellUiContract::textSecondaryColor() const { return palette().text_secondary; }
-QString ShellUiContract::accentColor() const { return palette().accent; }
-QString ShellUiContract::accentTextColor() const { return palette().on_accent; }
-QString ShellUiContract::focusColor() const { return palette().focus; }
-QString ShellUiContract::borderColor() const { return palette().border; }
-QString ShellUiContract::errorColor() const { return palette().error; }
-QString ShellUiContract::warningColor() const { return palette().warning; }
-QString ShellUiContract::successColor() const { return palette().success; }
+QString ShellUiContract::canvasColor() const {
+    return high_contrast_ ? high_contrast_->window.name() : palette().canvas;
+}
+QString ShellUiContract::surfaceColor() const {
+    return high_contrast_ ? high_contrast_->window.name() : palette().surface;
+}
+QString ShellUiContract::surfaceRaisedColor() const {
+    return high_contrast_ ? high_contrast_->window.name() : palette().surface_raised;
+}
+QString ShellUiContract::textPrimaryColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().text_primary;
+}
+QString ShellUiContract::textSecondaryColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().text_secondary;
+}
+QString ShellUiContract::accentColor() const {
+    return high_contrast_ ? high_contrast_->highlight.name() : palette().accent;
+}
+QString ShellUiContract::accentTextColor() const {
+    return high_contrast_ ? high_contrast_->highlighted_text.name() : palette().on_accent;
+}
+QString ShellUiContract::focusColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().focus;
+}
+QString ShellUiContract::borderColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().border;
+}
+QString ShellUiContract::errorColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().error;
+}
+QString ShellUiContract::warningColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().warning;
+}
+QString ShellUiContract::successColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().success;
+}
+QString ShellUiContract::disabledTextColor() const {
+    return high_contrast_ ? high_contrast_->disabled_text.name() : textPrimaryColor();
+}
+bool ShellUiContract::highContrast() const noexcept { return high_contrast_.has_value(); }
 bool ShellUiContract::darkTheme() const noexcept { return dark_theme_; }
 bool ShellUiContract::reducedMotion() const noexcept { return reduced_motion_; }
 int ShellUiContract::panelTransitionMs() const noexcept {

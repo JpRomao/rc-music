@@ -10,7 +10,8 @@ inline void bindShellAppearance(PlayerPresenter& presenter, ShellUiContract& con
     const auto refresh = [&presenter, &contract, &system] {
         const auto appearance = system.snapshot();
         const auto& preferences = presenter.preferences();
-        contract.updateAppearance(preferences.theme, preferences.motion, appearance.dark, appearance.reduced_motion);
+        contract.updateAppearance(preferences.theme, preferences.motion, appearance.dark, appearance.reduced_motion,
+                                  appearance.high_contrast);
     };
     QObject::connect(&presenter, &PlayerPresenter::preferencesChanged, &contract, refresh);
     QObject::connect(&system, &QtSystemAppearance::appearanceChanged, &contract, refresh);

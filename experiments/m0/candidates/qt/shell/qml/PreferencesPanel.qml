@@ -231,6 +231,17 @@ Popup {
                         onValueActivated: index => root.presenter.setMotionPreference(index === 1 ? PlayerPresenter.ReducedMotion : PlayerPresenter.SystemMotion)
                     }
                 }
+                Text {
+                    objectName: "preferences-high-contrast-note"
+                    Layout.fillWidth: true
+                    text: labels.highContrastActive
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    color: root.contract.textSecondaryColor
+                    visible: root.contract.highContrast
+                    Accessible.id: objectName
+                    Accessible.name: text
+                }
                 Item {
                     Layout.fillHeight: true
                 }

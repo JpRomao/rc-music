@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte, fila virtualizada, navegação manual anterior/próxima e preferências/temas implementados; checks automatizados da fatia verdes
+**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte, fila virtualizada, navegação manual, preferências/temas e alto contraste implementados; checks automatizados da fatia HC verdes
 
 **Código do produto:** ainda não iniciado
 
@@ -97,7 +97,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
 - “as preferências já persistem e restauram a sessão”: a fatia experimental de preferências/temas usa somente memória e não conclui FR-042/FR-043/FR-044;
-- “alto contraste está resolvido”: permanece pendente para a próxima fatia, junto dos gates manuais nativos;
+- “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “YouTube é suportado”: é pesquisa futura com possível incompatibilidade de políticas;
 - “ADRs foram aceitos”: todos continuam `Proposto`.
 
@@ -126,7 +126,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. continuar M0.2 por TDD com alto contraste, tray, pacote e validações manuais pendentes do shell experimental C++20/Qt Quick/QML, sem áudio real;
+1. continuar M0.2 por TDD com tray, pacote e validações manuais pendentes do shell experimental C++20/Qt Quick/QML, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
@@ -134,7 +134,7 @@ O M0 está autorizado sem aceitar stack. A sequência atual é:
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
-A fatia de preferências/temas do candidato Qt foi validada pelos checks automatizados. A [política comum e evidência](m0/README.md) registra painel/foco, edição imediata sem rollback automático e resolução do sistema, sem alterar fixture ou protocolo. Preferências são somente em memória; sessão/fim da fila reais e FR-042/FR-043/FR-044 continuam futuros. Escalas offscreen não comprovam DPI nativo/NVDA, e alto contraste permanece para a próxima fatia.
+A fatia de preferências/temas foi fechada em `ab87803`; a [política comum e evidência](m0/README.md) preserva esses resultados na seção 6 e registra separadamente HC na seção 7. Alto contraste está implementado com precedência temporária sobre os três temas, pares opacos e movimento independente; os checks automatizados passaram após as correções da auditoria independente. Fixture/protocolo permanecem inalterados. Preferências são somente em memória; sessão/fim da fila reais e FR-042/FR-043/FR-044 continuam futuros. Paletas injetadas e escalas offscreen não comprovam alto contraste nativo, DPI real/NVDA ou aprovação de UX-006.
 
 A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. Acessibilidade nativa/NVDA e desempenho permanecem pendentes.
 

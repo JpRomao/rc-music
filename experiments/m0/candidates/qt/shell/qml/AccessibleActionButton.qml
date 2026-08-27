@@ -27,10 +27,10 @@ Button {
     required property ShellUiContract contract
 
     background: Rectangle {
-        color: control.down ? Qt.darker(control.contract.accentColor, 1.1) : control.contract.accentColor
+        color: control.down && !control.contract.highContrast ? Qt.darker(control.contract.accentColor, 1.1) : control.contract.accentColor
         radius: control.contract.radiusMedium
         border.width: control.activeFocus ? 3 : (control.hovered || control.down ? 2 : 0)
-        border.color: control.contract.focusColor
+        border.color: control.contract.highContrast ? control.contract.accentTextColor : control.contract.focusColor
     }
     contentItem: Text {
         text: control.text

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
@@ -19,13 +18,11 @@ ColumnLayout {
         if (presenter.beginSeekPreview(target))
             presenter.commitSeekPreview();
     }
-    Slider {
+    TransportSlider {
         id: progress
         objectName: "progress"
-        palette.window: root.contract.surfaceColor
-        palette.dark: root.contract.accentColor
+        contract: root.contract
         property bool dragStarted: false
-        readonly property bool focusIndicatorVisible: activeFocus && enabled
         Layout.fillWidth: true
         from: 0
         to: root.presenter.hasDuration ? root.presenter.durationMs : 0
@@ -69,15 +66,6 @@ ColumnLayout {
                 return;
             root.commitKeyboardSeek(target);
             event.accepted = true;
-        }
-        Rectangle {
-            anchors.fill: parent
-            color: "transparent"
-            radius: root.contract.radiusSmall
-            border.color: root.contract.focusColor
-            border.width: 3
-            visible: parent.focusIndicatorVisible
-            z: 10
         }
     }
     RowLayout {
@@ -144,11 +132,9 @@ ColumnLayout {
             accessibleName: root.presenter.muted ? root.contract.actionUnmute : root.contract.actionMute
             onClicked: root.presenter.toggleMute()
         }
-        Slider {
+        TransportSlider {
             objectName: "volume"
-            palette.window: root.contract.surfaceColor
-            palette.dark: root.contract.accentColor
-            readonly property bool focusIndicatorVisible: activeFocus && enabled
+            contract: root.contract
             from: 0
             to: 100
             value: root.presenter.volume * 100
@@ -161,15 +147,6 @@ ColumnLayout {
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             onMoved: root.presenter.setVolume(value / 100)
-            Rectangle {
-                anchors.fill: parent
-                color: "transparent"
-                radius: root.contract.radiusSmall
-                border.color: root.contract.focusColor
-                border.width: 3
-                visible: parent.focusIndicatorVisible
-                z: 10
-            }
         }
     }
 }

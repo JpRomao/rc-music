@@ -7,6 +7,7 @@ Button {
     required property ShellUiContract contract
     property string controlId: objectName
     property string accessibleName: text
+    readonly property bool contrastHighlighted: contract.highContrast && enabled && (hovered || down || checked)
     Accessible.role: Accessible.Button
     Accessible.id: controlId
     Accessible.name: accessibleName
@@ -15,7 +16,7 @@ Button {
     Accessible.onPressAction: control.clicked()
     activeFocusOnTab: true
     hoverEnabled: true
-    opacity: enabled ? 1.0 : 0.45
+    opacity: enabled || contract.highContrast ? 1.0 : 0.45
     implicitHeight: contract.controlTargetPreferred
     implicitWidth: Math.max(contract.controlTargetPreferred, contentItem.implicitWidth + 16)
     Keys.onReturnPressed: event => {
@@ -27,18 +28,20 @@ Button {
         event.accepted = true;
     }
     background: Rectangle {
-        color: control.enabled ? (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor) : "transparent"
+        color: control.contract.highContrast ? (control.contrastHighlighted ? control.contract.accentColor : control.contract.surfaceColor) : (control.enabled ? (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor) : "transparent")
         radius: control.contract.radiusSmall
         border.width: control.activeFocus ? 3 : (control.checked ? 2 : 1)
-        border.color: control.activeFocus ? control.contract.focusColor : (control.checked ? control.contract.accentColor : control.contract.borderColor)
+        border.color: control.contract.highContrast ? (!control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.focusColor)) : (control.activeFocus ? control.contract.focusColor : (control.checked ? control.contract.accentColor : control.contract.borderColor))
         Rectangle {
             objectName: "hover-feedback"
             anchors.fill: parent
             radius: control.contract.radiusSmall
             color: control.contract.textPrimaryColor
-            opacity: control.hovered && control.enabled ? 0.08 : 0
+            visible: !control.contract.highContrast
+            opacity: !control.contract.highContrast && control.hovered && control.enabled ? 0.08 : 0
             Accessible.ignored: true
             Behavior on opacity {
+                enabled: !control.contract.highContrast
                 NumberAnimation {
                     duration: control.contract.feedbackTransitionMs
                 }
@@ -47,7 +50,7 @@ Button {
     }
     contentItem: Text {
         text: control.text
-        color: control.contract.textPrimaryColor
+        color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.textPrimaryColor)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         topPadding: control.down ? 2 : 0

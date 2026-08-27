@@ -36,13 +36,14 @@ ColumnLayout {
         onActivated: index => root.valueActivated(index)
         palette.base: root.contract.surfaceColor
         palette.button: root.contract.surfaceColor
-        palette.buttonText: root.contract.textPrimaryColor
+        palette.buttonText: root.contract.highContrast && down ? root.contract.accentTextColor : root.contract.textPrimaryColor
         palette.text: root.contract.textPrimaryColor
         palette.window: root.contract.surfaceColor
         palette.windowText: root.contract.textPrimaryColor
         palette.highlight: root.contract.accentColor
         palette.highlightedText: root.contract.accentTextColor
-        palette.mid: root.contract.borderColor
+        palette.mid: root.contract.highContrast ? root.contract.accentColor : root.contract.borderColor
+        palette.dark: root.contract.highContrast && down ? root.contract.accentTextColor : root.contract.textPrimaryColor
         delegate: ItemDelegate {
             id: option
             required property int index
@@ -61,11 +62,12 @@ ColumnLayout {
             }
         }
         Rectangle {
+            objectName: root.controlId + "-focus"
             anchors.fill: parent
             color: "transparent"
             radius: root.contract.radiusSmall
             border.width: 3
-            border.color: root.contract.focusColor
+            border.color: root.contract.highContrast && control.down ? root.contract.accentTextColor : root.contract.focusColor
             visible: control.activeFocus
             z: 2
             Accessible.ignored: true

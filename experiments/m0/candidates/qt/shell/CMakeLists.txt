@@ -149,6 +149,7 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/Main.qml PROPERTIES QT_RESOURCE_ALIAS "Main.qml")
     set_source_files_properties(qml/EmptyState.qml PROPERTIES QT_RESOURCE_ALIAS "EmptyState.qml")
     set_source_files_properties(qml/AccessibleActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "AccessibleActionButton.qml")
+    set_source_files_properties(qml/TransportSlider.qml PROPERTIES QT_RESOURCE_ALIAS "TransportSlider.qml")
     set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
     set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
     set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
@@ -173,6 +174,7 @@ if(M0_QT_SHELL_SUPPORT)
             qml/NowPlayingState.qml
             qml/ErrorState.qml
             qml/TransportBar.qml
+            qml/TransportSlider.qml
             qml/QueuePanel.qml
             qml/PreferencesPanel.qml
             qml/PreferencesText.qml

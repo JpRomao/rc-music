@@ -1,5 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/PlaybackTypes.hpp"
+#include "presentation/HighContrastPalette.hpp"
 #include "presentation/ShellUiContract.hpp"
 
 #include <QCryptographicHash>
@@ -13,6 +14,7 @@
 #include <QTest>
 #include <QtQml/qqml.h>
 
+#include <optional>
 #include <stdexcept>
 
 namespace music_player::m0::test {
@@ -34,6 +36,18 @@ QStringList paletteColors(const FixturePalette& palette) {
             palette.border,         palette.error,   palette.warning,        palette.success};
 }
 
+QStringList highContrastColors(const HighContrastPalette& palette) {
+    const QString window = palette.window.name();
+    const QString text = palette.window_text.name();
+    return {window, window, window, text, text, palette.highlight.name(), palette.highlighted_text.name(),
+            text,   text,   text,   text, text};
+}
+
+HighContrastPalette lightHighContrastPalette() {
+    return {QColor{254, 245, 220}, QColor{11, 24, 48}, QColor{24, 15, 143}, QColor{255, 252, 235},
+            QColor{107, 82, 110}};
+}
+
 } // namespace
 
 class ShellUiContractTests final : public QObject {
@@ -49,6 +63,13 @@ class ShellUiContractTests final : public QObject {
     void appearanceNotificationsReflectOnlyEffectiveChanges();
     void appearanceIsCoherentWhenNotified();
     void rejectsInvalidAppearanceModesWithoutMutation();
+    void highContrastPaletteHasDeterministicDefaults();
+    void highContrastOverridesEveryThemeWithoutChangingMotion();
+    void leavingHighContrastRestoresTheRequestedTheme();
+    void highContrastChangesAreAtomicAndIdempotent();
+    void highContrastDarkThemeUsesWindowBrightness();
+    void rejectsInvalidHighContrastColorsWithoutMutation();
+    void rejectsInvalidAppearanceModesEvenInHighContrast();
 };
 
 void ShellUiContractTests::initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
@@ -113,6 +134,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.errorColor(), QStringLiteral("#B42318"));
     QCOMPARE(contract.warningColor(), QStringLiteral("#8A4B08"));
     QCOMPARE(contract.successColor(), QStringLiteral("#167344"));
+    QCOMPARE(contract.disabledTextColor(), contract.textPrimaryColor());
+    QVERIFY(!contract.highContrast());
     QVERIFY(!contract.darkTheme());
     QVERIFY(!contract.reducedMotion());
     QCOMPARE(contract.panelTransitionMs(), 160);
@@ -174,6 +197,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("errorColor"),
         QStringLiteral("warningColor"),
         QStringLiteral("successColor"),
+        QStringLiteral("disabledTextColor"),
+        QStringLiteral("highContrast"),
         QStringLiteral("darkTheme"),
         QStringLiteral("reducedMotion"),
         QStringLiteral("panelTransitionMs"),
@@ -188,6 +213,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("accentTextColor"),    QStringLiteral("focusColor"),
         QStringLiteral("borderColor"),        QStringLiteral("errorColor"),
         QStringLiteral("warningColor"),       QStringLiteral("successColor"),
+        QStringLiteral("disabledTextColor"),  QStringLiteral("highContrast"),
         QStringLiteral("darkTheme"),          QStringLiteral("reducedMotion"),
         QStringLiteral("panelTransitionMs"),  QStringLiteral("feedbackTransitionMs"),
     };
@@ -297,6 +323,8 @@ void ShellUiContractTests::themeModesUseFixturePalettesWithExplicitPrecedence() 
             QCOMPARE(contract.darkTheme(), expected_dark);
             QCOMPARE(appearanceColors(contract),
                      paletteColors(expected_dark ? bundle.themes.dark : bundle.themes.light));
+            QCOMPARE(contract.disabledTextColor(), contract.textPrimaryColor());
+            QVERIFY(!contract.highContrast());
             QVERIFY(!contract.reducedMotion());
             QCOMPARE(contract.panelTransitionMs(), 160);
             QCOMPARE(contract.feedbackTransitionMs(), 120);
@@ -404,6 +432,203 @@ void ShellUiContractTests::rejectsInvalidAppearanceModesWithoutMutation() {
                                           static_cast<MotionMode>(invalid_motion), false, false));
             verify_unchanged();
         }
+    }
+}
+
+void ShellUiContractTests::highContrastPaletteHasDeterministicDefaults() {
+    const HighContrastPalette palette;
+    QCOMPARE(palette.window, QColor(Qt::black));
+    QCOMPARE(palette.window_text, QColor(Qt::white));
+    QCOMPARE(palette.highlight, QColor(Qt::yellow));
+    QCOMPARE(palette.highlighted_text, QColor(Qt::black));
+    QCOMPARE(palette.disabled_text, QColor(128, 128, 128));
+    QVERIFY(palette == HighContrastPalette{});
+    for (QColor HighContrastPalette::* const member :
+         {&HighContrastPalette::window, &HighContrastPalette::window_text, &HighContrastPalette::highlight,
+          &HighContrastPalette::highlighted_text, &HighContrastPalette::disabled_text}) {
+        HighContrastPalette changed = palette;
+        changed.*member = QColor(18, 52, 86);
+        QVERIFY(palette != changed);
+    }
+}
+
+void ShellUiContractTests::highContrastOverridesEveryThemeWithoutChangingMotion() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    struct Scenario final {
+        HighContrastPalette palette;
+        bool dark;
+    };
+    for (const auto& scenario : {Scenario{HighContrastPalette{}, true}, Scenario{lightHighContrastPalette(), false}}) {
+        ShellUiContract contract(bundle);
+        for (const ThemeMode theme : {ThemeMode::System, ThemeMode::Light, ThemeMode::Dark}) {
+            for (const bool system_dark : {false, true}) {
+                for (const MotionMode motion : {MotionMode::System, MotionMode::Reduced}) {
+                    for (const bool system_reduced : {false, true}) {
+                        contract.updateAppearance(theme, motion, system_dark, system_reduced, scenario.palette);
+                        const bool reduced = motion == MotionMode::Reduced || system_reduced;
+                        QVERIFY(contract.highContrast());
+                        QCOMPARE(appearanceColors(contract), highContrastColors(scenario.palette));
+                        QCOMPARE(contract.disabledTextColor(), scenario.palette.disabled_text.name());
+                        QCOMPARE(contract.darkTheme(), scenario.dark);
+                        QCOMPARE(contract.reducedMotion(), reduced);
+                        QCOMPARE(contract.panelTransitionMs(), reduced ? 0 : 160);
+                        QCOMPARE(contract.feedbackTransitionMs(), reduced ? 0 : 120);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void ShellUiContractTests::leavingHighContrastRestoresTheRequestedTheme() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    for (const ThemeMode theme : {ThemeMode::System, ThemeMode::Light, ThemeMode::Dark}) {
+        for (const bool system_dark : {false, true}) {
+            ShellUiContract contract(bundle);
+            QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+            contract.updateAppearance(theme, MotionMode::Reduced, system_dark, false, HighContrastPalette{});
+            QVERIFY(contract.highContrast());
+            contract.updateAppearance(theme, MotionMode::Reduced, system_dark, false);
+            const bool dark = theme == ThemeMode::Dark || (theme == ThemeMode::System && system_dark);
+            QVERIFY(!contract.highContrast());
+            QCOMPARE(contract.darkTheme(), dark);
+            QCOMPARE(appearanceColors(contract), paletteColors(dark ? bundle.themes.dark : bundle.themes.light));
+            QCOMPARE(contract.disabledTextColor(), contract.textPrimaryColor());
+            QVERIFY(contract.reducedMotion());
+            QCOMPARE(contract.panelTransitionMs(), 0);
+            QCOMPARE(contract.feedbackTransitionMs(), 0);
+            QCOMPARE(changed.count(), 2);
+        }
+    }
+}
+
+void ShellUiContractTests::highContrastChangesAreAtomicAndIdempotent() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    HighContrastPalette expected;
+    bool expected_reduced = false;
+    int observations = 0;
+    QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+    QObject::connect(&contract, &ShellUiContract::appearanceChanged, &contract, [&] {
+        ++observations;
+        QVERIFY(contract.highContrast());
+        QVERIFY(contract.darkTheme());
+        QCOMPARE(appearanceColors(contract), highContrastColors(expected));
+        QCOMPARE(contract.disabledTextColor(), expected.disabled_text.name());
+        QCOMPARE(contract.reducedMotion(), expected_reduced);
+        QCOMPARE(contract.panelTransitionMs(), expected_reduced ? 0 : 160);
+        QCOMPARE(contract.feedbackTransitionMs(), expected_reduced ? 0 : 120);
+    });
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false, expected);
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(observations, 1);
+    int expected_count = 1;
+    for (QColor HighContrastPalette::* const member :
+         {&HighContrastPalette::window, &HighContrastPalette::window_text, &HighContrastPalette::highlight,
+          &HighContrastPalette::highlighted_text, &HighContrastPalette::disabled_text}) {
+        expected.*member = QColor(18, 52, 86);
+        contract.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false, expected);
+        ++expected_count;
+        QCOMPARE(changed.count(), expected_count);
+        QCOMPARE(observations, expected_count);
+        contract.updateAppearance(ThemeMode::Light, MotionMode::System, true, false, expected);
+        contract.updateAppearance(ThemeMode::System, MotionMode::System, false, false, expected);
+        QCOMPARE(changed.count(), expected_count);
+        QCOMPARE(observations, expected_count);
+    }
+    HighContrastPalette caller_copy = expected;
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::System, true, false, caller_copy);
+    caller_copy.window = QColor(Qt::white);
+    QCOMPARE(appearanceColors(contract), highContrastColors(expected));
+    QCOMPARE(changed.count(), expected_count);
+
+    expected_reduced = true;
+    contract.updateAppearance(ThemeMode::Light, MotionMode::Reduced, false, false, expected);
+    ++expected_count;
+    QCOMPARE(changed.count(), expected_count);
+    QCOMPARE(observations, expected_count);
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, true, true, expected);
+    QCOMPARE(changed.count(), expected_count);
+}
+
+void ShellUiContractTests::highContrastDarkThemeUsesWindowBrightness() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    struct Scenario final {
+        QColor window;
+        bool dark;
+    };
+    for (const auto& scenario : {Scenario{QColor(Qt::black), true}, Scenario{QColor(Qt::white), false},
+                                 Scenario{QColor(127, 127, 127), true}, Scenario{QColor(128, 128, 128), false},
+                                 Scenario{QColor(Qt::blue), true}, Scenario{QColor(Qt::yellow), false}}) {
+        ShellUiContract contract(bundle);
+        HighContrastPalette palette;
+        palette.window = scenario.window;
+        contract.updateAppearance(ThemeMode::Dark, MotionMode::System, true, false, palette);
+        QCOMPARE(contract.darkTheme(), scenario.dark);
+        QCOMPARE(contract.canvasColor(), scenario.window.name());
+        QVERIFY(contract.highContrast());
+    }
+}
+
+void ShellUiContractTests::rejectsInvalidHighContrastColorsWithoutMutation() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    for (const bool initially_high_contrast : {false, true}) {
+        ShellUiContract contract(bundle);
+        contract.updateAppearance(ThemeMode::Dark, MotionMode::Reduced, false, false,
+                                  initially_high_contrast ? std::optional{HighContrastPalette{}} : std::nullopt);
+        const QStringList original = appearanceColors(contract);
+        const QString original_disabled = contract.disabledTextColor();
+        QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+        for (QColor HighContrastPalette::* const member :
+             {&HighContrastPalette::window, &HighContrastPalette::window_text, &HighContrastPalette::highlight,
+              &HighContrastPalette::highlighted_text, &HighContrastPalette::disabled_text}) {
+            for (const QColor& invalid :
+                 {QColor{}, QColor(0, 0, 0, 0), QColor(18, 52, 86, 254), QColor::fromRgbF(0.1F, 0.2F, 0.3F, 0.999F)}) {
+                HighContrastPalette palette = lightHighContrastPalette();
+                palette.*member = invalid;
+                QVERIFY_THROWS_EXCEPTION(
+                    std::invalid_argument,
+                    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false, palette));
+                QCOMPARE(appearanceColors(contract), original);
+                QCOMPARE(contract.disabledTextColor(), original_disabled);
+                QCOMPARE(contract.highContrast(), initially_high_contrast);
+                QVERIFY(contract.darkTheme());
+                QVERIFY(contract.reducedMotion());
+                QCOMPARE(contract.panelTransitionMs(), 0);
+                QCOMPARE(contract.feedbackTransitionMs(), 0);
+                QCOMPARE(changed.count(), 0);
+            }
+        }
+    }
+}
+
+void ShellUiContractTests::rejectsInvalidAppearanceModesEvenInHighContrast() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    const HighContrastPalette original_palette;
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::Reduced, false, false, original_palette);
+    QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+    const auto verify_unchanged = [&] {
+        QVERIFY(contract.highContrast());
+        QVERIFY(contract.darkTheme());
+        QVERIFY(contract.reducedMotion());
+        QCOMPARE(contract.panelTransitionMs(), 0);
+        QCOMPARE(contract.feedbackTransitionMs(), 0);
+        QCOMPARE(appearanceColors(contract), highContrastColors(original_palette));
+        QCOMPARE(contract.disabledTextColor(), original_palette.disabled_text.name());
+        QCOMPARE(changed.count(), 0);
+    };
+    for (const int invalid_theme : {-1, 3}) {
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 contract.updateAppearance(static_cast<ThemeMode>(invalid_theme), MotionMode::System,
+                                                           false, false, lightHighContrastPalette()));
+        verify_unchanged();
+    }
+    for (const int invalid_motion : {-1, 2}) {
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 contract.updateAppearance(ThemeMode::Light, static_cast<MotionMode>(invalid_motion),
+                                                           false, false, lightHighContrastPalette()));
+        verify_unchanged();
     }
 }
 

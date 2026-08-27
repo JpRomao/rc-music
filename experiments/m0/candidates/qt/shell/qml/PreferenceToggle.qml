@@ -20,12 +20,12 @@ CheckBox {
     Accessible.checkable: true
     Accessible.checked: checked
     onToggled: valueEdited(checked)
-    palette.windowText: contract.textPrimaryColor
-    palette.text: contract.textPrimaryColor
+    palette.windowText: contract.highContrast && !enabled ? contract.disabledTextColor : contract.textPrimaryColor
+    palette.text: contract.highContrast && !enabled ? contract.disabledTextColor : contract.textPrimaryColor
     palette.base: contract.surfaceColor
     palette.highlight: contract.accentColor
     palette.highlightedText: contract.accentTextColor
-    palette.mid: contract.borderColor
+    palette.mid: contract.highContrast && !enabled ? contract.disabledTextColor : contract.borderColor
     Rectangle {
         anchors.fill: parent
         color: "transparent"

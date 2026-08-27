@@ -102,6 +102,9 @@ FocusScope {
                 required property var durationMs
                 required property bool available
                 required property var errorCode
+                readonly property bool contrastHighlighted: root.contract.highContrast && (ListView.isCurrentItem || hovered)
+                readonly property color primaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textPrimaryColor
+                readonly property color secondaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textSecondaryColor
                 objectName: "queue-row-" + occurrenceId
                 width: ListView.view.width
                 height: 64
@@ -126,10 +129,10 @@ FocusScope {
                 }
 
                 background: Rectangle {
-                    color: row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent")
+                    color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent"))
                     radius: root.contract.radiusSmall
-                    border.width: row.ListView.isCurrentItem && queueList.activeFocus ? 3 : 0
-                    border.color: root.contract.focusColor
+                    border.width: row.ListView.isCurrentItem ? (queueList.activeFocus ? 3 : (root.contract.highContrast ? 2 : 0)) : (root.contract.highContrast && row.hovered ? 1 : 0)
+                    border.color: row.contrastHighlighted ? root.contract.accentTextColor : root.contract.focusColor
                 }
 
                 contentItem: RowLayout {
@@ -137,7 +140,7 @@ FocusScope {
 
                     Text {
                         text: row.occurrenceId === root.presenter.currentOccurrenceId ? "▶" : ""
-                        color: root.contract.textPrimaryColor
+                        color: row.primaryColor
                         Layout.preferredWidth: 16
                         Accessible.ignored: true
                     }
@@ -149,7 +152,7 @@ FocusScope {
                             text: row.title.length > 0 ? row.title : row.fileName
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: root.contract.textPrimaryColor
+                            color: row.primaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }
@@ -157,7 +160,7 @@ FocusScope {
                             text: row.artist
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: root.contract.textSecondaryColor
+                            color: row.secondaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }
@@ -166,7 +169,7 @@ FocusScope {
                             text: root.contract.errorTitle
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: root.contract.textSecondaryColor
+                            color: row.secondaryColor
                             visible: !row.available
                             Layout.fillWidth: true
                             Accessible.ignored: true
@@ -174,14 +177,35 @@ FocusScope {
                     }
                     Text {
                         text: root.formatDuration(row.durationMs)
-                        color: root.contract.textSecondaryColor
+                        color: row.secondaryColor
                         Accessible.ignored: true
                     }
                 }
             }
 
             ScrollBar.vertical: ScrollBar {
+                id: scrollBar
+                objectName: "queue-scrollbar"
                 activeFocusOnTab: false
+                contentItem: Rectangle {
+                    implicitWidth: 6
+                    implicitHeight: 6
+                    radius: width / 2
+                    color: root.contract.highContrast ? root.contract.textPrimaryColor : (scrollBar.pressed ? root.contract.accentColor : root.contract.borderColor)
+                    opacity: root.contract.highContrast ? 1 : (scrollBar.policy === ScrollBar.AlwaysOn || (scrollBar.active && scrollBar.size < 1) ? 0.75 : 0)
+                    Behavior on opacity {
+                        enabled: !root.contract.highContrast
+                        NumberAnimation {
+                            duration: root.contract.feedbackTransitionMs
+                        }
+                    }
+                }
+                background: Rectangle {
+                    visible: root.contract.highContrast
+                    color: root.contract.surfaceColor
+                    border.width: 1
+                    border.color: root.contract.textPrimaryColor
+                }
             }
 
             Rectangle {

@@ -2,11 +2,14 @@
 
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/PlaybackTypes.hpp"
+#include "presentation/HighContrastPalette.hpp"
 
 #include <QObject>
 #include <QString>
 #include <QUrl>
 #include <QtQmlIntegration/qqmlintegration.h>
+
+#include <optional>
 
 namespace music_player::m0 {
 
@@ -67,6 +70,8 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString errorColor READ errorColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString warningColor READ warningColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString successColor READ successColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString disabledTextColor READ disabledTextColor NOTIFY appearanceChanged)
+    Q_PROPERTY(bool highContrast READ highContrast NOTIFY appearanceChanged)
     Q_PROPERTY(bool darkTheme READ darkTheme NOTIFY appearanceChanged)
     Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY appearanceChanged)
     Q_PROPERTY(int panelTransitionMs READ panelTransitionMs NOTIFY appearanceChanged)
@@ -76,7 +81,8 @@ class ShellUiContract final : public QObject {
 
   public:
     explicit ShellUiContract(const FixtureBundle& bundle, QObject* parent = nullptr);
-    void updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion);
+    void updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
+                          std::optional<HighContrastPalette> high_contrast = std::nullopt);
     [[nodiscard]] int clientWidth() const noexcept;
     [[nodiscard]] int clientHeight() const noexcept;
     [[nodiscard]] int minimumWidth() const noexcept;
@@ -130,6 +136,8 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString errorColor() const;
     [[nodiscard]] QString warningColor() const;
     [[nodiscard]] QString successColor() const;
+    [[nodiscard]] QString disabledTextColor() const;
+    [[nodiscard]] bool highContrast() const noexcept;
     [[nodiscard]] bool darkTheme() const noexcept;
     [[nodiscard]] bool reducedMotion() const noexcept;
     [[nodiscard]] int panelTransitionMs() const noexcept;
@@ -148,6 +156,7 @@ class ShellUiContract final : public QObject {
     FixtureStrings strings_;
     FixtureThemes themes_;
     FixtureMotion motion_;
+    std::optional<HighContrastPalette> high_contrast_;
     bool dark_theme_{false};
     bool reduced_motion_{false};
     QUrl placeholder_source_{QStringLiteral("qrc:/m0/assets/cover-placeholder.svg")};
