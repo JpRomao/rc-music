@@ -149,6 +149,8 @@ A receita em `package/` prepara somente uma pasta privada para M0.2, não um ins
 
 O stage `tray-34edef1-local-02`, derivado do shell de `34edef1`, passou na conferência de 1.378 arquivos/82.388.347 bytes e 69 PEs x64. A cópia para `relocação com espaços 34edef1-01` preservou o mesmo manifesto e payload. Isso ainda não comprova execução relocada: o smoke isolado foi bloqueado por `RTSSHooks64.dll` injetado pelo RivaTuner. `error-recovery` do pacote não chegou a executar, embora os smokes do build comum continuem verdes no CTest. Nenhuma configuração externa foi alterada e o processo do player foi limpo.
 
+O stage posterior `tray-200b983-clean-01` foi gerado pela receita commitada em `200b983`, com worktree limpo e `recipe_dirty=false`. Seu manifesto é `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`; o payload confere integralmente com o stage anterior. O build existente não precisou recompilar. Essa regeneração estática não executou o aplicativo e não remove o bloqueio de smoke ou os gates manuais.
+
 ### Gerar e verificar
 
 Use PowerShell 7.6.5 em um **Developer PowerShell for VS 2022 x64**, na raiz do repositório, após configurar o build Qt ON/Release conforme acima. Fontes do shell, fixture e protocolo devem estar commitados e limpos. A receita identifica separadamente mudanças ainda não commitadas em si mesma (`recipe_dirty`); antes de medições, todo o worktree deve estar limpo. O nome do destino deve ser novo: não há opção de sobrescrita.

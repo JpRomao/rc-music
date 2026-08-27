@@ -75,7 +75,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 - Nenhuma stack ou engine foi aceita.
 - ADR-0001, ADR-0002 e ADR-0003 continuam `Proposto`.
 - Os budgets são metas, não medições.
-- Windows possui somente um build Release local e não empacotado do candidato Qt; Linux e o candidato Tauri ainda não possuem build.
+- Windows possui build Release e pacote local de avaliação do candidato Qt, com inventário verificado mas execução isolada ainda bloqueada; Linux e o candidato Tauri ainda não possuem build.
 - YouTube continua pesquisa futura sem promessa de implementação.
 
 ### 2.3 Checkpoint M0 atual

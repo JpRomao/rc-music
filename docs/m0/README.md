@@ -323,4 +323,10 @@ A primeira tentativa real de `tray-lifecycle` do pacote foi rejeitada porque o p
 
 As evidências locais ficam em `evidence/` desse stage: `deployment-plan.v1.json`, `pe-closure.v1.json`, `smoke-blocked-rtss.v1.json`, `release-ctest.txt` e logs dos testes PowerShell. Parser/whitespace e validação documental fazem parte do fechamento. PSScriptAnalyzer não está instalado e não é alegado como lint aprovado. A rastreabilidade de `CHK-CLOSE` é o commit que introduz a receita, testes e este registro; o artefato acima preserva a proveniência anterior explicitamente indicada.
 
+### Regeneração com a receita commitada
+
+Após o commit `200b9838dc9e86427e083771ef71bc9f1ee49f4b`, a receita gerou `out/m0/packages/qt-shell/tray-200b983-clean-01` com o worktree limpo, `source_paths_clean=true` e `recipe_dirty=false`. O novo manifesto tem SHA-256 `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`. A verificação dos dois manifestos confirmou os mesmos 1.378 paths, tamanhos e hashes de payload, totalizando 82.388.347 bytes; os hashes da receita conferem com os arquivos commitados. O relatório PE continua com 69 arquivos e 41 pré-requisitos externos.
+
+O build existente foi reutilizado (`ninja: no work to do.`); esta evidência prova a regeneração do stage pela receita limpa, não um rebuild do zero nem reprodução binária em outra máquina. O resultado está em `evidence/committed-recipe-check.v1.json` do novo stage. Não houve execução do aplicativo ou nova tentativa de smoke: o RivaTuner continuava ativo e a autorização para retomar o desktop não foi recebida. A relocação registrada acima continua sendo a cópia do stage anterior, não uma execução relocada do novo pacote.
+
 M0.2 permanece em andamento. Execução isolada/relocada, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa, integração de instalador e medições continuam pendentes. Não houve retomada de Computer Use, leitura dos áudios pessoais, distribuição ou decisão de stack.
