@@ -7,7 +7,7 @@
 
 Esta revisão atende à triagem de advisories exigida pelo [gate de dependências](../../quality/quality-gates.md) e pelo controle `SEC-014` do [threat model](../../security/threat-model.md). Prepara `NFR-REL-006` e `NFR-STACK-006`, sem declarar esses requisitos atendidos. Não é decisão de stack, scanner completo, certificação de segurança ou autorização de redistribuição.
 
-O objeto é o pacote privado `out/m0/packages/qt-shell/tray-200b983-clean-01`, gerado em `200b9838dc9e86427e083771ef71bc9f1ee49f4b`, com `source_paths_clean=true` e `recipe_dirty=false`. Seu manifesto autenticado tem SHA-256 `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`: 1.378 arquivos, 82.388.347 bytes e 69 PEs x64. A [seção 9 do registro M0](../README.md) mantém a receita, a regeneração e o smoke bloqueado por RTSS.
+O objeto é o pacote privado `out/m0/packages/qt-shell/tray-200b983-clean-01`, gerado em `200b9838dc9e86427e083771ef71bc9f1ee49f4b`, com `source_paths_clean=true` e `recipe_dirty=false`. Seu manifesto autenticado tem SHA-256 `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`: 1.378 arquivos, 82.388.347 bytes e 69 PEs x64. A [seção 9 do registro M0](../README.md) mantém a receita, a regeneração, o bloqueio histórico por RTSS e os smokes posteriores aprovados; estes não resolvem os achados desta triagem.
 
 Resultados que exigem acompanhamento:
 
@@ -15,7 +15,7 @@ Resultados que exigem acompanhamento:
 2. O toolset MSVC 14.43 usado pelo shell está fora de suporte. O runtime mais novo do host não resolve o suporte do compilador nem a ressalva de linker 19.43 com Qt compilado por 19.44.
 3. D3DCompiler, servicing do CRT, atribuições sem versão e obrigações completas de licença/notices continuam sem fechamento.
 
-Não houve atualização de dependência, instalação, modificação da toolchain, execução de PoC, execução do player, retomada de desktop ou acesso aos áudios pessoais. As consultas externas enviaram somente identificadores públicos de componentes, versões e revisões; o SBOM e os paths locais não foram enviados a um scanner externo.
+Durante a triagem, não houve atualização de dependência, instalação, modificação da toolchain, execução de PoC, execução do player, retomada de desktop ou acesso aos áudios pessoais. As consultas externas enviaram somente identificadores públicos de componentes, versões e revisões; o SBOM e os paths locais não foram enviados a um scanner externo.
 
 ## Identidade e limites do inventário
 
@@ -163,4 +163,4 @@ As três consultas de advisories via API retornaram HTTP 200 e nenhuma próxima 
 
 Esta é uma mudança documental, sem comportamento novo: TDD não se aplica. A validação documental passou com 31 Markdown, 83 requisitos, 17 checks e 76 etapas; o manifesto autenticado e os seis hashes de evidência acima foram reconferidos, e a revisão do diff não apresentou achados. As suítes C++/QML já verdes não foram repetidas como se fossem um scanner de vulnerabilidades. O commit que introduz este documento é a evidência de `CHK-CLOSE` desta revisão, não o encerramento de M0.2.
 
-Para retomar: resolver as pendências de segurança/toolchain com evidência e decisões proporcionais; concluir o smoke isolado/relocado após remover a interferência externa sem relaxar a whitelist; retomar os gates de desktop apenas com autorização. Redistribuição, M0.3 e fechamento de M0.2 não foram liberados por esta triagem.
+Para retomar: resolver as pendências de segurança/toolchain com evidência e decisões proporcionais e retomar os gates de desktop apenas com autorização. O smoke offscreen original/relocado passou posteriormente, sem RTSS ou relaxamento da whitelist, conforme o registro M0; esse resultado não substitui `CHK-SEC`. Redistribuição, M0.3 e fechamento de M0.2 não foram liberados por esta triagem.

@@ -59,7 +59,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | D0.9 — autorização e preferências | concluído neste documento |
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
-| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas, alto contraste e bandeja implementados sob as políticas comuns das seções 6–8, com checks automatizados de ciclo de vida verdes; pacote, bandeja/alto contraste nativos, acessibilidade nativa/NVDA e medições pendentes |
+| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas, alto contraste e bandeja implementados sob as políticas comuns das seções 6–8; pacote local com smoke offscreen original/relocado aprovado na seção 9; bandeja/alto contraste nativos, acessibilidade nativa/NVDA, segurança e medições pendentes |
 | M0.2 — [triagem de segurança do pacote](evidence/m0-2-security-triage.md) | parcial; vínculo PE/SPDX conferido, fontes FreeType/PCRE2 com achados, MSVC fora de suporte e pendências explícitas; não encerra `CHK-SEC` |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
@@ -251,7 +251,7 @@ O incremento parte de `4b4bf42` (HC) e usa Qt 6.11.2/MSVC x64, CMake Release e a
 - **Startup sem testes:** permaneceu vivo por 1,5 s, offscreen/estrito, com stdout/stderr vazios. O PID retido foi encerrado à força somente para cleanup; esse check não comprova saída graciosa. A inspeção final não encontrou processos Qt do workspace remanescentes.
 - **Contratos:** fixture `21a150477811aa62f59f4f958d594786bcef4a7c2dfd2bfda3ef9d29dee7c8e5` e markers `60d73a785cfeb67c0cec45fb2c77d1687edf151e8d44a122d669b4800e345d4c` permanecem inalterados; validação documental e diff check aprovados.
 
-Logs locais ficam em `out/m0/builds/qt-shell/final-release`, incluindo `lifecycle-full-ctest.log`, `lifecycle-repeat-10.log` e os Reds/Greens QML, além dos builds isolados `navigation-core`, `lifecycle-presenter`, `tray-adapter`, `tray-binding` e `lifecycle-launch-options`. Nenhuma inspeção manual foi retomada após a interrupção de Computer Use; pacote, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux e medições continuam pendentes.
+Logs locais ficam em `out/m0/builds/qt-shell/final-release`, incluindo `lifecycle-full-ctest.log`, `lifecycle-repeat-10.log` e os Reds/Greens QML, além dos builds isolados `navigation-core`, `lifecycle-presenter`, `tray-adapter`, `tray-binding` e `lifecycle-launch-options`. Nenhuma inspeção manual foi retomada após a interrupção de Computer Use; naquela fatia, pacote, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux e medições permaneciam pendentes. O pacote e seu smoke posterior são registrados na seção 9.
 
 ## 9. Política experimental de pacote Qt para avaliação local
 
@@ -309,7 +309,7 @@ O stage `out/m0/packages/qt-shell/tray-34edef1-local-02` deriva do shell de `34e
 
 A revisão independente conferiu o manifesto, todas as origens do plano e os 69 PEs x64 por `dumpbin`, sem executar o payload. Há 29 DLLs Qt na raiz, 12 plugins nativos, 26 plugins QML e um D3D compiler, além do executável. As 733 referências PE se dividem em 228 internas, 109 CRT, 133 Windows e 263 API sets. Os 41 arquivos externos conferem em hash/versão no host; os cinco componentes MSVC CRT são `14.51.36247.0`. Não há Qt Test, executáveis de teste, CRT/redist, ferramentas, áudio, arquivos debug, DXC ou Mesa no payload. O D3D compiler confere com a cópia provisionada na toolchain, não com Windows Kits/System32.
 
-Cinco componentes da aplicação aparecem somente como recursos `qrc`, preferidos pelo `qmldir`, e não como cópia QML solta. Seus nomes de recursos estão no executável, idêntico ao build. A inspeção estática não identificou componente ausente, mas somente o smoke pode comprovar a resolução efetiva e a jornada desse pacote.
+Cinco componentes da aplicação aparecem somente como recursos `qrc`, preferidos pelo `qmldir`, e não como cópia QML solta. Seus nomes de recursos estão no executável, idêntico ao build. A inspeção estática não identificou componente ausente; a comprovação das jornadas offscreen com resolução efetiva veio posteriormente, no stage de receita commitada descrito abaixo.
 
 Checks da receita:
 
@@ -320,7 +320,7 @@ Checks da receita:
 - **Checks finais:** core Qt OFF 55/55, 1.849 asserções; formato de 43 C++/20 QML e `qmllint` silencioso; parser de oito scripts/módulos PowerShell aprovado. Validação documental passou com 30 Markdown, 83 requisitos, 17 checks e 76 etapas; diff check aprovado.
 - **Relocação de arquivos:** cópia para `out/m0/packages/qt-shell/relocação com espaços 34edef1-01`, com os mesmos 1.378 arquivos e o mesmo hash de manifesto, aprovada pelo validador. Não houve execução do aplicativo nessa cópia.
 
-A primeira tentativa real de `tray-lifecycle` do pacote foi rejeitada porque o processo carregou o módulo externo `RTSSHooks64.dll`, injetado pelo RivaTuner Statistics Server. O runner encerrou somente o processo retido; a inspeção posterior não encontrou players do workspace remanescentes. O smoke `error-recovery` **do pacote** não foi executado. A retomada aguarda o fechamento do RivaTuner pelo usuário, sem alterar sua configuração nem relaxar a whitelist do runner. Os testes unitários do runner não substituem essa integração bloqueada.
+A primeira tentativa real de `tray-lifecycle` do pacote foi rejeitada porque o processo carregou o módulo externo `RTSSHooks64.dll`, injetado pelo RivaTuner Statistics Server. O runner encerrou somente o processo retido; a inspeção posterior não encontrou players do workspace remanescentes. O smoke `error-recovery` **do pacote** não foi executado naquela tentativa. Naquele checkpoint, a retomada aguardava o fechamento do RivaTuner, sem alterar sua configuração nem relaxar a whitelist do runner. A execução posterior aprovada é registrada separadamente abaixo; não reclassifica esta tentativa como sucesso.
 
 As evidências locais ficam em `evidence/` desse stage: `deployment-plan.v1.json`, `pe-closure.v1.json`, `smoke-blocked-rtss.v1.json`, `release-ctest.txt` e logs dos testes PowerShell. Parser/whitespace e validação documental fazem parte do fechamento. PSScriptAnalyzer não está instalado e não é alegado como lint aprovado. A rastreabilidade de `CHK-CLOSE` é o commit que introduz a receita, testes e este registro; o artefato acima preserva a proveniência anterior explicitamente indicada.
 
@@ -328,8 +328,32 @@ As evidências locais ficam em `evidence/` desse stage: `deployment-plan.v1.json
 
 Após o commit `200b9838dc9e86427e083771ef71bc9f1ee49f4b`, a receita gerou `out/m0/packages/qt-shell/tray-200b983-clean-01` com o worktree limpo, `source_paths_clean=true` e `recipe_dirty=false`. O novo manifesto tem SHA-256 `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`. A verificação dos dois manifestos confirmou os mesmos 1.378 paths, tamanhos e hashes de payload, totalizando 82.388.347 bytes; os hashes da receita conferem com os arquivos commitados. O relatório PE continua com 69 arquivos e 41 pré-requisitos externos.
 
-O build existente foi reutilizado (`ninja: no work to do.`); esta evidência prova a regeneração do stage pela receita limpa, não um rebuild do zero nem reprodução binária em outra máquina. O resultado está em `evidence/committed-recipe-check.v1.json` do novo stage. Não houve execução do aplicativo ou nova tentativa de smoke: o RivaTuner continuava ativo e a autorização para retomar o desktop não foi recebida. A relocação registrada acima continua sendo a cópia do stage anterior, não uma execução relocada do novo pacote.
+O build existente foi reutilizado (`ninja: no work to do.`); esta evidência prova a regeneração do stage pela receita limpa, não um rebuild do zero nem reprodução binária em outra máquina. O resultado está em `evidence/committed-recipe-check.v1.json` do novo stage. Na conclusão dessa regeneração estática, não houve execução do aplicativo ou nova tentativa de smoke: o RivaTuner continuava ativo e a autorização para retomar o desktop não havia sido recebida. A relocação registrada acima é a cópia do stage anterior; a execução relocada posterior do novo pacote está registrada abaixo.
 
-M0.2 permanece em andamento. Execução isolada/relocada, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa, integração de instalador e medições continuam pendentes. Não houve retomada de Computer Use, leitura dos áudios pessoais, distribuição ou decisão de stack.
+Nesse checkpoint, M0.2 permaneceu em andamento, com execução isolada/relocada, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa, integração de instalador e medições pendentes. Não houve retomada de Computer Use, leitura dos áudios pessoais, distribuição ou decisão de stack.
 
 A [triagem de segurança posterior](evidence/m0-2-security-triage.md) cruza o pacote com SPDX, configuração, fontes fixadas e advisories públicos. Ela identifica pendências de FreeType/PCRE2 e de suporte do MSVC; hashes ou testes verdes não encerram essas questões. O registro distingue fonte afetada, alcance não demonstrado, avisos fora da faixa e componentes ausentes, sem aprovar redistribuição ou alterar o preflight histórico.
+
+### Smoke offscreen original e relocado — 2026-08-27
+
+Após `2cd898af1cb17f67cc2938446c174bedaf951135`, a consulta de processos encontrou zero RTSS. O runner já commitado foi executado sem alterações na whitelist, ambiente, deadlines ou journeys. Nenhuma aplicação externa foi encerrada ou configurada pelo agente. O controle do desktop não foi retomado: os processos filhos usaram `offscreen`, backend software, estilo Basic, perfil/diretório de trabalho neutros e guard contra diálogos do loader.
+
+O original é `out/m0/packages/qt-shell/tray-200b983-clean-01`. Uma nova cópia de `app/`, manifesto e sidecar foi criada em `out/m0/packages/qt-shell/relocação com espaços 200b983-01`, sem sobrescrever o stage ou a relocação anteriores. Ambos usam o manifesto `a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99`, com 1.378 arquivos/82.388.347 bytes. A verificação autenticada passou antes e depois das jornadas em cada localização.
+
+| Localização | Jornada | Saída | Primeira captura completa (ms) | Amostras vivas | Módulos distintos |
+|---|---|---:|---:|---:|---:|
+| original | `tray-lifecycle` | 0 | 135,5167 | 6 | 86 |
+| original | `error-recovery` | 0 | 74,6409 | 9 | 90 |
+| relocada | `tray-lifecycle` | 0 | 152,4874 | 10 | 90 |
+| relocada | `error-recovery` | 0 | 83,0682 | 10 | 90 |
+
+As quatro jornadas terminaram normalmente, com stdout/stderr vazios, zero erros transitórios de captura e `terminated_by_runner=false`. Os módulos exigidos foram observados vivos antes de 500 ms; todos os módulos amostrados vieram somente do pacote ou de System32. O Qt e seus plugins vieram do payload, sem paths do SDK no ambiente filho. Sete módulos CRT observados são externos: os cinco MSVC já inventariados mais `msvcrt.dll` e `ucrtbase.dll` do Windows. A consulta posterior encontrou zero players do workspace e zero RTSS.
+
+| Relatório relativo ao respectivo stage | Localização | SHA-256 |
+|---|---|---|
+| `evidence/smoke-offscreen-no-rtss-20260827-01.v1.json` | original | `6c238adce3436773f0e1995d2007d81b971291895585495edf7ca13720df22c1` |
+| `evidence/smoke-offscreen-no-rtss-20260827-01.v1.json` | relocada | `63134421121f7aef8718b2f1f2f8263c740bed9330c874bcddafba1781ecbd58` |
+
+Cada relatório preserva commit do runner, data UTC, paths, ambiente e resultados completos. Os tempos acima comprovam somente o deadline de captura do smoke; não são cold start, latência da UI, medição comparativa ou cumprimento de budget de performance. Snapshots não são um trace completo do loader. A verificação local não remove o SDK da máquina, não prova isolamento de rede e não testa CRT ausente.
+
+Esta fatia altera somente documentação/evidência; não há comportamento novo que exija Red/Green. A validação documental passou com 31 Markdown, 83 requisitos, 17 checks e 76 etapas. Os dois manifestos, hashes dos relatórios e proveniência foram reconferidos; a revisão independente do diff não apresentou achados. O commit que adiciona esta subseção registra o fechamento desta fatia. Os checks C++/QML anteriores não são apresentados como novamente executados. M0.2 e `CHK-SEC` permanecem abertos: ainda faltam autorização e validações de desktop/NVDA/HC/DPI/bandeja nativos e resolução das pendências de segurança/toolchain. Linux, máquina limpa, instalador, redistribuição e medições também não foram aprovados. M0.3 não foi iniciado.
