@@ -773,6 +773,36 @@ Invoke-IdentityProbe 'second'
         } 'inventory|tree|physical|mismatch|hash|size'
     }
 
+    Test-Case 'physical inventory supports long Windows paths and still rejects alternate data streams' {
+        $root = Join-Path $testRoot 'long-path-tree'
+        $leafParent = $root
+        foreach ($segment in @(
+                'segment-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'segment-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'segment-cccccccccccccccccccccccccccccccc',
+                'segment-dddddddddddddddddddddddddddddddd',
+                'segment-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+            )) {
+            $leafParent = Join-Path $leafParent $segment
+        }
+        $leaf = Join-Path $leafParent 'leaf.txt'
+        $leafBytes = [Text.UTF8Encoding]::new($false).GetBytes("long-path`n")
+        Write-TestBytes $leaf $leafBytes
+        Assert-True ($leaf.Length -gt 260) 'Regression fixture did not exceed the legacy Windows MAX_PATH boundary.'
+
+        $inventoryPath = Join-Path $testRoot 'long-path.tsv'
+        $result = New-M0CanonicalTreeInventory -TreeRoot $root -InventoryPath $inventoryPath
+        Assert-Equal $result.file_count ([long]1)
+        Assert-Equal $result.total_bytes ([long]$leafBytes.Length)
+
+        [IO.File]::WriteAllBytes($leaf + ':m0-probe', [byte[]](1, 2, 3))
+        Assert-Rejected {
+            New-M0CanonicalTreeInventory `
+                -TreeRoot $root `
+                -InventoryPath (Join-Path $testRoot 'long-path-ads.tsv')
+        } 'alternate data stream|ADS'
+    }
+
     Test-Case 'inventory rejects noncanonical text and physical hardlinks or reparse points' {
         $root = Join-Path $testRoot 'unsafe-tree'
         Write-TestBytes (Join-Path $root 'leaf.txt') ([byte[]](1, 2, 3))

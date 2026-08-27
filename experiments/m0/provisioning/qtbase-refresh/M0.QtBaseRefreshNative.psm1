@@ -17,6 +17,7 @@ if ($IsWindows) {
     $nativeNamespace = 'M0QtBaseRefreshTreeNative_' + [Guid]::NewGuid().ToString('N')
     $nativeTypeDefinition = @'
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -38,9 +39,22 @@ namespace __M0_NATIVE_NAMESPACE__ {
     }
 
     public static class FileIdentity {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WIN32_FIND_STREAM_DATA {
+            public long StreamSize;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 296)]
+            public string StreamName;
+        }
+
+        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid {
+            private SafeFindHandle() : base(true) { }
+            protected override bool ReleaseHandle() { return FindClose(handle); }
+        }
+
         private const uint GENERIC_READ = 0x80000000;
         private const uint FILE_SHARE_READ = 0x00000001;
         private const uint OPEN_EXISTING = 3;
+        private const int ERROR_HANDLE_EOF = 38;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
@@ -52,6 +66,17 @@ namespace __M0_NATIVE_NAMESPACE__ {
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetFinalPathNameByHandleW(IntPtr handle, StringBuilder path,
             uint pathLength, uint flags);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFindHandle FindFirstStreamW(string fileName, int infoLevel,
+            out WIN32_FIND_STREAM_DATA findStreamData, uint flags);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool FindNextStreamW(SafeFindHandle findHandle,
+            out WIN32_FIND_STREAM_DATA findStreamData);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FindClose(IntPtr findHandle);
 
         public static SafeFileHandle OpenReadOnlyWithoutWriteDeleteSharing(string path) {
             var handle = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, IntPtr.Zero,
@@ -76,6 +101,23 @@ namespace __M0_NATIVE_NAMESPACE__ {
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             }
             return buffer.ToString();
+        }
+
+        public static string[] GetStreamNames(string path) {
+            WIN32_FIND_STREAM_DATA data;
+            using (var findHandle = FindFirstStreamW(path, 0, out data, 0)) {
+                if (findHandle.IsInvalid) {
+                    int error = Marshal.GetLastWin32Error();
+                    if (error == ERROR_HANDLE_EOF) { return new string[0]; }
+                    throw new Win32Exception(error);
+                }
+                var names = new List<string>();
+                names.Add(data.StreamName);
+                while (FindNextStreamW(findHandle, out data)) { names.Add(data.StreamName); }
+                int finalError = Marshal.GetLastWin32Error();
+                if (finalError != ERROR_HANDLE_EOF) { throw new Win32Exception(finalError); }
+                return names.ToArray();
+            }
         }
     }
 }
@@ -205,10 +247,10 @@ function Get-M0NativeSha256Bytes {
 function Assert-M0NativeNoAlternateDataStreams {
     param([Parameter(Mandatory)] [string] $LiteralPath, [Parameter(Mandatory)] [string] $Context)
     if (-not $IsWindows) { return }
-    $streams = @(Get-Item -LiteralPath $LiteralPath -Stream * -ErrorAction Stop)
-    $unexpected = @($streams | Where-Object { $_.Stream -cne ':$DATA' })
+    $streams = @($script:NativeFileIdentityType::GetStreamNames((ConvertTo-M0NativeExtendedPath $LiteralPath)))
+    $unexpected = @($streams | Where-Object { $_ -cne '::$DATA' })
     if ($unexpected.Count -ne 0) {
-        throw "$Context contains an alternate data stream: $($unexpected[0].Stream)"
+        throw "$Context contains an alternate data stream: $($unexpected[0])"
     }
 }
 
@@ -228,13 +270,13 @@ function Open-M0NativePhysicalFile {
         throw "$Context is outside its physical boundary."
     }
     if (-not $SkipReparseChain) { Assert-M0NativeNoReparseExistingChain $full $Context }
-    Assert-M0NativeNoAlternateDataStreams $full $Context
 
     $handle = $null
     $stream = $null
     try {
         $handle = $script:NativeFileIdentityType::OpenReadOnlyWithoutWriteDeleteSharing(
             (ConvertTo-M0NativeExtendedPath $full))
+        Assert-M0NativeNoAlternateDataStreams $full $Context
         $stream = [IO.FileStream]::new($handle, [IO.FileAccess]::Read, 65536, $false)
         $handle = $null
         $finalPath = [IO.Path]::GetFullPath((ConvertFrom-M0NativeFinalPath (
