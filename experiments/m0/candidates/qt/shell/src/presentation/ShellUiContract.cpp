@@ -17,7 +17,7 @@ const FixtureAsset& assetById(const FixtureBundle& bundle, const QString& asset_
 
 ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
     : QObject(parent), window_(bundle.window), layout_(bundle.layout_tokens), strings_(bundle.strings),
-      palette_(bundle.themes.light) {
+      themes_(bundle.themes), motion_(bundle.motion) {
     if (window_.client_width_px != 960 || window_.client_height_px != 640 || window_.minimum_width_px != 720 ||
         window_.minimum_height_px != 520 || layout_.queue_panel_min_width_px != 320 ||
         layout_.queue_panel_max_width_px != 380 || layout_.control_target_min_px != 40 ||
@@ -38,8 +38,15 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         strings_.not_informed != QStringLiteral("Não informado") ||
         strings_.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
         strings_.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
-        strings_.action_skip != QStringLiteral("Pular") || palette_.canvas != QStringLiteral("#F6F7F9") ||
-        palette_.accent != QStringLiteral("#4F46E5")) {
+        strings_.action_skip != QStringLiteral("Pular") ||
+        strings_.preferences_title != QStringLiteral("Preferências") ||
+        strings_.section_general != QStringLiteral("Geral") ||
+        strings_.section_playback != QStringLiteral("Reprodução") ||
+        strings_.section_appearance != QStringLiteral("Aparência") ||
+        strings_.theme_system != QStringLiteral("Sistema") || strings_.theme_light != QStringLiteral("Claro") ||
+        strings_.theme_dark != QStringLiteral("Escuro") || strings_.motion_system != QStringLiteral("Sistema") ||
+        strings_.motion_reduced != QStringLiteral("Reduzido") || themes_.light.canvas != QStringLiteral("#F6F7F9") ||
+        themes_.light.accent != QStringLiteral("#4F46E5")) {
         throw std::invalid_argument{"unsupported empty shell fixture"};
     }
     const FixtureAsset& placeholder = assetById(bundle, QStringLiteral("cover-placeholder"));
@@ -49,6 +56,43 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         throw std::invalid_argument{"empty shell asset mapping drifted"};
     }
 }
+
+void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark,
+                                       bool system_reduced_motion) {
+    bool next_dark = false;
+    switch (theme) {
+    case ThemeMode::System:
+        next_dark = system_dark;
+        break;
+    case ThemeMode::Light:
+        break;
+    case ThemeMode::Dark:
+        next_dark = true;
+        break;
+    default:
+        throw std::invalid_argument{"unsupported theme mode"};
+    }
+
+    bool next_reduced = false;
+    switch (motion) {
+    case MotionMode::System:
+        next_reduced = system_reduced_motion;
+        break;
+    case MotionMode::Reduced:
+        next_reduced = true;
+        break;
+    default:
+        throw std::invalid_argument{"unsupported motion mode"};
+    }
+
+    if (dark_theme_ == next_dark && reduced_motion_ == next_reduced)
+        return;
+
+    dark_theme_ = next_dark;
+    reduced_motion_ = next_reduced;
+    emit appearanceChanged();
+}
+
 int ShellUiContract::clientWidth() const noexcept { return window_.client_width_px; }
 int ShellUiContract::clientHeight() const noexcept { return window_.client_height_px; }
 int ShellUiContract::minimumWidth() const noexcept { return window_.minimum_width_px; }
@@ -81,14 +125,36 @@ QString ShellUiContract::notInformed() const { return strings_.not_informed; }
 QString ShellUiContract::errorTitle() const { return strings_.error_title; }
 QString ShellUiContract::errorBody() const { return strings_.error_body; }
 QString ShellUiContract::actionSkip() const { return strings_.action_skip; }
-QString ShellUiContract::canvasColor() const { return palette_.canvas; }
-QString ShellUiContract::surfaceColor() const { return palette_.surface; }
-QString ShellUiContract::textPrimaryColor() const { return palette_.text_primary; }
-QString ShellUiContract::textSecondaryColor() const { return palette_.text_secondary; }
-QString ShellUiContract::accentColor() const { return palette_.accent; }
-QString ShellUiContract::accentTextColor() const { return palette_.on_accent; }
-QString ShellUiContract::focusColor() const { return palette_.focus; }
-QString ShellUiContract::borderColor() const { return palette_.border; }
+QString ShellUiContract::preferencesTitle() const { return strings_.preferences_title; }
+QString ShellUiContract::sectionGeneral() const { return strings_.section_general; }
+QString ShellUiContract::sectionPlayback() const { return strings_.section_playback; }
+QString ShellUiContract::sectionAppearance() const { return strings_.section_appearance; }
+QString ShellUiContract::themeSystem() const { return strings_.theme_system; }
+QString ShellUiContract::themeLight() const { return strings_.theme_light; }
+QString ShellUiContract::themeDark() const { return strings_.theme_dark; }
+QString ShellUiContract::motionSystem() const { return strings_.motion_system; }
+QString ShellUiContract::motionReduced() const { return strings_.motion_reduced; }
+const FixturePalette& ShellUiContract::palette() const noexcept { return dark_theme_ ? themes_.dark : themes_.light; }
+QString ShellUiContract::canvasColor() const { return palette().canvas; }
+QString ShellUiContract::surfaceColor() const { return palette().surface; }
+QString ShellUiContract::surfaceRaisedColor() const { return palette().surface_raised; }
+QString ShellUiContract::textPrimaryColor() const { return palette().text_primary; }
+QString ShellUiContract::textSecondaryColor() const { return palette().text_secondary; }
+QString ShellUiContract::accentColor() const { return palette().accent; }
+QString ShellUiContract::accentTextColor() const { return palette().on_accent; }
+QString ShellUiContract::focusColor() const { return palette().focus; }
+QString ShellUiContract::borderColor() const { return palette().border; }
+QString ShellUiContract::errorColor() const { return palette().error; }
+QString ShellUiContract::warningColor() const { return palette().warning; }
+QString ShellUiContract::successColor() const { return palette().success; }
+bool ShellUiContract::darkTheme() const noexcept { return dark_theme_; }
+bool ShellUiContract::reducedMotion() const noexcept { return reduced_motion_; }
+int ShellUiContract::panelTransitionMs() const noexcept {
+    return reduced_motion_ ? motion_.reduced.panel_transition_ms : motion_.normal.panel_transition_ms;
+}
+int ShellUiContract::feedbackTransitionMs() const noexcept {
+    return reduced_motion_ ? motion_.reduced.feedback_transition_ms : motion_.normal.feedback_transition_ms;
+}
 QUrl ShellUiContract::placeholderSource() const { return placeholder_source_; }
 QUrl ShellUiContract::trackSource() const { return track_source_; }
 

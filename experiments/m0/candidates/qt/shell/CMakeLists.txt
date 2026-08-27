@@ -108,6 +108,23 @@ if(M0_QT_SHELL_SUPPORT)
     qt_standard_project_setup(REQUIRES 6.11)
     set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 
+    add_library(m0_qt_system_appearance STATIC
+        src/adapters/QtSystemAppearance.hpp
+        src/adapters/QtSystemAppearance.cpp
+    )
+    target_include_directories(m0_qt_system_appearance PUBLIC src)
+    target_link_libraries(m0_qt_system_appearance PUBLIC Qt6::Core Qt6::Gui)
+    target_compile_features(m0_qt_system_appearance PUBLIC cxx_std_20)
+    set_target_properties(m0_qt_system_appearance PROPERTIES AUTOMOC ON)
+    if(WIN32)
+        target_link_libraries(m0_qt_system_appearance PRIVATE user32)
+    endif()
+    if(MSVC)
+        target_compile_options(m0_qt_system_appearance PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_system_appearance PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
@@ -132,6 +149,11 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/Main.qml PROPERTIES QT_RESOURCE_ALIAS "Main.qml")
     set_source_files_properties(qml/EmptyState.qml PROPERTIES QT_RESOURCE_ALIAS "EmptyState.qml")
     set_source_files_properties(qml/AccessibleActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "AccessibleActionButton.qml")
+    set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
+    set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
+    set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
+    set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
+    set_source_files_properties(qml/PreferenceSecondsField.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceSecondsField.qml")
     qt_add_library(m0_qt_shell_ui STATIC)
     qt_add_qml_module(m0_qt_shell_ui
         URI MusicPlayer.M0
@@ -152,6 +174,11 @@ if(M0_QT_SHELL_SUPPORT)
             qml/ErrorState.qml
             qml/TransportBar.qml
             qml/QueuePanel.qml
+            qml/PreferencesPanel.qml
+            qml/PreferencesText.qml
+            qml/PreferenceChoice.qml
+            qml/PreferenceToggle.qml
+            qml/PreferenceSecondsField.qml
     )
     target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
     target_link_libraries(m0_qt_shell_ui PRIVATE
@@ -202,6 +229,7 @@ if(M0_QT_SHELL_SUPPORT)
 
     qt_add_executable(m0_qt_shell app/main.cpp)
     target_link_libraries(m0_qt_shell PRIVATE
+        m0_qt_system_appearance
         m0_qt_shell_bootstrap
         m0_qt_shell_support
         m0_qt_shell_ui
@@ -222,6 +250,19 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(BUILD_TESTING)
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
+        add_executable(m0_qt_system_appearance_tests tests/qtest/QtSystemAppearanceTests.cpp)
+        target_link_libraries(m0_qt_system_appearance_tests PRIVATE m0_qt_system_appearance Qt6::Test)
+        target_compile_features(m0_qt_system_appearance_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_system_appearance_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_system_appearance_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_system_appearance_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.system-appearance COMMAND m0_qt_system_appearance_tests
+            -o "${CMAKE_CURRENT_BINARY_DIR}/system-appearance-test.txt,txt"
+            -o -,txt
+        )
         add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
         target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
         target_compile_features(m0_qt_shell_launch_tests PRIVATE cxx_std_20)
@@ -235,7 +276,7 @@ if(M0_QT_SHELL_SUPPORT)
         add_executable(m0_qt_fixture_tests
             tests/qtest/FixtureRepositoryTests.cpp
         )
-        target_link_libraries(m0_qt_fixture_tests PRIVATE m0_qt_shell_support Qt6::Test)
+        target_link_libraries(m0_qt_fixture_tests PRIVATE m0_qt_shell_support Qt6::Gui Qt6::Test)
         target_include_directories(m0_qt_fixture_tests PRIVATE src)
         target_compile_features(m0_qt_fixture_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_fixture_tests PRIVATE
@@ -250,7 +291,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
         add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
-        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support m0_qt_shell_ui Qt6::Test)
+        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support m0_qt_shell_ui Qt6::Gui Qt6::Test)
         target_include_directories(m0_qt_presenter_tests PRIVATE src)
         target_compile_features(m0_qt_presenter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_presenter_tests PRIVATE
@@ -291,6 +332,7 @@ if(M0_QT_SHELL_SUPPORT)
         add_test(NAME m0.qt.shell-ui-contract COMMAND m0_qt_shell_contract_tests)
         add_executable(m0_qt_quick_tests tests/quick/quick_main.cpp)
         target_link_libraries(m0_qt_quick_tests PRIVATE
+            m0_qt_system_appearance
             m0_qt_shell_support
             m0_qt_shell_ui
             m0_qt_shell_uiplugin
@@ -330,11 +372,23 @@ if(M0_QT_SHELL_SUPPORT)
             "QT_QPA_PLATFORM=offscreen"
             "QSG_RHI_BACKEND=software"
             "QT_QUICK_CONTROLS_STYLE=Basic"
+            "QT_LOGGING_TO_CONSOLE=1"
+            "QT_FORCE_STDERR_LOGGING=1"
+            "QT_FATAL_WARNINGS=1"
         )
         if(WIN32 AND IS_DIRECTORY "$ENV{WINDIR}/Fonts")
             cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST m0_windows_font_dir NORMALIZE)
             list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
         endif()
+        set_tests_properties(m0.qt.system-appearance PROPERTIES
+            LABELS "m0;qt;system-appearance"
+            TIMEOUT 10
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        set_tests_properties(m0.qt.fixture.repository-and-model m0.qt.presenter.initial-load PROPERTIES
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
         add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell
             --m0-scenario=unavailable
             --m0-smoke=error-recovery

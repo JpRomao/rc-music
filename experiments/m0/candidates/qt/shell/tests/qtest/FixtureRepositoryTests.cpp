@@ -893,6 +893,6 @@ void FixtureRepositoryTests::rejectsIntegerOutsideSigned64BitRange() {
 
 } // namespace music_player::m0::test
 
-QTEST_GUILESS_MAIN(music_player::m0::test::FixtureRepositoryTests)
+QTEST_MAIN(music_player::m0::test::FixtureRepositoryTests)
 
 #include "FixtureRepositoryTests.moc"

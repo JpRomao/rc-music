@@ -65,10 +65,25 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool muted READ muted NOTIFY preferencesChanged)
     Q_PROPERTY(int skipBackwardSeconds READ skipBackwardSeconds NOTIFY preferencesChanged)
     Q_PROPERTY(int skipForwardSeconds READ skipForwardSeconds NOTIFY preferencesChanged)
+    Q_PROPERTY(ThemePreference themePreference READ themePreference NOTIFY preferencesChanged)
+    Q_PROPERTY(MotionPreference motionPreference READ motionPreference NOTIFY preferencesChanged)
+    Q_PROPERTY(ClosePreference closePreference READ closePreference NOTIFY preferencesChanged)
+    Q_PROPERTY(QueueEndPreference queueEndPreference READ queueEndPreference NOTIFY preferencesChanged)
+    Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
+    Q_PROPERTY(bool startMinimized READ startMinimized NOTIFY preferencesChanged)
+    Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
 
   public:
     enum class PlaybackState { Unloaded, Loading, Ready, Paused, Playing, Error };
     Q_ENUM(PlaybackState)
+    enum class ThemePreference { SystemTheme, LightTheme, DarkTheme };
+    Q_ENUM(ThemePreference)
+    enum class MotionPreference { SystemMotion, ReducedMotion };
+    Q_ENUM(MotionPreference)
+    enum class ClosePreference { MinimizeToTray, Exit };
+    Q_ENUM(ClosePreference)
+    enum class QueueEndPreference { StopKeepSelection, StopClearSelection };
+    Q_ENUM(QueueEndPreference)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
 
@@ -111,6 +126,14 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool muted() const noexcept;
     [[nodiscard]] int skipBackwardSeconds() const noexcept;
     [[nodiscard]] int skipForwardSeconds() const noexcept;
+    [[nodiscard]] ThemePreference themePreference() const;
+    [[nodiscard]] MotionPreference motionPreference() const;
+    [[nodiscard]] ClosePreference closePreference() const;
+    [[nodiscard]] QueueEndPreference queueEndPreference() const;
+    [[nodiscard]] bool restoreLastSession() const noexcept;
+    [[nodiscard]] bool startMinimized() const noexcept;
+    [[nodiscard]] bool trayAvailable() const noexcept;
+    void refreshPlatformAvailability();
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
@@ -122,6 +145,14 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool commitSeekPreview();
     Q_INVOKABLE bool setVolume(double volume);
     Q_INVOKABLE bool toggleMute();
+    Q_INVOKABLE bool setThemePreference(ThemePreference theme);
+    Q_INVOKABLE bool setMotionPreference(MotionPreference motion);
+    Q_INVOKABLE bool setSkipBackwardSeconds(int seconds);
+    Q_INVOKABLE bool setSkipForwardSeconds(int seconds);
+    Q_INVOKABLE bool setClosePreference(ClosePreference behavior);
+    Q_INVOKABLE bool setRestoreLastSession(bool restore);
+    Q_INVOKABLE bool setStartMinimized(bool minimized);
+    Q_INVOKABLE bool setQueueEndPreference(QueueEndPreference behavior);
     Q_INVOKABLE bool skipUnavailable();
     [[nodiscard]] bool advanceOneTick();
 
@@ -130,6 +161,7 @@ class PlayerPresenter final : public QObject {
     void preferencesChanged();
     void playbackChanged();
     void seekRejected();
+    void platformChanged();
 
   private:
     friend class experiment::PlayerPresenterScenarioControl;
@@ -144,6 +176,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
+    PlatformIntegration& platform_;
+    bool tray_available_;
     DeterministicPlaybackBackend backend_;
     PlayerController controller_;
     QueueListModel queue_model_;

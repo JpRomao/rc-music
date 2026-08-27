@@ -1,11 +1,14 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/domain/PlaybackTypes.hpp"
 #include "presentation/ShellUiContract.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QMetaMethod>
 #include <QMetaProperty>
+#include <QSignalSpy>
 #include <QStringList>
 #include <QTest>
 #include <QtQml/qqml.h>
@@ -18,6 +21,19 @@ namespace {
 const QString fixture_resource_path = QStringLiteral(":/m0/data/fixture.v1.json");
 const QString queue_resource_path = QStringLiteral(":/m0/data/queue.v1.json");
 
+QStringList appearanceColors(const ShellUiContract& contract) {
+    return {contract.canvasColor(),      contract.surfaceColor(),       contract.surfaceRaisedColor(),
+            contract.textPrimaryColor(), contract.textSecondaryColor(), contract.accentColor(),
+            contract.accentTextColor(),  contract.focusColor(),         contract.borderColor(),
+            contract.errorColor(),       contract.warningColor(),       contract.successColor()};
+}
+
+QStringList paletteColors(const FixturePalette& palette) {
+    return {palette.canvas,         palette.surface, palette.surface_raised, palette.text_primary,
+            palette.text_secondary, palette.accent,  palette.on_accent,      palette.focus,
+            palette.border,         palette.error,   palette.warning,        palette.success};
+}
+
 } // namespace
 
 class ShellUiContractTests final : public QObject {
@@ -27,6 +43,12 @@ class ShellUiContractTests final : public QObject {
     void exposesFrozenConstantsAndAuthenticatedResources();
     void rejectsUnknownAssetMappings();
     void rejectsUnsupportedTransportStrings();
+    void rejectsUnsupportedPreferenceStrings();
+    void themeModesUseFixturePalettesWithExplicitPrecedence();
+    void motionModesUseFixtureTimingsWithExplicitPrecedence();
+    void appearanceNotificationsReflectOnlyEffectiveChanges();
+    void appearanceIsCoherentWhenNotified();
+    void rejectsInvalidAppearanceModesWithoutMutation();
 };
 
 void ShellUiContractTests::initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
@@ -70,14 +92,31 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.errorTitle(), QStringLiteral("Não foi possível abrir esta faixa"));
     QCOMPARE(contract.errorBody(), QStringLiteral("A faixa de teste está indisponível."));
     QCOMPARE(contract.actionSkip(), QStringLiteral("Pular"));
+    QCOMPARE(contract.preferencesTitle(), QStringLiteral("Preferências"));
+    QCOMPARE(contract.sectionGeneral(), QStringLiteral("Geral"));
+    QCOMPARE(contract.sectionPlayback(), QStringLiteral("Reprodução"));
+    QCOMPARE(contract.sectionAppearance(), QStringLiteral("Aparência"));
+    QCOMPARE(contract.themeSystem(), QStringLiteral("Sistema"));
+    QCOMPARE(contract.themeLight(), QStringLiteral("Claro"));
+    QCOMPARE(contract.themeDark(), QStringLiteral("Escuro"));
+    QCOMPARE(contract.motionSystem(), QStringLiteral("Sistema"));
+    QCOMPARE(contract.motionReduced(), QStringLiteral("Reduzido"));
     QCOMPARE(contract.canvasColor(), QStringLiteral("#F6F7F9"));
     QCOMPARE(contract.surfaceColor(), QStringLiteral("#FFFFFF"));
+    QCOMPARE(contract.surfaceRaisedColor(), QStringLiteral("#FFFFFF"));
     QCOMPARE(contract.textPrimaryColor(), QStringLiteral("#15171A"));
     QCOMPARE(contract.textSecondaryColor(), QStringLiteral("#4F5660"));
     QCOMPARE(contract.accentColor(), QStringLiteral("#4F46E5"));
     QCOMPARE(contract.accentTextColor(), QStringLiteral("#FFFFFF"));
     QCOMPARE(contract.focusColor(), QStringLiteral("#2457D6"));
     QCOMPARE(contract.borderColor(), QStringLiteral("#8A929E"));
+    QCOMPARE(contract.errorColor(), QStringLiteral("#B42318"));
+    QCOMPARE(contract.warningColor(), QStringLiteral("#8A4B08"));
+    QCOMPARE(contract.successColor(), QStringLiteral("#167344"));
+    QVERIFY(!contract.darkTheme());
+    QVERIFY(!contract.reducedMotion());
+    QCOMPARE(contract.panelTransitionMs(), 160);
+    QCOMPARE(contract.feedbackTransitionMs(), 120);
     QCOMPARE(contract.placeholderSource(), QUrl(QStringLiteral("qrc:/m0/assets/cover-placeholder.svg")));
     QCOMPARE(contract.trackSource(), QUrl(QStringLiteral("qrc:/m0/assets/cover-track.svg")));
     const QMetaObject* meta = contract.metaObject();
@@ -114,27 +153,63 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("errorTitle"),
         QStringLiteral("errorBody"),
         QStringLiteral("actionSkip"),
+        QStringLiteral("preferencesTitle"),
+        QStringLiteral("sectionGeneral"),
+        QStringLiteral("sectionPlayback"),
+        QStringLiteral("sectionAppearance"),
+        QStringLiteral("themeSystem"),
+        QStringLiteral("themeLight"),
+        QStringLiteral("themeDark"),
+        QStringLiteral("motionSystem"),
+        QStringLiteral("motionReduced"),
         QStringLiteral("canvasColor"),
         QStringLiteral("surfaceColor"),
+        QStringLiteral("surfaceRaisedColor"),
         QStringLiteral("textPrimaryColor"),
         QStringLiteral("textSecondaryColor"),
         QStringLiteral("accentColor"),
         QStringLiteral("accentTextColor"),
         QStringLiteral("focusColor"),
         QStringLiteral("borderColor"),
+        QStringLiteral("errorColor"),
+        QStringLiteral("warningColor"),
+        QStringLiteral("successColor"),
+        QStringLiteral("darkTheme"),
+        QStringLiteral("reducedMotion"),
+        QStringLiteral("panelTransitionMs"),
+        QStringLiteral("feedbackTransitionMs"),
         QStringLiteral("placeholderSource"),
         QStringLiteral("trackSource"),
+    };
+    const QStringList appearance_properties = {
+        QStringLiteral("canvasColor"),        QStringLiteral("surfaceColor"),
+        QStringLiteral("surfaceRaisedColor"), QStringLiteral("textPrimaryColor"),
+        QStringLiteral("textSecondaryColor"), QStringLiteral("accentColor"),
+        QStringLiteral("accentTextColor"),    QStringLiteral("focusColor"),
+        QStringLiteral("borderColor"),        QStringLiteral("errorColor"),
+        QStringLiteral("warningColor"),       QStringLiteral("successColor"),
+        QStringLiteral("darkTheme"),          QStringLiteral("reducedMotion"),
+        QStringLiteral("panelTransitionMs"),  QStringLiteral("feedbackTransitionMs"),
     };
     QStringList actual_properties;
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
         const QMetaProperty property = meta->property(index);
         actual_properties.append(QString::fromLatin1(property.name()));
         QVERIFY(property.isReadable());
-        QVERIFY(property.isConstant());
         QVERIFY(!property.isWritable());
+        if (appearance_properties.contains(QString::fromLatin1(property.name()))) {
+            QVERIFY(!property.isConstant());
+            QVERIFY(property.hasNotifySignal());
+            QCOMPARE(property.notifySignal().methodSignature(), QByteArray{"appearanceChanged()"});
+        } else {
+            QVERIFY(property.isConstant());
+            QVERIFY(!property.hasNotifySignal());
+        }
     }
     QCOMPARE(actual_properties, expected_properties);
-    QCOMPARE(meta->methodCount(), meta->methodOffset());
+    QCOMPARE(meta->methodCount(), meta->methodOffset() + 1);
+    QCOMPARE(meta->method(meta->methodOffset()).methodType(), QMetaMethod::Signal);
+    QCOMPARE(meta->method(meta->methodOffset()).methodSignature(), QByteArray{"appearanceChanged()"});
     QCOMPARE(meta->indexOfProperty("fixturePath"), -1);
     QCOMPARE(meta->indexOfProperty("queuePath"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
@@ -198,6 +273,137 @@ void ShellUiContractTests::rejectsUnsupportedTransportStrings() {
         FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
         bundle.strings.*member = QStringLiteral("drifted");
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
+    }
+}
+
+void ShellUiContractTests::rejectsUnsupportedPreferenceStrings() {
+    for (QString FixtureStrings::* const member :
+         {&FixtureStrings::preferences_title, &FixtureStrings::section_general, &FixtureStrings::section_playback,
+          &FixtureStrings::section_appearance, &FixtureStrings::theme_system, &FixtureStrings::theme_light,
+          &FixtureStrings::theme_dark, &FixtureStrings::motion_system, &FixtureStrings::motion_reduced}) {
+        FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+        bundle.strings.*member = QStringLiteral("drifted");
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
+    }
+}
+
+void ShellUiContractTests::themeModesUseFixturePalettesWithExplicitPrecedence() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    for (const ThemeMode theme : {ThemeMode::System, ThemeMode::Light, ThemeMode::Dark}) {
+        for (const bool system_dark : {false, true}) {
+            contract.updateAppearance(theme, MotionMode::System, system_dark, false);
+            const bool expected_dark = theme == ThemeMode::Dark || (theme == ThemeMode::System && system_dark);
+            QCOMPARE(contract.darkTheme(), expected_dark);
+            QCOMPARE(appearanceColors(contract),
+                     paletteColors(expected_dark ? bundle.themes.dark : bundle.themes.light));
+            QVERIFY(!contract.reducedMotion());
+            QCOMPARE(contract.panelTransitionMs(), 160);
+            QCOMPARE(contract.feedbackTransitionMs(), 120);
+        }
+    }
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
+    QCOMPARE(appearanceColors(contract), paletteColors(bundle.themes.light));
+}
+
+void ShellUiContractTests::motionModesUseFixtureTimingsWithExplicitPrecedence() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    for (const MotionMode motion : {MotionMode::System, MotionMode::Reduced}) {
+        for (const bool system_reduced : {false, true}) {
+            contract.updateAppearance(ThemeMode::Light, motion, true, system_reduced);
+            const bool expected_reduced = motion == MotionMode::Reduced || system_reduced;
+            QCOMPARE(contract.reducedMotion(), expected_reduced);
+            QCOMPARE(contract.panelTransitionMs(), expected_reduced ? 0 : 160);
+            QCOMPARE(contract.feedbackTransitionMs(), expected_reduced ? 0 : 120);
+            QVERIFY(!contract.darkTheme());
+            QCOMPARE(appearanceColors(contract), paletteColors(bundle.themes.light));
+        }
+    }
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false);
+    QVERIFY(!contract.reducedMotion());
+    QCOMPARE(contract.panelTransitionMs(), bundle.motion.normal.panel_transition_ms);
+    QCOMPARE(contract.feedbackTransitionMs(), bundle.motion.normal.feedback_transition_ms);
+}
+
+void ShellUiContractTests::appearanceNotificationsReflectOnlyEffectiveChanges() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+    QVERIFY(changed.isValid());
+
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false);
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
+    QCOMPARE(changed.count(), 0);
+
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false);
+    QCOMPARE(changed.count(), 1);
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, true, false);
+    QCOMPARE(changed.count(), 1);
+
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::Reduced, false, false);
+    QCOMPARE(changed.count(), 2);
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, true, true);
+    QCOMPARE(changed.count(), 2);
+
+    contract.updateAppearance(ThemeMode::Light, MotionMode::Reduced, true, true);
+    QCOMPARE(changed.count(), 3);
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, true, true);
+    QCOMPARE(changed.count(), 3);
+
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, true, false);
+    QCOMPARE(changed.count(), 4);
+    contract.updateAppearance(ThemeMode::System, MotionMode::System, true, false);
+    QCOMPARE(changed.count(), 4);
+}
+
+void ShellUiContractTests::appearanceIsCoherentWhenNotified() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+    bool observed_complete_appearance = false;
+    QObject::connect(&contract, &ShellUiContract::appearanceChanged, &contract, [&] {
+        observed_complete_appearance = contract.darkTheme() && contract.reducedMotion() &&
+                                       contract.panelTransitionMs() == 0 && contract.feedbackTransitionMs() == 0 &&
+                                       appearanceColors(contract) == paletteColors(bundle.themes.dark);
+    });
+
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::Reduced, false, false);
+
+    QCOMPARE(changed.count(), 1);
+    QVERIFY(observed_complete_appearance);
+}
+
+void ShellUiContractTests::rejectsInvalidAppearanceModesWithoutMutation() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    for (const bool initially_dark_and_reduced : {false, true}) {
+        ShellUiContract contract(bundle);
+        contract.updateAppearance(initially_dark_and_reduced ? ThemeMode::Dark : ThemeMode::Light,
+                                  initially_dark_and_reduced ? MotionMode::Reduced : MotionMode::System, false, false);
+        QSignalSpy changed(&contract, &ShellUiContract::appearanceChanged);
+        const QStringList original_colors = appearanceColors(contract);
+        const auto verify_unchanged = [&] {
+            QCOMPARE(contract.darkTheme(), initially_dark_and_reduced);
+            QCOMPARE(contract.reducedMotion(), initially_dark_and_reduced);
+            QCOMPARE(contract.panelTransitionMs(), initially_dark_and_reduced ? 0 : 160);
+            QCOMPARE(contract.feedbackTransitionMs(), initially_dark_and_reduced ? 0 : 120);
+            QCOMPARE(appearanceColors(contract), original_colors);
+            QCOMPARE(changed.count(), 0);
+        };
+
+        for (const int invalid_theme : {-1, 3}) {
+            QVERIFY_THROWS_EXCEPTION(
+                std::invalid_argument,
+                contract.updateAppearance(static_cast<ThemeMode>(invalid_theme), MotionMode::Reduced, true, true));
+            verify_unchanged();
+        }
+        for (const int invalid_motion : {-1, 2}) {
+            QVERIFY_THROWS_EXCEPTION(
+                std::invalid_argument,
+                contract.updateAppearance(initially_dark_and_reduced ? ThemeMode::Light : ThemeMode::Dark,
+                                          static_cast<MotionMode>(invalid_motion), false, false));
+            verify_unchanged();
+        }
     }
 }
 

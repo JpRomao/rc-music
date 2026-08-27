@@ -134,9 +134,9 @@ std::vector<QueueNavigationItem> navigationItems(const FixtureBundle& bundle) {
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)),
-      backend_(backendConfig(bundle_)), controller_(backend_, platform), queue_model_(this), timer_(this),
-      state_(stateById(bundle_, bundle_.default_state_id)) {
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+      tray_available_(platform.trayAvailable()), backend_(backendConfig(bundle_)), controller_(backend_, platform),
+      queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)) {
     const FixtureDefaults& defaults = bundle_.preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
     const MotionMode motion = motionMode(defaults.motion);
@@ -265,6 +265,58 @@ double PlayerPresenter::volume() const noexcept { return controller_.preferences
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
 int PlayerPresenter::skipBackwardSeconds() const noexcept { return controller_.preferences().skip_backward_seconds; }
 int PlayerPresenter::skipForwardSeconds() const noexcept { return controller_.preferences().skip_forward_seconds; }
+PlayerPresenter::ThemePreference PlayerPresenter::themePreference() const {
+    switch (preferences().theme) {
+    case ThemeMode::System:
+        return ThemePreference::SystemTheme;
+    case ThemeMode::Light:
+        return ThemePreference::LightTheme;
+    case ThemeMode::Dark:
+        return ThemePreference::DarkTheme;
+    }
+    invalidMapping("theme preference");
+}
+PlayerPresenter::MotionPreference PlayerPresenter::motionPreference() const {
+    switch (preferences().motion) {
+    case MotionMode::System:
+        return MotionPreference::SystemMotion;
+    case MotionMode::Reduced:
+        return MotionPreference::ReducedMotion;
+    }
+    invalidMapping("motion preference");
+}
+PlayerPresenter::ClosePreference PlayerPresenter::closePreference() const {
+    switch (preferences().close_behavior) {
+    case CloseBehavior::MinimizeToTray:
+        return ClosePreference::MinimizeToTray;
+    case CloseBehavior::Exit:
+        return ClosePreference::Exit;
+    }
+    invalidMapping("close preference");
+}
+PlayerPresenter::QueueEndPreference PlayerPresenter::queueEndPreference() const {
+    switch (preferences().queue_end_behavior) {
+    case QueueEndBehavior::StopKeepSelection:
+        return QueueEndPreference::StopKeepSelection;
+    case QueueEndBehavior::StopClearSelection:
+        return QueueEndPreference::StopClearSelection;
+    }
+    invalidMapping("queue end preference");
+}
+bool PlayerPresenter::restoreLastSession() const noexcept { return preferences().restore_last_session; }
+bool PlayerPresenter::startMinimized() const noexcept { return preferences().start_minimized; }
+bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
+void PlayerPresenter::refreshPlatformAvailability() {
+    const bool available = platform_.trayAvailable();
+    if (available == tray_available_)
+        return;
+    tray_available_ = available;
+    if (!available && startMinimized()) {
+        static_cast<void>(controller_.setStartMinimized(false));
+        emit preferencesChanged();
+    }
+    emit platformChanged();
+}
 bool PlayerPresenter::togglePlayback() {
     const PlaybackStatus before = controller_.confirmedSnapshot().status;
     if (!controller_.togglePlayback())
@@ -358,6 +410,106 @@ bool PlayerPresenter::setVolume(const double volume) {
 }
 bool PlayerPresenter::toggleMute() {
     controller_.toggleMute();
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setThemePreference(const ThemePreference theme) {
+    ThemeMode value;
+    switch (theme) {
+    case ThemePreference::SystemTheme:
+        value = ThemeMode::System;
+        break;
+    case ThemePreference::LightTheme:
+        value = ThemeMode::Light;
+        break;
+    case ThemePreference::DarkTheme:
+        value = ThemeMode::Dark;
+        break;
+    default:
+        return false;
+    }
+    if (value == preferences().theme)
+        return false;
+    controller_.setTheme(value);
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setMotionPreference(const MotionPreference motion) {
+    MotionMode value;
+    switch (motion) {
+    case MotionPreference::SystemMotion:
+        value = MotionMode::System;
+        break;
+    case MotionPreference::ReducedMotion:
+        value = MotionMode::Reduced;
+        break;
+    default:
+        return false;
+    }
+    if (value == preferences().motion)
+        return false;
+    controller_.setMotionMode(value);
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setSkipBackwardSeconds(const int seconds) {
+    if (seconds == skipBackwardSeconds() || !controller_.setSkipBackwardSeconds(seconds))
+        return false;
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setSkipForwardSeconds(const int seconds) {
+    if (seconds == skipForwardSeconds() || !controller_.setSkipForwardSeconds(seconds))
+        return false;
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setClosePreference(const ClosePreference behavior) {
+    CloseBehavior value;
+    switch (behavior) {
+    case ClosePreference::MinimizeToTray:
+        value = CloseBehavior::MinimizeToTray;
+        break;
+    case ClosePreference::Exit:
+        value = CloseBehavior::Exit;
+        break;
+    default:
+        return false;
+    }
+    if (value == preferences().close_behavior)
+        return false;
+    controller_.setCloseBehavior(value);
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setRestoreLastSession(const bool restore) {
+    if (restore == restoreLastSession())
+        return false;
+    controller_.setRestoreLastSession(restore);
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setStartMinimized(const bool minimized) {
+    if (minimized == startMinimized() || !controller_.setStartMinimized(minimized))
+        return false;
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
+    QueueEndBehavior value;
+    switch (behavior) {
+    case QueueEndPreference::StopKeepSelection:
+        value = QueueEndBehavior::StopKeepSelection;
+        break;
+    case QueueEndPreference::StopClearSelection:
+        value = QueueEndBehavior::StopClearSelection;
+        break;
+    default:
+        return false;
+    }
+    if (value == preferences().queue_end_behavior)
+        return false;
+    controller_.setQueueEndBehavior(value);
     emit preferencesChanged();
     return true;
 }

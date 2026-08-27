@@ -17,7 +17,8 @@ namespace {
 
 class AvailableTrayPlatform final : public PlatformIntegration {
   public:
-    [[nodiscard]] bool trayAvailable() const noexcept override { return true; }
+    bool available{true};
+    [[nodiscard]] bool trayAvailable() const noexcept override { return available; }
     void hideWindow() override {}
     void minimizeWindow() override {}
     void showAndActivateWindow() override {}
@@ -47,6 +48,10 @@ class PlayerPresenterTests final : public QObject {
     void previousUsesConfirmedThresholdAndPreservesPause();
     void navigationSkipsUnavailableItemsAndStopsAtBounds();
     void navigationIsInertDuringSeekAndInactiveStates();
+    void exposesTypedPreferenceDefaults();
+    void editsPreferencesWithoutChangingPlaybackOrTheQueue();
+    void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
+    void refreshesTrayAvailabilityAndGuardsStartMinimized();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -637,8 +642,151 @@ void PlayerPresenterTests::navigationIsInertDuringSeekAndInactiveStates() {
     QCOMPARE(presenter.positionMs(), 84'000);
 }
 
+void PlayerPresenterTests::exposesTypedPreferenceDefaults() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QCOMPARE(presenter.themePreference(), PlayerPresenter::ThemePreference::SystemTheme);
+    QCOMPARE(presenter.motionPreference(), PlayerPresenter::MotionPreference::SystemMotion);
+    QCOMPARE(presenter.closePreference(), PlayerPresenter::ClosePreference::MinimizeToTray);
+    QCOMPARE(presenter.queueEndPreference(), PlayerPresenter::QueueEndPreference::StopKeepSelection);
+    QVERIFY(presenter.restoreLastSession());
+    QVERIFY(!presenter.startMinimized());
+    QVERIFY(presenter.trayAvailable());
+    const QMetaObject* meta = presenter.metaObject();
+    for (const char* name : {"themePreference", "motionPreference", "closePreference", "queueEndPreference",
+                             "restoreLastSession", "startMinimized", "trayAvailable"}) {
+        const int index = meta->indexOfProperty(name);
+        QVERIFY(index >= 0);
+        const QMetaProperty property = meta->property(index);
+        QVERIFY(property.isReadable());
+        QVERIFY(!property.isWritable());
+        QVERIFY(property.hasNotifySignal());
+    }
+    for (const char* name : {"themePreference", "motionPreference", "closePreference", "queueEndPreference"})
+        QVERIFY(meta->property(meta->indexOfProperty(name)).isEnumType());
+    QCOMPARE(meta->indexOfMethod("refreshPlatformAvailability()"), -1);
+}
+
+void PlayerPresenterTests::editsPreferencesWithoutChangingPlaybackOrTheQueue() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.togglePlayback());
+    QueueListModel* const model = presenter.queueModel();
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QCOMPARE(presenter.preferences().theme, ThemeMode::Dark);
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::LightTheme));
+    QCOMPARE(presenter.preferences().theme, ThemeMode::Light);
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::SystemTheme));
+    QCOMPARE(presenter.preferences().theme, ThemeMode::System);
+    QVERIFY(presenter.setMotionPreference(PlayerPresenter::MotionPreference::ReducedMotion));
+    QCOMPARE(presenter.preferences().motion, MotionMode::Reduced);
+    QVERIFY(presenter.setMotionPreference(PlayerPresenter::MotionPreference::SystemMotion));
+    QCOMPARE(presenter.preferences().motion, MotionMode::System);
+    QVERIFY(presenter.setSkipBackwardSeconds(7));
+    QVERIFY(presenter.setSkipForwardSeconds(12));
+    QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit));
+    QVERIFY(presenter.setRestoreLastSession(false));
+    QVERIFY(presenter.setStartMinimized(true));
+    QVERIFY(presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection));
+    QCOMPARE(preferences.size(), 11);
+    QCOMPARE(presenter.skipBackwardSeconds(), 7);
+    QCOMPARE(presenter.skipForwardSeconds(), 12);
+    QCOMPARE(presenter.preferences().close_behavior, CloseBehavior::Exit);
+    QVERIFY(!presenter.restoreLastSession());
+    QVERIFY(presenter.startMinimized());
+    QCOMPARE(presenter.preferences().queue_end_behavior, QueueEndBehavior::StopClearSelection);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.positionMs(), 84'000);
+    QCOMPARE(presenter.volume(), 0.8);
+    QVERIFY(!presenter.muted());
+    QCOMPARE(presenter.queueModel(), model);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(states.size(), 0);
+    QCOMPARE(playback.size(), 0);
+
+    QVERIFY(presenter.skipBackward());
+    QCOMPARE(presenter.positionMs(), 77'000);
+    QVERIFY(presenter.advanceOneTick());
+    QVERIFY(presenter.skipForward());
+    QCOMPARE(presenter.positionMs(), 89'000);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+}
+
+void PlayerPresenterTests::rejectsInvalidAndUnchangedPreferencesWithoutNotifications() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy changed(&presenter, &PlayerPresenter::preferencesChanged);
+    for (const int value : {-1, 99}) {
+        QVERIFY(!presenter.setThemePreference(static_cast<PlayerPresenter::ThemePreference>(value)));
+        QVERIFY(!presenter.setMotionPreference(static_cast<PlayerPresenter::MotionPreference>(value)));
+        QVERIFY(!presenter.setClosePreference(static_cast<PlayerPresenter::ClosePreference>(value)));
+        QVERIFY(!presenter.setQueueEndPreference(static_cast<PlayerPresenter::QueueEndPreference>(value)));
+    }
+    for (const int value : {std::numeric_limits<int>::min(), 0, 301, std::numeric_limits<int>::max()}) {
+        QVERIFY(!presenter.setSkipBackwardSeconds(value));
+        QVERIFY(!presenter.setSkipForwardSeconds(value));
+    }
+    QVERIFY(!presenter.setThemePreference(PlayerPresenter::ThemePreference::SystemTheme));
+    QVERIFY(!presenter.setMotionPreference(PlayerPresenter::MotionPreference::SystemMotion));
+    QVERIFY(!presenter.setClosePreference(PlayerPresenter::ClosePreference::MinimizeToTray));
+    QVERIFY(!presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopKeepSelection));
+    QVERIFY(!presenter.setRestoreLastSession(true));
+    QVERIFY(!presenter.setStartMinimized(false));
+    QVERIFY(!presenter.setSkipBackwardSeconds(5));
+    QVERIFY(!presenter.setSkipForwardSeconds(5));
+    QCOMPARE(changed.size(), 0);
+    QCOMPARE(presenter.themePreference(), PlayerPresenter::ThemePreference::SystemTheme);
+    QCOMPARE(presenter.motionPreference(), PlayerPresenter::MotionPreference::SystemMotion);
+    QCOMPARE(presenter.closePreference(), PlayerPresenter::ClosePreference::MinimizeToTray);
+    QCOMPARE(presenter.queueEndPreference(), PlayerPresenter::QueueEndPreference::StopKeepSelection);
+    QCOMPARE(presenter.skipBackwardSeconds(), 5);
+    QCOMPARE(presenter.skipForwardSeconds(), 5);
+    for (const int value : {1, 300}) {
+        QVERIFY(presenter.setSkipBackwardSeconds(value));
+        QVERIFY(presenter.setSkipForwardSeconds(value));
+    }
+    QCOMPARE(changed.size(), 4);
+}
+
+void PlayerPresenterTests::refreshesTrayAvailabilityAndGuardsStartMinimized() {
+    AvailableTrayPlatform platform;
+    platform.available = false;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    QSignalSpy availability(&presenter, &PlayerPresenter::platformChanged);
+    QVERIFY(!presenter.trayAvailable());
+    QVERIFY(!presenter.setStartMinimized(true));
+    QVERIFY(!presenter.startMinimized());
+    QCOMPARE(preferences.size(), 0);
+    presenter.refreshPlatformAvailability();
+    QCOMPARE(availability.size(), 0);
+    platform.available = true;
+    presenter.refreshPlatformAvailability();
+    QCOMPARE(availability.size(), 1);
+    QVERIFY(presenter.trayAvailable());
+    QVERIFY(presenter.setStartMinimized(true));
+    QVERIFY(presenter.startMinimized());
+    QCOMPARE(preferences.size(), 1);
+    platform.available = false;
+    presenter.refreshPlatformAvailability();
+    QCOMPARE(availability.size(), 2);
+    QVERIFY(!presenter.trayAvailable());
+    QVERIFY(!presenter.startMinimized());
+    QCOMPARE(preferences.size(), 2);
+    presenter.refreshPlatformAvailability();
+    QCOMPARE(availability.size(), 2);
+    QCOMPARE(preferences.size(), 2);
+}
+
 } // namespace music_player::m0::test
 
-QTEST_GUILESS_MAIN(music_player::m0::test::PlayerPresenterTests)
+QTEST_MAIN(music_player::m0::test::PlayerPresenterTests)
 
 #include "PlayerPresenterTests.moc"

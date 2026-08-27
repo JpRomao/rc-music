@@ -14,6 +14,20 @@ ApplicationWindow {
     minimumHeight: uiContract.minimumHeight
     title: uiContract.appName
     color: uiContract.canvasColor
+    palette.window: uiContract.canvasColor
+    palette.base: uiContract.surfaceColor
+    palette.alternateBase: uiContract.surfaceRaisedColor
+    palette.windowText: uiContract.textPrimaryColor
+    palette.text: uiContract.textPrimaryColor
+    palette.button: uiContract.surfaceColor
+    palette.buttonText: uiContract.textPrimaryColor
+    palette.highlight: uiContract.accentColor
+    palette.highlightedText: uiContract.accentTextColor
+    palette.mid: uiContract.borderColor
+    palette.midlight: uiContract.borderColor
+    palette.dark: uiContract.textPrimaryColor
+    palette.light: uiContract.surfaceRaisedColor
+    palette.placeholderText: uiContract.textSecondaryColor
     visible: true
     signal openAudioRequested
     property bool queueOpen: false
@@ -32,6 +46,13 @@ ApplicationWindow {
     function toggleQueue() {
         setQueueOpen(!queueOpen);
     }
+    function openPreferences() {
+        queueOpen = false;
+        if (preferencesPanel.opened)
+            preferencesPanel.focusFirst();
+        else
+            preferencesPanel.open();
+    }
 
     ColumnLayout {
         id: mainLayout
@@ -45,7 +66,8 @@ ApplicationWindow {
                 id: queueButton
                 objectName: "queue"
                 anchors.top: parent.top
-                anchors.right: parent.right
+                anchors.right: preferencesButton.left
+                anchors.rightMargin: window.uiContract.spacingUnit * 2
                 z: 20
                 contract: window.uiContract
                 text: window.uiContract.queueTitle
@@ -56,6 +78,17 @@ ApplicationWindow {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: window.toggleQueue()
+            }
+            AccessibleTransportButton {
+                id: preferencesButton
+                objectName: "preferences"
+                anchors.top: parent.top
+                anchors.right: parent.right
+                z: 20
+                contract: window.uiContract
+                text: window.uiContract.preferencesTitle
+                accessibleName: window.uiContract.preferencesTitle
+                onClicked: window.openPreferences()
             }
             Item {
                 id: stateLayer
@@ -110,25 +143,40 @@ ApplicationWindow {
         presenter: window.presenter
         onCloseRequested: window.setQueueOpen(false)
     }
+    PreferencesPanel {
+        id: preferencesPanel
+        parent: window.contentItem
+        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 600)
+        height: Math.min(contentArea.height, 400)
+        x: (window.width - width) / 2
+        y: mainLayout.y + contentArea.y
+        contract: window.uiContract
+        presenter: window.presenter
+        onClosed: preferencesButton.forceActiveFocus(Qt.TabFocusReason)
+    }
 
     Shortcut {
         sequence: "Ctrl+L"
-        enabled: queueButton.enabled
+        enabled: queueButton.enabled && !preferencesPanel.visible
         onActivated: window.toggleQueue()
     }
     Shortcut {
         sequence: "Ctrl+Left"
-        enabled: window.presenter.canGoPrevious
+        enabled: window.presenter.canGoPrevious && !preferencesPanel.visible
         onActivated: window.presenter.previousTrack()
     }
     Shortcut {
         sequence: "Ctrl+Right"
-        enabled: window.presenter.canGoNext
+        enabled: window.presenter.canGoNext && !preferencesPanel.visible
         onActivated: window.presenter.nextTrack()
     }
     Shortcut {
         sequence: "Esc"
-        enabled: window.queueOpen
+        enabled: window.queueOpen && !preferencesPanel.visible
         onActivated: window.setQueueOpen(false)
+    }
+    Shortcut {
+        sequence: "Ctrl+,"
+        onActivated: window.openPreferences()
     }
 }

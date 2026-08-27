@@ -22,6 +22,8 @@ ColumnLayout {
     Slider {
         id: progress
         objectName: "progress"
+        palette.window: root.contract.surfaceColor
+        palette.dark: root.contract.accentColor
         property bool dragStarted: false
         readonly property bool focusIndicatorVisible: activeFocus && enabled
         Layout.fillWidth: true
@@ -144,6 +146,8 @@ ColumnLayout {
         }
         Slider {
             objectName: "volume"
+            palette.window: root.contract.surfaceColor
+            palette.dark: root.contract.accentColor
             readonly property bool focusIndicatorVisible: activeFocus && enabled
             from: 0
             to: 100

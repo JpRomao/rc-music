@@ -12,7 +12,50 @@ A navegação manual segue a [política experimental comum a M0.2/M0.3](../../..
 
 O painel sincroniza seleção e rolagem com a ocorrência atual sem mover o foco do transporte. O título atual fica limitado à área disponível quando a fila está aberta. Quick Test cobre a preservação do foco durante a troca e os limites do título longo de `queue-0512`, sem alegar inspeção visual manual.
 
-M0.2 permanece em andamento. Ainda estão pendentes preferências, aplicação dos temas, tray concreto, pacote, medições e validações manuais de acessibilidade. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. A prova funcional de virtualização não declara NFR-PERF-006 aprovado; o gate de stall exige o harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
+A fatia atual implementa preferências/temas conforme a política comum da seção 6 do [registro M0](../../../../docs/m0/README.md), sem alterar a fixture/protocolo. O painel modal fica limitado ao conteúdo, mantendo o transporte visível, e usa Geral/Reprodução/Aparência com seleção exclusiva. Diálogo, botões, seletores, toggles e editores possuem roles explícitos; `Tab`/`Shift+Tab` permanecem no painel. Abrir fecha o painel da fila, seleciona Geral e foca a categoria; `Ctrl+,` abre/refoca sem alternar, e `Esc`/Fechar devolve foco ao botão `preferences`. Com dropdown aberto, o primeiro `Esc` fecha só a lista, preservando o modal. Atalhos de transporte/fila não atuam com o painel aberto. IDs e textos adicionais são centralizados no candidato conforme a tabela comum; volume/mudo não são duplicados, e Aplicativos Padrão fica para M0.9.
+
+Os campos de salto são avaliados a cada tecla: inteiros ASCII válidos de 1–300 s são aplicados imediatamente e de modo independente; drafts inválidos mostram “Use um número inteiro entre 1 e 300.” e preservam o último valor válido do core. Um prefixo válido já pode ter sido aplicado antes de a edição ficar inválida; não há rollback automático. Fechar/reabrir descarta somente o draft e exibe o último valor válido em memória. A nota visível explica que preferências ficam somente em memória e sessão/fim da fila reais são futuros; EOF continua `clamp_paused`, sem concluir FR-042/FR-043/FR-044. Tema “Sistema” usa `QStyleHints::colorScheme`, desconhecido usa claro e os modos Claro/Escuro prevalecem; a resolução ocorre antes do QML e quando o esquema/preferência muda. Os 12 tokens da paleta congelada alcançam também a palette Basic e os sliders. Movimento “Sistema” no Windows consulta `SPI_GETCLIENTAREAANIMATION` somente para leitura; desconhecido/sem API usa reduzido, e a escolha Reduzido prevalece. Painel e feedback usam respectivamente 160 ms e 120 ms no modo normal e 0 ms no reduzido, sem animação contínua. As fontes oficiais e a separação entre APIs e políticas do experimento estão no registro M0.
+
+Os checks automatizados desta fatia passaram: Red/Green do presenter, jornada Quick Test, suíte isolada de `QtSystemAppearance`, CTest Release estrito 58/58 em 7,25 s e core Qt OFF 51/51 com 473 asserções. Após o ajuste final dos delegates, Quick passou 7/7 em cada fator `QT_SCALE_FACTOR=1.5` e `2`, em modo estrito/offscreen; dez repetições do Quick e dez do smoke do executável passaram. Formato C++/QML, `qmllint`, contratos/hashes da fixture e markers também passaram.
+
+Reds adicionais reproduziram contraste 1:1 no item destacado do seletor Basic e altura de 38 px abaixo do mínimo de 40 px. O delegate corrigido usa `Highlight`/`HighlightedText` ou `Base`/`Text` e altura preferida de 44 px que acomoda o conteúdo. A regressão também verifica `Esc` no dropdown mantendo o modal e `Tab`/`Shift+Tab` em Aparência; o Release completo acima já inclui essa correção, sem alegação de alto contraste nativo.
+
+O build novo Qt ON com `BUILD_TESTING=OFF`, atualizado pelo rebuild final dos delegates, não contém testes ou controles artificiais e rejeita cenário indisponível/smoke com exit 1; o alias normal `--m0-scenario=empty` continua aceito. O default permaneceu vivo por 1,5 s sem output antes da limpeza dos PIDs; isso não prova saída graciosa. Não restaram processos de validação. A [evidência consolidada](../../../../docs/m0/README.md) registra a auditoria dos builds e os limites dos smokes.
+
+No harness, `FixtureRepositoryTests` e `PlayerPresenterTests` agora usam `QGuiApplication` offscreen: com `QCoreApplication`, `QAbstractItemModelTester` exercitava papéis que geravam warnings de `QPixmap`. Essa correção é do ambiente de teste Qt e não adiciona Qt ao core.
+
+M0.2 permanece em andamento. Alto contraste fica para a próxima fatia; tray concreto, pacote, medições e validações manuais de acessibilidade continuam pendentes. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para navegação ou preferências/temas. Os testes controlados do adapter não comprovam a jornada nativa de mudança das configurações do SO. A prova funcional de virtualização não declara NFR-PERF-006 aprovado; o gate de stall exige o harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
+
+## Checks de formato C++ e QML
+
+Execute na raiz do repositório após o preflight autenticado, com PowerShell 7 e `rg` disponíveis. O caminho abaixo é o `clang-format` 19.1.1 do Visual Studio validado no host. O `qmlformat` 6.11.2 não oferece `--check`; o check compara sua saída padrão com o arquivo normalizado para LF, sem editar os arquivos. Seu `--dry-run` apenas informa settings e não substitui essa comparação.
+
+```powershell
+$formatRepo = (Resolve-Path .).Path
+$formatSource = Join-Path $formatRepo 'experiments\m0\candidates\qt\shell'
+$clangFormat = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\clang-format.exe'
+$qmlFormat = Join-Path $formatRepo 'out\m0\toolchains\qt-6.11.2-msvc2022_64\bin\qmlformat.exe'
+if (-not (Test-Path -LiteralPath $clangFormat -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $qmlFormat -PathType Leaf)) {
+    throw 'Execute o preflight: ferramentas de formato ausentes.'
+}
+
+$cppFiles = @(rg --files $formatSource -g '*.cpp' -g '*.hpp')
+if ($LASTEXITCODE -ne 0 -or $cppFiles.Count -eq 0) { throw 'Falha ao enumerar C++.' }
+& $clangFormat --dry-run --Werror @cppFiles
+if ($LASTEXITCODE -ne 0) { throw 'Formato C++ divergente.' }
+
+$qmlFiles = @(rg --files $formatSource -g '*.qml')
+if ($LASTEXITCODE -ne 0 -or $qmlFiles.Count -eq 0) { throw 'Falha ao enumerar QML.' }
+foreach ($qmlFile in $qmlFiles) {
+    $formattedLines = @(& $qmlFormat --newline unix $qmlFile)
+    if ($LASTEXITCODE -ne 0) { throw "qmlformat falhou: $qmlFile" }
+    $formatted = ($formattedLines -join "`n") + "`n"
+    $original = (Get-Content -LiteralPath $qmlFile -Raw).Replace("`r`n", "`n").Replace("`r", "`n")
+    if ($formatted -cne $original) { throw "Formato QML divergente: $qmlFile" }
+}
+Write-Output "Formato OK: $($cppFiles.Count) C++ e $($qmlFiles.Count) QML."
+```
 
 ## Build e testes do core
 

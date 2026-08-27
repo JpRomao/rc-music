@@ -2,6 +2,7 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
+#include "presentation/ShellAppearanceBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 
 #include <QCoreApplication>
@@ -89,10 +90,13 @@ int main(int argc, char* argv[]) {
 #endif
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
-        QQmlApplicationEngine engine;
-        ShellUiContract contract(bundle, &engine);
         ShellPlatform platform;
-        PlayerPresenter presenter(bundle, platform, &engine);
+        music_player::m0::QtSystemAppearance system_appearance;
+        ShellUiContract contract(bundle);
+        PlayerPresenter presenter(bundle, platform);
+        // Destroy QML roots before the C++ objects referenced by their required properties.
+        QQmlApplicationEngine engine;
+        music_player::m0::bindShellAppearance(presenter, contract, system_appearance);
         if (options.initial_scenario == InitialShellScenario::Unavailable &&
             (!presenter.loadFrozenQueue() || !PlayerPresenterScenarioControl::enterUnavailable(presenter))) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};

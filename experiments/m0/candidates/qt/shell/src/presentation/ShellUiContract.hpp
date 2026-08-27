@@ -1,6 +1,7 @@
 #pragma once
 
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/domain/PlaybackTypes.hpp"
 
 #include <QObject>
 #include <QString>
@@ -45,19 +46,37 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString errorTitle READ errorTitle CONSTANT)
     Q_PROPERTY(QString errorBody READ errorBody CONSTANT)
     Q_PROPERTY(QString actionSkip READ actionSkip CONSTANT)
-    Q_PROPERTY(QString canvasColor READ canvasColor CONSTANT)
-    Q_PROPERTY(QString surfaceColor READ surfaceColor CONSTANT)
-    Q_PROPERTY(QString textPrimaryColor READ textPrimaryColor CONSTANT)
-    Q_PROPERTY(QString textSecondaryColor READ textSecondaryColor CONSTANT)
-    Q_PROPERTY(QString accentColor READ accentColor CONSTANT)
-    Q_PROPERTY(QString accentTextColor READ accentTextColor CONSTANT)
-    Q_PROPERTY(QString focusColor READ focusColor CONSTANT)
-    Q_PROPERTY(QString borderColor READ borderColor CONSTANT)
+    Q_PROPERTY(QString preferencesTitle READ preferencesTitle CONSTANT)
+    Q_PROPERTY(QString sectionGeneral READ sectionGeneral CONSTANT)
+    Q_PROPERTY(QString sectionPlayback READ sectionPlayback CONSTANT)
+    Q_PROPERTY(QString sectionAppearance READ sectionAppearance CONSTANT)
+    Q_PROPERTY(QString themeSystem READ themeSystem CONSTANT)
+    Q_PROPERTY(QString themeLight READ themeLight CONSTANT)
+    Q_PROPERTY(QString themeDark READ themeDark CONSTANT)
+    Q_PROPERTY(QString motionSystem READ motionSystem CONSTANT)
+    Q_PROPERTY(QString motionReduced READ motionReduced CONSTANT)
+    Q_PROPERTY(QString canvasColor READ canvasColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString surfaceColor READ surfaceColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString surfaceRaisedColor READ surfaceRaisedColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString textPrimaryColor READ textPrimaryColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString textSecondaryColor READ textSecondaryColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString accentColor READ accentColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString accentTextColor READ accentTextColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString focusColor READ focusColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString borderColor READ borderColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString errorColor READ errorColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString warningColor READ warningColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString successColor READ successColor NOTIFY appearanceChanged)
+    Q_PROPERTY(bool darkTheme READ darkTheme NOTIFY appearanceChanged)
+    Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY appearanceChanged)
+    Q_PROPERTY(int panelTransitionMs READ panelTransitionMs NOTIFY appearanceChanged)
+    Q_PROPERTY(int feedbackTransitionMs READ feedbackTransitionMs NOTIFY appearanceChanged)
     Q_PROPERTY(QUrl placeholderSource READ placeholderSource CONSTANT)
     Q_PROPERTY(QUrl trackSource READ trackSource CONSTANT)
 
   public:
     explicit ShellUiContract(const FixtureBundle& bundle, QObject* parent = nullptr);
+    void updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion);
     [[nodiscard]] int clientWidth() const noexcept;
     [[nodiscard]] int clientHeight() const noexcept;
     [[nodiscard]] int minimumWidth() const noexcept;
@@ -90,22 +109,47 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString errorTitle() const;
     [[nodiscard]] QString errorBody() const;
     [[nodiscard]] QString actionSkip() const;
+    [[nodiscard]] QString preferencesTitle() const;
+    [[nodiscard]] QString sectionGeneral() const;
+    [[nodiscard]] QString sectionPlayback() const;
+    [[nodiscard]] QString sectionAppearance() const;
+    [[nodiscard]] QString themeSystem() const;
+    [[nodiscard]] QString themeLight() const;
+    [[nodiscard]] QString themeDark() const;
+    [[nodiscard]] QString motionSystem() const;
+    [[nodiscard]] QString motionReduced() const;
     [[nodiscard]] QString canvasColor() const;
     [[nodiscard]] QString surfaceColor() const;
+    [[nodiscard]] QString surfaceRaisedColor() const;
     [[nodiscard]] QString textPrimaryColor() const;
     [[nodiscard]] QString textSecondaryColor() const;
     [[nodiscard]] QString accentColor() const;
     [[nodiscard]] QString accentTextColor() const;
     [[nodiscard]] QString focusColor() const;
     [[nodiscard]] QString borderColor() const;
+    [[nodiscard]] QString errorColor() const;
+    [[nodiscard]] QString warningColor() const;
+    [[nodiscard]] QString successColor() const;
+    [[nodiscard]] bool darkTheme() const noexcept;
+    [[nodiscard]] bool reducedMotion() const noexcept;
+    [[nodiscard]] int panelTransitionMs() const noexcept;
+    [[nodiscard]] int feedbackTransitionMs() const noexcept;
     [[nodiscard]] QUrl placeholderSource() const;
     [[nodiscard]] QUrl trackSource() const;
 
+  signals:
+    void appearanceChanged();
+
   private:
+    [[nodiscard]] const FixturePalette& palette() const noexcept;
+
     FixtureWindow window_;
     FixtureLayoutTokens layout_;
     FixtureStrings strings_;
-    FixturePalette palette_;
+    FixtureThemes themes_;
+    FixtureMotion motion_;
+    bool dark_theme_{false};
+    bool reduced_motion_{false};
     QUrl placeholder_source_{QStringLiteral("qrc:/m0/assets/cover-placeholder.svg")};
     QUrl track_source_{QStringLiteral("qrc:/m0/assets/cover-track.svg")};
 };
