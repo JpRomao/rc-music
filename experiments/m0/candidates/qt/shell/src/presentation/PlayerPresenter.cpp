@@ -1,4 +1,4 @@
-#include "m0/presentation/PlayerPresenter.hpp"
+#include "presentation/PlayerPresenter.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -168,10 +168,15 @@ QString PlayerPresenter::currentOccurrenceId() const { return state_.current_occ
 bool PlayerPresenter::hasContextOccurrence() const noexcept { return state_.context_occurrence_id.has_value(); }
 QString PlayerPresenter::contextOccurrenceId() const { return state_.context_occurrence_id.value_or(QString{}); }
 bool PlayerPresenter::hasPosition() const noexcept { return state_.position_ms.has_value(); }
-qint64 PlayerPresenter::positionMs() const noexcept { return state_.position_ms.value_or(0); }
+qint64 PlayerPresenter::positionMs() const noexcept { return controller_.displayedPositionMs(); }
+qint64 PlayerPresenter::confirmedPositionMs() const noexcept { return controller_.confirmedSnapshot().position_ms; }
+bool PlayerPresenter::seekPreviewActive() const noexcept { return controller_.seekPreviewActive(); }
+bool PlayerPresenter::seekPending() const noexcept { return controller_.seekPending(); }
 bool PlayerPresenter::hasDuration() const noexcept { return state_.duration_ms.has_value(); }
-qint64 PlayerPresenter::durationMs() const noexcept { return state_.duration_ms.value_or(0); }
-bool PlayerPresenter::seekable() const noexcept { return state_.seekable; }
+qint64 PlayerPresenter::durationMs() const noexcept {
+    return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
+}
+bool PlayerPresenter::seekable() const noexcept { return queueLoaded() && controller_.confirmedSnapshot().seekable; }
 QString PlayerPresenter::assetId() const { return state_.asset_id; }
 bool PlayerPresenter::hasMessage() const noexcept { return state_.message_key.has_value(); }
 QString PlayerPresenter::messageKey() const { return state_.message_key.value_or(QString{}); }
@@ -183,6 +188,99 @@ QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept { return &queue
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
+int PlayerPresenter::skipBackwardSeconds() const noexcept { return controller_.preferences().skip_backward_seconds; }
+int PlayerPresenter::skipForwardSeconds() const noexcept { return controller_.preferences().skip_forward_seconds; }
+bool PlayerPresenter::togglePlayback() {
+    const PlaybackStatus before = controller_.confirmedSnapshot().status;
+    if (!controller_.togglePlayback())
+        return false;
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    if (before == controller_.confirmedSnapshot().status)
+        return false;
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::skipBackward() {
+    if (!controller_.skipBackward())
+        return false;
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::skipForward() {
+    if (!controller_.skipForward())
+        return false;
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
+    const PlaybackStatus status = controller_.confirmedSnapshot().status;
+    const bool transport_active =
+        status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing;
+    if (!queueLoaded() || !transport_active || !seekable() || controller_.seekPreviewActive() ||
+        controller_.seekPending())
+        return false;
+    const auto before = controller_.displayedPositionMs();
+    const bool was_active = controller_.seekPreviewActive();
+    controller_.beginSeekPreview(position_ms);
+    if (!controller_.seekPreviewActive())
+        return false;
+    if (!was_active || before != controller_.displayedPositionMs())
+        emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
+    if (!controller_.seekPreviewActive() || controller_.seekPending())
+        return false;
+    const auto before = controller_.displayedPositionMs();
+    controller_.updateSeekPreview(position_ms);
+    if (before != controller_.displayedPositionMs())
+        emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::commitSeekPreview() {
+    if (!controller_.seekPreviewActive() || controller_.seekPending())
+        return false;
+    controller_.commitSeekPreview();
+    if (!controller_.seekPending())
+        return false;
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::setVolume(const double volume) {
+    if (volume == controller_.preferences().volume || !controller_.setVolume(volume))
+        return false;
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::toggleMute() {
+    controller_.toggleMute();
+    emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::advanceOneTick() {
+    if (!queueLoaded())
+        return false;
+    const auto before = controller_.confirmedSnapshot();
+    const auto before_displayed = controller_.displayedPositionMs();
+    const bool before_preview = controller_.seekPreviewActive();
+    const bool before_pending = controller_.seekPending();
+    const DeterministicTickResult result = backend_.tick();
+    controller_.applyBackendSnapshot(result.snapshot);
+    if (result.seek_rejected)
+        controller_.rejectPendingSeek();
+    const auto& after = controller_.confirmedSnapshot();
+    const bool changed = result.seek_rejected || before.status != after.status ||
+                         before.position_ms != after.position_ms || before.duration_ms != after.duration_ms ||
+                         before.seekable != after.seekable || before_displayed != controller_.displayedPositionMs() ||
+                         before_preview != controller_.seekPreviewActive() ||
+                         before_pending != controller_.seekPending();
+    if (changed)
+        emit playbackChanged();
+    if (result.seek_rejected)
+        emit seekRejected();
+    return changed;
+}
+void PlayerPresenter::rejectNextSeekForTest() noexcept { backend_.rejectNextSeek(); }
 bool PlayerPresenter::loadFrozenQueue() {
     if (queue_model_.loaded() || bundle_.queue.isEmpty())
         return false;
@@ -194,6 +292,7 @@ bool PlayerPresenter::loadFrozenQueue() {
     if (!queue_model_.loadOnce(bundle_.queue))
         return false;
     emit stateChanged();
+    emit playbackChanged();
     return true;
 }
 

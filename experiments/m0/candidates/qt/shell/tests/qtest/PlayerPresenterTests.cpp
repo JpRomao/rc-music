@@ -1,12 +1,14 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
-#include "m0/presentation/PlayerPresenter.hpp"
+#include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModelTester>
 #include <QMetaProperty>
 #include <QSignalSpy>
+#include <QStringList>
 #include <QTest>
 #include <QTimer>
 
+#include <limits>
 #include <stdexcept>
 
 namespace music_player::m0::test {
@@ -36,6 +38,8 @@ class PlayerPresenterTests final : public QObject {
     void loadsFrozenQueueOnceWithoutReplacingTheModel();
     void derivesBackendSnapshotFromTheTypedPlayingState();
     void rejectsUnknownMappingsAndExposesNoInfrastructureApi();
+    void drivesTransportPreferencesAndManualTicksDeterministically();
+    void keepsUnavailableAndTerminalTransportInert();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -113,6 +117,7 @@ void PlayerPresenterTests::loadsFrozenQueueOnceWithoutReplacingTheModel() {
     QueueListModel* const identity = presenter.queueModel();
     QAbstractItemModelTester tester(identity, QAbstractItemModelTester::FailureReportingMode::QtTest);
     QSignalSpy state_changed(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback_changed(&presenter, &PlayerPresenter::playbackChanged);
     bool reset_was_atomic = false;
     connect(identity, &QAbstractItemModel::modelReset, &presenter, [&] {
         reset_was_atomic = identity->rowCount() == 1000 && presenter.queueLoaded() &&
@@ -142,12 +147,14 @@ void PlayerPresenterTests::loadsFrozenQueueOnceWithoutReplacingTheModel() {
     QCOMPARE(presenter.hasError(), false);
     QCOMPARE(presenter.errorCode(), QString{});
     QCOMPARE(state_changed.size(), 1);
+    QCOMPARE(playback_changed.size(), 1);
     QCOMPARE(reset_was_atomic, true);
 
     QVERIFY(!presenter.loadFrozenQueue());
     QCOMPARE(presenter.queueModel(), identity);
     QCOMPARE(identity->rowCount(), 1000);
     QCOMPARE(state_changed.size(), 1);
+    QCOMPARE(playback_changed.size(), 1);
 }
 
 void PlayerPresenterTests::derivesBackendSnapshotFromTheTypedPlayingState() {
@@ -194,6 +201,10 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     PlayerPresenter presenter(frozenBundle(), platform);
     const QMetaObject* meta = presenter.metaObject();
     QVERIFY(meta->indexOfMethod("loadFrozenQueue()") >= 0);
+    for (const char* method :
+         {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
+          "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)", "toggleMute()"})
+        QVERIFY(meta->indexOfMethod(method) >= 0);
     const int queue_model_property = meta->indexOfProperty("queueModel");
     QVERIFY(queue_model_property >= 0);
     QCOMPARE(meta->property(queue_model_property).metaType().id(), qMetaTypeId<QAbstractItemModel*>());
@@ -206,7 +217,138 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     QCOMPARE(meta->indexOfProperty("queuePath"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
     QCOMPARE(meta->indexOfProperty("timer"), -1);
+    for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "applyBackendSnapshot()"})
+        QCOMPARE(meta->indexOfMethod(method), -1);
     QCOMPARE(presenter.findChildren<QTimer*>().size(), 0);
+}
+
+void PlayerPresenterTests::drivesTransportPreferencesAndManualTicksDeterministically() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
+
+    QVERIFY(!presenter.advanceOneTick());
+    QCOMPARE(playback.size(), 0);
+    QVERIFY(presenter.loadFrozenQueue());
+    playback.clear();
+    QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+    QCOMPARE(presenter.skipBackwardSeconds(), 5);
+    QCOMPARE(presenter.skipForwardSeconds(), 5);
+
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(playback.size(), 1);
+    QVERIFY(!presenter.advanceOneTick());
+    QCOMPARE(playback.size(), 1);
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    QVERIFY(presenter.skipBackward());
+    QCOMPARE(presenter.positionMs(), 79'000);
+    QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(presenter.confirmedPositionMs(), 79'000);
+    QVERIFY(presenter.skipForward());
+    QCOMPARE(presenter.positionMs(), 84'000);
+    QCOMPARE(presenter.confirmedPositionMs(), 79'000);
+    QVERIFY(presenter.seekPreviewActive());
+    QVERIFY(presenter.seekPending());
+    QVERIFY(!presenter.skipBackward());
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(presenter.positionMs(), 84'000);
+    QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+    QVERIFY(!presenter.seekPreviewActive());
+    QVERIFY(!presenter.seekPending());
+
+    QVERIFY(presenter.beginSeekPreview(std::numeric_limits<qint64>::max()));
+    QVERIFY(!presenter.beginSeekPreview(1));
+    QCOMPARE(presenter.positionMs(), presenter.durationMs());
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(presenter.positionMs(), presenter.durationMs());
+    QCOMPARE(presenter.confirmedPositionMs(), 84'200);
+    QVERIFY(presenter.updateSeekPreview(std::numeric_limits<qint64>::min()));
+    QCOMPARE(presenter.positionMs(), 0);
+    const int same_update_signals = playback.size();
+    QVERIFY(presenter.updateSeekPreview(0));
+    QCOMPARE(playback.size(), same_update_signals);
+    QVERIFY(presenter.commitSeekPreview());
+    QVERIFY(!presenter.commitSeekPreview());
+    QStringList rejection_signal_order;
+    connect(&presenter, &PlayerPresenter::playbackChanged, &presenter,
+            [&rejection_signal_order] { rejection_signal_order.append(QStringLiteral("playback")); });
+    connect(&presenter, &PlayerPresenter::seekRejected, &presenter,
+            [&rejection_signal_order] { rejection_signal_order.append(QStringLiteral("rejected")); });
+    const int playback_before_rejection = playback.size();
+    PlayerPresenterTestAccess::rejectNextSeek(presenter);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(rejected.size(), 1);
+    QCOMPARE(playback.size(), playback_before_rejection + 1);
+    QCOMPARE(rejection_signal_order, QStringList({QStringLiteral("playback"), QStringLiteral("rejected")}));
+    QCOMPARE(presenter.positionMs(), 84'200);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(rejected.size(), 1);
+    QCOMPARE(presenter.positionMs(), 84'400);
+
+    QVERIFY(presenter.setVolume(0.25));
+    QCOMPARE(presenter.volume(), 0.25);
+    QCOMPARE(preferences.size(), 1);
+    QVERIFY(!presenter.setVolume(std::numeric_limits<double>::quiet_NaN()));
+    QVERIFY(!presenter.setVolume(std::numeric_limits<double>::infinity()));
+    QVERIFY(!presenter.setVolume(-0.1));
+    QVERIFY(!presenter.setVolume(2.0));
+    QVERIFY(!presenter.setVolume(0.25));
+    QCOMPARE(preferences.size(), 1);
+    QVERIFY(presenter.setVolume(0.0));
+    QVERIFY(presenter.toggleMute());
+    QVERIFY(presenter.muted());
+    QVERIFY(presenter.toggleMute());
+    QVERIFY(!presenter.muted());
+    QCOMPARE(presenter.volume(), 0.25);
+}
+
+void PlayerPresenterTests::keepsUnavailableAndTerminalTransportInert() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter empty(frozenBundle(), platform);
+    QSignalSpy empty_playback(&empty, &PlayerPresenter::playbackChanged);
+    QVERIFY(!empty.togglePlayback());
+    QVERIFY(!empty.skipBackward());
+    QVERIFY(!empty.beginSeekPreview(1));
+    QCOMPARE(empty_playback.size(), 0);
+
+    FixtureBundle error_bundle = frozenBundle();
+    error_bundle.states[1].playback_state = QStringLiteral("error");
+    PlayerPresenter error(std::move(error_bundle), platform);
+    QVERIFY(error.loadFrozenQueue());
+    QSignalSpy error_playback(&error, &PlayerPresenter::playbackChanged);
+    QVERIFY(!error.togglePlayback());
+    QVERIFY(!error.skipForward());
+    QVERIFY(!error.beginSeekPreview(10));
+    QVERIFY(!error.commitSeekPreview());
+    QVERIFY(!error.advanceOneTick());
+    QCOMPARE(error_playback.size(), 0);
+
+    FixtureBundle terminal_bundle = frozenBundle();
+    terminal_bundle.states[1].position_ms = 247'900;
+    PlayerPresenter terminal(std::move(terminal_bundle), platform);
+    QVERIFY(terminal.loadFrozenQueue());
+    QVERIFY(terminal.advanceOneTick());
+    QCOMPARE(terminal.positionMs(), 248'000);
+    QCOMPARE(terminal.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QSignalSpy terminal_playback(&terminal, &PlayerPresenter::playbackChanged);
+    QVERIFY(!terminal.togglePlayback());
+    QCOMPARE(terminal_playback.size(), 0);
+
+    FixtureBundle paused_bundle = frozenBundle();
+    paused_bundle.states[1].playback_state = QStringLiteral("paused");
+    PlayerPresenter paused(std::move(paused_bundle), platform);
+    QVERIFY(paused.loadFrozenQueue());
+    QVERIFY(paused.beginSeekPreview(90'000));
+    QVERIFY(paused.commitSeekPreview());
+    QVERIFY(paused.advanceOneTick());
+    QCOMPARE(paused.positionMs(), 90'000);
+    QCOMPARE(paused.playbackState(), PlayerPresenter::PlaybackState::Paused);
 }
 
 } // namespace music_player::m0::test

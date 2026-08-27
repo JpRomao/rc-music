@@ -6,7 +6,7 @@ Shell experimental C++20/Qt Quick de M0.2. A stack continua apenas como candidat
 
 Os incrementos TDD materializados em `shell/` incluem o core C++20 puro, com portas para playback e integração de plataforma, o backend manual determinístico e o suporte Qt isolado para carregar a fixture congelada e expor a fila em um `QAbstractListModel`. O modelo nasce vazio e aceita exatamente uma carga não vazia por reset, preservando a mesma identidade. O presenter `QObject` começa no estado vazio, preserva valores opcionais por propriedades `has…`, aplica explicitamente todos os defaults tipados e publica de forma atômica a fila e o snapshot falso derivados da fixture. O core cobre toggle play/pause, saltos com clamp, seek com preview/ack, preferências em memória e a decisão de close/tray. O backend reproduz os snapshots de 200 ms, transporte, clamp/pausa no fim e ack/rejeição de seek sem relógio ou áudio reais. O adapter Qt autentica os dois arquivos antes do parse, ancora seus bytes na cadeia protocolo → manifesto e projeta em tipos explícitos o contrato de apresentação, preferências, estados, detalhes, assets e fila, preservando ordem, nullabilidade e casos hostis. A seam de decodificação sem hash existe somente sob `src/` para testes semânticos causais e não faz parte da API pública.
 
-Ainda estão pendentes as ações e o timer do presenter, a UI QML, a aplicação visual dos temas, o tray concreto e as validações manuais. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
+Ainda estão pendentes o agendamento de 200 ms do presenter, a UI QML, a aplicação visual dos temas, o tray concreto e as validações manuais. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
 
 ## Build e testes do core
 

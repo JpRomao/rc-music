@@ -75,10 +75,10 @@ if(M0_QT_SHELL_SUPPORT)
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
-        include/m0/presentation/PlayerPresenter.hpp
         src/adapters/fixture/FixtureDecoder.hpp
         src/adapters/fixture/FixtureRepository.cpp
         src/presentation/QueueListModel.cpp
+        src/presentation/PlayerPresenter.hpp
         src/presentation/PlayerPresenter.cpp
     )
     target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
@@ -115,6 +115,7 @@ if(M0_QT_SHELL_SUPPORT)
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
         add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
         target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support Qt6::Test)
+        target_include_directories(m0_qt_presenter_tests PRIVATE src)
         target_compile_features(m0_qt_presenter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_presenter_tests PRIVATE
             M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
