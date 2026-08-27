@@ -11,6 +11,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 if (-not $IsWindows) { throw 'This local evaluation package requires Windows x64.' }
 Import-Module (Join-Path $PSScriptRoot 'QtShellPackageBuilder.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'QtShellPackageManifest.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'QtShellPackagePrerequisites.psm1') -Force
 
 function Get-Sha256([string] $Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -53,24 +54,12 @@ $buildParent = Resolve-QtShellPackageChildPath $repository 'out/m0/builds/qt-she
 $build = Resolve-QtShellPackageChildPath $buildParent ([IO.Path]::GetFullPath($BuildDirectory, $repository))
 $applicationQml = Resolve-QtShellPackageChildPath $build 'qml/MusicPlayer/M0'
 $cachePath = Resolve-QtShellPackageChildPath $build 'CMakeCache.txt'
-$configuration = Test-QtShellReleaseCache (Get-Content -LiteralPath $cachePath -Raw) $source $qt
 $compilerInfoPath = Resolve-QtShellPackageChildPath $build 'CMakeFiles/3.31.5/CMakeCXXCompiler.cmake'
-$compilerIdentity = Get-QtShellCompilerIdentity (Get-Content -LiteralPath $compilerInfoPath -Raw) (Get-Content -LiteralPath (Join-Path $qt 'mkspecs/qconfig.pri') -Raw)
-$compiler = $compilerIdentity.compiler
-$cmake = 'C:/Program Files/CMake/bin/cmake.exe'
-$dumpbin = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64/dumpbin.exe'
-$deploy = Join-Path $qt 'bin/windeployqt.exe'
-$qtpaths = Join-Path $qt 'bin/qtpaths.exe'
-foreach ($tool in @($cmake, $dumpbin, $deploy, $qtpaths, $compiler)) {
-    if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Preflight tool is missing: $tool" }
-}
-if ((Get-Item -LiteralPath $compiler).VersionInfo.FileVersion -cne $compilerIdentity.shell_msvc) {
-    throw 'The actual compiler version differs from the CMake compiler identity.'
-}
-if ((Get-Sha256 $deploy) -cne 'd7a4db063f16cb420c8f89a8393ae92749b0f08a74736c929f795ff9e7b9395b') {
-    throw 'windeployqt does not match the authenticated Qt 6.11.2 tool.'
-}
-$contract = Join-Path $repository 'experiments/m0/provisioning/qt-shell/qt-shell-toolchain-contract.v1.json'
+$qtConfigPath = Resolve-QtShellPackageChildPath $qt 'mkspecs/qconfig.pri'
+$refreshContractRelative = 'experiments/m0/provisioning/qt-shell/msvc-refresh-contract.v1.json'
+$refreshContract = Resolve-QtShellPackageChildPath $repository $refreshContractRelative
+$refreshContractHash = 'eead467f5a597a72b6ff45812b40040db629232bc089d0c61c0dd64c73693f03'
+$contract = Resolve-QtShellPackageChildPath $repository 'experiments/m0/provisioning/qt-shell/qt-shell-toolchain-contract.v1.json'
 if ((Get-Sha256 $contract) -cne 'ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952') {
     throw 'The historical toolchain contract has changed; review the package recipe first.'
 }
@@ -84,21 +73,40 @@ function Get-SourceStatus {
 if (@(Get-SourceStatus).Count -ne 0) { throw 'Commit shell/fixture/protocol changes before building an identified package.' }
 $commit = @(& git -C $repository rev-parse HEAD) -join ''
 if ($LASTEXITCODE -ne 0 -or $commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Could not identify the source commit.' }
-$recipeStatus = @(& git -C $repository status --porcelain=v1 --untracked-files=all -- 'experiments/m0/candidates/qt/package')
+$recipeStatus = @(& git -C $repository status --porcelain=v1 --untracked-files=all -- 'experiments/m0/candidates/qt/package' $refreshContractRelative)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect package recipe status.' }
 
 $packageParent = Resolve-QtShellPackageChildPath $repository 'out/m0/packages/qt-shell'
+if ($Name.Contains('/') -or $Name.Contains('\')) { throw 'Package name must be one path component.' }
+$plannedDestination = Resolve-QtShellPackageChildPath $packageParent $Name
+if (Test-Path -LiteralPath $plannedDestination) { throw "Package destination already exists: $plannedDestination" }
+Write-Host "Rebuilding the Release shell with authenticated MSVC 14.44 for commit $commit..."
+$refreshedBuild = Invoke-QtShellRefreshedBuild -ContractPath $refreshContract -ExpectedContractSha256 $refreshContractHash -CompilerInfoPath $compilerInfoPath -CachePath $cachePath -QtConfigPath $qtConfigPath -SourceRoot $source -QtRoot $qt -BuildAction {
+    param($identity)
+    $prerequisites = Get-QtShellPackagePrerequisites -RepositoryRoot $repository -QtRoot $qt -CachePath $cachePath -CompilerPath $identity.compiler -ToolsetVersion $identity.toolset_version
+    $cmake = @($prerequisites.tools | Where-Object { $_.name -ceq 'cmake' })[0].path
+    Invoke-Native $cmake @('--build', $build, '--target', 'm0_qt_shell') $repository
+}
+if (@(Get-SourceStatus).Count -ne 0 -or (@(& git -C $repository rev-parse HEAD) -join '') -cne $commit) {
+    throw 'Source state changed during the build.'
+}
+$configuration = $refreshedBuild.configuration
+$receipt = $refreshedBuild.receipt
+$compilerIdentity = $receipt.identity
+$prerequisites = Get-QtShellPackagePrerequisites -RepositoryRoot $repository -QtRoot $qt -CachePath $cachePath -CompilerPath $compilerIdentity.compiler -ToolsetVersion $compilerIdentity.toolset_version
+$deploy = @($prerequisites.tools | Where-Object { $_.name -ceq 'windeployqt' })[0].path
+$qtpaths = @($prerequisites.tools | Where-Object { $_.name -ceq 'qtpaths' })[0].path
+$dumpbin = $compilerIdentity.dumpbin
+
+# No stage is created until the build and both identity checks succeed.
 $destination = New-QtShellPackageDirectory -Parent $packageParent -Name $Name
 $payload = Resolve-QtShellPackageChildPath $destination 'app'
 $evidence = Resolve-QtShellPackageChildPath $destination 'evidence'
 $null = New-Item -ItemType Directory -Path $payload, $evidence
-Write-Host "Rebuilding the Release shell for commit $commit..."
-$buildResult = Invoke-Native $cmake @('--build', $build, '--target', 'm0_qt_shell') $repository
+$buildResult = $refreshedBuild.build_result
 [IO.File]::WriteAllText((Join-Path $evidence 'build.log'), $buildResult.stdout + $buildResult.stderr)
-if (@(Get-SourceStatus).Count -ne 0 -or (@(& git -C $repository rev-parse HEAD) -join '') -cne $commit) {
-    throw 'Source state changed during the build.'
-}
-$null = Test-QtShellReleaseCache (Get-Content -LiteralPath $cachePath -Raw) $source $qt
+$receiptPath = Join-Path $evidence 'msvc-refresh-receipt.v1.json'
+Write-Json $receiptPath $receipt
 $executable = Resolve-QtShellPackageChildPath $build 'm0_qt_shell.exe'
 $arguments = @(
     '--release', '--qtpaths', $qtpaths, '--qmldir', (Join-Path $source 'qml'),
@@ -197,7 +205,7 @@ $closure = [pscustomobject] [ordered] @{
 }
 Write-Json (Join-Path $evidence 'pe-closure.v1.json') $closure
 
-$recipeFiles = @('New-QtShellPackage.ps1', 'QtShellPackageBuilder.psm1', 'QtShellPackageManifest.psm1', 'qt.conf', 'LOCAL-EVALUATION.txt')
+$recipeFiles = @('New-QtShellPackage.ps1', 'QtShellPackageBuilder.psm1', 'QtShellPackageManifest.psm1', 'QtShellPackagePrerequisites.psm1', 'qt.conf', 'LOCAL-EVALUATION.txt')
 $metadata = [pscustomobject] [ordered] @{
     purpose = 'm0.2-private-local-evaluation'
     source_commit = $commit
@@ -209,20 +217,27 @@ $metadata = [pscustomobject] [ordered] @{
     qt_version = '6.11.2'
     qt_build_msvc = $compilerIdentity.qt_build_msvc
     shell_msvc = $compilerIdentity.shell_msvc
+    linker_msvc = $compilerIdentity.linker_msvc
+    toolset_version = $compilerIdentity.toolset_version
     toolchain_contract_sha256 = Get-Sha256 $contract
+    msvc_refresh_contract_sha256 = $receipt.refresh_contract_sha256
+    msvc_refresh_receipt_path = 'evidence/msvc-refresh-receipt.v1.json'
+    msvc_refresh_receipt_sha256 = Get-Sha256 $receiptPath
     fixture_manifest_sha256 = Get-Sha256 (Join-Path $repository 'experiments/m0/shared/shell-fixture/manifest.v1.json')
     protocol_sha256 = Get-Sha256 (Join-Path $repository 'experiments/m0/protocol/protocol.v1.json')
-    cmake_cache_sha256 = Get-Sha256 $cachePath
-    compiler_info_sha256 = Get-Sha256 $compilerInfoPath
+    cmake_cache_sha256 = $receipt.cmake_cache_sha256
+    compiler_info_sha256 = $receipt.compiler_info_sha256
     deployment_plan_sha256 = Get-Sha256 (Join-Path $evidence 'deployment-plan.v1.json')
     pe_closure_sha256 = Get-Sha256 (Join-Path $evidence 'pe-closure.v1.json')
-    tools = @(@{ name = 'windeployqt'; sha256 = Get-Sha256 $deploy }, @{ name = 'qtpaths'; sha256 = Get-Sha256 $qtpaths }, @{ name = 'cmake'; sha256 = Get-Sha256 $cmake }, @{ name = 'dumpbin'; sha256 = Get-Sha256 $dumpbin }, @{ name = 'cl'; sha256 = Get-Sha256 $compiler })
+    tools = @($prerequisites.tools) + @($compilerIdentity.tools)
+    build_environment = $prerequisites.environment
     recipe = @($recipeFiles | ForEach-Object { [pscustomobject] @{ relative_path = $_; sha256 = Get-Sha256 (Join-Path $PSScriptRoot $_) } })
     external_msvc_runtime = @($closure.external_files | Where-Object { $_.kind -eq 'host-msvc-runtime' })
     redistribution_allowed = $false
     known_limits = @(
         'Host MSVC runtime is external; no redistributable or Windows DLL is included.',
-        'MSVC 19.43 shell/linker with Qt built by 19.44 is only locally exercised, not certified on a clean machine.',
+        'Pinned MSVC 19.44 compiler/linker and SDK environment do not certify ABI or execution on a clean machine.',
+        'Selected launchers are authenticated; Qt codegen/scanner tools and every transitive header/library are not individually attested.',
         'Project redistribution license, full third-party notices/sources and D3D/Mesa license review remain open.',
         'DXC/Direct3D 12 is excluded; native graphics, tray/Explorer, NVDA, real HC/DPI, Linux and performance remain unverified.',
         'Quiescent inputs and destination required; no concurrent-writer security guarantee.'

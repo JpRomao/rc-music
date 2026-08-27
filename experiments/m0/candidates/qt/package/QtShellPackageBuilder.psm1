@@ -382,6 +382,35 @@ function New-QtShellMsvcRefreshReceipt {
     }
 }
 
+function Invoke-QtShellRefreshedBuild {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $ContractPath,
+        [Parameter(Mandatory)] [string] $ExpectedContractSha256,
+        [Parameter(Mandatory)] [string] $CompilerInfoPath,
+        [Parameter(Mandatory)] [string] $CachePath,
+        [Parameter(Mandatory)] [string] $QtConfigPath,
+        [Parameter(Mandatory)] [string] $SourceRoot,
+        [Parameter(Mandatory)] [string] $QtRoot,
+        [Parameter(Mandatory)] [scriptblock] $BuildAction
+    )
+    $receiptArguments = @{
+        ContractPath = $ContractPath; ExpectedContractSha256 = $ExpectedContractSha256
+        CompilerInfoPath = $CompilerInfoPath; CachePath = $CachePath; QtConfigPath = $QtConfigPath
+    }
+    $null = Test-QtShellReleaseCache -CacheText (Read-QtShellRefreshText $CachePath).text -SourceRoot $SourceRoot -QtRoot $QtRoot
+    $before = New-QtShellMsvcRefreshReceipt @receiptArguments
+    $buildResult = & $BuildAction $before.identity
+    if ($buildResult.exit_code -ne 0) {
+        $failure = [InvalidOperationException]::new("Refreshed build failed (exit_code=$($buildResult.exit_code)).`n$($buildResult.stdout)`n$($buildResult.stderr)")
+        $errorRecord = [Management.Automation.ErrorRecord]::new($failure, 'QtShellRefreshedBuildFailed', [Management.Automation.ErrorCategory]::InvalidResult, $buildResult)
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
+    $configuration = Test-QtShellReleaseCache -CacheText (Read-QtShellRefreshText $CachePath).text -SourceRoot $SourceRoot -QtRoot $QtRoot
+    $receipt = New-QtShellMsvcRefreshReceipt @receiptArguments
+    return [pscustomobject] [ordered] @{ configuration = $configuration; receipt = $receipt; build_result = $buildResult }
+}
+
 function ConvertFrom-QtShellPeReport {
     param([Parameter(Mandatory)] [string] $Report)
     if ($Report -notmatch '(?m)^\s*8664 machine \(x64\)\s*$') { throw 'PE report does not identify x64.' }
@@ -419,4 +448,4 @@ function Assert-QtShellRuntimeFiles {
     }
 }
 
-Export-ModuleMember -Function Resolve-QtShellPackageChildPath, New-QtShellPackageDirectory, ConvertTo-QtShellDeploymentPlan, Test-QtShellReleaseCache, Get-QtShellCompilerIdentity, Get-QtShellMsvcRefreshIdentity, New-QtShellMsvcRefreshReceipt, ConvertFrom-QtShellPeReport, Assert-QtShellRuntimeFiles
+Export-ModuleMember -Function Resolve-QtShellPackageChildPath, New-QtShellPackageDirectory, ConvertTo-QtShellDeploymentPlan, Test-QtShellReleaseCache, Get-QtShellCompilerIdentity, Get-QtShellMsvcRefreshIdentity, New-QtShellMsvcRefreshReceipt, Invoke-QtShellRefreshedBuild, ConvertFrom-QtShellPeReport, Assert-QtShellRuntimeFiles

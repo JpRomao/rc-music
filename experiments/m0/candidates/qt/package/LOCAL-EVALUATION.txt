@@ -13,9 +13,10 @@ licencas continuam pendentes antes de qualquer distribuicao.
 
 O Visual C++ Runtime x64 e um PRE-REQUISITO EXTERNO do host. Nao ha
 instalador do runtime nem DLLs copiadas do Windows neste pacote.
-Qt foi compilado com MSVC 19.44, enquanto o shell usa a toolchain
-experimental MSVC 19.43. Os checks locais nao garantem compatibilidade
-em outra maquina, nem substituem a validacao em ambiente limpo.
+Qt e o shell usam a familia MSVC 19.44. O manifesto registra as revisoes
+exatas e vincula o receipt autenticado das ferramentas e do CMake.
+Os checks locais nao garantem compatibilidade em outra maquina, nem
+substituem a validacao em ambiente limpo.
 
 qt.conf usa caminhos relativos. O deployment conserva os imports QML
 apontados pelo scanner oficial, inclusive estilos opcionais e a copia

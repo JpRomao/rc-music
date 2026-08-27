@@ -1,7 +1,7 @@
 # M0.2 — MSVC instalado e build de verificação
 
 **Data:** 2026-08-27
-**Estado:** instalação e build Release verificados; receita de pacote ainda não integrada ao refresh; M0.2 permanece aberto
+**Estado deste checkpoint:** instalação e build Release verificados; a receita ainda não estava integrada ao refresh. A [integração posterior](m0-2-msvc-package.md) tem evidência própria; M0.2 permanece aberto.
 
 ## Resultado
 
@@ -73,4 +73,4 @@ Os dois arquivos `*_errors.log` foram preservados na mesma subpasta, vazios, SHA
 - O manifesto histórico `a227bb2b…97dc99` foi revalidado integralmente: 1.378 arquivos preservados. Os cinco arquivos CRT externos permanecem com os hashes/versões históricos `14.51.36247.0`.
 - Não restaram processos do novo build. A mudança versiona dados de identidade e documentação, sem comportamento novo que exija Red/Green artificial; os helpers já tinham TDD em `b59a247`.
 
-A instalação resolve a ausência do MSVC 14.44, e o build prova seu uso com este shell. **A receita `New-QtShellPackage.ps1` ainda usa o caminho histórico:** falta integrar o contrato/receipt com TDD, gerar novo pacote e repetir seus smokes isolados/relocados. Os stages antigos não passam a usar o novo compilador. A [triagem de segurança](m0-2-security-triage.md), as obrigações de licença e os gates nativos continuam pendentes. Esta entrega não encerra M0.2, não libera M0.3 e não aceita uma stack.
+A instalação resolve a ausência do MSVC 14.44, e o build prova seu uso com este shell. A [integração posterior do contrato/receipt à receita](m0-2-msvc-package.md) foi implementada por TDD e validada com o pacote diagnóstico offscreen; falta gerar o pacote de receita commitada e repetir seus smokes original/relocado. Os stages antigos não passam a usar o novo compilador. A [triagem de segurança](m0-2-security-triage.md), as obrigações de licença e os gates nativos continuam pendentes. Esta entrega não encerra M0.2, não libera M0.3 e não aceita uma stack.

@@ -3,7 +3,7 @@
 **Data:** 2026-08-27
 **Estado no checkpoint `b59a247`:** validadores preparados; primeira instalação cancelada na confirmação de administrador; receita ainda usava a toolchain histórica
 
-**Atualização posterior:** a nova tentativa explicitamente autorizada concluiu a [instalação e o build com MSVC 14.44](m0-2-msvc-installation.md), incluindo contrato e receipt reais. As seções abaixo preservam o escopo histórico desta preparação; a integração à receita de pacote continua pendente.
+**Atualização posterior:** a nova tentativa explicitamente autorizada concluiu a [instalação e o build com MSVC 14.44](m0-2-msvc-installation.md), incluindo contrato e receipt reais. A [integração à receita](m0-2-msvc-package.md) passou com TDD e pacote diagnóstico; o pacote de receita commitada ainda é o próximo passo. As seções abaixo preservam o escopo histórico desta preparação.
 
 ## Resultado e escopo
 

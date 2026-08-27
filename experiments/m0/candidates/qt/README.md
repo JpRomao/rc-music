@@ -88,19 +88,37 @@ foreach ($qmlFile in $qmlFiles) {
 Write-Output "Formato OK: $($cppFiles.Count) C++ e $($qmlFiles.Count) QML."
 ```
 
+## Ambiente de build MSVC 14.44
+
+O preflight Qt histórico permanece imutável. O [contrato de refresh](../../provisioning/qt-shell/msvc-refresh-contract.v1.json), instalado e validado conforme a [evidência de instalação](../../../../docs/m0/evidence/m0-2-msvc-installation.md), fixa separadamente MSVC 19.44.35228.0, linker/dumpbin 14.44.35228.0 e toolset 14.44.35207. Builds antigos com 19.43 não são aceitos pela receita atual; não reaproveite seus diretórios.
+
+Após o preflight autenticado, abra uma sessão nova de PowerShell 7 x64 na raiz do repositório e selecione explicitamente a instância e o SDK:
+
+```powershell
+$m0VsRoot = 'C:\Program Files\Microsoft Visual Studio\18\BuildTools'
+Import-Module (Join-Path $m0VsRoot 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+Enter-VsDevShell -VsInstallPath $m0VsRoot -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64 -vcvars_ver=14.44 -winsdk=10.0.22621.0'
+$m0CompilerBin = Join-Path $m0VsRoot 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64'
+$m0Compiler = Join-Path $m0CompilerBin 'cl.exe'
+$m0Linker = Join-Path $m0CompilerBin 'link.exe'
+$m0Ninja = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+```
+
+A receita autentica CMake, Ninja, `windeployqt` e `qtpaths`, além das ferramentas MSVC, antes de executá-las e exige o ambiente MSVC/SDK esperado. Não corrige silenciosamente `INCLUDE`, `LIB` ou flags herdadas; use uma sessão limpa se houver divergência. O Ninja histórico autenticado continua sendo usado por path absoluto, sem depender de sua presença no `PATH` da nova instância. Isso não é autenticação transitiva de todo codegen/loader: `qmlimportscanner` não tem pin próprio no descriptor histórico, e todos os headers/libs do SDK não são individualmente atestados.
+
 ## Build e testes do core
 
-Execute primeiro o preflight autenticado na raiz do repositório. Depois, em um **Developer PowerShell for VS 2022** configurado para x64:
+Na sessão preparada acima, use um diretório próprio do novo compilador:
 
 ```powershell
 $repo = (Resolve-Path .).Path
 $source = Join-Path $repo 'experiments\m0\candidates\qt\shell'
-$build = Join-Path $repo 'out\m0\builds\qt-shell\core-release'
+$build = Join-Path $repo 'out\m0\builds\qt-shell\core-msvc-14.44-release'
 $catch2 = Join-Path $repo 'out\m0\toolchains\Catch2-3.15.3'
 $cmake = 'C:\Program Files\CMake\bin\cmake.exe'
 $ctest = 'C:\Program Files\CMake\bin\ctest.exe'
 
-& $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DM0_CATCH2_SOURCE_DIR=$catch2"
+& $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DM0_CATCH2_SOURCE_DIR=$catch2" "-DCMAKE_CXX_COMPILER=$m0Compiler" "-DCMAKE_LINKER=$m0Linker" "-DCMAKE_MAKE_PROGRAM=$m0Ninja"
 & $cmake --build $build --target m0_qt_core_tests
 & $ctest --test-dir $build -C Release --output-on-failure -R '^m0\.qt\.core\.'
 ```
@@ -114,13 +132,13 @@ Para validar também o repository da fixture, o modelo da fila e a jornada QML, 
 ```powershell
 $repo = (Resolve-Path .).Path
 $source = Join-Path $repo 'experiments\m0\candidates\qt\shell'
-$build = Join-Path $repo 'out\m0\builds\qt-shell\support-release'
+$build = Join-Path $repo 'out\m0\builds\qt-shell\support-msvc-14.44-release'
 $catch2 = Join-Path $repo 'out\m0\toolchains\Catch2-3.15.3'
 $qt = Join-Path $repo 'out\m0\toolchains\qt-6.11.2-msvc2022_64'
 $cmake = 'C:\Program Files\CMake\bin\cmake.exe'
 $ctest = 'C:\Program Files\CMake\bin\ctest.exe'
 
-& $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DM0_CATCH2_SOURCE_DIR=$catch2" -DM0_QT_SHELL_SUPPORT=ON "-DCMAKE_PREFIX_PATH=$qt"
+& $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "-DM0_CATCH2_SOURCE_DIR=$catch2" -DM0_QT_SHELL_SUPPORT=ON "-DCMAKE_PREFIX_PATH=$qt" "-DCMAKE_CXX_COMPILER=$m0Compiler" "-DCMAKE_LINKER=$m0Linker" "-DCMAKE_MAKE_PROGRAM=$m0Ninja"
 & $cmake --build $build
 & $cmake --build $build --target m0_qt_shell_ui_qmllint
 & $ctest --test-dir $build -C Release --output-on-failure
@@ -155,13 +173,13 @@ Após `2cd898a`, zero processos RTSS foram encontrados e o mesmo runner passou n
 
 ### Gerar e verificar
 
-Use PowerShell 7.6.5 em um **Developer PowerShell for VS 2022 x64**, na raiz do repositório, após configurar o build Qt ON/Release conforme acima. Fontes do shell, fixture e protocolo devem estar commitados e limpos. A receita identifica separadamente mudanças ainda não commitadas em si mesma (`recipe_dirty`); antes de medições, todo o worktree deve estar limpo. O nome do destino deve ser novo: não há opção de sobrescrita.
+Use PowerShell 7.6.5 no ambiente **MSVC 14.44/SDK 10.0.22621.0** preparado acima, na raiz do repositório, após configurar o novo build Qt ON/Release. Fontes do shell, fixture e protocolo devem estar commitados e limpos. A receita identifica separadamente mudanças ainda não commitadas em si mesma ou no contrato de refresh (`recipe_dirty`); antes de medições, todo o worktree deve estar limpo. O nome do destino deve ser novo: não há opção de sobrescrita.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 $packageRepo = (Resolve-Path .).Path
 $packageScripts = Join-Path $packageRepo 'experiments/m0/candidates/qt/package'
-$packageBuild = Join-Path $packageRepo 'out/m0/builds/qt-shell/support-release'
+$packageBuild = Join-Path $packageRepo 'out/m0/builds/qt-shell/support-msvc-14.44-release'
 $packageName = 'local-' + [guid]::NewGuid().ToString('N')
 $package = & (Join-Path $packageScripts 'New-QtShellPackage.ps1') -BuildDirectory $packageBuild -Name $packageName
 $package
@@ -170,7 +188,7 @@ Import-Module (Join-Path $packageScripts 'QtShellPackageManifest.psm1') -Force
 Test-QtShellPackageManifest -PackageRoot $package.package_root -ManifestPath $package.manifest_path -ExpectedManifestSha256 $package.manifest_sha256 | Out-Null
 ```
 
-O retorno contém o hash que identifica o manifesto gerado. Para verificar um pacote guardado ou copiado, use o hash registrado na evidência externa; recalcular um hash a partir de um manifesto desconhecido ou confiar somente no sidecar não autentica sua origem. Os diretórios precisam permanecer quiescentes durante geração, verificação e execução. `evidence/` guarda log de build, mapa de cópias e imports PE; `app/` contém o payload inventariado.
+O retorno contém o hash que identifica o manifesto gerado. Para verificar um pacote guardado ou copiado, use o hash registrado na evidência externa; recalcular um hash a partir de um manifesto desconhecido ou confiar somente no sidecar não autentica sua origem. Os diretórios precisam permanecer quiescentes durante geração, verificação e execução. `evidence/` guarda log de build, receipt MSVC, mapa de cópias e imports PE; `app/` contém o payload inventariado. O manifesto vincula o hash do receipt pós-build e mantém separados os hashes dos contratos histórico e de refresh. O validador de payload não revalida por si só os arquivos externos de `evidence/`.
 
 ### Smoke offscreen, sem paths do SDK
 
@@ -183,16 +201,18 @@ $packageSmoke | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path (
 
 O runner executa somente `tray-lifecycle` e `error-recovery`, em ordem, e só retorna aprovação se ambas terminarem com código 0, output vazio e captura dos módulos requeridos antes de 500 ms. O manifesto é validado antes de iniciar e novamente depois de ambas as jornadas. O timeout de cada jornada é 5 s; kill serve somente ao cleanup de falha. Snapshots são amostras, não um trace completo do loader. Guard local de erro impede diálogos de loader/crash na criação do processo e restaura as flags do caller. Isso não substitui bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa ou performance.
 
-### Preparação do refresh MSVC
+### Refresh MSVC na receita
 
-Os validadores de identidade/receipt do MSVC 14.44 estão testados, mas ainda não integrados à receita vigente. Após a [primeira tentativa cancelada](../../../../docs/m0/evidence/m0-2-msvc-refresh.md), a [nova instalação autorizada](../../../../docs/m0/evidence/m0-2-msvc-installation.md) terminou com sucesso: contrato com pins reais, receipt autenticando CMake/ferramentas, build Release com MSVC 19.44.35228 e CTest 65/65. O pacote histórico não foi substituído. Os testes sintéticos abaixo não substituem essa evidência real nem aprovam o novo pacote, que ainda precisa ser gerado após integrar o refresh com TDD.
+Após a [primeira tentativa cancelada](../../../../docs/m0/evidence/m0-2-msvc-refresh.md), a [nova instalação autorizada](../../../../docs/m0/evidence/m0-2-msvc-installation.md) terminou com sucesso. A receita atual autentica o contrato fixado e os arquivos CMake/ferramentas antes e depois do build; falha em qualquer fase impede criar o stage. O manifesto usa a identidade pós-build, incluindo linker, ambiente e hashes separados do refresh. O pacote histórico não é substituído ou reclassificado. Testes sintéticos da orquestração não substituem compilação/linkagem, pacote real ou integração nativa.
+
+A [evidência de integração](../../../../docs/m0/evidence/m0-2-msvc-package.md) registra 206/206 testes do empacotador, Release Qt 65/65, core Qt OFF 55/55 e o pacote diagnóstico com smoke 2/2. Esse primeiro stage tem `recipe_dirty=true`; o pacote de receita commitada e seus smokes original/relocado ainda são o próximo passo. Segurança e validação nativa continuam pendentes.
 
 ### Testes do empacotador
 
-Os testes usam somente fixtures sintéticas, sem áudio, rede ou execução do player:
+Os testes usam fixtures sintéticas e contratos locais autenticados, sem áudio, rede ou execução do player:
 
 ```powershell
-foreach ($testFile in @('Builder.Tests.ps1', 'ToolchainRefresh.Tests.ps1', 'Manifest.Tests.ps1', 'Smoke.Tests.ps1')) {
+foreach ($testFile in @('Builder.Tests.ps1', 'ToolchainRefresh.Tests.ps1', 'RefreshedBuild.Tests.ps1', 'Prerequisites.Tests.ps1', 'Manifest.Tests.ps1', 'Smoke.Tests.ps1')) {
     & pwsh -NoLogo -NoProfile -File (Join-Path $packageScripts "tests/$testFile")
     if ($LASTEXITCODE -ne 0) { throw "Falha nos testes: $testFile" }
 }
