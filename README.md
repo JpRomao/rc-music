@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; o M0.2 possui preflight Qt validado, core/presenter determinísticos e uma jornada QML tipada vazia/tocando/erro com transporte, fila virtualizada e navegação manual anterior/próxima. Preferências, temas, alto contraste e bandeja estão implementados no candidato Qt, com checks automatizados da fatia de ciclo de vida verdes. Ainda não existe implementação de produto, shell validado integralmente, instalador, formato de áudio comprovado ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; o M0.2 possui preflight Qt validado, core/presenter determinísticos e uma jornada QML tipada vazia/tocando/erro com transporte, fila virtualizada e navegação manual anterior/próxima. Preferências, temas, alto contraste e bandeja estão implementados. O pacote local foi inventariado e relocado; seu smoke isolado está bloqueado por injeção do RivaTuner. Ainda não existe implementação de produto, shell validado integralmente, instalador, formato de áudio comprovado ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -75,6 +75,8 @@ O candidato Qt implementa o painel modal Geral/Reprodução/Aparência, edição
 
 A bandeja usa o mesmo transporte do presenter e distingue fechar, ocultar e sair. O primeiro fechamento para a bandeja pede confirmação na própria janela, com opt-out somente nesta execução; falta de bandeja minimiza normalmente e deixa uma explicação disponível. O novo smoke `--m0-smoke=tray-lifecycle` percorre menu, aviso, ocultação/restauração, perda de capacidade e saída do executável real, offscreen, com código zero e janela fechada. A seção 8 do registro M0 reúne os testes e limites; bandeja/Explorer nativos, pacote e gates manuais continuam pendentes.
 
+A seção 9 do registro M0 documenta o pacote local: origem/commit, inventário SHA-256, imports PE, `qt.conf` relativo e pré-requisitos externos. O stage possui 1.378 arquivos/82.388.347 bytes e sua cópia para um caminho com espaços e acentos preservou o manifesto. O smoke isolado do pacote foi bloqueado por `RTSSHooks64.dll` injetado pelo RivaTuner; não é aprovação de execução sem SDK. O runner não altera aplicações externas ou configurações do sistema. Os comandos de geração, validação e smoke estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). O CRT é externo, a distribuição continua proibida e M0.2 não foi encerrado.
+
 O teste funcional verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação; não conta todo o pool de reutilização nem o total de instanciações durante a execução. Essa evidência não fecha NFR-PERF-006 nem o budget de stall de 100 ms, que depende do harness externo comparativo de M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA e desempenho continuam pendentes. O fim da faixa fake continua `clamp_paused`, e “Pular” no cenário de erro continua uma recuperação separada; CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem encerram FR-011/FR-016/FR-017.
 
 Validações atuais:
@@ -109,7 +111,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. continuar M0.2 com pacote, preparação para medições e validações manuais do shell Qt Quick, incluindo a bandeja nativa;
+1. concluir o smoke isolado do pacote após o usuário fechar o RivaTuner e retomar, com autorização, as validações manuais pendentes de M0.2;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

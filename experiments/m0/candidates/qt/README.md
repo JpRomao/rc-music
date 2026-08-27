@@ -142,3 +142,52 @@ Para repetir apenas os contratos de bandeja e seu smoke sem abrir UI nativa:
 Em um diretório novo configurado com `-DBUILD_TESTING=OFF`, os cenários/hooks de smoke são rejeitados, e não há executáveis de teste nem dependência do app em Qt Test. O build novo `out/m0/builds/qt-shell/tray-no-tests-20260827` comprovou isso; a observação de startup offscreen por 1,5 s usou encerramento forçado somente para cleanup, não como prova de saída normal.
 
 Configure com `M0_QT_SHELL_SUPPORT=OFF` — o padrão — continua compilando e testando o core sem localizar Qt nem ler a fixture.
+
+## Pacote local de avaliação
+
+A receita em `package/` prepara somente uma pasta privada para M0.2, não um instalador nem uma release para distribuição. O executável contém os hooks de `BUILD_TESTING=ON`, mas o payload não inclui executáveis de teste ou Qt Test. O runtime C++ do host é um pré-requisito externo; nenhum redistributable é instalado ou copiado. A seção 9 do [registro M0](../../../../docs/m0/README.md) contém a política, proveniência e limitações.
+
+O stage `tray-34edef1-local-02`, derivado do shell de `34edef1`, passou na conferência de 1.378 arquivos/82.388.347 bytes e 69 PEs x64. A cópia para `relocação com espaços 34edef1-01` preservou o mesmo manifesto e payload. Isso ainda não comprova execução relocada: o smoke isolado foi bloqueado por `RTSSHooks64.dll` injetado pelo RivaTuner. `error-recovery` do pacote não chegou a executar, embora os smokes do build comum continuem verdes no CTest. Nenhuma configuração externa foi alterada e o processo do player foi limpo.
+
+### Gerar e verificar
+
+Use PowerShell 7.6.5 em um **Developer PowerShell for VS 2022 x64**, na raiz do repositório, após configurar o build Qt ON/Release conforme acima. Fontes do shell, fixture e protocolo devem estar commitados e limpos. A receita identifica separadamente mudanças ainda não commitadas em si mesma (`recipe_dirty`); antes de medições, todo o worktree deve estar limpo. O nome do destino deve ser novo: não há opção de sobrescrita.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$packageRepo = (Resolve-Path .).Path
+$packageScripts = Join-Path $packageRepo 'experiments/m0/candidates/qt/package'
+$packageBuild = Join-Path $packageRepo 'out/m0/builds/qt-shell/support-release'
+$packageName = 'local-' + [guid]::NewGuid().ToString('N')
+$package = & (Join-Path $packageScripts 'New-QtShellPackage.ps1') -BuildDirectory $packageBuild -Name $packageName
+$package
+
+Import-Module (Join-Path $packageScripts 'QtShellPackageManifest.psm1') -Force
+Test-QtShellPackageManifest -PackageRoot $package.package_root -ManifestPath $package.manifest_path -ExpectedManifestSha256 $package.manifest_sha256 | Out-Null
+```
+
+O retorno contém o hash que identifica o manifesto gerado. Para verificar um pacote guardado ou copiado, use o hash registrado na evidência externa; recalcular um hash a partir de um manifesto desconhecido ou confiar somente no sidecar não autentica sua origem. Os diretórios precisam permanecer quiescentes durante geração, verificação e execução. `evidence/` guarda log de build, mapa de cópias e imports PE; `app/` contém o payload inventariado.
+
+### Smoke offscreen, sem paths do SDK
+
+Feche o RivaTuner e outros injetores/overlays antes deste check. O runner rejeita módulos externos à pasta do pacote e ao Windows, exige Qt/plugins no payload e não altera aplicações externas ou configurações do SO. Ele cria ambiente filho mínimo e diretórios neutros de trabalho/perfil, usa `offscreen`, `QT_QUICK_BACKEND=software` e estilo Basic, sem herdar os paths Qt/QML do shell de desenvolvimento.
+
+```powershell
+$packageSmoke = & (Join-Path $packageScripts 'Test-QtShellPackageSmoke.ps1') -PackageRoot $package.package_root -ManifestPath $package.manifest_path -ExpectedManifestSha256 $package.manifest_sha256
+$packageSmoke | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path (Split-Path $package.manifest_path) 'evidence/smoke-offscreen.v1.json') -Encoding utf8
+```
+
+O runner executa somente `tray-lifecycle` e `error-recovery`, em ordem, e só retorna aprovação se ambas terminarem com código 0, output vazio e captura dos módulos requeridos antes de 500 ms. O manifesto é validado antes de iniciar e novamente depois de ambas as jornadas. O timeout de cada jornada é 5 s; kill serve somente ao cleanup de falha. Snapshots são amostras, não um trace completo do loader. Guard local de erro impede diálogos de loader/crash na criação do processo e restaura as flags do caller. Isso não substitui bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa ou performance.
+
+### Testes do empacotador
+
+Os testes usam somente fixtures sintéticas, sem áudio, rede ou execução do player:
+
+```powershell
+foreach ($testFile in @('Builder.Tests.ps1', 'Manifest.Tests.ps1', 'Smoke.Tests.ps1')) {
+    & pwsh -NoLogo -NoProfile -File (Join-Path $packageScripts "tests/$testFile")
+    if ($LASTEXITCODE -ne 0) { throw "Falha nos testes: $testFile" }
+}
+```
+
+Não há dependência em Pester ou PSScriptAnalyzer. Parser PowerShell, testes, revisão do diff e os checks nativos do shell fazem parte do fechamento; ausência de PSScriptAnalyzer não é reportada como lint aprovado. Arquivos de evidência e fixtures temporárias ficam sob `out/m0` e não são incluídos no Git.

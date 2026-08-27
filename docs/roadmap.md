@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; candidato Qt em M0.2 com jornada vazia/tocando/erro, transporte, fila virtualizada, navegação manual, preferências/temas, alto contraste e bandeja implementados; checks automatizados de ciclo de vida verdes.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; shell Qt de M0.2 implementado até bandeja, com checks automatizados verdes; pacote local inventariado/relocado, smoke isolado bloqueado por RivaTuner e gates nativos pendentes.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
@@ -76,6 +76,8 @@ M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), inc
 A fatia de preferências/temas foi fechada em `ab87803`, sem encerrar persistência, sessão ou fim da fila reais. A [política comum e evidência](m0/README.md) separa seu histórico da nova fatia HC, implementada com precedência temporária da paleta do sistema, pares opacos e movimento independente. Os checks automatizados HC passaram após as correções da auditoria independente. Paletas injetadas e escalas offscreen não substituem alto contraste nativo, DPI real, NVDA ou validação manual, nem encerram UX-006.
 
 A bandeja está implementada sob a política comum da seção 8: menu, intenções separadas de fechar/ocultar/sair, aviso inicial por execução, fallback explicado e restauração do modo da janela. A suíte Release estrita passou 65/65 e o smoke do executável encerra normalmente com a janela QML fechada. Regressões cobrem animações/foco e perda de capacidade durante a ocultação. Isso não comprova bandeja/Explorer nativos nem encerra FR-030/FR-031/FR-032 ou M0.2; pacote e gates manuais continuam pendentes.
+
+O pacote de avaliação local da seção 9 já tem receita, inventário exato, imports PE e relocação de arquivos verificados. O smoke isolado foi bloqueado pelo RivaTuner, que injetou `RTSSHooks64.dll`; aguarda fechamento dessa aplicação pelo usuário. M0.2 continua em andamento, sem aprovação do pacote em execução, sem retomada de Computer Use e sem início de M0.3.
 
 O teste da fila verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação, não o pool completo nem as instanciações ao longo da execução. Essa prova funcional não fecha NFR-PERF-006 nem substitui a medição externa do stall de 100 ms em M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA continua pendente. Nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
 

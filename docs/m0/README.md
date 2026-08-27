@@ -251,3 +251,76 @@ O incremento parte de `4b4bf42` (HC) e usa Qt 6.11.2/MSVC x64, CMake Release e a
 - **Contratos:** fixture `21a150477811aa62f59f4f958d594786bcef4a7c2dfd2bfda3ef9d29dee7c8e5` e markers `60d73a785cfeb67c0cec45fb2c77d1687edf151e8d44a122d669b4800e345d4c` permanecem inalterados; validação documental e diff check aprovados.
 
 Logs locais ficam em `out/m0/builds/qt-shell/final-release`, incluindo `lifecycle-full-ctest.log`, `lifecycle-repeat-10.log` e os Reds/Greens QML, além dos builds isolados `navigation-core`, `lifecycle-presenter`, `tray-adapter`, `tray-binding` e `lifecycle-launch-options`. Nenhuma inspeção manual foi retomada após a interrupção de Computer Use; pacote, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux e medições continuam pendentes.
+
+## 9. Política experimental de pacote Qt para avaliação local
+
+Esta fatia prepara uma pasta executável para avaliação privada do mantenedor, não um instalador nem uma release redistribuível. Usa o shell determinístico, sem áudio ou rede reais, e preserva a fixture e o protocolo. O pacote inclui os controles fechados de cenário/smoke de `BUILD_TESTING=ON`; não deve ser apresentado como build de produção sem hooks. M0.2 continua em andamento.
+
+### Receita, estrutura e proveniência
+
+A receita [New-QtShellPackage.ps1](../../experiments/m0/candidates/qt/package/New-QtShellPackage.ps1) recebe um build e um nome de destino, exige CMake/Ninja Release x64 com Qt e hooks habilitados e reconstrói o alvo `m0_qt_shell`. Shell, fixture e protocolo devem estar commitados e limpos antes e depois do build. A receita cria um destino novo sob `out/m0/packages/qt-shell`, rejeitando sobrescrita, escape de paths, aliases Windows inseguros e reparse points. Os diretórios de entrada e saída devem permanecer quiescentes; não há garantia contra um escritor concorrente hostil.
+
+| Caminho relativo ao destino | Conteúdo |
+|---|---|
+| `app/` | executável, DLLs, `plugins/`, `qml/`, `qt.conf`, aviso `LOCAL-EVALUATION.txt` e inventários `third-party/*.spdx` |
+| `evidence/` | log de build, plano de deployment e relatório de imports PE; a evidência do smoke é registrada separadamente |
+| `manifest.v1.json` | metadata de proveniência e inventário exato de `app/`, com paths relativos, tamanhos e SHA-256 |
+| `manifest.v1.json.sha256` | digest do manifesto, que deve ser confrontado com uma referência externa antes da verificação |
+
+O manifesto fica fora do payload para não incluir a si próprio. A verificação rejeita arquivos ausentes, extras ou alterados. Quantidade de arquivos e bytes do payload são relatadas separadamente dos pré-requisitos externos, sem convertê-las em métricas de RAM ou desempenho.
+
+A proveniência registra `source_commit`, `source_paths_clean` e `recipe_dirty`. A limpeza dos diretórios de fonte não significa que todo o worktree ou a receita estejam commitados. O manifesto também inclui `configuration`, `architecture`, `test_hooks`, as versões Qt/MSVC e hashes de cache, identidade do compilador, contrato de toolchain, fixture, protocolo, plano de deployment, relatório PE, ferramentas e arquivos da receita. `external_msvc_runtime`, `redistribution_allowed=false` e `known_limits` tornam os pré-requisitos e limites explícitos.
+
+### Dependências QML, plugins e imports PE
+
+O `windeployqt` executa scan real com `--qmldir` apontando para o QML do shell e `--qmlimport` para o QML gerado pelo build. O plano do dry-run e o plano da cópia devem coincidir, e cada arquivo copiado deve conservar tamanho e hash da origem. `--no-patchqt` evita alteração dos bytes de Qt durante o deployment. A [documentação oficial de deployment Windows](https://doc.qt.io/qt-6/windows-deployment.html) descreve o scan por `qmlimportscanner` e as opções de seleção de dependências.
+
+As origens permitidas são a toolchain Qt e o diretório explícito `build/qml/MusicPlayer/M0`, identificado como `application-qml`; essa exceção não libera outros arquivos do build nem DLLs do aplicativo. A receita conserva a cópia do módulo QML e os estilos opcionais encontrados pelo scanner, sem otimização desse conjunto nesta fatia. Os recursos `qrc` continuam dentro do executável.
+
+O `qt.conf` usa `Prefix=.`, `Plugins=plugins` e `QmlImports=qml`. Assim, os paths são relativos ao executável, conforme a [documentação de qt.conf](https://doc.qt.io/qt-6/qt-conf.html). O payload mantém o plugin Windows, o plugin offscreen usado nos checks e os plugins SVG. A independência efetiva dos paths de desenvolvimento deve ser comprovada pelo smoke com ambiente saneado.
+
+A seleção automática de D3D compiler do sistema é desativada com `--no-system-d3d-compiler`. A receita adiciona explicitamente `QtRoot/d3dcompiler_47.dll`, já provisionado, ao plano e à cópia; não usa a cópia descoberta no Windows SDK ou em System32. `--no-system-dxc-compiler` exclui DXC/Direct3D 12 desta avaliação. Compiler runtime, FFmpeg, traduções e plugins de debug QML não entram pela seleção automática; ferramentas, bibliotecas de teste e arquivos de áudio são rejeitados no payload.
+
+O relatório PE verifica x64 e imports diretos e de delay-load. Cada dependência deve estar no payload ou ser um pré-requisito Windows identificado. Arquivos de System32 são somente lidos e inventariados, nunca copiados. Essa análise não comprova todas as cargas dinâmicas nem execução em máquina limpa.
+
+### Compilador, runtime e limites
+
+A receita exige Qt 6.11.2 compilado com MSVC 19.44.35227 e shell compilado com MSVC 19.43.34808.0. A identidade registrada pelo CMake é comparada com a versão física de `cl.exe`, e o manifesto inclui o hash desse binário. Divergência exige revisão da receita.
+
+O CRT x64 é um pré-requisito externo. O pacote não inclui nem instala o redistributable local 14.42 ou DLLs do runtime retiradas do Windows. A versão usada no host é registrada no inventário. A Microsoft exige runtime compatível com o componente compilado pelo toolset mais recente e impõe condições também à versão do linker. Portanto, o uso do linker 19.43 com Qt compilado por 19.44 permanece uma ressalva de compatibilidade, não resolvida por um smoke local. Referências: [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170) e [compatibilidade binária MSVC](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017?view=msvc-170).
+
+As cópias dos SBOMs Qt não substituem notices, fontes correspondentes ou revisão de licenças. O fechamento de licenças/notices de terceiros, D3D e a licença do projeto continuam pendentes antes de redistribuir. `NOASSERTION` não é uma licença nem prova de incompatibilidade. Mesa não está neste payload; sua pendência histórica no preflight não é resolvida por essa ausência.
+
+Os smokes devem usar ambiente saneado, sem depender dos paths de desenvolvimento do Qt, e verificar o manifesto antes e depois da execução. A jornada de ciclo de vida exige saída normal em código 0. Encerramento forçado serve somente ao cleanup e não aprova essa jornada.
+
+Esses checks locais não concluem `CHK-PACKAGE` integral nem M0.2. Comparação, métricas e gates comuns dos dois candidatos pertencem a M0.4; instalador, associações, upgrade e uninstall ficam em M0.9. Bandeja/Explorer, NVDA, HC/DPI reais e Linux continuam pendentes. O preflight histórico conserva seu escopo e seus resultados; esta política não os reinterpreta.
+
+### Evidência desta fatia — 2026-08-27
+
+O stage `out/m0/packages/qt-shell/tray-34edef1-local-02` deriva do shell de `34edef16e98b576e292c2b66b0349d2da07e583a`, Qt 6.11.2/MSVC x64, Release/`BUILD_TESTING=ON`. Shell/fixture/protocolo estavam limpos; a receita ainda estava em desenvolvimento e registra `recipe_dirty=true`. O manifesto externo tem SHA-256 `5e1368e58431fb9f6ef7908ac25a0b68ebe668eff8b2a8b9d37587379acb1d90`. Isso identifica este artefato de diagnóstico, não um batch comparativo nem uma release pública.
+
+| Origem | Arquivos | Bytes |
+|---|---:|---:|
+| Toolchain Qt | 1.360 | 75.285.179 |
+| Cópia QML da aplicação | 12 | 71.521 |
+| Executável, `qt.conf`, aviso e três SPDX | 6 | 7.031.647 |
+| Payload total | 1.378 | 82.388.347 |
+
+A revisão independente conferiu o manifesto, todas as origens do plano e os 69 PEs x64 por `dumpbin`, sem executar o payload. Há 29 DLLs Qt na raiz, 12 plugins nativos, 26 plugins QML e um D3D compiler, além do executável. As 733 referências PE se dividem em 228 internas, 109 CRT, 133 Windows e 263 API sets. Os 41 arquivos externos conferem em hash/versão no host; os cinco componentes MSVC CRT são `14.51.36247.0`. Não há Qt Test, executáveis de teste, CRT/redist, ferramentas, áudio, arquivos debug, DXC ou Mesa no payload. O D3D compiler confere com a cópia provisionada na toolchain, não com Windows Kits/System32.
+
+Cinco componentes da aplicação aparecem somente como recursos `qrc`, preferidos pelo `qmldir`, e não como cópia QML solta. Seus nomes de recursos estão no executável, idêntico ao build. A inspeção estática não identificou componente ausente, mas somente o smoke pode comprovar a resolução efetiva e a jornada desse pacote.
+
+Checks da receita:
+
+- **Builder:** Red inicial 0/10; Green final 14/14. Casos cobrem origem/destino, sobrescrita, aliases/nomes reservados, reparse, cache Release/hooks, imports PE, arquivos proibidos e versões. Reds adicionais reproduziram a origem QML gerada fora da toolchain e o parsing do compiler com CRLF. A primeira tentativa de deployment com ambiente VS foi corretamente rejeitada por selecionar D3D de Windows Kits; a receita passou a usar explicitamente a cópia Qt provisionada.
+- **Manifesto:** Red inicial de inventário vazio e Red adicional de igualdade cultural indevida entre caminhos Unicode distintos; Green 113/113, repetido três vezes. Há cobertura de conjunto exato, hashes/tamanhos, UTF-8/JSON, duplicatas, caminhos, ADS, hardlinks, junctions e arquivos bloqueados. A comparação final de paths é ordinal.
+- **Smoke com fakes:** Green final 38/38, repetido três vezes, sem executar Qt. Cobre ambiente filho, DLLs/paths, captura/timeout/cleanup, guard contra diálogos do loader e revalidação do manifesto após ambas as jornadas. Red de pós-validação confirmou que uma alteração no payload impedia aprovação; a whitelist não foi relaxada.
+- **Release comum:** CTest estrito 65/65 em 13,45 s após o rebuild do alvo. Esses testes usam o ambiente de desenvolvimento e não substituem o smoke isolado do pacote.
+- **Checks finais:** core Qt OFF 55/55, 1.849 asserções; formato de 43 C++/20 QML e `qmllint` silencioso; parser de oito scripts/módulos PowerShell aprovado. Validação documental passou com 30 Markdown, 83 requisitos, 17 checks e 76 etapas; diff check aprovado.
+- **Relocação de arquivos:** cópia para `out/m0/packages/qt-shell/relocação com espaços 34edef1-01`, com os mesmos 1.378 arquivos e o mesmo hash de manifesto, aprovada pelo validador. Não houve execução do aplicativo nessa cópia.
+
+A primeira tentativa real de `tray-lifecycle` do pacote foi rejeitada porque o processo carregou o módulo externo `RTSSHooks64.dll`, injetado pelo RivaTuner Statistics Server. O runner encerrou somente o processo retido; a inspeção posterior não encontrou players do workspace remanescentes. O smoke `error-recovery` **do pacote** não foi executado. A retomada aguarda o fechamento do RivaTuner pelo usuário, sem alterar sua configuração nem relaxar a whitelist do runner. Os testes unitários do runner não substituem essa integração bloqueada.
+
+As evidências locais ficam em `evidence/` desse stage: `deployment-plan.v1.json`, `pe-closure.v1.json`, `smoke-blocked-rtss.v1.json`, `release-ctest.txt` e logs dos testes PowerShell. Parser/whitespace e validação documental fazem parte do fechamento. PSScriptAnalyzer não está instalado e não é alegado como lint aprovado. A rastreabilidade de `CHK-CLOSE` é o commit que introduz a receita, testes e este registro; o artefato acima preserva a proveniência anterior explicitamente indicada.
+
+M0.2 permanece em andamento. Execução isolada/relocada, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa, integração de instalador e medições continuam pendentes. Não houve retomada de Computer Use, leitura dos áudios pessoais, distribuição ou decisão de stack.

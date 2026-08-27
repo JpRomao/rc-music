@@ -1,0 +1,30 @@
+Music Player M0.2 - avaliacao local privada do mantenedor
+
+Este e um shell experimental, nao o produto. Nao reproduz audio real nem
+usa a biblioteca pessoal. O executavel Release inclui os controles de
+cenario/smoke de BUILD_TESTING=ON para a jornada comparativa congelada.
+
+NAO PUBLICAR OU REDISTRIBUIR este diretorio. O projeto ainda nao escolheu
+uma licenca de distribuicao. Os arquivos third-party/*.spdx sao copias
+dos inventarios fornecidos pela toolchain Qt; nao substituem uma revisao
+completa de licencas, notices, fontes correspondentes ou redistribuicao.
+NOASSERTION nao e uma licenca. D3D/Mesa e o fechamento da cadeia de
+licencas continuam pendentes antes de qualquer distribuicao.
+
+O Visual C++ Runtime x64 e um PRE-REQUISITO EXTERNO do host. Nao ha
+instalador do runtime nem DLLs copiadas do Windows neste pacote.
+Qt foi compilado com MSVC 19.44, enquanto o shell usa a toolchain
+experimental MSVC 19.43. Os checks locais nao garantem compatibilidade
+em outra maquina, nem substituem a validacao em ambiente limpo.
+
+qt.conf usa caminhos relativos. O deployment conserva os imports QML
+apontados pelo scanner oficial, inclusive estilos opcionais e a copia
+do modulo QML do shell; os recursos qrc continuam dentro do executavel.
+O caminho DXC/Direct3D 12 e excluido deste ensaio. Renderizacao nativa,
+bandeja/Explorer, NVDA, DPI/HC reais, Linux e desempenho nao sao
+comprovados pelos smokes offscreen.
+
+O manifesto e os relatorios ficam fora de app/. Compare o SHA-256 do
+manifesto com a evidencia externa antes de executar o smoke. Inventario
+e smoke requerem diretorios quiescentes; nao oferecem uma garantia de
+seguranca contra um escritor concorrente hostil.

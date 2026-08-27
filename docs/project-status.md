@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte, fila virtualizada, navegação manual, preferências/temas, alto contraste e bandeja implementados; checks automatizados de ciclo de vida verdes
+**Fase:** M0.2 em andamento; shell/bandeja implementados; pacote local inventariado e relocado, com smoke isolado bloqueado por RivaTuner e gates nativos pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -99,6 +99,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “as preferências já persistem e restauram a sessão”: a fatia experimental de preferências/temas usa somente memória e não conclui FR-042/FR-043/FR-044;
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “a bandeja está validada no Windows”: menu, avisos, fallback e saída passaram em testes offscreen, mas isso não comprova ícone/Explorer reais, ativação nativa, NVDA ou Linux;
+- “o pacote está validado sem SDK ou pronto para distribuir”: inventário, imports PE e relocação de arquivos passaram, mas o smoke isolado foi bloqueado por `RTSSHooks64.dll`; CRT externo, licenças e ambiente limpo continuam pendentes;
 - “YouTube é suportado”: é pesquisa futura com possível incompatibilidade de políticas;
 - “ADRs foram aceitos”: todos continuam `Proposto`.
 
@@ -127,7 +128,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. continuar M0.2 com pacote e validações manuais pendentes do shell experimental C++20/Qt Quick/QML, incluindo bandeja nativa, sem áudio real;
+1. concluir o smoke isolado do pacote após o usuário fechar o RivaTuner e retomar, com autorização, os gates manuais de M0.2, incluindo bandeja nativa, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
@@ -138,6 +139,8 @@ A navegação manual segue a [política experimental comum](m0/README.md): anter
 A fatia de preferências/temas foi fechada em `ab87803`; a [política comum e evidência](m0/README.md) preserva esses resultados na seção 6 e registra separadamente HC na seção 7. Alto contraste está implementado com precedência temporária sobre os três temas, pares opacos e movimento independente; os checks automatizados passaram após as correções da auditoria independente. Fixture/protocolo permanecem inalterados. Preferências são somente em memória; sessão/fim da fila reais e FR-042/FR-043/FR-044 continuam futuros. Paletas injetadas e escalas offscreen não comprovam alto contraste nativo, DPI real/NVDA ou aprovação de UX-006.
 
 A seção 8 registra a política comum de bandeja e sua implementação Qt: menu compartilhando o transporte, intenções separadas de fechar/ocultar/sair, confirmação inicial por execução e fallback explicado. O smoke do executável fecha a janela QML e encerra normalmente, sem kill como evidência de sucesso. Os checks automatizados passaram após regressões de animação/foco e perda de disponibilidade durante a ocultação. Isso não conclui FR-030/FR-031/FR-032, o pacote ou os gates nativos de M0.2.
+
+A seção 9 registra a receita e os checks do pacote local, sem alterar o preflight histórico. Inventário SHA-256, imports PE e relocação com Unicode passaram; o stage tem 1.378 arquivos/82.388.347 bytes e usa o CRT externo do host. O smoke isolado foi rejeitado por injeção de `RTSSHooks64.dll`; o usuário precisa fechar o RivaTuner para uma nova tentativa. Isso não equivale a validar execução sem SDK, máquina limpa, licenças de redistribuição ou instalação. Nenhuma aplicação externa foi encerrada nem configuração do sistema alterada.
 
 A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. Acessibilidade nativa/NVDA e desempenho permanecem pendentes.
 
