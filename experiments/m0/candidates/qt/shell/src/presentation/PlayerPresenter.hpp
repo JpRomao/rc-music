@@ -3,6 +3,7 @@
 #include "m0/adapters/DeterministicPlaybackBackend.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/PlayerController.hpp"
+#include "m0/domain/QueueNavigation.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
 #include <QAbstractItemModel>
@@ -12,6 +13,8 @@
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <cstddef>
+#include <optional>
+#include <vector>
 
 namespace music_player::m0 {
 namespace experiment {
@@ -41,6 +44,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool hasDuration READ hasDuration NOTIFY playbackChanged)
     Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY playbackChanged)
     Q_PROPERTY(bool seekable READ seekable NOTIFY playbackChanged)
+    Q_PROPERTY(bool canGoPrevious READ canGoPrevious NOTIFY playbackChanged)
+    Q_PROPERTY(bool canGoNext READ canGoNext NOTIFY playbackChanged)
     Q_PROPERTY(QString assetId READ assetId NOTIFY stateChanged)
     Q_PROPERTY(bool hasMessage READ hasMessage NOTIFY stateChanged)
     Q_PROPERTY(QString messageKey READ messageKey NOTIFY stateChanged)
@@ -83,6 +88,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool hasDuration() const noexcept;
     [[nodiscard]] qint64 durationMs() const noexcept;
     [[nodiscard]] bool seekable() const noexcept;
+    [[nodiscard]] bool canGoPrevious() const noexcept;
+    [[nodiscard]] bool canGoNext() const noexcept;
     [[nodiscard]] QString assetId() const;
     [[nodiscard]] bool hasMessage() const noexcept;
     [[nodiscard]] QString messageKey() const;
@@ -108,6 +115,8 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
     Q_INVOKABLE bool skipForward();
+    Q_INVOKABLE bool previousTrack();
+    Q_INVOKABLE bool nextTrack();
     Q_INVOKABLE bool beginSeekPreview(qint64 position_ms);
     Q_INVOKABLE bool updateSeekPreview(qint64 position_ms);
     Q_INVOKABLE bool commitSeekPreview();
@@ -131,7 +140,10 @@ class PlayerPresenter final : public QObject {
     void reconcileTimer();
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
+    [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
+    [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
+    std::vector<QueueNavigationItem> navigation_items_;
     DeterministicPlaybackBackend backend_;
     PlayerController controller_;
     QueueListModel queue_model_;

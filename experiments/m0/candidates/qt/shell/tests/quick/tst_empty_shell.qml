@@ -142,6 +142,8 @@ TestCase {
         const skipForward = findChild(shell, "skip-forward");
         const volume = findChild(shell, "volume");
         const mute = findChild(shell, "mute");
+        const previous = findChild(shell, "previous");
+        const next = findChild(shell, "next");
         compare(progress.Accessible.id, "progress");
         compare(volume.Accessible.id, "volume");
         verify(emptyState.visible);
@@ -229,7 +231,7 @@ TestCase {
         verify(currentQueueRow.Accessible.name.indexOf("Canção nº 17 — São João, ação e café ☕") >= 0);
         verify(instantiatedQueueRows(queueList) > 0);
         verify(instantiatedQueueRows(queueList) < 64);
-        const queueOpenFocusOrder = [queueButton, progress, skipBackward, playPause, skipForward, mute, volume, queueList];
+        const queueOpenFocusOrder = [queueButton, progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < queueOpenFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);
@@ -326,8 +328,8 @@ TestCase {
         }
         compare(skipBackward.text, "−5");
         compare(skipForward.text, "+5");
-        verify(!findChild(shell, "previous").enabled);
-        verify(!findChild(shell, "next").enabled);
+        verify(previous.enabled);
+        verify(next.enabled);
         compare(volume.from, 0);
         compare(volume.to, 100);
         compare(volume.value, 80);
@@ -335,11 +337,11 @@ TestCase {
         compare(volume.stepSize, 1);
         verify(volume.height >= testShellUiContract.controlTargetMinimum); // qmllint disable unqualified
         verifyInsideWindow(volume);
-        const focusOrder = [progress, skipBackward, playPause, skipForward, mute, volume];
+        const focusOrder = [progress, previous, skipBackward, playPause, skipForward, next, mute, volume];
         for (const focusableControl of focusOrder)
             compare(focusableControl.Accessible.focusable, true);
-        compare(findChild(shell, "previous").Accessible.focusable, false);
-        compare(findChild(shell, "next").Accessible.focusable, false);
+        compare(previous.Accessible.focusable, true);
+        compare(next.Accessible.focusable, true);
         progress.forceActiveFocus(Qt.TabFocusReason);
         tryVerify(function () {
             return progress.activeFocus;
@@ -502,5 +504,59 @@ TestCase {
         verify(!errorState.visible);
         verify(progress.enabled);
         compare(findChild(shell, "current-title").text, "Canção nº 17 — São João, ação e café ☕");
+
+        mouseClick(playPause);
+        compare(testPlayerPresenter.playbackState, PlayerPresenter.Paused); // qmllint disable unqualified
+        seekCommitCount = testScenarioDriver.seekCommitAttemptCount(); // qmllint disable unqualified
+        mouseClick(previous);
+        compare(testScenarioDriver.seekCommitAttemptCount(), seekCommitCount + 1); // qmllint disable unqualified
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0017"); // qmllint disable unqualified
+        compare(testPlayerPresenter.positionMs, 0); // qmllint disable unqualified
+        verify(!previous.enabled);
+        verify(!next.enabled);
+        tryVerify(function () {
+            return !testPlayerPresenter.seekPending;
+        }, 500); // qmllint disable unqualified
+        compare(testPlayerPresenter.playbackState, PlayerPresenter.Paused); // qmllint disable unqualified
+        previous.Accessible.pressAction();
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0016"); // qmllint disable unqualified
+        next.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0017"); // qmllint disable unqualified
+        keyClick(Qt.Key_Left, Qt.ControlModifier);
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0016"); // qmllint disable unqualified
+        keyClick(Qt.Key_Right, Qt.ControlModifier);
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0017"); // qmllint disable unqualified
+
+        shell.width = 960;
+        tryCompare(shell, "width", 960);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(function () {
+            return queuePanel.visible && queueList.activeFocus;
+        });
+        next.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0018"); // qmllint disable unqualified
+        wait(0);
+        verify(next.activeFocus, "Track changes must not steal transport focus for the queue");
+        compare(queueList.currentIndex, 17);
+        for (let index = 17; index < 511; ++index)
+            verify(testPlayerPresenter.nextTrack()); // qmllint disable unqualified
+        wait(0);
+        compare(testPlayerPresenter.currentOccurrenceId, "queue-0512"); // qmllint disable unqualified
+        compare(currentTitle.textFormat, Text.PlainText);
+        compare(currentTitle.text, testPlayerPresenter.currentTitle); // qmllint disable unqualified
+        const currentTitleLeft = currentTitle.mapToItem(shell.contentItem, 0, 0).x;
+        const currentTitleRight = currentTitle.mapToItem(shell.contentItem, currentTitle.width, 0).x;
+        const currentStateLeft = stateLayer.mapToItem(shell.contentItem, 0, 0).x;
+        const currentStateRight = stateLayer.mapToItem(shell.contentItem, stateLayer.width, 0).x;
+        verify(currentTitleLeft >= currentStateLeft - 0.5);
+        verify(currentTitleRight <= currentStateRight + 0.5);
+        verifyInsideWindow(currentTitle);
+        verify(next.activeFocus);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queuePanel.visible && queueButton.activeFocus;
+        });
     }
 }

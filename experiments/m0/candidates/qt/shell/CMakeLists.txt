@@ -373,6 +373,7 @@ add_subdirectory(
 add_library(m0_qt_core STATIC
     src/adapters/DeterministicPlaybackBackend.cpp
     src/application/PlayerController.cpp
+    src/domain/QueueNavigation.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
 target_compile_features(m0_qt_core PUBLIC cxx_std_20)
@@ -387,6 +388,7 @@ if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
         tests/catch2/DeterministicPlaybackBackendTests.cpp
         tests/catch2/PlayerControllerTests.cpp
+        tests/catch2/QueueNavigationTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
     target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)

@@ -22,7 +22,7 @@ ColumnLayout {
         elide: Text.ElideRight
         Accessible.name: text
         color: root.contract.textPrimaryColor
-        Layout.maximumWidth: 560
+        Layout.maximumWidth: root.width
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
@@ -32,7 +32,7 @@ ColumnLayout {
         elide: Text.ElideRight
         Accessible.name: text
         color: root.contract.textSecondaryColor
-        Layout.maximumWidth: 560
+        Layout.maximumWidth: root.width
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
@@ -42,7 +42,7 @@ ColumnLayout {
         elide: Text.ElideRight
         Accessible.name: text
         color: root.contract.textSecondaryColor
-        Layout.maximumWidth: 560
+        Layout.maximumWidth: root.width
         Layout.alignment: Qt.AlignHCenter
     }
 }

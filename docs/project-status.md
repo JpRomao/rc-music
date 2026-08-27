@@ -1,8 +1,8 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-26
+**Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte e fila com virtualização funcional testados
+**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte, fila virtualizada e navegação manual anterior/próxima
 
 **Código do produto:** ainda não iniciado
 
@@ -124,12 +124,14 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD com navegação anterior/próxima, temas, preferências, tray, pacote e validações manuais pendentes, sem áudio real;
+1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD com temas, preferências, tray, pacote e validações manuais pendentes, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
 5. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10.
 
-A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual da fila nesta fatia não foi realizada porque a sessão Computer Use foi interrompida; acessibilidade nativa/NVDA e desempenho permanecem pendentes.
+A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
+
+A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. Acessibilidade nativa/NVDA e desempenho permanecem pendentes.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

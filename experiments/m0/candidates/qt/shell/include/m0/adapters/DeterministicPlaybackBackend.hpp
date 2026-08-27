@@ -35,6 +35,7 @@ class DeterministicPlaybackBackend final : public PlaybackBackend {
     void setVolume(double volume) override;
     void setMuted(bool muted) override;
 
+    [[nodiscard]] bool selectTrack(std::int64_t duration_ms, PlaybackStatus status) noexcept;
     void rejectNextSeek() noexcept;
     [[nodiscard]] DeterministicTickResult tick();
     [[nodiscard]] bool enterUnavailableScenario() noexcept;

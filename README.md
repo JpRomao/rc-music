@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; o M0.2 possui preflight Qt validado, core/presenter determinísticos e uma jornada QML tipada vazia/tocando/erro com transporte e fila virtualizada. Ainda não existe implementação de produto, shell UI completo, instalador, formato de áudio comprovado ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; o M0.2 possui preflight Qt validado, core/presenter determinísticos e uma jornada QML tipada vazia/tocando/erro com transporte, fila virtualizada e navegação manual anterior/próxima. Ainda não existe implementação de produto, shell UI completo, instalador, formato de áudio comprovado ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -69,9 +69,9 @@ Comece por:
 
 ## Estado do repositório
 
-O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental em `experiments/m0/candidates/qt/shell` contém o core C++20 puro, o backend manual determinístico, o adapter Qt da fixture, o modelo tipado da fila e o presenter com ações, metadata atual/contextual, cenário recuperável de faixa indisponível e agendamento de 200 ms. O shell Qt Quick tipado já percorre automaticamente vazio, tocando/pausado e erro com barra persistente, seek, saltos, volume, mudo e recuperação; sua fila lateral projeta os 1.000 IDs congelados em uma `ListView` lazy com reutilização, foco/seleção acessíveis, `Ctrl+L` e `Esc`. Um smoke do executável real entra no erro por uma opção fechada do harness e recupera pela ação QML “Pular”, preservando a barra e o modelo da fila. Fixture, fila e SVGs ficam autenticados em recursos `qrc`. Os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Navegação anterior/próxima, temas, preferências, tray, pacote, medições externas e validações manuais ainda estão pendentes; não há scaffold do produto na raiz.
+O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental em `experiments/m0/candidates/qt/shell` contém o core C++20 puro, o backend manual determinístico, o adapter Qt da fixture, o modelo tipado da fila e o presenter com ações, metadata atual/contextual, cenário recuperável de faixa indisponível e agendamento de 200 ms. O shell Qt Quick tipado já percorre automaticamente vazio, tocando/pausado e erro com barra persistente, seek, saltos, volume, mudo e recuperação; sua fila lateral projeta os 1.000 IDs congelados em uma `ListView` lazy com reutilização, foco/seleção acessíveis, `Ctrl+L` e `Esc`. A navegação manual anterior/próxima segue a política comum do [registro M0](docs/m0/README.md): reinício após 3 s quando há seek, busca do vizinho disponível sem circular a fila e troca em posição zero preservando o estado de reprodução, volume, mudo e modelo. Um smoke do executável real entra no erro por uma opção fechada do harness e recupera pela ação QML “Pular”, preservando a barra e o modelo da fila. Fixture, fila e SVGs ficam autenticados em recursos `qrc`. Os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Temas, preferências, tray, pacote, medições externas e validações manuais ainda estão pendentes; não há scaffold do produto na raiz.
 
-O teste funcional verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação; não conta todo o pool de reutilização nem o total de instanciações durante a execução. Essa evidência não fecha NFR-PERF-006 nem o budget de stall de 100 ms, que depende do harness externo comparativo de M0.4. A inspeção manual da fila nesta fatia não foi realizada porque a sessão Computer Use foi interrompida; acessibilidade nativa/NVDA e desempenho continuam pendentes.
+O teste funcional verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação; não conta todo o pool de reutilização nem o total de instanciações durante a execução. Essa evidência não fecha NFR-PERF-006 nem o budget de stall de 100 ms, que depende do harness externo comparativo de M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA e desempenho continuam pendentes. O fim da faixa fake continua `clamp_paused`, e “Pular” no cenário de erro continua uma recuperação separada; CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem encerram FR-011/FR-016/FR-017.
 
 Validações atuais:
 
@@ -105,7 +105,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. continuar M0.2 por TDD com navegação anterior/próxima, temas, preferências, tray, pacote, preparação para medições e validações manuais do shell Qt Quick;
+1. continuar M0.2 por TDD com temas, preferências, tray, pacote, preparação para medições e validações manuais do shell Qt Quick;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

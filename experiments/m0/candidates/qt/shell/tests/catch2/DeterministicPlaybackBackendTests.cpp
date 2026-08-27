@@ -159,4 +159,136 @@ TEST_CASE("candidate unavailable scenario restores its initial snapshot", "[m0][
     CHECK_FALSE(backend.restoreInitialScenario());
 }
 
+TEST_CASE("track selection starts the requested transport state at zero", "[m0][qt][core][backend][select-track]") {
+    for (const auto status : {PlaybackStatus::Ready, PlaybackStatus::Paused, PlaybackStatus::Playing}) {
+        CAPTURE(static_cast<int>(status));
+        DeterministicPlaybackBackend backend{{PlaybackStatus::Error, 19, 99, false}};
+        backend.setVolume(0.35);
+        backend.setMuted(true);
+
+        REQUIRE(backend.selectTrack(90'000, status));
+
+        CHECK(backend.snapshot().status == status);
+        CHECK(backend.snapshot().position_ms == 0);
+        CHECK(backend.snapshot().duration_ms == 90'000);
+        CHECK(backend.snapshot().seekable);
+        CHECK(backend.volume() == Catch::Approx(0.35));
+        CHECK(backend.muted());
+        CHECK_FALSE(backend.hasPendingSeek());
+        const auto following = backend.tick();
+        CHECK(following.snapshot.status == status);
+        CHECK(following.snapshot.position_ms == (status == PlaybackStatus::Playing ? 200 : 0));
+        CHECK_FALSE(following.seek_rejected);
+    }
+}
+
+TEST_CASE("track selection accepts the positive duration boundaries", "[m0][qt][core][backend][select-track]") {
+    for (const auto duration_ms : {std::int64_t{1}, std::numeric_limits<std::int64_t>::max()}) {
+        CAPTURE(duration_ms);
+        DeterministicPlaybackBackend backend;
+
+        REQUIRE(backend.selectTrack(duration_ms, PlaybackStatus::Paused));
+
+        CHECK(backend.snapshot().position_ms == 0);
+        CHECK(backend.snapshot().duration_ms == duration_ms);
+        CHECK(backend.snapshot().seekable);
+    }
+}
+
+TEST_CASE("invalid track selection preserves the snapshot and pending rejection",
+          "[m0][qt][core][backend][select-track]") {
+    struct InvalidSelection {
+        std::int64_t duration_ms;
+        PlaybackStatus status;
+    };
+    for (const auto input : {
+             InvalidSelection{0, PlaybackStatus::Playing},
+             InvalidSelection{-1, PlaybackStatus::Playing},
+             InvalidSelection{std::numeric_limits<std::int64_t>::min(), PlaybackStatus::Playing},
+             InvalidSelection{90'000, PlaybackStatus::Empty},
+             InvalidSelection{90'000, PlaybackStatus::Loading},
+             InvalidSelection{90'000, PlaybackStatus::Error},
+             InvalidSelection{90'000, static_cast<PlaybackStatus>(99)},
+         }) {
+        CAPTURE(input.duration_ms, static_cast<int>(input.status));
+        DeterministicPlaybackBackend backend;
+        backend.setVolume(0.35);
+        backend.setMuted(true);
+        backend.rejectNextSeek();
+        backend.seekTo(120'000);
+        REQUIRE(backend.hasPendingSeek());
+        const auto before = backend.snapshot();
+
+        CHECK_FALSE(backend.selectTrack(input.duration_ms, input.status));
+
+        CHECK(backend.snapshot().status == before.status);
+        CHECK(backend.snapshot().position_ms == before.position_ms);
+        CHECK(backend.snapshot().duration_ms == before.duration_ms);
+        CHECK(backend.snapshot().seekable == before.seekable);
+        CHECK(backend.volume() == Catch::Approx(0.35));
+        CHECK(backend.muted());
+        CHECK(backend.hasPendingSeek());
+        const auto rejected = backend.tick();
+        CHECK(rejected.seek_rejected);
+        CHECK(rejected.snapshot.position_ms == before.position_ms);
+        CHECK_FALSE(backend.hasPendingSeek());
+        backend.seekTo(60'000);
+        const auto acknowledged = backend.tick();
+        CHECK_FALSE(acknowledged.seek_rejected);
+        CHECK(acknowledged.snapshot.position_ms == 60'000);
+    }
+}
+
+TEST_CASE("track selection discards the previous item pending seek and rejection",
+          "[m0][qt][core][backend][select-track]") {
+    for (const bool previous_seek_pending : {false, true}) {
+        for (const bool previous_rejection_armed : {false, true}) {
+            CAPTURE(previous_seek_pending, previous_rejection_armed);
+            DeterministicPlaybackBackend backend;
+            if (previous_seek_pending)
+                backend.seekTo(120'000);
+            if (previous_rejection_armed)
+                backend.rejectNextSeek();
+
+            REQUIRE(backend.selectTrack(65'000, PlaybackStatus::Paused));
+
+            CHECK_FALSE(backend.hasPendingSeek());
+            const auto following = backend.tick();
+            CHECK(following.snapshot.position_ms == 0);
+            CHECK_FALSE(following.seek_rejected);
+            backend.seekTo(12'000);
+            REQUIRE(backend.hasPendingSeek());
+            const auto acknowledged = backend.tick();
+            CHECK(acknowledged.snapshot.status == PlaybackStatus::Paused);
+            CHECK(acknowledged.snapshot.position_ms == 12'000);
+            CHECK_FALSE(acknowledged.seek_rejected);
+            CHECK_FALSE(backend.hasPendingSeek());
+        }
+    }
+}
+
+TEST_CASE("restoring after track selection and error retains the original seed",
+          "[m0][qt][core][backend][select-track]") {
+    DeterministicPlaybackBackend backend;
+    backend.setVolume(0.35);
+    backend.setMuted(true);
+    REQUIRE(backend.selectTrack(12'000, PlaybackStatus::Paused));
+    backend.seekTo(6'000);
+    backend.rejectNextSeek();
+    REQUIRE(backend.enterUnavailableScenario());
+
+    REQUIRE(backend.restoreInitialScenario());
+
+    CHECK(backend.snapshot().status == PlaybackStatus::Playing);
+    CHECK(backend.snapshot().position_ms == 84'000);
+    CHECK(backend.snapshot().duration_ms == 248'000);
+    CHECK(backend.snapshot().seekable);
+    CHECK(backend.volume() == Catch::Approx(0.35));
+    CHECK(backend.muted());
+    CHECK_FALSE(backend.hasPendingSeek());
+    const auto following = backend.tick();
+    CHECK(following.snapshot.position_ms == 84'200);
+    CHECK_FALSE(following.seek_rejected);
+}
+
 } // namespace music_player::m0::test

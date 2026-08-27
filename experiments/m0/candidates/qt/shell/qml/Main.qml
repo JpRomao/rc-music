@@ -76,6 +76,7 @@ ApplicationWindow {
                 }
                 NowPlayingState {
                     anchors.centerIn: parent
+                    width: Math.min(parent.width, 560)
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
@@ -114,6 +115,16 @@ ApplicationWindow {
         sequence: "Ctrl+L"
         enabled: queueButton.enabled
         onActivated: window.toggleQueue()
+    }
+    Shortcut {
+        sequence: "Ctrl+Left"
+        enabled: window.presenter.canGoPrevious
+        onActivated: window.presenter.previousTrack()
+    }
+    Shortcut {
+        sequence: "Ctrl+Right"
+        enabled: window.presenter.canGoNext
+        onActivated: window.presenter.nextTrack()
     }
     Shortcut {
         sequence: "Esc"

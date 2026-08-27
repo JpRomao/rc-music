@@ -43,6 +43,10 @@ class PlayerPresenterTests final : public QObject {
     void keepsUnavailableAndTerminalTransportInert();
     void schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem();
     void projectsTypedMetadataAndRecoversFrozenUnavailableScenario();
+    void navigatesDistinctOccurrencesWithoutResettingTheModel();
+    void previousUsesConfirmedThresholdAndPreservesPause();
+    void navigationSkipsUnavailableItemsAndStopsAtBounds();
+    void navigationIsInertDuringSeekAndInactiveStates();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -216,12 +220,12 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     QVERIFY(meta->indexOfMethod("loadFrozenQueue()") >= 0);
     for (const char* method : {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
                                "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)",
-                               "toggleMute()", "skipUnavailable()"})
+                               "toggleMute()", "skipUnavailable()", "previousTrack()", "nextTrack()"})
         QVERIFY(meta->indexOfMethod(method) >= 0);
     const int queue_model_property = meta->indexOfProperty("queueModel");
     QVERIFY(queue_model_property >= 0);
     QCOMPARE(meta->property(queue_model_property).metaType().id(), qMetaTypeId<QAbstractItemModel*>());
-    for (const char* property_name : {"volume", "muted"}) {
+    for (const char* property_name : {"volume", "muted", "canGoPrevious", "canGoNext"}) {
         const int property_index = meta->indexOfProperty(property_name);
         QVERIFY(property_index >= 0);
         QVERIFY(meta->property(property_index).hasNotifySignal());
@@ -493,6 +497,144 @@ void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScen
     QVERIFY(!presenter.skipUnavailable());
     QCOMPARE(state_changed.size(), 2);
     QCOMPARE(playback_changed.size(), 2);
+}
+
+void PlayerPresenterTests::navigatesDistinctOccurrencesWithoutResettingTheModel() {
+    AvailableTrayPlatform platform;
+    const FixtureBundle bundle = frozenBundle();
+    PlayerPresenter presenter(bundle, platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.setVolume(0.35));
+    QVERIFY(presenter.toggleMute());
+    QueueListModel* const model = presenter.queueModel();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+
+    QVERIFY(presenter.canGoPrevious());
+    QVERIFY(presenter.canGoNext());
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0018"));
+    QCOMPARE(presenter.currentQueueIndex(), 17);
+    QCOMPARE(presenter.currentTitle(), bundle.queue.at(17).title);
+    QCOMPARE(presenter.currentArtist(), bundle.queue.at(17).artist);
+    QCOMPARE(presenter.currentAlbum(), bundle.queue.at(17).album);
+    QCOMPARE(presenter.durationMs(), *bundle.queue.at(17).duration_ms);
+    QCOMPARE(presenter.positionMs(), 0);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(presenter.volume(), 0.35);
+    QVERIFY(presenter.muted());
+    QCOMPARE(states.size(), 1);
+    QCOMPARE(playback.size(), 1);
+    QCOMPARE(presenter.queueModel(), model);
+    QCOMPARE(model->rowCount(), 1000);
+    QCOMPARE(resets.size(), 0);
+
+    QVERIFY(presenter.previousTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.positionMs(), 0);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(presenter.positionMs(), 200);
+    QVERIFY(presenter.nextTrack());
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0019"));
+    QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::previousUsesConfirmedThresholdAndPreservesPause() {
+    AvailableTrayPlatform platform;
+    for (const qint64 position : {2'999, 3'000, 3'001}) {
+        FixtureBundle bundle = frozenBundle();
+        bundle.states[1].playback_state = QStringLiteral("paused");
+        bundle.states[1].position_ms = position;
+        PlayerPresenter presenter(std::move(bundle), platform);
+        QVERIFY(presenter.loadFrozenQueue());
+        QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+        QVERIFY(presenter.previousTrack());
+        QCOMPARE(presenter.positionMs(), 0);
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        if (position > 3'000) {
+            QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+            QCOMPARE(presenter.confirmedPositionMs(), position);
+            QVERIFY(presenter.seekPending());
+            QVERIFY(!presenter.previousTrack());
+            QVERIFY(presenter.advanceOneTick());
+            QVERIFY(!presenter.seekPending());
+            QCOMPARE(presenter.confirmedPositionMs(), 0);
+            QCOMPARE(states.size(), 0);
+        } else {
+            QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0016"));
+            QVERIFY(!presenter.seekPending());
+            QCOMPARE(states.size(), 1);
+        }
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    }
+}
+
+void PlayerPresenterTests::navigationSkipsUnavailableItemsAndStopsAtBounds() {
+    AvailableTrayPlatform platform;
+    FixtureBundle bundle = frozenBundle();
+    bundle.states[1].current_occurrence_id = QStringLiteral("queue-0998");
+    bundle.states[1].position_ms = 0;
+    bundle.states[1].duration_ms = bundle.queue.at(997).duration_ms;
+    bundle.states[1].playback_state = QStringLiteral("paused");
+    PlayerPresenter presenter(bundle, platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QueueListModel* const model = presenter.queueModel();
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-1000"));
+    QCOMPARE(presenter.currentQueueIndex(), 999);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(!presenter.canGoNext());
+    QVERIFY(!presenter.nextTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-1000"));
+    QVERIFY(!model->data(model->index(998, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(model->index(998, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("fixture_source_unavailable"));
+    QVERIFY(presenter.previousTrack());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0998"));
+    QCOMPARE(presenter.queueModel(), model);
+
+    bundle.states[1].current_occurrence_id = QStringLiteral("queue-0001");
+    bundle.states[1].duration_ms = bundle.queue.at(0).duration_ms;
+    PlayerPresenter first(bundle, platform);
+    QVERIFY(first.loadFrozenQueue());
+    QVERIFY(!first.canGoPrevious());
+    QVERIFY(!first.previousTrack());
+    QCOMPARE(first.currentOccurrenceId(), QStringLiteral("queue-0001"));
+    QCOMPARE(first.positionMs(), 0);
+}
+
+void PlayerPresenterTests::navigationIsInertDuringSeekAndInactiveStates() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QVERIFY(!presenter.canGoPrevious());
+    QVERIFY(!presenter.canGoNext());
+    QVERIFY(!presenter.previousTrack());
+    QVERIFY(!presenter.nextTrack());
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.beginSeekPreview(120'000));
+    QVERIFY(!presenter.canGoPrevious());
+    QVERIFY(!presenter.canGoNext());
+    QVERIFY(!presenter.previousTrack());
+    QVERIFY(!presenter.nextTrack());
+    QVERIFY(presenter.commitSeekPreview());
+    QVERIFY(!presenter.canGoPrevious());
+    QVERIFY(!presenter.canGoNext());
+    QVERIFY(!presenter.previousTrack());
+    QVERIFY(!presenter.nextTrack());
+    QVERIFY(presenter.advanceOneTick());
+    QVERIFY(presenter.canGoPrevious());
+    QVERIFY(presenter.canGoNext());
+    QVERIFY(presenter.nextTrack());
+    QVERIFY(experiment::PlayerPresenterScenarioControl::enterUnavailable(presenter));
+    QVERIFY(!presenter.canGoPrevious());
+    QVERIFY(!presenter.canGoNext());
+    QVERIFY(!presenter.previousTrack());
+    QVERIFY(!presenter.nextTrack());
+    QVERIFY(presenter.skipUnavailable());
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.positionMs(), 84'000);
 }
 
 } // namespace music_player::m0::test

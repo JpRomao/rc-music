@@ -33,13 +33,16 @@ FocusScope {
             parts.push(root.contract.errorTitle);
         return parts.join(". ");
     }
-    function focusCurrent() {
+    function syncCurrent() {
         if (queueList.count === 0)
             return;
         const targetIndex = root.presenter.currentQueueIndex >= 0 ? root.presenter.currentQueueIndex : 0;
         queueList.currentIndex = targetIndex;
         queueList.positionViewAtIndex(targetIndex, ListView.Center);
         queueList.forceLayout();
+    }
+    function focusCurrent() {
+        syncCurrent();
         queueList.forceActiveFocus(Qt.TabFocusReason);
     }
 
@@ -202,7 +205,7 @@ FocusScope {
         target: root.presenter
         function onStateChanged() {
             if (root.visible)
-                Qt.callLater(root.focusCurrent);
+                Qt.callLater(root.syncCurrent);
         }
     }
 }

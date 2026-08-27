@@ -98,10 +98,11 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         AccessibleTransportButton {
             objectName: "previous"
-            enabled: false
+            enabled: root.presenter.canGoPrevious
             contract: root.contract
             text: "⏮"
             accessibleName: root.contract.actionPrevious
+            onClicked: root.presenter.previousTrack()
         }
         AccessibleTransportButton {
             objectName: "skip-backward"
@@ -128,10 +129,11 @@ ColumnLayout {
         }
         AccessibleTransportButton {
             objectName: "next"
-            enabled: false
+            enabled: root.presenter.canGoNext
             contract: root.contract
             text: "⏭"
             accessibleName: root.contract.actionNext
+            onClicked: root.presenter.nextTrack()
         }
         AccessibleTransportButton {
             objectName: "mute"

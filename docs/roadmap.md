@@ -1,7 +1,7 @@
 # Roadmap
 
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  
-**Última revisão:** 2026-08-26
+**Última revisão:** 2026-08-27
 
 ## 1. Como ler
 
@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos, jornada vazia/tocando/erro, transporte e fila virtualizada do candidato Qt em M0.2 validados.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; candidato Qt em M0.2 com jornada vazia/tocando/erro, transporte, fila virtualizada e navegação manual.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
@@ -71,7 +71,9 @@ Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o m
 
 Ambiente, protocolo e layout foram congelados em [M0-E1/M0-P1/M0-L1](m0/README.md). O [preflight Qt](m0/evidence/m0-2-preflight.md) fechou a toolchain necessária ao início de M0.2; provisionamentos ainda ausentes das etapas seguintes continuam bloqueando somente seus checks dependentes.
 
-M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), incluindo o piloto sintético `P` não decisório. O preflight M0.2 registrou Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML, `clang-format` e NVDA em contrato autenticado. Os incrementos TDD atuais incluem o core C++20 puro, o backend manual determinístico, o loader Qt ancorado no manifesto, o modelo tipado da fila comum, o presenter com ações de transporte, preferências e timer de 200 ms e a jornada QML vazia/tocando/erro com transporte e fila lateral virtualizada de 1.000 itens. Dados e SVGs são recursos autenticados e relocáveis; navegação anterior/próxima, temas, preferências visuais, tray, pacote e verificações manuais continuam pendentes. O teste da fila verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação, não o pool completo nem as instanciações ao longo da execução. Essa prova funcional não fecha NFR-PERF-006 nem substitui a medição externa do stall de 100 ms em M0.4. A inspeção manual da fila nesta fatia não foi realizada porque a sessão Computer Use foi interrompida; acessibilidade nativa/NVDA continua pendente. Nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
+M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), incluindo o piloto sintético `P` não decisório. O preflight M0.2 registrou Qt 6.11.2 Desktop MSVC 2022 x64, ferramentas QML, `clang-format` e NVDA em contrato autenticado. Os incrementos TDD atuais incluem o core C++20 puro, o backend manual determinístico, o loader Qt ancorado no manifesto, o modelo tipado da fila comum, o presenter com ações de transporte, preferências e timer de 200 ms e a jornada QML vazia/tocando/erro com transporte, fila lateral virtualizada de 1.000 itens e navegação manual anterior/próxima. Dados e SVGs são recursos autenticados e relocáveis; temas, preferências visuais, tray, pacote e verificações manuais continuam pendentes. A [política experimental de navegação](m0/README.md) é comum a M0.2/M0.3, sem mudança da fixture/protocolo: reinício após 3 s com seek, vizinho disponível sem circular, troca em zero preservando reprodução/volume/mudo/modelo e comandos inertes em vazio/carregando/erro/seek ocupado. EOF mantém `clamp_paused`; a recuperação do cenário de erro fica separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
+
+O teste da fila verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação, não o pool completo nem as instanciações ao longo da execução. Essa prova funcional não fecha NFR-PERF-006 nem substitui a medição externa do stall de 100 ms em M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA continua pendente. Nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
 
 ### M0-A — UI e shell A/B
 

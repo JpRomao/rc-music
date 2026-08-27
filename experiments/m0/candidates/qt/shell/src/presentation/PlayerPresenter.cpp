@@ -123,11 +123,20 @@ const FixtureState& stateById(const FixtureBundle& bundle, const QString& id) {
     invalidMapping("state_id");
 }
 
+std::vector<QueueNavigationItem> navigationItems(const FixtureBundle& bundle) {
+    std::vector<QueueNavigationItem> entries;
+    entries.reserve(static_cast<std::size_t>(bundle.queue.size()));
+    for (const QueueItem& item : bundle.queue)
+        entries.push_back({item.available});
+    return entries;
+}
+
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), backend_(backendConfig(bundle_)), controller_(backend_, platform),
-      queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)) {
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)),
+      backend_(backendConfig(bundle_)), controller_(backend_, platform), queue_model_(this), timer_(this),
+      state_(stateById(bundle_, bundle_.default_state_id)) {
     const FixtureDefaults& defaults = bundle_.preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
     const MotionMode motion = motionMode(defaults.motion);
@@ -189,6 +198,16 @@ qint64 PlayerPresenter::durationMs() const noexcept {
     return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
 }
 bool PlayerPresenter::seekable() const noexcept { return queueLoaded() && controller_.confirmedSnapshot().seekable; }
+std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirection direction) const noexcept {
+    const int current = currentQueueIndex();
+    if (!queueLoaded() || current < 0)
+        return std::nullopt;
+    return queueNavigationTarget(navigation_items_, static_cast<std::size_t>(current), direction,
+                                 controller_.confirmedSnapshot(),
+                                 controller_.seekPreviewActive() || controller_.seekPending());
+}
+bool PlayerPresenter::canGoPrevious() const noexcept { return navigationTarget(QueueDirection::Previous).has_value(); }
+bool PlayerPresenter::canGoNext() const noexcept { return navigationTarget(QueueDirection::Next).has_value(); }
 QString PlayerPresenter::assetId() const { return state_.asset_id; }
 bool PlayerPresenter::hasMessage() const noexcept { return state_.message_key.has_value(); }
 QString PlayerPresenter::messageKey() const { return state_.message_key.value_or(QString{}); }
@@ -268,6 +287,30 @@ bool PlayerPresenter::skipForward() {
     if (!controller_.skipForward())
         return false;
     reconcileTimer();
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::previousTrack() { return navigate(QueueDirection::Previous); }
+bool PlayerPresenter::nextTrack() { return navigate(QueueDirection::Next); }
+bool PlayerPresenter::navigate(const QueueDirection direction) {
+    const auto target = navigationTarget(direction);
+    if (!target.has_value())
+        return false;
+    if (*target == static_cast<std::size_t>(currentQueueIndex()))
+        return beginSeekPreview(0) && commitSeekPreview();
+
+    const QueueItem& track = bundle_.queue.at(static_cast<qsizetype>(*target));
+    if (!track.duration_ms.has_value() ||
+        !backend_.selectTrack(*track.duration_ms, controller_.confirmedSnapshot().status))
+        return false;
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    state_ = stateById(bundle_, QStringLiteral("playing"));
+    state_.current_occurrence_id = track.occurrence_id;
+    state_.position_ms = backend_.snapshot().position_ms;
+    state_.duration_ms = backend_.snapshot().duration_ms;
+    state_.seekable = backend_.snapshot().seekable;
+    reconcileTimer();
+    emit stateChanged();
     emit playbackChanged();
     return true;
 }

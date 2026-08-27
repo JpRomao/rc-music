@@ -52,6 +52,17 @@ void DeterministicPlaybackBackend::setVolume(const double volume) {
 
 void DeterministicPlaybackBackend::setMuted(const bool muted) { muted_ = muted; }
 
+bool DeterministicPlaybackBackend::selectTrack(const std::int64_t duration_ms, const PlaybackStatus status) noexcept {
+    if (duration_ms <= 0 ||
+        (status != PlaybackStatus::Ready && status != PlaybackStatus::Paused && status != PlaybackStatus::Playing)) {
+        return false;
+    }
+    snapshot_ = {status, 0, duration_ms, true};
+    pending_seek_.reset();
+    reject_next_seek_ = false;
+    return true;
+}
+
 void DeterministicPlaybackBackend::rejectNextSeek() noexcept { reject_next_seek_ = true; }
 
 DeterministicTickResult DeterministicPlaybackBackend::tick() {
