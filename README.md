@@ -77,6 +77,8 @@ A bandeja usa o mesmo transporte do presenter e distingue fechar, ocultar e sair
 
 A seção 9 do registro M0 documenta o pacote local: origem/commit, inventário SHA-256, imports PE, `qt.conf` relativo e pré-requisitos externos. O stage possui 1.378 arquivos/82.388.347 bytes e sua cópia para um caminho com espaços e acentos preservou o manifesto. O smoke isolado do pacote foi bloqueado por `RTSSHooks64.dll` injetado pelo RivaTuner; não é aprovação de execução sem SDK. O runner não altera aplicações externas ou configurações do sistema. Os comandos de geração, validação e smoke estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). O CRT é externo, a distribuição continua proibida e M0.2 não foi encerrado.
 
+A [triagem de segurança](docs/m0/evidence/m0-2-security-triage.md) registra achados nas fontes vendorizadas de FreeType/PCRE2, alcance no shell ainda não demonstrado e MSVC 14.43 fora de suporte. A identidade PE/SPDX foi conferida, mas `CHK-SEC` permanece aberto; nenhum componente foi atualizado ou risco aceito por essa revisão.
+
 O teste funcional verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação; não conta todo o pool de reutilização nem o total de instanciações durante a execução. Essa evidência não fecha NFR-PERF-006 nem o budget de stall de 100 ms, que depende do harness externo comparativo de M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA e desempenho continuam pendentes. O fim da faixa fake continua `clamp_paused`, e “Pular” no cenário de erro continua uma recuperação separada; CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem encerram FR-011/FR-016/FR-017.
 
 Validações atuais:
@@ -111,7 +113,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. concluir o smoke isolado do pacote após o usuário fechar o RivaTuner e retomar, com autorização, as validações manuais pendentes de M0.2;
+1. resolver as pendências de segurança/toolchain, concluir o smoke isolado após o usuário fechar o RivaTuner e retomar, com autorização, as validações manuais de M0.2;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

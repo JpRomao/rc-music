@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; shell/bandeja implementados; pacote local inventariado e relocado, com smoke isolado bloqueado por RivaTuner e gates nativos pendentes
+**Fase:** M0.2 em andamento; shell/bandeja implementados; pacote local inventariado e relocado, com smoke isolado bloqueado por RivaTuner, gates nativos e pendências de segurança/toolchain
 
 **Código do produto:** ainda não iniciado
 
@@ -128,7 +128,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. concluir o smoke isolado do pacote após o usuário fechar o RivaTuner e retomar, com autorização, os gates manuais de M0.2, incluindo bandeja nativa, sem áudio real;
+1. resolver as pendências de segurança/toolchain, concluir o smoke isolado após o usuário fechar o RivaTuner e retomar, com autorização, os gates manuais de M0.2, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
@@ -141,6 +141,8 @@ A fatia de preferências/temas foi fechada em `ab87803`; a [política comum e ev
 A seção 8 registra a política comum de bandeja e sua implementação Qt: menu compartilhando o transporte, intenções separadas de fechar/ocultar/sair, confirmação inicial por execução e fallback explicado. O smoke do executável fecha a janela QML e encerra normalmente, sem kill como evidência de sucesso. Os checks automatizados passaram após regressões de animação/foco e perda de disponibilidade durante a ocultação. Isso não conclui FR-030/FR-031/FR-032, o pacote ou os gates nativos de M0.2.
 
 A seção 9 registra a receita e os checks do pacote local, sem alterar o preflight histórico. Inventário SHA-256, imports PE e relocação com Unicode passaram; o stage tem 1.378 arquivos/82.388.347 bytes e usa o CRT externo do host. O smoke isolado foi rejeitado por injeção de `RTSSHooks64.dll`; o usuário precisa fechar o RivaTuner para uma nova tentativa. Isso não equivale a validar execução sem SDK, máquina limpa, licenças de redistribuição ou instalação. Nenhuma aplicação externa foi encerrada nem configuração do sistema alterada.
+
+A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achados nas fontes FreeType/PCRE2, sem exploração do shell demonstrada, e confirma MSVC 14.43 fora de suporte. O vínculo PE/SPDX foi conferido, mas advisories, servicing e licenças não receberam aprovação global. Dependências, toolchain e contrato histórico foram preservados; `CHK-SEC` permanece em aberto.
 
 A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. Acessibilidade nativa/NVDA e desempenho permanecem pendentes.
 

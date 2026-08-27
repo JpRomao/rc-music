@@ -60,6 +60,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
 | M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas, alto contraste e bandeja implementados sob as políticas comuns das seções 6–8, com checks automatizados de ciclo de vida verdes; pacote, bandeja/alto contraste nativos, acessibilidade nativa/NVDA e medições pendentes |
+| M0.2 — [triagem de segurança do pacote](evidence/m0-2-security-triage.md) | parcial; vínculo PE/SPDX conferido, fontes FreeType/PCRE2 com achados, MSVC fora de suporte e pendências explícitas; não encerra `CHK-SEC` |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5–M0.8 — corpus e áudio | pendente |
@@ -330,3 +331,5 @@ Após o commit `200b9838dc9e86427e083771ef71bc9f1ee49f4b`, a receita gerou `out/
 O build existente foi reutilizado (`ninja: no work to do.`); esta evidência prova a regeneração do stage pela receita limpa, não um rebuild do zero nem reprodução binária em outra máquina. O resultado está em `evidence/committed-recipe-check.v1.json` do novo stage. Não houve execução do aplicativo ou nova tentativa de smoke: o RivaTuner continuava ativo e a autorização para retomar o desktop não foi recebida. A relocação registrada acima continua sendo a cópia do stage anterior, não uma execução relocada do novo pacote.
 
 M0.2 permanece em andamento. Execução isolada/relocada, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa, integração de instalador e medições continuam pendentes. Não houve retomada de Computer Use, leitura dos áudios pessoais, distribuição ou decisão de stack.
+
+A [triagem de segurança posterior](evidence/m0-2-security-triage.md) cruza o pacote com SPDX, configuração, fontes fixadas e advisories públicos. Ela identifica pendências de FreeType/PCRE2 e de suporte do MSVC; hashes ou testes verdes não encerram essas questões. O registro distingue fonte afetada, alcance não demonstrado, avisos fora da faixa e componentes ausentes, sem aprovar redistribuição ou alterar o preflight histórico.
