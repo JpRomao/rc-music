@@ -127,7 +127,7 @@ const FixtureState& stateById(const FixtureBundle& bundle, const QString& id) {
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), backend_(backendConfig(bundle_)), controller_(backend_, platform),
-      queue_model_(this), state_(stateById(bundle_, bundle_.default_state_id)) {
+      queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)) {
     const FixtureDefaults& defaults = bundle_.preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
     const MotionMode motion = motionMode(defaults.motion);
@@ -156,6 +156,9 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     if (!controller_.setStartMinimized(defaults.start_minimized))
         invalidMapping("start_minimized");
     controller_.setQueueEndBehavior(queue_end);
+    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, [this] { static_cast<void>(advanceOneTick()); });
 }
 
 QString PlayerPresenter::stateId() const { return state_.state_id; }
@@ -197,18 +200,21 @@ bool PlayerPresenter::togglePlayback() {
     controller_.applyBackendSnapshot(backend_.snapshot());
     if (before == controller_.confirmedSnapshot().status)
         return false;
+    reconcileTimer();
     emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::skipBackward() {
     if (!controller_.skipBackward())
         return false;
+    reconcileTimer();
     emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::skipForward() {
     if (!controller_.skipForward())
         return false;
+    reconcileTimer();
     emit playbackChanged();
     return true;
 }
@@ -243,6 +249,7 @@ bool PlayerPresenter::commitSeekPreview() {
     controller_.commitSeekPreview();
     if (!controller_.seekPending())
         return false;
+    reconcileTimer();
     emit playbackChanged();
     return true;
 }
@@ -274,6 +281,7 @@ bool PlayerPresenter::advanceOneTick() {
                          before.seekable != after.seekable || before_displayed != controller_.displayedPositionMs() ||
                          before_preview != controller_.seekPreviewActive() ||
                          before_pending != controller_.seekPending();
+    reconcileTimer();
     if (changed)
         emit playbackChanged();
     if (result.seek_rejected)
@@ -281,6 +289,14 @@ bool PlayerPresenter::advanceOneTick() {
     return changed;
 }
 void PlayerPresenter::rejectNextSeekForTest() noexcept { backend_.rejectNextSeek(); }
+void PlayerPresenter::reconcileTimer() {
+    const bool needed = queueLoaded() && (controller_.confirmedSnapshot().status == PlaybackStatus::Playing ||
+                                          controller_.seekPending());
+    if (needed && !timer_.isActive())
+        timer_.start();
+    else if (!needed && timer_.isActive())
+        timer_.stop();
+}
 bool PlayerPresenter::loadFrozenQueue() {
     if (queue_model_.loaded() || bundle_.queue.isEmpty())
         return false;
@@ -291,6 +307,7 @@ bool PlayerPresenter::loadFrozenQueue() {
     state_.seekable = backend_.snapshot().seekable;
     if (!queue_model_.loadOnce(bundle_.queue))
         return false;
+    reconcileTimer();
     emit stateChanged();
     emit playbackChanged();
     return true;

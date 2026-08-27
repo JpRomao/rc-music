@@ -8,6 +8,7 @@
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 namespace music_player::m0 {
 namespace test {
@@ -97,10 +98,12 @@ class PlayerPresenter final : public QObject {
   private:
     friend struct test::PlayerPresenterTestAccess;
     void rejectNextSeekForTest() noexcept;
+    void reconcileTimer();
     FixtureBundle bundle_;
     DeterministicPlaybackBackend backend_;
     PlayerController controller_;
     QueueListModel queue_model_;
+    QTimer timer_;
     FixtureState state_;
 };
 

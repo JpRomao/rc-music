@@ -40,6 +40,7 @@ class PlayerPresenterTests final : public QObject {
     void rejectsUnknownMappingsAndExposesNoInfrastructureApi();
     void drivesTransportPreferencesAndManualTicksDeterministically();
     void keepsUnavailableAndTerminalTransportInert();
+    void schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -219,7 +220,7 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     QCOMPARE(meta->indexOfProperty("timer"), -1);
     for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "applyBackendSnapshot()"})
         QCOMPARE(meta->indexOfMethod(method), -1);
-    QCOMPARE(presenter.findChildren<QTimer*>().size(), 0);
+    QCOMPARE(presenter.findChildren<QTimer*>().size(), 1);
 }
 
 void PlayerPresenterTests::drivesTransportPreferencesAndManualTicksDeterministically() {
@@ -349,6 +350,61 @@ void PlayerPresenterTests::keepsUnavailableAndTerminalTransportInert() {
     QVERIFY(paused.advanceOneTick());
     QCOMPARE(paused.positionMs(), 90'000);
     QCOMPARE(paused.playbackState(), PlayerPresenter::PlaybackState::Paused);
+}
+
+void PlayerPresenterTests::schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    const QList<QTimer*> timers = presenter.findChildren<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(timers.size(), 1);
+    QTimer* const timer = timers.front();
+    QCOMPARE(timer->interval(), 200);
+    QCOMPARE(timer->timerType(), Qt::PreciseTimer);
+    QVERIFY(!timer->isActive());
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QTest::qWait(250);
+    QCOMPARE(playback.size(), 0);
+
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(timer->isActive());
+    QTRY_COMPARE_WITH_TIMEOUT(presenter.confirmedPositionMs(), 84'200, 500);
+    QVERIFY(presenter.togglePlayback());
+    QVERIFY(!timer->isActive());
+    const qint64 paused_position = presenter.confirmedPositionMs();
+    QTest::qWait(250);
+    QCOMPARE(presenter.confirmedPositionMs(), paused_position);
+
+    QVERIFY(presenter.beginSeekPreview(90'000));
+    QVERIFY(presenter.commitSeekPreview());
+    QVERIFY(timer->isActive());
+    QTRY_COMPARE_WITH_TIMEOUT(presenter.confirmedPositionMs(), 90'000, 500);
+    QVERIFY(!presenter.seekPending());
+    QVERIFY(!timer->isActive());
+
+    QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
+    QVERIFY(presenter.beginSeekPreview(91'000));
+    QVERIFY(presenter.commitSeekPreview());
+    PlayerPresenterTestAccess::rejectNextSeek(presenter);
+    QVERIFY(timer->isActive());
+    QTRY_COMPARE_WITH_TIMEOUT(rejected.size(), 1, 500);
+    QVERIFY(!presenter.seekPending());
+    QVERIFY(!timer->isActive());
+
+    QVERIFY(presenter.togglePlayback());
+    QVERIFY(timer->isActive());
+    QVERIFY(presenter.togglePlayback());
+    QVERIFY(!timer->isActive());
+
+    FixtureBundle terminal_bundle = frozenBundle();
+    terminal_bundle.states[1].position_ms = 247'900;
+    PlayerPresenter terminal(std::move(terminal_bundle), platform);
+    QTimer* const terminal_timer = terminal.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(terminal_timer != nullptr);
+    QVERIFY(terminal.loadFrozenQueue());
+    QVERIFY(terminal_timer->isActive());
+    QTRY_COMPARE_WITH_TIMEOUT(terminal.playbackState(), PlayerPresenter::PlaybackState::Paused, 500);
+    QCOMPARE(terminal.positionMs(), 248'000);
+    QVERIFY(!terminal_timer->isActive());
 }
 
 } // namespace music_player::m0::test
