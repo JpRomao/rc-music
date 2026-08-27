@@ -1,7 +1,7 @@
 # M0.2 — Integração do MSVC ao pacote Qt
 
 **Data:** 2026-08-27
-**Estado:** integração validada com pacote diagnóstico; pacote de receita commitada ainda pendente; não encerra M0.2
+**Estado:** integração commitada em `63717e5`; pacote de receita limpa e smokes original/relocado validados; jornada nativa parcial; não encerra M0.2
 
 ## Escopo
 
@@ -71,8 +71,49 @@ Paths relativos a `out/m0/builds/qt-shell/msvc-14.44-package-refresh-20260827-01
 
 Os seis logs `ps-*.log` guardam as suítes do empacotador. Evidências do core estão em `out/m0/test-runs/qt-core-msvc14.44-refresh-20260827-01/`: `summary.json` SHA-256 `3ee68be19539381568b4b4b4babdd318250b8037a19dfe3c8652e173e16a29b9` e `ctest-core.junit.xml` `80f13f7ea351dad85f62747a428da29ecba5aa7dfb2525be0170eb73bbe66ea9`.
 
+## Pacote de receita commitada
+
+O commit **`63717e5b8935cfe64132f7653f5e457dfa9867f2`** fecha a implementação, testes e documentação da integração. Com o worktree limpo antes/depois, a receita gerou `out/m0/packages/qt-shell/msvc-63717e5-clean-01`: `source_paths_clean=true`, **`recipe_dirty=false`**, manifesto SHA-256 **`54eba3d9809dc1eae4b9b309d09d02721a86513bcc977638dea21101320cf787`**. O build incremental não precisou recompilar; fontes e bytes do payload são iguais aos do diagnóstico, com **1.378 arquivos / 82.423.288 bytes / 69 PEs**.
+
+Uma cópia nova de `app/`, `evidence/`, manifesto e sidecar foi criada em `out/m0/packages/qt-shell/relocação com espaços 63717e5-01`. Não houve sobrescrita. Os dois manifestos e os vínculos externos de receipt, deployment e PE closure foram reconferidos, assim como os seis hashes de arquivos da receita commitada. O receipt mantém `23207bd6…ad302`; a proveniência do pacote não depende apenas do sidecar copiado.
+
+O runner de `63717e5` passou nas quatro jornadas, sem RTSS ou relaxamento da whitelist:
+
+| Local / jornada | Exit | Captura completa (ms) | Amostras |
+|---|---:|---:|---:|
+| Original / `tray-lifecycle` | 0 | 180,05 | 7 |
+| Original / `error-recovery` | 0 | 103,96 | 10 |
+| Relocado / `tray-lifecycle` | 0 | 107,56 | 10 |
+| Relocado / `error-recovery` | 0 | 78,61 | 9 |
+
+Todos terminaram com stdout/stderr vazios, zero erros transitórios de captura e sem encerramento forçado. Módulos observados somente do pacote/System32; o manifesto foi validado antes/depois em cada localização. Não restaram players após esses smokes. Os tempos não são métricas comparativas. O stage histórico `tray-200b983-clean-01` também foi revalidado integralmente sem alteração.
+
+Relatórios no diretório de build desta fatia:
+
+| Arquivo | Bytes | SHA-256 |
+|---|---:|---|
+| `smoke-clean-original.json` | 40086 | `b299361866fd2cb560ae24c0b42a010682f49c09809aa8e5edcb104a12f385dc` |
+| `smoke-clean-relocated.json` | 40955 | `85d7872e11508a0e384e1037740520ed0dcba7747f4b49260718d3a9e4263c03` |
+| `smoke-clean-summary.json` | 1427 | `5472ef0edb6214fa83057e8ae15334d251ae3be198ec040a728856a388746262` |
+
+Os relatórios original/relocado foram gravados em `2026-08-27T18:05:23.6746955Z` e `2026-08-27T18:05:31.8648957Z`, respectivamente, conforme timestamps dos arquivos. Não são timestamps internos de início dos processos.
+
+## Tentativa nativa deste pacote
+
+O executável do pacote limpo foi aberto pela skill `computer-use`, com seleção inequívoca da janela retornada (`96077226`, título `Player de música`). PID observado **26420**, início `2026-08-27T18:06:07.823128Z`. Foram usados somente a fixture falsa e os controles do player; nenhum áudio pessoal, configuração global do Windows ou aplicativo externo foi alterado.
+
+As capturas acompanharam estado vazio → fixture tocando por `Ctrl+O` → pausa por Espaço; o transporte mudou para Reproduzir antes de EOF. `Ctrl+L` mostrou a fila, `Ctrl+,` abriu Preferências e a seleção Aparência → Claro mudou visualmente a paleta sem reiniciar. Isso não determina a causa das capturas divergentes da [tentativa histórica](m0-2-native-attempt-20260827.md), nem prova que o compilador corrigiu aquele problema.
+
+A observação de foco via UIA permaneceu inconclusiva: a extração ainda indicava `current-title` após navegação, e algumas mudanças de controles apareceram somente numa captura posterior. A borda do botão Fila também representa seleção, não apenas foco. Não foi concluído defeito no produto ou na captura; os testes QML de foco não comprovam entrega de eventos ao leitor de tela.
+
+A tentativa de Escape foi recusada pela ferramenta com `user input was detected in this window; call get_window_state before continuing`. A nova captura mostrou o menu de tema aberto, diferente do estado anterior; as entradas automatizadas foram pausadas e o usuário avisado. Na consulta read-only de `2026-08-27T18:14:26.9966374Z`, o PID não estava mais presente. Não houve kill pelo agente; causa e código do encerramento não foram observados. **Isso não aprova Escape, Ctrl+Q, Fechar, bandeja ou saída normal nativos.**
+
+O manifesto do pacote continuou íntegro. O NVDA portátil teve apenas identidade/assinatura reconferidas; não foi iniciado. Não houve jornada NVDA, HC/DPI reais, movimento reduzido do Windows, menu/recuperação do Explorer ou teste Linux. A retomada das entradas depende de disponibilidade do desktop sem interferência no uso manual.
+
 ## Limites e sequência
 
-Após commitar esta integração, falta gerar o pacote de receita limpa e repetir os smokes original/relocado. A [triagem de segurança](m0-2-security-triage.md) continua aplicável no seu escopo: as bibliotecas Qt não foram atualizadas, e a instalação do compilador não corrige FreeType nem resolve servicing/redistribuição/licenças.
+Integração e pacote offscreen estão validados, mas a [triagem de segurança](m0-2-security-triage.md) continua aplicável no seu escopo: as bibliotecas Qt não foram atualizadas, e a instalação do compilador não corrige FreeType nem resolve servicing/redistribuição/licenças. A preparação da regressão e do backport upstream isolado é o próximo passo técnico dentro do M0 já autorizado; ainda não foi aplicada nesta evidência. Qualquer SDK corrigido exige nova identidade de fonte/patch/configuração e novos checks do pacote, sem alterar o histórico nem aceitar definitivamente uma stack.
 
-NVDA, bandeja/Explorer, alto contraste e DPI reais, Linux, máquina limpa e medições continuam pendentes. A tentativa nativa anterior permanece inconclusiva. M0.3 não é liberado e nenhuma stack é aceita por esta integração.
+NVDA, bandeja/Explorer, alto contraste e DPI reais, Linux, máquina limpa e medições continuam pendentes. A observação nativa parcial não encerra `CHK-UI`/`CHK-A11Y`. M0.3 não é liberado e nenhuma stack é aceita por esta integração. O commit de evidências posterior registra os resultados de execução sem alterar a receita ou o payload de `63717e5`.
+
+Esse fechamento é documental, sem Red/Green artificial. A revisão independente dos dois pacotes, vínculos de evidência, seis arquivos da receita e quatro jornadas registradas não apresentou achados. O validador documental passou com **37 Markdown, 83 requisitos, 17 checks e 76 etapas**, e `git diff --check` passou. As suítes de `63717e5` não são apresentadas como repetidas nesta atualização documental.

@@ -1,7 +1,7 @@
 # M0.2 — MSVC instalado e build de verificação
 
 **Data:** 2026-08-27
-**Estado deste checkpoint:** instalação e build Release verificados; a receita ainda não estava integrada ao refresh. A [integração posterior](m0-2-msvc-package.md) tem evidência própria; M0.2 permanece aberto.
+**Estado histórico deste checkpoint:** instalação e build Release verificados; a receita ainda não estava integrada ao refresh. A [evolução posterior da receita e do pacote](m0-2-msvc-package.md) tem evidência própria; M0.2 permanece aberto.
 
 ## Resultado
 
@@ -73,4 +73,4 @@ Os dois arquivos `*_errors.log` foram preservados na mesma subpasta, vazios, SHA
 - O manifesto histórico `a227bb2b…97dc99` foi revalidado integralmente: 1.378 arquivos preservados. Os cinco arquivos CRT externos permanecem com os hashes/versões históricos `14.51.36247.0`.
 - Não restaram processos do novo build. A mudança versiona dados de identidade e documentação, sem comportamento novo que exija Red/Green artificial; os helpers já tinham TDD em `b59a247`.
 
-A instalação resolve a ausência do MSVC 14.44, e o build prova seu uso com este shell. A [integração posterior do contrato/receipt à receita](m0-2-msvc-package.md) foi implementada por TDD e validada com o pacote diagnóstico offscreen; falta gerar o pacote de receita commitada e repetir seus smokes original/relocado. Os stages antigos não passam a usar o novo compilador. A [triagem de segurança](m0-2-security-triage.md), as obrigações de licença e os gates nativos continuam pendentes. Esta entrega não encerra M0.2, não libera M0.3 e não aceita uma stack.
+A instalação resolve a ausência do MSVC 14.44, e o build prova seu uso com este shell. A integração à receita, os pacotes posteriores e seus smokes, a validação nativa parcial e a sequência atual estão na [evidência do pacote MSVC](m0-2-msvc-package.md) e no [registro M0](../README.md). Os stages antigos não passam a usar o novo compilador. Este checkpoint histórico não encerra M0.2, não libera M0.3 e não aceita uma stack; os registros atuais preservam as pendências de segurança, licença e gates nativos.
