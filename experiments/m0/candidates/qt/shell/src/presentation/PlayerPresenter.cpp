@@ -168,6 +168,15 @@ PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
 bool PlayerPresenter::queueLoaded() const noexcept { return state_.queue_loaded; }
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept { return state_.current_occurrence_id.has_value(); }
 QString PlayerPresenter::currentOccurrenceId() const { return state_.current_occurrence_id.value_or(QString{}); }
+int PlayerPresenter::currentQueueIndex() const noexcept {
+    if (!state_.current_occurrence_id.has_value())
+        return -1;
+    for (qsizetype index = 0; index < bundle_.queue.size(); ++index) {
+        if (bundle_.queue.at(index).occurrence_id == *state_.current_occurrence_id)
+            return static_cast<int>(index);
+    }
+    return -1;
+}
 bool PlayerPresenter::hasContextOccurrence() const noexcept { return state_.context_occurrence_id.has_value(); }
 QString PlayerPresenter::contextOccurrenceId() const { return state_.context_occurrence_id.value_or(QString{}); }
 bool PlayerPresenter::hasPosition() const noexcept { return state_.position_ms.has_value(); }

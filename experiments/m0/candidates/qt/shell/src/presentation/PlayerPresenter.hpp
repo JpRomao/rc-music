@@ -30,6 +30,7 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool queueLoaded READ queueLoaded NOTIFY stateChanged)
     Q_PROPERTY(bool hasCurrentOccurrence READ hasCurrentOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString currentOccurrenceId READ currentOccurrenceId NOTIFY stateChanged)
+    Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(bool hasPosition READ hasPosition NOTIFY stateChanged)
@@ -71,6 +72,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool queueLoaded() const noexcept;
     [[nodiscard]] bool hasCurrentOccurrence() const noexcept;
     [[nodiscard]] QString currentOccurrenceId() const;
+    [[nodiscard]] int currentQueueIndex() const noexcept;
     [[nodiscard]] bool hasContextOccurrence() const noexcept;
     [[nodiscard]] QString contextOccurrenceId() const;
     [[nodiscard]] bool hasPosition() const noexcept;

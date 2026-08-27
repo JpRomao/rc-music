@@ -42,6 +42,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.clientHeight(), 640);
     QCOMPARE(contract.minimumWidth(), 720);
     QCOMPARE(contract.minimumHeight(), 520);
+    QCOMPARE(contract.queuePanelMinimumWidth(), 320);
+    QCOMPARE(contract.queuePanelMaximumWidth(), 380);
     QCOMPARE(contract.controlTargetMinimum(), 40);
     QCOMPARE(contract.controlTargetPreferred(), 44);
     QCOMPARE(contract.radiusSmall(), 8);
@@ -63,6 +65,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.volumeName(), QStringLiteral("Volume"));
     QCOMPARE(contract.actionMute(), QStringLiteral("Silenciar"));
     QCOMPARE(contract.actionUnmute(), QStringLiteral("Ativar som"));
+    QCOMPARE(contract.queueTitle(), QStringLiteral("Fila"));
+    QCOMPARE(contract.notInformed(), QStringLiteral("Não informado"));
     QCOMPARE(contract.errorTitle(), QStringLiteral("Não foi possível abrir esta faixa"));
     QCOMPARE(contract.errorBody(), QStringLiteral("A faixa de teste está indisponível."));
     QCOMPARE(contract.actionSkip(), QStringLiteral("Pular"));
@@ -82,6 +86,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("clientHeight"),
         QStringLiteral("minimumWidth"),
         QStringLiteral("minimumHeight"),
+        QStringLiteral("queuePanelMinimumWidth"),
+        QStringLiteral("queuePanelMaximumWidth"),
         QStringLiteral("controlTargetMinimum"),
         QStringLiteral("controlTargetPreferred"),
         QStringLiteral("radiusMedium"),
@@ -103,6 +109,8 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("volumeName"),
         QStringLiteral("actionMute"),
         QStringLiteral("actionUnmute"),
+        QStringLiteral("queueTitle"),
+        QStringLiteral("notInformed"),
         QStringLiteral("errorTitle"),
         QStringLiteral("errorBody"),
         QStringLiteral("actionSkip"),
@@ -185,7 +193,8 @@ void ShellUiContractTests::rejectsUnsupportedTransportStrings() {
           &FixtureStrings::action_next, &FixtureStrings::skip_backward_short, &FixtureStrings::skip_forward_short,
           &FixtureStrings::skip_backward_name, &FixtureStrings::skip_forward_name, &FixtureStrings::progress_name,
           &FixtureStrings::volume_name, &FixtureStrings::action_mute, &FixtureStrings::action_unmute,
-          &FixtureStrings::error_title, &FixtureStrings::error_body, &FixtureStrings::action_skip}) {
+          &FixtureStrings::queue_title, &FixtureStrings::not_informed, &FixtureStrings::error_title,
+          &FixtureStrings::error_body, &FixtureStrings::action_skip}) {
         FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
         bundle.strings.*member = QStringLiteral("drifted");
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));

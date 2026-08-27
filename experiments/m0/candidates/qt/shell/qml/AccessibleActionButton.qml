@@ -7,6 +7,7 @@ Button {
     required property string controlId
     objectName: controlId
     Accessible.role: Accessible.Button
+    Accessible.id: controlId
     Accessible.name: text
     Accessible.focusable: enabled
     Accessible.focused: activeFocus

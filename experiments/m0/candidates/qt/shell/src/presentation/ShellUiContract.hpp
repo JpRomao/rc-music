@@ -17,6 +17,8 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(int clientHeight READ clientHeight CONSTANT)
     Q_PROPERTY(int minimumWidth READ minimumWidth CONSTANT)
     Q_PROPERTY(int minimumHeight READ minimumHeight CONSTANT)
+    Q_PROPERTY(int queuePanelMinimumWidth READ queuePanelMinimumWidth CONSTANT)
+    Q_PROPERTY(int queuePanelMaximumWidth READ queuePanelMaximumWidth CONSTANT)
     Q_PROPERTY(int controlTargetMinimum READ controlTargetMinimum CONSTANT)
     Q_PROPERTY(int controlTargetPreferred READ controlTargetPreferred CONSTANT)
     Q_PROPERTY(int radiusMedium READ radiusMedium CONSTANT)
@@ -38,6 +40,8 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString volumeName READ volumeName CONSTANT)
     Q_PROPERTY(QString actionMute READ actionMute CONSTANT)
     Q_PROPERTY(QString actionUnmute READ actionUnmute CONSTANT)
+    Q_PROPERTY(QString queueTitle READ queueTitle CONSTANT)
+    Q_PROPERTY(QString notInformed READ notInformed CONSTANT)
     Q_PROPERTY(QString errorTitle READ errorTitle CONSTANT)
     Q_PROPERTY(QString errorBody READ errorBody CONSTANT)
     Q_PROPERTY(QString actionSkip READ actionSkip CONSTANT)
@@ -58,6 +62,8 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] int clientHeight() const noexcept;
     [[nodiscard]] int minimumWidth() const noexcept;
     [[nodiscard]] int minimumHeight() const noexcept;
+    [[nodiscard]] int queuePanelMinimumWidth() const noexcept;
+    [[nodiscard]] int queuePanelMaximumWidth() const noexcept;
     [[nodiscard]] int controlTargetMinimum() const noexcept;
     [[nodiscard]] int controlTargetPreferred() const noexcept;
     [[nodiscard]] int radiusMedium() const noexcept;
@@ -79,6 +85,8 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString volumeName() const;
     [[nodiscard]] QString actionMute() const;
     [[nodiscard]] QString actionUnmute() const;
+    [[nodiscard]] QString queueTitle() const;
+    [[nodiscard]] QString notInformed() const;
     [[nodiscard]] QString errorTitle() const;
     [[nodiscard]] QString errorBody() const;
     [[nodiscard]] QString actionSkip() const;

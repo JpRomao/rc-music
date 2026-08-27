@@ -54,6 +54,7 @@ void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() 
     QCOMPARE(presenter.queueLoaded(), false);
     QCOMPARE(presenter.hasCurrentOccurrence(), false);
     QCOMPARE(presenter.currentOccurrenceId(), QString{});
+    QCOMPARE(presenter.currentQueueIndex(), -1);
     QCOMPARE(presenter.hasContextOccurrence(), false);
     QCOMPARE(presenter.contextOccurrenceId(), QString{});
     QCOMPARE(presenter.hasPosition(), false);
@@ -143,6 +144,7 @@ void PlayerPresenterTests::loadsFrozenQueueOnceWithoutReplacingTheModel() {
     QCOMPARE(presenter.stateId(), QStringLiteral("playing"));
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
     QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.currentQueueIndex(), 16);
     QCOMPARE(presenter.hasCurrentOccurrence(), true);
     QCOMPARE(presenter.hasContextOccurrence(), false);
     QCOMPARE(presenter.contextOccurrenceId(), QString{});
@@ -448,6 +450,7 @@ void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScen
     QCOMPARE(presenter.stateId(), QStringLiteral("error"));
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
     QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0999"));
+    QCOMPARE(presenter.currentQueueIndex(), 998);
     QCOMPARE(presenter.contextOccurrenceId(), QStringLiteral("queue-0017"));
     QCOMPARE(presenter.hasPosition(), false);
     QCOMPARE(presenter.positionMs(), 0);
@@ -482,6 +485,7 @@ void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScen
     QCOMPARE(presenter.stateId(), QStringLiteral("playing"));
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
     QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.currentQueueIndex(), 16);
     QCOMPARE(presenter.hasContextTrack(), false);
     QCOMPARE(state_changed.size(), 2);
     QCOMPARE(playback_changed.size(), 2);

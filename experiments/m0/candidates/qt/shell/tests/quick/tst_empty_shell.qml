@@ -50,6 +50,22 @@ TestCase {
             verify(previousPosition.x + previous.width <= currentPosition.x + 0.5, previous.objectName + " [" + previousPosition.x + ", " + previous.width + "] overlaps " + current.objectName + " [" + currentPosition.x + ", " + current.width + "]");
         }
     }
+    function instantiatedQueueRows(listView) {
+        let instantiated = 0;
+        for (let index = 0; index < listView.count; ++index) {
+            if (listView.itemAtIndex(index) !== null)
+                ++instantiated;
+        }
+        return instantiated;
+    }
+    function revealQueueRow(listView, index) {
+        listView.positionViewAtIndex(index, ListView.Center);
+        listView.forceLayout();
+        tryVerify(function () {
+            return listView.itemAtIndex(index) !== null;
+        });
+        return listView.itemAtIndex(index);
+    }
 
     function test_emptyPlayingErrorJourney() {
         shell = createTemporaryObject(shellComponent, null);
@@ -72,6 +88,7 @@ TestCase {
         compare(button.text, testShellUiContract.openAudioText); // qmllint disable unqualified
         compare(button.Accessible.role, Accessible.Button);
         compare(button.Accessible.name, testShellUiContract.openAudioText); // qmllint disable unqualified
+        compare(button.Accessible.id, "open-audio");
         verify(button.width >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
         verify(button.height >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
         verifyInsideWindow(emptyState);
@@ -111,6 +128,13 @@ TestCase {
 
         const transport = findChild(shell.contentItem, "transport-bar");
         verify(transport);
+        const queueButton = findChild(shell, "queue");
+        verify(queueButton);
+        compare(queueButton.Accessible.role, Accessible.Button);
+        compare(queueButton.Accessible.name, "Fila");
+        compare(queueButton.Accessible.id, "queue");
+        verify(!queueButton.enabled);
+        verify(!findChild(shell, "queue-panel").visible);
         verify(!transport.enabled);
         const progress = findChild(shell, "progress");
         const playPause = findChild(shell, "play-pause");
@@ -118,6 +142,8 @@ TestCase {
         const skipForward = findChild(shell, "skip-forward");
         const volume = findChild(shell, "volume");
         const mute = findChild(shell, "mute");
+        compare(progress.Accessible.id, "progress");
+        compare(volume.Accessible.id, "volume");
         verify(emptyState.visible);
         verify(!progress.enabled);
         verify(!playPause.enabled);
@@ -169,6 +195,108 @@ TestCase {
         verifyInsideWindow(currentTitle);
         verifyInsideWindow(currentArtist);
         verifyInsideWindow(currentAlbum);
+        verify(queueButton.enabled);
+        queueButton.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        const queuePanel = findChild(shell, "queue-panel");
+        const stateLayer = findChild(shell, "state-layer");
+        const queueList = findChild(shell, "queue-list");
+        tryVerify(function () {
+            return queuePanel.visible;
+        });
+        verifyInsideWindow(queuePanel);
+        compare(queuePanel.width, testShellUiContract.queuePanelMinimumWidth); // qmllint disable unqualified
+        compare(queuePanel.overlayMode, true);
+        compare(queueList.count, 1000);
+        compare(queueList.reuseItems, true);
+        compare(queueList.cacheBuffer, 0);
+        compare(queueList.currentIndex, 16);
+        compare(queueList.Accessible.role, Accessible.List);
+        compare(queueList.Accessible.name, "Fila");
+        compare(queueList.Accessible.id, "queue-list");
+        compare(queueList.Accessible.focused, true);
+        verify(queueList.focusIndicatorVisible);
+        compare(queueList.itemAtIndex(998), null);
+        const currentQueueRow = revealQueueRow(queueList, 16);
+        compare(currentQueueRow.occurrenceId, "queue-0017");
+        compare(currentQueueRow.Accessible.id, "queue-0017");
+        compare(currentQueueRow.Accessible.role, Accessible.ListItem);
+        compare(currentQueueRow.Accessible.focusable, true);
+        compare(currentQueueRow.Accessible.selectable, true);
+        compare(currentQueueRow.Accessible.selected, true);
+        compare(currentQueueRow.Accessible.focused, true);
+        compare(currentQueueRow.background.border.width, 3);
+        verify(currentQueueRow.Accessible.name.indexOf("Canção nº 17 — São João, ação e café ☕") >= 0);
+        verify(instantiatedQueueRows(queueList) > 0);
+        verify(instantiatedQueueRows(queueList) < 64);
+        const queueOpenFocusOrder = [queueButton, progress, skipBackward, playPause, skipForward, mute, volume, queueList];
+        queueButton.forceActiveFocus(Qt.TabFocusReason);
+        for (let focusIndex = 1; focusIndex < queueOpenFocusOrder.length; ++focusIndex) {
+            keyClick(Qt.Key_Tab);
+            tryVerify(function () {
+                return queueOpenFocusOrder[focusIndex].activeFocus;
+            });
+        }
+        for (let focusIndex = queueOpenFocusOrder.length - 2; focusIndex >= 0; --focusIndex) {
+            keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+            tryVerify(function () {
+                return queueOpenFocusOrder[focusIndex].activeFocus;
+            });
+        }
+        queueList.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Down);
+        compare(queueList.currentIndex, 17);
+        const decomposedQueueRow = queueList.itemAtIndex(17);
+        compare(decomposedQueueRow.occurrenceId, "queue-0018");
+        compare(decomposedQueueRow.Accessible.selected, true);
+        keyClick(Qt.Key_Up);
+        compare(queueList.currentIndex, 16);
+        const markupQueueRow = revealQueueRow(queueList, 41);
+        compare(markupQueueRow.occurrenceId, "queue-0042");
+        compare(markupQueueRow.title, "<b>Não interpretar</b> & \"aspas\" 'simples'");
+        compare(findChild(markupQueueRow, "queue-row-title").textFormat, Text.PlainText);
+        compare(findChild(markupQueueRow, "queue-row-title").text, markupQueueRow.title);
+        const longQueueRow = revealQueueRow(queueList, 511);
+        compare(longQueueRow.occurrenceId, "queue-0512");
+        compare(findChild(longQueueRow, "queue-row-title").elide, Text.ElideRight);
+        compare(findChild(longQueueRow, "queue-row-title").text, longQueueRow.title);
+        const unavailableQueueRow = revealQueueRow(queueList, 998);
+        compare(unavailableQueueRow.occurrenceId, "queue-0999");
+        verify(!unavailableQueueRow.available);
+        verify(unavailableQueueRow.Accessible.name.indexOf(testShellUiContract.errorTitle) >= 0); // qmllint disable unqualified
+        compare(findChild(unavailableQueueRow, "queue-row-status").text, testShellUiContract.errorTitle); // qmllint disable unqualified
+        verify(findChild(unavailableQueueRow, "queue-row-status").visible);
+        const finalQueueRow = revealQueueRow(queueList, 999);
+        compare(finalQueueRow.occurrenceId, "queue-1000");
+        compare(finalQueueRow.Accessible.id, "queue-1000");
+        verify(finalQueueRow.available);
+        verify(!findChild(finalQueueRow, "queue-row-status").visible);
+        verify(finalQueueRow.Accessible.name.indexOf(testShellUiContract.errorTitle) < 0); // qmllint disable unqualified
+        verify(instantiatedQueueRows(queueList) < 64);
+        shell.width = 960;
+        tryCompare(shell, "width", 960);
+        tryCompare(queuePanel, "width", testShellUiContract.queuePanelMaximumWidth); // qmllint disable unqualified
+        compare(queuePanel.overlayMode, false);
+        const stateRight = stateLayer.mapToItem(shell.contentItem, stateLayer.width, 0).x;
+        const panelLeft = queuePanel.mapToItem(shell.contentItem, 0, 0).x;
+        verify(stateRight <= panelLeft + 0.5);
+        shell.width = shell.minimumWidth;
+        tryCompare(shell, "width", 720);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queuePanel.visible;
+        });
+        tryVerify(function () {
+            return queueButton.activeFocus;
+        });
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(function () {
+            return queuePanel.visible && queueList.activeFocus;
+        });
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(function () {
+            return !queuePanel.visible && queueButton.activeFocus;
+        });
         compare(findChild(shell, "elapsed-time").text, "01:24");
         compare(findChild(shell, "duration-time").text, "04:08");
         compare(progress.Accessible.role, Accessible.Slider);
@@ -192,6 +320,7 @@ TestCase {
             verify(transportButton);
             compare(transportButton.Accessible.role, Accessible.Button);
             compare(transportButton.Accessible.name, expectedNames[objectName]);
+            compare(transportButton.Accessible.id, objectName);
             verify(transportButton.width >= 44);
             verify(transportButton.height >= 44);
         }
@@ -318,6 +447,7 @@ TestCase {
         const errorSkip = findChild(shell, "error-skip");
         compare(errorSkip.Accessible.role, Accessible.Button);
         compare(errorSkip.Accessible.name, "Pular");
+        compare(errorSkip.Accessible.id, "error-skip");
         verify(errorSkip.width >= 44);
         verify(errorSkip.height >= 44);
         verifyInsideWindow(findChild(shell, "error-title"));
@@ -331,6 +461,33 @@ TestCase {
             verify(!errorControl.activeFocus);
         }
         verifyHorizontalNonOverlap(emptyTransportControls);
+        queueButton.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        tryVerify(function () {
+            return queuePanel.visible && queueList.activeFocus;
+        });
+        compare(queueList.currentIndex, 998);
+        const selectedUnavailableQueueRow = revealQueueRow(queueList, 998);
+        compare(selectedUnavailableQueueRow.occurrenceId, "queue-0999");
+        compare(selectedUnavailableQueueRow.Accessible.selected, true);
+        const errorQueueFocusOrder = [queueButton, errorSkip, queueList];
+        queueButton.forceActiveFocus(Qt.TabFocusReason);
+        for (let focusIndex = 1; focusIndex < errorQueueFocusOrder.length; ++focusIndex) {
+            keyClick(Qt.Key_Tab);
+            tryVerify(function () {
+                return errorQueueFocusOrder[focusIndex].activeFocus;
+            });
+        }
+        for (let focusIndex = errorQueueFocusOrder.length - 2; focusIndex >= 0; --focusIndex) {
+            keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+            tryVerify(function () {
+                return errorQueueFocusOrder[focusIndex].activeFocus;
+            });
+        }
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queuePanel.visible && queueButton.activeFocus;
+        });
         errorSkip.forceActiveFocus(Qt.TabFocusReason);
         tryVerify(function () {
             return errorSkip.activeFocus;

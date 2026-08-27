@@ -151,6 +151,7 @@ if(M0_QT_SHELL_SUPPORT)
             qml/NowPlayingState.qml
             qml/ErrorState.qml
             qml/TransportBar.qml
+            qml/QueuePanel.qml
     )
     target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
     target_link_libraries(m0_qt_shell_ui PRIVATE

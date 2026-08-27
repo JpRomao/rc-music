@@ -5,8 +5,10 @@ import MusicPlayer.M0
 Button {
     id: control
     required property ShellUiContract contract
+    property string controlId: objectName
     property string accessibleName: text
     Accessible.role: Accessible.Button
+    Accessible.id: controlId
     Accessible.name: accessibleName
     Accessible.focusable: enabled
     Accessible.focused: activeFocus

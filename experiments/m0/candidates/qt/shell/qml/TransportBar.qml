@@ -31,6 +31,7 @@ ColumnLayout {
         stepSize: 1000
         enabled: root.enabled && root.presenter.seekable && !root.presenter.seekPending
         Accessible.role: Accessible.Slider
+        Accessible.id: "progress"
         Accessible.name: root.contract.progressName
         Accessible.focusable: enabled
         Accessible.focused: activeFocus
@@ -149,6 +150,7 @@ ColumnLayout {
             implicitWidth: 120
             activeFocusOnTab: true
             Accessible.role: Accessible.Slider
+            Accessible.id: "volume"
             Accessible.name: root.contract.volumeName
             Accessible.focusable: enabled
             Accessible.focused: activeFocus

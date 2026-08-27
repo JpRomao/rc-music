@@ -625,6 +625,12 @@ void FixtureRepositoryTests::queueModelExposesTypedRolesInSourceOrder() {
     QCOMPARE(model.data(first, QueueListModel::AvailableRole).metaType().id(), QMetaType::Bool);
     QCOMPARE(model.data(first, QueueListModel::OrderIndexRole).toInt(), 0);
     QCOMPARE(model.data(first, QueueListModel::OccurrenceIdRole).toString(), QStringLiteral("queue-0001"));
+    for (int row = 0; row < model.rowCount(); ++row) {
+        const QModelIndex index = model.index(row, 0);
+        QCOMPARE(model.data(index, QueueListModel::OrderIndexRole).toInt(), row);
+        QCOMPARE(model.data(index, QueueListModel::OccurrenceIdRole).toString(),
+                 QStringLiteral("queue-%1").arg(row + 1, 4, 10, QLatin1Char{'0'}));
+    }
     QCOMPARE(model.data(model.index(16, 0), QueueListModel::OccurrenceIdRole).toString(), QStringLiteral("queue-0017"));
     QCOMPARE(model.data(model.index(999, 0), QueueListModel::OccurrenceIdRole).toString(),
              QStringLiteral("queue-1000"));

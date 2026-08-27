@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-26
 
-**Fase:** M0.2 em andamento; primeiro estado vazio Qt Quick tipado validado
+**Fase:** M0.2 em andamento; jornada Qt Quick vazia/tocando/erro, transporte e fila com virtualização funcional testados
 
 **Código do produto:** ainda não iniciado
 
@@ -124,10 +124,12 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD, evoluindo o estado vazio já validado para estados tocando/erro, controles persistentes, fila visual, temas, preferências e tray sem áudio real;
+1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD com navegação anterior/próxima, temas, preferências, tray, pacote e validações manuais pendentes, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
 5. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10.
+
+A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual da fila nesta fatia não foi realizada porque a sessão Computer Use foi interrompida; acessibilidade nativa/NVDA e desempenho permanecem pendentes.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

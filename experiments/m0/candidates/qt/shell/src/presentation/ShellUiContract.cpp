@@ -19,7 +19,8 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
     : QObject(parent), window_(bundle.window), layout_(bundle.layout_tokens), strings_(bundle.strings),
       palette_(bundle.themes.light) {
     if (window_.client_width_px != 960 || window_.client_height_px != 640 || window_.minimum_width_px != 720 ||
-        window_.minimum_height_px != 520 || layout_.control_target_min_px != 40 ||
+        window_.minimum_height_px != 520 || layout_.queue_panel_min_width_px != 320 ||
+        layout_.queue_panel_max_width_px != 380 || layout_.control_target_min_px != 40 ||
         layout_.control_target_preferred_px != 44 || strings_.app_name != QStringLiteral("Player de música") ||
         strings_.action_open_audio != QStringLiteral("Abrir áudio") ||
         strings_.empty_title != QStringLiteral("Abra um áudio para começar") ||
@@ -33,7 +34,8 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         strings_.skip_forward_name != QStringLiteral("Avançar {seconds} segundos") ||
         strings_.progress_name != QStringLiteral("Posição da faixa") ||
         strings_.volume_name != QStringLiteral("Volume") || strings_.action_mute != QStringLiteral("Silenciar") ||
-        strings_.action_unmute != QStringLiteral("Ativar som") ||
+        strings_.action_unmute != QStringLiteral("Ativar som") || strings_.queue_title != QStringLiteral("Fila") ||
+        strings_.not_informed != QStringLiteral("Não informado") ||
         strings_.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
         strings_.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
         strings_.action_skip != QStringLiteral("Pular") || palette_.canvas != QStringLiteral("#F6F7F9") ||
@@ -51,6 +53,8 @@ int ShellUiContract::clientWidth() const noexcept { return window_.client_width_
 int ShellUiContract::clientHeight() const noexcept { return window_.client_height_px; }
 int ShellUiContract::minimumWidth() const noexcept { return window_.minimum_width_px; }
 int ShellUiContract::minimumHeight() const noexcept { return window_.minimum_height_px; }
+int ShellUiContract::queuePanelMinimumWidth() const noexcept { return layout_.queue_panel_min_width_px; }
+int ShellUiContract::queuePanelMaximumWidth() const noexcept { return layout_.queue_panel_max_width_px; }
 int ShellUiContract::controlTargetMinimum() const noexcept { return layout_.control_target_min_px; }
 int ShellUiContract::controlTargetPreferred() const noexcept { return layout_.control_target_preferred_px; }
 int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_medium_px; }
@@ -72,6 +76,8 @@ QString ShellUiContract::progressName() const { return strings_.progress_name; }
 QString ShellUiContract::volumeName() const { return strings_.volume_name; }
 QString ShellUiContract::actionMute() const { return strings_.action_mute; }
 QString ShellUiContract::actionUnmute() const { return strings_.action_unmute; }
+QString ShellUiContract::queueTitle() const { return strings_.queue_title; }
+QString ShellUiContract::notInformed() const { return strings_.not_informed; }
 QString ShellUiContract::errorTitle() const { return strings_.error_title; }
 QString ShellUiContract::errorBody() const { return strings_.error_body; }
 QString ShellUiContract::actionSkip() const { return strings_.action_skip; }
