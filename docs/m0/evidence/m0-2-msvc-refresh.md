@@ -1,7 +1,9 @@
 # M0.2 — Preparação do refresh MSVC
 
 **Data:** 2026-08-27
-**Estado:** validadores preparados; instalação cancelada na confirmação de administrador; receita vigente ainda usa a toolchain histórica
+**Estado no checkpoint `b59a247`:** validadores preparados; primeira instalação cancelada na confirmação de administrador; receita ainda usava a toolchain histórica
+
+**Atualização posterior:** a nova tentativa explicitamente autorizada concluiu a [instalação e o build com MSVC 14.44](m0-2-msvc-installation.md), incluindo contrato e receipt reais. As seções abaixo preservam o escopo histórico desta preparação; a integração à receita de pacote continua pendente.
 
 ## Resultado e escopo
 

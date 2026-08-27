@@ -185,7 +185,7 @@ O runner executa somente `tray-lifecycle` e `error-recovery`, em ordem, e só re
 
 ### Preparação do refresh MSVC
 
-Os validadores de identidade/receipt do MSVC 14.44 estão testados, mas desativados na receita vigente. A [evidência do refresh](../../../../docs/m0/evidence/m0-2-msvc-refresh.md) registra o cancelamento da instalação na confirmação de administrador e a preservação do preflight histórico. Não há novo compilador/pacote validado ou contrato operacional com pins reais. Os testes sintéticos abaixo não comprovam instalação ou compilação com MSVC atualizado.
+Os validadores de identidade/receipt do MSVC 14.44 estão testados, mas ainda não integrados à receita vigente. Após a [primeira tentativa cancelada](../../../../docs/m0/evidence/m0-2-msvc-refresh.md), a [nova instalação autorizada](../../../../docs/m0/evidence/m0-2-msvc-installation.md) terminou com sucesso: contrato com pins reais, receipt autenticando CMake/ferramentas, build Release com MSVC 19.44.35228 e CTest 65/65. O pacote histórico não foi substituído. Os testes sintéticos abaixo não substituem essa evidência real nem aprovam o novo pacote, que ainda precisa ser gerado após integrar o refresh com TDD.
 
 ### Testes do empacotador
 

@@ -4,7 +4,7 @@
 
 ## Escopo e identidade
 
-O mantenedor autorizou retomar o controle do desktop e atualizar o MSVC para uma versão suportada. A autorização não aceita uma stack, dispensa gates, aprova riscos de segurança ou permite redistribuição. Esta tentativa usou o pacote **existente, com o compilador histórico**, apenas para diagnóstico e identificação de regressões. A [instalação de MSVC](m0-2-msvc-refresh.md) não chegou a ocorrer: foi cancelada na confirmação de administrador.
+O mantenedor autorizou retomar o controle do desktop e atualizar o MSVC para uma versão suportada. A autorização não aceita uma stack, dispensa gates, aprova riscos de segurança ou permite redistribuição. Esta tentativa usou o pacote **existente, com o compilador histórico**, apenas para diagnóstico e identificação de regressões. A [primeira tentativa de instalação de MSVC](m0-2-msvc-refresh.md) foi cancelada na confirmação de administrador. A [instalação posterior autorizada](m0-2-msvc-installation.md) terminou com sucesso, sem modificar este pacote ou reclassificar esta tentativa nativa como aprovada.
 
 | Campo | Valor observado |
 |---|---|
@@ -42,4 +42,4 @@ O processo observado antes do cleanup respondia à consulta `Responding`; isso n
 
 Esta evidência é documental e não exige teste artificial. Seu commit de fechamento e os checks documentais acompanham o incremento que a incorpora. A correção dos atalhos mantém seu próprio registro Red/Green.
 
-**Próximo passo:** os atalhos receberam correções e testes conforme a seção 5 do [registro M0](../README.md), ainda fora do pacote histórico. Concluir o refresh autenticado de MSVC após nova tentativa autorizada, gerar um novo build/pacote e repetir a jornada nativa quando a captura e a interação estiverem consistentes. `M0.2`, `CHK-SEC` e os gates manuais permanecem abertos; `M0.3` não é liberado por esta tentativa.
+**Próximo passo:** os atalhos receberam correções e testes conforme a seção 5 do [registro M0](../README.md), ainda fora do pacote histórico. O novo build já foi validado com MSVC 14.44; falta integrar seu contrato/receipt à receita, gerar e validar novo pacote e repetir a jornada nativa quando a captura e a interação estiverem consistentes. `M0.2`, `CHK-SEC` e os gates manuais permanecem abertos; `M0.3` não é liberado por esta tentativa.

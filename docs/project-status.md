@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; pacote anterior com smoke offscreen original/relocado aprovado; tentativa nativa inconclusiva e instalação MSVC cancelada; gates nativos/manuais e segurança/toolchain pendentes
+**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; MSVC 14.44 instalado e novo build Release validado, ainda fora da receita de pacote; pacote anterior com smoke offscreen original/relocado aprovado; tentativa nativa inconclusiva e gates nativos/manuais e segurança pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -128,7 +128,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. obter autorização para nova tentativa de instalação MSVC após o cancelamento, concluir o refresh/checks e as pendências de segurança; repetir os gates nativos/manuais de M0.2 com captura/interação verificáveis, sem áudio real;
+1. integrar o contrato/receipt MSVC à receita com TDD, gerar e validar novo pacote, resolver as pendências de segurança e repetir os gates nativos/manuais de M0.2 com captura/interação verificáveis, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
@@ -144,8 +144,8 @@ A seção 8 registra a política comum de bandeja e sua implementação Qt: menu
 
 A seção 9 registra a receita e os checks do pacote local, sem alterar o preflight histórico. Inventário SHA-256, imports PE e relocação com Unicode passaram; o stage tem 1.378 arquivos/82.388.347 bytes e usa o CRT externo do host. O bloqueio inicial por `RTSSHooks64.dll` foi superado após uma leitura encontrar zero processos RTSS. As duas jornadas offscreen passaram no stage de receita commitada e na cópia relocada, com saída normal, módulos amostrados somente do pacote/System32 e manifesto íntegro. Nenhuma aplicação externa, whitelist ou configuração do sistema foi alterada. Isso não equivale a validar desktop nativo, máquina limpa, licenças de redistribuição ou instalação.
 
-A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achados nas fontes FreeType/PCRE2, sem exploração do shell demonstrada, e confirma MSVC 14.43 fora de suporte. O vínculo PE/SPDX foi conferido, mas advisories, servicing e licenças não receberam aprovação global. Dependências, toolchain e contrato histórico foram preservados; `CHK-SEC` permanece em aberto.
+A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achados nas fontes FreeType/PCRE2, sem exploração do shell demonstrada, e confirma MSVC 14.43 fora de suporte no pacote histórico. O vínculo PE/SPDX foi conferido, mas advisories, servicing e licenças não receberam aprovação global. A triagem preservou dependências, toolchain e contrato histórico; a instalação posterior autorizada é registrada abaixo. `CHK-SEC` permanece em aberto.
 
-A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. A [preparação do refresh](m0/evidence/m0-2-msvc-refresh.md) foi commitada em `b59a247`, mas a instalação foi cancelada na confirmação de administrador, sem novo compilador ou pacote. Acessibilidade nativa/NVDA, segurança e desempenho permanecem pendentes.
+A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. Após a preparação `b59a247` e o primeiro cancelamento, a [nova instalação autorizada](m0/evidence/m0-2-msvc-installation.md) terminou com sucesso, sem reboot, e MSVC 19.44.35228 passou no novo build/CTest 65/65 e receipt real. Ainda falta integrar e validar o novo pacote. Acessibilidade nativa/NVDA, segurança e desempenho permanecem pendentes.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).
