@@ -1,19 +1,59 @@
 # Rebuild isolado do Qtbase para M0.2
 
-Esta pasta materializa uma identidade nova para reconstruir o Qtbase 6.11.2 com o backport FreeType `5a280ec`. Ela não modifica, reetiqueta ou substitui o SDK oficial, o contrato histórico `ac00a565…1952`, o pacote `msvc-63717e5-clean-01` ou qualquer evidência anterior.
+Esta pasta define uma identidade nova e reproduzível para reconstruir o Qtbase 6.11.2 com o backport FreeType `5a280ec`. Ela não modifica, reetiqueta ou substitui o SDK oficial, o contrato histórico `ac00a565…1952`, o pacote `msvc-63717e5-clean-01` ou qualquer evidência anterior.
 
-O contrato operacional fixa o archive Qtbase da revisão `ef55f427`, o patch de alvo único, Vulkan-Headers `sdk-1.2.182.0`, MSVC 14.44, Windows SDK 10.0.26100.0 e os bytes relevantes de CMake/Ninja/SDK. A configuração usa Qt compartilhado, `Debug;RelWithDebInfo`, bibliotecas 3rd-party embutidas, OpenGL dinâmico, Vulkan, DirectWrite/Direct2D, acessibilidade, bandeja, CET, `/MD` e informação de debug; somente `RelWithDebInfo` será instalado. LTCG, PCH, OpenSSL, PostgreSQL e o pipeline SBOM oficial ficam explicitamente fora desta receita. OpenSSL/PostgreSQL não pertencem ao closure implantado do candidato; essa limitação não equivale a paridade integral com o SDK Qtbase oficial.
+Não há instalação global nesta etapa. A receita usa os pré-requisitos já autenticados no host: MSVC 14.44, Windows SDK 10.0.26100.0, CMake 3.31.5 e Ninja 1.12.1. Os headers Vulkan são extraídos em uma árvore privada sob `out/m0`.
 
-Não há instalação global nesta etapa. Os headers Vulkan são extraídos em uma árvore privada sob `out/m0`, Schannel atende o backend TLS efetivamente implantado, e o NVDA já permanece provisionado separadamente em modo portátil.
+## Identidades do contrato
 
-## Contrato de orquestração
+- `qtbase-refresh-contract.v1.json` é histórico e somente para verificação. Seus 15.475 bytes e SHA-256 `2023dd7621015906d86d5956474e828f4e1ef74bedda52907c5e827aa378c2c6` são imutáveis. A compatibilidade do formato v1 é coberta por fixture; nenhum replay de receipt v1 real é alegado.
+- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.513 bytes e SHA-256 `e4727e9ff05d5a23b09fef5b92788bec21361b6d06371aa84a0f4eff4266561d` são autenticados pelo sidecar canônico adjacente.
+- O contrato v2 fixa tamanho e hash do orquestrador, do runner nativo e do launcher. O launcher não aceita parâmetros, overrides de path, callbacks ou hashes fornecidos pelo chamador.
 
-O módulo aceita somente JSON fechado e autenticado por SHA-256 externo. Antes de criar um `RunRoot`, autentica fontes e ferramentas, rejeita variáveis de build injetadas e exige um filho direto novo de `out/m0/qtbase-refresh-runs`. O callback roda exatamente uma vez. Receipt só é publicado por rename sem overwrite depois de resultado nativo zero e observações exatas de patch, configuração, features e 15 artefatos do closure.
+O sidecar colocalizado não substitui a âncora externa: a execução real exige receita commitada e working tree limpa. Um adversário local concorrente com a mesma conta ou privilégios administrativos está fora do threat model; o workspace deve permanecer exclusivo durante o rebuild.
+
+## Receita v2
+
+A entrada fixa combina:
+
+- archive Qtbase da revisão `ef55f427f2c8b410d34f8a7681020a3000cf6866`;
+- patch upstream de alvo único `5a280ecde6f324de0d226261036e736e0cb49a71`;
+- Vulkan-Headers `37164a5726f7e6113810f9557903a117498421cf`;
+- 36 ferramentas, headers e bibliotecas do host autenticados por tamanho e SHA-256.
+
+A preparação produz inventários físicos canônicos UTF-8 sem BOM/LF e ordem ordinal. O contrato fixa estas árvores de entrada:
+
+| Árvore | Arquivos | Bytes | SHA-256 do inventário |
+| --- | ---: | ---: | --- |
+| Qtbase original | 22.856 | 276.454.784 | `1d994ab02aaa31b0ee3d96143fb3abeef3fc41818968b48f44ac82faf13338a7` |
+| Qtbase corrigido | 22.856 | 276.459.640 | `04f8cfd9fc0cbc581be485941d178b91ef0c6f0ffb9f95d1758bc1fb6c5a04d4` |
+| Vulkan-Headers | 53 | 12.968.619 | `06d27b1e3d9d14479ec50ea583d9d42d24ad67e86dc7f9ca51c608f18a76d25e` |
+
+O runner executa, nessa ordem, configure, build `RelWithDebInfo` e install. A configuração usa Qt compartilhado, `Debug;RelWithDebInfo`, bibliotecas 3rd-party embutidas, OpenGL dinâmico, Vulkan, DirectWrite/Direct2D, acessibilidade, bandeja, CET e informação de debug. LTCG, PCH, OpenSSL, PostgreSQL e o pipeline SBOM oficial ficam explicitamente fora da receita.
+
+Sucesso requer três comandos e sete relatórios autenticados: summary, cache CMake, vínculo Ninja direto de `Qt6Gui.dll` e `qminimal.dll` a `Qt6BundledFreetype.lib`, além de headers/imports/exports obtidos por `dumpbin`. O orquestrador revalida todas as folhas e árvores físicas, publica atomicamente `qtbase-refresh-manifest.v2.json` e somente então `qtbase-refresh-receipt.v2.json`, ambos sem overwrite.
+
+## Checks e execução
+
+Execute os checks rápidos antes do rebuild:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\tests\QtBaseRefresh.Tests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\tests\QtBaseRefreshNative.Tests.ps1
 ```
 
-SHA-256 do contrato operacional: `2023dd7621015906d86d5956474e828f4e1ef74bedda52907c5e827aa378c2c6`.
+Com a receita commitada e o working tree limpo, o launcher de produção inicia um `RunRoot` novo e aleatório sob `out/m0/qtbase-refresh-runs`:
 
-O runner nativo, os inventários de árvore/install, a comparação de exports/imports e o pacote corrigido são incrementos posteriores. Até eles passarem, este contrato não demonstra um `Qt6Gui.dll` corrigido, não encerra `CHK-SEC`/M0.2 e não autoriza distribuição nem escolha de stack.
+```powershell
+pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\Invoke-M0QtBaseRefresh.ps1
+```
+
+O rebuild pode levar horas. O resultado só é aceito após verificar em outro processo o hash externo do receipt, o manifesto e todas as evidências físicas. Falha, timeout, drift, reparse point, hardlink, ADS, path fora da raiz, arquivo preexistente ou divergência semântica impedem a publicação final.
+
+## Limites da evidência
+
+O receipt v2 comprova a receita autenticada, execução sequencial com exit zero, configuração observada, árvores, artefatos PE x64 e nomes estruturais de imports/exports. O verificador não carrega DLLs não confiáveis e, isoladamente, não prova carregabilidade em runtime nem identidade funcional completa do Qt. Essas propriedades pertencem aos smokes do novo pacote em processo isolado, original e relocado.
+
+Qtbase corrigido também não é, por si só, o pacote do shell: QML/Quick/Svg e ferramentas suplementares ainda precisam ser combinados com o SDK oficial autenticado sem permitir fallback ou overwrite dos binários base. O delta entre SDK 10.0.26100.0 desta receita e o SDK 10.0.22621.0 historicamente fixado pelo shell deve ser resolvido explicitamente nessa integração.
+
+Esta receita não encerra `CHK-SEC`, M0.2, licenças, notices, redistribuição ou adoção definitiva da stack. Ela também não produz SBOM oficial. Validação desktop nativa, NVDA, alto contraste/DPI reais, bandeja/Explorer, foco e encerramento permanecem pausados até a interação estar disponível.

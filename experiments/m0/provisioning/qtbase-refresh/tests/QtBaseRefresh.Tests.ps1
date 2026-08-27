@@ -1216,6 +1216,53 @@ Test-Case 'the historical schema v1 contract and sidecar remain byte-for-byte im
         'Historical v1 sidecar bytes drifted.'
 }
 
+Test-Case 'the production schema v2 contract and sidecar authenticate the committed recipe' {
+    $productionContractPath = Join-Path $PSScriptRoot '../qtbase-refresh-contract.v2.json'
+    $productionSidecarPath = Join-Path $PSScriptRoot '../qtbase-refresh-contract.v2.json.sha256'
+    Assert-True ([IO.File]::Exists($productionContractPath)) 'Production schema-v2 contract is missing.'
+    Assert-True ([IO.File]::Exists($productionSidecarPath)) 'Production schema-v2 sidecar is missing.'
+
+    $contractBytes = [IO.File]::ReadAllBytes($productionContractPath)
+    $sidecarBytes = [IO.File]::ReadAllBytes($productionSidecarPath)
+    foreach ($binding in @(
+            @('contract', $contractBytes),
+            @('sidecar', $sidecarBytes)
+        )) {
+        $bytes = [byte[]]$binding[1]
+        Assert-True ($bytes.Length -gt 0) "Production schema-v2 $($binding[0]) is empty."
+        Assert-True (-not ($bytes.Length -ge 3 -and $bytes[0] -eq 0xef -and $bytes[1] -eq 0xbb -and $bytes[2] -eq 0xbf)) `
+            "Production schema-v2 $($binding[0]) contains a UTF-8 BOM."
+        try { $null = [Text.UTF8Encoding]::new($false, $true).GetString($bytes) }
+        catch { throw "Production schema-v2 $($binding[0]) is not strict UTF-8." }
+    }
+
+    $sidecarText = [Text.UTF8Encoding]::new($false, $true).GetString($sidecarBytes)
+    $sidecarMatch = [regex]::Match(
+        $sidecarText,
+        '\A(?<sha256>[0-9a-f]{64}) \*qtbase-refresh-contract\.v2\.json\n\z',
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+    Assert-True $sidecarMatch.Success 'Production schema-v2 sidecar is not canonical.'
+    $expectedContractSha256 = $sidecarMatch.Groups['sha256'].Value
+    Assert-Equal (Get-TestSha256 $productionContractPath) $expectedContractSha256 `
+        'Production schema-v2 sidecar does not authenticate the contract bytes.'
+
+    $accepted = Assert-M0QtBaseRefreshContract `
+        -LiteralPath $productionContractPath `
+        -ExpectedSha256 $expectedContractSha256
+    Assert-Equal $accepted.schema_version ([long]2)
+    Assert-Equal $accepted.refresh_id 'm0.2-qtbase-freetype-backport-v2'
+    Assert-Equal $accepted.isolation.receipt_relative_path 'evidence/qtbase-refresh-receipt.v2.json'
+    foreach ($spec in @($accepted.recipe.files)) {
+        $leaf = Join-Path $repositoryRoot $spec.relative_path
+        Assert-True ([IO.File]::Exists($leaf)) "Production recipe leaf '$($spec.id)' is missing."
+        Assert-Equal ([long](Get-Item -LiteralPath $leaf).Length) ([long]$spec.size_bytes) `
+            "Production recipe leaf '$($spec.id)' size drifted."
+        Assert-Equal (Get-TestSha256 $leaf) $spec.sha256 `
+            "Production recipe leaf '$($spec.id)' hash drifted."
+    }
+}
+
 Test-Case 'contract v2 externally pins the closed production recipe and physical tree layout' {
     $fixture = ConvertTo-QtBaseRefreshV2Fixture (New-QtBaseRefreshFixture)
     $accepted = Assert-M0QtBaseRefreshContract `

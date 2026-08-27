@@ -1,0 +1,585 @@
+{
+  "schema_version": 2,
+  "refresh_id": "m0.2-qtbase-freetype-backport-v2",
+  "product": {
+    "qt_version": "6.11.2",
+    "architecture": "x86_64",
+    "compiler_abi": "msvc2022_64"
+  },
+  "recipe": {
+    "files": [
+      {
+        "id": "orchestrator",
+        "relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefresh.psm1",
+        "size_bytes": 149089,
+        "sha256": "d2c748a5bf60c03c1e762a69d689659b8009be952781697264a14cf59f2991da"
+      },
+      {
+        "id": "runner",
+        "relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefreshNative.psm1",
+        "size_bytes": 109314,
+        "sha256": "0df5c6df704d8a9db69d6d117868ecf0ad42c5c06f8ca9c41c6b0111a83c60fb"
+      },
+      {
+        "id": "entrypoint",
+        "relative_path": "experiments/m0/provisioning/qtbase-refresh/Invoke-M0QtBaseRefresh.ps1",
+        "size_bytes": 11069,
+        "sha256": "7950813052fd3c1009cce66bc42be666ab7e60647d21699713e2b1ba3698e57c"
+      }
+    ],
+    "runner_export": "Invoke-M0QtBaseRefreshNative"
+  },
+  "inputs": {
+    "qtbase_source": {
+      "relative_path": "out/m0/ft50811-01/downloads/qtbase-ef55f427f2c8b410d34f8a7681020a3000cf6866.tar.gz",
+      "size_bytes": 67782484,
+      "sha256": "12b3a9ba00613180caea4da77a1ae6fc1ca054b8822b316ba3a05fb4414fba56",
+      "commit_sha": "ef55f427f2c8b410d34f8a7681020a3000cf6866"
+    },
+    "freetype_patch": {
+      "relative_path": "experiments/m0/security/freetype-regression/5a280ec.patch",
+      "size_bytes": 1705,
+      "sha256": "fae1c96cd94b9ed5aafc7424f4b8894f2e235b4869a72b3cdbb684dedcea9d1a",
+      "target_relative_path": "src/3rdparty/freetype/src/truetype/ttgxvar.c",
+      "target_before_sha256": "b5ca576f480437e59f84a31ba2b569c7aadd31871f608034f6ea576340b88e10",
+      "target_after_sha256": "9126fee413fabeb2f9f78b60548065dda2a8365ef95da43cb2a0edc55813e346"
+    },
+    "vulkan_headers": {
+      "relative_path": "out/m0/ft50811-01/downloads/Vulkan-Headers-37164a5726f7e6113810f9557903a117498421cf.tar.gz",
+      "size_bytes": 1163000,
+      "sha256": "8cdf5ba673abeee23e781c5d76697bd2abecb2e1e25ecb8928825f539f79b1b3",
+      "commit_sha": "37164a5726f7e6113810f9557903a117498421cf",
+      "header_relative_path": "include/vulkan/vulkan_core.h",
+      "header_sha256": "1c688d7628c679816277e2186e7832c2d6e3eace0de20ff5e1c46ae88473cc83",
+      "license_relative_path": "LICENSE.txt",
+      "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  },
+  "tools": [
+    {
+      "id": "cmd",
+      "relative_path": "Windows/System32/cmd.exe",
+      "size_bytes": 344064,
+      "sha256": "8dd1ebb0b969370c70a5ee7f7ee347949aa7046aa5e1a33fcd7b1e9415b21fc3",
+      "version": "10.0.26100.8875"
+    },
+    {
+      "id": "vsdevcmd",
+      "relative_path": "Program Files/Microsoft Visual Studio/18/BuildTools/Common7/Tools/VsDevCmd.bat",
+      "size_bytes": 11526,
+      "sha256": "a7815e85d636828e5cf70fe4235b11fcb41750896a4d2d60756b43bacaf4f0b2",
+      "version": "18.9.2"
+    },
+    {
+      "id": "cmake",
+      "relative_path": "Program Files/CMake/bin/cmake.exe",
+      "size_bytes": 12079056,
+      "sha256": "8893e3f7647e2d1e0b18af84e53f136a976cefbfd2c15aaddc4b934936a3637f",
+      "version": "3.31.5"
+    },
+    {
+      "id": "cmcldeps",
+      "relative_path": "Program Files/CMake/bin/cmcldeps.exe",
+      "size_bytes": 1797072,
+      "sha256": "ecc0342d88282fb61461578319d625994795227c7a2be0d7c764d960683a3219",
+      "version": "3.31.5"
+    },
+    {
+      "id": "ninja",
+      "relative_path": "Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe",
+      "size_bytes": 3466696,
+      "sha256": "5020138b3757035df9dca9a2243624d5810ffa6ae24444bd95f752cbd1b89123",
+      "version": "1.12.1"
+    },
+    {
+      "id": "cl",
+      "relative_path": "Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
+      "size_bytes": 677736,
+      "sha256": "88c8344236a27a6e727e0a8edc49aaa2690bdc7a9464b9d18cc7abe70a9f1c0d",
+      "version": "19.44.35228.0"
+    },
+    {
+      "id": "link",
+      "relative_path": "Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.exe",
+      "size_bytes": 3252576,
+      "sha256": "ca11e6c45debd34bf652dfe984c5360a531a005ed78bf72852330c9c2590cf0d",
+      "version": "14.44.35228.0"
+    },
+    {
+      "id": "lib",
+      "relative_path": "Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lib.exe",
+      "size_bytes": 23376,
+      "sha256": "3d694c782f93e998fec5db0c2df78153565da23a028ee4618561fa0c33408489",
+      "version": "14.44.35228.0"
+    },
+    {
+      "id": "dumpbin",
+      "relative_path": "Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/dumpbin.exe",
+      "size_bytes": 23416,
+      "sha256": "12a1cd87238bd66dfdb788b4fcdcb91ce4b3f81236aab12a7a29e5ae1d85af50",
+      "version": "14.44.35228.0"
+    },
+    {
+      "id": "rc",
+      "relative_path": "Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe",
+      "size_bytes": 55640,
+      "sha256": "43da1503c262c30894c851589bf0155f8365d77e63a5f7bc13982320e3a6b42d",
+      "version": "10.0.26100.7705"
+    },
+    {
+      "id": "mt",
+      "relative_path": "Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe",
+      "size_bytes": 1972584,
+      "sha256": "1b8a272d586a9ab53ac2ccd457a88bd0210d7d7ac3daea5b34743cc2afe73b26",
+      "version": "10.0.26100.7705"
+    },
+    {
+      "id": "midl",
+      "relative_path": "Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/midl.exe",
+      "size_bytes": 153968,
+      "sha256": "53ccbcbc2ff14b2d08d029ad07b3d1aa4ff3b103f712199a15248a6cccf6d2a3",
+      "version": "10.0.26100.7705"
+    },
+    {
+      "id": "windows-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/windows.h",
+      "size_bytes": 7511,
+      "sha256": "b337d661d03a4abefb7b86a2742ce1ad5d19b57cd8b858bd13e7bbcc1dbeeaaa",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dwrite-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/dwrite.h",
+      "size_bytes": 220303,
+      "sha256": "e991bb9037949bb1c03bdf34eee04a8dd8c0578d2504d41913a711ce77c697de",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dwrite-2-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/dwrite_2.h",
+      "size_bytes": 41960,
+      "sha256": "64d2ff91eebce0ba23cbb7f8eaf3d3df5babcabbee408deb98ce419c3bc49353",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dwrite-3-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/dwrite_3.h",
+      "size_bytes": 199659,
+      "sha256": "1a033492b5bb70e9cc273a948cb76a5ac310d2b205fda58136d13776501c7ad6",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "d2d1-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/d2d1.h",
+      "size_bytes": 116171,
+      "sha256": "fcf7f870acf11e1509b4cec31d433602502b77d0a236e417304948a1ce7486a5",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "d2d1-1-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/d2d1_1.h",
+      "size_bytes": 78228,
+      "sha256": "b4f0d073563cd8f46673ca3091967a57fcd9b255fc564e6274c3f1bb66d1db7b",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "d3d11-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/d3d11.h",
+      "size_bytes": 581470,
+      "sha256": "65964c91b641d5fc93d68796183318a9ebe493e41502f61fc26fbbf34e9d3ead",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dxgi1-6-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared/dxgi1_6.h",
+      "size_bytes": 61426,
+      "sha256": "720f9f871e82118e1a33997558ec1ccd7fbd00e27cfce13a0b803448f5f99c9f",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "sdkddkver-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared/sdkddkver.h",
+      "size_bytes": 11565,
+      "sha256": "2472140e0a4d56595743bb74002a51aee9b58667bd178fc43742e19debfeb774",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "sal-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared/sal.h",
+      "size_bytes": 214011,
+      "sha256": "a2b3ee38bc3b998d7162a38d1aa1c8d19eb3f72eea64eb5ee68fb6497b65e7f1",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "corecrt-h",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt/corecrt.h",
+      "size_bytes": 127273,
+      "sha256": "822e503b81dd7b3d7df93ca22fced3672a5154484fd42054d5941e619bcf6cbc",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "ucrt-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64/ucrt.lib",
+      "size_bytes": 285588,
+      "sha256": "7ef4eac926bf597d2f243f16cdfed7e0db22cb3ca34a1d7e088a84c994a03d66",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "kernel32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/kernel32.lib",
+      "size_bytes": 311908,
+      "sha256": "341c7d56125a03b458e4d5093e4c79b33123ccfdfd610fe236937b8e6f3134bb",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "user32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/user32.lib",
+      "size_bytes": 167864,
+      "sha256": "f45759349ad08b848bdd4eee39cd9b428b2a7ae63a09889c09a197fe7b01421d",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "gdi32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/gdi32.lib",
+      "size_bytes": 138622,
+      "sha256": "f530829c5e91cacd906c9e7363ca873bb8eaeb50114cc6a74a8a04c49bb4ec40",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dwrite-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/dwrite.lib",
+      "size_bytes": 1746,
+      "sha256": "168a644673176f873ff228e4050e48057838d685dd9a60ec24c7238b2be4161b",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "d2d1-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/d2d1.lib",
+      "size_bytes": 4396,
+      "sha256": "f85ef040051beaf65cdf71d20d1991721f6f2be1f7d4857851000c752795d3b2",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "d3d11-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/d3d11.lib",
+      "size_bytes": 3834,
+      "sha256": "043f509f20d5dc6269ddd81e8741b4ff075e2fc7983f5477b6cc618577b1cd8d",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "dxgi-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/dxgi.lib",
+      "size_bytes": 5522,
+      "sha256": "181cf09753c8db1ec62aaacc91574f1c6b54ae13526d1e77e83fd051c756af7f",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "windowscodecs-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/windowscodecs.lib",
+      "size_bytes": 391476,
+      "sha256": "c294218e968fdc2f2fd4e990b85d5ab40d0f35e9be6f4c06086db96bd4dcfd00",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "advapi32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/advapi32.lib",
+      "size_bytes": 178306,
+      "sha256": "a0ea53377e6de11c5fdc07e72af11d22d8fa613cecc6ccb1b6de43490392eadc",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "ole32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/ole32.lib",
+      "size_bytes": 118864,
+      "sha256": "f7b6d1e4a2f2a16c6a78ed821c8aa7f0b488112bb4da778285086e4588ca197a",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "shell32-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/shell32.lib",
+      "size_bytes": 271918,
+      "sha256": "2a22142874964268432783a85cef5e3f5c18ed050ab77e637bb6bab30bb73ab6",
+      "version": "sdk-10.0.26100.7705"
+    },
+    {
+      "id": "uuid-lib",
+      "relative_path": "Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64/uuid.lib",
+      "size_bytes": 8936424,
+      "sha256": "d077ffb106503e057428dc7bb4c5daac019c269ffc714edb18ca028723cc840a",
+      "version": "sdk-10.0.26100.7705"
+    }
+  ],
+  "environment": {
+    "forbidden_variables": [
+      "CL",
+      "_CL_",
+      "LINK",
+      "_LINK_",
+      "CFLAGS",
+      "CXXFLAGS",
+      "LDFLAGS",
+      "CMAKE_PREFIX_PATH",
+      "CMAKE_TOOLCHAIN_FILE",
+      "QMAKESPEC",
+      "QT_HOST_PATH",
+      "VULKAN_SDK",
+      "PYTHONHOME",
+      "PYTHONPATH",
+      "PERL5LIB"
+    ]
+  },
+  "isolation": {
+    "run_parent_relative_path": "out/m0/qtbase-refresh-runs",
+    "require_new_direct_child": true,
+    "receipt_relative_path": "evidence/qtbase-refresh-receipt.v2.json"
+  },
+  "trees": [
+    {
+      "id": "qtbase-before",
+      "root_relative_path": "source/qtbase-before",
+      "inventory_relative_path": "evidence/inventories/qtbase-before.tsv",
+      "expected": {
+        "file_count": 22856,
+        "total_size_bytes": 276454784,
+        "inventory_sha256": "1d994ab02aaa31b0ee3d96143fb3abeef3fc41818968b48f44ac82faf13338a7"
+      }
+    },
+    {
+      "id": "qtbase-patched",
+      "root_relative_path": "source/qtbase-patched",
+      "inventory_relative_path": "evidence/inventories/qtbase-patched.tsv",
+      "expected": {
+        "file_count": 22856,
+        "total_size_bytes": 276459640,
+        "inventory_sha256": "04f8cfd9fc0cbc581be485941d178b91ef0c6f0ffb9f95d1758bc1fb6c5a04d4"
+      }
+    },
+    {
+      "id": "vulkan",
+      "root_relative_path": "source/vulkan",
+      "inventory_relative_path": "evidence/inventories/vulkan.tsv",
+      "expected": {
+        "file_count": 53,
+        "total_size_bytes": 12968619,
+        "inventory_sha256": "06d27b1e3d9d14479ec50ea583d9d42d24ad67e86dc7f9ca51c608f18a76d25e"
+      }
+    },
+    {
+      "id": "install",
+      "root_relative_path": "install",
+      "inventory_relative_path": "evidence/inventories/install.tsv",
+      "expected": null
+    }
+  ],
+  "commands": [
+    {
+      "id": "configure",
+      "tool_id": "cmd",
+      "script_relative_path": "source/qtbase-patched/configure.bat",
+      "arguments_binding": "configuration.arguments",
+      "working_directory_relative_path": "build",
+      "stdout_relative_path": "evidence/logs/configure.stdout.log",
+      "stderr_relative_path": "evidence/logs/configure.stderr.log"
+    },
+    {
+      "id": "build",
+      "tool_id": "cmake",
+      "script_relative_path": null,
+      "arguments_binding": "configuration.build_arguments",
+      "working_directory_relative_path": "build",
+      "stdout_relative_path": "evidence/logs/build.stdout.log",
+      "stderr_relative_path": "evidence/logs/build.stderr.log"
+    },
+    {
+      "id": "install",
+      "tool_id": "cmake",
+      "script_relative_path": null,
+      "arguments_binding": "configuration.install_arguments",
+      "working_directory_relative_path": "build",
+      "stdout_relative_path": "evidence/logs/install.stdout.log",
+      "stderr_relative_path": "evidence/logs/install.stderr.log"
+    }
+  ],
+  "reports": [
+    {
+      "id": "configure-summary",
+      "producer_id": "runner",
+      "arguments": [
+        "copy-verbatim"
+      ],
+      "subject_relative_path": "build/config.summary",
+      "relative_path": "evidence/reports/configure-summary.txt"
+    },
+    {
+      "id": "cmake-cache",
+      "producer_id": "runner",
+      "arguments": [
+        "copy-verbatim"
+      ],
+      "subject_relative_path": "build/CMakeCache.txt",
+      "relative_path": "evidence/reports/cmake-cache.txt"
+    },
+    {
+      "id": "qtgui-freetype-dependency",
+      "producer_id": "runner",
+      "arguments": [
+        "analyze-freetype-link-graph"
+      ],
+      "subject_relative_path": "build/CMakeFiles/impl-RelWithDebInfo.ninja",
+      "relative_path": "evidence/reports/qtgui-freetype-dependency.txt"
+    },
+    {
+      "id": "qt6gui-headers",
+      "producer_id": "dumpbin",
+      "arguments": [
+        "/nologo",
+        "/headers"
+      ],
+      "subject_relative_path": "install/bin/Qt6Gui.dll",
+      "relative_path": "evidence/reports/qt6gui-headers.txt"
+    },
+    {
+      "id": "qt6gui-imports",
+      "producer_id": "dumpbin",
+      "arguments": [
+        "/nologo",
+        "/imports"
+      ],
+      "subject_relative_path": "install/bin/Qt6Gui.dll",
+      "relative_path": "evidence/reports/qt6gui-imports.txt"
+    },
+    {
+      "id": "qt6gui-exports",
+      "producer_id": "dumpbin",
+      "arguments": [
+        "/nologo",
+        "/exports"
+      ],
+      "subject_relative_path": "install/bin/Qt6Gui.dll",
+      "relative_path": "evidence/reports/qt6gui-exports.txt"
+    },
+    {
+      "id": "qminimal-imports",
+      "producer_id": "dumpbin",
+      "arguments": [
+        "/nologo",
+        "/imports"
+      ],
+      "subject_relative_path": "install/plugins/platforms/qminimal.dll",
+      "relative_path": "evidence/reports/qminimal-imports.txt"
+    }
+  ],
+  "configuration": {
+    "generator": "Ninja Multi-Config",
+    "arguments": [
+      "-prefix",
+      "${INSTALL_ROOT}",
+      "-shared",
+      "-debug-and-release",
+      "-force-debug-info",
+      "-headersclean",
+      "-nomake",
+      "examples",
+      "-nomake",
+      "tests",
+      "-no-ltcg",
+      "-intelcet",
+      "-qt-zlib",
+      "-qt-pcre",
+      "-qt-freetype",
+      "-qt-harfbuzz",
+      "-qt-libpng",
+      "-qt-libjpeg",
+      "-opengl",
+      "dynamic",
+      "-vulkan",
+      "-no-openssl",
+      "-schannel",
+      "-no-sql-psql",
+      "-cmake-generator",
+      "Ninja Multi-Config",
+      "--",
+      "-DCMAKE_SYSTEM_VERSION=10.0.26100.0",
+      "-DVulkan_INCLUDE_DIR=${VULKAN_INCLUDE}",
+      "-DFEATURE_vulkan=ON",
+      "-DFEATURE_directwrite=ON",
+      "-DFEATURE_directwrite3=ON",
+      "-DFEATURE_directwritecolrv1=ON",
+      "-DFEATURE_direct2d=ON",
+      "-DFEATURE_direct2d1_1=ON",
+      "-DFEATURE_accessibility=ON",
+      "-DFEATURE_systemtrayicon=ON",
+      "-DFEATURE_schannel=ON",
+      "-DFEATURE_openssl=OFF",
+      "-DFEATURE_intelcet=ON",
+      "-DFEATURE_msvc_obj_debug_info=ON",
+      "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF",
+      "-DBUILD_WITH_PCH=OFF",
+      "-DQT_BUILD_TESTS=OFF",
+      "-DQT_INSTALL_CONFIG_INFO_FILES=ON",
+      "-DQT_GENERATE_SBOM=OFF",
+      "-DQT_GENERATE_SOURCE_SBOM=OFF",
+      "-DCMAKE_MAKE_PROGRAM=${NINJA}",
+      "-DCMAKE_C_COMPILER=${CL}",
+      "-DCMAKE_CXX_COMPILER=${CL}",
+      "-DCMAKE_RC_COMPILER=${RC}",
+      "-DCMAKE_MT=${MT}"
+    ],
+    "build_arguments": [
+      "--build",
+      "${BUILD_ROOT}",
+      "--config",
+      "RelWithDebInfo",
+      "--parallel",
+      "8"
+    ],
+    "install_arguments": [
+      "--install",
+      "${BUILD_ROOT}",
+      "--config",
+      "RelWithDebInfo"
+    ],
+    "installed_configuration": "RelWithDebInfo",
+    "expected_artifacts": [
+      "bin/Qt6Core.dll",
+      "bin/Qt6Gui.dll",
+      "bin/Qt6Network.dll",
+      "bin/Qt6OpenGL.dll",
+      "bin/Qt6Widgets.dll",
+      "plugins/generic/qtuiotouchplugin.dll",
+      "plugins/imageformats/qgif.dll",
+      "plugins/imageformats/qico.dll",
+      "plugins/imageformats/qjpeg.dll",
+      "plugins/networkinformation/qnetworklistmanager.dll",
+      "plugins/platforms/qoffscreen.dll",
+      "plugins/platforms/qwindows.dll",
+      "plugins/styles/qmodernwindowsstyle.dll",
+      "plugins/tls/qcertonlybackend.dll",
+      "plugins/tls/qschannelbackend.dll"
+    ],
+    "expected_features": {
+      "shared": true,
+      "debug_and_release": true,
+      "force_debug_info": true,
+      "bundled_freetype": true,
+      "bundled_harfbuzz": true,
+      "bundled_pcre2": true,
+      "bundled_zlib": true,
+      "bundled_png": true,
+      "bundled_jpeg": true,
+      "opengl": "dynamic",
+      "vulkan": true,
+      "directwrite": true,
+      "directwrite3": true,
+      "directwrite_colrv1": true,
+      "direct2d": true,
+      "direct2d1_1": true,
+      "accessibility": true,
+      "systemtrayicon": true,
+      "openssl_runtime": false,
+      "schannel": true,
+      "intelcet": true,
+      "msvc_obj_debug_info": true
+    }
+  }
+}
