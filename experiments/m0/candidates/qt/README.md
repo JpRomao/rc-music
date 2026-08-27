@@ -183,12 +183,16 @@ $packageSmoke | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path (
 
 O runner executa somente `tray-lifecycle` e `error-recovery`, em ordem, e só retorna aprovação se ambas terminarem com código 0, output vazio e captura dos módulos requeridos antes de 500 ms. O manifesto é validado antes de iniciar e novamente depois de ambas as jornadas. O timeout de cada jornada é 5 s; kill serve somente ao cleanup de falha. Snapshots são amostras, não um trace completo do loader. Guard local de erro impede diálogos de loader/crash na criação do processo e restaura as flags do caller. Isso não substitui bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux, máquina limpa ou performance.
 
+### Preparação do refresh MSVC
+
+Os validadores de identidade/receipt do MSVC 14.44 estão testados, mas desativados na receita vigente. A [evidência do refresh](../../../../docs/m0/evidence/m0-2-msvc-refresh.md) registra o cancelamento da instalação na confirmação de administrador e a preservação do preflight histórico. Não há novo compilador/pacote validado ou contrato operacional com pins reais. Os testes sintéticos abaixo não comprovam instalação ou compilação com MSVC atualizado.
+
 ### Testes do empacotador
 
 Os testes usam somente fixtures sintéticas, sem áudio, rede ou execução do player:
 
 ```powershell
-foreach ($testFile in @('Builder.Tests.ps1', 'Manifest.Tests.ps1', 'Smoke.Tests.ps1')) {
+foreach ($testFile in @('Builder.Tests.ps1', 'ToolchainRefresh.Tests.ps1', 'Manifest.Tests.ps1', 'Smoke.Tests.ps1')) {
     & pwsh -NoLogo -NoProfile -File (Join-Path $packageScripts "tests/$testFile")
     if ($LASTEXITCODE -ne 0) { throw "Falha nos testes: $testFile" }
 }
