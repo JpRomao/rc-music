@@ -206,10 +206,14 @@ void PlayerController::setQueueEndBehavior(const QueueEndBehavior behavior) {
 
 CloseDisposition PlayerController::requestClose() {
     if (preferences_.close_behavior == CloseBehavior::Exit) {
-        platform_.requestExit();
+        requestExit();
         return CloseDisposition::ExitRequested;
     }
 
+    return requestHide();
+}
+
+CloseDisposition PlayerController::requestHide() {
     if (platform_.trayAvailable()) {
         platform_.hideWindow();
         return CloseDisposition::HiddenToTray;
@@ -218,6 +222,8 @@ CloseDisposition PlayerController::requestClose() {
     platform_.minimizeWindow();
     return CloseDisposition::Minimized;
 }
+
+void PlayerController::requestExit() { platform_.requestExit(); }
 
 void PlayerController::requestRestore() { platform_.showAndActivateWindow(); }
 

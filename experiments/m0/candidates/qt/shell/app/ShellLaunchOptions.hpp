@@ -9,6 +9,7 @@ enum class InitialShellScenario { Empty, Unavailable };
 struct ShellLaunchOptions final {
     InitialShellScenario initial_scenario{InitialShellScenario::Empty};
     bool smoke_error_recovery{false};
+    bool smoke_tray_lifecycle{false};
 };
 
 [[nodiscard]] ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments);

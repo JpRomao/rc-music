@@ -15,6 +15,7 @@ class ShellLaunchOptionsTests final : public QObject {
         const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
         QVERIFY(!options.smoke_error_recovery);
+        QVERIFY(!options.smoke_tray_lifecycle);
     }
 
     void acceptsTheClosedUnavailableScenario() {
@@ -22,20 +23,57 @@ class ShellLaunchOptionsTests final : public QObject {
             parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Unavailable);
         QVERIFY(!options.smoke_error_recovery);
+        QVERIFY(!options.smoke_tray_lifecycle);
     }
 
     void acceptsTheExplicitEmptyScenario() {
         const auto options =
             parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=empty")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+        QVERIFY(!options.smoke_error_recovery);
+        QVERIFY(!options.smoke_tray_lifecycle);
+    }
+
+    void acceptsTheClosedErrorRecoverySmoke_data() {
+        QTest::addColumn<QStringList>("arguments");
+        QTest::newRow("scenario before smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
+                           QStringLiteral("--m0-smoke=error-recovery")};
+        QTest::newRow("scenario after smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=error-recovery"),
+                           QStringLiteral("--m0-scenario=unavailable")};
     }
 
     void acceptsTheClosedErrorRecoverySmoke() {
-        const auto options =
-            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
-                                     QStringLiteral("--m0-smoke=error-recovery")});
+        QFETCH(QStringList, arguments);
+        const auto options = parseShellLaunchOptions(arguments);
         QCOMPARE(options.initial_scenario, InitialShellScenario::Unavailable);
         QVERIFY(options.smoke_error_recovery);
+        QVERIFY(!options.smoke_tray_lifecycle);
+    }
+
+    void acceptsTheClosedTrayLifecycleSmoke_data() {
+        QTest::addColumn<QStringList>("arguments");
+        QTest::newRow("implicit empty scenario")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("explicit empty before smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=empty"),
+                           QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("explicit empty after smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
+                           QStringLiteral("--m0-scenario=empty")};
+    }
+
+    void acceptsTheClosedTrayLifecycleSmoke() {
+        QFETCH(QStringList, arguments);
+        try {
+            const auto options = parseShellLaunchOptions(arguments);
+            QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+            QVERIFY(!options.smoke_error_recovery);
+            QVERIFY(options.smoke_tray_lifecycle);
+        } catch (const std::invalid_argument& error) {
+            QFAIL(error.what());
+        }
     }
 
     void rejectsMalformedM0Options_data() {
@@ -49,11 +87,33 @@ class ShellLaunchOptionsTests final : public QObject {
                            QStringLiteral("--m0-scenario=unavailable")};
         QTest::newRow("unknown smoke") << QStringList{QStringLiteral("m0_qt_shell"),
                                                       QStringLiteral("--m0-smoke=other")};
+        QTest::newRow("missing smoke") << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=")};
         QTest::newRow("smoke without unavailable scenario")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=error-recovery")};
-        QTest::newRow("duplicate smoke") << QStringList{QStringLiteral("m0_qt_shell"),
-                                                        QStringLiteral("--m0-smoke=error-recovery"),
-                                                        QStringLiteral("--m0-smoke=error-recovery")};
+        QTest::newRow("error recovery with empty before smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=empty"),
+                           QStringLiteral("--m0-smoke=error-recovery")};
+        QTest::newRow("error recovery with empty after smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=error-recovery"),
+                           QStringLiteral("--m0-scenario=empty")};
+        QTest::newRow("tray lifecycle with unavailable before smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
+                           QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("tray lifecycle with unavailable after smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
+                           QStringLiteral("--m0-scenario=unavailable")};
+        QTest::newRow("duplicate smoke") << QStringList{
+            QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
+            QStringLiteral("--m0-smoke=error-recovery"), QStringLiteral("--m0-smoke=error-recovery")};
+        QTest::newRow("duplicate tray lifecycle smoke")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
+                           QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("error recovery and tray lifecycle smokes")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
+                           QStringLiteral("--m0-smoke=error-recovery"), QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("tray lifecycle and error recovery smokes")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
+                           QStringLiteral("--m0-smoke=error-recovery")};
     }
 
     void rejectsMalformedM0Options() {

@@ -32,16 +32,24 @@ ApplicationWindow {
     signal openAudioRequested
     property bool queueOpen: false
 
+    onClosing: close => {
+        close.accepted = presenter.exiting;
+        if (!close.accepted)
+            presenter.requestClose();
+    }
+
     function setQueueOpen(open) {
         if (open && !presenter.queueLoaded)
             return;
         queueOpen = open;
-        if (open)
-            Qt.callLater(queuePanel.focusCurrent);
-        else
-            Qt.callLater(function () {
+        Qt.callLater(function () {
+            if (windowNotice.visible || preferencesPanel.visible || window.presenter.exiting)
+                return;
+            if (window.queueOpen)
+                queuePanel.focusCurrent();
+            else
                 queueButton.forceActiveFocus(Qt.TabFocusReason);
-            });
+        });
     }
     function toggleQueue() {
         setQueueOpen(!queueOpen);
@@ -152,31 +160,49 @@ ApplicationWindow {
         y: mainLayout.y + contentArea.y
         contract: window.uiContract
         presenter: window.presenter
-        onClosed: preferencesButton.forceActiveFocus(Qt.TabFocusReason)
+        onClosed: {
+            if (!window.presenter.exiting) {
+                if (windowNotice.visible)
+                    windowNotice.focusFirst();
+                else
+                    preferencesButton.forceActiveFocus(Qt.TabFocusReason);
+            }
+        }
+    }
+    WindowNotice {
+        id: windowNotice
+        parent: window.contentItem
+        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 560)
+        x: (window.width - width) / 2
+        y: (window.height - height) / 2
+        contract: window.uiContract
+        presenter: window.presenter
+        fallbackFocusItem: preferencesButton
     }
 
     Shortcut {
         sequence: "Ctrl+L"
-        enabled: queueButton.enabled && !preferencesPanel.visible
+        enabled: queueButton.enabled && !preferencesPanel.visible && !windowNotice.visible
         onActivated: window.toggleQueue()
     }
     Shortcut {
         sequence: "Ctrl+Left"
-        enabled: window.presenter.canGoPrevious && !preferencesPanel.visible
+        enabled: window.presenter.canGoPrevious && !preferencesPanel.visible && !windowNotice.visible
         onActivated: window.presenter.previousTrack()
     }
     Shortcut {
         sequence: "Ctrl+Right"
-        enabled: window.presenter.canGoNext && !preferencesPanel.visible
+        enabled: window.presenter.canGoNext && !preferencesPanel.visible && !windowNotice.visible
         onActivated: window.presenter.nextTrack()
     }
     Shortcut {
         sequence: "Esc"
-        enabled: window.queueOpen && !preferencesPanel.visible
+        enabled: window.queueOpen && !preferencesPanel.visible && !windowNotice.visible
         onActivated: window.setQueueOpen(false)
     }
     Shortcut {
         sequence: "Ctrl+,"
+        enabled: !windowNotice.visible
         onActivated: window.openPreferences()
     }
 }

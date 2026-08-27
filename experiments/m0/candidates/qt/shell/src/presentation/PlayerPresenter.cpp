@@ -306,6 +306,91 @@ PlayerPresenter::QueueEndPreference PlayerPresenter::queueEndPreference() const 
 bool PlayerPresenter::restoreLastSession() const noexcept { return preferences().restore_last_session; }
 bool PlayerPresenter::startMinimized() const noexcept { return preferences().start_minimized; }
 bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
+bool PlayerPresenter::exiting() const noexcept { return exiting_; }
+PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { return window_notice_; }
+bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
+void PlayerPresenter::reportTrayUnavailable() {
+    if (exiting_ || window_notice_ == WindowNotice::TrayUnavailableNotice)
+        return;
+    window_notice_ = WindowNotice::TrayUnavailableNotice;
+    emit lifecycleChanged();
+}
+bool PlayerPresenter::requestClose() {
+    if (exiting_)
+        return false;
+    refreshPlatformAvailability();
+    if (exiting_)
+        return false;
+    if (closePreference() == ClosePreference::Exit)
+        return requestExit();
+    if (window_notice_ == WindowNotice::TrayCloseNotice)
+        return false;
+    if (tray_available_ && tray_notice_enabled_ && !tray_notice_seen_) {
+        window_notice_ = WindowNotice::TrayCloseNotice;
+        emit lifecycleChanged();
+        return true;
+    }
+    return requestHide();
+}
+bool PlayerPresenter::requestHide() {
+    if (exiting_)
+        return false;
+    refreshPlatformAvailability();
+    if (exiting_)
+        return false;
+    const auto disposition = controller_.requestHide();
+    if (exiting_)
+        return true;
+    auto next_notice = window_notice_;
+    if (disposition == CloseDisposition::Minimized)
+        next_notice = WindowNotice::TrayUnavailableNotice;
+    else if (window_notice_ == WindowNotice::TrayCloseNotice)
+        next_notice = WindowNotice::NoNotice;
+    if (window_notice_ != next_notice) {
+        window_notice_ = next_notice;
+        emit lifecycleChanged();
+    }
+    return true;
+}
+bool PlayerPresenter::requestRestore() {
+    if (exiting_)
+        return false;
+    controller_.requestRestore();
+    return true;
+}
+bool PlayerPresenter::requestExit() {
+    if (exiting_)
+        return false;
+    exiting_ = true;
+    window_notice_ = WindowNotice::NoNotice;
+    timer_.stop();
+    emit lifecycleChanged();
+    controller_.requestExit();
+    return true;
+}
+bool PlayerPresenter::confirmWindowNotice() {
+    if (exiting_ || window_notice_ == WindowNotice::NoNotice)
+        return false;
+    if (window_notice_ == WindowNotice::TrayCloseNotice) {
+        tray_notice_seen_ = true;
+        return requestHide();
+    }
+    return cancelWindowNotice();
+}
+bool PlayerPresenter::cancelWindowNotice() {
+    if (exiting_ || window_notice_ == WindowNotice::NoNotice)
+        return false;
+    window_notice_ = WindowNotice::NoNotice;
+    emit lifecycleChanged();
+    return true;
+}
+bool PlayerPresenter::setTrayNoticeEnabled(const bool enabled) {
+    if (exiting_ || tray_notice_enabled_ == enabled)
+        return false;
+    tray_notice_enabled_ = enabled;
+    emit lifecycleChanged();
+    return true;
+}
 void PlayerPresenter::refreshPlatformAvailability() {
     const bool available = platform_.trayAvailable();
     if (available == tray_available_)
@@ -563,8 +648,9 @@ bool PlayerPresenter::advanceOneTick() {
 void PlayerPresenter::rejectNextSeekForTest() noexcept { backend_.rejectNextSeek(); }
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 void PlayerPresenter::reconcileTimer() {
-    const bool needed = queueLoaded() && (controller_.confirmedSnapshot().status == PlaybackStatus::Playing ||
-                                          controller_.seekPending());
+    const bool needed =
+        !exiting_ && queueLoaded() &&
+        (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending());
     if (needed && !timer_.isActive())
         timer_.start();
     else if (!needed && timer_.isActive())

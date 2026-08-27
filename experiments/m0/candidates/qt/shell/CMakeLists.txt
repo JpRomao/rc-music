@@ -104,9 +104,24 @@ if(M0_QT_SHELL_SUPPORT)
         QuickTest
         Svg
         Test
+        Widgets
     )
     qt_standard_project_setup(REQUIRES 6.11)
     set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
+
+    add_library(m0_qt_shell_platform STATIC
+        src/adapters/QtShellPlatform.hpp
+        src/adapters/QtShellPlatform.cpp
+    )
+    target_include_directories(m0_qt_shell_platform PUBLIC include src)
+    target_link_libraries(m0_qt_shell_platform PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
+    target_compile_features(m0_qt_shell_platform PUBLIC cxx_std_20)
+    set_target_properties(m0_qt_shell_platform PROPERTIES AUTOMOC ON)
+    if(MSVC)
+        target_compile_options(m0_qt_shell_platform PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_shell_platform PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
 
     add_library(m0_qt_system_appearance STATIC
         src/adapters/QtSystemAppearance.hpp
@@ -151,6 +166,7 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/AccessibleActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "AccessibleActionButton.qml")
     set_source_files_properties(qml/TransportSlider.qml PROPERTIES QT_RESOURCE_ALIAS "TransportSlider.qml")
     set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
+    set_source_files_properties(qml/WindowNotice.qml PROPERTIES QT_RESOURCE_ALIAS "WindowNotice.qml")
     set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
     set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
     set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
@@ -166,6 +182,7 @@ if(M0_QT_SHELL_SUPPORT)
             src/presentation/PlayerPresenter.hpp
             src/presentation/PlayerPresenter.cpp
             src/presentation/PlayerPresenterScenarioControl.hpp
+            src/presentation/LifecycleText.hpp
         QML_FILES
             qml/Main.qml
             qml/EmptyState.qml
@@ -177,6 +194,7 @@ if(M0_QT_SHELL_SUPPORT)
             qml/TransportSlider.qml
             qml/QueuePanel.qml
             qml/PreferencesPanel.qml
+            qml/WindowNotice.qml
             qml/PreferencesText.qml
             qml/PreferenceChoice.qml
             qml/PreferenceToggle.qml
@@ -231,6 +249,7 @@ if(M0_QT_SHELL_SUPPORT)
 
     qt_add_executable(m0_qt_shell app/main.cpp)
     target_link_libraries(m0_qt_shell PRIVATE
+        m0_qt_shell_platform
         m0_qt_system_appearance
         m0_qt_shell_bootstrap
         m0_qt_shell_support
@@ -241,6 +260,7 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::Quick
         Qt6::QuickControls2
         Qt6::Svg
+        Qt6::Widgets
     )
     target_include_directories(m0_qt_shell PRIVATE src)
     target_compile_features(m0_qt_shell PRIVATE cxx_std_20)
@@ -252,6 +272,32 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(BUILD_TESTING)
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
+        add_executable(m0_qt_shell_platform_tests tests/qtest/QtShellPlatformTests.cpp)
+        target_link_libraries(m0_qt_shell_platform_tests PRIVATE m0_qt_shell_platform Qt6::Test Qt6::Widgets)
+        target_compile_features(m0_qt_shell_platform_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_shell_platform_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_shell_platform_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_shell_platform_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.shell-platform COMMAND m0_qt_shell_platform_tests)
+        add_executable(m0_qt_shell_platform_binding_tests tests/qtest/ShellPlatformBindingTests.cpp)
+        target_link_libraries(m0_qt_shell_platform_binding_tests PRIVATE
+            m0_qt_shell_platform m0_qt_shell_support m0_qt_shell_ui Qt6::Test Qt6::Widgets)
+        target_include_directories(m0_qt_shell_platform_binding_tests PRIVATE src)
+        target_compile_features(m0_qt_shell_platform_binding_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_qt_shell_platform_binding_tests PRIVATE
+            M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
+            M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
+        )
+        set_target_properties(m0_qt_shell_platform_binding_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_shell_platform_binding_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_shell_platform_binding_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.shell-platform-binding COMMAND m0_qt_shell_platform_binding_tests)
         add_executable(m0_qt_system_appearance_tests tests/qtest/QtSystemAppearanceTests.cpp)
         target_link_libraries(m0_qt_system_appearance_tests PRIVATE m0_qt_system_appearance Qt6::Test)
         target_compile_features(m0_qt_system_appearance_tests PRIVATE cxx_std_20)
@@ -388,6 +434,18 @@ if(M0_QT_SHELL_SUPPORT)
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
+        set_tests_properties(m0.qt.shell-platform PROPERTIES
+            LABELS "m0;qt;shell-platform;tray"
+            TIMEOUT 15
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        set_tests_properties(m0.qt.shell-platform-binding PROPERTIES
+            LABELS "m0;qt;shell-platform;tray;lifecycle"
+            TIMEOUT 10
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
         set_tests_properties(m0.qt.fixture.repository-and-model m0.qt.presenter.initial-load PROPERTIES
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
@@ -397,6 +455,13 @@ if(M0_QT_SHELL_SUPPORT)
         )
         set_tests_properties(m0.qt.shell-executable.error-recovery PROPERTIES
             LABELS "m0;qt;shell-executable;error-recovery"
+            TIMEOUT 5
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        add_test(NAME m0.qt.shell-executable.tray-lifecycle COMMAND m0_qt_shell --m0-smoke=tray-lifecycle)
+        set_tests_properties(m0.qt.shell-executable.tray-lifecycle PROPERTIES
+            LABELS "m0;qt;shell-executable;tray;lifecycle"
             TIMEOUT 5
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             ENVIRONMENT "${m0_qt_quick_test_environment}"

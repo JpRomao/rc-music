@@ -72,6 +72,9 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
     Q_PROPERTY(bool startMinimized READ startMinimized NOTIFY preferencesChanged)
     Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
+    Q_PROPERTY(bool exiting READ exiting NOTIFY lifecycleChanged)
+    Q_PROPERTY(WindowNotice windowNotice READ windowNotice NOTIFY lifecycleChanged)
+    Q_PROPERTY(bool trayNoticeEnabled READ trayNoticeEnabled NOTIFY lifecycleChanged)
 
   public:
     enum class PlaybackState { Unloaded, Loading, Ready, Paused, Playing, Error };
@@ -84,6 +87,8 @@ class PlayerPresenter final : public QObject {
     Q_ENUM(ClosePreference)
     enum class QueueEndPreference { StopKeepSelection, StopClearSelection };
     Q_ENUM(QueueEndPreference)
+    enum class WindowNotice { NoNotice, TrayCloseNotice, TrayUnavailableNotice };
+    Q_ENUM(WindowNotice)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
 
@@ -133,7 +138,18 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool restoreLastSession() const noexcept;
     [[nodiscard]] bool startMinimized() const noexcept;
     [[nodiscard]] bool trayAvailable() const noexcept;
+    [[nodiscard]] bool exiting() const noexcept;
+    [[nodiscard]] WindowNotice windowNotice() const noexcept;
+    [[nodiscard]] bool trayNoticeEnabled() const noexcept;
     void refreshPlatformAvailability();
+    void reportTrayUnavailable();
+    Q_INVOKABLE bool requestClose();
+    Q_INVOKABLE bool requestHide();
+    Q_INVOKABLE bool requestRestore();
+    Q_INVOKABLE bool requestExit();
+    Q_INVOKABLE bool confirmWindowNotice();
+    Q_INVOKABLE bool cancelWindowNotice();
+    Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
@@ -162,6 +178,7 @@ class PlayerPresenter final : public QObject {
     void playbackChanged();
     void seekRejected();
     void platformChanged();
+    void lifecycleChanged();
 
   private:
     friend class experiment::PlayerPresenterScenarioControl;
@@ -184,6 +201,10 @@ class PlayerPresenter final : public QObject {
     QTimer timer_;
     FixtureState state_;
     std::size_t seek_commit_attempt_count_{0};
+    bool exiting_{false};
+    WindowNotice window_notice_{WindowNotice::NoNotice};
+    bool tray_notice_enabled_{true};
+    bool tray_notice_seen_{false};
 };
 
 } // namespace music_player::m0

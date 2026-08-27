@@ -3,12 +3,17 @@
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModelTester>
+#include <QMetaMethod>
 #include <QMetaProperty>
+#include <QPersistentModelIndex>
+#include <QSet>
 #include <QSignalSpy>
 #include <QStringList>
 #include <QTest>
 #include <QTimer>
+#include <QVariant>
 
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
@@ -19,10 +24,19 @@ class AvailableTrayPlatform final : public PlatformIntegration {
   public:
     bool available{true};
     [[nodiscard]] bool trayAvailable() const noexcept override { return available; }
-    void hideWindow() override {}
-    void minimizeWindow() override {}
-    void showAndActivateWindow() override {}
-    void requestExit() override {}
+    void hideWindow() override { ++hide_calls; }
+    void minimizeWindow() override { ++minimize_calls; }
+    void showAndActivateWindow() override { ++restore_calls; }
+    void requestExit() override {
+        ++exit_calls;
+        if (on_exit)
+            on_exit();
+    }
+    int hide_calls{0};
+    int minimize_calls{0};
+    int restore_calls{0};
+    int exit_calls{0};
+    std::function<void()> on_exit;
 };
 
 [[nodiscard]] FixtureBundle frozenBundle() {
@@ -52,6 +66,23 @@ class PlayerPresenterTests final : public QObject {
     void editsPreferencesWithoutChangingPlaybackOrTheQueue();
     void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
     void refreshesTrayAvailabilityAndGuardsStartMinimized();
+    void exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods();
+    void firstCloseWaitsForAcknowledgementAndDoesNotRepeatTheNotice();
+    void unavailableTrayMinimizesAndKeepsTheExplanationUntilRestored();
+    void cancellingTheFirstNoticeDoesNotConsumeIt();
+    void noticeOptOutIsInMemoryAndDoesNotActOnThePendingWindow();
+    void closeRefreshesAvailabilityBeforeDecidingTheWindowAction();
+    void confirmationRechecksAvailabilityWithoutPublishingATransientNotice();
+    void explicitHideIgnoresClosePreferenceAndBypassesTheNotice_data();
+    void explicitHideIgnoresClosePreferenceAndBypassesTheNotice();
+    void explicitHideClearsAPendingFirstNoticeWithoutAcknowledgingIt();
+    void closeExitPreferenceOverridesNoticesAndTrayAvailability_data();
+    void closeExitPreferenceOverridesNoticesAndTrayAvailability();
+    void reportingTrayLossOnlyProjectsAnIdempotentExplanation();
+    void lifecyclePreservesPlaybackQueueModelAndPendingBackendWork_data();
+    void lifecyclePreservesPlaybackQueueModelAndPendingBackendWork();
+    void exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform_data();
+    void exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -783,6 +814,529 @@ void PlayerPresenterTests::refreshesTrayAvailabilityAndGuardsStartMinimized() {
     presenter.refreshPlatformAvailability();
     QCOMPARE(availability.size(), 2);
     QCOMPARE(preferences.size(), 2);
+}
+
+void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QVERIFY(!presenter.exiting());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QVERIFY(presenter.trayNoticeEnabled());
+    const QMetaObject* const meta = presenter.metaObject();
+    for (const char* name : {"exiting", "windowNotice", "trayNoticeEnabled"}) {
+        const int index = meta->indexOfProperty(name);
+        QVERIFY(index >= 0);
+        const QMetaProperty property = meta->property(index);
+        QVERIFY(property.isReadable());
+        QVERIFY(!property.isWritable());
+        QCOMPARE(property.notifySignal().methodSignature(), QByteArray("lifecycleChanged()"));
+    }
+    const QMetaProperty notice = meta->property(meta->indexOfProperty("windowNotice"));
+    QVERIFY(notice.isEnumType());
+    QCOMPARE(notice.enumerator().keyCount(), 3);
+    QCOMPARE(notice.enumerator().keyToValue("NoNotice"), 0);
+    QCOMPARE(notice.enumerator().keyToValue("TrayCloseNotice"), 1);
+    QCOMPARE(notice.enumerator().keyToValue("TrayUnavailableNotice"), 2);
+    const QSet<QByteArray> expected{"loadFrozenQueue",
+                                    "togglePlayback",
+                                    "skipBackward",
+                                    "skipForward",
+                                    "previousTrack",
+                                    "nextTrack",
+                                    "beginSeekPreview",
+                                    "updateSeekPreview",
+                                    "commitSeekPreview",
+                                    "setVolume",
+                                    "toggleMute",
+                                    "setThemePreference",
+                                    "setMotionPreference",
+                                    "setSkipBackwardSeconds",
+                                    "setSkipForwardSeconds",
+                                    "setClosePreference",
+                                    "setRestoreLastSession",
+                                    "setStartMinimized",
+                                    "setQueueEndPreference",
+                                    "skipUnavailable",
+                                    "requestClose",
+                                    "requestHide",
+                                    "requestRestore",
+                                    "requestExit",
+                                    "confirmWindowNotice",
+                                    "cancelWindowNotice",
+                                    "setTrayNoticeEnabled"};
+    QSet<QByteArray> actual;
+    for (int index = meta->methodOffset(); index < meta->methodCount(); ++index) {
+        const QMetaMethod method = meta->method(index);
+        if (method.methodType() == QMetaMethod::Signal)
+            continue;
+        actual.insert(method.name());
+        QCOMPARE(method.returnMetaType().id(), QMetaType::Bool);
+    }
+    QCOMPARE(actual, expected);
+    for (const char* method : {"requestClose()", "requestHide()", "requestRestore()", "requestExit()",
+                               "confirmWindowNotice()", "cancelWindowNotice()", "setTrayNoticeEnabled(bool)"})
+        QVERIFY(meta->indexOfMethod(method) >= 0);
+    QCOMPARE(meta->indexOfMethod("reportTrayUnavailable()"), -1);
+    QCOMPARE(meta->indexOfMethod("refreshPlatformAvailability()"), -1);
+    QCOMPARE(meta->indexOfProperty("noticeSeen"), -1);
+    QCOMPARE(meta->indexOfProperty("backend"), -1);
+    QCOMPARE(meta->indexOfProperty("timer"), -1);
+}
+
+void PlayerPresenterTests::firstCloseWaitsForAcknowledgementAndDoesNotRepeatTheNotice() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(lifecycle.size(), 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(!presenter.requestClose());
+    QCOMPARE(lifecycle.size(), 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QVERIFY(presenter.confirmWindowNotice());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(platform.hide_calls, 1);
+    QCOMPARE(lifecycle.size(), 2);
+    QVERIFY(presenter.requestRestore());
+    QCOMPARE(platform.restore_calls, 1);
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(platform.hide_calls, 2);
+    QCOMPARE(platform.minimize_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(lifecycle.size(), 2);
+    QVERIFY(!presenter.confirmWindowNotice());
+    QVERIFY(!presenter.cancelWindowNotice());
+}
+
+void PlayerPresenterTests::unavailableTrayMinimizesAndKeepsTheExplanationUntilRestored() {
+    AvailableTrayPlatform platform;
+    platform.available = false;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(platform.minimize_calls, 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(lifecycle.size(), 1);
+    QVERIFY(presenter.requestRestore());
+    QCOMPARE(platform.restore_calls, 1);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(lifecycle.size(), 1);
+    QVERIFY(presenter.confirmWindowNotice());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(platform.minimize_calls, 1);
+    QCOMPARE(lifecycle.size(), 2);
+}
+
+void PlayerPresenterTests::cancellingTheFirstNoticeDoesNotConsumeIt() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.cancelWindowNotice());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(lifecycle.size(), 2);
+    QVERIFY(!presenter.cancelWindowNotice());
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(lifecycle.size(), 3);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.minimize_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+}
+
+void PlayerPresenterTests::noticeOptOutIsInMemoryAndDoesNotActOnThePendingWindow() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.setTrayNoticeEnabled(false));
+    QVERIFY(!presenter.setTrayNoticeEnabled(false));
+    QVERIFY(!presenter.trayNoticeEnabled());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(lifecycle.size(), 2);
+    QCOMPARE(platform.hide_calls, 0);
+    QVERIFY(presenter.cancelWindowNotice());
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(platform.hide_calls, 1);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(lifecycle.size(), 3);
+
+    QVERIFY(presenter.requestRestore());
+    QVERIFY(presenter.setTrayNoticeEnabled(true));
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QVERIFY(presenter.confirmWindowNotice());
+    QCOMPARE(platform.hide_calls, 2);
+    QVERIFY(presenter.setTrayNoticeEnabled(false));
+    QVERIFY(presenter.setTrayNoticeEnabled(true));
+    QVERIFY(presenter.requestRestore());
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(platform.hide_calls, 3);
+    QCOMPARE(lifecycle.size(), 8);
+    QCOMPARE(preferences.size(), 0);
+    QCOMPARE(platform.exit_calls, 0);
+
+    AvailableTrayPlatform another_platform;
+    PlayerPresenter another(frozenBundle(), another_platform);
+    QVERIFY(another.trayNoticeEnabled());
+    QVERIFY(another.requestClose());
+    QCOMPARE(another.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QVERIFY(another.setTrayNoticeEnabled(false));
+    QVERIFY(another.confirmWindowNotice());
+    QCOMPARE(another_platform.hide_calls, 1);
+    QVERIFY(another.setTrayNoticeEnabled(true));
+    QVERIFY(another.requestRestore());
+    QVERIFY(another.requestClose());
+    QCOMPARE(another.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(another_platform.hide_calls, 2);
+}
+
+void PlayerPresenterTests::closeRefreshesAvailabilityBeforeDecidingTheWindowAction() {
+    AvailableTrayPlatform platform;
+    platform.available = false;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy availability(&presenter, &PlayerPresenter::platformChanged);
+    platform.available = true;
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.trayAvailable());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(availability.size(), 1);
+    QVERIFY(presenter.cancelWindowNotice());
+    platform.available = false;
+    QVERIFY(presenter.requestClose());
+    QVERIFY(!presenter.trayAvailable());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(availability.size(), 2);
+    QCOMPARE(platform.minimize_calls, 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+}
+
+void PlayerPresenterTests::confirmationRechecksAvailabilityWithoutPublishingATransientNotice() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QList<PlayerPresenter::WindowNotice> notices;
+    connect(&presenter, &PlayerPresenter::lifecycleChanged, &presenter,
+            [&] { notices.append(presenter.windowNotice()); });
+    QVERIFY(presenter.requestClose());
+    platform.available = false;
+    QVERIFY(!presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(platform.minimize_calls, 0);
+    QCOMPARE(lifecycle.size(), 1);
+    QVERIFY(presenter.confirmWindowNotice());
+    QVERIFY(!presenter.trayAvailable());
+    QCOMPARE(platform.minimize_calls, 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(notices, QList<PlayerPresenter::WindowNotice>({PlayerPresenter::WindowNotice::TrayCloseNotice,
+                                                            PlayerPresenter::WindowNotice::TrayUnavailableNotice}));
+    QVERIFY(presenter.confirmWindowNotice());
+    platform.available = true;
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(platform.hide_calls, 1);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(platform.exit_calls, 0);
+}
+
+void PlayerPresenterTests::explicitHideIgnoresClosePreferenceAndBypassesTheNotice_data() {
+    QTest::addColumn<bool>("tray_available");
+    QTest::addColumn<bool>("close_exits");
+    QTest::newRow("tray-minimize") << true << false;
+    QTest::newRow("tray-exit") << true << true;
+    QTest::newRow("no-tray-minimize") << false << false;
+    QTest::newRow("no-tray-exit") << false << true;
+}
+
+void PlayerPresenterTests::explicitHideIgnoresClosePreferenceAndBypassesTheNotice() {
+    QFETCH(bool, tray_available);
+    QFETCH(bool, close_exits);
+    AvailableTrayPlatform platform;
+    platform.available = tray_available;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    if (close_exits)
+        QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit));
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QVERIFY(presenter.requestHide());
+    QCOMPARE(platform.hide_calls, tray_available ? 1 : 0);
+    QCOMPARE(platform.minimize_calls, tray_available ? 0 : 1);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(presenter.closePreference(),
+             close_exits ? PlayerPresenter::ClosePreference::Exit : PlayerPresenter::ClosePreference::MinimizeToTray);
+    QCOMPARE(presenter.windowNotice(), tray_available ? PlayerPresenter::WindowNotice::NoNotice
+                                                      : PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(lifecycle.size(), tray_available ? 0 : 1);
+    QVERIFY(!presenter.exiting());
+}
+
+void PlayerPresenterTests::explicitHideClearsAPendingFirstNoticeWithoutAcknowledgingIt() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit));
+    QVERIFY(presenter.requestHide());
+    QCOMPARE(platform.hide_calls, 1);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(lifecycle.size(), 2);
+    QVERIFY(presenter.requestRestore());
+    QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::MinimizeToTray));
+    QVERIFY(presenter.requestClose());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayCloseNotice);
+    QCOMPARE(lifecycle.size(), 3);
+}
+
+void PlayerPresenterTests::closeExitPreferenceOverridesNoticesAndTrayAvailability_data() {
+    QTest::addColumn<bool>("tray_available");
+    QTest::newRow("tray") << true;
+    QTest::newRow("no-tray") << false;
+}
+
+void PlayerPresenterTests::closeExitPreferenceOverridesNoticesAndTrayAvailability() {
+    QFETCH(bool, tray_available);
+    AvailableTrayPlatform platform;
+    platform.available = tray_available;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    if (tray_available)
+        QVERIFY(presenter.requestClose());
+    else
+        presenter.reportTrayUnavailable();
+    QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit));
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.exiting());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(presenter.closePreference(), PlayerPresenter::ClosePreference::Exit);
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.minimize_calls, 0);
+    QVERIFY(!presenter.requestClose());
+    QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::reportingTrayLossOnlyProjectsAnIdempotentExplanation() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    presenter.reportTrayUnavailable();
+    presenter.reportTrayUnavailable();
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(lifecycle.size(), 1);
+    QVERIFY(presenter.requestRestore());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QCOMPARE(lifecycle.size(), 1);
+    QVERIFY(presenter.cancelWindowNotice());
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QCOMPARE(lifecycle.size(), 2);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.minimize_calls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(platform.restore_calls, 1);
+    QCOMPARE(playback.size(), 0);
+    QCOMPARE(preferences.size(), 0);
+    QCOMPARE(presenter.positionMs(), 84'000);
+    QVERIFY(timer->isActive());
+}
+
+void PlayerPresenterTests::lifecyclePreservesPlaybackQueueModelAndPendingBackendWork_data() {
+    QTest::addColumn<bool>("tray_available");
+    QTest::addColumn<QString>("playback_state");
+    QTest::newRow("tray-ready") << true << QStringLiteral("ready");
+    QTest::newRow("tray-paused") << true << QStringLiteral("paused");
+    QTest::newRow("tray-playing") << true << QStringLiteral("playing");
+    QTest::newRow("no-tray-ready") << false << QStringLiteral("ready");
+    QTest::newRow("no-tray-paused") << false << QStringLiteral("paused");
+    QTest::newRow("no-tray-playing") << false << QStringLiteral("playing");
+}
+
+void PlayerPresenterTests::lifecyclePreservesPlaybackQueueModelAndPendingBackendWork() {
+    QFETCH(bool, tray_available);
+    QFETCH(QString, playback_state);
+    AvailableTrayPlatform platform;
+    platform.available = tray_available;
+    FixtureBundle bundle = frozenBundle();
+    bundle.states[1].playback_state = playback_state;
+    PlayerPresenter presenter(std::move(bundle), platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.setVolume(0.35));
+    QVERIFY(presenter.toggleMute());
+    QVERIFY(presenter.setSkipBackwardSeconds(7));
+    QVERIFY(presenter.setSkipForwardSeconds(12));
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(presenter.setMotionPreference(PlayerPresenter::MotionPreference::ReducedMotion));
+    QVERIFY(presenter.setRestoreLastSession(false));
+    QVERIFY(presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection));
+    QVERIFY(presenter.beginSeekPreview(124'000));
+    QVERIFY(presenter.commitSeekPreview());
+    PlayerPresenterTestAccess::rejectNextSeek(presenter);
+    QueueListModel* const model = presenter.queueModel();
+    const QPersistentModelIndex current = model->index(16, 0);
+    const auto occurrence_ids = [&] {
+        QStringList ids;
+        for (int row = 0; row < model->rowCount(); ++row)
+            ids.append(model->data(model->index(row, 0), QueueListModel::OccurrenceIdRole).toString());
+        return ids;
+    };
+    const QStringList ids = occurrence_ids();
+    QCOMPARE(ids.size(), 1000);
+    const auto presentation = [&] {
+        QVariantMap result;
+        for (const char* name : {"stateId",
+                                 "playbackState",
+                                 "queueLoaded",
+                                 "currentOccurrenceId",
+                                 "currentQueueIndex",
+                                 "contextOccurrenceId",
+                                 "positionMs",
+                                 "confirmedPositionMs",
+                                 "seekPreviewActive",
+                                 "seekPending",
+                                 "durationMs",
+                                 "seekable",
+                                 "currentTitle",
+                                 "currentArtist",
+                                 "currentAlbum",
+                                 "volume",
+                                 "muted",
+                                 "skipBackwardSeconds",
+                                 "skipForwardSeconds",
+                                 "themePreference",
+                                 "motionPreference",
+                                 "closePreference",
+                                 "queueEndPreference",
+                                 "restoreLastSession",
+                                 "startMinimized"})
+            result.insert(QString::fromLatin1(name), presenter.property(name));
+        return result;
+    };
+    const QVariantMap before = presentation();
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QSignalSpy changes(model, &QAbstractItemModel::dataChanged);
+    const auto verify_preserved = [&] {
+        QCOMPARE(presentation(), before);
+        QCOMPARE(presenter.queueModel(), model);
+        QCOMPARE(occurrence_ids(), ids);
+        QVERIFY(current.isValid());
+        QCOMPARE(current.data(QueueListModel::OccurrenceIdRole).toString(), QStringLiteral("queue-0017"));
+        QCOMPARE(playback.size(), 0);
+        QCOMPARE(states.size(), 0);
+        QCOMPARE(preferences.size(), 0);
+        QCOMPARE(resets.size(), 0);
+        QCOMPARE(changes.size(), 0);
+    };
+    QVERIFY(presenter.requestClose());
+    verify_preserved();
+    QVERIFY(presenter.cancelWindowNotice());
+    verify_preserved();
+    QVERIFY(presenter.requestClose());
+    QVERIFY(presenter.confirmWindowNotice());
+    verify_preserved();
+    QVERIFY(presenter.requestRestore());
+    verify_preserved();
+    QVERIFY(presenter.requestHide());
+    verify_preserved();
+    presenter.reportTrayUnavailable();
+    QVERIFY(presenter.confirmWindowNotice());
+    verify_preserved();
+    QVERIFY(presenter.setTrayNoticeEnabled(false));
+    QVERIFY(presenter.requestClose());
+    verify_preserved();
+    QVERIFY(presenter.requestRestore());
+    verify_preserved();
+    QCOMPARE(platform.exit_calls, 0);
+
+    QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
+    QVERIFY(presenter.advanceOneTick());
+    QCOMPARE(rejected.size(), 1);
+    QCOMPARE(presenter.positionMs(), 84'000);
+    QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+    QVERIFY(!presenter.seekPending());
+    QCOMPARE(presenter.volume(), 0.35);
+    QVERIFY(presenter.muted());
+}
+
+void PlayerPresenterTests::exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform_data() {
+    explicitHideIgnoresClosePreferenceAndBypassesTheNotice_data();
+}
+
+void PlayerPresenterTests::exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform() {
+    QFETCH(bool, tray_available);
+    QFETCH(bool, close_exits);
+    AvailableTrayPlatform platform;
+    platform.available = tray_available;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    if (close_exits)
+        QVERIFY(presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit));
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.beginSeekPreview(124'000));
+    QVERIFY(presenter.commitSeekPreview());
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(timer->isActive());
+    presenter.reportTrayUnavailable();
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::TrayUnavailableNotice);
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+    QStringList order;
+    connect(&presenter, &PlayerPresenter::lifecycleChanged, &presenter, [&] {
+        order.append(QStringLiteral("lifecycle"));
+        QVERIFY(presenter.exiting());
+        QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+        QVERIFY(!timer->isActive());
+        QCOMPARE(platform.exit_calls, 0);
+        QVERIFY(!presenter.requestExit());
+    });
+    platform.on_exit = [&] {
+        order.append(QStringLiteral("platform-exit"));
+        QVERIFY(presenter.exiting());
+        QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+        QVERIFY(!timer->isActive());
+        QVERIFY(!presenter.requestClose());
+    };
+
+    QVERIFY(presenter.requestExit());
+
+    QCOMPARE(order, QStringList({QStringLiteral("lifecycle"), QStringLiteral("platform-exit")}));
+    QCOMPARE(lifecycle.size(), 1);
+    QCOMPARE(platform.exit_calls, 1);
+    QVERIFY(!presenter.requestExit());
+    QVERIFY(!presenter.requestClose());
+    QVERIFY(!presenter.requestHide());
+    QVERIFY(!presenter.requestRestore());
+    QVERIFY(!presenter.confirmWindowNotice());
+    QVERIFY(!presenter.cancelWindowNotice());
+    QVERIFY(!presenter.setTrayNoticeEnabled(false));
+    presenter.reportTrayUnavailable();
+    QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
+    QVERIFY(presenter.trayNoticeEnabled());
+    QCOMPARE(lifecycle.size(), 1);
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(platform.hide_calls, 0);
+    QCOMPARE(platform.minimize_calls, 0);
+    QCOMPARE(platform.restore_calls, 0);
+    QTest::qWait(250);
+    QCOMPARE(presenter.positionMs(), 124'000);
+    QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+    QVERIFY(presenter.seekPending());
+    QVERIFY(presenter.seekPreviewActive());
+    // Even another existing transport operation must not restart the lifetime-owned timer.
+    QVERIFY(presenter.togglePlayback());
+    QVERIFY(presenter.togglePlayback());
+    QVERIFY(!timer->isActive());
 }
 
 } // namespace music_player::m0::test

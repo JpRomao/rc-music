@@ -28,9 +28,12 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 throw std::invalid_argument{"the M0 shell smoke may be specified only once"};
             smoke_seen = true;
             const QString value = argument.sliced(QStringLiteral("--m0-smoke=").size());
-            if (value != QStringLiteral("error-recovery"))
+            if (value == QStringLiteral("error-recovery"))
+                options.smoke_error_recovery = true;
+            else if (value == QStringLiteral("tray-lifecycle"))
+                options.smoke_tray_lifecycle = true;
+            else
                 throw std::invalid_argument{"unsupported M0 shell smoke"};
-            options.smoke_error_recovery = true;
             continue;
         }
         if (argument.startsWith(QStringLiteral("--m0-")))
@@ -38,6 +41,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     }
     if (options.smoke_error_recovery && options.initial_scenario != InitialShellScenario::Unavailable)
         throw std::invalid_argument{"the error recovery smoke requires the unavailable scenario"};
+    if (options.smoke_tray_lifecycle && options.initial_scenario != InitialShellScenario::Empty)
+        throw std::invalid_argument{"the tray lifecycle smoke requires the empty scenario"};
     return options;
 }
 

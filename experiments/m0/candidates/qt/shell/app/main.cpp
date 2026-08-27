@@ -1,13 +1,20 @@
 #include "ShellLaunchOptions.hpp"
+#include "adapters/QtShellPlatform.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "presentation/LifecycleText.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/ShellAppearanceBinding.hpp"
+#include "presentation/ShellPlatformBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 
+#ifdef M0_QT_SHELL_TEST_HOOKS
+#include "ShellLifecycleSmoke.hpp"
+#endif
+
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
-#include <QGuiApplication>
 #include <QMetaObject>
 #include <QPointer>
 #include <QQmlApplicationEngine>
@@ -17,7 +24,9 @@
 #include <QWindow>
 
 #include <exception>
+#include <functional>
 #include <stdexcept>
+#include <utility>
 
 using music_player::m0::FixtureRepository;
 using music_player::m0::PlayerPresenter;
@@ -27,30 +36,6 @@ using music_player::m0::experiment::parseShellLaunchOptions;
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
 
 namespace {
-class ShellPlatform final : public music_player::m0::PlatformIntegration {
-  public:
-    [[nodiscard]] bool trayAvailable() const noexcept override { return false; }
-    void bindWindow(QWindow& window) noexcept { window_ = &window; }
-    void hideWindow() override {
-        if (window_ != nullptr)
-            window_->hide();
-    }
-    void minimizeWindow() override {
-        if (window_ != nullptr)
-            window_->showMinimized();
-    }
-    void showAndActivateWindow() override {
-        if (window_ == nullptr)
-            return;
-        window_->showNormal();
-        window_->requestActivate();
-    }
-    void requestExit() override { QGuiApplication::quit(); }
-
-  private:
-    QPointer<QWindow> window_;
-};
-
 #ifdef M0_QT_SHELL_TEST_HOOKS
 [[nodiscard]] bool isVisible(const QObject* object) {
     return object != nullptr && object->property("visible").toBool();
@@ -81,18 +66,32 @@ class ShellPlatform final : public music_player::m0::PlatformIntegration {
 int main(int argc, char* argv[]) {
     Q_INIT_RESOURCE(m0_qt_shell_assets);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
-    QGuiApplication application(argc, argv);
+    QApplication application(argc, argv);
+    application.setQuitOnLastWindowClosed(false);
     try {
         const auto options = parseShellLaunchOptions(application.arguments());
 #ifndef M0_QT_SHELL_TEST_HOOKS
-        if (options.initial_scenario != InitialShellScenario::Empty || options.smoke_error_recovery)
+        if (options.initial_scenario != InitialShellScenario::Empty || options.smoke_error_recovery ||
+            options.smoke_tray_lifecycle)
             throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
 #endif
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
-        ShellPlatform platform;
-        music_player::m0::QtSystemAppearance system_appearance;
         ShellUiContract contract(bundle);
+        music_player::m0::LifecycleText lifecycle_text;
+        std::function<bool()> availability_reader;
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        bool tray_smoke_available = true;
+        if (options.smoke_tray_lifecycle)
+            availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
+#endif
+        music_player::m0::QtShellPlatform platform(
+            QIcon{QStringLiteral(":/m0/assets/cover-track.svg")}, contract.appName(),
+            {contract.actionPlay(), contract.actionPause(), contract.actionPrevious(), contract.actionNext(),
+             lifecycle_text.showAction(), lifecycle_text.hideAction(), lifecycle_text.exitAction(),
+             lifecycle_text.noTrack()},
+            std::move(availability_reader));
+        music_player::m0::QtSystemAppearance system_appearance;
         PlayerPresenter presenter(bundle, platform);
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
@@ -109,8 +108,25 @@ int main(int argc, char* argv[]) {
         auto* const window = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
         if (window == nullptr)
             return 1;
-        platform.bindWindow(*window);
+        music_player::m0::bindShellPlatform(presenter, platform, *window);
 #ifdef M0_QT_SHELL_TEST_HOOKS
+        bool tray_smoke_completed = false;
+        if (options.smoke_tray_lifecycle) {
+            QTimer::singleShot(
+                0, &application,
+                [&application, window, &presenter, &platform, &tray_smoke_available, &tray_smoke_completed] {
+                    tray_smoke_completed = music_player::m0::experiment::runShellLifecycleSmoke(
+                        *window, presenter, platform, tray_smoke_available);
+                    if (!tray_smoke_completed) {
+                        qCritical() << "The shell did not complete its close, tray, restore and exit lifecycle";
+                        application.exit(2);
+                    }
+                });
+            QTimer::singleShot(3000, &application, [&application] {
+                qCritical() << "The tray exit action did not terminate the shell gracefully";
+                application.exit(2);
+            });
+        }
         if (options.smoke_error_recovery) {
             QPointer<QObject> root = engine.rootObjects().constFirst();
             QTimer::singleShot(0, &application, [&application, root, &presenter]() {
@@ -121,7 +137,17 @@ int main(int argc, char* argv[]) {
             });
         }
 #endif
-        return application.exec();
+        const int result = application.exec();
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        if (options.smoke_tray_lifecycle &&
+            (result != 0 || !tray_smoke_completed || !presenter.exiting() || window->isVisible())) {
+            qCritical() << "The shell exited without completing the real, latched window close:"
+                        << "result" << result << "completed" << tray_smoke_completed << "exiting" << presenter.exiting()
+                        << "visible" << window->isVisible();
+            return 2;
+        }
+#endif
+        return result;
     } catch (const std::exception& error) {
         qCritical() << "Unable to start the frozen M0 shell:" << error.what();
         return 1;

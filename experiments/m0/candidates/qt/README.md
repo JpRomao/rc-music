@@ -45,7 +45,17 @@ No build sem testes atualizado, o default estrito ficou vivo por 1,5 s sem outpu
 
 Os testes usam paletas, leitores e notificações injetados: verificam a apresentação do candidato, não a leitura real de `GetSysColor`, a alternância de HC do Windows, ramos internos do Qt Basic ou Linux. Escalas offscreen não comprovam DPI real/NVDA, e não houve nova inspeção manual da UI. Os resultados de `ab87803` acima permanecem como histórico separado desta fatia.
 
-M0.2 permanece em andamento. Tray concreto, pacote, medições, alto contraste nativo e validações manuais de acessibilidade continuam pendentes; UX-006 não está encerrado. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para navegação, preferências/temas ou HC. A prova funcional de virtualização não declara NFR-PERF-006 aprovado; o gate de stall exige o harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
+M0.2 permanece em andamento. Pacote, medições, bandeja/alto contraste nativos e validações manuais de acessibilidade continuam pendentes; UX-006 não está encerrado. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para navegação, preferências/temas ou HC. A prova funcional de virtualização não declara NFR-PERF-006 aprovado; o gate de stall exige o harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. Não há áudio real, rede, leitura de biblioteca pessoal nem dependência Qt no core.
+
+## Bandeja e ciclo de vida
+
+A [política comum da seção 8](../../../../docs/m0/README.md) está implementada no candidato Qt. `QtShellPlatform` usa `QSystemTrayIcon`/`QMenu`, com `QApplication` e Qt Widgets somente na borda do shell. O core continua C++ puro. O menu usa o transporte do presenter e expõe título atual/contextual, reproduzir/pausar, anterior/próxima, mostrar/ocultar e sair. Rótulos e avisos adicionais ficam centralizados em `LifecycleText`; o ícone reutiliza o SVG autenticado da fixture.
+
+Fechar respeita a preferência; ocultar explicitamente a ignora; sair encerra uma única vez. O primeiro fechamento para bandeja oferece confirmação/cancelamento e um checkbox de aviso somente nesta execução. Sem bandeja observada, a janela é minimizada normalmente e disponibiliza uma explicação na restauração, inclusive se a capacidade mudar durante a tentativa de ocultar. O timer coarse de 1 s consulta disponibilidade somente enquanto a janela está oculta. O adapter preserva o último modo normal/maximizado/fullscreen e não alterna visibilidade em cliques repetidos no ícone. A API Windows do Qt retorna disponibilidade constante; isso não comprova presença do ícone ou recuperação do Explorer.
+
+O novo smoke `--m0-smoke=tray-lifecycle`, exclusivo de `BUILD_TESTING=ON` e cenário `Empty`, exercita o executável real com capacidade de bandeja injetada e plataforma offscreen: menu, pausa, aviso QML, ocultação/restauração maximizada, navegação, perda de capacidade e saída. Sucesso exige código zero e janela fechada pelo caminho enfileirado normal; o watchdog só pode produzir falha. A trava de saída precede `window.close()` e `quit()`, evitando que o fechamento retorne à bandeja. Não há áudio, rede ou automação do desktop nesses testes.
+
+Os checks de ciclo de vida incluem core/presenter, contrato do adapter, binding integrado, jornadas Quick e o smoke real. A suíte Release estrita passou 65/65; o core Qt OFF passou 55/55 com 1.849 asserções. Regressões cobrem perda tardia da bandeja, cancelamento/reabertura durante fade e foco de Preferências/fila concorrendo com o modal. Os detalhes e limites dos checks ficam na seção 8 do registro M0. A bandeja nativa, NVDA, DPI/HC reais, Linux e o pacote permanecem pendentes; não há conclusão integral de FR-030/FR-031/FR-032.
 
 ## Checks de formato C++ e QML
 
@@ -119,7 +129,16 @@ $ctest = 'C:\Program Files\CMake\bin\ctest.exe'
 No build do harness acima, que mantém `BUILD_TESTING=ON`, o cenário congelado de erro pode ser aberto manualmente no próprio executável e recuperado com “Pular”:
 
 ```powershell
+$env:PATH = (Join-Path $qt 'bin') + ';' + $env:PATH
 & (Join-Path $build 'm0_qt_shell.exe') --m0-scenario=unavailable
 ```
+
+Para repetir apenas os contratos de bandeja e seu smoke sem abrir UI nativa:
+
+```powershell
+& $ctest --test-dir $build -C Release --output-on-failure -R '^m0\.qt\.(shell-platform(-binding)?|shell-executable\.tray-lifecycle)$'
+```
+
+Em um diretório novo configurado com `-DBUILD_TESTING=OFF`, os cenários/hooks de smoke são rejeitados, e não há executáveis de teste nem dependência do app em Qt Test. O build novo `out/m0/builds/qt-shell/tray-no-tests-20260827` comprovou isso; a observação de startup offscreen por 1,5 s usou encerramento forçado somente para cleanup, não como prova de saída normal.
 
 Configure com `M0_QT_SHELL_SUPPORT=OFF` — o padrão — continua compilando e testando o core sem localizar Qt nem ler a fixture.

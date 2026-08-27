@@ -15,21 +15,35 @@ namespace {
 
 class QuickTestPlatform final : public music_player::m0::PlatformIntegration {
   public:
-    [[nodiscard]] bool trayAvailable() const noexcept override { return false; }
-    void hideWindow() override {}
-    void minimizeWindow() override {}
-    void showAndActivateWindow() override {}
-    void requestExit() override {}
+    [[nodiscard]] bool trayAvailable() const noexcept override { return tray_available; }
+    void hideWindow() override { ++hide_calls; }
+    void minimizeWindow() override { ++minimize_calls; }
+    void showAndActivateWindow() override { ++restore_calls; }
+    void requestExit() override { ++exit_calls; }
+    bool tray_available{false};
+    int hide_calls{0};
+    int minimize_calls{0};
+    int restore_calls{0};
+    int exit_calls{0};
 };
 
 class ScenarioDriver final : public QObject {
     Q_OBJECT
   public:
-    ScenarioDriver(music_player::m0::PlayerPresenter& presenter, music_player::m0::QtSystemAppearance& appearance,
+    ScenarioDriver(music_player::m0::PlayerPresenter& presenter, QuickTestPlatform& platform,
+                   music_player::m0::QtSystemAppearance& appearance,
                    std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state,
                    QObject* parent = nullptr)
-        : QObject(parent), presenter_(presenter), appearance_(appearance),
+        : QObject(parent), presenter_(presenter), platform_(platform), appearance_(appearance),
           appearance_state_(std::move(appearance_state)) {}
+    Q_INVOKABLE void setTrayAvailable(const bool available) {
+        platform_.tray_available = available;
+        presenter_.refreshPlatformAvailability();
+    }
+    Q_INVOKABLE int platformHideCalls() const noexcept { return platform_.hide_calls; }
+    Q_INVOKABLE int platformMinimizeCalls() const noexcept { return platform_.minimize_calls; }
+    Q_INVOKABLE int platformRestoreCalls() const noexcept { return platform_.restore_calls; }
+    Q_INVOKABLE int platformExitCalls() const noexcept { return platform_.exit_calls; }
     Q_INVOKABLE bool enterUnavailable() {
         return music_player::m0::experiment::PlayerPresenterScenarioControl::enterUnavailable(presenter_);
     }
@@ -59,6 +73,7 @@ class ScenarioDriver final : public QObject {
 
   private:
     music_player::m0::PlayerPresenter& presenter_;
+    QuickTestPlatform& platform_;
     music_player::m0::QtSystemAppearance& appearance_;
     std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state_;
 };
@@ -75,6 +90,7 @@ class EmptyShellQuickTestSetup final : public QObject {
     }
 
     void qmlEngineAvailable(QQmlEngine* engine) {
+        platform_ = QuickTestPlatform{};
         auto* contract = new music_player::m0::ShellUiContract(*bundle_, engine);
         auto* presenter = new music_player::m0::PlayerPresenter(*bundle_, platform_, engine);
         auto appearance_state = std::make_shared<music_player::m0::SystemAppearanceSnapshot>(false, false);
@@ -85,7 +101,7 @@ class EmptyShellQuickTestSetup final : public QObject {
         engine->rootContext()->setContextProperty(QStringLiteral("testPlayerPresenter"), presenter);
         engine->rootContext()->setContextProperty(
             QStringLiteral("testScenarioDriver"),
-            new ScenarioDriver(*presenter, *appearance, appearance_state, engine));
+            new ScenarioDriver(*presenter, platform_, *appearance, appearance_state, engine));
     }
 
   private:

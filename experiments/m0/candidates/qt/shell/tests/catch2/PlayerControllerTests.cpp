@@ -60,6 +60,19 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
     };
 }
 
+void checkUnchangedPreferences(const Preferences& actual, const Preferences& expected) {
+    CHECK(actual.theme == expected.theme);
+    CHECK(actual.motion == expected.motion);
+    CHECK(actual.volume == expected.volume);
+    CHECK(actual.muted == expected.muted);
+    CHECK(actual.skip_backward_seconds == expected.skip_backward_seconds);
+    CHECK(actual.skip_forward_seconds == expected.skip_forward_seconds);
+    CHECK(actual.close_behavior == expected.close_behavior);
+    CHECK(actual.restore_last_session == expected.restore_last_session);
+    CHECK(actual.start_minimized == expected.start_minimized);
+    CHECK(actual.queue_end_behavior == expected.queue_end_behavior);
+}
+
 TEST_CASE("toggle playback maps active states to exactly one backend command", "[m0][qt][core][transport]") {
     RecordingPlaybackBackend backend;
     RecordingPlatformIntegration platform{true};
@@ -431,6 +444,59 @@ TEST_CASE("start minimized is rejected without an available tray", "[m0][qt][cor
     CHECK(available_controller.preferences().start_minimized);
 }
 
+TEST_CASE("explicit hide uses the tray regardless of the close preference", "[m0][qt][core][lifecycle][tray]") {
+    const auto behavior = GENERATE(CloseBehavior::MinimizeToTray, CloseBehavior::Exit);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    controller.setCloseBehavior(behavior);
+    const auto preferences = controller.preferences();
+
+    CHECK(controller.requestHide() == CloseDisposition::HiddenToTray);
+
+    CHECK(platform.hide_calls == 1);
+    CHECK(platform.minimize_calls == 0);
+    CHECK(platform.exit_calls == 0);
+    CHECK(platform.restore_calls == 0);
+    checkUnchangedPreferences(controller.preferences(), preferences);
+}
+
+TEST_CASE("explicit hide minimizes without a tray regardless of the close preference",
+          "[m0][qt][core][lifecycle][tray]") {
+    const auto behavior = GENERATE(CloseBehavior::MinimizeToTray, CloseBehavior::Exit);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{false};
+    PlayerController controller{backend, platform};
+    controller.setCloseBehavior(behavior);
+    const auto preferences = controller.preferences();
+
+    CHECK(controller.requestHide() == CloseDisposition::Minimized);
+
+    CHECK(platform.hide_calls == 0);
+    CHECK(platform.minimize_calls == 1);
+    CHECK(platform.exit_calls == 0);
+    CHECK(platform.restore_calls == 0);
+    checkUnchangedPreferences(controller.preferences(), preferences);
+}
+
+TEST_CASE("explicit exit ignores the close preference and tray availability", "[m0][qt][core][lifecycle][tray]") {
+    const bool tray_available = GENERATE(false, true);
+    const auto behavior = GENERATE(CloseBehavior::MinimizeToTray, CloseBehavior::Exit);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{tray_available};
+    PlayerController controller{backend, platform};
+    controller.setCloseBehavior(behavior);
+    const auto preferences = controller.preferences();
+
+    controller.requestExit();
+
+    CHECK(platform.exit_calls == 1);
+    CHECK(platform.hide_calls == 0);
+    CHECK(platform.minimize_calls == 0);
+    CHECK(platform.restore_calls == 0);
+    checkUnchangedPreferences(controller.preferences(), preferences);
+}
+
 TEST_CASE("close hides to an available tray without exiting", "[m0][qt][core][close][tray]") {
     RecordingPlaybackBackend backend;
     RecordingPlatformIntegration platform{true};
@@ -480,6 +546,72 @@ TEST_CASE("restore activates the window through the platform port", "[m0][qt][co
 
     CHECK(platform.restore_calls == 1);
     CHECK(controller.confirmedSnapshot().position_ms == 84'000);
+}
+
+TEST_CASE("window lifecycle preserves playback preferences and a pending seek", "[m0][qt][core][lifecycle][seek]") {
+    const bool tray_available = GENERATE(false, true);
+    const auto behavior = GENERATE(CloseBehavior::MinimizeToTray, CloseBehavior::Exit);
+    const auto status = GENERATE(PlaybackStatus::Ready, PlaybackStatus::Paused, PlaybackStatus::Playing);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{tray_available};
+    const PlaybackSnapshot initial{status, 84'000, 248'000, true};
+    PlayerController controller{backend, platform, initial};
+    controller.setTheme(ThemeMode::Dark);
+    controller.setMotionMode(MotionMode::Reduced);
+    REQUIRE(controller.setVolume(0.35));
+    controller.toggleMute();
+    REQUIRE(controller.setSkipBackwardSeconds(7));
+    REQUIRE(controller.setSkipForwardSeconds(20));
+    controller.setCloseBehavior(behavior);
+    controller.setRestoreLastSession(false);
+    REQUIRE(controller.setStartMinimized(tray_available));
+    controller.setQueueEndBehavior(QueueEndBehavior::StopClearSelection);
+    controller.beginSeekPreview(124'000);
+    controller.commitSeekPreview();
+    REQUIRE(controller.seekPreviewActive());
+    REQUIRE(controller.seekPending());
+    const auto preferences = controller.preferences();
+
+    const auto check_preserved = [&] {
+        checkUnchangedPreferences(controller.preferences(), preferences);
+        CHECK(controller.confirmedSnapshot().status == initial.status);
+        CHECK(controller.confirmedSnapshot().position_ms == initial.position_ms);
+        CHECK(controller.confirmedSnapshot().duration_ms == initial.duration_ms);
+        CHECK(controller.confirmedSnapshot().seekable == initial.seekable);
+        CHECK(controller.displayedPositionMs() == 124'000);
+        CHECK(controller.seekPreviewActive());
+        CHECK(controller.seekPending());
+        CHECK(backend.play_requests == 0);
+        CHECK(backend.pause_requests == 0);
+        CHECK(backend.seek_requests == std::vector<std::int64_t>{124'000});
+        CHECK(backend.volume_requests == std::vector<double>{0.35});
+        CHECK(backend.mute_requests == std::vector<bool>{true});
+    };
+
+    const auto hidden = tray_available ? CloseDisposition::HiddenToTray : CloseDisposition::Minimized;
+    CHECK(controller.requestHide() == hidden);
+    check_preserved();
+    controller.requestRestore();
+    check_preserved();
+    const auto closed = behavior == CloseBehavior::Exit ? CloseDisposition::ExitRequested : hidden;
+    CHECK(controller.requestClose() == closed);
+    check_preserved();
+    controller.requestExit();
+    check_preserved();
+
+    CHECK(platform.restore_calls == 1);
+    const int hides = behavior == CloseBehavior::Exit ? 1 : 2;
+    CHECK(platform.hide_calls == (tray_available ? hides : 0));
+    CHECK(platform.minimize_calls == (tray_available ? 0 : hides));
+    CHECK(platform.exit_calls == (behavior == CloseBehavior::Exit ? 2 : 1));
+
+    // The original seek target must still acknowledge normally after all window actions.
+    controller.applyBackendSnapshot({status, 124'000, 248'000, true});
+    CHECK_FALSE(controller.seekPending());
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK(controller.confirmedSnapshot().status == status);
+    CHECK(controller.confirmedSnapshot().position_ms == 124'000);
+    CHECK(controller.displayedPositionMs() == 124'000);
 }
 
 } // namespace

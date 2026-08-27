@@ -40,6 +40,8 @@ class PlayerController final {
     void setQueueEndBehavior(QueueEndBehavior behavior);
 
     [[nodiscard]] CloseDisposition requestClose();
+    [[nodiscard]] CloseDisposition requestHide();
+    void requestExit();
     void requestRestore();
 
   private:

@@ -1,6 +1,6 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com jornada Qt Quick vazia/tocando/erro, transporte, fila, navegação manual, preferências/temas e alto contraste implementados no candidato; checks automatizados da fatia HC verdes; stack e engines não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com jornada Qt Quick vazia/tocando/erro, transporte, fila, navegação manual, preferências/temas, alto contraste e bandeja implementados no candidato; checks automatizados de ciclo de vida verdes; stack e engines não escolhidos
 
 **Data:** 2026-08-27
 
@@ -59,7 +59,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | D0.9 — autorização e preferências | concluído neste documento |
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
-| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas e alto contraste implementados sob as políticas comuns das seções 6–7, com checks automatizados da fatia HC verdes; tray, pacote, alto contraste nativo, acessibilidade nativa/NVDA e medições pendentes |
+| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas, alto contraste e bandeja implementados sob as políticas comuns das seções 6–8, com checks automatizados de ciclo de vida verdes; pacote, bandeja/alto contraste nativos, acessibilidade nativa/NVDA e medições pendentes |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5–M0.8 — corpus e áudio | pendente |
@@ -189,3 +189,65 @@ O build Qt ON com `BUILD_TESTING=OFF` recebeu rebuild incremental após as três
 Rastreabilidade de `CHK-CLOSE`: commit que introduz a fatia HC e este registro, com os checks acima e revisão do diff.
 
 As paletas e notificações injetadas comprovam a boundary e o QML do candidato, não a leitura real de `GetSysColor`, a alternância do Windows ou os ramos internos de alto contraste do estilo Qt Basic. Também não comprovam Linux, NVDA, DPI real ou a jornada nativa de movimento reduzido. Nenhuma nova inspeção manual da UI foi realizada. Alto contraste nativo requer evidência própria; UX-006 e M0.2 permanecem em andamento, sem novos requisitos funcionais declarados concluídos e sem aprovação de desempenho.
+
+## 8. Política experimental de bandeja e ciclo de vida
+
+Esta seção define a política implementada no candidato Qt, comum aos shells Qt/M0.2 e Tauri/M0.3. Não altera a fixture, o protocolo ou os defaults congelados. A [UX, seção 7](../product/ux-specification.md), continua como referência para o aviso e o menu mínimo.
+
+### Ações, menu e restauração
+
+Fechar a janela respeita a preferência de fechamento: “Encerrar” solicita saída; “Minimizar para bandeja” segue o fluxo de ocultação. A ação explícita “Ocultar” do menu ignora a escolha “Encerrar”, sem alterá-la, e não pede o aviso de primeiro fechamento. “Sair” sempre solicita encerramento real e idempotente, sem alterar preferências. Reprodução/pausa e anterior/próxima da bandeja usam os mesmos casos de uso e capacidades do transporte principal, inclusive as restrições da navegação da seção 5.
+
+| ID comum | Conteúdo e ação |
+|---|---|
+| `tray-current-track` | título atual ou contextual, quando disponível, ou “Nenhuma faixa selecionada”; restaura a janela |
+| `tray-play-pause` | rótulo de reproduzir/pausar da fixture, conforme o estado; aciona o transporte comum |
+| `tray-previous` | anterior, com a capacidade atual do transporte |
+| `tray-next` | próxima, com a capacidade atual do transporte |
+| `tray-show-hide` | “Ocultar” com a janela exibida; “Mostrar” quando oculta ou minimizada |
+| `tray-exit` | “Sair” |
+
+O título do menu é uma projeção de texto plano, elidida à direita em 280 DIP, com quebras de linha/tabs e espaços normalizados; ampersands permanecem literais. Não se modifica a metadata original. No Qt, `&` é escapado apenas na projeção de `QAction`, cuja [documentação de texto](https://doc.qt.io/qt-6/qaction.html#text-prop) distingue mnemônicos de ampersands literais.
+
+`Trigger` e `DoubleClick` no ícone solicitam restauração e ativação idempotentes, nunca alternância de visibilidade. A restauração preserva o último modo não minimizado — normal, maximizado ou fullscreen —, seleção, fila, posição/estado de reprodução e foco válido. Repetir o gesto não pode voltar a ocultar a janela. A [API de QSystemTrayIcon](https://doc.qt.io/qt-6/qsystemtrayicon.html#ActivationReason-enum) distingue os motivos de ativação; a escolha de restaurar nos dois casos é a política comum do experimento.
+
+### Avisos por execução, sem persistência
+
+Na primeira tentativa de fechar para a bandeja de cada execução, com o aviso habilitado, um aviso aparece na própria janela **antes de ocultá-la**: Popup QML no Qt, com equivalente no Tauri. Título: “Continuar na bandeja”. Corpo exato da UX: “O player continuará na bandeja. Use Sair para encerrar.” “Continuar” confirma a ocultação e consome o primeiro aviso; “Cancelar” ou `Esc` mantêm a janela e não consomem esse primeiro aviso. Não há confirmação ou ocultação automática por tempo. Um balão do sistema não substitui esse fluxo: a [documentação de showMessage](https://doc.qt.io/qt-6/qsystemtrayicon.html#showMessage) informa que a mensagem pode não aparecer conforme a configuração do usuário.
+
+O checkbox “Avisar ao fechar para a bandeja nesta sessão” começa habilitado em cada execução e aplica a escolha imediatamente em memória. Desmarcar e depois cancelar deixa o aviso desabilitado para o próximo fechamento, embora a tentativa cancelada não tenha consumido o primeiro aviso. Confirmar “Continuar” já consome o primeiro aviso mesmo mantendo o checkbox habilitado. Não há alegação de opt-out persistente entre execuções.
+
+Sem bandeja disponível, ações de ocultação — inclusive fechar configurado para bandeja — resultam em minimização normal da janela, nunca apenas em ocultação. A ausência conhecida pelo core gera `minimize_window`; se ela for observada somente pelo adapter durante a tentativa de ocultar, o evento `hideFellBackToMinimize` publica a nota após a minimização efetiva, mesmo sem mudança do cache de disponibilidade. Isso não substitui a saída explícita de “Sair” ou de fechar configurado para “Encerrar”. A limitação fica disponível em um Popup na restauração normal da janela, com título “Bandeja indisponível” e corpo “Não há bandeja disponível neste ambiente. Ao fechar, a janela é minimizada normalmente.” “Entendi” apenas dispensa a nota, sem ocultar, encerrar ou alterar a preferência. Perda de disponibilidade observada enquanto a janela está oculta causa a mesma minimização e disponibiliza a mesma nota.
+
+O aviso conserva seu texto durante o fade de saída. Uma nova tentativa de fechar durante esse fade reabre o aviso sem perder o foco de retorno; callbacks de foco da fila e do fechamento de Preferências não podem retirar foco do modal ativo. Atalhos da janela ficam suspensos enquanto o aviso está visível. Movimento normal/reduzido continua usando 160/0 ms, sem timeout de confirmação.
+
+Os textos adicionais de menu e avisos acima ficam centralizados em `LifecycleText` C++ no candidato Qt e devem ter os mesmos textos no candidato Tauri; rótulos de transporte já congelados continuam vindo da fixture.
+
+### Adapter Qt, capacidades e limites
+
+`QtShellPlatform` usa `QSystemTrayIcon`, `QMenu` e `QApplication`, acrescentando Qt Widgets somente ao adapter/shell experimental. A justificativa é usar o ícone e o menu do toolkit com integração de plataforma, mantendo a UI principal em Qt Quick e o core sem Qt. [QSystemTrayIcon](https://doc.qt.io/qt-6/qsystemtrayicon.html) e [QMenu](https://doc.qt.io/qt-6/qmenu.html) pertencem a Widgets; [QApplication](https://doc.qt.io/qt-6/qapplication.html#details) fornece a inicialização específica necessária aos widgets. Widgets vem do `qtbase` já provisionado; os SBOMs com `NOASSERTION` e demais bloqueios de distribuição do [preflight](evidence/m0-2-preflight.md) permanecem. O ícone provisório reutiliza `cover-track.svg` autenticado, sem alterar a fixture. O menu segue o estilo/paleta do sistema; não se forçam nele as cores do QML nem se alteram preferências do SO.
+
+O adapter consulta disponibilidade com um timer Qt coarse de 1 s **somente enquanto a janela estiver oculta**, interrompido ao mostrar, sair ou destruir a janela/adapter. Isso não prova presença real da bandeja no Windows: no [backend Windows do Qt 6.11.2](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/platforms/windows/qwindowssystemtrayicon.h), `isSystemTrayAvailable()` retorna `true`; o Qt já possui [tratamento de TaskbarCreated](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/platforms/windows/qwindowssystemtrayicon.cpp). O fallback responde à indisponibilidade observada, sem alegar detecção garantida de queda/reinício do Explorer. Tauri deve preservar o comportamento comum por suas capacidades e adapter, registrando as limitações próprias.
+
+Uma trava de saída é marcada antes de agendar o fechamento explícito da `QWindow` e `quit`, impedindo pedidos duplicados ou reativação posterior. Esse fechamento é necessário porque o [caminho de saída de QApplication 6.11.2](https://github.com/qt/qtbase/blob/v6.11.2/src/widgets/kernel/qapplication.cpp#L1551) trata janelas QWidget e pula o fechamento de QWindows de `QGuiApplication`. `quitOnLastWindowClosed` fica `false`: a política de fechar é explícita, não o encerramento implícito da última janela descrito pela [API de QGuiApplication](https://doc.qt.io/qt-6/qguiapplication.html#quitOnLastWindowClosed-prop). O smoke exige saída real em código 0 e janela QML fechada, sem encerramento forçado como evidência de sucesso.
+
+Essa política não aprova bandeja nativa, recuperação do Explorer, NVDA, DPI real, Linux ou empacotamento, nem conclui integralmente FR-030/FR-031/FR-032. Áudio real, salvamento persistente antes de sair e sessão completa continuam fora desta fatia experimental. M0.2 permanece em andamento.
+
+### Evidência automatizada da fatia Qt de ciclo de vida — 2026-08-27
+
+O incremento parte de `4b4bf42` (HC) e usa Qt 6.11.2/MSVC x64, CMake Release e a mesma fixture autenticada. Os resultados abaixo pertencem ao código desta fatia, não à bandeja real do Windows:
+
+- **Core:** Red de APIs ausentes e depois quatro falhas comportamentais na distinção fechar/ocultar/sair; Green Qt OFF 55/55, 1.849 asserções. As 113 entradas de compilação do build isolado continuam sem Qt.
+- **Presenter:** Red com 20 passagens/24 falhas nas novas transições; Green 44/44. Cinco repetições do teste após refactor passaram. Há cobertura de aviso inicial, confirmação/cancelamento, opt-out, reentrância, saída idempotente com timer parado, preservação de fila/modelo/seek e whitelist QML.
+- **Adapter:** Red de comportamento seguido de Green 24/24, com menu, intenções, modos da janela, disponibilidade, polling restrito, saída e destruição. Snapshots de transporte idênticos não repetem atualização de ações nem leitura de disponibilidade.
+- **Binding integrado:** três Reds reproduziram minimização sem nota quando a bandeja desaparecia entre a consulta do core e a guarda do adapter. Green final 8/8 cobre cache previamente verdadeiro/falso, confirmação do primeiro aviso, preservação de preferências/modelo/seek e lifetimes/saída reentrante. Adapter, binding e presenter passaram três repetições cada, em 17,24 s.
+- **Opções de lançamento:** Reds de smoke desconhecido e de combinação com `Unavailable` nas duas ordens; Green 24/24 e dez repetições. `tray-lifecycle` exige `Empty`; duplicatas e combinações inválidas são rejeitadas.
+- **QML:** o Red inicial confirmou que fechar escondia a janela sem política. Reds adicionais reproduziram troca indevida de texto durante fade, perda do novo aviso ao reabrir durante saída, foco de Preferências e foco enfileirado da fila escapando do modal. As regressões foram corrigidas; o teste de sobreposição exige uma amostra durante a entrada do aviso, sem aprovação vacuamente verdadeira.
+- **Release completo:** CTest estrito 65/65 em 14,95 s, com `QT_FATAL_WARNINGS=1`; `qmllint` silencioso. Formato de 43 arquivos C++ e 20 QML aprovado.
+- **Jornadas repetidas:** Quick e os smokes reais de erro/ciclo de vida passaram dez vezes cada — 30 execuções, 56,40 s. Quick passou 16/16 em cada escala offscreen `1.5` e `2`, em 4.760 ms e 4.837 ms. Isso não é prova de DPI nativo.
+- **Saída real:** o smoke primeiro falhou sem adapter/política explícita e depois detectou que `QApplication::quit` sozinho deixava a QWindow visível. Com fechamento enfileirado explícito, sucesso exige retorno 0, trava de saída e janela fechada; não se usa kill para aprovar essa jornada.
+- **Build novo sem testes:** `tray-no-tests-20260827`, Qt ON/Release/`BUILD_TESTING=OFF`, completou 106 ações Ninja e gerou 156 entradas de compilação. CTest descobriu zero testes; não há executáveis de teste, define de hooks ou Qt Test nas dependências do app. Qt Widgets foi confirmado nos imports e módulos carregados. Cenário indisponível e ambos os smokes foram rejeitados com saída 1.
+- **Startup sem testes:** permaneceu vivo por 1,5 s, offscreen/estrito, com stdout/stderr vazios. O PID retido foi encerrado à força somente para cleanup; esse check não comprova saída graciosa. A inspeção final não encontrou processos Qt do workspace remanescentes.
+- **Contratos:** fixture `21a150477811aa62f59f4f958d594786bcef4a7c2dfd2bfda3ef9d29dee7c8e5` e markers `60d73a785cfeb67c0cec45fb2c77d1687edf151e8d44a122d669b4800e345d4c` permanecem inalterados; validação documental e diff check aprovados.
+
+Logs locais ficam em `out/m0/builds/qt-shell/final-release`, incluindo `lifecycle-full-ctest.log`, `lifecycle-repeat-10.log` e os Reds/Greens QML, além dos builds isolados `navigation-core`, `lifecycle-presenter`, `tray-adapter`, `tray-binding` e `lifecycle-launch-options`. Nenhuma inspeção manual foi retomada após a interrupção de Computer Use; pacote, bandeja/Explorer nativos, NVDA, HC/DPI reais, Linux e medições continuam pendentes.
