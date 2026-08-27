@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-27
 
-**Fase:** M0.2 em andamento; shell/bandeja implementados; pacote local com smoke offscreen original/relocado aprovado; gates nativos/manuais e pendências de segurança/toolchain
+**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; pacote anterior com smoke offscreen original/relocado aprovado; tentativa nativa inconclusiva e instalação MSVC cancelada; gates nativos/manuais e segurança/toolchain pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -128,13 +128,15 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. resolver as pendências de segurança/toolchain e retomar, com autorização, os gates nativos/manuais de M0.2, sem áudio real;
+1. obter autorização para nova tentativa de instalação MSVC após o cancelamento, concluir o refresh/checks e as pendências de segurança; repetir os gates nativos/manuais de M0.2 com captura/interação verificáveis, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
 5. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10.
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
+
+A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 
 A fatia de preferências/temas foi fechada em `ab87803`; a [política comum e evidência](m0/README.md) preserva esses resultados na seção 6 e registra separadamente HC na seção 7. Alto contraste está implementado com precedência temporária sobre os três temas, pares opacos e movimento independente; os checks automatizados passaram após as correções da auditoria independente. Fixture/protocolo permanecem inalterados. Preferências são somente em memória; sessão/fim da fila reais e FR-042/FR-043/FR-044 continuam futuros. Paletas injetadas e escalas offscreen não comprovam alto contraste nativo, DPI real/NVDA ou aprovação de UX-006.
 
@@ -144,6 +146,6 @@ A seção 9 registra a receita e os checks do pacote local, sem alterar o prefli
 
 A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achados nas fontes FreeType/PCRE2, sem exploração do shell demonstrada, e confirma MSVC 14.43 fora de suporte. O vínculo PE/SPDX foi conferido, mas advisories, servicing e licenças não receberam aprovação global. Dependências, toolchain e contrato histórico foram preservados; `CHK-SEC` permanece em aberto.
 
-A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação. Acessibilidade nativa/NVDA e desempenho permanecem pendentes.
+A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. A [preparação do refresh](m0/evidence/m0-2-msvc-refresh.md) foi commitada em `b59a247`, mas a instalação foi cancelada na confirmação de administrador, sem novo compilador ou pacote. Acessibilidade nativa/NVDA, segurança e desempenho permanecem pendentes.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).

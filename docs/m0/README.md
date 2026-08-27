@@ -1,6 +1,6 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com jornada Qt Quick vazia/tocando/erro, transporte, fila, navegação manual, preferências/temas, alto contraste e bandeja implementados no candidato; checks automatizados de ciclo de vida verdes; stack e engines não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com transporte, fila, navegação, preferências/temas, alto contraste, bandeja e atalhos locais implementados no candidato Qt; tentativa nativa inconclusiva e refresh MSVC pendente; stack e engines não escolhidos
 
 **Data:** 2026-08-27
 
@@ -59,7 +59,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | D0.9 — autorização e preferências | concluído neste documento |
 | M0.0 — [ambiente](environment.md), [protocolo](protocol.md), [layout](layout.md) e [evidência](evidence/m0-0.md) | concluído em `81f9f2f` |
 | M0.1 — fixture comum, schemas, roteiro e harness | [concluído](evidence/m0-1.md) em `24d12ea`; piloto sintético `P` não decisório, zero coleta A/B |
-| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; preferências/temas, alto contraste e bandeja implementados sob as políticas comuns das seções 6–8; pacote local com smoke offscreen original/relocado aprovado na seção 9; bandeja/alto contraste nativos, acessibilidade nativa/NVDA, segurança e medições pendentes |
+| M0.2 — shell C++20/Qt Quick/QML com backend falso | em andamento; [preflight concluído](evidence/m0-2-preflight.md), core/presenter determinísticos, jornada vazia/tocando/erro, transporte, fila com virtualização funcional e navegação manual anterior/próxima; recursos `qrc` autenticados; atalhos locais, preferências/temas, alto contraste e bandeja sob as políticas comuns das seções 5–8; pacote anterior com smoke offscreen original/relocado aprovado na seção 9; tentativa nativa inconclusiva, bandeja/alto contraste nativos, acessibilidade nativa/NVDA, segurança e medições pendentes |
 | M0.2 — [triagem de segurança do pacote](evidence/m0-2-security-triage.md) | parcial; vínculo PE/SPDX conferido, fontes FreeType/PCRE2 com achados, MSVC fora de suporte e pendências explícitas; não encerra `CHK-SEC` |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
@@ -87,6 +87,39 @@ Para manter paridade entre M0.2 e M0.3, os dois shells usam esta política sobre
 Com a fila aberta, seleção e rolagem acompanham a ocorrência atual sem roubar o foco do transporte. O título longo da faixa atual permanece dentro da área livre ao lado do painel. No candidato Qt, regressões automatizadas cobrem a preservação do foco e os limites do título de `queue-0512`; isso não substitui inspeção manual/NVDA.
 
 EOF permanece `clamp_paused`, sem avanço automático. “Pular” no cenário de erro é uma recuperação separada: `queue-0999` com contexto `queue-0017` volta ao seed `queue-0017` em 84 s; não é o comando Próxima. CRUD da fila, avanço automático por `ended`, política real de fim da fila e persistência não pertencem a esta fatia. FR-011/FR-016/FR-017 continuam destinados às etapas do produto, sem alegação de conclusão pelo experimento.
+
+### Atalhos de janela e foco
+
+Para paridade M0.2/M0.3, os atalhos dos [requisitos](../product/requirements.md) atuam somente na janela ativa e reutilizam os mesmos casos de uso dos controles. Não são atalhos globais do sistema, não implementam teclas de mídia nativas e não concluem FR-037. Fixture e protocolo continuam inalterados.
+
+| Tecla | Política do shell experimental |
+|---|---|
+| `Ctrl+O` | no estado vazio, aciona uma vez a abertura falsa já existente; não abre diálogo/áudio real nem recarrega a fila carregada |
+| `Space` | reproduz/pausa com foco genérico ou no título; botões, sliders, fila e editores preservam sua própria interação, sem ativação dupla |
+| `M` | alterna mudo fora de edição de texto, usando o caso de uso existente |
+| `Left` / `Right` | fora de editores, sliders, fila e seletores que usam setas, usa os segundos configurados de retrocesso/avanço e as mesmas guardas de seek dos botões |
+| `Up` / `Down` | fora desses consumidores de setas, altera volume em 1 ponto percentual, preservando a fração existente, como o slider; limitado a 0–100% |
+| `Ctrl+Left` / `Ctrl+Right` | anterior/próxima conforme esta seção; preserva a navegação por palavras dos editores |
+| `Ctrl+L`, `Ctrl+,`, `Esc` | fila, abertura/refoco de Preferências e fechamento de painel/modal mantêm as políticas de foco das seções 6 e 8 |
+| `Ctrl+Q` | solicita saída explícita, idempotente, inclusive em Preferências; não consulta a preferência de fechar nem pede o primeiro aviso de bandeja |
+
+Vazio, carregamento e erro deixam os atalhos de transporte inertes. Preview/ack de seek suspendem saltos e navegação de faixa. Abrir, reproduzir/pausar, mudo, alternar fila, refocar Preferências e sair ignoram autorrepetição de tecla; setas podem repetir, respeitando essas guardas. Botões de transporte consomem `Space`/`Return`/`Enter`, mas não bloqueiam os atalhos de salto e volume pelas setas. As setas locais do progresso/volume e a seleção da fila não são substituídas pelos atalhos da janela, e o transporte não muda o foco.
+
+Enquanto Preferências estiver visível, abertura de áudio, transporte e fila ficam suspensos; `Ctrl+,` continua refocando o painel e `Ctrl+Q` continua sendo saída explícita. Enquanto o aviso de ciclo de vida estiver visível, inclusive no fade de saída, todos esses atalhos da janela ficam suspensos. As ações próprias do aviso, como `Esc` para cancelar e `Space` em seus botões, continuam disponíveis.
+
+No Qt, `Ctrl+Q` e `Ctrl+,` usam o [contexto de aplicação de `Shortcut`](https://doc.qt.io/qt-6/qml-qtquick-shortcut.html#context-prop), com guarda adicional da janela ativa e do aviso, para atravessar somente o modal de Preferências. O [matcher do Qt 6.11.2](https://raw.githubusercontent.com/qt/qtdeclarative/v6.11.2/src/quicktemplates/qquickshortcutcontext.cpp) bloqueia atalhos de contexto de janela fora de um popup modal. A guarda explícita impede que outra janela da aplicação acione esses comandos; não há registro de atalhos no SO.
+
+### Evidência diagnóstica de teclado — 2026-08-27
+
+A retomada do desktop foi autorizada nesta rodada. A [tentativa nativa](evidence/m0-2-native-attempt-20260827.md) registrou `Ctrl+Q` inerte, mas a observação de `Space` e a evidência visual permaneceram inconclusivas; autorização não equivale a aprovação desses gates. A falha de `Space` foi estabelecida separadamente por Red offscreen com foco em `current-title`: o estado permaneceu `Playing` em vez de `Paused`. Reds adicionais reproduziram ausência de abertura por `Ctrl+O`, mudo por `M`, alteração de volume por seta, salto configurado, refoco de Preferências e saída por `Ctrl+Q`, além de alternância indevida da fila por autorrepetição de `Ctrl+L`.
+
+A revisão identificou que a primeira guarda de foco bloqueava também setas sobre botões, que não as consomem. O Red sobre `play-pause` focado manteve 118.000 ms em vez dos 138.000 ms esperados. A guarda de `Space` foi separada da guarda das setas; a regressão cobre saltos e volume com foco em `play-pause`, `mute` e `previous`, preservando foco e a interação local dos demais controles.
+
+Outro Red reproduziu arredondamento indevido no volume fracionário: partindo de 0,805, `Up` produzia 0,82 em vez de 0,815. A correção remove somente esse arredondamento; a regressão também verifica `Down` de volta a 0,805 e os limites de 0–100%.
+
+Checks finais sobre a fonte corrigida: CTest Release completo, com checks Qt estritos, 65/65 em 19,23 s; Quick completo 22/22 sem skips; Quick e cada um dos dois smokes de executável passaram dez vezes — 30 execuções em 88,24 s. `qmllint` terminou silencioso, os checks de formato passaram em 43 arquivos C++ e 22 QML, e o diff check passou. A consulta final encontrou zero processos do player/teste Quick desse build. Os logs locais `keyboard-full-release-final-ctest.log` e `keyboard-final-ctest.log` ficam em `out/m0/builds/qt-shell/keyboard-shortcuts-diagnostic/`, junto aos registros Red/Green.
+
+O build isolado `keyboard-shortcuts-diagnostic` usa o compilador histórico MSVC 19.43.34808.0: seus resultados servem ao Red/Green da correção, não como aprovação do refresh de toolchain ou do pacote. Os testes usam backend/plataforma falsos, eventos Qt Test e `offscreen`; não executam áudio/diálogos reais nem substituem desktop nativo, NVDA, DPI/HC ou as medições de M0.4.
 
 ## 6. Política experimental de preferências, tema e movimento
 
@@ -356,4 +389,4 @@ As quatro jornadas terminaram normalmente, com stdout/stderr vazios, zero erros 
 
 Cada relatório preserva commit do runner, data UTC, paths, ambiente e resultados completos. Os tempos acima comprovam somente o deadline de captura do smoke; não são cold start, latência da UI, medição comparativa ou cumprimento de budget de performance. Snapshots não são um trace completo do loader. A verificação local não remove o SDK da máquina, não prova isolamento de rede e não testa CRT ausente.
 
-Esta fatia altera somente documentação/evidência; não há comportamento novo que exija Red/Green. A validação documental passou com 31 Markdown, 83 requisitos, 17 checks e 76 etapas. Os dois manifestos, hashes dos relatórios e proveniência foram reconferidos; a revisão independente do diff não apresentou achados. O commit que adiciona esta subseção registra o fechamento desta fatia. Os checks C++/QML anteriores não são apresentados como novamente executados. M0.2 e `CHK-SEC` permanecem abertos: ainda faltam autorização e validações de desktop/NVDA/HC/DPI/bandeja nativos e resolução das pendências de segurança/toolchain. Linux, máquina limpa, instalador, redistribuição e medições também não foram aprovados. M0.3 não foi iniciado.
+Esta fatia altera somente documentação/evidência; não há comportamento novo que exija Red/Green. A validação documental passou com 31 Markdown, 83 requisitos, 17 checks e 76 etapas. Os dois manifestos, hashes dos relatórios e proveniência foram reconferidos; a revisão independente do diff não apresentou achados. O commit que adiciona esta subseção registra o fechamento desta fatia. Os checks C++/QML anteriores não são apresentados como novamente executados. Nesse checkpoint faltavam autorização e validações de desktop/NVDA/HC/DPI/bandeja nativos, além da resolução das pendências de segurança/toolchain. A retomada posterior foi autorizada, mas a [tentativa nativa](evidence/m0-2-native-attempt-20260827.md) permaneceu inconclusiva; a [instalação MSVC](evidence/m0-2-msvc-refresh.md) foi cancelada na confirmação de administrador. M0.2 e `CHK-SEC` continuam abertos. Linux, máquina limpa, instalador, redistribuição e medições também não foram aprovados. M0.3 não foi iniciado.

@@ -3,7 +3,7 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-08-27
-**Marco atual:** M0.2 — em andamento; shell Qt implementado até bandeja, pacote local com smoke offscreen original/relocado aprovado; gates nativos/manuais e pendências de segurança/toolchain em aberto
+**Marco atual:** M0.2 — em andamento; shell Qt com bandeja e atalhos locais; pacote anterior com smoke offscreen original/relocado aprovado; tentativa nativa inconclusiva e atualização MSVC cancelada na confirmação de administrador; gates nativos/manuais e de segurança em aberto
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -75,7 +75,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 - Nenhuma stack ou engine foi aceita.
 - ADR-0001, ADR-0002 e ADR-0003 continuam `Proposto`.
 - Os budgets são metas, não medições.
-- Windows possui build Release e pacote local de avaliação do candidato Qt, com inventário verificado mas execução isolada ainda bloqueada; Linux e o candidato Tauri ainda não possuem build.
+- Windows possui build Release e pacote local de avaliação do candidato Qt, com inventário verificado e smoke offscreen isolado/relocado aprovado no stage histórico; isso não valida a jornada nativa nem empacota automaticamente os incrementos posteriores. Linux e o candidato Tauri ainda não possuem build.
 - YouTube continua pesquisa futura sem promessa de implementação.
 
 ### 2.3 Checkpoint M0 atual
@@ -90,6 +90,8 @@ A navegação manual anterior/próxima segue a [política experimental comum aos
 
 A navegação atualiza a seleção e a rolagem do painel sem roubar o foco do transporte. Regressões automatizadas verificam essa preservação de foco e o título longo de `queue-0512` contido na área disponível com a fila aberta.
 
+Os atalhos locais seguem a seção 5 do [registro M0](m0/README.md): Ctrl+O abre a fixture, Space alterna reprodução, setas usam os saltos configurados e o volume, M alterna mudo, Ctrl+setas navega, Ctrl+L alterna a fila, Ctrl+, abre/refoca Preferências e Ctrl+Q solicita saída uma única vez. As guardas preservam teclas de editores, sliders e lista, além das restrições modais; botões mantêm Space próprio sem bloquear indevidamente setas. Os Reds/Greens cobrem esses contextos e volume fracionário. Não são atalhos globais ou teclas de mídia nativas, não concluem FR-037 e ainda não foram incorporados ao stage histórico.
+
 A fatia de preferências/temas foi fechada em `ab87803`. O painel modal oferece Geral/Reprodução/Aparência exclusivas, roles explícitos e foco contido; saltos válidos são aplicados a cada tecla, sem rollback automático de prefixos já aceitos. Tema/movimento são resolvidos antes do QML, usando os tokens e tempos congelados. A seção 6 do [registro M0](m0/README.md) preserva a política comum M0.2/M0.3 e a evidência histórica dessa fatia. Preferências continuam somente em memória, EOF permanece `clamp_paused` e FR-042/FR-043/FR-044 não são declarados concluídos.
 
 Alto contraste está implementado no candidato e documentado separadamente na seção 7 do registro M0: prevalece temporariamente sobre os três temas guardados, projeta pares opacos nos controles e mantém movimento independente. Os checks automatizados passaram após as correções da auditoria independente, incluindo Release estrito, escalas offscreen, core sem Qt e rebuild incremental sem testes. A validação injetada não prova a leitura real de `GetSysColor`, a alternância nativa do Windows, ramos internos do Qt Basic ou Linux, e não encerra UX-006.
@@ -100,7 +102,9 @@ O pacote local da seção 9 já possui receita com TDD, origem/commit, inventár
 
 A [triagem de segurança do pacote](m0/evidence/m0-2-security-triage.md) identificou fontes FreeType/PCRE2 com avisos aplicáveis e correções ausentes nos trechos examinados, sem demonstração de exploração do shell. O MSVC 14.43 está fora de suporte; pré-requisitos Microsoft, atribuições e licenças também têm pendências. O vínculo dos 67 PEs Qt com os SPDX foi conferido considerando a transformação de assinatura, mas não aprova vulnerabilidades ou distribuição. `CHK-SEC` continua aberto e nenhuma dependência ou toolchain foi alterada automaticamente.
 
-A prova funcional de virtualização não fecha NFR-PERF-006: o stall input → foco visível de 100 ms continua reservado ao harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para navegação, preferências/temas ou HC. Empacotamento nativo, bandeja/alto contraste nativos, acessibilidade nativa/NVDA, validação de DPI real/movimento e medições continuam pendentes. A fixture e o roteiro congelados não são alterados pela política adicional de apresentação.
+A autorização posterior permitiu a [tentativa nativa de 2026-08-27](m0/evidence/m0-2-native-attempt-20260827.md). A árvore acessível mudou, mas as capturas permaneceram divergentes; nenhum gate visual, NVDA, HC/DPI ou saída nativa foi aprovado. O cleanup encerrou somente o processo de teste identificado e o manifesto permaneceu íntegro. A [preparação do refresh MSVC](m0/evidence/m0-2-msvc-refresh.md), commit `b59a247`, contém validadores inativos com 181 testes do empacotador verdes; a instalação foi cancelada na confirmação de administrador antes de iniciar. Não existe MSVC atualizado, receipt real, novo preflight ou pacote de refresh. Uma nova tentativa de instalação depende de autorização; as ferramentas históricas e os contratos congelados foram preservados.
+
+A prova funcional de virtualização não fecha NFR-PERF-006: o stall input → foco visível de 100 ms continua reservado ao harness externo de M0.4, e a carga única da fixture em memória não comprova processamento incremental/cancelável de arquivos. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; a tentativa posterior inconclusiva não fecha essa lacuna. Empacotamento nativo, bandeja/alto contraste nativos, acessibilidade nativa/NVDA, validação de DPI real/movimento e medições continuam pendentes. A fixture e o roteiro congelados não são alterados pela política adicional de apresentação.
 
 ## 3. Check obrigatório de todo incremento
 

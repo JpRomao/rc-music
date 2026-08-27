@@ -4,10 +4,12 @@
 #include "presentation/ShellAppearanceBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 
+#include <QPointer>
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QtQuickTest/quicktest.h>
+#include <QtTest/qtestkeyboard.h>
 
 #include <memory>
 
@@ -50,6 +52,15 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE qulonglong seekCommitAttemptCount() const noexcept {
         return static_cast<qulonglong>(
             music_player::m0::test::PlayerPresenterTestAccess::seekCommitAttemptCount(presenter_));
+    }
+    Q_INVOKABLE bool repeatKey(const int key, const int modifiers) {
+        QPointer<QWindow> window = QGuiApplication::focusWindow();
+        if (window == nullptr)
+            return false;
+        QTest::simulateEvent(window, true, key, Qt::KeyboardModifiers{modifiers}, {}, true, 1);
+        if (window != nullptr)
+            QTest::simulateEvent(window, false, key, Qt::KeyboardModifiers{modifiers}, {}, true, 1);
+        return true;
     }
     Q_INVOKABLE void setSystemAppearance(const bool dark, const bool reduced_motion) {
         appearance_state_->dark = dark;
