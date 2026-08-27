@@ -1,4 +1,5 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModelTester>
@@ -227,7 +228,7 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     QCOMPARE(meta->indexOfProperty("queuePath"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
     QCOMPARE(meta->indexOfProperty("timer"), -1);
-    for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "enterFrozenUnavailableScenarioForTest()",
+    for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "enterFrozenUnavailableScenario()",
                                "loadFrozenUnavailableScenario()", "applyBackendSnapshot()"})
         QCOMPARE(meta->indexOfMethod(method), -1);
     QCOMPARE(presenter.findChildren<QTimer*>().size(), 1);
@@ -441,7 +442,7 @@ void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScen
 
     QSignalSpy state_changed(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback_changed(&presenter, &PlayerPresenter::playbackChanged);
-    QVERIFY(PlayerPresenterTestAccess::enterFrozenUnavailableScenario(presenter));
+    QVERIFY(experiment::PlayerPresenterScenarioControl::enterUnavailable(presenter));
     QCOMPARE(presenter.queueModel(), model);
     QCOMPARE(model->rowCount(), 1000);
     QCOMPARE(presenter.stateId(), QStringLiteral("error"));

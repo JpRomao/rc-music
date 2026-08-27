@@ -4,9 +4,12 @@ import MusicPlayer.M0
 
 Button {
     id: control
-    objectName: "open-audio"
+    required property string controlId
+    objectName: controlId
     Accessible.role: Accessible.Button
     Accessible.name: text
+    Accessible.focusable: enabled
+    Accessible.focused: activeFocus
     Accessible.onPressAction: control.clicked()
     activeFocusOnTab: true
     hoverEnabled: true

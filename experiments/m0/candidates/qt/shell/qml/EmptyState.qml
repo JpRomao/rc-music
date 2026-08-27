@@ -15,7 +15,7 @@ ColumnLayout {
         sourceSize.width: 192
         sourceSize.height: 192
         Layout.alignment: Qt.AlignHCenter
-        Accessible.name: root.contract.emptyTitle
+        Accessible.ignored: true
     }
     Text {
         objectName: "empty-title"
@@ -30,6 +30,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     AccessibleActionButton {
+        controlId: "open-audio"
         contract: root.contract
         text: root.contract.openAudioText
         Layout.alignment: Qt.AlignHCenter

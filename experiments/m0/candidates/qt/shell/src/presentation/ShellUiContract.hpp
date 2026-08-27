@@ -26,6 +26,21 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString openAudioText READ openAudioText CONSTANT)
     Q_PROPERTY(QString emptyTitle READ emptyTitle CONSTANT)
     Q_PROPERTY(QString emptyHint READ emptyHint CONSTANT)
+    Q_PROPERTY(QString actionPlay READ actionPlay CONSTANT)
+    Q_PROPERTY(QString actionPause READ actionPause CONSTANT)
+    Q_PROPERTY(QString actionPrevious READ actionPrevious CONSTANT)
+    Q_PROPERTY(QString actionNext READ actionNext CONSTANT)
+    Q_PROPERTY(QString skipBackwardShort READ skipBackwardShort CONSTANT)
+    Q_PROPERTY(QString skipForwardShort READ skipForwardShort CONSTANT)
+    Q_PROPERTY(QString skipBackwardName READ skipBackwardName CONSTANT)
+    Q_PROPERTY(QString skipForwardName READ skipForwardName CONSTANT)
+    Q_PROPERTY(QString progressName READ progressName CONSTANT)
+    Q_PROPERTY(QString volumeName READ volumeName CONSTANT)
+    Q_PROPERTY(QString actionMute READ actionMute CONSTANT)
+    Q_PROPERTY(QString actionUnmute READ actionUnmute CONSTANT)
+    Q_PROPERTY(QString errorTitle READ errorTitle CONSTANT)
+    Q_PROPERTY(QString errorBody READ errorBody CONSTANT)
+    Q_PROPERTY(QString actionSkip READ actionSkip CONSTANT)
     Q_PROPERTY(QString canvasColor READ canvasColor CONSTANT)
     Q_PROPERTY(QString surfaceColor READ surfaceColor CONSTANT)
     Q_PROPERTY(QString textPrimaryColor READ textPrimaryColor CONSTANT)
@@ -52,6 +67,21 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString openAudioText() const;
     [[nodiscard]] QString emptyTitle() const;
     [[nodiscard]] QString emptyHint() const;
+    [[nodiscard]] QString actionPlay() const;
+    [[nodiscard]] QString actionPause() const;
+    [[nodiscard]] QString actionPrevious() const;
+    [[nodiscard]] QString actionNext() const;
+    [[nodiscard]] QString skipBackwardShort() const;
+    [[nodiscard]] QString skipForwardShort() const;
+    [[nodiscard]] QString skipBackwardName() const;
+    [[nodiscard]] QString skipForwardName() const;
+    [[nodiscard]] QString progressName() const;
+    [[nodiscard]] QString volumeName() const;
+    [[nodiscard]] QString actionMute() const;
+    [[nodiscard]] QString actionUnmute() const;
+    [[nodiscard]] QString errorTitle() const;
+    [[nodiscard]] QString errorBody() const;
+    [[nodiscard]] QString actionSkip() const;
     [[nodiscard]] QString canvasColor() const;
     [[nodiscard]] QString surfaceColor() const;
     [[nodiscard]] QString textPrimaryColor() const;

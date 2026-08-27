@@ -24,7 +24,20 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         strings_.action_open_audio != QStringLiteral("Abrir áudio") ||
         strings_.empty_title != QStringLiteral("Abra um áudio para começar") ||
         strings_.empty_hint != QStringLiteral("ou arraste arquivos para esta janela") ||
-        palette_.canvas != QStringLiteral("#F6F7F9") || palette_.accent != QStringLiteral("#4F46E5")) {
+        strings_.action_play != QStringLiteral("Reproduzir") || strings_.action_pause != QStringLiteral("Pausar") ||
+        strings_.action_previous != QStringLiteral("Faixa anterior") ||
+        strings_.action_next != QStringLiteral("Próxima faixa") ||
+        strings_.skip_backward_short != QStringLiteral("−{seconds}") ||
+        strings_.skip_forward_short != QStringLiteral("+{seconds}") ||
+        strings_.skip_backward_name != QStringLiteral("Voltar {seconds} segundos") ||
+        strings_.skip_forward_name != QStringLiteral("Avançar {seconds} segundos") ||
+        strings_.progress_name != QStringLiteral("Posição da faixa") ||
+        strings_.volume_name != QStringLiteral("Volume") || strings_.action_mute != QStringLiteral("Silenciar") ||
+        strings_.action_unmute != QStringLiteral("Ativar som") ||
+        strings_.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
+        strings_.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
+        strings_.action_skip != QStringLiteral("Pular") || palette_.canvas != QStringLiteral("#F6F7F9") ||
+        palette_.accent != QStringLiteral("#4F46E5")) {
         throw std::invalid_argument{"unsupported empty shell fixture"};
     }
     const FixtureAsset& placeholder = assetById(bundle, QStringLiteral("cover-placeholder"));
@@ -47,6 +60,21 @@ QString ShellUiContract::appName() const { return strings_.app_name; }
 QString ShellUiContract::openAudioText() const { return strings_.action_open_audio; }
 QString ShellUiContract::emptyTitle() const { return strings_.empty_title; }
 QString ShellUiContract::emptyHint() const { return strings_.empty_hint; }
+QString ShellUiContract::actionPlay() const { return strings_.action_play; }
+QString ShellUiContract::actionPause() const { return strings_.action_pause; }
+QString ShellUiContract::actionPrevious() const { return strings_.action_previous; }
+QString ShellUiContract::actionNext() const { return strings_.action_next; }
+QString ShellUiContract::skipBackwardShort() const { return strings_.skip_backward_short; }
+QString ShellUiContract::skipForwardShort() const { return strings_.skip_forward_short; }
+QString ShellUiContract::skipBackwardName() const { return strings_.skip_backward_name; }
+QString ShellUiContract::skipForwardName() const { return strings_.skip_forward_name; }
+QString ShellUiContract::progressName() const { return strings_.progress_name; }
+QString ShellUiContract::volumeName() const { return strings_.volume_name; }
+QString ShellUiContract::actionMute() const { return strings_.action_mute; }
+QString ShellUiContract::actionUnmute() const { return strings_.action_unmute; }
+QString ShellUiContract::errorTitle() const { return strings_.error_title; }
+QString ShellUiContract::errorBody() const { return strings_.error_body; }
+QString ShellUiContract::actionSkip() const { return strings_.action_skip; }
 QString ShellUiContract::canvasColor() const { return palette_.canvas; }
 QString ShellUiContract::surfaceColor() const { return palette_.surface; }
 QString ShellUiContract::textPrimaryColor() const { return palette_.text_primary; }

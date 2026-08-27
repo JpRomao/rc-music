@@ -8,6 +8,7 @@
 #include <QMetaProperty>
 #include <QStringList>
 #include <QTest>
+#include <QtQml/qqml.h>
 
 #include <stdexcept>
 
@@ -25,11 +26,14 @@ class ShellUiContractTests final : public QObject {
     void initTestCase();
     void exposesFrozenConstantsAndAuthenticatedResources();
     void rejectsUnknownAssetMappings();
+    void rejectsUnsupportedTransportStrings();
 };
 
 void ShellUiContractTests::initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
 
 void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
+    QVERIFY(qmlTypeId("MusicPlayer.M0", 1, 0, "ShellUiContract") >= 0);
+    QVERIFY(qmlTypeId("MusicPlayer.M0", 1, 0, "PlayerPresenter") >= 0);
     QVERIFY(QFile::exists(fixture_resource_path));
     QVERIFY(QFile::exists(queue_resource_path));
     const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
@@ -47,6 +51,21 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.openAudioText(), QStringLiteral("Abrir áudio"));
     QCOMPARE(contract.emptyTitle(), QStringLiteral("Abra um áudio para começar"));
     QCOMPARE(contract.emptyHint(), QStringLiteral("ou arraste arquivos para esta janela"));
+    QCOMPARE(contract.actionPlay(), QStringLiteral("Reproduzir"));
+    QCOMPARE(contract.actionPause(), QStringLiteral("Pausar"));
+    QCOMPARE(contract.actionPrevious(), QStringLiteral("Faixa anterior"));
+    QCOMPARE(contract.actionNext(), QStringLiteral("Próxima faixa"));
+    QCOMPARE(contract.skipBackwardShort(), QStringLiteral("−{seconds}"));
+    QCOMPARE(contract.skipForwardShort(), QStringLiteral("+{seconds}"));
+    QCOMPARE(contract.skipBackwardName(), QStringLiteral("Voltar {seconds} segundos"));
+    QCOMPARE(contract.skipForwardName(), QStringLiteral("Avançar {seconds} segundos"));
+    QCOMPARE(contract.progressName(), QStringLiteral("Posição da faixa"));
+    QCOMPARE(contract.volumeName(), QStringLiteral("Volume"));
+    QCOMPARE(contract.actionMute(), QStringLiteral("Silenciar"));
+    QCOMPARE(contract.actionUnmute(), QStringLiteral("Ativar som"));
+    QCOMPARE(contract.errorTitle(), QStringLiteral("Não foi possível abrir esta faixa"));
+    QCOMPARE(contract.errorBody(), QStringLiteral("A faixa de teste está indisponível."));
+    QCOMPARE(contract.actionSkip(), QStringLiteral("Pular"));
     QCOMPARE(contract.canvasColor(), QStringLiteral("#F6F7F9"));
     QCOMPARE(contract.surfaceColor(), QStringLiteral("#FFFFFF"));
     QCOMPARE(contract.textPrimaryColor(), QStringLiteral("#15171A"));
@@ -72,6 +91,21 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("openAudioText"),
         QStringLiteral("emptyTitle"),
         QStringLiteral("emptyHint"),
+        QStringLiteral("actionPlay"),
+        QStringLiteral("actionPause"),
+        QStringLiteral("actionPrevious"),
+        QStringLiteral("actionNext"),
+        QStringLiteral("skipBackwardShort"),
+        QStringLiteral("skipForwardShort"),
+        QStringLiteral("skipBackwardName"),
+        QStringLiteral("skipForwardName"),
+        QStringLiteral("progressName"),
+        QStringLiteral("volumeName"),
+        QStringLiteral("actionMute"),
+        QStringLiteral("actionUnmute"),
+        QStringLiteral("errorTitle"),
+        QStringLiteral("errorBody"),
+        QStringLiteral("actionSkip"),
         QStringLiteral("canvasColor"),
         QStringLiteral("surfaceColor"),
         QStringLiteral("textPrimaryColor"),
@@ -143,6 +177,19 @@ void ShellUiContractTests::rejectsUnknownAssetMappings() {
     bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
     bundle.assets.removeFirst();
     QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
+}
+
+void ShellUiContractTests::rejectsUnsupportedTransportStrings() {
+    for (QString FixtureStrings::* const member :
+         {&FixtureStrings::action_play, &FixtureStrings::action_pause, &FixtureStrings::action_previous,
+          &FixtureStrings::action_next, &FixtureStrings::skip_backward_short, &FixtureStrings::skip_forward_short,
+          &FixtureStrings::skip_backward_name, &FixtureStrings::skip_forward_name, &FixtureStrings::progress_name,
+          &FixtureStrings::volume_name, &FixtureStrings::action_mute, &FixtureStrings::action_unmute,
+          &FixtureStrings::error_title, &FixtureStrings::error_body, &FixtureStrings::action_skip}) {
+        FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+        bundle.strings.*member = QStringLiteral("drifted");
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
+    }
 }
 
 } // namespace music_player::m0::test

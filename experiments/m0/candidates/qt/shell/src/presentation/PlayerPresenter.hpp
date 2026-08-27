@@ -9,14 +9,22 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QtQmlIntegration/qqmlintegration.h>
+
+#include <cstddef>
 
 namespace music_player::m0 {
+namespace experiment {
+class PlayerPresenterScenarioControl;
+}
 namespace test {
 struct PlayerPresenterTestAccess;
 }
 
 class PlayerPresenter final : public QObject {
     Q_OBJECT
+    QML_NAMED_ELEMENT(PlayerPresenter)
+    QML_UNCREATABLE("PlayerPresenter is provided by the application bootstrap")
     Q_PROPERTY(QString stateId READ stateId NOTIFY stateChanged)
     Q_PROPERTY(PlaybackState playbackState READ playbackState NOTIFY playbackChanged)
     Q_PROPERTY(bool queueLoaded READ queueLoaded NOTIFY stateChanged)
@@ -113,9 +121,11 @@ class PlayerPresenter final : public QObject {
     void seekRejected();
 
   private:
+    friend class experiment::PlayerPresenterScenarioControl;
     friend struct test::PlayerPresenterTestAccess;
     void rejectNextSeekForTest() noexcept;
-    [[nodiscard]] bool enterFrozenUnavailableScenarioForTest();
+    [[nodiscard]] std::size_t seekCommitAttemptCountForTest() const noexcept;
+    [[nodiscard]] bool enterFrozenUnavailableScenario();
     void reconcileTimer();
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
@@ -125,6 +135,7 @@ class PlayerPresenter final : public QObject {
     QueueListModel queue_model_;
     QTimer timer_;
     FixtureState state_;
+    std::size_t seek_commit_attempt_count_{0};
 };
 
 } // namespace music_player::m0

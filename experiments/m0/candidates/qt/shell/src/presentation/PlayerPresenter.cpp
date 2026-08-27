@@ -288,6 +288,7 @@ bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
     return true;
 }
 bool PlayerPresenter::commitSeekPreview() {
+    ++seek_commit_attempt_count_;
     if (!controller_.seekPreviewActive() || controller_.seekPending())
         return false;
     controller_.commitSeekPreview();
@@ -308,7 +309,7 @@ bool PlayerPresenter::toggleMute() {
     emit preferencesChanged();
     return true;
 }
-bool PlayerPresenter::enterFrozenUnavailableScenarioForTest() {
+bool PlayerPresenter::enterFrozenUnavailableScenario() {
     if (!queueLoaded() || state_.state_id != QStringLiteral("playing") || !backend_.enterUnavailableScenario())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
@@ -356,6 +357,7 @@ bool PlayerPresenter::advanceOneTick() {
     return changed;
 }
 void PlayerPresenter::rejectNextSeekForTest() noexcept { backend_.rejectNextSeek(); }
+std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 void PlayerPresenter::reconcileTimer() {
     const bool needed = queueLoaded() && (controller_.confirmedSnapshot().status == PlaybackStatus::Playing ||
                                           controller_.seekPending());

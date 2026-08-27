@@ -69,7 +69,7 @@ Comece por:
 
 ## Estado do repositório
 
-O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental em `experiments/m0/candidates/qt/shell` contém o core C++20 puro, o backend manual determinístico, o adapter Qt da fixture, o modelo tipado da fila, o presenter com ações, metadata atual/contextual, cenário recuperável de faixa indisponível e agendamento de 200 ms, além da primeira janela Qt Quick tipada no estado vazio. Fixture, fila e SVGs usados pelo executável ficam autenticados e fechados em recursos `qrc`; os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). A representação visual dos estados tocando/erro, controles persistentes, fila visual, temas, preferências, tray, pacote e validações manuais ainda estão pendentes; não há scaffold do produto na raiz.
+O repositório já contém o descriptor, os schemas, o manifesto de stage e o runner autenticado do preflight Qt em `experiments/m0/provisioning/qt-shell`; toolchains/downloads grandes ficam ignorados em `out/m0`. O scaffold experimental em `experiments/m0/candidates/qt/shell` contém o core C++20 puro, o backend manual determinístico, o adapter Qt da fixture, o modelo tipado da fila e o presenter com ações, metadata atual/contextual, cenário recuperável de faixa indisponível e agendamento de 200 ms. O shell Qt Quick tipado já percorre automaticamente vazio, tocando/pausado e erro com barra persistente, seek, saltos, volume, mudo e recuperação; um smoke do executável real entra no erro por uma opção fechada do harness e recupera pela ação QML “Pular”. Fixture, fila e SVGs ficam autenticados em recursos `qrc`. Os comandos Release validados estão no [README do candidato Qt](experiments/m0/candidates/qt/README.md). Fila visual, navegação anterior/próxima, temas, preferências, tray, pacote, medições e validações manuais ainda estão pendentes; não há scaffold do produto na raiz.
 
 Validações atuais:
 
@@ -103,7 +103,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. continuar M0.2 por TDD a partir do estado vazio tipado até os estados tocando/erro, controles persistentes, fila, temas, preferências e tray do shell Qt Quick completo;
+1. continuar M0.2 por TDD com fila visual/virtualização, navegação anterior/próxima, temas, preferências, tray, pacote, medições e validações manuais do shell Qt Quick;
 2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
 4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.

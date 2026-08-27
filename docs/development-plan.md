@@ -3,7 +3,7 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-08-26
-**Marco atual:** M0.2 — em andamento; primeiro estado vazio Qt Quick tipado validado
+**Marco atual:** M0.2 — em andamento; jornada Qt Quick vazia/tocando/erro, transporte e smoke real validados
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -70,7 +70,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 
 ### 2.2 Estado que não pode ser inferido
 
-- Não existe código do produto, scaffold na raiz, instalador ou fixture de áudio; existe apenas o candidato experimental Qt sob `experiments/m0`, incluindo sua primeira janela vazia.
+- Não existe código do produto, scaffold na raiz, instalador ou fixture de áudio; existe apenas o candidato experimental Qt sob `experiments/m0`, com shell falso vazio/tocando/erro.
 - Nenhum formato foi comprovado.
 - Nenhuma stack ou engine foi aceita.
 - ADR-0001, ADR-0002 e ADR-0003 continuam `Proposto`.
@@ -84,7 +84,7 @@ A autoria documental e a revisão do mantenedor estão concluídas. A [autoriza�
 
 M0.1 foi concluído em `24d12ea`, com evidência consolidada em [`m0-1.md`](m0/evidence/m0-1.md). O marco fechou fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos, summary comum puro e o piloto Windows `P`. O caminho nominal do piloto permanece `partial/etw_live_not_implemented`; o fallback pós-falha de snapshot é `unavailable/pre_snapshot_fallback`. Ambos exigem cleanup completo e zero sobreviventes. `P` usa role `synthetic_pilot`, `decision_eligible=false` e nunca entra em snapshot-set, batch ou summary comum A/B. Nenhuma coleta comparativa A/B ocorreu e nenhuma stack ou engine foi aceita.
 
-M0.2 está em andamento. O [preflight autenticado](m0/evidence/m0-2-preflight.md) provisionou e validou Qt 6.11.2 Desktop MSVC 2022 x64, `qmlformat`, `qmllint`, deployment/módulos efetivos, `clang-format` compatível e NVDA, com origem, hash, licença, stage isolado e contrato externo. Os Reds/Greens materializaram o core C++20 puro e seus testes fora da raiz do produto, o backend manual determinístico, o loader Qt ancorado no manifesto, o modelo tipado da fila comum e o presenter com ações de transporte, preferências, metadata atual/contextual, transição recuperável para a faixa indisponível congelada e agendamento determinístico de 200 ms. Seek em voo é cancelado quando o backend deixa de ser transportável, sem timer ou estado pendente residual. A primeira janela Qt Quick usa módulo QML estático, contrato C++ somente leitura, estado vazio, foco/teclado e semântica acessível automatizada; fixture, fila e SVGs autenticados são recursos `qrc` relocáveis. A representação visual dos estados tocando/erro, controles persistentes, fila visual, temas, preferências, tray, pacote, acessibilidade manual e medições continuam pendentes. A fixture e o roteiro comuns permanecem congelados.
+M0.2 está em andamento. O [preflight autenticado](m0/evidence/m0-2-preflight.md) provisionou e validou Qt 6.11.2 Desktop MSVC 2022 x64, `qmlformat`, `qmllint`, deployment/módulos efetivos, `clang-format` compatível e NVDA, com origem, hash, licença, stage isolado e contrato externo. Os Reds/Greens materializaram o core C++20 puro e seus testes fora da raiz do produto, o backend manual determinístico, o loader Qt ancorado no manifesto, o modelo tipado da fila comum e o presenter com ações de transporte, preferências, metadata atual/contextual, transição recuperável para a faixa indisponível congelada e agendamento determinístico de 200 ms. Seek em voo é cancelado quando o backend deixa de ser transportável, sem timer ou estado pendente residual. O módulo QML estático registra `ShellUiContract` e `PlayerPresenter` como tipos não criáveis e expõe somente a boundary deliberada. A jornada automatizada percorre vazio → tocando/pausado → seek por clique, drag e teclado → erro com contexto → recuperação; a mesma barra persistente cobre progresso, saltos, play/pause, volume e mudo com foco explícito, ordem de Tab, targets e semântica acessível. O teste conta exatamente uma tentativa de commit por interação e valida limites sem sobreposição em 720 × 520. O executável experimental também entra no erro por uma opção fechada do harness; seu smoke aciona “Pular” no QML e comprova recuperação sem trocar a barra ou a fila. Fixture, fila e SVGs autenticados permanecem recursos `qrc` relocáveis. Fila visual/virtualização, navegação anterior/próxima, temas, preferências, tray, pacote, árvore nativa por NVDA, escalas/contraste/movimento e medições continuam pendentes. A fixture e o roteiro comuns permanecem congelados.
 
 ## 3. Check obrigatório de todo incremento
 

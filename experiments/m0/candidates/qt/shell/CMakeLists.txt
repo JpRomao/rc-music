@@ -114,8 +114,6 @@ if(M0_QT_SHELL_SUPPORT)
         src/adapters/fixture/FixtureDecoder.hpp
         src/adapters/fixture/FixtureRepository.cpp
         src/presentation/QueueListModel.cpp
-        src/presentation/PlayerPresenter.hpp
-        src/presentation/PlayerPresenter.cpp
     )
     target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
     target_link_libraries(m0_qt_shell_support PUBLIC m0_qt_core Qt6::Core)
@@ -142,10 +140,17 @@ if(M0_QT_SHELL_SUPPORT)
         SOURCES
             src/presentation/ShellUiContract.hpp
             src/presentation/ShellUiContract.cpp
+            src/presentation/PlayerPresenter.hpp
+            src/presentation/PlayerPresenter.cpp
+            src/presentation/PlayerPresenterScenarioControl.hpp
         QML_FILES
             qml/Main.qml
             qml/EmptyState.qml
             qml/AccessibleActionButton.qml
+            qml/AccessibleTransportButton.qml
+            qml/NowPlayingState.qml
+            qml/ErrorState.qml
+            qml/TransportBar.qml
     )
     target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
     target_link_libraries(m0_qt_shell_ui PRIVATE
@@ -181,8 +186,22 @@ if(M0_QT_SHELL_SUPPORT)
         target_compile_options(m0_qt_shell_uiplugin PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    add_library(m0_qt_shell_bootstrap STATIC
+        app/ShellLaunchOptions.hpp
+        app/ShellLaunchOptions.cpp
+    )
+    target_include_directories(m0_qt_shell_bootstrap PUBLIC app)
+    target_link_libraries(m0_qt_shell_bootstrap PUBLIC Qt6::Core)
+    target_compile_features(m0_qt_shell_bootstrap PUBLIC cxx_std_20)
+    if(MSVC)
+        target_compile_options(m0_qt_shell_bootstrap PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_shell_bootstrap PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     qt_add_executable(m0_qt_shell app/main.cpp)
     target_link_libraries(m0_qt_shell PRIVATE
+        m0_qt_shell_bootstrap
         m0_qt_shell_support
         m0_qt_shell_ui
         m0_qt_shell_uiplugin
@@ -201,6 +220,17 @@ if(M0_QT_SHELL_SUPPORT)
     endif()
 
     if(BUILD_TESTING)
+        target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
+        add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
+        target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
+        target_compile_features(m0_qt_shell_launch_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_shell_launch_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_shell_launch_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_shell_launch_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.shell-launch-options COMMAND m0_qt_shell_launch_tests)
         add_executable(m0_qt_fixture_tests
             tests/qtest/FixtureRepositoryTests.cpp
         )
@@ -219,7 +249,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
         add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
-        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support Qt6::Test)
+        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support m0_qt_shell_ui Qt6::Test)
         target_include_directories(m0_qt_presenter_tests PRIVATE src)
         target_compile_features(m0_qt_presenter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_presenter_tests PRIVATE
@@ -277,7 +307,7 @@ if(M0_QT_SHELL_SUPPORT)
         else()
             target_compile_options(m0_qt_quick_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
-        add_test(NAME m0.qt.quick.empty-shell COMMAND m0_qt_quick_tests
+        add_test(NAME m0.qt.quick.shell-states COMMAND m0_qt_quick_tests
             -input "${CMAKE_CURRENT_SOURCE_DIR}/tests/quick"
             -import "${QT_QML_OUTPUT_DIRECTORY}"
         )
@@ -287,14 +317,37 @@ if(M0_QT_SHELL_SUPPORT)
             LABELS "m0;qt;fixture;model"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
+        set_tests_properties(m0.qt.shell-launch-options PROPERTIES
+            LABELS "m0;qt;shell-launch"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
         set_tests_properties(m0.qt.presenter.initial-load PROPERTIES
             LABELS "m0;qt;presenter"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
-        set_tests_properties(m0.qt.quick.empty-shell PROPERTIES
-            LABELS "m0;qt;quick;empty-shell"
+        set(m0_qt_quick_test_environment
+            "QT_QPA_PLATFORM=offscreen"
+            "QSG_RHI_BACKEND=software"
+            "QT_QUICK_CONTROLS_STYLE=Basic"
+        )
+        if(WIN32 AND IS_DIRECTORY "$ENV{WINDIR}/Fonts")
+            cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST m0_windows_font_dir NORMALIZE)
+            list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
+        endif()
+        add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell
+            --m0-scenario=unavailable
+            --m0-smoke=error-recovery
+        )
+        set_tests_properties(m0.qt.shell-executable.error-recovery PROPERTIES
+            LABELS "m0;qt;shell-executable;error-recovery"
+            TIMEOUT 5
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
-            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QSG_RHI_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        set_tests_properties(m0.qt.quick.shell-states PROPERTIES
+            LABELS "m0;qt;quick;shell-states"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
         set_tests_properties(m0.qt.shell-ui-contract PROPERTIES
             LABELS "m0;qt;shell-ui-contract"
