@@ -123,6 +123,13 @@ void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
     snapshot = normalizedSnapshot(snapshot);
     confirmed_snapshot_ = snapshot;
 
+    if (!supportsTransport(snapshot.status) || !snapshot.seekable) {
+        seek_pending_ = false;
+        seek_preview_active_ = false;
+        displayed_position_ms_ = snapshot.position_ms;
+        return;
+    }
+
     if (seek_pending_ && snapshot.position_ms == preview_position_ms_) {
         seek_pending_ = false;
         seek_preview_active_ = false;

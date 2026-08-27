@@ -37,6 +37,8 @@ class DeterministicPlaybackBackend final : public PlaybackBackend {
 
     void rejectNextSeek() noexcept;
     [[nodiscard]] DeterministicTickResult tick();
+    [[nodiscard]] bool enterUnavailableScenario() noexcept;
+    [[nodiscard]] bool restoreInitialScenario() noexcept;
 
   private:
     DeterministicPlaybackConfig config_;

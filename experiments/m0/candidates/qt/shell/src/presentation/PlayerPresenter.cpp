@@ -186,6 +186,50 @@ QString PlayerPresenter::messageKey() const { return state_.message_key.value_or
 QString PlayerPresenter::primaryActionId() const { return state_.primary_action_id; }
 bool PlayerPresenter::hasError() const noexcept { return state_.error_code.has_value(); }
 QString PlayerPresenter::errorCode() const { return state_.error_code.value_or(QString{}); }
+const QueueItem* PlayerPresenter::currentTrack() const noexcept {
+    if (!state_.current_occurrence_id.has_value())
+        return nullptr;
+    for (const QueueItem& item : bundle_.queue) {
+        if (item.occurrence_id == *state_.current_occurrence_id)
+            return &item;
+    }
+    return nullptr;
+}
+const QueueItem* PlayerPresenter::contextTrack() const noexcept {
+    if (!state_.context_occurrence_id.has_value())
+        return nullptr;
+    for (const QueueItem& item : bundle_.queue) {
+        if (item.occurrence_id == *state_.context_occurrence_id)
+            return &item;
+    }
+    return nullptr;
+}
+bool PlayerPresenter::hasCurrentTrack() const noexcept { return currentTrack() != nullptr; }
+QString PlayerPresenter::currentTitle() const {
+    const QueueItem* const track = currentTrack();
+    return track != nullptr ? track->title : QString{};
+}
+QString PlayerPresenter::currentArtist() const {
+    const QueueItem* const track = currentTrack();
+    return track != nullptr ? track->artist : QString{};
+}
+QString PlayerPresenter::currentAlbum() const {
+    const QueueItem* const track = currentTrack();
+    return track != nullptr ? track->album : QString{};
+}
+bool PlayerPresenter::hasContextTrack() const noexcept { return contextTrack() != nullptr; }
+QString PlayerPresenter::contextTitle() const {
+    const QueueItem* const track = contextTrack();
+    return track != nullptr ? track->title : QString{};
+}
+QString PlayerPresenter::contextArtist() const {
+    const QueueItem* const track = contextTrack();
+    return track != nullptr ? track->artist : QString{};
+}
+QString PlayerPresenter::contextAlbum() const {
+    const QueueItem* const track = contextTrack();
+    return track != nullptr ? track->album : QString{};
+}
 QueueListModel* PlayerPresenter::queueModel() noexcept { return &queue_model_; }
 QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept { return &queue_model_; }
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
@@ -262,6 +306,29 @@ bool PlayerPresenter::setVolume(const double volume) {
 bool PlayerPresenter::toggleMute() {
     controller_.toggleMute();
     emit preferencesChanged();
+    return true;
+}
+bool PlayerPresenter::enterFrozenUnavailableScenarioForTest() {
+    if (!queueLoaded() || state_.state_id != QStringLiteral("playing") || !backend_.enterUnavailableScenario())
+        return false;
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    state_ = stateById(bundle_, QStringLiteral("error"));
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::skipUnavailable() {
+    if (state_.state_id != QStringLiteral("error") || !backend_.restoreInitialScenario())
+        return false;
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    state_ = stateById(bundle_, QStringLiteral("playing"));
+    state_.position_ms = backend_.snapshot().position_ms;
+    state_.duration_ms = backend_.snapshot().duration_ms;
+    state_.seekable = backend_.snapshot().seekable;
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::advanceOneTick() {

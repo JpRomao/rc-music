@@ -80,4 +80,22 @@ DeterministicTickResult DeterministicPlaybackBackend::tick() {
     return {.snapshot = snapshot_};
 }
 
+bool DeterministicPlaybackBackend::enterUnavailableScenario() noexcept {
+    if (snapshot_.status == PlaybackStatus::Error)
+        return false;
+    snapshot_ = {PlaybackStatus::Error, 0, 0, false};
+    pending_seek_.reset();
+    reject_next_seek_ = false;
+    return true;
+}
+
+bool DeterministicPlaybackBackend::restoreInitialScenario() noexcept {
+    if (snapshot_.status != PlaybackStatus::Error)
+        return false;
+    snapshot_ = config_.initial_snapshot;
+    pending_seek_.reset();
+    reject_next_seek_ = false;
+    return true;
+}
+
 } // namespace music_player::m0

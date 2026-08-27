@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -300,6 +301,24 @@ TEST_CASE("only the target snapshot acknowledges a pending seek", "[m0][qt][core
 
     CHECK(controller.seekPending());
     CHECK(controller.displayedPositionMs() == 124'000);
+}
+
+TEST_CASE("non-transport snapshots cancel seek preview and pending state", "[m0][qt][core][seek][error]") {
+    const PlaybackStatus status = GENERATE(PlaybackStatus::Empty, PlaybackStatus::Loading, PlaybackStatus::Error);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, playingSnapshot()};
+
+    controller.beginSeekPreview(124'000);
+    controller.commitSeekPreview();
+    REQUIRE(controller.seekPreviewActive());
+    REQUIRE(controller.seekPending());
+
+    controller.applyBackendSnapshot({status, 0, 0, false});
+
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK_FALSE(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 0);
 }
 
 TEST_CASE("a rejected seek restores the last confirmed position", "[m0][qt][core][seek][error]") {

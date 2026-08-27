@@ -38,6 +38,14 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString primaryActionId READ primaryActionId NOTIFY stateChanged)
     Q_PROPERTY(bool hasError READ hasError NOTIFY stateChanged)
     Q_PROPERTY(QString errorCode READ errorCode NOTIFY stateChanged)
+    Q_PROPERTY(bool hasCurrentTrack READ hasCurrentTrack NOTIFY stateChanged)
+    Q_PROPERTY(QString currentTitle READ currentTitle NOTIFY stateChanged)
+    Q_PROPERTY(QString currentArtist READ currentArtist NOTIFY stateChanged)
+    Q_PROPERTY(QString currentAlbum READ currentAlbum NOTIFY stateChanged)
+    Q_PROPERTY(bool hasContextTrack READ hasContextTrack NOTIFY stateChanged)
+    Q_PROPERTY(QString contextTitle READ contextTitle NOTIFY stateChanged)
+    Q_PROPERTY(QString contextArtist READ contextArtist NOTIFY stateChanged)
+    Q_PROPERTY(QString contextAlbum READ contextAlbum NOTIFY stateChanged)
     Q_PROPERTY(QAbstractItemModel* queueModel READ queueModelObject CONSTANT)
     Q_PROPERTY(double volume READ volume NOTIFY preferencesChanged)
     Q_PROPERTY(bool muted READ muted NOTIFY preferencesChanged)
@@ -71,6 +79,14 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString primaryActionId() const;
     [[nodiscard]] bool hasError() const noexcept;
     [[nodiscard]] QString errorCode() const;
+    [[nodiscard]] bool hasCurrentTrack() const noexcept;
+    [[nodiscard]] QString currentTitle() const;
+    [[nodiscard]] QString currentArtist() const;
+    [[nodiscard]] QString currentAlbum() const;
+    [[nodiscard]] bool hasContextTrack() const noexcept;
+    [[nodiscard]] QString contextTitle() const;
+    [[nodiscard]] QString contextArtist() const;
+    [[nodiscard]] QString contextAlbum() const;
     [[nodiscard]] QueueListModel* queueModel() noexcept;
     [[nodiscard]] QAbstractItemModel* queueModelObject() noexcept;
     [[nodiscard]] const Preferences& preferences() const noexcept;
@@ -87,6 +103,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool commitSeekPreview();
     Q_INVOKABLE bool setVolume(double volume);
     Q_INVOKABLE bool toggleMute();
+    Q_INVOKABLE bool skipUnavailable();
     [[nodiscard]] bool advanceOneTick();
 
   signals:
@@ -98,7 +115,10 @@ class PlayerPresenter final : public QObject {
   private:
     friend struct test::PlayerPresenterTestAccess;
     void rejectNextSeekForTest() noexcept;
+    [[nodiscard]] bool enterFrozenUnavailableScenarioForTest();
     void reconcileTimer();
+    [[nodiscard]] const QueueItem* currentTrack() const noexcept;
+    [[nodiscard]] const QueueItem* contextTrack() const noexcept;
     FixtureBundle bundle_;
     DeterministicPlaybackBackend backend_;
     PlayerController controller_;

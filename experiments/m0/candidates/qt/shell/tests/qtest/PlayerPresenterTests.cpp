@@ -41,6 +41,7 @@ class PlayerPresenterTests final : public QObject {
     void drivesTransportPreferencesAndManualTicksDeterministically();
     void keepsUnavailableAndTerminalTransportInert();
     void schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem();
+    void projectsTypedMetadataAndRecoversFrozenUnavailableScenario();
 };
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
@@ -65,6 +66,14 @@ void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() 
     QCOMPARE(presenter.primaryActionId(), QStringLiteral("open-audio"));
     QCOMPARE(presenter.hasError(), false);
     QCOMPARE(presenter.errorCode(), QString{});
+    QCOMPARE(presenter.hasCurrentTrack(), false);
+    QCOMPARE(presenter.currentTitle(), QString{});
+    QCOMPARE(presenter.currentArtist(), QString{});
+    QCOMPARE(presenter.currentAlbum(), QString{});
+    QCOMPARE(presenter.hasContextTrack(), false);
+    QCOMPARE(presenter.contextTitle(), QString{});
+    QCOMPARE(presenter.contextArtist(), QString{});
+    QCOMPARE(presenter.contextAlbum(), QString{});
 
     const Preferences& preferences = presenter.preferences();
     QCOMPARE(preferences.theme, ThemeMode::System);
@@ -202,9 +211,9 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     PlayerPresenter presenter(frozenBundle(), platform);
     const QMetaObject* meta = presenter.metaObject();
     QVERIFY(meta->indexOfMethod("loadFrozenQueue()") >= 0);
-    for (const char* method :
-         {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
-          "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)", "toggleMute()"})
+    for (const char* method : {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
+                               "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)",
+                               "toggleMute()", "skipUnavailable()"})
         QVERIFY(meta->indexOfMethod(method) >= 0);
     const int queue_model_property = meta->indexOfProperty("queueModel");
     QVERIFY(queue_model_property >= 0);
@@ -218,7 +227,8 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     QCOMPARE(meta->indexOfProperty("queuePath"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
     QCOMPARE(meta->indexOfProperty("timer"), -1);
-    for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "applyBackendSnapshot()"})
+    for (const char* method : {"advanceOneTick()", "rejectNextSeekForTest()", "enterFrozenUnavailableScenarioForTest()",
+                               "loadFrozenUnavailableScenario()", "applyBackendSnapshot()"})
         QCOMPARE(meta->indexOfMethod(method), -1);
     QCOMPARE(presenter.findChildren<QTimer*>().size(), 1);
 }
@@ -405,6 +415,79 @@ void PlayerPresenterTests::schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem() {
     QTRY_COMPARE_WITH_TIMEOUT(terminal.playbackState(), PlayerPresenter::PlaybackState::Paused, 500);
     QCOMPARE(terminal.positionMs(), 248'000);
     QVERIFY(!terminal_timer->isActive());
+}
+
+void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScenario() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QueueListModel* const model = presenter.queueModel();
+    QVERIFY(presenter.loadFrozenQueue());
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(timer->isActive());
+    QCOMPARE(presenter.hasCurrentTrack(), true);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Canção nº 17 — São João, ação e café ☕"));
+    QCOMPARE(presenter.currentArtist(), QStringLiteral("Artista Sintética Ç"));
+    QCOMPARE(presenter.currentAlbum(), QStringLiteral("Coleção Ação e Emoção"));
+    QCOMPARE(presenter.hasContextTrack(), false);
+    QCOMPARE(presenter.contextTitle(), QString{});
+    QCOMPARE(presenter.contextArtist(), QString{});
+    QCOMPARE(presenter.contextAlbum(), QString{});
+
+    QVERIFY(presenter.beginSeekPreview(124'000));
+    QVERIFY(presenter.commitSeekPreview());
+    QVERIFY(presenter.seekPreviewActive());
+    QVERIFY(presenter.seekPending());
+
+    QSignalSpy state_changed(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback_changed(&presenter, &PlayerPresenter::playbackChanged);
+    QVERIFY(PlayerPresenterTestAccess::enterFrozenUnavailableScenario(presenter));
+    QCOMPARE(presenter.queueModel(), model);
+    QCOMPARE(model->rowCount(), 1000);
+    QCOMPARE(presenter.stateId(), QStringLiteral("error"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0999"));
+    QCOMPARE(presenter.contextOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.hasPosition(), false);
+    QCOMPARE(presenter.positionMs(), 0);
+    QCOMPARE(presenter.hasDuration(), false);
+    QCOMPARE(presenter.durationMs(), 0);
+    QCOMPARE(presenter.seekable(), false);
+    QCOMPARE(presenter.seekPreviewActive(), false);
+    QCOMPARE(presenter.seekPending(), false);
+    QCOMPARE(presenter.hasError(), true);
+    QCOMPARE(presenter.errorCode(), QStringLiteral("fixture_source_unavailable"));
+    QCOMPARE(presenter.assetId(), QStringLiteral("cover-track"));
+    QCOMPARE(presenter.messageKey(), QStringLiteral("error_body"));
+    QCOMPARE(presenter.primaryActionId(), QStringLiteral("skip"));
+    QCOMPARE(presenter.hasCurrentTrack(), true);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Faixa indisponível de teste"));
+    QCOMPARE(presenter.currentArtist(), QStringLiteral("Artista sintético indisponível"));
+    QCOMPARE(presenter.currentAlbum(), QStringLiteral("Falhas recuperáveis"));
+    QCOMPARE(presenter.hasContextTrack(), true);
+    QCOMPARE(presenter.contextTitle(), QStringLiteral("Canção nº 17 — São João, ação e café ☕"));
+    QCOMPARE(presenter.contextArtist(), QStringLiteral("Artista Sintética Ç"));
+    QCOMPARE(presenter.contextAlbum(), QStringLiteral("Coleção Ação e Emoção"));
+    QCOMPARE(state_changed.size(), 1);
+    QCOMPARE(playback_changed.size(), 1);
+    QVERIFY(!timer->isActive());
+    QVERIFY(!presenter.advanceOneTick());
+    QCOMPARE(state_changed.size(), 1);
+    QCOMPARE(playback_changed.size(), 1);
+
+    QVERIFY(presenter.skipUnavailable());
+    QCOMPARE(presenter.queueModel(), model);
+    QCOMPARE(model->rowCount(), 1000);
+    QCOMPARE(presenter.stateId(), QStringLiteral("playing"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("queue-0017"));
+    QCOMPARE(presenter.hasContextTrack(), false);
+    QCOMPARE(state_changed.size(), 2);
+    QCOMPARE(playback_changed.size(), 2);
+    QVERIFY(timer->isActive());
+    QVERIFY(!presenter.skipUnavailable());
+    QCOMPARE(state_changed.size(), 2);
+    QCOMPARE(playback_changed.size(), 2);
 }
 
 } // namespace music_player::m0::test

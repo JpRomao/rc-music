@@ -142,4 +142,21 @@ TEST_CASE("invalid deterministic backend configuration is rejected", "[m0][qt][c
     CHECK_THROWS_AS(DeterministicPlaybackBackend({.initial_volume = 1.1}), std::invalid_argument);
 }
 
+TEST_CASE("candidate unavailable scenario restores its initial snapshot", "[m0][qt][core][backend]") {
+    DeterministicPlaybackBackend backend;
+    REQUIRE(backend.enterUnavailableScenario());
+    CHECK(backend.snapshot().status == PlaybackStatus::Error);
+    CHECK(backend.snapshot().position_ms == 0);
+    CHECK(backend.snapshot().duration_ms == 0);
+    CHECK_FALSE(backend.snapshot().seekable);
+    CHECK(backend.tick().snapshot.status == PlaybackStatus::Error);
+    CHECK_FALSE(backend.enterUnavailableScenario());
+    REQUIRE(backend.restoreInitialScenario());
+    CHECK(backend.snapshot().status == PlaybackStatus::Playing);
+    CHECK(backend.snapshot().position_ms == 84'000);
+    CHECK(backend.snapshot().duration_ms == 248'000);
+    CHECK(backend.snapshot().seekable);
+    CHECK_FALSE(backend.restoreInitialScenario());
+}
+
 } // namespace music_player::m0::test
