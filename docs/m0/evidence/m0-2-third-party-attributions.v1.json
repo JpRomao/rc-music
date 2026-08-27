@@ -1,0 +1,1098 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-08-27",
+  "scope": "Identificação técnica delimitada das atribuições unknown e LicenseRef do pacote Qt M0.2; UCD e Tika como limites adicionais.",
+  "legal_conclusion": false,
+  "redistribution_authorized": false,
+  "security_gate_complete": false,
+  "package": {
+    "workspace_relative": "out/m0/packages/qt-shell/tray-200b983-clean-01",
+    "source_commit": "200b9838dc9e86427e083771ef71bc9f1ee49f4b",
+    "manifest_sha256": "a227bb2b23b7ec958b49318183ec399fd9c1e648e640a75e5fa7d06e5a97dc99",
+    "qt_pe_count": 67
+  },
+  "repositories": [
+    {
+      "key": "qtbase",
+      "revision": "ef55f427f2c8b410d34f8a7681020a3000cf6866",
+      "spdx_sha256": "5acdc05bb79c66e31da70c8de4e9d37ba2f1d94199a21f8d430b888a76fe88c0"
+    },
+    {
+      "key": "qtdeclarative",
+      "revision": "4e3399c26ec57246c08de019cfcbda8d23604cfa",
+      "spdx_sha256": "0753ffa69fa629b4f52ebfe41cb5ea3a142160a1cd4d34aae9ff3f8a052c76e0"
+    },
+    {
+      "key": "qtsvg",
+      "revision": "17ca512f903f935282ebeca496aac5d11ba4199a",
+      "spdx_sha256": "c95254b9349aa562ec1f64b8a214a7f4f532cffccf586cedd9f2055a749377f7"
+    }
+  ],
+  "source_url_template": "https://raw.githubusercontent.com/qt/{repo}/{revision}/{path}",
+  "hash_method": "SHA-256 dos bytes completos recebidos por HTTPS, sem conversão de encoding ou finais de linha; apenas metadados são versionados, não cópias dos arquivos.",
+  "selection": {
+    "spdx_package_records": 301,
+    "root_file_ids": 67,
+    "owning_packages": 67,
+    "dependency_package_records": 124,
+    "unknown_attribution_records": 16,
+    "unique_unknown_attributions": 15,
+    "additional_unknown_target": "WrapAtomic",
+    "license_ref_ids": 5,
+    "method": "FileIDs do relatório PE/SPDX existente -> relações CONTAINS -> DEPENDS_ON, com aliases DocumentRef normalizados para seus SPDXIDs. Sem incluir ferramentas só porque constam do SPDX agregado."
+  },
+  "entries": [
+    {
+      "key": "pcre2",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "BundledPcre2",
+          "id": "SPDXRef-Package-qtbase-qt-bundled-3rdparty-module-BundledPcre2-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "10.47",
+      "license_concluded_literal": "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 1997-2007 University of Cambridge\nCopyright (c) 2007-2024 Philip Hazel\nCopyright (c) 2010-2024 Zoltan Herczeg",
+      "attribution_resource": "A14",
+      "source_resources": [],
+      "license_resources": [
+        "R22",
+        "R23",
+        "R39"
+      ],
+      "note": "Versão 10.47 conhecida; linha incluída pelo LicenseRef. LICENCE.md usa BSD-3-Clause WITH PCRE2-exception; SPDX do fornecedor preserva seu LicenseRef. LICENSE-SLJIT também localizado, sem aplicar a exceção automaticamente."
+    },
+    {
+      "key": "unicode-character-database",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_unicode-character-database",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-unicode-character-database-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "36",
+      "license_concluded_literal": "Unicode-3.0",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (C) 1991-2025 Unicode, Inc.",
+      "attribution_resource": "A15",
+      "source_resources": [
+        "R35"
+      ],
+      "license_resources": [
+        "R44"
+      ],
+      "note": "PackageVersion 36 preservado. A15 explica revisão UCD; R35 declara geração Unicode 17.0. São campos diferentes, não correção do SPDX. qunicodetables.cpp não foi baixado nesta leitura."
+    },
+    {
+      "key": "siphash",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_siphash",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-siphash-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "CC0-1.0",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (C) 2012-2014 Jean-Philippe Aumasson\nCopyright (C) 2012-2014 Daniel J. Bernstein <djb@cr.yp.to>\nCopyright (C) 2016 Intel Corporation",
+      "attribution_resource": "A01",
+      "source_resources": [
+        "R01"
+      ],
+      "license_resources": [
+        "R43"
+      ],
+      "note": "A01 aponta upstream adcbf09b1684a718f594faa650ffc56bacdb0777; não foi afirmada igualdade entre esse upstream e o arquivo Qt adaptado."
+    },
+    {
+      "key": "md4",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_md4",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-md4-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "CC0-1.0",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Written by Alexander Peslyak - better known as Solar Designer <solar@openwall.com> - in 2001, and placed in the public domain. There's absolutely no warranty.",
+      "attribution_resource": "A02",
+      "source_resources": [
+        "R25",
+        "R26"
+      ],
+      "license_resources": [
+        "R27",
+        "R43"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "md5",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_md5",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-md5-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "CC0-1.0",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Written by Colin Plumb in 1993, no copyright is claimed. Ian Jackson <ian@chiark.greenend.org.uk>.",
+      "attribution_resource": "A03",
+      "source_resources": [
+        "R28",
+        "R29"
+      ],
+      "license_resources": [
+        "R30",
+        "R43"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "sha1",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_sha1",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-sha1-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "LicenseRef-SHA1-Public-Domain",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (C) Dominik Reichl <dominik.reichl@t-online.de>\nCopyright (C) 2016 The Qt Company Ltd",
+      "attribution_resource": "A04",
+      "source_resources": [
+        "R31"
+      ],
+      "license_resources": [
+        "R32",
+        "R36"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "rfc6234",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_rfc6234",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-rfc6234-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "BSD-3-Clause",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 2011 IETF Trust and the persons identified as authors of the code.",
+      "attribution_resource": "A05",
+      "source_resources": [
+        "R33",
+        "R34"
+      ],
+      "license_resources": [
+        "R02"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "easing",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_easing",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-easing-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "BSD-3-Clause",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 2001 Robert Penner",
+      "attribution_resource": "A06",
+      "source_resources": [
+        "R04"
+      ],
+      "license_resources": [
+        "R03"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "tika-mimetypes",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Core_Attribution_tika-mimetypes",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Core-Attribution-tika-mimetypes-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "c29724782854bb5a319f4a1940d0828a58ace3f9",
+      "license_concluded_literal": "Apache-2.0",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright 2026 The Apache Software Foundation",
+      "attribution_resource": "A16",
+      "source_resources": [
+        "R24"
+      ],
+      "license_resources": [
+        "R45"
+      ],
+      "note": "Somente definições MIME atribuídas ao XML, não Java/Tika inteiro. O header remete a NOTICE; o recorte pertinente do NOTICE ainda deve ser selecionado."
+    },
+    {
+      "key": "grayraster",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Gui_Attribution_grayraster",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Gui-Attribution-grayraster-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Gui"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "FTL OR GPL-2.0-only",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright 2000-2016 by David Turner, Robert Wilhelm, and Werner Lemberg.",
+      "attribution_resource": "A07",
+      "source_resources": [
+        "R06"
+      ],
+      "license_resources": [
+        "R05"
+      ],
+      "note": "Trecho derivado ftgrays.c; unknown preservado, sem herdar automaticamente a versão 2.14.3 do engine FreeType separado."
+    },
+    {
+      "key": "smooth-scaling-algorithm",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Gui_Attribution_smooth-scaling-algorithm",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Gui-Attribution-smooth-scaling-algorithm-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Gui"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "BSD-2-Clause AND Imlib2",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (C) 2004, 2005 Daniel M. Duley.\n(C) Carsten Haitzler and various contributors.\n(C) Willem Monsuwe <willem@stack.nl>",
+      "attribution_resource": "A07",
+      "source_resources": [
+        "R08"
+      ],
+      "license_resources": [
+        "R07"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "xserverhelper",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Gui_Attribution_xserverhelper",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Gui-Attribution-xserverhelper-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Gui"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "X11 AND HPND",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 1987, 1988 X Consortium\nCopyright 1987, 1988 by Digital Equipment Corporation, Maynard, Massachusetts.",
+      "attribution_resource": "A07",
+      "source_resources": [
+        "R10"
+      ],
+      "license_resources": [
+        "R09"
+      ],
+      "note": "Atribuição X11 AND HPND se refere ao trecho derivado; o arquivo Qt qregion.cpp possui também sua própria expressão de licença."
+    },
+    {
+      "key": "webgradients",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Gui_Attribution_webgradients",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Gui-Attribution-webgradients-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Gui"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "MIT",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 2017 itmeo",
+      "attribution_resource": "A08",
+      "source_resources": [
+        "R12"
+      ],
+      "license_resources": [
+        "R11"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "icc-srgb-color-profile",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "Gui_Attribution_icc-srgb-color-profile",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-Gui-Attribution-icc-srgb-color-profile-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Gui"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "LicenseRef-ICC-License",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright International Color Consortium, 2015",
+      "attribution_resource": "A09",
+      "source_resources": [
+        "R14"
+      ],
+      "license_resources": [
+        "R13",
+        "R38"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "wintab",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "QWindowsIntegrationPlugin_Attribution_wintab",
+          "id": "SPDXRef-Package-qtbase-qt-3rdparty-sources-QWindowsIntegrationPlugin-Attribution-wintab-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "QWindowsIntegrationPlugin"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "LicenseRef-Lcs-Telegraphics",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright 1991-1998 by LCS/Telegraphics.",
+      "attribution_resource": "A10",
+      "source_resources": [
+        "R15",
+        "R16"
+      ],
+      "license_resources": [
+        "R37"
+      ],
+      "note": "Identificação técnica de fonte/licença; versão unknown preservada, sem conclusão de segurança ou autorização de redistribuição."
+    },
+    {
+      "key": "WrapAtomic",
+      "repo": "qtbase",
+      "spdx_packages": [
+        {
+          "name": "WrapAtomic",
+          "id": "SPDXRef-Package-qtbase-system-3rdparty-WrapAtomic-9ce86868aeba"
+        }
+      ],
+      "consumers": [
+        "Core"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "NOASSERTION",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "NOASSERTION",
+      "attribution_resource": "A17",
+      "source_resources": [
+        "A17"
+      ],
+      "license_resources": [],
+      "note": "Target INTERFACE IMPORTED definido por A17; NOASSERTION e unknown do SPDX preservados. A licença BSD-3-Clause do arquivo CMake não licencia automaticamente a biblioteca padrão/runtime. Cache local HAVE_STDATOMIC=1."
+    },
+    {
+      "key": "masm",
+      "repo": "qtdeclarative",
+      "spdx_packages": [
+        {
+          "name": "Qml_Attribution_masm",
+          "id": "SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-Qml-Attribution-masm-dc825212e031"
+        }
+      ],
+      "consumers": [
+        "Qml"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "BSD-2-Clause",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (C) 2003-2018 Apple Inc. All rights reserved.\nCopyright (C) 2007 Justin Haygood (jhaygood@reaktix.com)\nCopyright (C) 2007-2009 Torch Mobile, Inc. All rights reserved. (http://www.torchmobile.com/)\nCopyright (C) 2009, 2010 University of Szeged\nCopyright (C) 2009-2011 STMicroelectronics. All rights reserved.\nCopyright (C) 2010 MIPS Technologies, Inc. All rights reserved.\nCopyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged\nCopyright (C) 2010 MIPS Technologies, Inc. All rights reserved.\nCopyright (C) 2010, 2011 Research In Motion Limited. All rights reserved.\nCopyright (C) 2011 Google Inc. All rights reserved.\nCopyright (C) 2013 Samsung Electronics. All rights reserved.\nCopyright (C) 2015 Cisco Systems, Inc. All rights reserved.\nCopyright (c) 2002-2009 Vivek Thampi",
+      "attribution_resource": "A11",
+      "source_resources": [],
+      "license_resources": [
+        "R17"
+      ],
+      "note": "Identificação do diretório src/3rdparty/masm pela revisão Qt e licença; não foi criado inventário integral de arquivos nem atribuída versão WebKit/Safari."
+    },
+    {
+      "key": "shadow_angular_material",
+      "repo": "qtdeclarative",
+      "spdx_packages": [
+        {
+          "name": "QuickControls2Material_Attribution_shadow_angular_material",
+          "id": "SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-QuickControls2Material-Attribution-shadow-angular-material-dc825212e031"
+        },
+        {
+          "name": "qtquickcontrols2materialstyleplugin_Attribution_shadow_angular_material",
+          "id": "SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-qtquickcontrols2materialstyleplugin-Attribution-shadow-angular-material-dc825212e031"
+        }
+      ],
+      "consumers": [
+        "QuickControls2Material",
+        "qtquickcontrols2materialstyleplugin"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "MIT",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright (c) 2014-2016 Google, Inc",
+      "attribution_resource": "A12",
+      "source_resources": [
+        "R19"
+      ],
+      "license_resources": [
+        "R18"
+      ],
+      "note": "Dois registros SPDX representam a mesma atribuição. Valores de sombra no arquivo Qt; não é inclusão de toda a biblioteca Angular."
+    },
+    {
+      "key": "xsvg",
+      "repo": "qtsvg",
+      "spdx_packages": [
+        {
+          "name": "Svg_Attribution_xsvg",
+          "id": "SPDXRef-Package-qtsvg-qt-3rdparty-sources-Svg-Attribution-xsvg-d09caeca8d6a"
+        }
+      ],
+      "consumers": [
+        "Svg"
+      ],
+      "version_literal": "unknown",
+      "license_concluded_literal": "HPND-sell-variant",
+      "license_declared_literal": "NOASSERTION",
+      "copyright_text": "Copyright 2002 USC/Information Sciences Institute",
+      "attribution_resource": "A13",
+      "source_resources": [
+        "R21"
+      ],
+      "license_resources": [
+        "R20"
+      ],
+      "note": "Atribuição HPND-sell-variant se refere ao tratamento de arcos; qsvghandler.cpp também contém código Qt com expressão de licença própria."
+    }
+  ],
+  "qt_license_alternative": {
+    "package_records": 72,
+    "expression_literal": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+    "resource_refs": [
+      "R40",
+      "R41",
+      "R42"
+    ],
+    "note": "Expressão do fornecedor nos registros Qt selecionados; não prova licença comercial adquirida, não escolhe licença para o projeto e não elimina obrigações dos terceiros. A rota GPL-2.0-only não foi avaliada nesta revisão."
+  },
+  "license_ref_text_normalization": "Extrair conteúdo entre <text> e </text>; CRLF e CR isolado -> LF; Trim() nas extremidades; SHA-256 UTF-8 sem BOM. Não normalizar espaços internos nem reformatar parágrafos.",
+  "license_ref_comparisons": [
+    {
+      "spdx_document": "qtbase",
+      "license_id": "LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "292780fb2aab88d2c612559cb87e6e0c48a1f42f79773724f5bb1dc31463a49b",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtbase",
+      "license_id": "LicenseRef-ICC-License",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "0d49e12ced8febcf1e016f1ecb7fab9db850dbbe09777d3736a9c283de1022b3",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtbase",
+      "license_id": "LicenseRef-Lcs-Telegraphics",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "f7700da61accce57325f4ed65ba68fa0a7562d63d8e05dbc39b55804f2e7cb30",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtbase",
+      "license_id": "LicenseRef-Qt-Commercial",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "ae27b47d47e55078a2bb282cb447eaef5c033874fa7103a13087bbc78967e103",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtbase",
+      "license_id": "LicenseRef-SHA1-Public-Domain",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "839af8cea08b969fb12f170f3890d80bf5d4c2a21c49eacb2bafa5eaca326171",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtdeclarative",
+      "license_id": "LicenseRef-Qt-Commercial",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "ae27b47d47e55078a2bb282cb447eaef5c033874fa7103a13087bbc78967e103",
+      "negative_control_appended_character_matches": false
+    },
+    {
+      "spdx_document": "qtsvg",
+      "license_id": "LicenseRef-Qt-Commercial",
+      "matches_source_after_crlf_to_lf_and_trim": true,
+      "normalized_sha256": "ae27b47d47e55078a2bb282cb447eaef5c033874fa7103a13087bbc78967e103",
+      "negative_control_appended_character_matches": false
+    }
+  ],
+  "resources": [
+    {
+      "id": "A01",
+      "repo": "qtbase",
+      "path": "src/3rdparty/siphash/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 793,
+      "sha256": "8614947dfc0ca1d21aad2f88b4400598262ab8c08aa87c4f7acc0c2de6e5619e"
+    },
+    {
+      "id": "A02",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md4/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 574,
+      "sha256": "34bda63a2fcc23c83f2e5364ccd394553b4baa505b1f79ded9cc2161c56a9b4c"
+    },
+    {
+      "id": "A03",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md5/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 446,
+      "sha256": "20b0f1b17ccd1bd5e8d763b1cdca4b095b8f0c037644b5ee18154536b7d8425e"
+    },
+    {
+      "id": "A04",
+      "repo": "qtbase",
+      "path": "src/3rdparty/sha1/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 618,
+      "sha256": "53cab2c771f7f7ffbf6a58ff759e5846b746e91d98dfe467d5145edf8cd7d306"
+    },
+    {
+      "id": "A05",
+      "repo": "qtbase",
+      "path": "src/3rdparty/rfc6234/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 660,
+      "sha256": "fa24413bdc5015fc7fc84297fa17d4c8a598f8f7c76b9495a6e6b26a77b4a324"
+    },
+    {
+      "id": "A06",
+      "repo": "qtbase",
+      "path": "src/3rdparty/easing/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 471,
+      "sha256": "77d67a1db5882bb0b9a1278b014885bee45a4c059d1da9f835b6da5bc4b9c93d"
+    },
+    {
+      "id": "A07",
+      "repo": "qtbase",
+      "path": "src/gui/painting/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 2256,
+      "sha256": "8cddd6c73a885f697261c4d6d60e5cd814a2544fcd407504b52a5eb9b7cc3600"
+    },
+    {
+      "id": "A08",
+      "repo": "qtbase",
+      "path": "util/gradientgen/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 596,
+      "sha256": "6e87ac5d79ab92110e6e517b2c74e4f4fd15878540e93eea0300e529d3318572"
+    },
+    {
+      "id": "A09",
+      "repo": "qtbase",
+      "path": "src/3rdparty/icc/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 775,
+      "sha256": "509da9bd2b3f769c730aa4627b1080d65f39b0ecd4130111c9e1122e13cd35b5"
+    },
+    {
+      "id": "A10",
+      "repo": "qtbase",
+      "path": "src/3rdparty/wintab/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 602,
+      "sha256": "b879ea91b719531d45e1cfe33d2241d060a9260200bd91a09ada074b16063f9c"
+    },
+    {
+      "id": "A11",
+      "repo": "qtdeclarative",
+      "path": "src/3rdparty/masm/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 1395,
+      "sha256": "99b383b3e1908b23be11ea197f0ad787112ea2ae36fb9b99ca7a79577c36da11"
+    },
+    {
+      "id": "A12",
+      "repo": "qtdeclarative",
+      "path": "src/quickcontrols/material/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 581,
+      "sha256": "aa170ef963adf45260131dc4ce537a4d164d6c918044175b47f3c7746dfb9ca6"
+    },
+    {
+      "id": "A13",
+      "repo": "qtsvg",
+      "path": "src/svg/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 551,
+      "sha256": "c1b0472511c791561b89ee0d11c11d78a85fbdf5df5ad94c1a4653e192367759"
+    },
+    {
+      "id": "A14",
+      "repo": "qtbase",
+      "path": "src/3rdparty/pcre2/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 1829,
+      "sha256": "e009f73100ef4aed400257a095cdb25ee31980c4a290f1aca52d147cb3067abc"
+    },
+    {
+      "id": "A15",
+      "repo": "qtbase",
+      "path": "src/corelib/text/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 2170,
+      "sha256": "4e23736600be956e4214849ad8baaa955441656db7324713fab6353c1163b4f5"
+    },
+    {
+      "id": "A16",
+      "repo": "qtbase",
+      "path": "src/corelib/mimetypes/3rdparty/qt_attribution.json",
+      "role": "attribution",
+      "size_bytes": 1383,
+      "sha256": "329652c93e6b47663115543cfd746cb56b96a98d774d540d58e64614bd9739eb"
+    },
+    {
+      "id": "A17",
+      "repo": "qtbase",
+      "path": "cmake/FindWrapAtomic.cmake",
+      "role": "build-definition",
+      "size_bytes": 1640,
+      "sha256": "cf316570194a66291f5518a7b34f45fe7d3d594915a1350da345e6020ede1ead"
+    },
+    {
+      "id": "R01",
+      "repo": "qtbase",
+      "path": "src/3rdparty/siphash/siphash.cpp",
+      "role": "attributed-file",
+      "size_bytes": 8457,
+      "sha256": "e95eebf552c26d49d75a6b1ca937b0826ece531d88c0b5f52f2509076af53c06"
+    },
+    {
+      "id": "R02",
+      "repo": "qtbase",
+      "path": "src/3rdparty/rfc6234/LICENSE",
+      "role": "license",
+      "size_bytes": 1568,
+      "sha256": "7ccebd514aaabc86192f957d773cebf06577c12fe9f25ecd419c6cac5da7a14c"
+    },
+    {
+      "id": "R03",
+      "repo": "qtbase",
+      "path": "src/3rdparty/easing/LICENSE",
+      "role": "license",
+      "size_bytes": 1505,
+      "sha256": "92fac99458f1754b73edf50f9c9983e0efaa06ad96e2afd5e538c79f45b4b191"
+    },
+    {
+      "id": "R04",
+      "repo": "qtbase",
+      "path": "src/3rdparty/easing/easing.cpp",
+      "role": "attributed-file",
+      "size_bytes": 19140,
+      "sha256": "7196125187a197a55e780e208319b4880f39a560da1bd681fc210d48914a75bb"
+    },
+    {
+      "id": "R05",
+      "repo": "qtbase",
+      "path": "src/3rdparty/freetype/LICENSE.txt",
+      "role": "license",
+      "size_bytes": 26234,
+      "sha256": "bf543cdda11864477b8d2ca2aa9afc2aaa8f9133461b4d962ed6ec73646256a1"
+    },
+    {
+      "id": "R06",
+      "repo": "qtbase",
+      "path": "src/gui/painting/qgrayraster.c",
+      "role": "attributed-file",
+      "size_bytes": 60057,
+      "sha256": "a20020e7284f57ac26dbdc950a1cd4ddead5b97aafa7fd903acca9f1aae5cf07"
+    },
+    {
+      "id": "R07",
+      "repo": "qtbase",
+      "path": "src/gui/painting/LICENSE.QIMAGETRANSFORM.txt",
+      "role": "license",
+      "size_bytes": 3004,
+      "sha256": "46b3cbfa2f2946b93291506351e9be1dd0a28d2a53260f5aa488abd36fbeca9d"
+    },
+    {
+      "id": "R08",
+      "repo": "qtbase",
+      "path": "src/gui/painting/qimagescale.cpp",
+      "role": "attributed-file",
+      "size_bytes": 44522,
+      "sha256": "d2654709b5df6c40cbdafc2f4ef2c050f34968ebaa800ef186e49ce9ccc90f1a"
+    },
+    {
+      "id": "R09",
+      "repo": "qtbase",
+      "path": "src/gui/painting/LICENSE.XCONSORTIUM.txt",
+      "role": "license",
+      "size_bytes": 2294,
+      "sha256": "a216b01291eb38fc1af93cfccf1fc67b48d9923612e517c2a695e95b3f03c22c"
+    },
+    {
+      "id": "R10",
+      "repo": "qtbase",
+      "path": "src/gui/painting/qregion.cpp",
+      "role": "attributed-file",
+      "size_bytes": 132996,
+      "sha256": "2ff4616fac3872f3d5288182f3f9b09dd41017959c715e473bd0309ada8751a9"
+    },
+    {
+      "id": "R11",
+      "repo": "qtbase",
+      "path": "util/gradientgen/LICENSE.WEBGRADIENTS.txt",
+      "role": "license",
+      "size_bytes": 1062,
+      "sha256": "9be732e45b638c74f9c0e5248541dd54dc7e8e9a5545df96b5c4b7c9ac0c68ba"
+    },
+    {
+      "id": "R12",
+      "repo": "qtbase",
+      "path": "util/gradientgen/webgradients.css",
+      "role": "attributed-file",
+      "size_bytes": 22908,
+      "sha256": "692af68cdf1f33398efc9da8462797b7e1352e79b2f18c1d18a8c7d48f7af2df"
+    },
+    {
+      "id": "R13",
+      "repo": "qtbase",
+      "path": "src/3rdparty/icc/LICENSE.txt",
+      "role": "license",
+      "size_bytes": 463,
+      "sha256": "9e34ff47b3a44814e183342e7e198d127a6740e29d20e8381fba7688dafc79dd"
+    },
+    {
+      "id": "R14",
+      "repo": "qtbase",
+      "path": "src/3rdparty/icc/sRGB2014.icc",
+      "role": "attributed-file",
+      "size_bytes": 3024,
+      "sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a"
+    },
+    {
+      "id": "R15",
+      "repo": "qtbase",
+      "path": "src/3rdparty/wintab/pktdef.h",
+      "role": "attributed-file",
+      "size_bytes": 6376,
+      "sha256": "11f53ac5568c0efcf06e1aaa18e9ac16cfe1b51060d063762c8ba809bbb894df"
+    },
+    {
+      "id": "R16",
+      "repo": "qtbase",
+      "path": "src/3rdparty/wintab/wintab.h",
+      "role": "attributed-file",
+      "size_bytes": 21351,
+      "sha256": "27a8d66f8c9db27e7de52b233e3d13ee5b8cf92bed800f21491fdd229a31c0da"
+    },
+    {
+      "id": "R17",
+      "repo": "qtdeclarative",
+      "path": "src/3rdparty/masm/LICENSE",
+      "role": "license",
+      "size_bytes": 1260,
+      "sha256": "9ba0c20a2972274f27e975d79ed3582e322d6891338266a52e2d3a9417fc0a72"
+    },
+    {
+      "id": "R18",
+      "repo": "qtdeclarative",
+      "path": "src/quickcontrols/material/LICENSE.ANGULARJS.txt",
+      "role": "license",
+      "size_bytes": 1082,
+      "sha256": "a1c1daa9eec4db907907c0ccc42a4843bb996410f888b972a39fe152e829bc3d"
+    },
+    {
+      "id": "R19",
+      "repo": "qtdeclarative",
+      "path": "src/quickcontrols/material/impl/ElevationEffect.qml",
+      "role": "attributed-file",
+      "size_bytes": 8435,
+      "sha256": "2e2cc4738814389e658538c92d3afa358f0929a64f7ea7dcbff8ef6a602943fc"
+    },
+    {
+      "id": "R20",
+      "repo": "qtsvg",
+      "path": "src/svg/LICENSE.XSVG.txt",
+      "role": "license",
+      "size_bytes": 1185,
+      "sha256": "3a946598a9f674d44df764279ca0b85b5d6faba08f3bc75d8e0fcf6cd729a9bd"
+    },
+    {
+      "id": "R21",
+      "repo": "qtsvg",
+      "path": "src/svg/qsvghandler.cpp",
+      "role": "attributed-file",
+      "size_bytes": 153840,
+      "sha256": "567efbb17e2a1f4b8a60934003c5a3082b0034f70d7077279414f4207eb9b945"
+    },
+    {
+      "id": "R22",
+      "repo": "qtbase",
+      "path": "src/3rdparty/pcre2/LICENCE.md",
+      "role": "license",
+      "size_bytes": 4011,
+      "sha256": "197d8a73ffee0d6b09adba2f9c677b5f5aede24edf89258a68e48248d010d811"
+    },
+    {
+      "id": "R23",
+      "repo": "qtbase",
+      "path": "src/3rdparty/pcre2/LICENSE-SLJIT",
+      "role": "license",
+      "size_bytes": 1444,
+      "sha256": "5f216505c0f6ea3273caec89e766eef93cdeb7bbb0c429f9360116d7c938feeb"
+    },
+    {
+      "id": "R24",
+      "repo": "qtbase",
+      "path": "src/corelib/mimetypes/3rdparty/tika-mimetypes.xml",
+      "role": "attributed-file",
+      "size_bytes": 317384,
+      "sha256": "73b26a2bc70c5f78e4c028ce0ce352454e96515dd74c3f098b2c219788acb66b"
+    },
+    {
+      "id": "R25",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md4/md4.cpp",
+      "role": "source-header",
+      "size_bytes": 6594,
+      "sha256": "221066e5a6849d49126e54afc8c0fd2d9375a4d5b08bafd2a8e3194d0ba55c4d"
+    },
+    {
+      "id": "R26",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md4/md4.h",
+      "role": "source-header",
+      "size_bytes": 725,
+      "sha256": "8174fd6527ca22ffe22862d414d82283efd454972d4ccad43a752d2aa1d0071c"
+    },
+    {
+      "id": "R27",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md4/REUSE.toml",
+      "role": "license-mapping",
+      "size_bytes": 290,
+      "sha256": "145340ef1f238800506adeb45934ff7b93a3bf9c6793707f3fd1beb0d7079f07"
+    },
+    {
+      "id": "R28",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md5/md5.cpp",
+      "role": "source-header",
+      "size_bytes": 7716,
+      "sha256": "ecc3a072d271c96291fa55689d617b31bdabb44a93694e5ff11aa00e41ac118c"
+    },
+    {
+      "id": "R29",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md5/md5.h",
+      "role": "source-header",
+      "size_bytes": 1480,
+      "sha256": "33ea94be23d4decdfb64a9c76fad2698b387dab2f991d9f6f8741f5a1737a79d"
+    },
+    {
+      "id": "R30",
+      "repo": "qtbase",
+      "path": "src/3rdparty/md5/REUSE.toml",
+      "role": "license-mapping",
+      "size_bytes": 230,
+      "sha256": "f19f21adee8d5cc60be7bab48df4b5816372e2482a5ea9b89b6f2dac28d88ac7"
+    },
+    {
+      "id": "R31",
+      "repo": "qtbase",
+      "path": "src/3rdparty/sha1/sha1.cpp",
+      "role": "source-header",
+      "size_bytes": 8590,
+      "sha256": "cf0635f5a0be705bfbd22037b818700e6a67c9cd9290e659c4443cd5f454a8f3"
+    },
+    {
+      "id": "R32",
+      "repo": "qtbase",
+      "path": "src/3rdparty/sha1/REUSE.toml",
+      "role": "license-mapping",
+      "size_bytes": 256,
+      "sha256": "aadc1f36d433903ed5f5fee50bda90c9b8b2d2ec1715e3d5bd7fa046528add64"
+    },
+    {
+      "id": "R33",
+      "repo": "qtbase",
+      "path": "src/3rdparty/rfc6234/sha384-512.c",
+      "role": "source-header",
+      "size_bytes": 37691,
+      "sha256": "29286827e72a9e106c6bbf71355e16bdf29e5082dc1a72893d97ac6b2f2ce225"
+    },
+    {
+      "id": "R34",
+      "repo": "qtbase",
+      "path": "src/3rdparty/rfc6234/sha.h",
+      "role": "source-header",
+      "size_bytes": 14014,
+      "sha256": "9eead1e53e7b9c79f08cdec2517addcf6e993d4dff0a557e034464c2fbb4be0f"
+    },
+    {
+      "id": "R35",
+      "repo": "qtbase",
+      "path": "src/corelib/text/qunicodetables_p.h",
+      "role": "source-header",
+      "size_bytes": 6076,
+      "sha256": "a296d1585e6307e7cf86574e5a06b54bb756936c2370a69f8f6e7974047449d4"
+    },
+    {
+      "id": "R36",
+      "repo": "qtbase",
+      "path": "LICENSES/LicenseRef-SHA1-Public-Domain.txt",
+      "role": "license",
+      "size_bytes": 144,
+      "sha256": "65d86b8ec6b1cd8b8f6e64fd8710274ba00d6a3c520e00dfdcd1c3d2071f3305"
+    },
+    {
+      "id": "R37",
+      "repo": "qtbase",
+      "path": "LICENSES/LicenseRef-Lcs-Telegraphics.txt",
+      "role": "license",
+      "size_bytes": 139,
+      "sha256": "c10225ebbd5191bfdd761b0d7752c785f2453ab665d6c454473fb12d254668aa"
+    },
+    {
+      "id": "R38",
+      "repo": "qtbase",
+      "path": "LICENSES/LicenseRef-ICC-License.txt",
+      "role": "license",
+      "size_bytes": 463,
+      "sha256": "9e34ff47b3a44814e183342e7e198d127a6740e29d20e8381fba7688dafc79dd"
+    },
+    {
+      "id": "R39",
+      "repo": "qtbase",
+      "path": "LICENSES/LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception.txt",
+      "role": "license",
+      "size_bytes": 1852,
+      "sha256": "0526625fcc746a42d3f19a0ab357d3dc8479fdbe3bfd168825498f50215c7a63"
+    },
+    {
+      "id": "R40",
+      "repo": "qtbase",
+      "path": "LICENSES/LicenseRef-Qt-Commercial.txt",
+      "role": "license",
+      "size_bytes": 462,
+      "sha256": "9b1f50aae6267f9d5e0ceb6775ee86450262c25ec7c0573e151fe5d3f18a4700"
+    },
+    {
+      "id": "R41",
+      "repo": "qtbase",
+      "path": "LICENSES/LGPL-3.0-only.txt",
+      "role": "license",
+      "size_bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "id": "R42",
+      "repo": "qtbase",
+      "path": "LICENSES/GPL-3.0-only.txt",
+      "role": "license",
+      "size_bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "id": "R43",
+      "repo": "qtbase",
+      "path": "LICENSES/CC0-1.0.txt",
+      "role": "license",
+      "size_bytes": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+    },
+    {
+      "id": "R44",
+      "repo": "qtbase",
+      "path": "LICENSES/Unicode-3.0.txt",
+      "role": "license",
+      "size_bytes": 1995,
+      "sha256": "80bb6294022d8764adb36a9d65ebb6bd94efb1865918a71e31e6c247607d7634"
+    },
+    {
+      "id": "R45",
+      "repo": "qtbase",
+      "path": "LICENSES/Apache-2.0.txt",
+      "role": "license",
+      "size_bytes": 10398,
+      "sha256": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb"
+    }
+  ],
+  "limitations": [
+    "Não é auditoria completa de todas as licenças, versões upstream, patches, CVEs ou caminhos executáveis.",
+    "Identidade dos bytes públicos e vínculos SPDX não provam atendimento jurídico das obrigações.",
+    "Fontes foram lidas em memória; não se executou, copiou ou modificou código/biblioteca do Qt.",
+    "Inventário cobre hashes de 62 recursos delimitados; MASM/PCRE2 não receberam hash por arquivo de todo o diretório.",
+    "Textos completos/notices/fontes correspondentes não foram adicionados ao payload. O NOTICE pertinente aos dados Tika continua pendente.",
+    "unknown, NOASSERTION e versões literais foram preservados; a licença própria do repositório e redistribuição continuam sem decisão."
+  ]
+}

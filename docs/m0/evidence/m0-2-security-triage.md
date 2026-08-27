@@ -11,9 +11,9 @@ O objeto é o pacote privado `out/m0/packages/qt-shell/tray-200b983-clean-01`, g
 
 Resultados que exigem acompanhamento:
 
-1. FreeType 2.14.3 e PCRE2 10.47 têm avisos aplicáveis às fontes vendorizadas examinadas; os trechos corretivos não estão nessas fontes. Isso não demonstra exploração do shell ou presença de cada função no PE final.
+1. FreeType 2.14.3 e PCRE2 10.47 têm avisos aplicáveis às fontes vendorizadas examinadas; os trechos corretivos não estão nessas fontes. A [análise posterior de símbolos](m0-2-qt-symbol-applicability.md) confirmou as funções FreeType investigadas no PE e encontrou forte evidência de ausência do caminho de serialização PCRE2 nessa DLL específica, sem demonstração de exploração do shell ou aprovação global.
 2. O toolset MSVC 14.43 usado pelo shell está fora de suporte. O runtime mais novo do host não resolve o suporte do compilador nem a ressalva de linker 19.43 com Qt compilado por 19.44.
-3. D3DCompiler, servicing do CRT, atribuições sem versão e obrigações completas de licença/notices continuam sem fechamento.
+3. D3DCompiler, servicing do CRT e obrigações completas de licença/notices continuam sem fechamento. O [complemento de atribuições](m0-2-third-party-attributions.md) identifica fontes e textos de licença, mas preserva versões upstream desconhecidas e pendências de distribuição.
 
 Durante a triagem, não houve atualização de dependência, instalação, modificação da toolchain, execução de PoC, execução do player, retomada de desktop ou acesso aos áudios pessoais. As consultas externas enviaram somente identificadores públicos de componentes, versões e revisões; o SBOM e os paths locais não foram enviados a um scanner externo.
 
@@ -62,9 +62,9 @@ O [registro CNA](https://cveawg.mitre.org/api/cve/CVE-2026-50811), publicado em 
 
 Na [fonte Qt fixada pelo SPDX](https://github.com/qt/qtbase/blob/ef55f427f2c8b410d34f8a7681020a3000cf6866/src/3rdparty/freetype/src/truetype/ttgxvar.c#L3449), `TT_Get_Var_Design` ainda percorre entradas além do número de eixos ao preencher coordenadas extras; não há a correção que zera essas posições e limita a cópia. SHA-256 do texto consultado: `b5ca576f480437e59f84a31ba2b569c7aadd31871f608034f6ea576340b88e10`.
 
-O [callsite Qt examinado](https://github.com/qt/qtbase/blob/ef55f427f2c8b410d34f8a7681020a3000cf6866/src/gui/text/freetype/qfontengine_ft.cpp#L366) usa `var->num_axis` e um buffer desse tamanho. Isso é evidência de um chamador específico, não prova de ausência de outros caminhos ou de exploração impossível. Não foi reproduzido um gatilho no shell, nem comprovado o estado da função dentro do PE por análise binária.
+O [callsite Qt examinado](https://github.com/qt/qtbase/blob/ef55f427f2c8b410d34f8a7681020a3000cf6866/src/gui/text/freetype/qfontengine_ft.cpp#L366) usa `var->num_axis` e um buffer desse tamanho. Isso é evidência de um chamador específico, não prova de ausência de outros caminhos ou de exploração impossível. Não foi reproduzido um gatilho no shell. A [análise PE/PDB posterior](m0-2-qt-symbol-applicability.md) confirmou `FT_Get_Var_Design_Coordinates` e `TT_Get_Var_Design` no binário, sem comprovar correção ou alcance do caminho afetado.
 
-**Disposição:** fonte vendorizada afetada, alcance no produto não demonstrado. Resolver correção/proveniência do binário ou uma análise de aplicabilidade suficiente antes de encerrar essa pendência; não atualizar DLL isolada ou alterar o contrato congelado silenciosamente.
+**Disposição:** fonte vendorizada afetada e funções presentes, alcance no produto não demonstrado. Resolver correção/proveniência do binário ou uma análise de aplicabilidade suficiente antes de encerrar essa pendência; não atualizar DLL isolada ou alterar o contrato congelado silenciosamente.
 
 ### PCRE2 — GHSA-q7rw-r7qq-2hx6
 
@@ -74,13 +74,13 @@ A [fonte vendorizada](https://github.com/qt/qtbase/blob/ef55f427f2c8b410d34f8a76
 
 O [stream operator de QRegularExpression](https://github.com/qt/qtbase/blob/ef55f427f2c8b410d34f8a7681020a3000cf6866/src/corelib/text/qregularexpression.cpp#L2756) grava padrão/opções, não a representação serializada PCRE2. Uso de regex não demonstra exposição por essa API, e ausência de chamada no código próprio não encerra a análise do payload.
 
-**Disposição:** fonte afetada, correção ausente no trecho examinado, inclusão no target estático confirmada; linkagem final, alcance e exposição no shell não demonstrados. Não classificar a dependência inteira como corrigida.
+**Disposição atualizada:** fonte afetada e correção ausente no trecho examinado. A [análise posterior do PDB correspondente ao PE](m0-2-qt-symbol-applicability.md) encontrou 24 compilands PCRE2 e as funções de compilação/matching, mas não `pcre2_serialize.c` ou símbolos `pcre2_serialize*`. É forte evidência de que o caminho específico desse advisory não foi incorporado à Qt6Core examinada, delimitada pelos limites de enumeração documentados. Não classifica PCRE2 10.47 como corrigido nem fecha `CHK-SEC`; reavaliar em novo payload/configuração.
 
 ### Compilador e pré-requisitos Microsoft
 
 A [tabela Microsoft](https://learn.microsoft.com/en-us/cpp/overview/compiler-versions?view=msvc-170) identifica MSVC 14.43/`_MSC_VER=1943` como EOL. O shell usa 19.43.34808.0. A [política de ciclo de suporte](https://devblogs.microsoft.com/cppblog/new-release-cadence-and-support-lifecycle-for-msvc-build-tools/) não transforma essa versão antiga em uma das linhas novas suportadas. Trata-se de risco de suporte confirmado, não de CVE ou exploração comprovada.
 
-No VS 2022 inspecionado há toolsets 14.16, 14.29, 14.34, 14.39 e 14.43; não há 14.44 já instalada. A atualização/seleção de toolchain precisa de novo preflight, rebuild e checks, preservando o histórico. Nenhum instalador foi acionado ou componente do Visual Studio alterado. Permanece também a ressalva de compatibilidade do linker mais antigo que o usado para compilar Qt.
+No VS 2022 inspecionado há toolsets 14.16, 14.29, 14.34, 14.39 e 14.43; não há 14.44 já instalada. A atualização/seleção de toolchain precisa de novo preflight, rebuild e checks, preservando o histórico. Na triagem inicial nenhum instalador foi acionado. A [tentativa posterior autorizada](m0-2-msvc-refresh.md) foi cancelada na confirmação de administrador, antes de instalar; não houve atualização de componente nem novo compilador validado. Permanece também a ressalva de compatibilidade do linker mais antigo que o usado para compilar Qt.
 
 | Componente externo ou adicional | Observação | Disposição |
 |---|---|---|
@@ -142,7 +142,7 @@ O [advisory CVE-2026-8924 do curl](https://curl.se/docs/CVE-2026-8924.html), pub
 
 As consultas delimitadas acima não esgotam as demais atribuições de código/dados ou canais de divulgação. A origem das entradas está inventariada; nenhuma recebeu status genérico “sem vulnerabilidades”.
 
-MASM/JavaScriptCore, XSVG, Wintab, sombras Angular Material e várias atribuições de hash/rasterização/dados têm versão upstream `unknown` ou identificação insuficiente para matching confiável. A versão `36` da entrada UCD foi preservada literalmente, sem reinterpretá-la como uma versão Unicode comprovada. Fontes, patches, subconjuntos efetivamente incorporados e `LicenseRef` exigem revisão própria. O uso de dados derivados de Tika não é inclusão automática da biblioteca Java inteira.
+MASM/JavaScriptCore, XSVG, Wintab, sombras Angular Material e várias atribuições de hash/rasterização/dados têm versão upstream `unknown`; o [complemento de atribuições](m0-2-third-party-attributions.md) agora as vincula às revisões Qt fixadas, preservando essa incerteza para matching de advisories. O complemento cobre 19 grupos, 62 recursos oficiais autenticados e as sete definições de cinco `LicenseRef`, com controles negativos. A versão `36` de UCD foi preservada e distinguida da declaração Unicode 17.0 na fonte; não é nova prova binária. Fontes correspondentes completas, notices aplicáveis e cumprimento das licenças continuam pendentes. O uso de dados derivados de Tika não é inclusão automática da biblioteca Java inteira.
 
 Os 67 PEs Qt são 6.11.2.0; os dois restantes são o executável próprio e D3DCompiler. Os avisos do Qt não substituem a revisão das bibliotecas embutidas. Assinatura válida e hashes corretos demonstram identidade no escopo verificado, não ausência de bugs ou aprovação de licença.
 
@@ -163,4 +163,6 @@ As três consultas de advisories via API retornaram HTTP 200 e nenhuma próxima 
 
 Esta é uma mudança documental, sem comportamento novo: TDD não se aplica. A validação documental passou com 31 Markdown, 83 requisitos, 17 checks e 76 etapas; o manifesto autenticado e os seis hashes de evidência acima foram reconferidos, e a revisão do diff não apresentou achados. As suítes C++/QML já verdes não foram repetidas como se fossem um scanner de vulnerabilidades. O commit que introduz este documento é a evidência de `CHK-CLOSE` desta revisão, não o encerramento de M0.2.
 
-Para retomar: resolver as pendências de segurança/toolchain com evidência e decisões proporcionais e retomar os gates de desktop apenas com autorização. O smoke offscreen original/relocado passou posteriormente, sem RTSS ou relaxamento da whitelist, conforme o registro M0; esse resultado não substitui `CHK-SEC`. Redistribuição, M0.3 e fechamento de M0.2 não foram liberados por esta triagem.
+Os complementos de atribuições e símbolos têm evidências e limites próprios nos documentos linkados; não reescrevem os extratos históricos ou o pacote. Seus checks documentais e commits fecham apenas essas análises adicionais.
+
+Para retomar: resolver as pendências de segurança/toolchain com evidência e decisões proporcionais. A autorização posterior de desktop permitiu uma [tentativa nativa inconclusiva](m0-2-native-attempt-20260827.md); a repetição depende de captura/interação consistentes, e uma nova tentativa de instalação exige autorização após o cancelamento. O smoke offscreen original/relocado passou, sem RTSS ou relaxamento da whitelist, conforme o registro M0; esse resultado não substitui `CHK-SEC`. Redistribuição, M0.3 e fechamento de M0.2 não foram liberados por esta triagem.
