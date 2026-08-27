@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-26
 
-**Fase:** M0.2 em andamento; preflight Qt concluído e primeiro incremento do core experimental iniciado
+**Fase:** M0.2 em andamento; primeiro estado vazio Qt Quick tipado validado
 
 **Código do produto:** ainda não iniciado
 
@@ -124,7 +124,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD, evoluindo o core e o presenter determinísticos já iniciados para a UI sem áudio real, usando o [preflight autenticado](m0/evidence/m0-2-preflight.md);
+1. continuar em M0.2 o shell experimental C++20/Qt Quick/QML por TDD, evoluindo o estado vazio já validado para estados tocando/erro, controles persistentes, fila visual, temas, preferências e tray sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;

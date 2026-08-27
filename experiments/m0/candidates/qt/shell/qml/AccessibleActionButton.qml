@@ -1,0 +1,38 @@
+import QtQuick
+import QtQuick.Controls
+import MusicPlayer.M0
+
+Button {
+    id: control
+    objectName: "open-audio"
+    Accessible.role: Accessible.Button
+    Accessible.name: text
+    Accessible.onPressAction: control.clicked()
+    activeFocusOnTab: true
+    hoverEnabled: true
+    Keys.onReturnPressed: event => {
+        control.clicked();
+        event.accepted = true;
+    }
+    Keys.onEnterPressed: event => {
+        control.clicked();
+        event.accepted = true;
+    }
+    implicitWidth: Math.max(contract.controlTargetPreferred, contentItem.implicitWidth + 32)
+    implicitHeight: contract.controlTargetPreferred
+    required property ShellUiContract contract
+
+    background: Rectangle {
+        color: control.down ? Qt.darker(control.contract.accentColor, 1.1) : control.contract.accentColor
+        radius: control.contract.radiusMedium
+        border.width: control.activeFocus ? 3 : (control.hovered || control.down ? 2 : 0)
+        border.color: control.contract.focusColor
+    }
+    contentItem: Text {
+        text: control.text
+        color: control.contract.accentTextColor
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        topPadding: control.down ? 2 : 0
+    }
+}
