@@ -1,0 +1,3 @@
+# Unified-diff context lines intentionally contain one trailing space and the
+# authenticated upstream file ends after a blank context line. Preserve bytes.
+5a280ec.patch -text whitespace=-blank-at-eol,-blank-at-eof

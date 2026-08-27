@@ -1,0 +1,44 @@
+This local test uses the FreeType vendor from Qt 6.11.2. Qt's attribution
+declares 2.14.3, while the pinned header reports 2.14.2; this is not described
+as an unmodified upstream release. It is based in part on the work of the
+FreeType Team (https://freetype.org/). FreeType is used under
+the FreeType License (FTL); the vendor LICENSE.txt preserves the full terms.
+Additional terms are preserved in BDF-LICENSE.txt, PCF-LICENSE.txt and
+ZLIB-LICENSE.txt. The unchanged upstream correction is retained as
+5a280ec.patch with author/commit metadata; it remains subject to FreeType's
+license. No vendor library or font binary is included in this directory.
+
+The testfont_variable.ttf fixture is supplied by The Qt Company Ltd. under
+GPL-3.0-only, as recorded by tests/** in qtbase/REUSE.toml at revision
+ef55f427f2c8b410d34f8a7681020a3000cf6866. It is used only as test input in
+this private experiment and is not included in the player package.
+
+The translation-unit list in CMakeLists.txt follows Qt's BSD-3-Clause
+src/3rdparty/freetype/CMakeLists.txt at that revision. That source list is
+adapted for a standalone build without Qt Core or PNG:
+
+Copyright (C) The Qt Company Ltd.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
