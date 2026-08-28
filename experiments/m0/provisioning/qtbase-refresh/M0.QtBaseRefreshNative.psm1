@@ -254,14 +254,15 @@ function Assert-M0NativeNoAlternateDataStreams {
     }
 }
 
-function Open-M0NativePhysicalFile {
+function Open-M0NativePhysicalFileCore {
     param(
         [Parameter(Mandatory)] [string] $LiteralPath,
         [Parameter(Mandatory)] [string] $Context,
         [string] $BoundaryRoot,
         [Nullable[long]] $ExpectedSizeBytes,
         [string] $ExpectedSha256,
-        [switch] $SkipReparseChain
+        [switch] $SkipReparseChain,
+        [Parameter(Mandatory)] [bool] $RequireSingleLink
     )
     if (-not $IsWindows) { throw "$Context requires the Windows physical-file identity gate." }
     if (-not [IO.File]::Exists($LiteralPath)) { throw "$Context is missing: $LiteralPath" }
@@ -285,7 +286,9 @@ function Open-M0NativePhysicalFile {
             throw "$Context final physical path differs from the authenticated path."
         }
         $linkCount = [long]$script:NativeFileIdentityType::GetLinkCount($stream.SafeFileHandle)
-        if ($linkCount -ne 1) { throw "$Context has physical hardlink count $linkCount; exactly one is required." }
+        if ($RequireSingleLink -and $linkCount -ne 1) {
+            throw "$Context has physical hardlink count $linkCount; exactly one is required."
+        }
         if ($null -ne $ExpectedSizeBytes -and $stream.Length -ne [long]$ExpectedSizeBytes) {
             throw "$Context size differs from the expected anchor."
         }
@@ -298,6 +301,7 @@ function Open-M0NativePhysicalFile {
             path = $full
             size_bytes = [long]$stream.Length
             sha256 = $sha256
+            link_count = $linkCount
             stream = $stream
         }
     }
@@ -306,6 +310,40 @@ function Open-M0NativePhysicalFile {
         elseif ($null -ne $handle) { $handle.Dispose() }
         throw
     }
+}
+
+function Open-M0NativePhysicalFile {
+    param(
+        [Parameter(Mandatory)] [string] $LiteralPath,
+        [Parameter(Mandatory)] [string] $Context,
+        [string] $BoundaryRoot,
+        [Nullable[long]] $ExpectedSizeBytes,
+        [string] $ExpectedSha256,
+        [switch] $SkipReparseChain
+    )
+    return Open-M0NativePhysicalFileCore `
+        -LiteralPath $LiteralPath `
+        -Context $Context `
+        -BoundaryRoot $BoundaryRoot `
+        -ExpectedSizeBytes $ExpectedSizeBytes `
+        -ExpectedSha256 $ExpectedSha256 `
+        -SkipReparseChain:$SkipReparseChain `
+        -RequireSingleLink $true
+}
+
+function Open-M0NativeInstallHardlinkSource {
+    param(
+        [Parameter(Mandatory)] [string] $LiteralPath,
+        [Parameter(Mandatory)] [string] $Context,
+        [Parameter(Mandatory)] [string] $BoundaryRoot,
+        [switch] $SkipReparseChain
+    )
+    return Open-M0NativePhysicalFileCore `
+        -LiteralPath $LiteralPath `
+        -Context $Context `
+        -BoundaryRoot $BoundaryRoot `
+        -SkipReparseChain:$SkipReparseChain `
+        -RequireSingleLink $false
 }
 
 function Get-M0NativeTreeData {
@@ -432,6 +470,135 @@ function Remove-M0NativeNewOutput {
         }
         else {
             [IO.Directory]::Delete($full, $true)
+        }
+    }
+}
+
+function Get-M0NativePhysicalLinkCount {
+    param(
+        [Parameter(Mandatory)] [string] $LiteralPath,
+        [Parameter(Mandatory)] [string] $Context,
+        [Parameter(Mandatory)] [string] $BoundaryRoot,
+        [switch] $SkipReparseChain
+    )
+    if (-not $IsWindows) { throw "$Context requires the Windows physical-file identity gate." }
+    if (-not [IO.File]::Exists($LiteralPath)) { throw "$Context is missing: $LiteralPath" }
+    $full = [IO.Path]::GetFullPath($LiteralPath)
+    if (-not (Test-M0NativePathWithin $full $BoundaryRoot -AllowEqual)) {
+        throw "$Context is outside its physical boundary."
+    }
+    if (-not $SkipReparseChain) { Assert-M0NativeNoReparseExistingChain $full $Context }
+
+    $handle = $script:NativeFileIdentityType::OpenReadOnlyWithoutWriteDeleteSharing(
+        (ConvertTo-M0NativeExtendedPath $full))
+    try {
+        Assert-M0NativeNoAlternateDataStreams $full $Context
+        $finalPath = [IO.Path]::GetFullPath((ConvertFrom-M0NativeFinalPath (
+                    $script:NativeFileIdentityType::GetFinalPath($handle))))
+        if (-not [string]::Equals($finalPath, $full, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "$Context final physical path differs from the expected path."
+        }
+        return [long]$script:NativeFileIdentityType::GetLinkCount($handle)
+    }
+    finally { $handle.Dispose() }
+}
+
+function Convert-M0NativeInstallHardlinksToCopies {
+    param(
+        [Parameter(Mandatory)] [string] $InstallRoot,
+        [Parameter(Mandatory)] [string] $RunRoot
+    )
+    $runRootFull = ConvertTo-M0NativeFullPath $RunRoot
+    $installRootFull = ConvertTo-M0NativeFullPath $InstallRoot
+    if (-not (Test-M0NativePathWithin $installRootFull $runRootFull)) {
+        throw 'Install hardlink materialization root is outside RunRoot.'
+    }
+    if (-not [IO.Directory]::Exists($installRootFull)) { throw 'Install hardlink materialization root is missing.' }
+    Assert-M0NativeNoReparseExistingChain $installRootFull 'Install hardlink materialization root'
+
+    $seenOrdinal = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $seenCaseFolded = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $fileByPath = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    $pending = [Collections.Generic.Stack[object]]::new()
+    $pending.Push([pscustomobject]@{ path = $installRootFull; relative_path = '' })
+    while ($pending.Count -ne 0) {
+        $current = $pending.Pop()
+        foreach ($item in [IO.DirectoryInfo]::new($current.path).EnumerateFileSystemInfos()) {
+            $relative = if ([string]::IsNullOrEmpty($current.relative_path)) {
+                $item.Name
+            }
+            else { $current.relative_path + '/' + $item.Name }
+            Assert-M0NativeSafeRelativePath $relative 'Install hardlink materialization entry path'
+            if (-not $seenOrdinal.Add($relative)) { throw "Install tree has duplicate path '$relative'." }
+            if (-not $seenCaseFolded.Add($relative)) { throw "Install tree has a case-folded path collision at '$relative'." }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Install tree contains a reparse-point entry: $relative"
+            }
+            if ($item -is [IO.DirectoryInfo]) {
+                $pending.Push([pscustomobject]@{ path = $item.FullName; relative_path = $relative })
+            }
+            elseif ($item -is [IO.FileInfo]) { $fileByPath.Add($relative, $item.FullName) }
+            else { throw "Install tree contains an unsupported entry type: $relative" }
+        }
+    }
+
+    $paths = [string[]]@($fileByPath.Keys)
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    $hardlinkedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($relative in $paths) {
+        $linkCount = Get-M0NativePhysicalLinkCount `
+            -LiteralPath $fileByPath[$relative] `
+            -Context "Installed file '$relative'" `
+            -BoundaryRoot $installRootFull `
+            -SkipReparseChain
+        if ($linkCount -gt 1) { $hardlinkedPaths.Add($relative) }
+    }
+    if ($hardlinkedPaths.Count -eq 0) { return }
+
+    $scratchRoot = Resolve-M0NativeRunPath $runRootFull 'n' 'Install hardlink materialization scratch root'
+    if ([IO.Directory]::Exists($scratchRoot) -or [IO.File]::Exists($scratchRoot)) {
+        throw 'Install hardlink materialization scratch root must be CreateNew.'
+    }
+    [IO.Directory]::CreateDirectory($scratchRoot) | Out-Null
+    Assert-M0NativeNoReparseExistingChain $scratchRoot 'Install hardlink materialization scratch root'
+    try {
+        $index = 0
+        foreach ($relative in $hardlinkedPaths) {
+            $sourcePath = $fileByPath[$relative]
+            $source = Open-M0NativeInstallHardlinkSource `
+                -LiteralPath $sourcePath `
+                -Context "Installed hardlink '$relative'" `
+                -BoundaryRoot $installRootFull `
+                -SkipReparseChain
+            try {
+                if ($source.link_count -eq 1) { continue }
+                $tempPath = Join-Path $scratchRoot $index.ToString('D8', [Globalization.CultureInfo]::InvariantCulture)
+                $index++
+                $temp = [IO.FileStream]::new($tempPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+                try {
+                    $source.stream.Position = 0
+                    $source.stream.CopyTo($temp, 65536)
+                    $temp.Flush($true)
+                }
+                finally { $temp.Dispose() }
+                $expectedSize = $source.size_bytes
+                $expectedSha256 = $source.sha256
+            }
+            finally { $source.stream.Dispose() }
+
+            [IO.File]::Move($tempPath, $sourcePath, $true)
+            $verified = Open-M0NativePhysicalFile `
+                -LiteralPath $sourcePath `
+                -Context "Materialized installed file '$relative'" `
+                -BoundaryRoot $installRootFull `
+                -ExpectedSizeBytes $expectedSize `
+                -ExpectedSha256 $expectedSha256
+            $verified.stream.Dispose()
+        }
+    }
+    finally {
+        if ([IO.Directory]::Exists($scratchRoot) -or [IO.File]::Exists($scratchRoot)) {
+            Remove-M0NativeNewOutput -LiteralPath $scratchRoot -Context 'Install hardlink materialization scratch root'
         }
     }
 }
@@ -2182,6 +2349,9 @@ function Invoke-M0QtBaseRefreshNative {
     Assert-M0NativePreparedObservation $prepared $Context.contract
     $environment = Invoke-M0NativeCaptureBuildEnvironment $Context $callerEnvironment
     $commands = Invoke-M0NativeContractCommands $Context $resolved $environment
+    Convert-M0NativeInstallHardlinksToCopies `
+        -InstallRoot (Resolve-M0NativeRunPath $resolved.run_root 'install' 'Installed tree') `
+        -RunRoot $resolved.run_root
     $reports = Invoke-M0NativeContractReports $Context $resolved $environment
     $install = New-M0NativeInstallEvidence $Context $resolved.run_root
     return [pscustomobject][ordered]@{

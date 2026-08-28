@@ -516,7 +516,9 @@ function New-FakeNativeProcessBoundary {
         [string] $FailId,
         [string] $TimeoutId,
         [switch] $InvalidEnvironment,
-        [switch] $PathBudgetWarning
+        [switch] $PathBudgetWarning,
+        [switch] $InstallHardlinkAliases,
+        [switch] $LockInstallHardlinkAlias
     )
     $configureSummary = $expectedNativeConfigureSummary
     $cmakeCache = $expectedNativeCMakeCache
@@ -571,6 +573,16 @@ function New-FakeNativeProcessBoundary {
         elseif ($request.id -ceq 'install') {
             foreach ($relative in $Fixture.ExpectedArtifacts) { Write-TestPeX64 (Join-Path $Fixture.RunRoot "install/$relative") }
             Write-TestPeX64 (Join-Path $Fixture.RunRoot 'install/plugins/platforms/qminimal.dll')
+            if ($InstallHardlinkAliases) {
+                $primary = Join-Path $Fixture.RunRoot 'install/bin/androiddeployqt.exe'
+                $alias = Join-Path $Fixture.RunRoot 'install/bin/androiddeployqt6.exe'
+                Write-TestPeX64 $primary
+                $null = New-Item -ItemType HardLink -Path $alias -Target $primary
+                if ($LockInstallHardlinkAlias) {
+                    $State.LockedHandle = [IO.FileStream]::new(
+                        $primary, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+                }
+            }
         }
         elseif ($request.id.StartsWith('report:', [StringComparison]::Ordinal)) {
             $reportId = $request.id.Substring('report:'.Length)
@@ -1295,6 +1307,67 @@ index 111111111..222222222 100644
         }
         finally {
             [Environment]::SetEnvironmentVariable($sentinelName, $previousSentinel, 'Process')
+            Clear-NativeRunnerTestBoundaries
+        }
+    }
+
+    Test-Case 'native runner materializes hardlinked install aliases before physical inventory' {
+        $fixture = New-NativeRunnerFixture 'runner-install-hardlinks'
+        $state = [pscustomobject]@{ Calls = [Collections.Generic.List[object]]::new() }
+        $boundary = New-FakeNativeProcessBoundary $fixture $state -InstallHardlinkAliases
+        Set-NativeRunnerTestBoundaries $fixture.Prepared $boundary
+        try {
+            $result = Invoke-M0QtBaseRefreshNative -Context $fixture.Context
+            $primary = Join-Path $fixture.RunRoot 'install/bin/androiddeployqt.exe'
+            $alias = Join-Path $fixture.RunRoot 'install/bin/androiddeployqt6.exe'
+            foreach ($path in @($primary, $alias)) {
+                $linkCount = & $script:module {
+                    param($literalPath)
+                    $handle = $script:NativeFileIdentityType::OpenReadOnlyWithoutWriteDeleteSharing(
+                        (ConvertTo-M0NativeExtendedPath $literalPath))
+                    try { return [long]$script:NativeFileIdentityType::GetLinkCount($handle) }
+                    finally { $handle.Dispose() }
+                } $path
+                Assert-Equal $linkCount ([long]1) "Installed alias '$path' retained a mutable hardlink."
+            }
+            Assert-Equal ([Convert]::ToHexString([IO.File]::ReadAllBytes($primary))) `
+                ([Convert]::ToHexString([IO.File]::ReadAllBytes($alias))) `
+                'Materialized install aliases do not preserve identical bytes.'
+            $installTree = @($result.evidence.trees | Where-Object id -ceq 'install')[0]
+            $inventoryText = [IO.File]::ReadAllText((Join-Path $fixture.RunRoot $installTree.inventory.relative_path))
+            Assert-True $inventoryText.Contains("bin/androiddeployqt.exe`t", [StringComparison]::Ordinal) `
+                'Install inventory omitted the primary tool alias.'
+            Assert-True $inventoryText.Contains("bin/androiddeployqt6.exe`t", [StringComparison]::Ordinal) `
+                'Install inventory omitted the versioned tool alias.'
+            Assert-True (-not [IO.Directory]::Exists((Join-Path $fixture.RunRoot 'n'))) `
+                'Install hardlink materialization left its private scratch directory behind.'
+        }
+        finally { Clear-NativeRunnerTestBoundaries }
+    }
+
+    Test-Case 'install hardlink materialization fails closed and removes scratch when replacement is blocked' {
+        $fixture = New-NativeRunnerFixture 'runner-install-hardlink-locked'
+        $state = [pscustomobject]@{ Calls = [Collections.Generic.List[object]]::new(); LockedHandle = $null }
+        $boundary = New-FakeNativeProcessBoundary `
+            -Fixture $fixture `
+            -State $state `
+            -InstallHardlinkAliases `
+            -LockInstallHardlinkAlias
+        Set-NativeRunnerTestBoundaries $fixture.Prepared $boundary
+        try {
+            Assert-Rejected {
+                Invoke-M0QtBaseRefreshNative -Context $fixture.Context
+            } 'access|denied|move|replace|hardlink|used by another process'
+            Assert-Equal @($state.Calls | ForEach-Object id) @(
+                'vsdevcmd-environment', 'configure', 'build', 'install'
+            ) 'Reports ran after install hardlink materialization failed.'
+            Assert-True (-not [IO.Directory]::Exists((Join-Path $fixture.RunRoot 'n'))) `
+                'Rejected install hardlink materialization left its scratch directory behind.'
+            Assert-True (-not [IO.File]::Exists((Join-Path $fixture.RunRoot 'evidence/inventories/install.tsv'))) `
+                'Rejected install hardlink materialization published an install inventory.'
+        }
+        finally {
+            if ($null -ne $state.LockedHandle) { $state.LockedHandle.Dispose() }
             Clear-NativeRunnerTestBoundaries
         }
     }
