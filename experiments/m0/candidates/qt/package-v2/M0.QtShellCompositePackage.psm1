@@ -1401,6 +1401,17 @@ function Assert-M0PackageV2AbsolutePlanPath {
     return ConvertTo-M0PackageV2FullPath $Value
 }
 
+function ConvertTo-M0PackageV2CMakePath {
+    param([Parameter(Mandatory)] [string] $Value)
+    $normalized = $Value.Replace('\', '/')
+    if ($normalized.Contains(';', [StringComparison]::Ordinal) -or
+        $normalized.StartsWith('//?/', [StringComparison]::Ordinal) -or
+        $normalized.StartsWith('//./', [StringComparison]::Ordinal)) {
+        throw 'A CMake cache path contains unsupported list or device syntax.'
+    }
+    return $normalized
+}
+
 function New-M0PackageV2BuildCommand {
     param(
         [Parameter(Mandatory)] [string] $Id,
@@ -1474,17 +1485,27 @@ function New-M0PackageV2BuildPlan {
     }
     $qtConfig = Join-Path $sdk 'lib/cmake/Qt6'
     $coreExecutable = Join-Path $coreBuild 'm0_qt_core_tests.exe'
+    $cmakePaths = [ordered]@{
+        catch2 = ConvertTo-M0PackageV2CMakePath $catch2
+        sdk = ConvertTo-M0PackageV2CMakePath $sdk
+        qt_config = ConvertTo-M0PackageV2CMakePath $qtConfig
+        ninja = ConvertTo-M0PackageV2CMakePath $tools.ninja
+        cl = ConvertTo-M0PackageV2CMakePath $tools.cl
+        link = ConvertTo-M0PackageV2CMakePath $tools.link
+        rc = ConvertTo-M0PackageV2CMakePath $tools.rc
+        mt = ConvertTo-M0PackageV2CMakePath $tools.mt
+    }
     $commonConfigure = [object[]]@(
         '-G', 'Ninja',
         '-DCMAKE_BUILD_TYPE=Release',
         '-DBUILD_TESTING=ON',
         "-DCMAKE_SYSTEM_VERSION=$script:WindowsSdkVersion",
-        "-DM0_CATCH2_SOURCE_DIR=$catch2",
-        "-DCMAKE_MAKE_PROGRAM=$($tools.ninja)",
-        "-DCMAKE_CXX_COMPILER=$($tools.cl)",
-        "-DCMAKE_LINKER=$($tools.link)",
-        "-DCMAKE_RC_COMPILER=$($tools.rc)",
-        "-DCMAKE_MT=$($tools.mt)",
+        "-DM0_CATCH2_SOURCE_DIR:PATH=$($cmakePaths.catch2)",
+        "-DCMAKE_MAKE_PROGRAM:FILEPATH=$($cmakePaths.ninja)",
+        "-DCMAKE_CXX_COMPILER:FILEPATH=$($cmakePaths.cl)",
+        "-DCMAKE_LINKER:FILEPATH=$($cmakePaths.link)",
+        "-DCMAKE_RC_COMPILER:FILEPATH=$($cmakePaths.rc)",
+        "-DCMAKE_MT:FILEPATH=$($cmakePaths.mt)",
         '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
     )
 
@@ -1493,8 +1514,8 @@ function New-M0PackageV2BuildPlan {
             -FilePath $tools.cmake -Arguments ([object[]]@(
                     '-S', $source, '-B', $qtBuild,
                     '-DM0_QT_SHELL_SUPPORT=ON',
-                    "-DCMAKE_PREFIX_PATH=$sdk",
-                    "-DQt6_DIR=$qtConfig") + $commonConfigure) `
+                    "-DCMAKE_PREFIX_PATH:PATH=$($cmakePaths.sdk)",
+                    "-DQt6_DIR:PATH=$($cmakePaths.qt_config)") + $commonConfigure) `
             -WorkingDirectory $repository -TimeoutSeconds 300 -ExpectedTestCount $null))
     $commands.Add((New-M0PackageV2BuildCommand -Id 'qt-on-build' `
             -FilePath $tools.cmake -Arguments ([object[]]@(

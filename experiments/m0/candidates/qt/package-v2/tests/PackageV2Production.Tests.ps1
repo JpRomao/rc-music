@@ -115,7 +115,9 @@ Case 'pure build plan closes Qt-on core-off qmllint and exact CTest inventory co
         core_off_build_root = 'C:\repo with spaces\out\build core OFF'
         tools = [pscustomobject][ordered]@{
             cmake = 'C:\tools\cmake.exe'; ctest = 'C:\tools\ctest.exe'; ninja = 'C:\tools\ninja.exe'
-            cl = 'C:\tools\cl.exe'; link = 'C:\tools\link.exe'; rc = 'C:\tools\rc.exe'; mt = 'C:\tools\mt.exe'
+            cl = 'C:\tools\cl.exe'; link = 'C:\tools\link.exe'
+            rc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
+            mt = 'C:\tools\mt.exe'
             dumpbin = 'C:\tools\dumpbin.exe'
         }
     }
@@ -140,14 +142,51 @@ Case 'pure build plan closes Qt-on core-off qmllint and exact CTest inventory co
     $coreArguments = @($coreConfigure.arguments) -join "`n"
     foreach ($needle in @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=ON',
             '-DM0_QT_SHELL_SUPPORT=ON', '-DCMAKE_SYSTEM_VERSION=10.0.26100.0',
-            '-DM0_CATCH2_SOURCE_DIR=C:\repo with spaces\out\m0\toolchains\Catch2-3.15.3',
-            '-DCMAKE_PREFIX_PATH=C:\repo with spaces\q\run\sdk',
-            '-DQt6_DIR=C:\repo with spaces\q\run\sdk\lib\cmake\Qt6')) {
+            '-DM0_CATCH2_SOURCE_DIR:PATH=C:/repo with spaces/out/m0/toolchains/Catch2-3.15.3',
+            '-DCMAKE_MAKE_PROGRAM:FILEPATH=C:/tools/ninja.exe',
+            '-DCMAKE_CXX_COMPILER:FILEPATH=C:/tools/cl.exe',
+            '-DCMAKE_LINKER:FILEPATH=C:/tools/link.exe',
+            '-DCMAKE_RC_COMPILER:FILEPATH=C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe',
+            '-DCMAKE_MT:FILEPATH=C:/tools/mt.exe',
+            '-DCMAKE_PREFIX_PATH:PATH=C:/repo with spaces/q/run/sdk',
+            '-DQt6_DIR:PATH=C:/repo with spaces/q/run/sdk/lib/cmake/Qt6')) {
         Need $qtArguments.Contains($needle, [StringComparison]::Ordinal) "Qt-on configure lacks '$needle'."
+    }
+    $cmakePathTypes = [ordered]@{
+        M0_CATCH2_SOURCE_DIR = 'PATH'
+        CMAKE_MAKE_PROGRAM = 'FILEPATH'
+        CMAKE_CXX_COMPILER = 'FILEPATH'
+        CMAKE_LINKER = 'FILEPATH'
+        CMAKE_RC_COMPILER = 'FILEPATH'
+        CMAKE_MT = 'FILEPATH'
+        CMAKE_PREFIX_PATH = 'PATH'
+        Qt6_DIR = 'PATH'
+    }
+    foreach ($configure in @($qtConfigure, $coreConfigure)) {
+        foreach ($definition in $cmakePathTypes.GetEnumerator()) {
+            $name = [string]$definition.Key
+            $type = [string]$definition.Value
+            $allNameMatches = @($configure.arguments | Where-Object {
+                    $_.StartsWith("-D${name}=", [StringComparison]::Ordinal) -or
+                    $_.StartsWith("-D${name}:", [StringComparison]::Ordinal)
+                })
+            $matches = @($configure.arguments | Where-Object {
+                    $_.StartsWith("-D${name}:$type=", [StringComparison]::Ordinal)
+                })
+            if ($configure.id -ceq 'core-off-configure' -and
+                $name -in @('CMAKE_PREFIX_PATH', 'Qt6_DIR')) {
+                Same $allNameMatches.Count 0 "Core-off configure received '$name'."
+                continue
+            }
+            Same $allNameMatches.Count 1 "Configure cache path '$name' is not singular."
+            Same $matches.Count 1 "Configure cache path '$name' is not singular."
+            Need (-not $matches[0].Contains('\', [StringComparison]::Ordinal)) `
+                "Configure cache path '$name' is not normalized: '$($matches[0])'."
+        }
     }
     Need $coreArguments.Contains('-DM0_QT_SHELL_SUPPORT=OFF', [StringComparison]::Ordinal) `
         'Core-off configure enables Qt.'
-    Need (-not $coreArguments.Contains('C:\repo with spaces\q\run\sdk', [StringComparison]::OrdinalIgnoreCase)) `
+    Need (-not $coreArguments.Contains('C:/repo with spaces/q/run/sdk', [StringComparison]::OrdinalIgnoreCase)) `
         'Core-off configure receives a Qt SDK path.'
     Same (@($plan.commands | Where-Object id -CEQ 'qt-on-ctest-list')[0].expected_test_count) ([long]65) `
         'Qt-on expected CTest count drifted.'
@@ -155,6 +194,22 @@ Case 'pure build plan closes Qt-on core-off qmllint and exact CTest inventory co
         'Core-off expected CTest count drifted.'
     Need ((@($plan.commands | Where-Object id -CEQ 'qt-on-qmllint')[0].arguments -join ' ').Contains('all_qmllint')) `
         'Qt-on plan does not execute the generated qmllint target.'
+
+    Same (Private $module 'ConvertTo-M0PackageV2CMakePath' @(@{
+                Value = '\\server\share\path with spaces'
+            })) `
+        '//server/share/path with spaces' 'CMake UNC path normalization drifted.'
+    foreach ($unsafe in @('C:\repo;injected', '\\?\C:\repo', '\\.\C:\repo',
+            '//?/C:/repo', '//./C:/repo')) {
+        $threw = $false
+        try {
+            Private $module 'ConvertTo-M0PackageV2CMakePath' @(@{
+                    Value = $unsafe
+                }) | Out-Null
+        }
+        catch { $threw = $true }
+        Need $threw "CMake cache path accepted unsafe syntax: '$unsafe'."
+    }
 }
 
 Case 'CTest inventory parser accepts exact count and rejects missing skipped or disabled tests' {

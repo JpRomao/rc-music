@@ -232,7 +232,7 @@ $packageV2Launcher = Join-Path $packageV2Dir 'Invoke-M0QtShellCompositePackage.p
 $packageV2Contract = Join-Path $packageV2Dir 'qt-shell-composite-package-contract.v2.json'
 $compositeReceipt = Join-Path $packageV2Repo 'q\f75eb9bea8280844c6d1a2b3f4\evidence\qt-shell-composite-receipt.v2.json'
 
-$packageV2ContractSha256 = '9f62a5461c5bda11af8eaa6c554070cd46a7d167a2e05aa063e83880e2856d75'
+$packageV2ContractSha256 = 'cfc8ffd88c018798279af583be95f5dfe71ceb77254e6004c83cd5721894b72a'
 $compositeReceiptSha256 = '30399b3099cf04bdd50d6f083d077e82a590afefeec0617fda89ef5266a1d63e'
 $qtbaseReceiptSha256 = '8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619'
 
