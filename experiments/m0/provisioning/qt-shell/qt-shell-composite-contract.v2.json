@@ -1,0 +1,290 @@
+{
+  "schema_version": 2,
+  "composite_id": "m0.2-qt-shell-composite-sdk-v2",
+  "product": {
+    "qt_version": "6.11.2",
+    "edition": "Desktop",
+    "architecture": "x86_64",
+    "compiler_abi": "msvc2022_64",
+    "windows_sdk_version": "10.0.26100.0"
+  },
+  "provenance": {
+    "qt_shell_v1_contract": {
+      "relative_path": "experiments/m0/provisioning/qt-shell/qt-shell-toolchain-contract.v1.json",
+      "size_bytes": 1412,
+      "sha256": "ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952",
+      "file_count": 8
+    },
+    "qtbase_refresh": {
+      "contract_relative_path": "experiments/m0/provisioning/qtbase-refresh/qtbase-refresh-contract.v2.json",
+      "contract_size_bytes": 20464,
+      "contract_sha256": "fd2cc91ae7824c117a93f69e78d792c500f30fd2d112c3ecb2f0404de3b0d818",
+      "module_relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefresh.psm1",
+      "module_size_bytes": 150065,
+      "module_sha256": "95245cb3cf812e0174840a73b94eb86c8217b4ee90131cbbae92f45469d54f0d",
+      "receipt_relative_path": "q/96bvah3m0t0t71m990olv5gpvs/evidence/qtbase-refresh-receipt.v2.json",
+      "receipt_size_bytes": 4369,
+      "receipt_sha256": "8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619",
+      "manifest_relative_path": "q/96bvah3m0t0t71m990olv5gpvs/evidence/qtbase-refresh-manifest.v2.json",
+      "manifest_size_bytes": 13866,
+      "manifest_sha256": "dc26c0962e927145466b879e352a4c99d9fc7da54d335567373c353739afbf6b",
+      "install_root_relative_path": "q/96bvah3m0t0t71m990olv5gpvs/install",
+      "install_file_count": 4289,
+      "install_total_size_bytes": 526177624,
+      "install_inventory_relative_path": "q/96bvah3m0t0t71m990olv5gpvs/evidence/inventories/install.tsv",
+      "install_inventory_size_bytes": 478362,
+      "install_inventory_sha256": "b489401f06a97de9c8017a5dca6df626a3b12605a4974ff680d5fd25856e9e09"
+    }
+  },
+  "recipe": {
+    "files": [
+      {
+        "id": "orchestrator",
+        "relative_path": "experiments/m0/provisioning/qt-shell/M0.QtShellComposite.psm1",
+      "size_bytes": 148007,
+      "sha256": "c3f4a6bbe3d7eada46c44bf588dbeac8f61ca08c020ef5ab0e2536aa6d6ba1de"
+      },
+      {
+        "id": "runner",
+        "relative_path": "experiments/m0/provisioning/qt-shell/M0.QtShellCompositeNative.psm1",
+      "size_bytes": 64084,
+      "sha256": "bdf14b206180c95a28d5c262192530deb657c8c191911362af32ed69f0ec8596"
+      },
+      {
+        "id": "entrypoint",
+        "relative_path": "experiments/m0/provisioning/qt-shell/Invoke-M0QtShellComposite.ps1",
+      "size_bytes": 42709,
+      "sha256": "51217755fd30658095de32bc4941674f8eb83bbda2cc802f22aee5f065fc3f7a"
+      }
+    ],
+    "runner_export": "Invoke-M0QtShellCompositeNative"
+  },
+  "inputs": {
+    "extractor": {
+      "id": "7zip",
+      "version": "26.02",
+      "relative_path": "out/m0/toolchains/7zip-26.02/x64/7za.exe",
+      "size_bytes": 1334784,
+      "sha256": "35d4d69d7cd6cb44558f208c3b1334268013f9daf82d2dda848893a1c30c59c2"
+    },
+    "archives": [
+      {
+        "owner_id": "qtdeclarative",
+        "archive_id": "qtdeclarative",
+        "relative_path": "out/m0/downloads/qt-6.11.2-msvc2022_64/6.11.2-0-202608131017qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "size_bytes": 172484222,
+        "sha256": "5591ca564c1a9299a45a15b6b1d324c86e0aaed7cf6c47b7e6fe464aecae2587",
+        "expected_file_count": 5470,
+        "expected_total_size_bytes": 1865393737
+      },
+      {
+        "owner_id": "qtsvg",
+        "archive_id": "qtsvg",
+        "relative_path": "out/m0/downloads/qt-6.11.2-msvc2022_64/6.11.2-0-202608131017qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+        "size_bytes": 684353,
+        "sha256": "417f44499c835b2303f3ff78043179bb23442f33d5d2816fbf7e8dbf275b1c89",
+        "expected_file_count": 120,
+        "expected_total_size_bytes": 4556378
+      },
+      {
+        "owner_id": "d3d",
+        "archive_id": "qt-d3dcompiler-47-x64",
+        "relative_path": "out/m0/downloads/qt-6.11.2-msvc2022_64/6.11.2-0-202608131017d3dcompiler_47-x64.7z",
+        "size_bytes": 1380117,
+        "sha256": "b1c379f739fa59a495a388c0878757e3d90fb72e0df771237a1ee4a2c1675d15",
+        "expected_file_count": 1,
+        "expected_total_size_bytes": 4173928
+      }
+    ]
+  },
+  "ownership": {
+    "owners": [
+      "qtbase-refresh-v2",
+      "qtdeclarative",
+      "qtsvg",
+      "d3d"
+    ],
+    "path_comparer": "OrdinalIgnoreCase",
+    "leaf_collision_policy": "reject-even-identical",
+    "directory_overlap_allowed": true,
+    "allow_hardlinks": false,
+    "allow_reparse_points": false,
+    "allow_ads": false,
+    "official_sdk_fallback": false
+  },
+  "required_artifacts": [
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/Qt6Core.dll",
+      "size_bytes": 10351104,
+      "sha256": "3d472b9249aa3a91dabf453c7e84b2f172d2a26ec4266b0919d6bb985438497a"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/Qt6Gui.dll",
+      "size_bytes": 9534464,
+      "sha256": "2327a7314ab8e2dea6a9f753594e6aa2723dcec7f46763ef030cd1057f550b25"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/Qt6Widgets.dll",
+      "size_bytes": 6484992,
+      "sha256": "b7575bc98c91ad4aa372ffc85ccd08ee2fe7a8ed921d9a86937516a1a4033662"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/Qt6Test.dll",
+      "size_bytes": 371200,
+      "sha256": "8cee7db0c3e75e8f32da032c31893638207caa25f81f28083baa9afa0dcd0612"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/qtpaths.exe",
+      "size_bytes": 77824,
+      "sha256": "cf1828070edabae7f2f97a4e4e31d5742f7f96ea9d4da0ae510d0743faa88d59"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/windeployqt.exe",
+      "size_bytes": 262144,
+      "sha256": "edcee9076c20ddfdbc1d060f3713c634850459acfc8614f5635c5ae972c1179b"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/moc.exe",
+      "size_bytes": 1038848,
+      "sha256": "a36e45179dc976eb6d2e7f2a56b3b967b93974471f3be274ee1c8e5d8203ca6b"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/rcc.exe",
+      "size_bytes": 126464,
+      "sha256": "9c47bb30b8db265bf24a7c57e62019268a31c9680b4164887048aa2f00722341"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "bin/uic.exe",
+      "size_bytes": 499712,
+      "sha256": "74919a6416d0b13fbf4c1d2d42223cd3cd12f381609f96d95f49aec58bf83acc"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "plugins/platforms/qwindows.dll",
+      "size_bytes": 978944,
+      "sha256": "06fa77d9be690bfcf41ab543085702566192580c2c08099bbdea6ae41d1b8eae"
+    },
+    {
+      "owner_id": "qtbase-refresh-v2",
+      "relative_path": "plugins/platforms/qoffscreen.dll",
+      "size_bytes": 98816,
+      "sha256": "4bb5a1cac3cff815d448c8e2287cee61d242bf128adb57749e2fbf042a31ea28"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/Qt6Qml.dll",
+      "size_bytes": 5337912,
+      "sha256": "257670ffa28fc84d4ec9f818de27e2e4611d9a0cffcb657179a210931e36671b"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/Qt6Quick.dll",
+      "size_bytes": 6569272,
+      "sha256": "ed2917b9905a5b867ecc192fa4429170494af0dcdaacc68053fe88948319cd08"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/Qt6QuickControls2.dll",
+      "size_bytes": 103224,
+      "sha256": "d2ea80c71cf74443b45df94cea9287cc38176fed4d5f965b7d639c465d0cfa20"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/Qt6QuickLayouts.dll",
+      "size_bytes": 317752,
+      "sha256": "8126dc4b0792cde25506147dadddc578c86a19474d2d8c6f79e50aed9c6ddc46"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/Qt6QuickTest.dll",
+      "size_bytes": 311608,
+      "sha256": "f8734c5a7050646d1c14be933515a91d75bf945d64a278e0d0c3e19f5e1c0627"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmlformat.exe",
+      "size_bytes": 2347832,
+      "sha256": "919c3134408abad8eaa0daf70a2296511419ed66e68e78cab587a7f49ffd8d7a"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmllint.exe",
+      "size_bytes": 104248,
+      "sha256": "2c4d5d6c5e280f1bb83be5de0e9ecce8d2d47906274d1fb22ac3bc300744edb6"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmltestrunner.exe",
+      "size_bytes": 24888,
+      "sha256": "76b311512a6850ddf8efab1d6d978952ab4b2d06bcc35b0181c07576f051831a"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmlimportscanner.exe",
+      "size_bytes": 139576,
+      "sha256": "4b4ebc78b8e03411ad03d8e5970c5a3c2e7d1feda6e8a7644581460ea1c33221"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmlcachegen.exe",
+      "size_bytes": 62776,
+      "sha256": "2df706ce69f5e77a193c76e66e5dd26050220a1ce72fee0197d57e241876073f"
+    },
+    {
+      "owner_id": "qtdeclarative",
+      "relative_path": "bin/qmltyperegistrar.exe",
+      "size_bytes": 268600,
+      "sha256": "f48f3df27e243c1044715914626fa38e1af94b2b8cb57695ff5f92c09396ca99"
+    },
+    {
+      "owner_id": "qtsvg",
+      "relative_path": "bin/Qt6Svg.dll",
+      "size_bytes": 609080,
+      "sha256": "1052c17a9df0eb82023e0e4c369bbd0af58e4c5fea3c27a4b5ee83b60c015492"
+    },
+    {
+      "owner_id": "qtsvg",
+      "relative_path": "plugins/imageformats/qsvg.dll",
+      "size_bytes": 39736,
+      "sha256": "486b395e23e258d03d54cdba045f129e9b1321f9ff12f99fe58293e0351b8caf"
+    },
+    {
+      "owner_id": "qtsvg",
+      "relative_path": "plugins/iconengines/qsvgicon.dll",
+      "size_bytes": 72504,
+      "sha256": "7879ba1d2f293ad09c515de736add8c1023b0a4e80e2301d1283555efc2e8828"
+    },
+    {
+      "owner_id": "d3d",
+      "relative_path": "d3dcompiler_47.dll",
+      "size_bytes": 4173928,
+      "sha256": "e994847e01a6f1e4cbdc5a864616ac262f67ee4f14db194984661a8d927ab7f4"
+    }
+  ],
+  "isolation": {
+    "run_parent_relative_path": "q",
+    "require_new_direct_child": true,
+    "sdk_relative_path": "sdk",
+    "global_inventory_relative_path": "evidence/composite-inventory.tsv",
+    "owner_inventory_directory_relative_path": "evidence/inventories",
+    "manifest_relative_path": "evidence/qt-shell-composite-manifest.v2.json",
+    "receipt_relative_path": "evidence/qt-shell-composite-receipt.v2.json"
+  },
+  "limits": [
+    "diagnostic M0 composite SDK only",
+    "does not prove general Qt ABI compatibility",
+    "does not approve a Qt toolkit decision",
+    "does not approve redistribution or publication",
+    "does not close CHK-SEC or M0.2",
+    "does not replace the official SDK or historical packages"
+  ]
+}
