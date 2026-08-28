@@ -325,7 +325,7 @@ function Get-TestCMakeCacheText {
             'QT_FEATURE_system_zlib:INTERNAL=OFF',
             'QT_FEATURE_systemtrayicon:INTERNAL=ON',
             'QT_FEATURE_vulkan:INTERNAL=ON'
-        ) -join "`n") + "`n"
+        ) -join "`n") + "`n`n"
 }
 
 function New-TestLauncherFixture {
@@ -809,7 +809,7 @@ function New-TestV2PhysicalEvidence {
             $subjectContent = switch ($contractReport.id) {
                 'configure-summary' { Get-TestConfigSummaryText; break }
                 'cmake-cache' { Get-TestCMakeCacheText; break }
-                'qtgui-freetype-dependency' { "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = d3d11.lib lib\Qt6BundledFreetype.lib`nbuild plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6Gui.lib lib\Qt6BundledFreetype.lib`n"; break }
+                'qtgui-freetype-dependency' { "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = d3d11.lib lib\Qt6BundledFreetype.lib`nbuild plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6Gui.lib lib\Qt6BundledFreetype.lib`n`n"; break }
                 default { $null }
             }
             if ($null -ne $subjectContent) {
@@ -1631,7 +1631,7 @@ Test-Case 'schema v2 rejects opaque report bytes even when their physical hash i
     Assert-True (-not [IO.File]::Exists((Join-Path $arguments.RunRoot $fixture.Contract.isolation.receipt_relative_path))) 'Opaque report bytes published a v2 receipt.'
 }
 
-Test-Case 'verbatim CMake reports preserve authenticated CRLF source bytes' {
+Test-Case 'verbatim CMake reports preserve authenticated CRLF source bytes and final blank line' {
     $root = Join-Path $testRoot ('verbatim-crlf-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $subject = Join-Path $root 'CMakeCache.txt'
@@ -1659,6 +1659,55 @@ Test-Case 'configure summary accepts the authenticated Qt 6.11.2 CRLF preamble' 
         param($reportSpec, $reportPath, $subjectPath)
         Assert-M0V2SemanticReport $reportSpec $reportPath $subjectPath 'authenticated Qt configure summary'
     } $spec $report $subject
+}
+
+Test-Case 'verbatim reports reject report-specific final newline drift' {
+    $configSummary = Get-TestConfigSummaryText
+    $cmakeCache = Get-TestCMakeCacheText
+    $cases = @(
+        @{
+            id = 'configure-summary'
+            subject_name = 'config.summary'
+            report_name = 'configure-summary.txt'
+            text = $configSummary.Substring(0, $configSummary.Length - 1)
+            expected_error = 'exactly 1 final newline'
+        },
+        @{
+            id = 'configure-summary'
+            subject_name = 'config.summary'
+            report_name = 'configure-summary.txt'
+            text = $configSummary + "`n"
+            expected_error = 'exactly 1 final newline'
+        },
+        @{
+            id = 'cmake-cache'
+            subject_name = 'CMakeCache.txt'
+            report_name = 'cmake-cache.txt'
+            text = $cmakeCache.Substring(0, $cmakeCache.Length - 1)
+            expected_error = 'exactly 2 final newline'
+        },
+        @{
+            id = 'cmake-cache'
+            subject_name = 'CMakeCache.txt'
+            report_name = 'cmake-cache.txt'
+            text = $cmakeCache + "`n"
+            expected_error = 'exactly 2 final newline'
+        }
+    )
+    foreach ($case in $cases) {
+        $root = Join-Path $testRoot ('verbatim-final-newline-drift-' + [Guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($root) | Out-Null
+        $subject = Join-Path $root $case.subject_name
+        $report = Join-Path $root $case.report_name
+        Write-TestText $subject $case.text
+        Write-TestText $report $case.text
+        Assert-Rejected {
+            & $script:module {
+                param($reportId, $reportPath, $subjectPath)
+                Assert-M0V2SemanticReport ([pscustomobject]@{ id = $reportId }) $reportPath $subjectPath 'drifted final newline report'
+            } $case.id $report $subject
+        } $case.expected_error
+    }
 }
 
 Test-Case 'verbatim configure summary rejects mixed CRLF and LF source bytes' {
@@ -1709,7 +1758,7 @@ Test-Case 'CMake cache rejects free-floating expected text and an unpinned confi
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $subject = Join-Path $root 'CMakeCache.txt'
     $report = Join-Path $root 'cmake-cache.txt'
-    $text = "CMAKE_GENERATOR:INTERNAL=Ninja Multi-Config`nCMAKE_CONFIGURATION_TYPES:STRING=Release`n# stray RelWithDebInfo;Debug`n"
+    $text = "CMAKE_GENERATOR:INTERNAL=Ninja Multi-Config`nCMAKE_CONFIGURATION_TYPES:STRING=Release`n# stray RelWithDebInfo;Debug`n`n"
     Write-TestText $subject $text
     Write-TestText $report $text
     Assert-Rejected {
@@ -1717,7 +1766,7 @@ Test-Case 'CMake cache rejects free-floating expected text and an unpinned confi
             param($reportPath, $subjectPath)
             Assert-M0V2SemanticReport ([pscustomobject]@{ id = 'cmake-cache' }) $reportPath $subjectPath 'unpinned CMake cache'
         } $report $subject
-    } 'CMake|configuration|cache|feature|semantic|RelWithDebInfo'
+    } 'CMAKE_CONFIGURATION_TYPES.*drifted'
 }
 
 Test-Case 'configuration summary rejects contradictory values for an expected label' {
@@ -1747,7 +1796,7 @@ Test-Case 'FreeType dependency report rejects disconnected Ninja aliases' {
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $subject = Join-Path $root 'impl-RelWithDebInfo.ninja'
     $report = Join-Path $root 'qtgui-freetype-dependency.txt'
-    Write-TestText $subject "build Qt6Gui: phony`nbuild qminimal: phony`nbuild Qt6BundledFreetype: phony`n"
+    Write-TestText $subject "build Qt6Gui: phony`nbuild qminimal: phony`nbuild Qt6BundledFreetype: phony`n`n"
     Write-TestText $report "bin/Qt6Gui.dll`tlib/Qt6BundledFreetype.lib`nplugins/platforms/qminimal.dll`tlib/Qt6BundledFreetype.lib`n"
     $spec = [pscustomobject]@{ id = 'qtgui-freetype-dependency' }
     Assert-Rejected {
@@ -1756,6 +1805,41 @@ Test-Case 'FreeType dependency report rejects disconnected Ninja aliases' {
             Assert-M0V2SemanticReport $reportSpec $reportPath $subjectPath 'disconnected Ninja aliases'
         } $spec $report $subject
     } 'FreeType|edge|dependency|Ninja|semantic'
+}
+
+Test-Case 'FreeType dependency subject accepts generated Ninja CRLF final blank line' {
+    $root = Join-Path $testRoot ('ninja-real-newlines-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($root) | Out-Null
+    $subject = Join-Path $root 'impl-RelWithDebInfo.ninja'
+    $report = Join-Path $root 'qtgui-freetype-dependency.txt'
+    $ninjaText = "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6BundledFreetype.lib`nbuild plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6BundledFreetype.lib`n`n".Replace("`n", "`r`n")
+    [IO.File]::WriteAllText($subject, $ninjaText, [Text.UTF8Encoding]::new($false))
+    Write-TestText $report "bin/Qt6Gui.dll`tlib/Qt6BundledFreetype.lib`nplugins/platforms/qminimal.dll`tlib/Qt6BundledFreetype.lib`n"
+    & $script:module {
+        param($reportPath, $subjectPath)
+        Assert-M0V2SemanticReport ([pscustomobject]@{ id = 'qtgui-freetype-dependency' }) $reportPath $subjectPath 'generated Ninja subject'
+    } $report $subject
+}
+
+Test-Case 'FreeType dependency subject rejects generated Ninja final newline drift' {
+    $ninjaText = "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6BundledFreetype.lib`nbuild plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo objects | lib\Qt6BundledFreetype.lib`n  LINK_LIBRARIES = lib\Qt6BundledFreetype.lib`n`n".Replace("`n", "`r`n")
+    foreach ($text in @(
+            $ninjaText.Substring(0, $ninjaText.Length - 2),
+            ($ninjaText + "`r`n")
+        )) {
+        $root = Join-Path $testRoot ('ninja-final-newline-' + [Guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($root) | Out-Null
+        $subject = Join-Path $root 'impl-RelWithDebInfo.ninja'
+        $report = Join-Path $root 'qtgui-freetype-dependency.txt'
+        Write-TestText $subject $text
+        Write-TestText $report "bin/Qt6Gui.dll`tlib/Qt6BundledFreetype.lib`nplugins/platforms/qminimal.dll`tlib/Qt6BundledFreetype.lib`n"
+        Assert-Rejected {
+            & $script:module {
+                param($reportPath, $subjectPath)
+                Assert-M0V2SemanticReport ([pscustomobject]@{ id = 'qtgui-freetype-dependency' }) $reportPath $subjectPath 'Ninja subject with final newline drift'
+            } $report $subject
+        } 'exactly 2 final newline'
+    }
 }
 
 Test-Case 'FreeType dependency parser rejects rule tokens and substring lookalikes' {

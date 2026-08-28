@@ -7,7 +7,7 @@ Não há instalação global nesta etapa. A receita usa os pré-requisitos já a
 ## Identidades do contrato
 
 - `qtbase-refresh-contract.v1.json` é histórico e somente para verificação. Seus 15.475 bytes e SHA-256 `2023dd7621015906d86d5956474e828f4e1ef74bedda52907c5e827aa378c2c6` são imutáveis. A compatibilidade do formato v1 é coberta por fixture; nenhum replay de receipt v1 real é alegado.
-- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.464 bytes e SHA-256 `3a58cc3bd599f24d2af77ceb8f797fcbc16c60e749e66c5975043ac953371bbb` são autenticados pelo sidecar canônico adjacente.
+- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.464 bytes e SHA-256 `110e719bb1ab7be88ac2a27d4c6961de00b5d7c7097d0aa6fddac3450294fb33` são autenticados pelo sidecar canônico adjacente.
 - O contrato v2 fixa tamanho e hash do orquestrador, do runner nativo e do launcher. O launcher não aceita parâmetros, overrides de path, callbacks ou hashes fornecidos pelo chamador.
 
 O sidecar colocalizado não substitui a âncora externa: a execução real exige receita commitada e working tree limpa. Um adversário local concorrente com a mesma conta ou privilégios administrativos está fora do threat model; o workspace deve permanecer exclusivo durante o rebuild.
@@ -32,6 +32,8 @@ A preparação produz inventários físicos canônicos UTF-8 sem BOM/LF e ordem 
 O runner executa, nessa ordem, configure, build `RelWithDebInfo` e install. A configuração usa Qt compartilhado, `Debug;RelWithDebInfo`, bibliotecas 3rd-party embutidas, OpenGL dinâmico, Vulkan, DirectWrite/Direct2D, acessibilidade, bandeja, CET e informação de debug. LTCG, PCH, OpenSSL, PostgreSQL e o pipeline SBOM oficial ficam explicitamente fora da receita.
 
 Sucesso requer três comandos e sete relatórios autenticados: summary, cache CMake, vínculo Ninja direto de `Qt6Gui.dll` e `qminimal.dll` a `Qt6BundledFreetype.lib`, além de headers/imports/exports obtidos por `dumpbin`. O orquestrador revalida todas as folhas e árvores físicas, publica atomicamente `qtbase-refresh-manifest.v2.json` e somente então `qtbase-refresh-receipt.v2.json`, ambos sem overwrite.
+
+As cópias verbatim preservam os bytes do produtor e exigem finais de linha consistentes. O `config.summary` termina com uma sequência; `CMakeCache.txt` e `impl-RelWithDebInfo.ninja` terminam com duas sequências, isto é, uma linha vazia final. Os relatórios derivados permanecem canônicos em LF com uma única sequência final.
 
 ## Checks e execução
 

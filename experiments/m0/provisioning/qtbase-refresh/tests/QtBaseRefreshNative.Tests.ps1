@@ -41,7 +41,7 @@ $expectedNativeConfigureSummary = (@(
         '    DirectWrite .......................... yes'
         '    DirectWrite 3 ........................ yes'
         '    DirectWrite COLRv1 Support ........... yes'
-    ) -join "`n") + "`n"
+    ) -join "`r`n") + "`r`n"
 $expectedNativeCMakeCache = (@(
         'CMAKE_CONFIGURATION_TYPES:UNINITIALIZED=RelWithDebInfo;Debug'
         'CMAKE_GENERATOR:INTERNAL=Ninja Multi-Config'
@@ -73,7 +73,7 @@ $expectedNativeCMakeCache = (@(
         'QT_FEATURE_system_zlib:INTERNAL=OFF'
         'QT_FEATURE_systemtrayicon:INTERNAL=ON'
         'QT_FEATURE_vulkan:INTERNAL=ON'
-    ) -join "`n") + "`n"
+    ) -join "`r`n") + "`r`n`r`n"
 
 function Test-Case {
     param([Parameter(Mandatory)] [string] $Name, [Parameter(Mandatory)] [scriptblock] $Body)
@@ -569,10 +569,10 @@ function New-FakeNativeProcessBoundary {
             Write-TestBytes (Join-Path $Fixture.RunRoot 'b/config.summary') ([Text.UTF8Encoding]::new($false).GetBytes($configureSummary))
             Write-TestBytes (Join-Path $Fixture.RunRoot 'b/CMakeCache.txt') ([Text.UTF8Encoding]::new($false).GetBytes($cmakeCache))
             Write-TestBytes (Join-Path $Fixture.RunRoot 'b/CMakeFiles/impl-RelWithDebInfo.ninja') ([Text.UTF8Encoding]::new($false).GetBytes(
-                    "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo gui.obj | lib\Qt6BundledFreetype.lib`n" +
-                    "  LINK_LIBRARIES = d3d11.lib lib\Qt6BundledFreetype.lib`n" +
-                    "build plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo qminimal.obj | lib\Qt6BundledFreetype.lib`n" +
-                    "  LINK_LIBRARIES = lib\Qt6Gui.lib lib\Qt6BundledFreetype.lib`n"))
+                    "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo gui.obj | lib\Qt6BundledFreetype.lib`r`n" +
+                    "  LINK_LIBRARIES = d3d11.lib lib\Qt6BundledFreetype.lib`r`n" +
+                    "build plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo qminimal.obj | lib\Qt6BundledFreetype.lib`r`n" +
+                    "  LINK_LIBRARIES = lib\Qt6Gui.lib lib\Qt6BundledFreetype.lib`r`n`r`n"))
         }
         elseif ($request.id -ceq 'install') {
             foreach ($relative in $Fixture.ExpectedArtifacts) { Write-TestPeX64 (Join-Path $Fixture.RunRoot "install/$relative") }

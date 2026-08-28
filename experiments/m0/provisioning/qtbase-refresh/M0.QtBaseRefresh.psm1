@@ -1508,7 +1508,11 @@ function Read-M0StrictLfText {
 }
 
 function Read-M0VerbatimUtf8Text {
-    param([Parameter(Mandatory)][string] $LiteralPath, [Parameter(Mandatory)][string] $Context)
+    param(
+        [Parameter(Mandatory)][string] $LiteralPath,
+        [Parameter(Mandatory)][string] $Context,
+        [Parameter(Mandatory)][ValidateRange(1, 2)][int] $ExpectedFinalNewlineCount
+    )
     $bytes = [IO.File]::ReadAllBytes($LiteralPath)
     if ($bytes.Length -eq 0 -or
         ($bytes.Length -ge 3 -and $bytes[0] -eq 0xef -and $bytes[1] -eq 0xbb -and $bytes[2] -eq 0xbf)) {
@@ -1519,12 +1523,15 @@ function Read-M0VerbatimUtf8Text {
     $withoutCrLf = $text.Replace("`r`n", '')
     $hasCrLf = $withoutCrLf.Length -ne $text.Length
     if ($withoutCrLf.Contains("`r") -or ($hasCrLf -and $withoutCrLf.Contains("`n"))) {
-        throw "$Context semantic content is invalid: expected consistent LF or CRLF and exactly one final newline."
+        throw "$Context semantic content is invalid: expected consistent LF or CRLF."
     }
     $normalized = $text.Replace("`r`n", "`n")
-    if (-not $normalized.EndsWith("`n", [StringComparison]::Ordinal) -or
-        ($normalized.Length -ge 2 -and $normalized[$normalized.Length - 2] -eq "`n")) {
-        throw "$Context semantic content is invalid: expected consistent LF or CRLF and exactly one final newline."
+    $finalNewlineCount = 0
+    for ($index = $normalized.Length - 1; $index -ge 0 -and $normalized[$index] -eq "`n"; $index--) {
+        $finalNewlineCount++
+    }
+    if ($finalNewlineCount -ne $ExpectedFinalNewlineCount) {
+        throw "$Context semantic content is invalid: expected exactly $ExpectedFinalNewlineCount final newline(s)."
     }
     return $normalized
 }
@@ -1728,11 +1735,10 @@ function Assert-M0V2SemanticReport {
         [Parameter(Mandatory)][string] $SubjectPath,
         [Parameter(Mandatory)][string] $Context
     )
-    $text = if ($Spec.id -in @('configure-summary', 'cmake-cache')) {
-        Read-M0VerbatimUtf8Text $ReportPath $Context
-    }
-    else {
-        Read-M0StrictLfText $ReportPath $Context
+    $text = switch ($Spec.id) {
+        'configure-summary' { Read-M0VerbatimUtf8Text $ReportPath $Context -ExpectedFinalNewlineCount 1; break }
+        'cmake-cache' { Read-M0VerbatimUtf8Text $ReportPath $Context -ExpectedFinalNewlineCount 2; break }
+        default { Read-M0StrictLfText $ReportPath $Context }
     }
     switch ($Spec.id) {
         'configure-summary' {
@@ -1762,7 +1768,7 @@ function Assert-M0V2SemanticReport {
         }
         'qtgui-freetype-dependency' {
             $expected = "bin/Qt6Gui.dll`tlib/Qt6BundledFreetype.lib`nplugins/platforms/qminimal.dll`tlib/Qt6BundledFreetype.lib`n"
-            $subjectText = Read-M0VerbatimUtf8Text $SubjectPath "$Context subject"
+            $subjectText = Read-M0VerbatimUtf8Text $SubjectPath "$Context subject" -ExpectedFinalNewlineCount 2
             if ($text -cne $expected -or
                 -not (Test-M0NinjaDependencyEdge $subjectText 'bin/Qt6Gui.dll' 'CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo' 'lib/Qt6BundledFreetype.lib') -or
                 -not (Test-M0NinjaDependencyEdge $subjectText 'plugins/platforms/qminimal.dll' 'CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo' 'lib/Qt6BundledFreetype.lib')) {
