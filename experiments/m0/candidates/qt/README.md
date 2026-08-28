@@ -211,7 +211,142 @@ A [evidência de integração](../../../../docs/m0/evidence/m0-2-msvc-package.md
 
 A [execução isolada de 2026-08-28](../../../../docs/m0/evidence/m0-2-qtbase-refresh.md) concluiu configure/build/install do Qtbase 6.11.2 com `5a280ec` em um `RunRoot` novo. O manifesto v2 `dc26c096…afbf6b` e o receipt `8a4e3c13…28619`, ancorado externamente, foram revalidados em outro processo junto com as 4.289 folhas físicas, os 15 PEs contratuais e `qminimal`. O SDK Qt oficial e `msvc-63717e5-clean-01` preservam seus bytes anteriores.
 
-O passo posterior [compôs e autenticou o SDK Qt](../../../../docs/m0/evidence/m0-2-qt-composite-sdk.md) no run `f75eb9bea8280844c6d1a2b3f4`: contrato `f75eb9b…`, manifesto `221afa…`, receipt `30399b…` e 9.880 arquivos/2.400.301.667 bytes; o processo independente retornou `verified=True`. O SDK oficial, o contrato v1 e os builds/pacotes históricos permanecem preservados. Essa composição ainda não foi usada para configurar, compilar, empacotar ou executar este candidato e não prova carregabilidade, ABI, máquina limpa, CRT, licenças/notices/SBOM ou redistribuição. O próximo incremento é um build contra essa identidade com Windows SDK `10.0.26100.0` e um pacote autenticado v2 aditivo, seguido dos checks Release e smokes original/relocado. `CHK-SEC`, M0.2 e os gates nativos continuam abertos; a interação desktop permanece pausada.
+O passo posterior [compôs e autenticou o SDK Qt](../../../../docs/m0/evidence/m0-2-qt-composite-sdk.md) no run `f75eb9bea8280844c6d1a2b3f4`: contrato `f75eb9b…`, manifesto `221afa…`, receipt `30399b…` e 9.880 arquivos/2.400.301.667 bytes; o processo independente retornou `verified=True`. O SDK oficial, o contrato v1 e os builds/pacotes históricos permanecem preservados. A receita e o contrato `package-v2` estão implementados e congelados, mas ainda não foram usados para configurar, compilar, empacotar ou executar este candidato. O próximo incremento é executar essa receita contra a identidade composta com Windows SDK `10.0.26100.0`, seguido dos checks Release e smokes original/relocado. Até essa execução, não há prova nova de carregabilidade, ABI, pacote, máquina limpa, CRT, licenças/notices/SBOM ou redistribuição. `CHK-SEC`, M0.2 e os gates nativos continuam abertos; a interação desktop permanece pausada.
+
+### Receita autenticada `package-v2` — execução real pendente
+
+A receita congelada fica em `package-v2/` e exige Windows x64 e PowerShell 7.2 ou superior. Os exemplos abaixo são os comandos operacionais para a execução real futura; nenhum build, pacote ou smoke novo é alegado por esta documentação. Execute-os somente a partir do commit da receita, em um worktree limpo e numa nova sessão PowerShell. O hash do contrato é uma âncora externa literal obrigatória: não o recalcule a partir do contrato recebido e não o derive do sidecar.
+
+Prepare as âncoras e somente os diretórios-pai. `BuildRoot`, `OutputRoot`, `ScratchRoot` e `SmokeWorkspaceRoot` devem ser filhos novos, ausentes, distintos e não sobrepostos sob `out/m0`:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+if (-not $IsWindows -or -not [Environment]::Is64BitProcess -or
+    $PSVersionTable.PSVersion -lt [version]'7.2') {
+    throw 'A receita package-v2 exige Windows x64 e PowerShell 7.2 ou superior.'
+}
+
+$packageV2Repo = (Resolve-Path .).Path
+$packageV2Dir = Join-Path $packageV2Repo 'experiments\m0\candidates\qt\package-v2'
+$packageV2Launcher = Join-Path $packageV2Dir 'Invoke-M0QtShellCompositePackage.ps1'
+$packageV2Contract = Join-Path $packageV2Dir 'qt-shell-composite-package-contract.v2.json'
+$compositeReceipt = Join-Path $packageV2Repo 'q\f75eb9bea8280844c6d1a2b3f4\evidence\qt-shell-composite-receipt.v2.json'
+
+$packageV2ContractSha256 = '1ff81d8f916dbbaebb7f24f6f360d221535b78fa1e719f18ab7101c91b452fac'
+$compositeReceiptSha256 = '30399b3099cf04bdd50d6f083d077e82a590afefeec0617fda89ef5266a1d63e'
+$qtbaseReceiptSha256 = '8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619'
+
+$packageV2Common = @{
+    ContractPath = $packageV2Contract
+    ExpectedContractSha256 = $packageV2ContractSha256
+    CompositeReceiptPath = $compositeReceipt
+    ExpectedCompositeReceiptSha256 = $compositeReceiptSha256
+    ExpectedQtBaseReceiptSha256 = $qtbaseReceiptSha256
+    RepositoryRoot = $packageV2Repo
+}
+
+$buildParent = Join-Path $packageV2Repo 'out\m0\builds\qt-shell\package-v2'
+$packageParent = Join-Path $packageV2Repo 'out\m0\packages\qt-shell\package-v2'
+$scratchParent = Join-Path $packageV2Repo 'out\m0\scratch\qt-shell\package-v2'
+$smokeParent = Join-Path $packageV2Repo 'out\m0\smoke\qt-shell\package-v2'
+$reportParent = Join-Path $packageV2Repo 'out\m0\reports\qt-shell\package-v2'
+foreach ($parent in @($buildParent, $packageParent, $scratchParent, $smokeParent, $reportParent)) {
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+}
+```
+
+O modo **Build** autentica receita, receipts, fontes e ferramentas antes/depois, produz os builds Qt ON e core OFF Release, executa seus checks e publica um pacote novo:
+
+```powershell
+$buildId = [guid]::NewGuid().ToString('N')
+$buildRoot = Join-Path $buildParent $buildId
+$packageRoot = Join-Path $packageParent $buildId
+$buildScratchRoot = Join-Path $scratchParent ('build-' + $buildId)
+
+$packageV2Build = & $packageV2Launcher @packageV2Common `
+    -BuildRoot $buildRoot `
+    -OutputRoot $packageRoot `
+    -ScratchRoot $buildScratchRoot
+$packageV2Build
+```
+
+O modo **Relocate** primeiro autentica o receipt canônico do pacote de origem, copia seu inventário fechado para um root novo com espaços e acentos e autentica novamente o destino:
+
+```powershell
+$relocationId = [guid]::NewGuid().ToString('N')
+$relocatedPackageRoot = Join-Path $packageParent ('relocação com espaços-' + $relocationId)
+$relocationScratchRoot = Join-Path $scratchParent ('relocate-' + $relocationId)
+
+$packageV2Relocated = & $packageV2Launcher @packageV2Common `
+    -SourcePackageRoot $packageV2Build.package_root `
+    -ReceiptPath $packageV2Build.receipt_path `
+    -ExpectedReceiptSha256 $packageV2Build.receipt_sha256 `
+    -OutputRoot $relocatedPackageRoot `
+    -ScratchRoot $relocationScratchRoot
+$packageV2Relocated
+```
+
+O modo **Smoke** exige o receipt canônico e seu hash externo capturado do Build. `ReportPath` deve estar dentro do repositório, fora do pacote, com diretório-pai já existente e arquivo-alvo ausente. Use roots e relatórios diferentes para original e relocado:
+
+```powershell
+$originalSmokeId = [guid]::NewGuid().ToString('N')
+$originalSmokeWorkspace = Join-Path $smokeParent ('original-' + $originalSmokeId)
+$originalReportPath = Join-Path $reportParent ('original-' + $originalSmokeId + '.json')
+$packageV2OriginalSmoke = & $packageV2Launcher @packageV2Common `
+    -PackageRoot $packageV2Build.package_root `
+    -ReceiptPath $packageV2Build.receipt_path `
+    -ExpectedReceiptSha256 $packageV2Build.receipt_sha256 `
+    -SmokeWorkspaceRoot $originalSmokeWorkspace `
+    -ReportPath $originalReportPath
+$packageV2OriginalSmoke
+
+$relocatedSmokeId = [guid]::NewGuid().ToString('N')
+$relocatedSmokeWorkspace = Join-Path $smokeParent ('relocated-' + $relocatedSmokeId)
+$relocatedReportPath = Join-Path $reportParent ('relocated-' + $relocatedSmokeId + '.json')
+$packageV2RelocatedSmoke = & $packageV2Launcher @packageV2Common `
+    -PackageRoot $packageV2Relocated.package_root `
+    -ReceiptPath $packageV2Relocated.receipt_path `
+    -ExpectedReceiptSha256 $packageV2Relocated.receipt_sha256 `
+    -SmokeWorkspaceRoot $relocatedSmokeWorkspace `
+    -ReportPath $relocatedReportPath
+$packageV2RelocatedSmoke
+```
+
+Os testes sintéticos da receita não executam o build pesado nem substituem os checks reais. Rode cada arquivo em um processo limpo para evitar estado compartilhado entre módulos:
+
+```powershell
+$packageV2Tests = @(
+    'CompositeBuild.Tests.ps1'
+    'Contract.Tests.ps1'
+    'PackageV2Production.Tests.ps1'
+    'PackageV2ProductionExecution.Tests.ps1'
+    'PackageV2Relocation.Tests.ps1'
+    'PackageV2Smoke.Tests.ps1'
+    'PackageV2Staging.Tests.ps1'
+    'PackageV2Verifier.Tests.ps1'
+)
+foreach ($testFile in $packageV2Tests) {
+    & pwsh -NoLogo -NoProfile -NonInteractive -File `
+        (Join-Path $packageV2Dir "tests\$testFile")
+    if ($LASTEXITCODE -ne 0) { throw "Falha nos testes package-v2: $testFile" }
+}
+```
+
+Não há dependência deliberada em Pester ou PSScriptAnalyzer. O parser AST abaixo é somente um check de sintaxe PowerShell, não lint, e a ausência de PSScriptAnalyzer não deve ser apresentada como lint aprovado:
+
+```powershell
+$packageV2Scripts = @(Get-ChildItem -LiteralPath $packageV2Dir -Recurse -File |
+    Where-Object { $_.Extension -in @('.ps1', '.psm1') })
+foreach ($scriptFile in $packageV2Scripts) {
+    $tokens = $null
+    $parseErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile(
+        $scriptFile.FullName, [ref]$tokens, [ref]$parseErrors)
+    if (@($parseErrors).Count -ne 0) {
+        throw "Parser AST falhou: $($scriptFile.FullName): $($parseErrors -join '; ')"
+    }
+}
+```
 
 ### Testes do empacotador
 

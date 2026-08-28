@@ -1,0 +1,331 @@
+{
+  "schema_version": 2,
+  "package_id": "m0.2-qt-shell-composite-package-v2",
+  "product": {
+    "qt_version": "6.11.2",
+    "edition": "Desktop",
+    "architecture": "x86_64",
+    "compiler_abi": "msvc2022_64",
+    "windows_sdk_version": "10.0.26100.0",
+    "msvc_compiler_version": "19.44.35228",
+    "msvc_toolset_version": "14.44.35207",
+    "qt_config_msvc_version": "19.44.35228"
+  },
+  "recipe": {
+    "files": [
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/Invoke-M0QtShellCompositePackage.ps1",
+      "size_bytes": 78355,
+      "sha256": "ab65221320253a2925116a7eb37267c19fcbc198e70615d09ba93a35e876818b"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackage.psm1",
+      "size_bytes": 199155,
+      "sha256": "76ad045f0a1ba8661ff319667490e73373e1db062a625132b0e63479ef4237c4"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackageNative.psm1",
+      "size_bytes": 77104,
+      "sha256": "3efab506a27250ac4cdb51a31bcade9ca938204f19cdee4dfeb7e57ee0e3a582"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackageSmoke.psm1",
+      "size_bytes": 50176,
+      "sha256": "67d588b12911fd15e71164055aa6050c1f47611e0f09177176357c9cdf26dec8"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/Test-M0QtShellCompositePackageSmoke.ps1",
+      "size_bytes": 1060,
+      "sha256": "54a28dcd7ec724c1bd37b45da0818a1bfbbace5b798c3eba8f578144b69c006d"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/qt.conf",
+      "size_bytes": 48,
+      "sha256": "9be7f75cad540e9d3f6e496898085d7b58c198e994ef8b811a7796201e5a9881"
+      },
+      {
+        "relative_path": "experiments/m0/candidates/qt/package-v2/PACKAGE-LIMITATIONS.txt",
+      "size_bytes": 2971,
+      "sha256": "2be3ede990da0d6da1e8674b6fe9d50a42d77db9e635e057024d81db8f067ab3"
+      }
+    ],
+    "core_exports": [
+      "Assert-M0QtShellCompositePackageReceipt",
+      "Invoke-M0QtShellCompositePackage"
+    ],
+    "native_export": "Invoke-M0QtShellCompositePackageNative",
+    "smoke_export": "Test-M0QtShellCompositePackageSmoke"
+  },
+  "inputs": {
+    "composite_contract": {
+      "relative_path": "experiments/m0/provisioning/qt-shell/qt-shell-composite-contract.v2.json",
+      "size_bytes": 10845,
+      "sha256": "f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28"
+    },
+    "composite_receipt": {
+      "relative_path": "q/f75eb9bea8280844c6d1a2b3f4/evidence/qt-shell-composite-receipt.v2.json",
+      "size_bytes": 1430,
+      "sha256": "30399b3099cf04bdd50d6f083d077e82a590afefeec0617fda89ef5266a1d63e"
+    },
+    "qtbase_receipt": {
+      "relative_path": "q/96bvah3m0t0t71m990olv5gpvs/evidence/qtbase-refresh-receipt.v2.json",
+      "size_bytes": 4369,
+      "sha256": "8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619"
+    },
+    "sources": {
+      "shell_tree": {
+        "relative_path": "experiments/m0/candidates/qt/shell",
+        "git_tree": "c08c56ea197b469ab9a225a4e2550a2eafce6ec6"
+      },
+      "fixture_tree": {
+        "relative_path": "experiments/m0/shared/shell-fixture",
+        "git_tree": "5f4f96cda5a2bc4487eeb0aecf0f73d1052c97ed"
+      },
+      "protocol_tree": {
+        "relative_path": "experiments/m0/protocol",
+        "git_tree": "05e3b0ab587d8e502bf738277e43f43d3f39c982"
+      },
+      "cmakelists": {
+        "relative_path": "experiments/m0/candidates/qt/shell/CMakeLists.txt",
+        "size_bytes": 25529,
+        "sha256": "43ecaf9b52a3fc2a924bbcfc4fe57811455869e5cdc8b7df14dc22524cf18ff4"
+      },
+      "fixture_manifest": {
+        "relative_path": "experiments/m0/shared/shell-fixture/manifest.v1.json",
+        "size_bytes": 1863,
+        "sha256": "21a150477811aa62f59f4f958d594786bcef4a7c2dfd2bfda3ef9d29dee7c8e5"
+      },
+      "protocol": {
+        "relative_path": "experiments/m0/protocol/protocol.v1.json",
+        "size_bytes": 3460,
+        "sha256": "d4f108e5e6276f9644e6447c51ea79b3f7dd8feae3bf55d5a8cd0bba3cb21404"
+      }
+    },
+    "catch2": {
+      "version": "3.15.3",
+      "commit": "8b08d4d79514f45f7e4ce2a607ac9c94e920d1bb",
+      "source_relative_path": "out/m0/toolchains/Catch2-3.15.3",
+      "archive_relative_path": "out/m0/downloads/catch2-3.15.3/Catch2-3.15.3.tar.gz",
+      "archive_size_bytes": 1208344,
+      "archive_sha256": "b0299ae552918220a7a6e21e7de5b714777f4e8c883fb70c4bb23fe01df8c6e3"
+    },
+    "tools": [
+      {
+        "id": "cmake",
+        "version": "3.31.5",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\CMake\\bin\\cmake.exe",
+        "size_bytes": 12079056,
+        "sha256": "8893e3f7647e2d1e0b18af84e53f136a976cefbfd2c15aaddc4b934936a3637f"
+      },
+      {
+        "id": "ctest",
+        "version": "3.31.5",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\CMake\\bin\\ctest.exe",
+        "size_bytes": 12987856,
+        "sha256": "00c10d3167ec15b1dde9c3054cc4483175d03dac6f6fe31dfaeb3e037a152a61"
+      },
+      {
+        "id": "ninja",
+        "version": "1.12.1",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja\\ninja.exe",
+        "size_bytes": 3466696,
+        "sha256": "5020138b3757035df9dca9a2243624d5810ffa6ae24444bd95f752cbd1b89123"
+      },
+      {
+        "id": "cl",
+        "version": "19.44.35228.0",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe",
+        "size_bytes": 677736,
+        "sha256": "88c8344236a27a6e727e0a8edc49aaa2690bdc7a9464b9d18cc7abe70a9f1c0d"
+      },
+      {
+        "id": "link",
+        "version": "14.44.35228.0",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\link.exe",
+        "size_bytes": 3252576,
+        "sha256": "ca11e6c45debd34bf652dfe984c5360a531a005ed78bf72852330c9c2590cf0d"
+      },
+      {
+        "id": "dumpbin",
+        "version": "14.44.35228.0",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\dumpbin.exe",
+        "size_bytes": 23416,
+        "sha256": "12a1cd87238bd66dfdb788b4fcdcb91ce4b3f81236aab12a7a29e5ae1d85af50"
+      },
+      {
+        "id": "rc",
+        "version": "10.0.26100.7705",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\rc.exe",
+        "size_bytes": 55640,
+        "sha256": "43da1503c262c30894c851589bf0155f8365d77e63a5f7bc13982320e3a6b42d"
+      },
+      {
+        "id": "mt",
+        "version": "10.0.26100.7705",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\mt.exe",
+        "size_bytes": 1972584,
+        "sha256": "1b8a272d586a9ab53ac2ccd457a88bd0210d7d7ac3daea5b34743cc2afe73b26"
+      },
+      {
+        "id": "vsdevcmd",
+        "version": "18.0",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\18\\BuildTools\\Common7\\Tools\\VsDevCmd.bat",
+        "size_bytes": 11526,
+        "sha256": "a7815e85d636828e5cf70fe4235b11fcb41750896a4d2d60756b43bacaf4f0b2"
+      },
+      {
+        "id": "cmd",
+        "version": "10.0.26100.8875",
+        "path_kind": "absolute",
+        "path": "C:\\Windows\\System32\\cmd.exe",
+        "size_bytes": 344064,
+        "sha256": "8dd1ebb0b969370c70a5ee7f7ee347949aa7046aa5e1a33fcd7b1e9415b21fc3"
+      },
+      {
+        "id": "git",
+        "version": "2.45.2.windows.1",
+        "path_kind": "absolute",
+        "path": "C:\\Program Files\\Git\\cmd\\git.exe",
+        "size_bytes": 45048,
+        "sha256": "5385ff9ae361ca41e7a31b335fc0d81f2de9c35fc62a165c5e34850d837b59cc"
+      },
+      {
+        "id": "windeployqt",
+        "version": "6.11.2.0",
+        "path_kind": "composite-sdk-relative",
+        "path": "bin/windeployqt.exe",
+        "size_bytes": 262144,
+        "sha256": "edcee9076c20ddfdbc1d060f3713c634850459acfc8614f5635c5ae972c1179b"
+      },
+      {
+        "id": "qtpaths",
+        "version": "6.11.2.0",
+        "path_kind": "composite-sdk-relative",
+        "path": "bin/qtpaths.exe",
+        "size_bytes": 77824,
+        "sha256": "cf1828070edabae7f2f97a4e4e31d5742f7f96ea9d4da0ae510d0743faa88d59"
+      },
+      {
+        "id": "qmllint",
+        "version": "6.11.2.0",
+        "path_kind": "composite-sdk-relative",
+        "path": "bin/qmllint.exe",
+        "size_bytes": 104248,
+        "sha256": "2c4d5d6c5e280f1bb83be5de0e9ecce8d2d47906274d1fb22ac3bc300744edb6"
+      }
+    ],
+    "sbom_files": [
+      {
+        "id": "qtdeclarative-binary",
+        "source_relative_path": "sbom/qtdeclarative-6.11.2.spdx",
+        "target_relative_path": "evidence/sbom/qtdeclarative-6.11.2.spdx",
+        "size_bytes": 3812459,
+        "sha256": "0753ffa69fa629b4f52ebfe41cb5ea3a142160a1cd4d34aae9ff3f8a052c76e0"
+      },
+      {
+        "id": "qtsvg-binary",
+        "source_relative_path": "sbom/qtsvg-6.11.2.spdx",
+        "target_relative_path": "evidence/sbom/qtsvg-6.11.2.spdx",
+        "size_bytes": 66917,
+        "sha256": "c95254b9349aa562ec1f64b8a214a7f4f532cffccf586cedd9f2055a749377f7"
+      }
+    ]
+  },
+  "build": {
+    "generator": "Ninja",
+    "configuration": "Release",
+    "qt_on": {
+      "support_enabled": true,
+      "expected_ctest_count": 65
+    },
+    "core_off": {
+      "support_enabled": false,
+      "expected_ctest_count": 55
+    },
+    "qml_lint": {
+      "required": true,
+      "target": "all_qmllint"
+    }
+  },
+  "deployment": {
+    "dry_run_equals_actual": true,
+    "composite_sdk_only": true,
+    "application_qml_only": true,
+    "allow_official_sdk_fallback": false,
+    "allow_system32_qt_or_d3d_fallback": false,
+    "composite_qconfig": {
+      "relative_path": "mkspecs/qconfig.pri",
+      "size_bytes": 848,
+      "sha256": "527d93fe2c875f4814828b7354c8b3d362d34fd2f08a41fb79751b3abea363d5"
+    }
+  },
+  "envelope": {
+    "top_level": [
+      "app",
+      "evidence"
+    ],
+    "payload_relative_path": "app",
+    "evidence_relative_path": "evidence",
+    "manifest_relative_path": "evidence/qt-shell-composite-package-manifest.v2.json",
+    "receipt_relative_path": "evidence/qt-shell-composite-package-receipt.v2.json",
+    "receipt_is_final_entry": true,
+    "create_new": true,
+    "allow_reparse_points": false,
+    "allow_ads": false,
+    "allow_hardlinks": false,
+    "path_comparer": "OrdinalIgnoreCase"
+  },
+  "smoke": {
+    "variants": [
+      "original",
+      "relocated-spaces-accents"
+    ],
+    "journeys": [
+      {
+        "id": "tray-lifecycle",
+        "arguments": [
+          "--m0-smoke=tray-lifecycle"
+        ]
+      },
+      {
+        "id": "error-recovery",
+        "arguments": [
+          "--m0-scenario=unavailable",
+          "--m0-smoke=error-recovery"
+        ]
+      }
+    ],
+    "module_capture_deadline_ms": 500,
+    "verify_before_and_after_each": true,
+    "require_zero_survivors": true
+  },
+  "security": {
+    "redistribution_allowed": false,
+    "chk_sec": "open",
+    "qtbase_sbom_status": "absent",
+    "notices_status": "incomplete",
+    "sources_status": "incomplete"
+  },
+  "limits": [
+    "This private diagnostic does not establish general ABI compatibility or clean machine support.",
+    "The Microsoft CRT and other prerequisites remain external and unproven on a clean machine.",
+    "PCRE2 reachability, full licenses, notices, sources, and complete SBOM coverage remain open.",
+    "Qt translations are not deployed; the composite SDK lacks translations/catalogs.json and only that exact windeployqt warning is accepted as recorded evidence.",
+    "Native accessibility, tray, Explorer, DPI, reduced-motion, and high-contrast checks remain paused.",
+    "The Windows publisher releases descendant leases immediately before root rename; post-publication verification detects drift but does not prove exclusion of a hostile concurrent same-user writer in that narrow window.",
+    "Recipe authentication performed by the PowerShell launcher does not establish a trust root for the launcher or wrapper bytes themselves; hostile pre-execution replacement requires an external trusted signature/bootstrap and remains outside this package proof.",
+    "Authenticated pre/post checks detect input drift but do not sandbox tools or exclude hostile concurrent same-user mutation during build execution.",
+    "The bounded build runner uses best-effort Kill(entireProcessTree) and does not place tools in a Windows Job Object; it therefore does not prove zero detached descendants after normal exit, timeout, or cancellation.",
+    "Linux packaging and runtime behavior remain unvalidated.",
+    "M0.2 and CHK-SEC remain open; no UI stack decision is accepted by this contract."
+  ]
+}

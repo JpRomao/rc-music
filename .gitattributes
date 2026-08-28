@@ -11,3 +11,5 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 LICENSE* text eol=lf
+experiments/m0/candidates/qt/package-v2/PACKAGE-LIMITATIONS.txt text eol=lf
+experiments/m0/candidates/qt/package-v2/qt.conf text eol=lf

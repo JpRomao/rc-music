@@ -1,0 +1,52 @@
+Music Player M0.2 - pacote diagnostico local privado v2
+
+Este diretorio contem somente um shell experimental. Ele nao reproduz audio
+real, nao usa a biblioteca pessoal e nao representa uma escolha da stack.
+
+NAO PUBLICAR OU REDISTRIBUIR. redistribution_allowed=false e CHK-SEC continua
+aberto. O projeto ainda nao fechou licencas, notices, fontes correspondentes,
+SBOM completo ou requisitos de oferta de codigo. Os SPDX de Qt Declarative e
+Qt SVG sao copias autenticadas dos inventarios binarios aplicaveis; nao existe
+um SBOM verdadeiro do Qtbase reconstruido neste pacote.
+
+O Visual C++ Runtime x64 continua sendo pre-requisito externo do host. Nenhum
+runtime redistribuivel ou DLL do Windows e copiado. Os checks locais nao provam
+ABI geral, runtime em maquina limpa, compatibilidade fora deste host, correcao
+PCRE2, cadeia completa de licencas ou permissao de redistribuicao.
+
+O qt.conf usa caminhos relativos. O deploy deve copiar Qt exclusivamente do SDK
+composto autenticado e QML da aplicacao gerado pelo build correspondente. Nao e
+permitido fallback para o SDK Qt oficial anterior nem para Qt/D3D em System32.
+Traducoes Qt nao sao implantadas. O SDK composto nao contem
+translations/catalogs.json; o aviso exato emitido por windeployqt deve ser
+registrado como evidencia e qualquer outro stderr continua sendo falha.
+
+No Windows, os leases dos arquivos descendentes sao liberados imediatamente
+antes do rename no-replace do diretorio raiz, porque o sistema recusa renomear
+um ancestral com esses handles abertos. O verifier pos-publicacao detecta
+qualquer deriva antes do uso, mas nao prova exclusao absoluta de um writer
+hostil concorrente do mesmo usuario nessa janela estreita.
+
+A autenticacao da recipe executada pelo launcher PowerShell
+nao cria uma raiz de confianca para os proprios bytes do launcher ou do
+wrapper. Uma substituicao
+hostil anterior a execucao exige assinatura ou bootstrap externo confiavel e
+permanece fora da prova deste pacote; hash-then-execute em PowerShell nao elimina
+essa janela.
+
+As verificacoes autenticadas pre/pos tambem detectam deriva dos inputs, mas nao
+sandboxeiam ferramentas nem excluem mutacao hostil concorrente do mesmo usuario
+durante a execucao do build.
+
+O runner limita captura, espera e tentativa de encerramento com
+Kill(entireProcessTree), mas nao executa as ferramentas em um Windows Job Object.
+Portanto, ele nao comprova zero descendentes destacados apos saida
+normal, timeout ou cancelamento. A prova de zero sobreviventes do smoke e
+separada e nao deve ser extrapolada para os processos das ferramentas de build.
+
+Os smokes offscreen cobrem somente tray-lifecycle e error-recovery no pacote
+original e numa copia relocada com espacos e acentos. Eles amostram modulos do
+processo, nao substituem um trace completo do loader e nao provam desktop/tray
+nativo, NVDA, DPI/high contrast reais, Linux, instalador ou desempenho.
+
+M0.2, CHK-SEC e a decisao de stack permanecem abertos ate os gates documentados.
