@@ -2,12 +2,12 @@
 
 Esta pasta define uma identidade nova e reproduzível para reconstruir o Qtbase 6.11.2 com o backport FreeType `5a280ec`. Ela não modifica, reetiqueta ou substitui o SDK oficial, o contrato histórico `ac00a565…1952`, o pacote `msvc-63717e5-clean-01` ou qualquer evidência anterior.
 
-Não há instalação global nesta etapa. A receita usa os pré-requisitos já autenticados no host: MSVC 14.44, Windows SDK 10.0.26100.0, CMake 3.31.5 e Ninja 1.12.1. Os headers Vulkan são extraídos em uma árvore privada sob `out/m0`.
+Não há instalação global nesta etapa. A receita usa os pré-requisitos já autenticados no host: MSVC 14.44, Windows SDK 10.0.26100.0, CMake 3.31.5 e Ninja 1.12.1. Fontes, headers Vulkan, build, instalação e evidências ficam no `RunRoot` privado sob `q`.
 
 ## Identidades do contrato
 
 - `qtbase-refresh-contract.v1.json` é histórico e somente para verificação. Seus 15.475 bytes e SHA-256 `2023dd7621015906d86d5956474e828f4e1ef74bedda52907c5e827aa378c2c6` são imutáveis. A compatibilidade do formato v1 é coberta por fixture; nenhum replay de receipt v1 real é alegado.
-- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.513 bytes e SHA-256 `902cd8201d23b151257d25888e63e5df62ed6ce9168751b306765928db8c5363` são autenticados pelo sidecar canônico adjacente.
+- `qtbase-refresh-contract.v2.json` é a receita de produção. Seus 20.464 bytes e SHA-256 `2fb54e39d4b1b8c474e62b302fc834e97fa84552c346fbb63e1349ae35626e2a` são autenticados pelo sidecar canônico adjacente.
 - O contrato v2 fixa tamanho e hash do orquestrador, do runner nativo e do launcher. O launcher não aceita parâmetros, overrides de path, callbacks ou hashes fornecidos pelo chamador.
 
 O sidecar colocalizado não substitui a âncora externa: a execução real exige receita commitada e working tree limpa. Um adversário local concorrente com a mesma conta ou privilégios administrativos está fora do threat model; o workspace deve permanecer exclusivo durante o rebuild.
@@ -42,13 +42,13 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtba
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\tests\QtBaseRefreshNative.Tests.ps1
 ```
 
-Com a receita commitada e o working tree limpo, o launcher de produção inicia um `RunRoot` novo sob `out/m0/qtbase-refresh-runs`. O nome usa os 32 hexadecimais do GUID completo, sem o overhead de path de prefixo ou timestamp:
+Com a receita commitada e o working tree limpo, o launcher de produção inicia um `RunRoot` novo sob o diretório dedicado `q`. O nome codifica todos os 128 bits de um GUID em 26 caracteres base32 minúsculos; o build usa o leaf `b`. Esse layout projeta em 244 caracteres o pior objeto observado neste checkout, abaixo do limite CMake de 250. O runner também procura `CMAKE_OBJECT_PATH_MAX` e `cannot be safely placed under this directory` nos dois logs completos do configure e proíbe o build se qualquer aviso reaparecer:
 
 ```powershell
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qtbase-refresh\Invoke-M0QtBaseRefresh.ps1
 ```
 
-O rebuild pode levar horas. O resultado só é aceito após verificar em outro processo o hash externo do receipt, o manifesto e todas as evidências físicas. Falha, timeout, drift, reparse point, hardlink, ADS, path fora da raiz, arquivo preexistente ou divergência semântica impedem a publicação final.
+O rebuild pode levar horas. O resultado só é aceito após verificar em outro processo o hash externo do receipt, o manifesto e todas as evidências físicas. Falha, timeout, orçamento de path inseguro, drift, reparse point, hardlink, ADS, path fora da raiz, arquivo preexistente ou divergência semântica impedem a publicação final.
 
 ## Limites da evidência
 

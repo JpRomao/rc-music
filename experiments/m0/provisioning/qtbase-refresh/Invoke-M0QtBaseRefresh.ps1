@@ -131,6 +131,33 @@ function Open-M0BootstrapRecipeLease {
     }
 }
 
+function ConvertTo-M0BootstrapRunId {
+    param([Parameter(Mandatory)] [Guid] $Value)
+
+    $alphabet = '0123456789abcdefghijklmnopqrstuv'
+    $bytes = [Convert]::FromHexString($Value.ToString('N'))
+    $builder = [Text.StringBuilder]::new(26)
+    $buffer = 0
+    $bitCount = 0
+    foreach ($byte in $bytes) {
+        $buffer = ($buffer -shl 8) -bor [int]$byte
+        $bitCount += 8
+        while ($bitCount -ge 5) {
+            $bitCount -= 5
+            $null = $builder.Append($alphabet[($buffer -shr $bitCount) -band 31])
+            $buffer = if ($bitCount -eq 0) { 0 } else { $buffer -band ((1 -shl $bitCount) - 1) }
+        }
+    }
+    if ($bitCount -gt 0) {
+        $null = $builder.Append($alphabet[($buffer -shl (5 - $bitCount)) -band 31])
+    }
+    $runId = $builder.ToString()
+    if ($runId -cnotmatch '\A[0-9a-v]{26}\z') {
+        throw 'The full 128-bit GUID did not encode as canonical lowercase base32.'
+    }
+    return $runId
+}
+
 if (-not $IsWindows) { throw 'The QtBase refresh production launcher is proven only on Windows.' }
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..')).TrimEnd([IO.Path]::DirectorySeparatorChar)
@@ -221,7 +248,7 @@ try {
     if (-not [IO.Directory]::Exists($runParent)) {
         throw "Pinned isolated RunRoot parent does not exist: $runParent"
     }
-    $runName = [Guid]::NewGuid().ToString('N')
+    $runName = ConvertTo-M0BootstrapRunId ([Guid]::NewGuid())
     $runRoot = Join-Path $runParent $runName
     $windowsFolder = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
     $toolRoot = [IO.Path]::GetPathRoot($windowsFolder)

@@ -328,7 +328,7 @@ function Get-TestCMakeCacheText {
 function New-TestLauncherFixture {
     $root = Join-Path $testRoot ('launcher-' + [Guid]::NewGuid().ToString('N'))
     $recipeRoot = Join-Path $root 'experiments/m0/provisioning/qtbase-refresh'
-    $runParent = Join-Path $root 'out/m0/qtbase-refresh-runs'
+    $runParent = Join-Path $root 'q'
     [IO.Directory]::CreateDirectory($recipeRoot) | Out-Null
     [IO.Directory]::CreateDirectory($runParent) | Out-Null
     $fixtureLauncher = Join-Path $recipeRoot 'Invoke-M0QtBaseRefresh.ps1'
@@ -339,7 +339,7 @@ $script:MarkerRoot = $PSScriptRoot
 [IO.File]::WriteAllText((Join-Path $script:MarkerRoot 'imported.marker'), 'imported', [Text.UTF8Encoding]::new($false))
 function Assert-M0QtBaseRefreshContract {
     param([string] $LiteralPath, [string] $ExpectedSha256)
-    return [pscustomobject]@{ isolation = [pscustomobject]@{ run_parent_relative_path = 'out/m0/qtbase-refresh-runs' } }
+    return [pscustomobject]@{ isolation = [pscustomobject]@{ run_parent_relative_path = 'q' } }
 }
 function Assert-M0QtBaseRefreshReceipt { param() }
 function Invoke-M0QtBaseRefresh {
@@ -1072,17 +1072,19 @@ param(
     $v1.inputs.vulkan_headers.header_sha256 = $vulkanHeaderIdentity.sha256
     $v1.inputs.vulkan_headers.license_sha256 = $vulkanLicenseIdentity.sha256
     $isolation = [ordered]@{
-        run_parent_relative_path = $v1.isolation.run_parent_relative_path
+        run_parent_relative_path = 'q'
         require_new_direct_child = $v1.isolation.require_new_direct_child
         receipt_relative_path = 'evidence/qtbase-refresh-receipt.v2.json'
     }
+    $Fixture.RunParent = Join-Path $Fixture.Root 'q'
+    [IO.Directory]::CreateDirectory($Fixture.RunParent) | Out-Null
     $commands = @(
         [ordered]@{
             id = 'configure'
             tool_id = 'cmd'
             script_relative_path = 'source/qtbase-patched/configure.bat'
             arguments_binding = 'configuration.arguments'
-            working_directory_relative_path = 'build'
+            working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/configure.stdout.log'
             stderr_relative_path = 'evidence/logs/configure.stderr.log'
         },
@@ -1091,7 +1093,7 @@ param(
             tool_id = 'cmake'
             script_relative_path = $null
             arguments_binding = 'configuration.build_arguments'
-            working_directory_relative_path = 'build'
+            working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/build.stdout.log'
             stderr_relative_path = 'evidence/logs/build.stderr.log'
         },
@@ -1100,15 +1102,15 @@ param(
             tool_id = 'cmake'
             script_relative_path = $null
             arguments_binding = 'configuration.install_arguments'
-            working_directory_relative_path = 'build'
+            working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/install.stdout.log'
             stderr_relative_path = 'evidence/logs/install.stderr.log'
         }
     )
     $reports = @(
-        [ordered]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
-        [ordered]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
-        [ordered]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'build/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
+        [ordered]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
+        [ordered]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
+        [ordered]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'b/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
         [ordered]@{ id = 'qt6gui-headers'; producer_id = 'dumpbin'; arguments = @('/nologo', '/headers'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-headers.txt' },
         [ordered]@{ id = 'qt6gui-imports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/imports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-imports.txt' },
         [ordered]@{ id = 'qt6gui-exports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/exports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-exports.txt' },
@@ -1253,7 +1255,21 @@ Test-Case 'the production schema v2 contract and sidecar authenticate the commit
         -ExpectedSha256 $expectedContractSha256
     Assert-Equal $accepted.schema_version ([long]2)
     Assert-Equal $accepted.refresh_id 'm0.2-qtbase-freetype-backport-v2'
+    Assert-Equal $accepted.isolation.run_parent_relative_path 'q' `
+        'Production RunRoot parent does not preserve the measured Windows path budget.'
     Assert-Equal $accepted.isolation.receipt_relative_path 'evidence/qtbase-refresh-receipt.v2.json'
+    Assert-SequenceEqual @($accepted.commands | ForEach-Object working_directory_relative_path) @('b', 'b', 'b') `
+        'Production build working directories do not preserve the measured Windows path budget.'
+    Assert-SequenceEqual @($accepted.reports | Select-Object -First 3 | ForEach-Object subject_relative_path) @(
+        'b/config.summary', 'b/CMakeCache.txt', 'b/CMakeFiles/impl-RelWithDebInfo.ninja'
+    ) 'Production build report subjects do not preserve the measured Windows path budget.'
+    $projectedRunRoot = Join-Path (Join-Path $repositoryRoot $accepted.isolation.run_parent_relative_path) ('v' * 26)
+    $projectedWorstObject = Join-Path $projectedRunRoot (
+        'b/src/platformsupport/devicediscovery/CMakeFiles/DeviceDiscoverySupportPrivate.dir/' +
+        'RelWithDebInfo/' + ('0' * 32) + '/mocs_compilation_RelWithDebInfo.cpp.obj'
+    )
+    Assert-True ($projectedWorstObject.Length -le 245) `
+        "Projected worst Qtbase object path is $($projectedWorstObject.Length) characters; the closed budget is 245."
     foreach ($spec in @($accepted.recipe.files)) {
         $leaf = Join-Path $repositoryRoot $spec.relative_path
         Assert-True ([IO.File]::Exists($leaf)) "Production recipe leaf '$($spec.id)' is missing."
@@ -1417,8 +1433,10 @@ Test-Case 'production launcher authenticates contract and every recipe leaf befo
     $invokedRunRoot = [IO.File]::ReadAllText($nominal.InvokedMarker)
     Assert-Equal ([IO.Path]::GetDirectoryName($invokedRunRoot)) $nominal.RunParent `
         'The launcher did not create its RunRoot under the contract-pinned direct parent.'
-    Assert-True ([IO.Path]::GetFileName($invokedRunRoot) -cmatch '^[0-9a-f]{32}$') `
-        'The launcher RunRoot name must retain the full 128-bit GUID without timestamp or descriptive path overhead.'
+    Assert-True ([IO.Path]::GetFileName($invokedRunRoot) -cmatch '^[0-9a-v]{26}$') `
+        'The launcher RunRoot name must retain all 128 GUID bits in canonical lowercase base32.'
+    Assert-True ([IO.Path]::GetFileName($invokedRunRoot)[25] -cmatch '^[048cgkos]$') `
+        'The launcher RunRoot base32 padding bits are not canonical.'
 
     foreach ($kind in @('contract', 'orchestrator', 'runner', 'entrypoint')) {
         $fixture = New-TestLauncherFixture

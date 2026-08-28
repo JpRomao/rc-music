@@ -153,17 +153,17 @@ $script:ExpectedCommandIds = @('configure', 'build', 'install')
 $script:ExpectedCommandSpecs = @(
     [pscustomobject]@{
         id = 'configure'; tool_id = 'cmd'; script_relative_path = 'source/qtbase-patched/configure.bat'
-        arguments_binding = 'configuration.arguments'; working_directory_relative_path = 'build'
+        arguments_binding = 'configuration.arguments'; working_directory_relative_path = 'b'
         stdout_relative_path = 'evidence/logs/configure.stdout.log'; stderr_relative_path = 'evidence/logs/configure.stderr.log'
     },
     [pscustomobject]@{
         id = 'build'; tool_id = 'cmake'; script_relative_path = $null
-        arguments_binding = 'configuration.build_arguments'; working_directory_relative_path = 'build'
+        arguments_binding = 'configuration.build_arguments'; working_directory_relative_path = 'b'
         stdout_relative_path = 'evidence/logs/build.stdout.log'; stderr_relative_path = 'evidence/logs/build.stderr.log'
     },
     [pscustomobject]@{
         id = 'install'; tool_id = 'cmake'; script_relative_path = $null
-        arguments_binding = 'configuration.install_arguments'; working_directory_relative_path = 'build'
+        arguments_binding = 'configuration.install_arguments'; working_directory_relative_path = 'b'
         stdout_relative_path = 'evidence/logs/install.stdout.log'; stderr_relative_path = 'evidence/logs/install.stderr.log'
     }
 )
@@ -177,9 +177,9 @@ $script:ExpectedReportIds = @(
     'qminimal-imports'
 )
 $script:ExpectedReportSpecs = @(
-    [pscustomobject]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
-    [pscustomobject]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
-    [pscustomobject]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'build/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
+    [pscustomobject]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
+    [pscustomobject]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
+    [pscustomobject]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'b/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
     [pscustomobject]@{ id = 'qt6gui-headers'; producer_id = 'dumpbin'; arguments = @('/nologo', '/headers'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-headers.txt' },
     [pscustomobject]@{ id = 'qt6gui-imports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/imports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-imports.txt' },
     [pscustomobject]@{ id = 'qt6gui-exports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/exports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-exports.txt' },
@@ -2367,7 +2367,10 @@ function Assert-M0QtBaseRefreshContract {
 
     Assert-M0ExactProperties $contract.isolation @('run_parent_relative_path', 'require_new_direct_child', 'receipt_relative_path') 'contract.isolation'
     Assert-M0SafeRelativePath $contract.isolation.run_parent_relative_path 'Contract run parent'
-    if ($contract.isolation.run_parent_relative_path -cne 'out/m0/qtbase-refresh-runs') { throw 'Contract run parent is not isolated.' }
+    $expectedRunParent = if ($contract.schema_version -eq 2) { 'q' } else { 'out/m0/qtbase-refresh-runs' }
+    if ($contract.isolation.run_parent_relative_path -cne $expectedRunParent) {
+        throw 'Contract run parent does not match the closed schema layout and Windows path budget.'
+    }
     if ($contract.isolation.require_new_direct_child -isnot [bool] -or -not $contract.isolation.require_new_direct_child) {
         throw 'Contract must require a new direct-child RunRoot.'
     }

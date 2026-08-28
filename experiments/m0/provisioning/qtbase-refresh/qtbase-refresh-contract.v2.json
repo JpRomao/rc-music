@@ -11,20 +11,20 @@
       {
         "id": "orchestrator",
         "relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefresh.psm1",
-        "size_bytes": 149089,
-        "sha256": "d2c748a5bf60c03c1e762a69d689659b8009be952781697264a14cf59f2991da"
+        "size_bytes": 149222,
+        "sha256": "a8c9c1fd8383b3eada4d60d3aa2fc605b163c1fc7258b36fe77d568f30b9b61a"
       },
       {
         "id": "runner",
         "relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefreshNative.psm1",
-        "size_bytes": 111349,
-        "sha256": "ed5a5c3b9781f58f4743e9a9839efc1c4bee1ad459444e3eeb8e6e0f3a66f712"
+        "size_bytes": 113418,
+        "sha256": "56b9cf660507b7b0d4cd3ef4356b18dd9a944d7e385e9ef604e61977db13a14e"
       },
       {
         "id": "entrypoint",
         "relative_path": "experiments/m0/provisioning/qtbase-refresh/Invoke-M0QtBaseRefresh.ps1",
-        "size_bytes": 10987,
-        "sha256": "e07f58fab6b71ca2ca9bb9642340f9df0165deb5bf2660e6627f975ed69785dc"
+        "size_bytes": 11950,
+        "sha256": "c7e1c66a3db82c6937f28c4600f4d9a4b9529cde8ec7fc73712d6ec4a75875b3"
       }
     ],
     "runner_export": "Invoke-M0QtBaseRefreshNative"
@@ -329,7 +329,7 @@
     ]
   },
   "isolation": {
-    "run_parent_relative_path": "out/m0/qtbase-refresh-runs",
+    "run_parent_relative_path": "q",
     "require_new_direct_child": true,
     "receipt_relative_path": "evidence/qtbase-refresh-receipt.v2.json"
   },
@@ -377,7 +377,7 @@
       "tool_id": "cmd",
       "script_relative_path": "source/qtbase-patched/configure.bat",
       "arguments_binding": "configuration.arguments",
-      "working_directory_relative_path": "build",
+      "working_directory_relative_path": "b",
       "stdout_relative_path": "evidence/logs/configure.stdout.log",
       "stderr_relative_path": "evidence/logs/configure.stderr.log"
     },
@@ -386,7 +386,7 @@
       "tool_id": "cmake",
       "script_relative_path": null,
       "arguments_binding": "configuration.build_arguments",
-      "working_directory_relative_path": "build",
+      "working_directory_relative_path": "b",
       "stdout_relative_path": "evidence/logs/build.stdout.log",
       "stderr_relative_path": "evidence/logs/build.stderr.log"
     },
@@ -395,7 +395,7 @@
       "tool_id": "cmake",
       "script_relative_path": null,
       "arguments_binding": "configuration.install_arguments",
-      "working_directory_relative_path": "build",
+      "working_directory_relative_path": "b",
       "stdout_relative_path": "evidence/logs/install.stdout.log",
       "stderr_relative_path": "evidence/logs/install.stderr.log"
     }
@@ -407,7 +407,7 @@
       "arguments": [
         "copy-verbatim"
       ],
-      "subject_relative_path": "build/config.summary",
+      "subject_relative_path": "b/config.summary",
       "relative_path": "evidence/reports/configure-summary.txt"
     },
     {
@@ -416,7 +416,7 @@
       "arguments": [
         "copy-verbatim"
       ],
-      "subject_relative_path": "build/CMakeCache.txt",
+      "subject_relative_path": "b/CMakeCache.txt",
       "relative_path": "evidence/reports/cmake-cache.txt"
     },
     {
@@ -425,7 +425,7 @@
       "arguments": [
         "analyze-freetype-link-graph"
       ],
-      "subject_relative_path": "build/CMakeFiles/impl-RelWithDebInfo.ninja",
+      "subject_relative_path": "b/CMakeFiles/impl-RelWithDebInfo.ninja",
       "relative_path": "evidence/reports/qtgui-freetype-dependency.txt"
     },
     {

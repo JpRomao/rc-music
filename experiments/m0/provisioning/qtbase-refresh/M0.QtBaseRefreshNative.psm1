@@ -1622,9 +1622,9 @@ function Assert-M0NativeContextAndResolveArguments {
     Assert-M0NativeStringSequence @($Context.contract.reports | ForEach-Object id) $script:NativeReportIds 'Contract report ids'
 
     $expectedCommands = @(
-        @('cmd', 'source/qtbase-patched/configure.bat', 'configuration.arguments', 'build', 'evidence/logs/configure.stdout.log', 'evidence/logs/configure.stderr.log'),
-        @('cmake', $null, 'configuration.build_arguments', 'build', 'evidence/logs/build.stdout.log', 'evidence/logs/build.stderr.log'),
-        @('cmake', $null, 'configuration.install_arguments', 'build', 'evidence/logs/install.stdout.log', 'evidence/logs/install.stderr.log')
+        @('cmd', 'source/qtbase-patched/configure.bat', 'configuration.arguments', 'b', 'evidence/logs/configure.stdout.log', 'evidence/logs/configure.stderr.log'),
+        @('cmake', $null, 'configuration.build_arguments', 'b', 'evidence/logs/build.stdout.log', 'evidence/logs/build.stderr.log'),
+        @('cmake', $null, 'configuration.install_arguments', 'b', 'evidence/logs/install.stdout.log', 'evidence/logs/install.stderr.log')
     )
     for ($index = 0; $index -lt $expectedCommands.Count; $index++) {
         $actual = $Context.contract.commands[$index]
@@ -1640,9 +1640,9 @@ function Assert-M0NativeContextAndResolveArguments {
     }
 
     $expectedReports = @(
-        @('runner', 'copy-verbatim', 'build/config.summary', 'evidence/reports/configure-summary.txt'),
-        @('runner', 'copy-verbatim', 'build/CMakeCache.txt', 'evidence/reports/cmake-cache.txt'),
-        @('runner', 'analyze-freetype-link-graph', 'build/CMakeFiles/impl-RelWithDebInfo.ninja', 'evidence/reports/qtgui-freetype-dependency.txt'),
+        @('runner', 'copy-verbatim', 'b/config.summary', 'evidence/reports/configure-summary.txt'),
+        @('runner', 'copy-verbatim', 'b/CMakeCache.txt', 'evidence/reports/cmake-cache.txt'),
+        @('runner', 'analyze-freetype-link-graph', 'b/CMakeFiles/impl-RelWithDebInfo.ninja', 'evidence/reports/qtgui-freetype-dependency.txt'),
         @('dumpbin', '/nologo|/headers', 'install/bin/Qt6Gui.dll', 'evidence/reports/qt6gui-headers.txt'),
         @('dumpbin', '/nologo|/imports', 'install/bin/Qt6Gui.dll', 'evidence/reports/qt6gui-imports.txt'),
         @('dumpbin', '/nologo|/exports', 'install/bin/Qt6Gui.dll', 'evidence/reports/qt6gui-exports.txt'),
@@ -1673,7 +1673,7 @@ function Assert-M0NativeContextAndResolveArguments {
 
     $bindings = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
     $bindings.Add('INSTALL_ROOT', (Resolve-M0NativeRunPath $runRoot 'install' 'Install token root').Replace('\', '/'))
-    $bindings.Add('BUILD_ROOT', (Resolve-M0NativeRunPath $runRoot 'build' 'Build token root').Replace('\', '/'))
+    $bindings.Add('BUILD_ROOT', (Resolve-M0NativeRunPath $runRoot 'b' 'Build token root').Replace('\', '/'))
     $bindings.Add('VULKAN_INCLUDE', (Resolve-M0NativeRunPath $runRoot 'source/vulkan/include' 'Vulkan include token root').Replace('\', '/'))
     $bindings.Add('NINJA', $resolvedTools.ninja.Replace('\', '/'))
     $bindings.Add('CL', $resolvedTools.cl.Replace('\', '/'))
@@ -1724,6 +1724,58 @@ function Get-M0NativeCommandArguments {
     }
 }
 
+function Test-M0NativeStreamContainsAscii {
+    param(
+        [Parameter(Mandatory)] [IO.Stream] $Stream,
+        [Parameter(Mandatory)] [string] $Marker
+    )
+
+    $needle = [Text.Encoding]::ASCII.GetBytes($Marker)
+    if ($needle.Length -eq 0) { throw 'Native log marker must not be empty.' }
+    $buffer = [byte[]]::new(65536 + $needle.Length - 1)
+    $carry = 0
+    $Stream.Position = 0
+    while ($true) {
+        $read = $Stream.Read($buffer, $carry, 65536)
+        $total = $carry + $read
+        for ($offset = 0; $offset -le $total - $needle.Length; $offset++) {
+            $matched = $true
+            for ($index = 0; $index -lt $needle.Length; $index++) {
+                if ($buffer[$offset + $index] -ne $needle[$index]) {
+                    $matched = $false
+                    break
+                }
+            }
+            if ($matched) { return $true }
+        }
+        if ($read -eq 0) { return $false }
+        $carry = [Math]::Min($needle.Length - 1, $total)
+        if ($carry -gt 0) {
+            [Buffer]::BlockCopy($buffer, $total - $carry, $buffer, 0, $carry)
+        }
+    }
+}
+
+function Assert-M0NativeConfigurePathBudget {
+    param(
+        [Parameter(Mandatory)] [string] $StdoutPath,
+        [Parameter(Mandatory)] [string] $StderrPath,
+        [Parameter(Mandatory)] [string] $RunRoot
+    )
+
+    foreach ($path in @($StdoutPath, $StderrPath)) {
+        $lease = Open-M0NativePhysicalFile -LiteralPath $path -Context 'Configure path-budget log' -BoundaryRoot $RunRoot
+        try {
+            foreach ($marker in @('CMAKE_OBJECT_PATH_MAX', 'cannot be safely placed under this directory')) {
+                if (Test-M0NativeStreamContainsAscii -Stream $lease.stream -Marker $marker) {
+                    throw 'Configure reported an unsafe native object path (CMAKE_OBJECT_PATH_MAX); build is forbidden.'
+                }
+            }
+        }
+        finally { $lease.stream.Dispose() }
+    }
+}
+
 function Invoke-M0NativeContractCommands {
     param(
         [Parameter(Mandatory)] $Context,
@@ -1731,7 +1783,7 @@ function Invoke-M0NativeContractCommands {
         [Parameter(Mandatory)] [Collections.Generic.IDictionary[string,string]] $Environment
     )
     $runRoot = $Resolved.run_root
-    $buildRoot = Resolve-M0NativeRunPath $runRoot 'build' 'Native build root'
+    $buildRoot = Resolve-M0NativeRunPath $runRoot 'b' 'Native build root'
     if ([IO.Directory]::Exists($buildRoot) -or [IO.File]::Exists($buildRoot)) {
         throw 'Native build root must be CreateNew.'
     }
@@ -1784,6 +1836,9 @@ function Invoke-M0NativeContractCommands {
         if ($result.timed_out) { throw "Native command '$($spec.id)' timed out." }
         if ($result.exit_code -ne 0) {
             throw "Native command '$($spec.id)' failed with exit code $($result.exit_code): $(Read-M0NativeLogTail $stderrPath)"
+        }
+        if ($spec.id -ceq 'configure') {
+            Assert-M0NativeConfigurePathBudget -StdoutPath $stdoutPath -StderrPath $stderrPath -RunRoot $runRoot
         }
         $observations.Add([pscustomobject][ordered]@{
             id = $spec.id
@@ -2040,7 +2095,7 @@ function Invoke-M0NativeContractReports {
                         arguments = [string[]]$actualArguments.ToArray()
                         logical_arguments = [string[]]@($spec.arguments)
                         resolved_arguments = [string[]]$actualArguments.ToArray()
-                        working_directory = Resolve-M0NativeRunPath $runRoot 'build' "Report '$($spec.id)' working directory"
+                        working_directory = Resolve-M0NativeRunPath $runRoot 'b' "Report '$($spec.id)' working directory"
                         environment = Copy-M0NativeEnvironment $Environment
                         stdout_path = $rawStdout
                         stderr_path = $rawStderr

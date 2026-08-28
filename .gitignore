@@ -1,5 +1,7 @@
 /.tools/
 /out/m0/
+/q/*
+!/q/.gitkeep
 /experiments/m0/candidates/*/shell/node_modules/
 /experiments/m0/candidates/*/shell/target/
 /experiments/m0/candidates/*/shell/build/

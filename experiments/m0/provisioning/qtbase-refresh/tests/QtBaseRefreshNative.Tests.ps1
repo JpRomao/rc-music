@@ -417,24 +417,24 @@ function New-NativeRunnerFixture {
     $commands = @(
         [pscustomobject][ordered]@{
             id = 'configure'; tool_id = 'cmd'; script_relative_path = 'source/qtbase-patched/configure.bat'
-            arguments_binding = 'configuration.arguments'; working_directory_relative_path = 'build'
+            arguments_binding = 'configuration.arguments'; working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/configure.stdout.log'; stderr_relative_path = 'evidence/logs/configure.stderr.log'
         },
         [pscustomobject][ordered]@{
             id = 'build'; tool_id = 'cmake'; script_relative_path = $null
-            arguments_binding = 'configuration.build_arguments'; working_directory_relative_path = 'build'
+            arguments_binding = 'configuration.build_arguments'; working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/build.stdout.log'; stderr_relative_path = 'evidence/logs/build.stderr.log'
         },
         [pscustomobject][ordered]@{
             id = 'install'; tool_id = 'cmake'; script_relative_path = $null
-            arguments_binding = 'configuration.install_arguments'; working_directory_relative_path = 'build'
+            arguments_binding = 'configuration.install_arguments'; working_directory_relative_path = 'b'
             stdout_relative_path = 'evidence/logs/install.stdout.log'; stderr_relative_path = 'evidence/logs/install.stderr.log'
         }
     )
     $reports = @(
-        [pscustomobject][ordered]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
-        [pscustomobject][ordered]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'build/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
-        [pscustomobject][ordered]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'build/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
+        [pscustomobject][ordered]@{ id = 'configure-summary'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/config.summary'; relative_path = 'evidence/reports/configure-summary.txt' },
+        [pscustomobject][ordered]@{ id = 'cmake-cache'; producer_id = 'runner'; arguments = @('copy-verbatim'); subject_relative_path = 'b/CMakeCache.txt'; relative_path = 'evidence/reports/cmake-cache.txt' },
+        [pscustomobject][ordered]@{ id = 'qtgui-freetype-dependency'; producer_id = 'runner'; arguments = @('analyze-freetype-link-graph'); subject_relative_path = 'b/CMakeFiles/impl-RelWithDebInfo.ninja'; relative_path = 'evidence/reports/qtgui-freetype-dependency.txt' },
         [pscustomobject][ordered]@{ id = 'qt6gui-headers'; producer_id = 'dumpbin'; arguments = @('/nologo', '/headers'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-headers.txt' },
         [pscustomobject][ordered]@{ id = 'qt6gui-imports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/imports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-imports.txt' },
         [pscustomobject][ordered]@{ id = 'qt6gui-exports'; producer_id = 'dumpbin'; arguments = @('/nologo', '/exports'); subject_relative_path = 'install/bin/Qt6Gui.dll'; relative_path = 'evidence/reports/qt6gui-exports.txt' },
@@ -515,7 +515,8 @@ function New-FakeNativeProcessBoundary {
         [Parameter(Mandatory)] $State,
         [string] $FailId,
         [string] $TimeoutId,
-        [switch] $InvalidEnvironment
+        [switch] $InvalidEnvironment,
+        [switch] $PathBudgetWarning
     )
     $configureSummary = $expectedNativeConfigureSummary
     $cmakeCache = $expectedNativeCMakeCache
@@ -545,14 +546,23 @@ function New-FakeNativeProcessBoundary {
         }
 
         [IO.File]::WriteAllText($request.stdout_path, "$($request.id) stdout`r`n", [Text.UTF8Encoding]::new($false))
-        [IO.File]::WriteAllText($request.stderr_path, "$($request.id) stderr`r`n", [Text.UTF8Encoding]::new($false))
+        $stderrText = if ($PathBudgetWarning -and $request.id -ceq 'configure') {
+            @(
+                'CMake Warning in src/platformsupport/devicediscovery/CMakeLists.txt:'
+                '  The object file directory has 209 characters.'
+                '  The maximum full path to an object file is 250 characters (see CMAKE_OBJECT_PATH_MAX).'
+                '  Object file cannot be safely placed under this directory.'
+            ) -join "`r`n"
+        }
+        else { "$($request.id) stderr" }
+        [IO.File]::WriteAllText($request.stderr_path, $stderrText + "`r`n", [Text.UTF8Encoding]::new($false))
         if ($request.id -ceq $TimeoutId) { return [pscustomobject]@{ exit_code = [long]-1; timed_out = $true } }
         if ($request.id -ceq $FailId) { return [pscustomobject]@{ exit_code = [long]7; timed_out = $false } }
 
         if ($request.id -ceq 'configure') {
-            Write-TestBytes (Join-Path $Fixture.RunRoot 'build/config.summary') ([Text.UTF8Encoding]::new($false).GetBytes($configureSummary))
-            Write-TestBytes (Join-Path $Fixture.RunRoot 'build/CMakeCache.txt') ([Text.UTF8Encoding]::new($false).GetBytes($cmakeCache))
-            Write-TestBytes (Join-Path $Fixture.RunRoot 'build/CMakeFiles/impl-RelWithDebInfo.ninja') ([Text.UTF8Encoding]::new($false).GetBytes(
+            Write-TestBytes (Join-Path $Fixture.RunRoot 'b/config.summary') ([Text.UTF8Encoding]::new($false).GetBytes($configureSummary))
+            Write-TestBytes (Join-Path $Fixture.RunRoot 'b/CMakeCache.txt') ([Text.UTF8Encoding]::new($false).GetBytes($cmakeCache))
+            Write-TestBytes (Join-Path $Fixture.RunRoot 'b/CMakeFiles/impl-RelWithDebInfo.ninja') ([Text.UTF8Encoding]::new($false).GetBytes(
                     "build bin\Qt6Gui.dll lib\Qt6Gui.lib: CXX_SHARED_LIBRARY_LINKER__Gui_RelWithDebInfo gui.obj | lib\Qt6BundledFreetype.lib`n" +
                     "  LINK_LIBRARIES = d3d11.lib lib\Qt6BundledFreetype.lib`n" +
                     "build plugins\platforms\qminimal.dll: CXX_MODULE_LIBRARY_LINKER__QMinimalIntegrationPlugin_RelWithDebInfo qminimal.obj | lib\Qt6BundledFreetype.lib`n" +
@@ -1244,11 +1254,11 @@ index 111111111..222222222 100644
             Assert-Equal ([IO.File]::ReadAllText($freetypeReport)) (
                 "bin/Qt6Gui.dll`tlib/Qt6BundledFreetype.lib`n" +
                 "plugins/platforms/qminimal.dll`tlib/Qt6BundledFreetype.lib`n") 'FreeType report was not canonical.'
-            Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'build/config.summary'))) `
+            Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'b/config.summary'))) `
                 $expectedNativeConfigureSummary 'Configure summary fixture drifted from the verified Qt output.'
             Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'evidence/reports/configure-summary.txt'))) `
                 $expectedNativeConfigureSummary 'Configure summary report was not copied verbatim.'
-            Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'build/CMakeCache.txt'))) `
+            Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'b/CMakeCache.txt'))) `
                 $expectedNativeCMakeCache 'CMake cache fixture drifted from the verified Qt output.'
             Assert-Equal ([IO.File]::ReadAllText((Join-Path $fixture.RunRoot 'evidence/reports/cmake-cache.txt'))) `
                 $expectedNativeCMakeCache 'CMake cache report was not copied verbatim.'
@@ -1290,7 +1300,7 @@ index 111111111..222222222 100644
     }
 
     Test-Case 'native runner aborts on environment drift nonzero exit timeout and unknown token' {
-        foreach ($kind in @('caller-environment', 'environment', 'nonzero', 'timeout', 'token', 'report')) {
+        foreach ($kind in @('caller-environment', 'environment', 'nonzero', 'timeout', 'token', 'path-budget', 'report')) {
             $fixture = New-NativeRunnerFixture ('runner-red-' + $kind)
             $state = [pscustomobject]@{ Calls = [Collections.Generic.List[object]]::new() }
             if ($kind -eq 'token') {
@@ -1300,6 +1310,7 @@ index 111111111..222222222 100644
             if ($kind -eq 'environment') { $boundaryArguments.InvalidEnvironment = $true }
             elseif ($kind -eq 'nonzero') { $boundaryArguments.FailId = 'configure' }
             elseif ($kind -eq 'timeout') { $boundaryArguments.TimeoutId = 'configure' }
+            elseif ($kind -eq 'path-budget') { $boundaryArguments.PathBudgetWarning = $true }
             elseif ($kind -eq 'report') { $boundaryArguments.FailId = 'report:qt6gui-headers' }
             $boundary = New-FakeNativeProcessBoundary @boundaryArguments
             Set-NativeRunnerTestBoundaries $fixture.Prepared $boundary
@@ -1314,6 +1325,7 @@ index 111111111..222222222 100644
                     'nonzero' { 'configure.*exit code 7|exit code 7.*configure' }
                     'timeout' { 'configure.*timed out|timed out.*configure' }
                     'token' { 'unknown.*token|token.*AMBIENT|AMBIENT.*token' }
+                    'path-budget' { 'CMAKE_OBJECT_PATH_MAX|object.*path|path.*budget|cannot be safely placed' }
                     'report' { 'qt6gui-headers.*exit code 7|exit code 7.*qt6gui-headers' }
                 }
                 Assert-Rejected {
