@@ -41,8 +41,8 @@
       {
         "id": "orchestrator",
         "relative_path": "experiments/m0/provisioning/qt-shell/M0.QtShellComposite.psm1",
-      "size_bytes": 148007,
-      "sha256": "c3f4a6bbe3d7eada46c44bf588dbeac8f61ca08c020ef5ab0e2536aa6d6ba1de"
+      "size_bytes": 148684,
+      "sha256": "6290e5ef8a5b336cb6a3ad3f8e01632a6f1e8ce6e7cb71ed406a8e10d729cce6"
       },
       {
         "id": "runner",

@@ -2,7 +2,7 @@
 
 Esta receita v2 constrói um SDK privado para o candidato Qt sem alterar o contrato histórico v1. Ela combina, por cópia física isolada, o Qtbase reconstruído com o backport FreeType e os arquivos integrais dos archives oficiais `qtdeclarative`, `qtsvg` e `d3dcompiler_47`.
 
-O contrato histórico `qt-shell-toolchain-contract.v1.json` permanece com 1.412 bytes, SHA-256 `ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952` e oito membros. A receita nova está em `qt-shell-composite-contract.v2.json`: 10.845 bytes, SHA-256 `c421e625b01ced0e547907bd26541ed5db6f38e381c0823fc2de3826d5440a71`, também registrado no sidecar adjacente. O sidecar não substitui as âncoras externas exigidas pelo launcher.
+O contrato histórico `qt-shell-toolchain-contract.v1.json` permanece com 1.412 bytes, SHA-256 `ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952` e oito membros. A receita nova está em `qt-shell-composite-contract.v2.json`: 10.845 bytes, SHA-256 `f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28`, também registrado no sidecar adjacente. O sidecar não substitui as âncoras externas exigidas pelo launcher.
 
 ## Limites e propriedade
 
@@ -37,7 +37,7 @@ $contract = Join-Path $repo 'experiments\m0\provisioning\qt-shell\qt-shell-compo
 $runRoot = Join-Path $repo 'q\<novo-id-curto>'
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\Invoke-M0QtShellComposite.ps1 `
   -ContractPath $contract `
-  -ExpectedContractSha256 c421e625b01ced0e547907bd26541ed5db6f38e381c0823fc2de3826d5440a71 `
+  -ExpectedContractSha256 f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28 `
   -ExpectedQtBaseReceiptSha256 8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619 `
   -RepositoryRoot $repo `
   -RunRoot $runRoot
@@ -52,7 +52,7 @@ $receipt = Join-Path $repo 'q\<id-do-run>\evidence\qt-shell-composite-receipt.v2
 $expectedReceiptSha256 = '<receipt_sha256 capturado externamente>'
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\Invoke-M0QtShellComposite.ps1 `
   -ContractPath $contract `
-  -ExpectedContractSha256 c421e625b01ced0e547907bd26541ed5db6f38e381c0823fc2de3826d5440a71 `
+  -ExpectedContractSha256 f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28 `
   -ExpectedQtBaseReceiptSha256 8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619 `
   -RepositoryRoot $repo `
   -ReceiptPath $receipt `

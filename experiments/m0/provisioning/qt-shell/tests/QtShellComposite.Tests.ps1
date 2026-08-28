@@ -10,7 +10,7 @@ $nativeModulePath = Join-Path $contractRoot 'M0.QtShellCompositeNative.psm1'
 $launcherPath = Join-Path $contractRoot 'Invoke-M0QtShellComposite.ps1'
 $contractPath = Join-Path $contractRoot 'qt-shell-composite-contract.v2.json'
 $sidecarPath = $contractPath + '.sha256'
-$expectedContractSha256 = 'c421e625b01ced0e547907bd26541ed5db6f38e381c0823fc2de3826d5440a71'
+$expectedContractSha256 = 'f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28'
 $state = [ordered]@{ Passed = 0; Failed = 0 }
 $module = $null
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('m0-qt-shell-composite-core-' + [Guid]::NewGuid().ToString('N'))
@@ -724,6 +724,30 @@ try {
             'Failed atomic creation cleanup touched an external victim.'
     }
 
+    Test-Case 'atomic child creation reuses a retained delete-capable parent anchor' {
+        $parent = Join-Path $testRoot 'retained-parent-child'
+        $child = Join-Path $parent 'child'
+        $state = & $module {
+            param($Path, $Boundary)
+            New-M0AtomicOwnedTreeState -Root $Path -BoundaryRoot $Boundary `
+                -Context 'retained parent fixture'
+        } $parent $testRoot
+        $childAnchor = $null
+        try {
+            $childAnchor = & $module {
+                param($Path, $Boundary, $ParentAnchor)
+                New-M0AtomicDirectoryAnchor -LiteralPath $Path -BoundaryRoot $Boundary `
+                    -Context 'retained child fixture' -ParentAnchor $ParentAnchor
+            } $child $parent $state.root_anchor
+            Assert-True ([IO.Directory]::Exists($child)) `
+                'Atomic child creation failed under its retained parent anchor.'
+        }
+        finally {
+            if ($null -ne $childAnchor) { $childAnchor.handle.Dispose() }
+            $state.root_anchor.handle.Dispose()
+        }
+    }
+
     Test-Case 'create-new publication atomically anchors its previously missing parent' {
         $root = Join-Path $testRoot 'atomic-missing-parent'
         [IO.Directory]::CreateDirectory($root) | Out-Null
@@ -735,6 +759,66 @@ try {
         try { Assert-True ([IO.File]::Exists((Join-Path $root 'inventories/owner.tsv'))) `
                 'Create-new publication did not publish through its atomically created parent.' }
         finally { $published.lease.stream.Dispose() }
+    }
+
+    Test-Case 'extracted archive validation reuses its delete-capable authenticated root anchor' {
+        $parent = Join-Path $testRoot 'extract-anchor-reuse'
+        [IO.Directory]::CreateDirectory($parent) | Out-Null
+        $state = & $module {
+            param($Root, $Boundary)
+            New-M0AtomicOwnedTreeState -Root $Root -BoundaryRoot $Boundary `
+                -Context 'extract anchor reuse fixture'
+        } (Join-Path $parent 'owner') $parent
+        $leaf = Join-Path $state.root 'leaf.bin'
+        Write-TestBytes $leaf ([byte[]]@(1, 2, 3))
+        try {
+            $snapshot = & $module {
+                param($State)
+                $leaseSink = [Collections.Generic.List[object]]::new()
+                $leaseSink.Add($State.root_anchor)
+                $members = @([pscustomobject]@{ path = 'leaf.bin'; kind = 'file'; size_bytes = [long]3 })
+                $spec = [pscustomobject]@{
+                    owner_id = 'fixture'; expected_file_count = [long]1
+                    expected_total_size_bytes = [long]3
+                }
+                try {
+                    Assert-M0ExtractedArchive -Root $State.root -Members $members `
+                        -ArchiveSpec $spec -LeaseSink $leaseSink `
+                        -DirectoryLedger $State.directory_ledger -FileLedger $State.file_ledger `
+                        -RootAnchor $State.root_anchor
+                }
+                finally { Close-M0Leases $leaseSink }
+            } $state
+            Assert-Equal ([long]$snapshot.file_count) ([long]1) `
+                'Extracted archive snapshot lost its authenticated leaf.'
+        }
+        finally {
+            if (-not $state.root_anchor.handle.IsClosed) { $state.root_anchor.handle.Dispose() }
+        }
+    }
+
+    Test-Case 'create-new publication creates a missing parent under a retained root envelope' {
+        $root = Join-Path $testRoot 'retained-publication-root'
+        $state = & $module {
+            param($Path, $Boundary)
+            New-M0AtomicOwnedTreeState -Root $Path -BoundaryRoot $Boundary `
+                -Context 'retained publication fixture'
+        } $root $testRoot
+        $published = $null
+        try {
+            $published = & $module {
+                param($Path, $Boundary, $ParentAnchor)
+                Write-M0CreateNewFile -LiteralPath $Path -Bytes ([byte[]]@(3, 4)) `
+                    -BoundaryRoot $Boundary -Context 'retained parent publication fixture' `
+                    -MissingParentAnchor $ParentAnchor
+            } (Join-Path $root 'evidence/owner.tsv') $root $state.root_anchor
+            Assert-True ([IO.File]::Exists((Join-Path $root 'evidence/owner.tsv'))) `
+                'Create-new publication failed below a retained root envelope.'
+        }
+        finally {
+            if ($null -ne $published) { $published.lease.stream.Dispose() }
+            $state.root_anchor.handle.Dispose()
+        }
     }
 
     Test-Case 'receipt commit resweeps its immutable SDK envelope after a concurrent mutation' {
@@ -944,6 +1028,194 @@ try {
         finally {
             & $module { param($LeaseSink) Close-M0Leases $LeaseSink } $leases
         }
+    }
+
+    Test-Case 'minimal integration crosses extracted snapshots native publication and final evidence' {
+        $fixtureRoot = Join-Path $testRoot 'minimal-real-handle-integration'
+        $fixtureRepository = Join-Path $fixtureRoot 'repository'
+        $runParent = Join-Path $fixtureRepository 'q'
+        $parentInstall = Join-Path $fixtureRepository 'parent-install'
+        [IO.Directory]::CreateDirectory($runParent) | Out-Null
+        [IO.Directory]::CreateDirectory($parentInstall) | Out-Null
+
+        $contract = Read-Json $contractPath
+        $fixtureContractPath = Join-Path $fixtureRepository 'fixture-contract.json'
+        [IO.File]::WriteAllText($fixtureContractPath, '{}', [Text.UTF8Encoding]::new($false))
+        $fixtureContractSha256 = Get-Sha256 $fixtureContractPath
+        $fixtureEntrypoint = $PSCommandPath
+        $fixtureRunner = $nativeModulePath
+        $fixtureOrchestrator = $modulePath
+        $fixtureQtbaseHash = [string]$contract.provenance.qtbase_refresh.receipt_sha256
+        $utf8 = [Text.UTF8Encoding]::new($false)
+
+        $ownerRows = [ordered]@{
+            'qtbase-refresh-v2' = [Collections.Generic.List[object]]::new()
+            qtdeclarative = [Collections.Generic.List[object]]::new()
+            qtsvg = [Collections.Generic.List[object]]::new()
+            d3d = [Collections.Generic.List[object]]::new()
+        }
+        $value = [byte]1
+        foreach ($artifact in @($contract.required_artifacts)) {
+            $bytes = [byte[]]@($value, ($value + 1), ($value + 2))
+            $digest = [Convert]::ToHexString(
+                [Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+            $artifact.size_bytes = [long]$bytes.Length
+            $artifact.sha256 = $digest
+            $row = [pscustomobject][ordered]@{
+                owner_id = [string]$artifact.owner_id
+                source_relative_path = [string]$artifact.relative_path
+                relative_path = [string]$artifact.relative_path
+                size_bytes = [long]$bytes.Length
+                sha256 = $digest
+                bytes = $bytes
+            }
+            $ownerRows[[string]$artifact.owner_id].Add($row)
+            $value++
+        }
+
+        $parentInventory = [Text.StringBuilder]::new()
+        foreach ($row in $ownerRows['qtbase-refresh-v2']) {
+            Write-TestBytes (Join-Path $parentInstall $row.source_relative_path) $row.bytes
+            [void]$parentInventory.Append($row.source_relative_path).Append("`t").Append(
+                $row.size_bytes).Append("`t").Append($row.sha256).Append("`n")
+        }
+        $parentInventoryPath = Join-Path $fixtureRepository 'parent-install.tsv'
+        [IO.File]::WriteAllText($parentInventoryPath, $parentInventory.ToString(), $utf8)
+        $contract.provenance.qtbase_refresh.install_file_count =
+            [long]$ownerRows['qtbase-refresh-v2'].Count
+        $contract.provenance.qtbase_refresh.install_total_size_bytes = [long](
+            ($ownerRows['qtbase-refresh-v2'] | Measure-Object -Property size_bytes -Sum).Sum)
+
+        $extractorPath = Join-Path $fixtureRepository 'inputs/fake-7za.exe'
+        Write-TestBytes $extractorPath ([byte[]]@(7, 0))
+        $contract.inputs.extractor.relative_path = 'inputs/fake-7za.exe'
+        $contract.inputs.extractor.size_bytes = [long]2
+        $contract.inputs.extractor.sha256 = Get-Sha256 $extractorPath
+        $archiveFixtures = [ordered]@{}
+        for ($index = 0; $index -lt @($contract.inputs.archives).Count; $index++) {
+            $archive = $contract.inputs.archives[$index]
+            $ownerId = [string]$archive.owner_id
+            $relativeArchive = "inputs/$ownerId.archive"
+            $archivePath = Join-Path $fixtureRepository $relativeArchive
+            Write-TestBytes $archivePath ([byte[]]@([byte](20 + $index)))
+            $archive.relative_path = $relativeArchive
+            $archive.size_bytes = [long]1
+            $archive.sha256 = Get-Sha256 $archivePath
+            $archive.expected_file_count = [long]$ownerRows[$ownerId].Count
+            $archive.expected_total_size_bytes = [long](
+                ($ownerRows[$ownerId] | Measure-Object -Property size_bytes -Sum).Sum)
+            $archiveFixtures[[IO.Path]::GetFullPath($archivePath)] = @($ownerRows[$ownerId])
+        }
+
+        $fixture = [pscustomobject]@{
+            contract = $contract
+            runner = $fixtureRunner
+            orchestrator = $fixtureOrchestrator
+            entrypoint = $fixtureEntrypoint
+            parent_install = $parentInstall
+            parent_inventory = $parentInventoryPath
+            archives = $archiveFixtures
+            trace = [Collections.Generic.List[string]]::new()
+        }
+        & $module {
+            param($Value)
+            $script:CompositeIntegrationFixture = $Value
+            Set-Item Function:script:Assert-M0QtShellCompositeContract -Value {
+                param([string] $LiteralPath, [string] $ExpectedSha256)
+                return $script:CompositeIntegrationFixture.contract
+            }
+            Set-Item Function:script:Assert-M0RecipeFiles -Value {
+                param($Contract, [string] $RepositoryRoot, $Leases)
+                return [ordered]@{
+                    orchestrator = $script:CompositeIntegrationFixture.orchestrator
+                    runner = $script:CompositeIntegrationFixture.runner
+                    entrypoint = $script:CompositeIntegrationFixture.entrypoint
+                }
+            }
+            Set-Item Function:script:Assert-M0HistoricalV1 -Value {
+                param($Contract, [string] $RepositoryRoot, $Leases)
+            }
+            Set-Item Function:script:Assert-M0QtBaseParent -Value {
+                param($Contract, [string] $ExpectedReceiptSha256, [string] $RepositoryRoot, $Leases)
+                return [pscustomobject]@{
+                    install_root = $script:CompositeIntegrationFixture.parent_install
+                    inventory_path = $script:CompositeIntegrationFixture.parent_inventory
+                }
+            }
+            Set-Item Function:script:Invoke-M0BoundedProcess -Value {
+                param([string] $FilePath, [string[]] $ArgumentList, [string] $WorkingDirectory)
+                $archivePath = [IO.Path]::GetFullPath($ArgumentList[-1])
+                $rows = @($script:CompositeIntegrationFixture.archives[$archivePath])
+                if ($ArgumentList[0] -ceq 'l') {
+                    $script:CompositeIntegrationFixture.trace.Add("list:$archivePath")
+                    $listing = [Text.StringBuilder]::new()
+                    foreach ($row in $rows) {
+                        [void]$listing.Append("----------`nPath = ").Append(
+                            $row.source_relative_path).Append("`nFolder = -`nSize = ").Append(
+                            $row.size_bytes).Append("`n`n")
+                    }
+                    return [pscustomobject][ordered]@{
+                        exit_code = [long]0; stdout = $listing.ToString(); stderr = ''
+                    }
+                }
+                if ($ArgumentList[0] -ceq 'x') {
+                    $script:CompositeIntegrationFixture.trace.Add("extract:$archivePath")
+                    $output = [string]$ArgumentList[3]
+                    if (-not $output.StartsWith('-o', [StringComparison]::Ordinal)) {
+                        throw 'Fixture extraction output argument drifted.'
+                    }
+                    $output = $output.Substring(2)
+                    foreach ($row in $rows) {
+                        $path = Join-Path $output $row.source_relative_path
+                        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
+                        [IO.File]::WriteAllBytes($path, [byte[]]$row.bytes)
+                    }
+                    return [pscustomobject][ordered]@{ exit_code = [long]0; stdout = ''; stderr = '' }
+                }
+                throw 'Fixture received an unexpected extractor operation.'
+            }
+        } $fixture
+
+        $runRoot = Join-Path $runParent 'minimal-integration-run'
+        $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+        $result = & $module {
+            param($ContractPath, $ContractSha256, $QtbaseHash, $Repository, $Output)
+            Invoke-M0QtShellComposite `
+                -ContractPath $ContractPath `
+                -ExpectedContractSha256 $ContractSha256 `
+                -ExpectedQtBaseReceiptSha256 $QtbaseHash `
+                -RepositoryRoot $Repository `
+                -RunRoot $Output
+        } $fixtureContractPath $fixtureContractSha256 $fixtureQtbaseHash $fixtureRepository $runRoot
+        $stopwatch.Stop()
+
+        Assert-True ($stopwatch.Elapsed -lt [TimeSpan]::FromSeconds(15)) `
+            "Minimal integration exceeded its 15 second timeout: $($stopwatch.Elapsed)."
+        Assert-Equal @($fixture.trace).Count ([long]6) 'Fixture did not list and extract all three archives.'
+        Assert-True ([IO.Directory]::Exists((Join-Path $runRoot 'sdk'))) `
+            'Native runner did not publish the minimal SDK.'
+        foreach ($relativePath in @(
+                $contract.isolation.global_inventory_relative_path,
+                $contract.isolation.manifest_relative_path,
+                $contract.isolation.receipt_relative_path)) {
+            Assert-True ([IO.File]::Exists((Join-Path $runRoot $relativePath))) `
+                "Integration evidence is missing: $relativePath"
+        }
+        foreach ($ownerId in @('qtbase-refresh-v2', 'qtdeclarative', 'qtsvg', 'd3d')) {
+            Assert-True ([IO.File]::Exists((Join-Path $runRoot `
+                            "$($contract.isolation.owner_inventory_directory_relative_path)/$ownerId.tsv"))) `
+                "Owner evidence is missing: $ownerId"
+        }
+        Assert-Equal (Get-Sha256 $result.manifest_path) $result.manifest_sha256 `
+            'Published manifest hash differs from the public result.'
+        Assert-Equal (Get-Sha256 $result.receipt_path) $result.receipt_sha256 `
+            'Published receipt hash differs from the public result.'
+        Assert-True (-not [IO.Directory]::Exists(
+                (Join-Path $runParent '.minimal-integration-run.composite-archives'))) `
+            'Successful integration left archive scratch behind.'
+        Assert-True (-not [IO.Directory]::Exists(
+                (Join-Path $runParent '.minimal-integration-run.composite-native'))) `
+            'Successful integration left native scratch behind.'
     }
 
     Test-Case 'launcher requires external anchors and authenticates both modules before import' {

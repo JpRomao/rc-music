@@ -719,6 +719,7 @@ function New-M0AtomicDirectoryAnchor {
         [Parameter(Mandatory)] [string] $LiteralPath,
         [Parameter(Mandatory)] [string] $BoundaryRoot,
         [Parameter(Mandatory)] [string] $Context,
+        $ParentAnchor,
         [scriptblock] $AfterCreate
     )
     $full = ConvertTo-M0NormalizedDirectoryPath $LiteralPath
@@ -727,7 +728,18 @@ function New-M0AtomicDirectoryAnchor {
         -not [IO.Directory]::Exists($parent)) {
         throw "$Context requires one new contained directory leaf."
     }
-    $parentAnchor = Open-M0DirectoryAnchor $parent $BoundaryRoot "$Context parent"
+    $ownsParentAnchor = $null -eq $ParentAnchor
+    $parentAnchor = if ($ownsParentAnchor) {
+        Open-M0DirectoryAnchor $parent $BoundaryRoot "$Context parent"
+    }
+    else {
+        Assert-M0DirectoryAnchorUnchanged $ParentAnchor "$Context retained parent"
+        if (-not [string]::Equals([string]$ParentAnchor.path, $parent,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "$Context retained parent anchor belongs to a different directory."
+        }
+        $ParentAnchor
+    }
     $handle = $null
     $createdIdentity = $null
     try {
@@ -767,7 +779,7 @@ function New-M0AtomicDirectoryAnchor {
     }
     finally {
         if ($null -ne $handle) { $handle.Dispose() }
-        $parentAnchor.handle.Dispose()
+        if ($ownsParentAnchor) { $parentAnchor.handle.Dispose() }
     }
 }
 
@@ -1826,7 +1838,8 @@ function Assert-M0ExtractedArchive {
         [Parameter(Mandatory)] $ArchiveSpec,
         [Parameter(Mandatory)] [Collections.Generic.List[object]] $LeaseSink,
         [Collections.Generic.Dictionary[string,string]] $DirectoryLedger,
-        [Collections.Generic.Dictionary[string,string]] $FileLedger
+        [Collections.Generic.Dictionary[string,string]] $FileLedger,
+        [Parameter(Mandatory)] $RootAnchor
     )
     $expectedFiles = [Collections.Generic.Dictionary[string,long]]::new([StringComparer]::OrdinalIgnoreCase)
     $expectedDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -1845,7 +1858,7 @@ function Assert-M0ExtractedArchive {
     }
     $snapshot = Get-M0TreeSnapshot -TreeRoot $Root `
         -Context "Extracted archive '$($ArchiveSpec.owner_id)'" -LeaseSink $LeaseSink `
-        -DirectoryLedger $DirectoryLedger -FileLedger $FileLedger
+        -DirectoryLedger $DirectoryLedger -FileLedger $FileLedger -RootAnchor $RootAnchor
     if ($snapshot.file_count -ne $expectedFiles.Count -or
         $snapshot.total_size_bytes -ne [long]$ArchiveSpec.expected_total_size_bytes -or
         $snapshot.directories.Count -ne $expectedDirectories.Count) {
@@ -1874,6 +1887,7 @@ function Write-M0CreateNewFile {
         [scriptblock] $AfterFlush,
         [scriptblock] $BeforeCommit,
         [scriptblock] $ValidateCommitEnvelope,
+        $MissingParentAnchor,
         [Collections.Generic.Dictionary[string,string]] $DirectoryLedger,
         [Collections.Generic.Dictionary[string,string]] $FileLedger
     )
@@ -1885,7 +1899,8 @@ function Write-M0CreateNewFile {
     $parent = [IO.Path]::GetDirectoryName($full)
     $createdParentAnchor = $null
     if (-not [IO.Directory]::Exists($parent)) {
-        $createdParentAnchor = New-M0AtomicDirectoryAnchor $parent $BoundaryRoot "$Context new parent"
+        $createdParentAnchor = New-M0AtomicDirectoryAnchor $parent $BoundaryRoot `
+            "$Context new parent" -ParentAnchor $MissingParentAnchor
     }
     Assert-M0NoReparseChain $parent $BoundaryRoot "$Context parent"
     Assert-M0NoAlternateDataStreams $parent "$Context parent"
@@ -2242,7 +2257,7 @@ function Invoke-M0QtShellComposite {
             $ownerId = [string]$archive.owner_id
             $extractRoot = Join-Path $archiveScratch $ownerId
             $extractAnchor = New-M0AtomicDirectoryAnchor $extractRoot $archiveScratch `
-                "Archive '$ownerId' extraction root"
+                "Archive '$ownerId' extraction root" -ParentAnchor $archiveScratchState.root_anchor
             $sourceLeases.Add($extractAnchor)
             Add-M0OwnedIdentity $archiveScratchState.directory_ledger $extractRoot `
                 $extractAnchor.identity `
@@ -2265,7 +2280,7 @@ function Invoke-M0QtShellComposite {
             }
             Assert-M0LeasesUnchanged $leases "After archive '$ownerId' extraction"
             $snapshot = Assert-M0ExtractedArchive $extractRoot $members $archive $sourceLeases `
-                $archiveScratchState.directory_ledger $archiveScratchState.file_ledger
+                $archiveScratchState.directory_ledger $archiveScratchState.file_ledger $extractAnchor
             $sourceRoots[$ownerId] = $snapshot.root
             $ownerEntries[$ownerId] = @($snapshot.entries)
         }
@@ -2404,7 +2419,7 @@ function Invoke-M0QtShellComposite {
             'Composite evidence manifest'
         $validateSdkCommitEnvelope = {
             $null = Assert-M0ExactSdkTree $sdkRoot $plan
-        }.GetNewClosure()
+        }
         $null = Assert-M0ExactSdkTree $sdkRoot $plan
         Assert-M0LeasesUnchanged (@($leases) + @($publicationLeases)) `
             'Before composite manifest publication'
