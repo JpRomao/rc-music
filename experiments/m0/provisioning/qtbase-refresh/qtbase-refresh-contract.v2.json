@@ -11,8 +11,8 @@
       {
         "id": "orchestrator",
         "relative_path": "experiments/m0/provisioning/qtbase-refresh/M0.QtBaseRefresh.psm1",
-        "size_bytes": 150011,
-        "sha256": "17b44d297a9755d5d325b410014d4f8021bbb8a3273ee98ee9464aaedcb0d075"
+        "size_bytes": 150065,
+        "sha256": "95245cb3cf812e0174840a73b94eb86c8217b4ee90131cbbae92f45469d54f0d"
       },
       {
         "id": "runner",

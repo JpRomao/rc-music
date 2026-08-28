@@ -1721,9 +1721,8 @@ function Test-M0DumpbinQColorExportRow {
     param([Parameter(Mandatory)][string] $Text)
     return [Text.RegularExpressions.Regex]::IsMatch(
         $Text,
-        '^\s*[0-9]+[ \t]+[0-9A-F]+[ \t]+[0-9A-F]{4,}[ \t]+\?\?0QColor@@QEAA@HHHH@Z[ \t]*$',
-        [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
-            [Text.RegularExpressions.RegexOptions]::Multiline -bor
+        '^[ \t]*[0-9]+[ \t]+[0-9A-Fa-f]+[ \t]+[0-9A-Fa-f]{8}[ \t]+\?\?0QColor@@QEAA@HHHH@Z(?:[ \t]+=[ \t]+\?\?0QColor@@QEAA@HHHH@Z[ \t]+\(public:[ \t]+__cdecl[ \t]+QColor::QColor\(int,int,int,int\)\))?[ \t]*\r?$',
+        [Text.RegularExpressions.RegexOptions]::Multiline -bor
             [Text.RegularExpressions.RegexOptions]::CultureInvariant
     )
 }

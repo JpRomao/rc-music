@@ -593,7 +593,7 @@ function New-FakeNativeProcessBoundary {
             $markers = switch ($reportId) {
                 'qt6gui-headers' { "Dump of file Qt6Gui.dll`r`nPE signature found`r`nFile Type: DLL`r`nFILE HEADER VALUES`r`n8664 machine (x64)`r`n20B magic # (PE32+)`r`n" }
                 'qt6gui-imports' { "Dump of file Qt6Gui.dll`r`nFile Type: DLL`r`nSection contains the following imports:`r`nQt6Core.dll`r`nDWrite.dll`r`n" }
-                'qt6gui-exports' { "Dump of file Qt6Gui.dll`r`nFile Type: DLL`r`nSection contains the following exports for Qt6Gui.dll`r`nordinal hint RVA name`r`n      1    0 00001000 ??0QColor@@QEAA@HHHH@Z`r`n" }
+                'qt6gui-exports' { "Dump of file Qt6Gui.dll`r`nFile Type: DLL`r`nSection contains the following exports for Qt6Gui.dll`r`nordinal hint RVA name`r`n        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColor::QColor(int,int,int,int))`r`n" }
                 'qminimal-imports' { "Dump of file qminimal.dll`r`nFile Type: DLL`r`nSection contains the following imports:`r`nQt6Gui.dll`r`nQt6Core.dll`r`n" }
                 default { throw "Unexpected fake report id '$reportId'." }
             }

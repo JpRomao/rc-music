@@ -1859,6 +1859,34 @@ Test-Case 'FreeType dependency parser rejects rule tokens and substring lookalik
     }
 }
 
+Test-Case 'dumpbin QColor export parser accepts the pinned real decorated row and rejects lookalikes' {
+    $simpleRow = '      1    0 00001000 ??0QColor@@QEAA@HHHH@Z'
+    $realRow = '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColor::QColor(int,int,int,int))'
+    foreach ($validRow in @($simpleRow, $realRow)) {
+        $accepted = & $script:module {
+            param($text)
+            Test-M0DumpbinQColorExportRow $text
+        } $validRow
+        Assert-True $accepted "A supported dumpbin QColor export row was rejected: $validRow"
+    }
+
+    foreach ($lookalike in @(
+            '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Y (public: __cdecl QColor::QColor(int,int,int,int))',
+            '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColorFake::QColor(int,int,int,int))',
+            'ordinal hint RVA name ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColor::QColor(int,int,int,int))',
+            '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Y = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColor::QColor(int,int,int,int))',
+            '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@Z = ??0QColor@@QEAA@HHHH@Z (public: __cdecl QColor::QColor(int,int,int,int)) marker',
+            '        207   CE 00001DC0 ??0qColor@@QEAA@HHHH@Z = ??0qColor@@QEAA@HHHH@Z (public: __cdecl qColor::qColor(int,int,int,int))',
+            '        207   CE 00001DC0 ??0QColor@@QEAA@HHHH@ZFake'
+        )) {
+        $lookalikeAccepted = & $script:module {
+            param($text)
+            Test-M0DumpbinQColorExportRow $text
+        } $lookalike
+        Assert-True (-not $lookalikeAccepted) "A dumpbin QColor export lookalike was accepted: $lookalike"
+    }
+}
+
 Test-Case 'dumpbin reports reject marker-only text without bound imports and exports' {
     $root = Join-Path $testRoot ('dumpbin-markers-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($root) | Out-Null
