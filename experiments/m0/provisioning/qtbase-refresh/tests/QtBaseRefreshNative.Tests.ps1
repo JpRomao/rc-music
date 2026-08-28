@@ -7,6 +7,10 @@ $modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'M0.QtBaseRefreshNati
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('m0-qtbase-refresh-native-tests-' + [Guid]::NewGuid().ToString('N'))
 $state = [ordered]@{ Passed = 0; Failed = 0 }
 $expectedNativeConfigureSummary = (@(
+        ''
+        'Building for: win32-msvc (x86_64, CPU features: )'
+        'Compiler: msvc 19.44.35228.0'
+        'Build options:'
         '  Mode ................................... debug and release (with debug info)'
         '  Building shared libraries (alias of  BUILD_SHARED_LIBS)  yes'
         '  Using Link Time Optimization (LTCG) .... no'

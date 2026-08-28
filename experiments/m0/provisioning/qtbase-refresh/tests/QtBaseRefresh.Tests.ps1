@@ -256,7 +256,10 @@ function Remove-M0QtBaseRefreshTestTree {
 try {
 function Get-TestConfigSummaryText {
     return (@(
-            'Qt configuration summary',
+            '',
+            'Building for: win32-msvc (x86_64, CPU features: )',
+            'Compiler: msvc 19.44.35228.0',
+            'Build options:',
             '  Mode ................................... debug and release (with debug info)',
             '  Building shared libraries (alias of  BUILD_SHARED_LIBS)  yes',
             '  Using Link Time Optimization (LTCG) .... no',
@@ -1641,6 +1644,64 @@ Test-Case 'verbatim CMake reports preserve authenticated CRLF source bytes' {
         param($reportSpec, $reportPath, $subjectPath)
         Assert-M0V2SemanticReport $reportSpec $reportPath $subjectPath 'verbatim CMake report'
     } $spec $report $subject
+}
+
+Test-Case 'configure summary accepts the authenticated Qt 6.11.2 CRLF preamble' {
+    $root = Join-Path $testRoot ('config-summary-real-preamble-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($root) | Out-Null
+    $subject = Join-Path $root 'config.summary'
+    $report = Join-Path $root 'configure-summary.txt'
+    $text = (Get-TestConfigSummaryText).Replace("`n", "`r`n")
+    [IO.File]::WriteAllText($subject, $text, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($report, $text, [Text.UTF8Encoding]::new($false))
+    $spec = [pscustomobject]@{ id = 'configure-summary' }
+    & $script:module {
+        param($reportSpec, $reportPath, $subjectPath)
+        Assert-M0V2SemanticReport $reportSpec $reportPath $subjectPath 'authenticated Qt configure summary'
+    } $spec $report $subject
+}
+
+Test-Case 'verbatim configure summary rejects mixed CRLF and LF source bytes' {
+    $root = Join-Path $testRoot ('config-summary-mixed-newlines-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($root) | Out-Null
+    $subject = Join-Path $root 'config.summary'
+    $report = Join-Path $root 'configure-summary.txt'
+    $text = (Get-TestConfigSummaryText).Replace("`n", "`r`n").Replace(
+        "Build options:`r`n",
+        "Build options:`n",
+        [StringComparison]::Ordinal)
+    [IO.File]::WriteAllText($subject, $text, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($report, $text, [Text.UTF8Encoding]::new($false))
+    Assert-Rejected {
+        & $script:module {
+            param($reportPath, $subjectPath)
+            Assert-M0V2SemanticReport ([pscustomobject]@{ id = 'configure-summary' }) $reportPath $subjectPath 'mixed-newline Qt configure summary'
+        } $report $subject
+    } 'consistent LF or CRLF'
+}
+
+Test-Case 'configure summary rejects target or compiler preamble drift' {
+    foreach ($mutation in @(
+            @{ expected = 'win32-msvc (x86_64, CPU features: )'; replacement = 'win32-msvc (x86, CPU features: )' },
+            @{ expected = 'msvc 19.44.35228.0'; replacement = 'msvc 19.44.35229.0' }
+        )) {
+        $root = Join-Path $testRoot ('config-summary-preamble-drift-' + [Guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($root) | Out-Null
+        $subject = Join-Path $root 'config.summary'
+        $report = Join-Path $root 'configure-summary.txt'
+        $text = (Get-TestConfigSummaryText).Replace(
+            $mutation.expected,
+            $mutation.replacement,
+            [StringComparison]::Ordinal)
+        Write-TestText $subject $text
+        Write-TestText $report $text
+        Assert-Rejected {
+            & $script:module {
+                param($reportPath, $subjectPath)
+                Assert-M0V2SemanticReport ([pscustomobject]@{ id = 'configure-summary' }) $reportPath $subjectPath 'drifted Qt configure summary'
+            } $report $subject
+        } 'configure summary|semantic|bound source copy'
+    }
 }
 
 Test-Case 'CMake cache rejects free-floating expected text and an unpinned configuration value' {

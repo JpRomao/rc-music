@@ -249,6 +249,12 @@ $script:ExpectedConfigSummaryLines = @(
     '    DirectWrite 3 ........................ yes',
     '    DirectWrite COLRv1 Support ........... yes'
 )
+$script:ExpectedConfigSummaryPreamble = (@(
+        '',
+        'Building for: win32-msvc (x86_64, CPU features: )',
+        'Compiler: msvc 19.44.35228.0',
+        'Build options:'
+    ) -join "`n") + "`n"
 $script:ExpectedDirectConsumers = @('install/plugins/platforms/qminimal.dll')
 $script:ReceiptLimits = @(
     'diagnostic M0 rebuild only',
@@ -1510,8 +1516,13 @@ function Read-M0VerbatimUtf8Text {
     }
     try { $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes) }
     catch { throw [InvalidDataException]::new("$Context semantic content is invalid: expected strict UTF-8.", $_.Exception) }
+    $withoutCrLf = $text.Replace("`r`n", '')
+    $hasCrLf = $withoutCrLf.Length -ne $text.Length
+    if ($withoutCrLf.Contains("`r") -or ($hasCrLf -and $withoutCrLf.Contains("`n"))) {
+        throw "$Context semantic content is invalid: expected consistent LF or CRLF and exactly one final newline."
+    }
     $normalized = $text.Replace("`r`n", "`n")
-    if ($normalized.Contains("`r") -or -not $normalized.EndsWith("`n", [StringComparison]::Ordinal) -or
+    if (-not $normalized.EndsWith("`n", [StringComparison]::Ordinal) -or
         ($normalized.Length -ge 2 -and $normalized[$normalized.Length - 2] -eq "`n")) {
         throw "$Context semantic content is invalid: expected consistent LF or CRLF and exactly one final newline."
     }
@@ -1727,7 +1738,7 @@ function Assert-M0V2SemanticReport {
         'configure-summary' {
             if ((Get-M0Sha256 $ReportPath) -cne (Get-M0Sha256 $SubjectPath) -or
                 [long](Get-Item -LiteralPath $ReportPath).Length -ne [long](Get-Item -LiteralPath $SubjectPath).Length -or
-                -not $text.Contains('Qt configuration summary', [StringComparison]::Ordinal)) {
+                -not $text.StartsWith($script:ExpectedConfigSummaryPreamble, [StringComparison]::Ordinal)) {
                 throw "$Context semantic content is invalid: configure summary is not the bound source copy."
             }
             Assert-M0ExpectedConfigSummaryLines $text $Context
