@@ -4029,10 +4029,6 @@ function Invoke-M0PackageV2FinalVerification {
 }
 
 function New-M0PackageV2ProductionOperations {
-    $runAction = {
-        param($Command, $Environment)
-        Invoke-M0PackageV2BoundedProcess -Command $Command -Environment $Environment
-    }
     return [pscustomobject][ordered]@{
         verify_composite = {
             param($Context, $Phase)
@@ -4040,8 +4036,13 @@ function New-M0PackageV2ProductionOperations {
         }
         build_candidate = {
             param($Context)
+            $runAction = {
+                param($Command, $Environment)
+                Invoke-M0PackageV2BoundedProcess -Command $Command `
+                    -Environment $Environment
+            }
             Invoke-M0PackageV2BuildCandidate -Context $Context -RunAction $runAction
-        }.GetNewClosure()
+        }
         publish = {
             param($Context, $Candidate)
             Invoke-M0PackageV2NativePublication -Context $Context -Candidate $Candidate

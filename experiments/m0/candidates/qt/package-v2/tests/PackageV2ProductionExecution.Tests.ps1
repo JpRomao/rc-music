@@ -57,6 +57,34 @@ function New-TarFixture([object[]] $Entries) {
     return $path
 }
 
+Case 'production operations retain the authenticated module scope' {
+    $buildRoot = Join-Path ([IO.Path]::GetTempPath()) (
+        'm0-package-operation-scope-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($buildRoot) | Out-Null
+    try {
+        $operations = Private 'New-M0PackageV2ProductionOperations' @{}
+        foreach ($name in @(
+                'verify_composite', 'build_candidate', 'publish',
+                'verify_package')) {
+            $operation = $operations.$name
+            Need ($null -ne $operation.Module) `
+                "Production operation '$name' lost its module session state."
+            Same ([IO.Path]::GetFullPath($operation.Module.Path)) $corePath `
+                "Production operation '$name' escaped the authenticated module."
+        }
+        Reject {
+            & $operations.build_candidate ([pscustomobject]@{
+                    build_root = $buildRoot
+                })
+        } '^BuildRoot is no longer fresh before candidate construction\.$'
+    }
+    finally {
+        if ([IO.Directory]::Exists($buildRoot)) {
+            [IO.Directory]::Delete($buildRoot, $true)
+        }
+    }
+}
+
 Case 'public production entry accepts initially empty retained-lease sinks' {
     $repository = [IO.Path]::GetFullPath((Join-Path $root '../../../../..'))
     $contractPath = Join-Path $root 'qt-shell-composite-package-contract.v2.json'
