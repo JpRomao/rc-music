@@ -206,8 +206,11 @@ Case 'deployment plan permits only composite SDK and generated application QML s
     $sdk = Join-Path $temp 'composite sdk'
     $qml = Join-Path $temp 'build qml/MusicPlayer/M0'
     $destination = Join-Path $temp 'package/app'
+    $qmlDestination = Join-Path $destination 'qml/MusicPlayer/M0'
     $outside = Join-Path $temp 'official-sdk'
-    foreach ($directory in @($sdk, $qml, $destination, $outside)) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
+    foreach ($directory in @($sdk, $qml, $destination, $qmlDestination, $outside)) {
+        [IO.Directory]::CreateDirectory($directory) | Out-Null
+    }
     try {
         $qtSource = Join-Path $sdk 'Qt6Core.dll'
         $qmlSource = Join-Path $qml 'Main.qml'
@@ -216,19 +219,22 @@ Case 'deployment plan permits only composite SDK and generated application QML s
         [IO.File]::WriteAllText($qmlSource, 'qml')
         [IO.File]::WriteAllText($outsideSource, 'outside')
         $files = @(
-            [pscustomobject]@{ source = $qtSource; target = (Join-Path $destination 'Qt6Core.dll') },
-            [pscustomobject]@{ source = $qmlSource; target = (Join-Path $destination 'qml/MusicPlayer/M0/Main.qml') }
+            [pscustomobject]@{ source = $qtSource; target = $destination },
+            [pscustomobject]@{ source = $qmlSource; target = $qmlDestination }
         )
         $plan = Private $module 'ConvertTo-M0PackageV2DeploymentPlan' @(@{
                 Files = $files; CompositeSdkRoot = $sdk; ApplicationQmlRoot = $qml; DestinationRoot = $destination
             })
         Same (@($plan.files).Count) 2 'Deployment plan lost a file.'
+        Same (@($plan.files.relative_path) -join ',') `
+            'Qt6Core.dll,qml/MusicPlayer/M0/Main.qml' `
+            'Deployment directory targets did not append source basenames.'
         Same (Join-Ordinal @($plan.files.source_kind)) (Join-Ordinal @('composite-sdk', 'application-qml')) `
             'Deployment source classification drifted.'
         $threw = $false
         try {
             Private $module 'ConvertTo-M0PackageV2DeploymentPlan' @(@{
-                    Files = @([pscustomobject]@{ source = $outsideSource; target = (Join-Path $destination 'Qt6Gui.dll') })
+                Files = @([pscustomobject]@{ source = $outsideSource; target = (Join-Path $destination 'Qt6Gui.dll') })
                     CompositeSdkRoot = $sdk; ApplicationQmlRoot = $qml; DestinationRoot = $destination
                 }) | Out-Null
         }

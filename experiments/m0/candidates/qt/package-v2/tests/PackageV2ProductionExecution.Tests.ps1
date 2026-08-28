@@ -57,6 +57,121 @@ function New-TarFixture([object[]] $Entries) {
     return $path
 }
 
+Case 'public production entry accepts initially empty retained-lease sinks' {
+    $repository = [IO.Path]::GetFullPath((Join-Path $root '../../../../..'))
+    $contractPath = Join-Path $root 'qt-shell-composite-package-contract.v2.json'
+    $runParent = Join-Path $repository (
+        'out/m0/test-runs/package-v2-empty-leases-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($runParent) | Out-Null
+    try {
+        Reject {
+            Invoke-M0QtShellCompositePackage `
+                -ContractPath $contractPath `
+                -ExpectedContractSha256 ('0' * 64) `
+                -CompositeReceiptPath $contractPath `
+                -ExpectedCompositeReceiptSha256 ('1' * 64) `
+                -ExpectedQtBaseReceiptSha256 ('2' * 64) `
+                -RepositoryRoot $repository `
+                -BuildRoot (Join-Path $runParent 'build') `
+                -OutputRoot (Join-Path $runParent 'package') `
+                -ScratchRoot (Join-Path $runParent 'scratch')
+        } 'production contract SHA-256 drifted'
+    }
+    finally {
+        if ([IO.Directory]::Exists($runParent)) {
+            [IO.Directory]::Delete($runParent, $true)
+        }
+    }
+}
+
+Case 'pinned-file authentication accepts initially empty retained-lease sinks' {
+    $leases = [Collections.Generic.List[object]]::new()
+    $files = [Collections.Generic.List[object]]::new()
+    $item = Get-Item -LiteralPath $corePath -Force
+    $pin = [pscustomobject][ordered]@{
+        relative_path = 'M0.QtShellCompositePackage.psm1'
+        size_bytes = [long]$item.Length
+        sha256 = (Get-FileHash -LiteralPath $corePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    try {
+        $lease = Private 'Open-M0PackageV2PinnedFile' @{
+            LiteralPath = $corePath
+            Pin = $pin
+            BoundaryRoot = $root
+            Context = 'Empty lease-sink regression fixture'
+            Leases = $leases
+            Files = $files
+        }
+        Need ($leases.Count -eq 1 -and $files.Count -eq 1) `
+            'Pinned-file authentication did not populate both initially empty sinks.'
+        Same $lease.sha256 $pin.sha256 'Pinned-file authentication changed the file hash.'
+    }
+    finally {
+        Private 'Close-M0PackageV2Leases' @{ Leases = $leases } | Out-Null
+    }
+}
+
+Case 'absolute-tool pins retain legitimate hardlink counts and detect count drift' {
+    if (-not $IsWindows) { return }
+    $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) (
+        'm0-package-hardlink-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    $primary = Join-Path $fixtureRoot 'tool.exe'
+    $secondLink = Join-Path $fixtureRoot 'tool-alias.exe'
+    $thirdLink = Join-Path $fixtureRoot 'tool-late-alias.exe'
+    [IO.File]::WriteAllBytes($primary, [byte[]](1, 2, 3, 4))
+    New-Item -ItemType HardLink -Path $secondLink -Target $primary | Out-Null
+    $item = Get-Item -LiteralPath $primary -Force
+    $pin = [pscustomobject][ordered]@{
+        relative_path = 'tool.exe'
+        size_bytes = [long]$item.Length
+        sha256 = (Get-FileHash -LiteralPath $primary -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $defaultLeases = [Collections.Generic.List[object]]::new()
+    $defaultFiles = [Collections.Generic.List[object]]::new()
+    $retainedLeases = [Collections.Generic.List[object]]::new()
+    $retainedFiles = [Collections.Generic.List[object]]::new()
+    try {
+        Reject {
+            Private 'Open-M0PackageV2PinnedFile' @{
+                LiteralPath = $primary
+                Pin = $pin
+                BoundaryRoot = $fixtureRoot
+                Context = 'Recipe hardlink regression fixture'
+                Leases = $defaultLeases
+                Files = $defaultFiles
+            }
+        } 'hardlink count is 2|exactly one'
+        Need ($defaultLeases.Count -eq 0 -and $defaultFiles.Count -eq 0) `
+            'Default single-link rejection retained a partial lease.'
+
+        $lease = Private 'Open-M0PackageV2PinnedFile' @{
+            LiteralPath = $primary
+            Pin = $pin
+            BoundaryRoot = $fixtureRoot
+            Context = 'Absolute tool hardlink regression fixture'
+            Leases = $retainedLeases
+            Files = $retainedFiles
+            AllowMultipleHardlinksForAbsoluteTool = $true
+        }
+        Same $lease.link_count ([long]2) 'Absolute-tool link count was not retained.'
+        New-Item -ItemType HardLink -Path $thirdLink -Target $primary | Out-Null
+        Reject {
+            Private 'Assert-M0PackageV2FileLeasesUnchanged' @{
+                Files = $retainedFiles
+                Context = 'Absolute tool hardlink resweep'
+            }
+        } 'hardlink|drift'
+    }
+    finally {
+        Private 'Close-M0PackageV2Leases' @{ Leases = $defaultLeases } | Out-Null
+        Private 'Close-M0PackageV2Leases' @{ Leases = $retainedLeases } | Out-Null
+        if ([IO.Directory]::Exists($fixtureRoot)) {
+            [IO.Directory]::Delete($fixtureRoot, $true)
+        }
+    }
+}
+
 Case 'ProcessStartInfo uses ArgumentList and an exact explicit environment' {
     $environment = [ordered]@{
         SystemRoot = 'C:\Windows'
@@ -173,7 +288,13 @@ Case 'build command executor enforces exact CTest inventories and core-off impor
         }
     )
     $tests = for ($index = 1; $index -le 65; $index++) {
-        [pscustomobject]@{ name = "case-$index"; properties = @() }
+        [pscustomobject]@{
+            name = "case-$index"
+            properties = @([pscustomobject]@{
+                    name = 'SKIP_RETURN_CODE'
+                    value = [long]4
+                })
+        }
     }
     $inventory = [pscustomobject]@{
         kind = 'ctestInfo'; version = [pscustomobject]@{ major = [long]1; minor = [long]0 }; tests = $tests
@@ -214,6 +335,45 @@ Case 'build command executor enforces exact CTest inventories and core-off impor
             RunAction = $badRunner
         }
     } 'qt-on-ctest-list|exit|failed'
+}
+
+Case 'CTest inventory permits only the numeric Catch2 skip-return sentinel four' {
+    $inventoryWith = {
+        param($Property)
+        [pscustomobject]@{
+            kind = 'ctestInfo'
+            version = [pscustomobject]@{ major = [long]1; minor = [long]0 }
+            tests = @([pscustomobject]@{
+                    name = 'catch2-case'
+                    properties = @($Property)
+                })
+        } | ConvertTo-Json -Depth 10 -Compress
+    }
+    $accepted = & $inventoryWith ([pscustomobject]@{
+            name = 'SKIP_RETURN_CODE'
+            value = [long]4
+        })
+    $proof = Private 'Assert-M0PackageV2CTestInventory' @{
+        Json = $accepted
+        ExpectedCount = [long]1
+        Context = 'Catch2 CTest inventory'
+    }
+    Same $proof.test_count ([long]1) 'Catch2 skip-return sentinel lost the test inventory.'
+
+    foreach ($bad in @(
+            [pscustomobject]@{ name = 'SKIP_RETURN_CODE'; value = [long]3 },
+            [pscustomobject]@{ name = 'SKIP_RETURN_CODE'; value = [long]5 },
+            [pscustomobject]@{ name = 'SKIP_RETURN_CODE'; value = '4' },
+            [pscustomobject]@{ name = 'SKIP_REGULAR_EXPRESSION'; value = '.*' },
+            [pscustomobject]@{ name = 'DISABLED'; value = $true })) {
+        Reject {
+            Private 'Assert-M0PackageV2CTestInventory' @{
+                Json = (& $inventoryWith $bad)
+                ExpectedCount = [long]1
+                Context = 'Catch2 CTest inventory'
+            }
+        } 'disabled|skip|SKIP|sentinel|return'
+    }
 }
 
 Case 'CTest JUnit proves exact executed count and rejects a skipped or Not Run case' {
@@ -361,6 +521,118 @@ Case 'windeployqt permits only its one pinned translations warning' {
     } 'unexpected|diagnostic|stderr'
 }
 
+Case 'deployment treats windeployqt targets as directories in dry and actual plans' {
+    $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) (
+        'm0-package-deploy-targets-' + [Guid]::NewGuid().ToString('N'))
+    $sdk = Join-Path $fixtureRoot 'sdk'
+    $qtBuild = Join-Path $fixtureRoot 'qt-build'
+    $applicationRoot = Join-Path $fixtureRoot 'application'
+    $coreSource = Join-Path $sdk 'bin/Qt6Core.dll'
+    $pluginSource = Join-Path $sdk 'plugins/platforms/qwindows.dll'
+    $d3dSource = Join-Path $sdk 'd3dcompiler_47.dll'
+    $executable = Join-Path $qtBuild 'm0_qt_shell.exe'
+    foreach ($directory in @(
+            (Split-Path -Parent $coreSource),
+            (Split-Path -Parent $pluginSource),
+            (Join-Path $qtBuild 'qml/MusicPlayer/M0'),
+            (Join-Path $fixtureRoot 'source/qml'))) {
+        [IO.Directory]::CreateDirectory($directory) | Out-Null
+    }
+    [IO.File]::WriteAllText($coreSource, 'qt-core')
+    [IO.File]::WriteAllText($pluginSource, 'qwindows')
+    [IO.File]::WriteAllText($d3dSource, 'd3d')
+    [IO.File]::WriteAllText($executable, 'shell')
+    $mappings = @(
+        [pscustomobject][ordered]@{
+            source = $coreSource
+            target = $applicationRoot
+        },
+        [pscustomobject][ordered]@{
+            source = $pluginSource
+            target = Join-Path $applicationRoot 'plugins/platforms'
+        })
+    $runner = {
+        param($Command, $Environment)
+        [IO.Directory]::CreateDirectory($applicationRoot) | Out-Null
+        [IO.Directory]::CreateDirectory((Join-Path $applicationRoot 'plugins')) | Out-Null
+        if ($Command.id -ceq 'deploy-actual') {
+            [IO.Directory]::CreateDirectory(
+                (Join-Path $applicationRoot 'plugins/platforms')) | Out-Null
+            [IO.File]::Copy($coreSource, (Join-Path $applicationRoot 'Qt6Core.dll'), $false)
+            [IO.File]::Copy(
+                $pluginSource,
+                (Join-Path $applicationRoot 'plugins/platforms/qwindows.dll'),
+                $false)
+        }
+        return [pscustomobject][ordered]@{
+            exit_code = [long]0
+            stdout = [pscustomobject][ordered]@{ files = $mappings } |
+                ConvertTo-Json -Depth 10 -Compress
+            stderr = ''
+            timed_out = $false
+        }
+    }.GetNewClosure()
+    try {
+        $result = Private 'Invoke-M0PackageV2Deployment' @{
+            Context = [pscustomobject][ordered]@{
+                repository_root = $fixtureRoot
+                source_root = Join-Path $fixtureRoot 'source'
+                composite_sdk_root = $sdk
+                tools = [pscustomobject][ordered]@{
+                    windeployqt = 'C:\fixture\windeployqt.exe'
+                    qtpaths = 'C:\fixture\qtpaths.exe'
+                }
+            }
+            QtOnBuildRoot = $qtBuild
+            ApplicationRoot = $applicationRoot
+            Environment = [ordered]@{ VSLANG = '1033' }
+            RunAction = $runner
+        }
+        $expected = @(
+            'Qt6Core.dll',
+            'd3dcompiler_47.dll',
+            'plugins/platforms/qwindows.dll')
+        Same (@($result.dry_plan.files.relative_path) -join ',') ($expected -join ',') `
+            'Dry-run directory targets did not resolve to canonical file paths.'
+        Same (@($result.actual_plan.files.relative_path) -join ',') ($expected -join ',') `
+            'Actual directory targets or synthetic D3D mapping drifted.'
+        Need ([IO.File]::Exists((Join-Path $applicationRoot 'd3dcompiler_47.dll'))) `
+            'Synthetic D3D file was not copied to its separately resolved target file.'
+
+        if ($IsWindows) {
+            $reparseDestination = Join-Path $fixtureRoot 'reparse-application'
+            $outsideDirectory = Join-Path $fixtureRoot 'outside-target'
+            $junction = Join-Path $reparseDestination 'plugins'
+            [IO.Directory]::CreateDirectory($reparseDestination) | Out-Null
+            [IO.Directory]::CreateDirectory($outsideDirectory) | Out-Null
+            New-Item -ItemType Junction -Path $junction -Target $outsideDirectory | Out-Null
+            try {
+                Reject {
+                    Private 'ConvertTo-M0PackageV2DeploymentPlan' @{
+                        Files = [object[]]@([pscustomobject][ordered]@{
+                                source = $pluginSource
+                                target = Join-Path $junction 'future-platforms'
+                            })
+                        CompositeSdkRoot = $sdk
+                        ApplicationQmlRoot = Join-Path $qtBuild 'qml/MusicPlayer/M0'
+                        DestinationRoot = $reparseDestination
+                    }
+                } 'reparse|physical|ancestr'
+            }
+            finally {
+                if ([IO.Directory]::Exists($junction)) {
+                    [IO.Directory]::Delete($junction, $false)
+                }
+            }
+        }
+    }
+    finally {
+        if ([IO.Directory]::Exists($fixtureRoot)) {
+            [IO.Directory]::Delete($fixtureRoot, $true)
+        }
+    }
+}
+
 Case 'publication entries are canonical and force receipt to the final position' {
     $rows = @(
         [pscustomobject]@{ relative_path = 'evidence/qt-shell-composite-package-receipt.v2.json'; size_bytes = [long]2; sha256 = 'b' * 64 },
@@ -377,6 +649,105 @@ Case 'publication entries are canonical and force receipt to the final position'
         'Publication order drifted.'
     Same ($entries[-1].PSObject.Properties.Name -join ',') `
         'relative_path,size_bytes,sha256' 'Receipt pin shape drifted.'
+}
+
+Case 'closed build result canonicalizes verifier evidence without relaxing exact pins' {
+    $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) (
+        'm0-package-closed-result-' + [Guid]::NewGuid().ToString('N'))
+    $outputRoot = Join-Path $fixtureRoot 'package'
+    $candidateRoot = Join-Path $fixtureRoot 'candidate'
+    $manifestRelative = 'evidence/qt-shell-composite-package-manifest.v2.json'
+    $receiptRelative = 'evidence/qt-shell-composite-package-receipt.v2.json'
+    foreach ($directory in @(
+            (Join-Path $outputRoot 'evidence'),
+            (Join-Path $candidateRoot 'evidence'))) {
+        [IO.Directory]::CreateDirectory($directory) | Out-Null
+    }
+    [IO.File]::WriteAllText((Join-Path $outputRoot $manifestRelative), 'manifest')
+    [IO.File]::WriteAllText((Join-Path $outputRoot $receiptRelative), 'receipt')
+    $rows = [ordered]@{
+        payload = [pscustomobject][ordered]@{
+            relative_path = 'app/m0_qt_shell.exe'; size_bytes = [long]1; sha256 = '1' * 64
+        }
+        manifest = [pscustomobject][ordered]@{
+            relative_path = $manifestRelative; size_bytes = [long]2; sha256 = '2' * 64
+        }
+        sbom = [pscustomobject][ordered]@{
+            relative_path = 'evidence/sbom/qt.spdx.json'; size_bytes = [long]3; sha256 = '3' * 64
+        }
+        receipt = [pscustomobject][ordered]@{
+            relative_path = $receiptRelative; size_bytes = [long]4; sha256 = '4' * 64
+        }
+    }
+    $context = [pscustomobject][ordered]@{
+        output_root = $outputRoot
+        expected_contract_sha256 = 'a' * 64
+        expected_composite_receipt_sha256 = 'b' * 64
+    }
+    $candidate = [pscustomobject][ordered]@{
+        source_root = $candidateRoot
+        manifest_relative_path = $manifestRelative
+        receipt_relative_path = $receiptRelative
+        receipt_sha256 = '4' * 64
+        entries = [object[]]@(
+            $rows.payload, $rows.manifest, $rows.sbom, $rows.receipt)
+    }
+    $verified = [pscustomobject][ordered]@{
+        verified = $true
+        package_id = 'm0.2-qt-shell-composite-package-v2'
+        contract_sha256 = 'a' * 64
+        composite_receipt_sha256 = 'b' * 64
+        manifest_sha256 = '2' * 64
+        receipt_sha256 = '4' * 64
+        manifest_path = $manifestRelative
+        payload = [object[]]@($rows.payload)
+        evidence = [object[]]@($rows.sbom, $rows.manifest, $rows.receipt)
+    }
+    try {
+        $result = Private 'New-M0PackageV2ClosedBuildResult' @{
+            Context = $context
+            Candidate = $candidate
+            Verified = $verified
+        }
+        Same (@($result.entries.relative_path) -join ',') `
+            (@($candidate.entries.relative_path) -join ',') `
+            'Verifier evidence order changed the canonical closed result.'
+
+        $duplicate = $verified.PSObject.Copy()
+        $duplicate.payload = [object[]]@($rows.payload, $rows.payload)
+        Reject {
+            Private 'New-M0PackageV2ClosedBuildResult' @{
+                Context = $context; Candidate = $candidate; Verified = $duplicate
+            }
+        } 'duplicate|alias|inventory'
+
+        $wrongPin = $verified.PSObject.Copy()
+        $wrongPin.evidence = [object[]]@(
+            $rows.sbom,
+            [pscustomobject][ordered]@{
+                relative_path = $manifestRelative; size_bytes = [long]2; sha256 = '9' * 64
+            },
+            $rows.receipt)
+        Reject {
+            Private 'New-M0PackageV2ClosedBuildResult' @{
+                Context = $context; Candidate = $candidate; Verified = $wrongPin
+            }
+        } 'differs|inventory|pin'
+
+        $receiptNotFinal = $verified.PSObject.Copy()
+        $receiptNotFinal.evidence = [object[]]@(
+            $rows.sbom, $rows.receipt, $rows.manifest)
+        Reject {
+            Private 'New-M0PackageV2ClosedBuildResult' @{
+                Context = $context; Candidate = $candidate; Verified = $receiptNotFinal
+            }
+        } 'receipt|final'
+    }
+    finally {
+        if ([IO.Directory]::Exists($fixtureRoot)) {
+            [IO.Directory]::Delete($fixtureRoot, $true)
+        }
+    }
 }
 
 Case 'generated evidence and controls use create-new without overwriting bytes' {

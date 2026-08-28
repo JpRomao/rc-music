@@ -20,8 +20,8 @@
       },
       {
         "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackage.psm1",
-      "size_bytes": 199155,
-      "sha256": "76ad045f0a1ba8661ff319667490e73373e1db062a625132b0e63479ef4237c4"
+      "size_bytes": 203663,
+      "sha256": "4fe979401a1cd5559d96f0f0fb74617c43a9a943732bad4e643e340ddba9dc89"
       },
       {
         "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackageNative.psm1",

@@ -393,6 +393,7 @@ function Open-M0PackageV2FileLease {
         [Parameter(Mandatory)] [string] $Context,
         [long] $ExpectedSizeBytes = -1,
         [string] $ExpectedSha256,
+        [switch] $AllowMultipleHardlinksForAbsoluteTool,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $LeaseSink,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $FileSink
     )
@@ -420,7 +421,10 @@ function Open-M0PackageV2FileLease {
             throw "$Context resolved through a physical alias."
         }
         $linkCount = [long]$script:PackageVerifierNative::GetLinkCount($handle)
-        if ($linkCount -ne 1) { throw "$Context hardlink count is $linkCount; exactly one is required." }
+        if ($linkCount -lt 1 -or
+            (-not $AllowMultipleHardlinksForAbsoluteTool -and $linkCount -ne 1)) {
+            throw "$Context hardlink count is $linkCount; exactly one is required."
+        }
         Assert-M0PackageV2NoAlternateDataStreams $full $Context
         $stream = [IO.FileStream]::new($handle, [IO.FileAccess]::Read, 65536, $false)
         $handle = $null
@@ -559,7 +563,8 @@ function Assert-M0PackageV2FileLeasesUnchanged {
         if (($attributes -band [IO.FileAttributes]::Directory) -or
             ($attributes -band [IO.FileAttributes]::ReparsePoint) -or
             [string]$script:PackageVerifierNative::GetIdentity($lease.stream.SafeFileHandle) -cne $lease.identity -or
-            [long]$script:PackageVerifierNative::GetLinkCount($lease.stream.SafeFileHandle) -ne 1 -or
+            [long]$script:PackageVerifierNative::GetLinkCount($lease.stream.SafeFileHandle) -ne
+                [long]$lease.link_count -or
             -not [string]::Equals($final, $lease.path, [StringComparison]::OrdinalIgnoreCase)) {
             throw "$Context detected identity, reparse, or hardlink drift: $($lease.path)"
         }
@@ -1583,8 +1588,13 @@ function Assert-M0PackageV2CTestInventory {
                 throw "$Context test $($test.name) has a malformed property name."
             }
             if (($property.name -ieq 'DISABLED' -and $property.value -eq $true) -or
-                $property.name -iin @('SKIP_REGULAR_EXPRESSION', 'SKIP_RETURN_CODE')) {
+                $property.name -ieq 'SKIP_REGULAR_EXPRESSION') {
                 throw "$Context test $($test.name) is disabled or can be skipped."
+            }
+            if ($property.name -ieq 'SKIP_RETURN_CODE' -and
+                ($property.value -isnot [long] -or $property.value -ne 4)) {
+                throw "$Context test $($test.name) has an invalid SKIP_RETURN_CODE; " +
+                    'only numeric 4 is permitted.'
             }
         }
     }
@@ -1782,7 +1792,8 @@ function ConvertTo-M0PackageV2DeploymentPlan {
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Files,
         [Parameter(Mandatory)] [string] $CompositeSdkRoot,
         [Parameter(Mandatory)] [string] $ApplicationQmlRoot,
-        [Parameter(Mandatory)] [string] $DestinationRoot
+        [Parameter(Mandatory)] [string] $DestinationRoot,
+        [switch] $RequirePhysicalTargets
     )
     if ($Files.Count -eq 0) { throw 'Deployment source mapping is empty.' }
     $sdk = ConvertTo-M0PackageV2FullPath $CompositeSdkRoot
@@ -1810,7 +1821,11 @@ function ConvertTo-M0PackageV2DeploymentPlan {
                 throw 'Deployment source and target must be paths.'
             }
             $source = ConvertTo-M0PackageV2FullPath $file.source
-            $target = ConvertTo-M0PackageV2FullPath $file.target
+            $sourceLeaf = [IO.Path]::GetFileName($source)
+            if ([string]::IsNullOrWhiteSpace($sourceLeaf)) {
+                throw 'Deployment source has no file basename.'
+            }
+            $targetDirectory = ConvertTo-M0PackageV2FullPath $file.target
             $sourceRoot = $null
             $sourceKind = $null
             if (Test-M0PackageV2PathWithin $source $sdk) {
@@ -1822,11 +1837,51 @@ function ConvertTo-M0PackageV2DeploymentPlan {
                 $sourceKind = 'application-qml'
             }
             else { throw "Deployment source is outside the authenticated roots: $source" }
-            if (-not (Test-M0PackageV2PathWithin $target $destination)) {
-                throw "Deployment target escaped its destination root: $target"
+            if (-not (Test-M0PackageV2PathWithin `
+                    $targetDirectory $destination -AllowEqual)) {
+                throw "Deployment target directory escaped its destination root: $targetDirectory"
+            }
+            $existingTargetAncestor = $targetDirectory
+            while ($true) {
+                $existingItem = $null
+                try {
+                    $existingItem = Get-Item -LiteralPath $existingTargetAncestor `
+                        -Force -ErrorAction Stop
+                }
+                catch [Management.Automation.ItemNotFoundException] { }
+                if ($null -ne $existingItem) {
+                    if ($existingItem -isnot [IO.DirectoryInfo]) {
+                        throw "Deployment target ancestry contains a non-directory: " +
+                            $existingTargetAncestor
+                    }
+                    break
+                }
+                $parent = [IO.Path]::GetDirectoryName($existingTargetAncestor)
+                if ([string]::IsNullOrWhiteSpace($parent) -or
+                    -not (Test-M0PackageV2PathWithin $parent $destination -AllowEqual)) {
+                    throw 'Deployment target ancestry escaped its destination root.'
+                }
+                $existingTargetAncestor = $parent
+            }
+            Assert-M0PackageV2NoReparseChain $existingTargetAncestor $destination `
+                'Deployment existing target ancestry'
+            $targetFile = ConvertTo-M0PackageV2FullPath (Join-Path $targetDirectory $sourceLeaf)
+            if (-not (Test-M0PackageV2PathWithin $targetFile $destination)) {
+                throw "Deployment target file escaped its destination root: $targetFile"
+            }
+            if ($RequirePhysicalTargets) {
+                if (-not [IO.Directory]::Exists($targetDirectory) -or
+                    -not [IO.File]::Exists($targetFile)) {
+                    throw "Physical deployment target is missing: $targetFile"
+                }
+                Assert-M0PackageV2NoReparseChain $targetDirectory $destination `
+                    'Deployment target directory'
+                Assert-M0PackageV2NoReparseChain $targetFile $destination `
+                    'Deployment target file'
             }
             $sourceRelative = [IO.Path]::GetRelativePath($sourceRoot, $source).Replace('\', '/')
-            $targetRelative = [IO.Path]::GetRelativePath($destination, $target).Replace('\', '/')
+            $targetRelative = [IO.Path]::GetRelativePath(
+                $destination, $targetFile).Replace('\', '/')
             Assert-M0PackageV2SafeRelativePath $sourceRelative 'Deployment source'
             Assert-M0PackageV2SafeRelativePath $targetRelative 'Deployment target'
 
@@ -2212,9 +2267,28 @@ function New-M0PackageV2ClosedBuildResult {
         -ExpectedContractSha256 $Context.expected_contract_sha256 `
         -ExpectedCompositeReceiptSha256 $Context.expected_composite_receipt_sha256 `
         -ExpectedReceiptSha256 $Candidate.receipt_sha256
+    $candidateEntries = [object[]] @($Candidate.entries)
     $verifiedEntries = [object[]] @(@($closedVerifier.payload) + @($closedVerifier.evidence))
-    $candidateJson = @($Candidate.entries) | ConvertTo-Json -Depth 10 -Compress
-    $verifiedJson = $verifiedEntries | ConvertTo-Json -Depth 10 -Compress
+    if ($candidateEntries.Count -eq 0 -or $verifiedEntries.Count -eq 0 -or
+        $candidateEntries[-1].relative_path -cne $Candidate.receipt_relative_path -or
+        $verifiedEntries[-1].relative_path -cne $Candidate.receipt_relative_path -or
+        $candidateEntries[-1].sha256 -cne $Candidate.receipt_sha256 -or
+        $verifiedEntries[-1].sha256 -cne $Candidate.receipt_sha256) {
+        throw 'Candidate and verifier inventories must end in the exact receipt pin.'
+    }
+    $canonicalCandidate = [object[]] @(New-M0PackageV2PublicationEntries `
+            -SourceRoot $Candidate.source_root -Rows $candidateEntries `
+            -ReceiptRelativePath $Candidate.receipt_relative_path)
+    $canonicalVerified = [object[]] @(New-M0PackageV2PublicationEntries `
+            -SourceRoot $Context.output_root -Rows $verifiedEntries `
+            -ReceiptRelativePath $Candidate.receipt_relative_path)
+    $candidateInputJson = $candidateEntries | ConvertTo-Json -Depth 10 -Compress
+    $candidateJson = $canonicalCandidate | ConvertTo-Json -Depth 10 -Compress
+    $verifiedJson = $canonicalVerified | ConvertTo-Json -Depth 10 -Compress
+    if (-not [string]::Equals(
+            $candidateInputJson, $candidateJson, [StringComparison]::Ordinal)) {
+        throw 'Published candidate entries are not in canonical receipt-final order.'
+    }
     if (-not [string]::Equals($candidateJson, $verifiedJson, [StringComparison]::Ordinal)) {
         throw 'Final verifier inventory differs from the published candidate entries.'
     }
@@ -2233,7 +2307,7 @@ function New-M0PackageV2ClosedBuildResult {
         receipt_sha256 = [string] $Candidate.receipt_sha256
         manifest_path = $manifestPath
         manifest_sha256 = [string] $closedVerifier.manifest_sha256
-        entries = $verifiedEntries
+        entries = $canonicalCandidate
     }
 }
 
@@ -2285,13 +2359,15 @@ function Open-M0PackageV2PinnedFile {
         [Parameter(Mandatory)] $Pin,
         [Parameter(Mandatory)] [string] $BoundaryRoot,
         [Parameter(Mandatory)] [string] $Context,
-        [Parameter(Mandatory)] [Collections.Generic.List[object]] $Leases,
-        [Parameter(Mandatory)] [Collections.Generic.List[object]] $Files
+        [switch] $AllowMultipleHardlinksForAbsoluteTool,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $Leases,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $Files
     )
     $closedPin = Assert-M0PackageV2Pin $Pin $Context
     return Open-M0PackageV2FileLease -LiteralPath $LiteralPath `
         -BoundaryRoot $BoundaryRoot -Context $Context `
         -ExpectedSizeBytes $closedPin.size_bytes -ExpectedSha256 $closedPin.sha256 `
+        -AllowMultipleHardlinksForAbsoluteTool:$AllowMultipleHardlinksForAbsoluteTool `
         -LeaseSink $Leases -FileSink $Files
 }
 
@@ -2350,9 +2426,9 @@ function Get-M0PackageV2ProductionContext {
         [Parameter(Mandatory)] [string] $BuildRoot,
         [Parameter(Mandatory)] [string] $OutputRoot,
         [Parameter(Mandatory)] [string] $ScratchRoot,
-        [Parameter(Mandatory)] [Collections.Generic.List[object]] $Leases,
-        [Parameter(Mandatory)] [Collections.Generic.List[object]] $Files,
-        [Parameter(Mandatory)] [Collections.Generic.List[object]] $Directories
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $Leases,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $Files,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.List[object]] $Directories
     )
     foreach ($anchor in @(
             @($ExpectedContractSha256, 'Package contract hash'),
@@ -2533,6 +2609,7 @@ function Get-M0PackageV2ProductionContext {
         else { $compositeSdkRoot }
         $null = Open-M0PackageV2PinnedFile -LiteralPath $path -Pin $pin `
             -BoundaryRoot $boundary -Context "Package tool '$($tool.id)'" `
+            -AllowMultipleHardlinksForAbsoluteTool:($tool.path_kind -ceq 'absolute') `
             -Leases $Leases -Files $Files
         $tools[$tool.id] = $path
     }
@@ -3379,8 +3456,9 @@ function Invoke-M0PackageV2Deployment {
     }
     $d3dMapping = [pscustomobject][ordered]@{
         source = $d3dSource
-        target = Join-Path $ApplicationRoot 'd3dcompiler_47.dll'
+        target = $ApplicationRoot
     }
+    $d3dTargetFile = Join-Path $ApplicationRoot 'd3dcompiler_47.dll'
 
     $dryCommand = New-M0PackageV2DeployCommand -Context $Context -Id 'deploy-dry-run' `
         -ExecutablePath $executable -QtOnBuildRoot $QtOnBuildRoot `
@@ -3411,11 +3489,12 @@ function Invoke-M0PackageV2Deployment {
         'windeployqt actual deployment'
     Assert-M0PackageV2RequiredFields $actualJson @('files') 'windeployqt actual deployment'
     $null = Copy-M0PackageV2FileCreateNew -SourcePath $d3dSource `
-        -DestinationPath $d3dMapping.target
+        -DestinationPath $d3dTargetFile
     $actualMappings = [object[]] @(@($actualJson.files) + @($d3dMapping))
     $actualPlan = ConvertTo-M0PackageV2DeploymentPlan -Files $actualMappings `
         -CompositeSdkRoot $Context.composite_sdk_root `
-        -ApplicationQmlRoot $qmlRoot -DestinationRoot $ApplicationRoot
+        -ApplicationQmlRoot $qmlRoot -DestinationRoot $ApplicationRoot `
+        -RequirePhysicalTargets
     Assert-M0PackageV2DeploymentPlansEqual -DryRun $dryPlan -Actual $actualPlan
 
     foreach ($row in @($actualPlan.files)) {
