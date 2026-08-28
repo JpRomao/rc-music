@@ -4,6 +4,12 @@ Esta receita v2 constrói um SDK privado para o candidato Qt sem alterar o contr
 
 O contrato histórico `qt-shell-toolchain-contract.v1.json` permanece com 1.412 bytes, SHA-256 `ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952` e oito membros. A receita nova está em `qt-shell-composite-contract.v2.json`: 10.845 bytes, SHA-256 `f75eb9bec13639f8b5201c0db749dd67cc4840732578c159d09218224e357f28`, também registrado no sidecar adjacente. O sidecar não substitui as âncoras externas exigidas pelo launcher.
 
+## Resultado autenticado
+
+O run privado `f75eb9bea8280844c6d1a2b3f4` publicou 9.880 arquivos e 2.400.301.667 bytes. O contrato `f75eb9b…`, o manifesto `221afa…` e o receipt externo `30399b…` foram revalidados em processo independente, que retornou `verified=True`; a evidência completa está em [`m0-2-qt-composite-sdk.md`](../../../../docs/m0/evidence/m0-2-qt-composite-sdk.md). O contrato v1, o SDK oficial e os builds/pacotes históricos não foram substituídos ou reclassificados.
+
+O próximo passo é reconstruir o shell contra esse SDK usando Windows SDK `10.0.26100.0`, produzir um pacote autenticado v2 aditivo e repetir os checks Release e smokes original/relocado. Este resultado isolado não aprova runtime, ABI geral, máquina limpa, CRT, licenças/notices/SBOM completos, redistribuição, `CHK-SEC`, M0.2 ou uma decisão de stack.
+
 ## Limites e propriedade
 
 O SDK fecha quatro donos sem fallback ou overwrite:
