@@ -207,6 +207,12 @@ Após a [primeira tentativa cancelada](../../../../docs/m0/evidence/m0-2-msvc-re
 
 A [evidência de integração](../../../../docs/m0/evidence/m0-2-msvc-package.md) registra 206/206 testes do empacotador, Release Qt 65/65, core Qt OFF 55/55 e o pacote diagnóstico com smoke 2/2. Depois do commit `63717e5`, o pacote `msvc-63717e5-clean-01` foi gerado com `recipe_dirty=false` e passou nas duas jornadas originais e nas duas relocadas. A tentativa nativa mostrou abertura/pausa/fila/Preferências/tema, mas as entradas foram pausadas ao detectar interação manual; foco acessível, saída, NVDA e HC/DPI não foram aprovados. A [regressão FreeType isolada](../../../../docs/m0/evidence/m0-2-freetype-backport.md) teve três falhas em nove casos no vendor original e Green 9/9 com o patch oficial, mas ainda não corrige QtGui/pacote. Segurança continua pendente; a reconstrução Qt exige nova identidade/configuração sem modificar o SDK histórico.
 
+### Rebuild Qtbase autenticado
+
+A [execução isolada de 2026-08-28](../../../../docs/m0/evidence/m0-2-qtbase-refresh.md) concluiu configure/build/install do Qtbase 6.11.2 com `5a280ec` em um `RunRoot` novo. O manifesto v2 `dc26c096…afbf6b` e o receipt `8a4e3c13…28619`, ancorado externamente, foram revalidados em outro processo junto com as 4.289 folhas físicas, os 15 PEs contratuais e `qminimal`. O SDK Qt oficial e `msvc-63717e5-clean-01` preservam seus bytes anteriores.
+
+Esse install isolado ainda não contém o conjunto autenticado QML/Quick/Svg necessário ao shell. Ele não foi usado para configurar, compilar, empacotar ou executar este candidato e não prova carregabilidade, ABI, máquina limpa, CRT, licenças/SBOM ou redistribuição. O próximo pacote precisa nascer de um SDK composto com origens exclusivas e resolver explicitamente o delta Windows SDK `10.0.26100.0`/`10.0.22621.0`. `CHK-SEC`, M0.2 e os gates nativos continuam abertos; a interação desktop permanece pausada.
+
 ### Testes do empacotador
 
 Os testes usam fixtures sintéticas e contratos locais autenticados, sem áudio, rede ou execução do player:

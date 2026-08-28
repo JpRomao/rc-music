@@ -54,6 +54,12 @@ O install oficial pode criar aliases de ferramentas Qt como hardlinks NTFS. Ante
 
 O rebuild pode levar horas. O resultado só é aceito após verificar em outro processo o hash externo do receipt, o manifesto e todas as evidências físicas. Falha, timeout, orçamento de path inseguro, drift, reparse point, hardlink, ADS, path fora da raiz, arquivo preexistente ou divergência semântica impedem a publicação final.
 
+## Execução autenticada de 2026-08-28
+
+O launcher commitado em `fff4ceaa4cfb6cec687596c1babe3f68d6136b95` publicou o run privado `q/96bvah3m0t0t71m990olv5gpvs`. Configure, build e install terminaram com exit zero; a instalação contém 4.289 folhas e 526.177.624 bytes, com inventário SHA-256 `b489401f06a97de9c8017a5dca6df626a3b12605a4974ff680d5fd25856e9e09`. O manifesto v2 tem 13.866 bytes/SHA-256 `dc26c0962e927145466b879e352a4c99d9fc7da54d335567373c353739afbf6b`; o receipt v2 tem 4.369 bytes/SHA-256 externo `8a4e3c13b2cbf1103ef2a7c417160eddc17db4fdc00dcea505e249eccab28619`.
+
+Um processo PowerShell novo executou o verificador público com esse hash externo e aprovou novamente contrato, receipt, manifesto, três comandos, sete relatórios, quatro inventários, 15 PEs contratuais, `qminimal` e todas as folhas físicas com link único. A [evidência consolidada](../../../../docs/m0/evidence/m0-2-qtbase-refresh.md) registra os hashes completos e a falha fechada anterior que motivou a regressão do parser de exports.
+
 ## Limites da evidência
 
 O receipt v2 comprova a receita autenticada, execução sequencial com exit zero, configuração observada, árvores, artefatos PE x64 e nomes estruturais de imports/exports. O verificador não carrega DLLs não confiáveis e, isoladamente, não prova carregabilidade em runtime nem identidade funcional completa do Qt. Essas propriedades pertencem aos smokes do novo pacote em processo isolado, original e relocado.

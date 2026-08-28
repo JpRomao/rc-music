@@ -1,8 +1,8 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-27
+**Atualizado em:** 2026-08-28
 
-**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; MSVC 14.44 instalado e novo build Release validado, ainda fora da receita de pacote; pacote anterior com smoke offscreen original/relocado aprovado; tentativa nativa inconclusiva e gates nativos/manuais e segurança pendentes
+**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; pacote histórico MSVC 14.44 com smokes offscreen original/relocado aprovado; Qtbase 6.11.2 corrigido reconstruído e autenticado isoladamente, ainda sem SDK composto ou integração ao shell/pacote; tentativa nativa inconclusiva e pausada, com gates nativos/manuais e `CHK-SEC` pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -100,6 +100,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “a bandeja está validada no Windows”: menu, avisos, fallback e saída passaram em testes offscreen, mas isso não comprova ícone/Explorer reais, ativação nativa, NVDA ou Linux;
 - “o pacote está validado em máquina sem SDK ou pronto para distribuir”: inventário, imports PE e smokes offscreen original/relocado passaram sem paths Qt do SDK no ambiente filho, mas isso não remove o SDK do host nem resolve CRT externo, licenças, segurança ou ambiente limpo;
+- “o Qtbase corrigido já corrige o player”: o rebuild isolado tem manifesto/receipt autenticados, mas ainda não compõe QML/Quick/Svg, não foi usado para construir ou empacotar o shell e não prova carregabilidade, ABI ou redistribuição;
 - “YouTube é suportado”: é pesquisa futura com possível incompatibilidade de políticas;
 - “ADRs foram aceitos”: todos continuam `Proposto`.
 
@@ -122,13 +123,13 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 e preflight M0.2 concluídos; shell M0.2 em andamento |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 e preflight M0.2 concluídos; Qtbase corrigido autenticado isoladamente; shell M0.2 ainda em andamento |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. integrar o contrato/receipt MSVC à receita com TDD, gerar e validar novo pacote, resolver as pendências de segurança e repetir os gates nativos/manuais de M0.2 com captura/interação verificáveis, sem áudio real;
+1. compor e autenticar um SDK Qt novo com o Qtbase corrigido e módulos QML/Quick/Svg oficiais, resolver o delta de Windows SDK, reconstruir/empacotar o shell, repetir os smokes e resolver as pendências de segurança; retomar os gates nativos/manuais de M0.2 somente com captura/interação verificáveis, sem áudio real;
 2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
 3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
 4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
@@ -146,6 +147,6 @@ A seção 9 registra a receita e os checks do pacote local, sem alterar o prefli
 
 A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achados nas fontes FreeType/PCRE2, sem exploração do shell demonstrada, e confirma MSVC 14.43 fora de suporte no pacote histórico. O vínculo PE/SPDX foi conferido, mas advisories, servicing e licenças não receberam aprovação global. A triagem preservou dependências, toolchain e contrato histórico; a instalação posterior autorizada é registrada abaixo. `CHK-SEC` permanece em aberto.
 
-A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. Após a preparação `b59a247` e o primeiro cancelamento, a [nova instalação autorizada](m0/evidence/m0-2-msvc-installation.md) terminou com sucesso, sem reboot, e MSVC 19.44.35228 passou no novo build/CTest 65/65 e receipt real. Ainda falta integrar e validar o novo pacote. Acessibilidade nativa/NVDA, segurança e desempenho permanecem pendentes.
+A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. Após a preparação `b59a247` e o primeiro cancelamento, a [nova instalação autorizada](m0/evidence/m0-2-msvc-installation.md) terminou com sucesso, sem reboot, e MSVC 19.44.35228 passou no novo build/CTest 65/65 e receipt real. A integração histórica ao pacote passou nos smokes offscreen; depois, o [Qtbase corrigido](m0/evidence/m0-2-qtbase-refresh.md) foi reconstruído isoladamente e autenticado por outro contrato/manifesto/receipt, preservando o pacote anterior. Ainda falta compor o SDK corrigido e validar novo build/pacote. Acessibilidade nativa/NVDA, `CHK-SEC` e desempenho permanecem pendentes.
 
 Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).
