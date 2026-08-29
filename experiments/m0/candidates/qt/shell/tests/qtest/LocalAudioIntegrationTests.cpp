@@ -175,18 +175,37 @@ class LocalAudioIntegrationTests final : public QObject {
         QTest::addColumn<QString>("source_file");
         QTest::addColumn<QString>("extension");
         QTest::addColumn<qint64>("expected_duration_ms");
+        QTest::addColumn<qint64>("duration_tolerance_ms");
         QTest::addColumn<QString>("expected_final_title");
 
         QTest::newRow("wav-pcm") << QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE) << QStringLiteral(".wav") << qint64{1'000}
-                                 << QStringLiteral("ação 日本 ☕");
+                                 << qint64{0} << QStringLiteral("ação 日本 ☕");
         QTest::newRow("mp3-cbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE) << QStringLiteral(".mp3") << qint64{2'000}
-                                 << QStringLiteral("Canção determinística 日本語 🎵");
+                                 << qint64{50} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("mp3-vbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_VBR_FILE) << QStringLiteral(".mp3")
+                                 << qint64{2'000} << qint64{50} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("mp3-unicode") << QString::fromUtf8(M0_TEST_AUDIO_MP3_UNICODE_FILE) << QStringLiteral(".mp3")
+                                     << qint64{2'000} << qint64{50}
+                                     << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << QStringLiteral(".m4a")
+                                 << qint64{2'000} << qint64{25} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("m4a-aac-mp4-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << QStringLiteral(".mp4") << qint64{2'000} << qint64{25}
+            << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("flac") << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << QStringLiteral(".flac") << qint64{2'000}
+                              << qint64{20} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("ogg-vorbis") << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".ogg")
+                                    << qint64{2'000} << qint64{20} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("ogg-vorbis-oga-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".oga") << qint64{2'000} << qint64{20}
+            << QStringLiteral("Canção determinística 日本語 🎵");
     }
 
     void opensUnicodeLocalAudioAndDrivesTheRealJourney() {
         QFETCH(QString, source_file);
         QFETCH(QString, extension);
         QFETCH(qint64, expected_duration_ms);
+        QFETCH(qint64, duration_tolerance_ms);
         QFETCH(QString, expected_final_title);
 
         QTemporaryDir temporary;
@@ -249,7 +268,6 @@ class LocalAudioIntegrationTests final : public QObject {
         QVERIFY(metadata.metadataSourcePath().has_value());
         QVERIFY(*metadata.metadataSourcePath() == selected_path);
         QVERIFY(metadata.metadataDurationMs().has_value());
-        constexpr qint64 duration_tolerance_ms = 50;
         QVERIFY(*metadata.metadataDurationMs() >= expected_duration_ms - duration_tolerance_ms);
         QVERIFY(*metadata.metadataDurationMs() <= expected_duration_ms + duration_tolerance_ms);
         QVERIFY(!metadata.metadataError().has_value());

@@ -112,9 +112,10 @@ int main(int argc, char* argv[]) {
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
         PlayerPresenter::AudioFilePicker audio_file_picker = [&contract]() -> std::optional<std::filesystem::path> {
-            const QString selected =
-                QFileDialog::getOpenFileName(nullptr, contract.openAudioText(), {},
-                                             QStringLiteral("Áudio local (*.mp3 *.wav);;Todos os arquivos (*)"));
+            const QString selected = QFileDialog::getOpenFileName(
+                nullptr, contract.openAudioText(), {},
+                QStringLiteral("Áudio local (*.mp3 *.MP3 *.m4a *.M4A *.mp4 *.MP4 *.flac *.FLAC *.ogg *.OGG *.oga "
+                               "*.OGA *.wav *.WAV);;Todos os arquivos (*)"));
             if (selected.isEmpty())
                 return std::nullopt;
 #ifdef Q_OS_WIN

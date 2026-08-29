@@ -490,10 +490,22 @@ if(M0_QT_AUDIO_SUPPORT)
     set(M0_AUDIO_CORPUS_MP3_VBR_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/mp3-vbr-stereo.mp3")
     set(M0_AUDIO_CORPUS_MP3_UNICODE_FILE
         "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/mp3-unicode-tags.mp3")
+    set(M0_AUDIO_CORPUS_M4A_AAC_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/m4a-aac-lc.m4a")
+    set(M0_AUDIO_CORPUS_FLAC_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/flac-16-stereo.flac")
+    set(M0_AUDIO_CORPUS_OGG_VORBIS_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/ogg-vorbis.ogg")
+    set(M0_AUDIO_CORPUS_OPUS_CANDIDATE_FILE
+        "${M0_AUDIO_CORPUS_ROOT}/fixtures/candidate/opus-candidate.opus")
+    set(M0_AUDIO_CORPUS_ALAC_CANDIDATE_FILE
+        "${M0_AUDIO_CORPUS_ROOT}/fixtures/candidate/m4a-alac-candidate.m4a")
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WAV_FILE)
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_FILE)
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_VBR_FILE)
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_UNICODE_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_M4A_AAC_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_FLAC_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_OGG_VORBIS_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_OPUS_CANDIDATE_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_ALAC_CANDIDATE_FILE)
     set(M0_AUDIO_CORPUS_EMPTY_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/empty.bin")
     set(M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
         "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/truncated-wav-pcm-mono.wav")
@@ -507,6 +519,11 @@ if(M0_QT_AUDIO_SUPPORT)
             M0_AUDIO_CORPUS_MP3_FILE
             M0_AUDIO_CORPUS_MP3_VBR_FILE
             M0_AUDIO_CORPUS_MP3_UNICODE_FILE
+            M0_AUDIO_CORPUS_M4A_AAC_FILE
+            M0_AUDIO_CORPUS_FLAC_FILE
+            M0_AUDIO_CORPUS_OGG_VORBIS_FILE
+            M0_AUDIO_CORPUS_OPUS_CANDIDATE_FILE
+            M0_AUDIO_CORPUS_ALAC_CANDIDATE_FILE
             M0_AUDIO_CORPUS_EMPTY_FILE
             M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
             M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE)
@@ -541,6 +558,41 @@ if(M0_QT_AUDIO_SUPPORT)
             "65e66cf43d999e98cf37cb64003d29b374a1238e454eca138c0dc5be2b18c000" OR
        NOT m0_audio_corpus_mp3_unicode_size EQUAL 24966)
         message(FATAL_ERROR "The committed Unicode MP3 corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_M4A_AAC_FILE}" m0_audio_corpus_m4a_aac_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_M4A_AAC_FILE}" m0_audio_corpus_m4a_aac_size)
+    if(NOT m0_audio_corpus_m4a_aac_sha256 STREQUAL
+            "aefe894a1a9277bf4795d421c97d4780fa342eef300819a459ca45329a614558" OR
+       NOT m0_audio_corpus_m4a_aac_size EQUAL 33400)
+        message(FATAL_ERROR "The committed M4A AAC corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_FLAC_FILE}" m0_audio_corpus_flac_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_FLAC_FILE}" m0_audio_corpus_flac_size)
+    if(NOT m0_audio_corpus_flac_sha256 STREQUAL
+            "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c" OR
+       NOT m0_audio_corpus_flac_size EQUAL 60531)
+        message(FATAL_ERROR "The committed FLAC corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}" m0_audio_corpus_ogg_vorbis_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}" m0_audio_corpus_ogg_vorbis_size)
+    if(NOT m0_audio_corpus_ogg_vorbis_sha256 STREQUAL
+            "abab4db40eb8380974e1c6ea69eb4c24bfd8eb2803b67b79e2a1a49523a7096f" OR
+       NOT m0_audio_corpus_ogg_vorbis_size EQUAL 12605)
+        message(FATAL_ERROR "The committed Ogg Vorbis corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_OPUS_CANDIDATE_FILE}" m0_audio_corpus_opus_candidate_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_OPUS_CANDIDATE_FILE}" m0_audio_corpus_opus_candidate_size)
+    if(NOT m0_audio_corpus_opus_candidate_sha256 STREQUAL
+            "341e25361371f851d85d34af950fb10279db36fbd67d91b324a9c08e40791e15" OR
+       NOT m0_audio_corpus_opus_candidate_size EQUAL 35706)
+        message(FATAL_ERROR "The committed Opus candidate fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_ALAC_CANDIDATE_FILE}" m0_audio_corpus_alac_candidate_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_ALAC_CANDIDATE_FILE}" m0_audio_corpus_alac_candidate_size)
+    if(NOT m0_audio_corpus_alac_candidate_sha256 STREQUAL
+            "5d729fbe90a0d98a081d1fe590b24021a8001871f516529d0f8d8392109ad339" OR
+       NOT m0_audio_corpus_alac_candidate_size EQUAL 78938)
+        message(FATAL_ERROR "The committed ALAC candidate fixture does not match its authenticated identity")
     endif()
     file(SHA256 "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_sha256)
     file(SIZE "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_size)
@@ -617,6 +669,12 @@ if(M0_QT_AUDIO_SUPPORT)
         target_compile_features(m0_qt_audio_adapter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_audio_adapter_tests PRIVATE
             M0_TEST_AUDIO_WAV_FILE="${M0_AUDIO_CORPUS_WAV_FILE}"
+            M0_TEST_AUDIO_MP3_FILE="${M0_AUDIO_CORPUS_MP3_FILE}"
+            M0_TEST_AUDIO_MP3_VBR_FILE="${M0_AUDIO_CORPUS_MP3_VBR_FILE}"
+            M0_TEST_AUDIO_MP3_UNICODE_FILE="${M0_AUDIO_CORPUS_MP3_UNICODE_FILE}"
+            M0_TEST_AUDIO_M4A_AAC_FILE="${M0_AUDIO_CORPUS_M4A_AAC_FILE}"
+            M0_TEST_AUDIO_FLAC_FILE="${M0_AUDIO_CORPUS_FLAC_FILE}"
+            M0_TEST_AUDIO_OGG_VORBIS_FILE="${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}"
             M0_TEST_AUDIO_EMPTY_FILE="${M0_AUDIO_CORPUS_EMPTY_FILE}"
             M0_TEST_AUDIO_TRUNCATED_WAV_FILE="${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}"
             M0_TEST_AUDIO_WRONG_EXTENSION_FILE="${M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE}"
@@ -634,8 +692,8 @@ if(M0_QT_AUDIO_SUPPORT)
         get_filename_component(m0_qt_audio_core_runtime_dir "${m0_qt_audio_core_runtime}" DIRECTORY)
         get_filename_component(m0_qt_audio_prefix "${m0_qt_audio_runtime_dir}" DIRECTORY)
         set_tests_properties(m0.qt.audio.playback-lifecycle PROPERTIES
-            LABELS "m0;qt;audio;PB-001;PB-002;PB-003;PB-006;PB-007;PB-008;PB-009;PB-010;PB-011;PB-012;PB-101;PB-102;PB-103"
-            TIMEOUT 5
+            LABELS "m0;qt;audio;PB-001;PB-002;PB-003;PB-004;PB-006;PB-007;PB-008;PB-009;PB-010;PB-011;PB-012;PB-101;PB-102;PB-103"
+            TIMEOUT 120
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
             ENVIRONMENT
@@ -673,6 +731,11 @@ if(M0_QT_AUDIO_SUPPORT)
                 M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
                 M0_TEST_AUDIO_WAV_FILE="${M0_AUDIO_CORPUS_WAV_FILE}"
                 M0_TEST_AUDIO_MP3_FILE="${M0_AUDIO_CORPUS_MP3_FILE}"
+                M0_TEST_AUDIO_MP3_VBR_FILE="${M0_AUDIO_CORPUS_MP3_VBR_FILE}"
+                M0_TEST_AUDIO_MP3_UNICODE_FILE="${M0_AUDIO_CORPUS_MP3_UNICODE_FILE}"
+                M0_TEST_AUDIO_M4A_AAC_FILE="${M0_AUDIO_CORPUS_M4A_AAC_FILE}"
+                M0_TEST_AUDIO_FLAC_FILE="${M0_AUDIO_CORPUS_FLAC_FILE}"
+                M0_TEST_AUDIO_OGG_VORBIS_FILE="${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}"
             )
             set_target_properties(m0_qt_local_audio_integration_tests PROPERTIES AUTOMOC ON)
             if(MSVC)
@@ -690,7 +753,7 @@ if(M0_QT_AUDIO_SUPPORT)
             add_test(NAME m0.qt.audio.local-integration COMMAND m0_qt_local_audio_integration_tests)
             set_tests_properties(m0.qt.audio.local-integration PROPERTIES
                 LABELS "m0;qt;audio;integration;local"
-                TIMEOUT 10
+                TIMEOUT 180
                 ENVIRONMENT_MODIFICATION
                     "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
                 ENVIRONMENT

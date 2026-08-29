@@ -1,6 +1,8 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 
+#include <QByteArray>
 #include <QList>
+#include <QString>
 #include <QTest>
 
 #include <algorithm>
@@ -9,12 +11,45 @@
 #include <vector>
 
 namespace music_player::m0::test {
+namespace {
+
+[[nodiscard]] std::filesystem::path nativePath(const QString& path) {
+#ifdef _WIN32
+    return std::filesystem::path{path.toStdWString()};
+#else
+    const QByteArray utf8 = path.toUtf8();
+    return std::filesystem::u8path(utf8.constData(), utf8.constData() + utf8.size());
+#endif
+}
+
+void addBasicCodecRows() {
+    QTest::newRow("wav-pcm") << QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE) << qint64{1'000} << qint64{0};
+    QTest::newRow("mp3-cbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE) << qint64{2'000} << qint64{50};
+    QTest::newRow("mp3-vbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_VBR_FILE) << qint64{2'000} << qint64{50};
+    QTest::newRow("mp3-unicode") << QString::fromUtf8(M0_TEST_AUDIO_MP3_UNICODE_FILE) << qint64{2'000} << qint64{50};
+    QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << qint64{2'000} << qint64{25};
+    QTest::newRow("flac") << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << qint64{2'000} << qint64{20};
+    QTest::newRow("ogg-vorbis") << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << qint64{2'000} << qint64{20};
+}
+
+} // namespace
 
 class QtMultimediaPlaybackBackendTests final : public QObject {
     Q_OBJECT
 
   private slots:
-    void loadsAuthenticatedWavAndPublishesReadyWithinTwoSeconds() {
+    void loadsAuthenticatedBasicCodecAndPublishesReadyWithinTwoSeconds_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::addColumn<qint64>("expected_duration_ms");
+        QTest::addColumn<qint64>("duration_tolerance_ms");
+        addBasicCodecRows();
+    }
+
+    void loadsAuthenticatedBasicCodecAndPublishesReadyWithinTwoSeconds() {
+        QFETCH(QString, source_file);
+        QFETCH(qint64, expected_duration_ms);
+        QFETCH(qint64, duration_tolerance_ms);
+
         QtMultimediaPlaybackBackend backend;
         QList<PlaybackStatus> observed_statuses;
         backend.setEventCallback([&](const PlaybackEvent& event) {
@@ -23,10 +58,11 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
             }
         });
 
-        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.load(nativePath(source_file)), PlaybackCommandResult::Accepted);
 
         QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
-        QCOMPARE(backend.snapshot().duration_ms, 1'000);
+        QVERIFY(backend.snapshot().duration_ms >= expected_duration_ms - duration_tolerance_ms);
+        QVERIFY(backend.snapshot().duration_ms <= expected_duration_ms + duration_tolerance_ms);
         QVERIFY(backend.snapshot().seekable);
 
         const auto loading = std::find(observed_statuses.cbegin(), observed_statuses.cend(), PlaybackStatus::Loading);
@@ -36,6 +72,28 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         QVERIFY(loading < ready);
         QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
         QCOMPARE(backend.snapshot().generation, std::uint64_t{1});
+    }
+
+    void canonicalSeekConfirmsItsDestination_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::newRow("mp3-vbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_VBR_FILE);
+        QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE);
+    }
+
+    void canonicalSeekConfirmsItsDestination() {
+        QFETCH(QString, source_file);
+
+        QtMultimediaPlaybackBackend backend;
+        QCOMPARE(backend.load(nativePath(source_file)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QVERIFY(backend.snapshot().seekable);
+        QCOMPARE(backend.setMuted(true), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.seekTo(1'000), PlaybackCommandResult::Accepted);
+        constexpr std::int64_t seek_tolerance_ms = 50;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.snapshot().position_ms >= 1'000 - seek_tolerance_ms &&
+                                     backend.snapshot().position_ms <= 1'000 + seek_tolerance_ms,
+                                 2'000);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
     }
 
     void playPauseAndSeekAreIdempotentForAuthenticatedWav() {
@@ -74,7 +132,18 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         QCOMPARE(events.size(), event_count_after_first_pause);
     }
 
+    void seekNearEndPublishesEndedExactlyOnceInDocumentedOrder_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::addColumn<qint64>("expected_duration_ms");
+        QTest::addColumn<qint64>("duration_tolerance_ms");
+        addBasicCodecRows();
+    }
+
     void seekNearEndPublishesEndedExactlyOnceInDocumentedOrder() {
+        QFETCH(QString, source_file);
+        QFETCH(qint64, expected_duration_ms);
+        QFETCH(qint64, duration_tolerance_ms);
+
         QtMultimediaPlaybackBackend backend;
         int ended_count = 0;
         std::uint64_t ended_generation = 0;
@@ -87,11 +156,17 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
             }
         });
 
-        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.load(nativePath(source_file)), PlaybackCommandResult::Accepted);
         QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QVERIFY(backend.snapshot().duration_ms >= expected_duration_ms - duration_tolerance_ms);
+        QVERIFY(backend.snapshot().duration_ms <= expected_duration_ms + duration_tolerance_ms);
         QCOMPARE(backend.setMuted(true), PlaybackCommandResult::Accepted);
-        QCOMPARE(backend.seekTo(900), PlaybackCommandResult::Accepted);
-        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().position_ms, std::int64_t{900}, 2'000);
+        const auto near_end_ms = std::max<std::int64_t>(0, backend.snapshot().duration_ms - 100);
+        QCOMPARE(backend.seekTo(near_end_ms), PlaybackCommandResult::Accepted);
+        constexpr std::int64_t seek_tolerance_ms = 50;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.snapshot().position_ms >= near_end_ms - seek_tolerance_ms &&
+                                     backend.snapshot().position_ms <= near_end_ms + seek_tolerance_ms,
+                                 2'000);
         QCOMPARE(backend.play(), PlaybackCommandResult::Accepted);
         const auto events_before_end = events.size();
 

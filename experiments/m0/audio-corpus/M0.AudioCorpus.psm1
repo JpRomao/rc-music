@@ -56,14 +56,14 @@ foreach ($entry in $script:M0ACCodecFixturePaths.GetEnumerator()) {
     $script:M0ACFixturePaths[$entry.Key] = $entry.Value
 }
 $script:M0ACCodecContracts = [ordered]@{
-    'flac-16-stereo' = @('FLAC', 'FLAC 16-bit compression level 5', 'lossless', 16)
-    'm4a-aac-lc' = @('ISO MP4/M4A', 'AAC Low Complexity 128 kb/s in ISO BMFF/M4A', 'constant', $null)
-    'm4a-alac-candidate' = @('ISO MP4/M4A', 'ALAC 16-bit in ISO BMFF/M4A', 'lossless', 16)
-    'mp3-cbr-stereo' = @('MP3', 'MP3 Layer III CBR 128 kb/s', 'constant', $null)
-    'mp3-unicode-tags' = @('MP3', 'MP3 Layer III CBR 96 kb/s with ID3v2.4 Unicode tags', 'constant', $null)
-    'mp3-vbr-stereo' = @('MP3', 'MP3 Layer III VBR quality 4', 'variable', $null)
-    'ogg-vorbis' = @('Ogg', 'Vorbis quality 4 in Ogg', 'variable', $null)
-    'opus-candidate' = @('Ogg', 'Opus VBR 96 kb/s in Ogg', 'variable', $null)
+    'flac-16-stereo' = @('FLAC', 'FLAC 16-bit compression level 5', 'lossless', 16, 20)
+    'm4a-aac-lc' = @('ISO MP4/M4A', 'AAC Low Complexity 128 kb/s in ISO BMFF/M4A', 'constant', $null, 25)
+    'm4a-alac-candidate' = @('ISO MP4/M4A', 'ALAC 16-bit in ISO BMFF/M4A', 'lossless', 16, 20)
+    'mp3-cbr-stereo' = @('MP3', 'MP3 Layer III CBR 128 kb/s', 'constant', $null, 50)
+    'mp3-unicode-tags' = @('MP3', 'MP3 Layer III CBR 96 kb/s with ID3v2.4 Unicode tags', 'constant', $null, 50)
+    'mp3-vbr-stereo' = @('MP3', 'MP3 Layer III VBR quality 4', 'variable', $null, 50)
+    'ogg-vorbis' = @('Ogg', 'Vorbis quality 4 in Ogg', 'variable', $null, 20)
+    'opus-candidate' = @('Ogg', 'Opus VBR 96 kb/s in Ogg', 'variable', $null, 20)
 }
 $script:M0ACCodecProbeContracts = [ordered]@{
     'flac-16-stereo' = [pscustomobject]@{
@@ -604,7 +604,8 @@ function Assert-M0ACFixtureMetadata {
         }
         if ($Fixture.expected_outcome -cne 'valid' -or $null -ne $Fixture.expected_error_code -or
             $Fixture.container -cne $contract[0] -or $Fixture.codec_and_profile -cne $contract[1] -or
-            [long]$Fixture.duration_ms -ne 2000 -or [int]$Fixture.duration_tolerance_ms -ne 20 -or
+            [long]$Fixture.duration_ms -ne 2000 -or
+            [int]$Fixture.duration_tolerance_ms -ne [int]$contract[4] -or
             [long]$Fixture.sample_rate_hz -ne 48000 -or [int]$Fixture.channels -ne 2 -or
             -not $bitDepthMatches -or $Fixture.bitrate_mode -cne $contract[2] -or
             -not $capabilities.decodable -or -not $capabilities.duration_known -or

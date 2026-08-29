@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados, geração isolada e o ciclo load/play/pause/seek/fim do WAV via Qt Multimedia estão verdes, assim como `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib para WAV/MP3 CBR/VBR/Unicode/content-detection/hostis e polling/`MR-016`/`MR-017`/`MR-020` no reader assíncrono limitado; a primeira composição UI abre MP3/WAV por diálogo nativo e percorre fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais, enquanto áudio audível, demais codecs, arte/limites, gates nativos e decisão de stack permanecem pendentes
+**Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados e geração isolada estão verdes, assim como `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia; `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib cobrem a matriz básica por conteúdo, enquanto polling/`MR-016`/`MR-017`/`MR-020` permanecem verdes no reader assíncrono limitado. Uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, mas playback inicia independentemente e o Qt pode decodificar candidatos, logo não há rejeição ponta a ponta nem classificação de suporte. A composição UI oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas sobre sete fixtures autenticadas com fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais e saída mutada; áudio audível, comportamento ponta a ponta dos candidatos, hostis restantes, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -92,7 +92,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 ## 5. Alegações que ainda não podem ser feitas
 
-- “o app já oferece suporte publicado a WAV/MP3/M4A/Opus”: o candidato experimental abre WAV e MP3 CBR, alcança `Playing`, seek e pausa com Qt Multimedia e integra metadata MP3/título Unicode à apresentação, mas o teste mantém volume zero/mudo; não há prova audível/dispositivo físico, matriz completa ou formato aprovado, e M4A/Opus ainda não atravessam essa jornada;
+- “o app já oferece suporte publicado a WAV/MP3/M4A/FLAC/Ogg/Opus”: o candidato experimental percorre a matriz básica WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis com Qt Multimedia e integra metadata/título Unicode à apresentação, mas os testes mantêm volume zero/mudo; não há prova audível/dispositivo físico nem formato aprovado ou matriz publicada. Opus/ALAC continuam candidatos: o extrator isolado retorna `UnsupportedFormat`, porém playback pode iniciar e o Qt pode decodificá-los, de modo que o comportamento integrado não foi classificado;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
@@ -123,14 +123,14 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; lifecycle/WAV, TagLib WAV/MP3 nos casos canônicos aplicáveis, reader limitado e primeira jornada local integrada MP3/WAV M0.6 verdes; áudio audível, automação nativa, pacote v2, matriz restante, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado e jornada local integrada verdes em nove linhas sobre sete fixtures da matriz básica experimental em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, hostis/limites, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. ampliar a jornada local já integrada aos codecs e estados hostis de maior valor antes de retomar medições;
-2. fechar em paralelo os limites de metadata/arte necessários ao comportamento em desenvolvimento, sem incorporar áudio pessoal ao corpus;
+1. ampliar a jornada local já integrada aos truncados por contêiner e estados hostis de maior valor antes de retomar medições;
+2. fechar em paralelo os limites de metadata/arte necessários ao comportamento em desenvolvimento, sem incorporar áudio pessoal ao corpus e sem promover Opus/ALAC além de candidatos;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.

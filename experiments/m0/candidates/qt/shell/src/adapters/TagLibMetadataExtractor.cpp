@@ -1,9 +1,16 @@
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 
+#include <audioproperties.h>
+#include <flacfile.h>
+#include <flacproperties.h>
+#include <mp4file.h>
+#include <mp4properties.h>
 #include <mpegfile.h>
 #include <mpegheader.h>
 #include <mpegproperties.h>
 #include <tag.h>
+#include <vorbisfile.h>
+#include <vorbisproperties.h>
 #include <wavfile.h>
 #include <wavproperties.h>
 
@@ -14,14 +21,18 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
 namespace music_player::m0 {
 namespace {
 
-constexpr std::size_t container_header_size = 12;
+constexpr std::size_t minimum_container_header_size = 12;
+constexpr std::size_t container_header_size = 512;
 using ContainerHeader = std::array<char, container_header_size>;
+
+enum class OggCodec { Unknown, Vorbis, Opus };
 
 [[nodiscard]] MetadataReadError error(const MetadataReadErrorCode code, std::string message) {
     return {.code = code, .message = std::move(message)};
@@ -34,6 +45,77 @@ using ContainerHeader = std::array<char, container_header_size>;
 [[nodiscard]] bool isRiffWave(const ContainerHeader& header) noexcept {
     return header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' && header[8] == 'W' &&
            header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+}
+
+[[nodiscard]] bool isFlac(const ContainerHeader& header) noexcept {
+    return header[0] == 'f' && header[1] == 'L' && header[2] == 'a' && header[3] == 'C';
+}
+
+[[nodiscard]] std::uint32_t bigEndian32(const ContainerHeader& header) noexcept {
+    return (static_cast<std::uint32_t>(byteAt(header, 0)) << 24U) |
+           (static_cast<std::uint32_t>(byteAt(header, 1)) << 16U) |
+           (static_cast<std::uint32_t>(byteAt(header, 2)) << 8U) | static_cast<std::uint32_t>(byteAt(header, 3));
+}
+
+[[nodiscard]] std::uint64_t bigEndian64(const ContainerHeader& header, const std::size_t offset) noexcept {
+    std::uint64_t value = 0;
+    for (std::size_t index = 0; index < 8; ++index) {
+        value = (value << 8U) | static_cast<std::uint64_t>(byteAt(header, offset + index));
+    }
+    return value;
+}
+
+[[nodiscard]] bool isIsoBaseMedia(const ContainerHeader& header, const std::uintmax_t file_size,
+                                  const std::size_t bytes_read) noexcept {
+    constexpr std::uint32_t extended_size_marker = 1;
+    constexpr std::size_t minimum_box_size = 16;
+    constexpr std::size_t minimum_extended_box_size = 24;
+    if (header[4] != 'f' || header[5] != 't' || header[6] != 'y' || header[7] != 'p') {
+        return false;
+    }
+
+    const auto atom_size = bigEndian32(header);
+    if (atom_size == extended_size_marker) {
+        if (bytes_read < minimum_extended_box_size) {
+            return false;
+        }
+        const auto extended_size = bigEndian64(header, 8);
+        return extended_size >= minimum_extended_box_size && extended_size <= file_size;
+    }
+    if (atom_size == 0) {
+        return file_size >= minimum_box_size;
+    }
+    return atom_size >= minimum_box_size && atom_size <= file_size;
+}
+
+[[nodiscard]] bool matches(const ContainerHeader& header, const std::size_t offset, const std::string_view value,
+                           const std::size_t bytes_read) noexcept {
+    if (offset > bytes_read || value.size() > bytes_read - offset) {
+        return false;
+    }
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (header[offset + index] != value[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] OggCodec oggCodec(const ContainerHeader& header, const std::size_t bytes_read) noexcept {
+    constexpr std::size_t fixed_page_header_size = 27;
+    if (bytes_read < fixed_page_header_size || !matches(header, 0, "OggS", bytes_read) || byteAt(header, 4) != 0) {
+        return OggCodec::Unknown;
+    }
+
+    const auto segment_count = static_cast<std::size_t>(byteAt(header, 26));
+    const auto first_packet_offset = fixed_page_header_size + segment_count;
+    if (matches(header, first_packet_offset, std::string_view{"\x01vorbis", 7}, bytes_read)) {
+        return OggCodec::Vorbis;
+    }
+    if (matches(header, first_packet_offset, "OpusHead", bytes_read)) {
+        return OggCodec::Opus;
+    }
+    return OggCodec::Unknown;
 }
 
 [[nodiscard]] bool hasId3v2Signature(const ContainerHeader& header) noexcept {
@@ -149,11 +231,24 @@ using ContainerHeader = std::array<char, container_header_size>;
     return metadata;
 }
 
+[[nodiscard]] bool hasValidAudioProperties(const TagLib::AudioProperties* properties) noexcept {
+    return properties != nullptr && properties->lengthInMilliseconds() > 0 && properties->sampleRate() > 0 &&
+           properties->channels() > 0;
+}
+
+void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProperties& properties) {
+    metadata.audio.duration_ms = properties.lengthInMilliseconds();
+    metadata.audio.sample_rate_hz = static_cast<std::uint32_t>(properties.sampleRate());
+    metadata.audio.channels = static_cast<std::uint16_t>(properties.channels());
+    if (properties.bitrate() > 0) {
+        metadata.audio.bitrate_kbps = static_cast<std::uint32_t>(properties.bitrate());
+    }
+}
+
 [[nodiscard]] MetadataReadResult readWave(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
     TagLib::RIFF::WAV::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
-    if (!file.isValid() || properties == nullptr || properties->lengthInMilliseconds() <= 0 ||
-        properties->sampleRate() <= 0 || properties->channels() <= 0 || properties->bitsPerSample() <= 0) {
+    if (!file.isValid() || !hasValidAudioProperties(properties) || properties->bitsPerSample() <= 0) {
         return error(MetadataReadErrorCode::InvalidData, "WAV metadata or audio properties are invalid");
     }
 
@@ -163,13 +258,8 @@ using ContainerHeader = std::array<char, container_header_size>;
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
-    metadata.audio.duration_ms = properties->lengthInMilliseconds();
-    metadata.audio.sample_rate_hz = static_cast<std::uint32_t>(properties->sampleRate());
-    metadata.audio.channels = static_cast<std::uint16_t>(properties->channels());
+    applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
-    if (properties->bitrate() > 0) {
-        metadata.audio.bitrate_kbps = static_cast<std::uint32_t>(properties->bitrate());
-    }
     metadata.audio.container = "WAV";
     metadata.audio.codec = codec;
     return metadata;
@@ -178,8 +268,7 @@ using ContainerHeader = std::array<char, container_header_size>;
 [[nodiscard]] MetadataReadResult readMp3(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
     TagLib::MPEG::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
-    if (!file.isValid() || properties == nullptr || properties->lengthInMilliseconds() <= 0 ||
-        properties->sampleRate() <= 0 || properties->channels() <= 0) {
+    if (!file.isValid() || !hasValidAudioProperties(properties)) {
         return error(MetadataReadErrorCode::InvalidData, "MP3 metadata or audio properties are invalid");
     }
     if (properties->isADTS()) {
@@ -192,14 +281,58 @@ using ContainerHeader = std::array<char, container_header_size>;
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
-    metadata.audio.duration_ms = properties->lengthInMilliseconds();
-    metadata.audio.sample_rate_hz = static_cast<std::uint32_t>(properties->sampleRate());
-    metadata.audio.channels = static_cast<std::uint16_t>(properties->channels());
-    if (properties->bitrate() > 0) {
-        metadata.audio.bitrate_kbps = static_cast<std::uint32_t>(properties->bitrate());
-    }
+    applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "MP3";
     metadata.audio.codec = codec;
+    return metadata;
+}
+
+[[nodiscard]] MetadataReadResult readFlac(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
+    TagLib::FLAC::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+    const auto* properties = file.audioProperties();
+    if (!file.isValid() || !hasValidAudioProperties(properties) || properties->bitsPerSample() <= 0) {
+        return error(MetadataReadErrorCode::InvalidData, "FLAC metadata or audio properties are invalid");
+    }
+
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyCommonAudioProperties(metadata, *properties);
+    metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
+    metadata.audio.container = "FLAC";
+    metadata.audio.codec = "FLAC";
+    return metadata;
+}
+
+[[nodiscard]] MetadataReadResult readM4aAac(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
+    TagLib::MP4::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+    const auto* properties = file.audioProperties();
+    if (!file.isValid() || !hasValidAudioProperties(properties)) {
+        return error(MetadataReadErrorCode::InvalidData, "MP4 metadata or audio properties are invalid");
+    }
+    if (properties->isEncrypted()) {
+        return error(MetadataReadErrorCode::UnsupportedFormat, "encrypted MP4 audio is not supported");
+    }
+    if (properties->codec() != TagLib::MP4::Properties::AAC) {
+        return error(MetadataReadErrorCode::UnsupportedFormat, "MP4 audio codec is not AAC");
+    }
+
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyCommonAudioProperties(metadata, *properties);
+    metadata.audio.container = "ISO MP4/M4A";
+    metadata.audio.codec = "AAC";
+    return metadata;
+}
+
+[[nodiscard]] MetadataReadResult readVorbis(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
+    TagLib::Vorbis::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+    const auto* properties = file.audioProperties();
+    if (!file.isValid() || !hasValidAudioProperties(properties)) {
+        return error(MetadataReadErrorCode::InvalidData, "Ogg Vorbis metadata or audio properties are invalid");
+    }
+
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyCommonAudioProperties(metadata, *properties);
+    metadata.audio.container = "Ogg";
+    metadata.audio.codec = "Vorbis";
     return metadata;
 }
 
@@ -227,11 +360,26 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
         }
         ContainerHeader header{};
         stream.read(header.data(), static_cast<std::streamsize>(header.size()));
-        if (stream.gcount() != static_cast<std::streamsize>(header.size())) {
+        const auto bytes_read = static_cast<std::size_t>(stream.gcount());
+        if (bytes_read < minimum_container_header_size) {
             return error(MetadataReadErrorCode::InvalidData, "metadata source has a truncated container header");
         }
         if (isRiffWave(header)) {
             return readWave(source_path, file_size);
+        }
+        if (isFlac(header)) {
+            return readFlac(source_path, file_size);
+        }
+        if (isIsoBaseMedia(header, file_size, bytes_read)) {
+            return readM4aAac(source_path, file_size);
+        }
+        switch (oggCodec(header, bytes_read)) {
+        case OggCodec::Vorbis:
+            return readVorbis(source_path, file_size);
+        case OggCodec::Opus:
+            return error(MetadataReadErrorCode::UnsupportedFormat, "Ogg Opus remains a candidate format");
+        case OggCodec::Unknown:
+            break;
         }
         if (hasId3v2Signature(header)) {
             if (!hasValidId3v2Header(header, file_size)) {

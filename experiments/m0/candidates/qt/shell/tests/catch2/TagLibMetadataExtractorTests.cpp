@@ -273,6 +273,90 @@ TEST_CASE("MR-001 preserves Unicode ID3v2 tags from the authenticated MP3 corpus
     CHECK(*metadata.audio.bitrate_kbps <= 104);
 }
 
+TEST_CASE("MR-001 and MR-018 read the authenticated basic codec matrix",
+          "[m0][qt][metadata][taglib][codec-matrix][MR-001][MR-018]") {
+    struct CodecCase final {
+        std::filesystem::path relative_path;
+        std::filesystem::path neutral_filename;
+        std::uintmax_t file_size_bytes;
+        std::int64_t duration_tolerance_ms;
+        std::string container;
+        std::string codec;
+        std::optional<std::uint16_t> bit_depth;
+    };
+
+    const ScopedTemporaryDirectory directory;
+    const TagLibMetadataExtractor reader;
+    for (const auto& codec_case : {
+             CodecCase{"fixtures/valid/m4a-aac-lc.m4a", "m4a-content.audio", 33'400, 25, "ISO MP4/M4A", "AAC",
+                       std::nullopt},
+             CodecCase{"fixtures/valid/flac-16-stereo.flac", "flac-content.audio", 60'531, 20, "FLAC", "FLAC",
+                       std::uint16_t{16}},
+             CodecCase{"fixtures/valid/ogg-vorbis.ogg", "vorbis-content.audio", 12'605, 20, "Ogg", "Vorbis",
+                       std::nullopt},
+         }) {
+        CAPTURE(codec_case.relative_path.string());
+        const ScopedTemporaryFile neutral_extension{temporaryPath(directory, codec_case.neutral_filename)};
+        writeBytes(neutral_extension.path(), readBytes(fixture(codec_case.relative_path)));
+
+        const auto result = reader.read(neutral_extension.path());
+        const auto& metadata = requireMetadata(result);
+
+        CHECK(metadata.file_size_bytes == codec_case.file_size_bytes);
+        CHECK(metadata.audio.container == codec_case.container);
+        CHECK(metadata.audio.codec == codec_case.codec);
+        REQUIRE(metadata.audio.duration_ms.has_value());
+        CHECK(*metadata.audio.duration_ms >= 2'000 - codec_case.duration_tolerance_ms);
+        CHECK(*metadata.audio.duration_ms <= 2'000 + codec_case.duration_tolerance_ms);
+        REQUIRE(metadata.audio.sample_rate_hz.has_value());
+        CHECK(*metadata.audio.sample_rate_hz == 48'000);
+        REQUIRE(metadata.audio.channels.has_value());
+        CHECK(*metadata.audio.channels == 2);
+        CHECK(metadata.audio.bit_depth == codec_case.bit_depth);
+        REQUIRE(metadata.audio.bitrate_kbps.has_value());
+        CHECK(*metadata.audio.bitrate_kbps > 0);
+        CHECK(metadata.tags.title == std::optional<std::string>{"Canção determinística 日本語 🎵"});
+        CHECK(metadata.tags.artist == std::optional<std::string>{"João – Codex"});
+        CHECK(metadata.tags.album == std::optional<std::string>{"Álbum de teste Ω"});
+        CHECK(metadata.tags.year == std::optional<std::uint32_t>{2026});
+        CHECK_FALSE(metadata.tags.track_number.has_value());
+        CHECK(metadata.display_title == "Canção determinística 日本語 🎵");
+    }
+}
+
+TEST_CASE("Opus and ALAC candidates return explicit unsupported metadata outcomes",
+          "[m0][qt][metadata][taglib][candidate-codec]") {
+    const TagLibMetadataExtractor reader;
+    for (const auto& relative_path : {
+             std::filesystem::path{"fixtures/candidate/opus-candidate.opus"},
+             std::filesystem::path{"fixtures/candidate/m4a-alac-candidate.m4a"},
+         }) {
+        CAPTURE(relative_path.string());
+        const auto result = reader.read(fixture(relative_path));
+        const auto& read_error = requireError(result);
+
+        CHECK(read_error.code == MetadataReadErrorCode::UnsupportedFormat);
+        CHECK_FALSE(read_error.message.empty());
+    }
+}
+
+TEST_CASE("ISO BMFF content with an extended ftyp size is recognized before metadata validation",
+          "[m0][qt][metadata][taglib][content-detection][extended-ftyp]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "extended-ftyp.audio")};
+    writeBytes(source.path(), {
+                                  0x00, 0x00, 0x00, 0x01, 'f', 't', 'y', 'p', 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x18, 'M', '4', 'A', ' ', 0x00, 0x00, 0x00, 0x00,
+                              });
+    const TagLibMetadataExtractor reader;
+
+    const auto result = reader.read(source.path());
+    const auto& read_error = requireError(result);
+
+    CHECK(read_error.code == MetadataReadErrorCode::InvalidData);
+    CHECK_FALSE(read_error.message.empty());
+}
+
 TEST_CASE("MR-003 MR-018 and MR-019 recognize tagless MP3 content and use the Unicode stem fallback",
           "[m0][qt][metadata][taglib][mp3][fallback][MR-003][MR-018][MR-019]") {
     const ScopedTemporaryDirectory directory;
