@@ -1,6 +1,6 @@
 # Layout temporário dos spikes M0
 
-**Estado:** congelado para M0.1
+**Estado:** contrato M0-L1 congelado; estrutura materializada até a fundação M0.5
 
 **Identificador:** `M0-L1`
 
@@ -51,7 +51,12 @@ experiments/m0/
 │       ├── summary.schema.json
 │       └── synthetic-process-tree-scenario.schema.json
 ├── shared/
-│   └── shell-fixture/
+│   ├── shell-fixture/
+│   └── audio-corpus/
+├── audio-corpus/
+│   ├── M0.AudioCorpus.psm1
+│   ├── schemas/
+│   └── tests/
 ├── candidates/
 │   ├── qt/
 │   │   ├── shell/
@@ -76,8 +81,11 @@ experiments/m0/
         ├── Summary.Tests.ps1
         └── Visual.Tests.ps1
 scripts/m0/
+├── Invoke-M0AudioCorpusTests.ps1
 ├── Invoke-M0Pilot.ps1
 ├── Invoke-M0SyntheticProcessNode.ps1
+├── New-M0AudioCorpus.ps1
+├── Test-M0AudioCorpus.ps1
 ├── Test-M0Process.ps1
 ├── Test-M0Summary.ps1
 ├── Test-M0Visual.ps1
@@ -145,6 +153,9 @@ O contrato separado do piloto ancora cenário, launch-intent, input/summary gold
 | `Test-M0Process.ps1` | descriptor/golden/process-tree ancorados, processo limpo, Job Windows root → child → grandchild, cleanup escopado e artifact P somente em memória; Linux não provado |
 | `Test-M0Summary.ps1` | descriptor/input/golden/schemas do summary comum, builder puro e trust físico Windows; não lê nem publica Evidence A/B |
 | `Invoke-M0HarnessTests.ps1` | testes autocontidos do harness |
+| `Invoke-M0AudioCorpusTests.ps1` | testes do manifesto, receita, catálogo, bytes WAV, paths, links e geração em stage fresco |
+| `Test-M0AudioCorpus.ps1` | `CHK-CORPUS` público sobre o corpus commitado e sua identidade física |
+| `New-M0AudioCorpus.ps1` | geração determinística somente em stage novo/vazio sob `out/m0`, sem rewrite do corpus commitado |
 | `Invoke-M0Pilot.ps1` | publicação recuperável Windows-only da evidência sintética `P`, com Job fechado antes do artifact, summary separado e zero participação em A/B |
 | `Invoke-M0CandidateChecks.ps1` | checks nativos mapeados por candidato |
 | `Invoke-M0ShellComparison.ps1` | preflight, ordem balanceada, coleta e resumo comum |

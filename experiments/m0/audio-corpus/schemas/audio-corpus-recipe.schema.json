@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 deterministic audio corpus generation recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "recipe_id",
+    "generator",
+    "network_allowed",
+    "ambient_tool_lookup_allowed",
+    "source_signal",
+    "actions"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.audio-corpus-recipe.v1" },
+    "schema_version": { "const": 1 },
+    "recipe_id": { "const": "M0-AUDIO-RECIPE-1" },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "size_bytes", "runtime"],
+      "properties": {
+        "relative_path": { "const": "scripts/m0/New-M0AudioCorpus.ps1" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "runtime": { "const": "PowerShell 7.6.5 with .NET integer and binary APIs" }
+      }
+    },
+    "network_allowed": { "const": false },
+    "ambient_tool_lookup_allowed": { "const": false },
+    "source_signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "frequency_hz", "amplitude", "sample_rate_hz", "channels", "bits_per_sample", "sample_count", "duration_ms"],
+      "properties": {
+        "kind": { "const": "integer_square_wave" },
+        "frequency_hz": { "const": 500 },
+        "amplitude": { "const": 4096 },
+        "sample_rate_hz": { "const": 48000 },
+        "channels": { "const": 1 },
+        "bits_per_sample": { "const": 16 },
+        "sample_count": { "const": 48000 },
+        "duration_ms": { "const": 1000 }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action_id", "operation", "output_relative_path"],
+        "properties": {
+          "action_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "operation": { "enum": ["write_pcm_wave", "copy_exact_bytes", "take_prefix_bytes", "write_empty_file"] },
+              "output_relative_path": {
+                "type": "string",
+                "pattern": "^fixtures/[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$"
+              },
+              "input_action_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+              "prefix_bytes": { "type": "integer", "minimum": 1 }
+            },
+            "allOf": [
+              {
+                "if": { "properties": { "operation": { "const": "take_prefix_bytes" } } },
+                "then": { "required": ["input_action_id", "prefix_bytes"] }
+              },
+              {
+                "if": { "properties": { "operation": { "const": "copy_exact_bytes" } } },
+                "then": {
+                  "required": ["input_action_id"],
+                  "not": { "required": ["prefix_bytes"] }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "operation": { "enum": ["write_pcm_wave", "write_empty_file"] }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "anyOf": [
+                      { "required": ["input_action_id"] },
+                      { "required": ["prefix_bytes"] }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+    }
+  }
+}

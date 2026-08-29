@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 canonical audio port cases",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "catalog_id", "catalog_status", "ports"],
+  "properties": {
+    "schema_id": { "const": "m0.audio-contract-cases.v1" },
+    "schema_version": { "const": 1 },
+    "catalog_id": { "const": "M0-AUDIO-CONTRACT-CASES-1" },
+    "catalog_status": { "enum": ["partial", "complete"] },
+    "ports": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["port", "cases"],
+        "properties": {
+          "port": { "enum": ["PlaybackBackend", "MetadataReader"] },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["case_id", "behavior", "status", "fixture_ids", "requirement_ids"],
+              "properties": {
+                "case_id": { "type": "string", "pattern": "^(?:PB|MR)-[0-9]{3}$" },
+                "behavior": { "type": "string", "minLength": 1, "maxLength": 240 },
+                "status": { "enum": ["catalogued", "fixture_bound"] },
+                "fixture_ids": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+                },
+                "requirement_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "pattern": "^(?:FR|NFR)-(?:[A-Z]+-)?[0-9]{3}$" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

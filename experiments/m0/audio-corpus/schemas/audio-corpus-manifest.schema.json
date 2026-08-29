@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 audio corpus manifest foundation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "manifest_id",
+    "corpus_id",
+    "completion",
+    "hash_algorithm",
+    "canonical_text",
+    "artifacts",
+    "fixtures"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.audio-corpus-manifest.v1" },
+    "schema_version": { "const": 1 },
+    "manifest_id": { "const": "M0-AUDIO-CORPUS-1-MANIFEST" },
+    "corpus_id": { "const": "M0-AUDIO-CORPUS-1" },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m0_5", "catalog_status", "published_format_support"],
+      "properties": {
+        "m0_5": { "enum": ["in_progress", "complete"] },
+        "catalog_status": { "enum": ["partial", "complete"] },
+        "published_format_support": { "type": "boolean" }
+      }
+    },
+    "hash_algorithm": { "const": "sha256" },
+    "canonical_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "bom", "newline", "final_newline_count"],
+      "properties": {
+        "encoding": { "const": "utf-8" },
+        "bom": { "const": false },
+        "newline": { "const": "lf" },
+        "final_newline_count": { "const": 1 }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "$ref": "#/definitions/artifact" }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/fixture" }
+    }
+  },
+  "definitions": {
+    "safe_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!/)(?!.*:)(?!.*\\\\)[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "requirement_id": {
+      "type": "string",
+      "pattern": "^(?:FR|NFR)-(?:[A-Z]+-)?[0-9]{3}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "role", "media_type", "size_bytes", "sha256", "origin", "license"],
+      "properties": {
+        "relative_path": { "$ref": "#/definitions/safe_path" },
+        "role": { "enum": ["license", "contract_cases", "generation_recipe"] },
+        "media_type": { "enum": ["text/plain", "application/json"] },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "origin": { "enum": ["project-authored-synthetic", "generated-from-repository-script"] },
+        "license": { "const": "LicenseRef-MusicPlayer-M0-Private" }
+      }
+    },
+    "expected_tags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "title", "artist", "album", "track", "year"],
+      "properties": {
+        "state": { "enum": ["absent", "present", "invalid"] },
+        "title": { "type": ["string", "null"] },
+        "artist": { "type": ["string", "null"] },
+        "album": { "type": ["string", "null"] },
+        "track": { "type": ["integer", "null"], "minimum": 0 },
+        "year": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "expected_artwork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "encoded_size_bytes", "width_px", "height_px", "pixel_count", "expected_action"],
+      "properties": {
+        "state": { "enum": ["absent", "present", "invalid", "over_limit"] },
+        "encoded_size_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "width_px": { "type": ["integer", "null"], "minimum": 1 },
+        "height_px": { "type": ["integer", "null"], "minimum": 1 },
+        "pixel_count": { "type": ["integer", "null"], "minimum": 1 },
+        "expected_action": { "enum": ["none", "accept", "discard", "placeholder"] }
+      }
+    },
+    "expected_capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decodable", "duration_known", "seekable", "tags_present", "artwork_present", "play_to_end"],
+      "properties": {
+        "decodable": { "type": "boolean" },
+        "duration_known": { "type": "boolean" },
+        "seekable": { "type": "boolean" },
+        "tags_present": { "type": "boolean" },
+        "artwork_present": { "type": "boolean" },
+        "play_to_end": { "type": "boolean" }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "relative_path",
+        "sha256",
+        "size_bytes",
+        "source_or_generation_recipe",
+        "license",
+        "container",
+        "codec_and_profile",
+        "duration_ms",
+        "duration_tolerance_ms",
+        "sample_rate_hz",
+        "channels",
+        "bit_depth_if_known",
+        "bitrate_mode",
+        "expected_tags",
+        "expected_artwork",
+        "expected_capabilities",
+        "expected_outcome",
+        "expected_error_code",
+        "requirement_ids"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "relative_path": { "$ref": "#/definitions/safe_path" },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "source_or_generation_recipe": { "type": "string", "pattern": "^M0-AUDIO-RECIPE-1:[a-z0-9-]+$" },
+        "license": { "const": "LicenseRef-MusicPlayer-M0-Private" },
+        "container": { "type": ["string", "null"] },
+        "codec_and_profile": { "type": ["string", "null"] },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "duration_tolerance_ms": { "type": "integer", "minimum": 0 },
+        "sample_rate_hz": { "type": ["integer", "null"], "minimum": 1 },
+        "channels": { "type": ["integer", "null"], "minimum": 1 },
+        "bit_depth_if_known": { "type": ["integer", "null"], "minimum": 1 },
+        "bitrate_mode": { "enum": ["uncompressed", "constant", "variable", "lossless", "not_applicable", "unknown"] },
+        "expected_tags": { "$ref": "#/definitions/expected_tags" },
+        "expected_artwork": { "$ref": "#/definitions/expected_artwork" },
+        "expected_capabilities": { "$ref": "#/definitions/expected_capabilities" },
+        "expected_outcome": { "enum": ["valid", "controlled_error"] },
+        "expected_error_code": { "type": ["string", "null"], "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+        "requirement_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/requirement_id" }
+        }
+      }
+    }
+  }
+}

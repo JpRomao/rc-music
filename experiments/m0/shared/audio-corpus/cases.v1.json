@@ -1,0 +1,405 @@
+{
+  "schema_id": "m0.audio-contract-cases.v1",
+  "schema_version": 1,
+  "catalog_id": "M0-AUDIO-CONTRACT-CASES-1",
+  "catalog_status": "partial",
+  "ports": [
+    {
+      "port": "MetadataReader",
+      "cases": [
+        {
+          "case_id": "MR-001",
+          "behavior": "Read present tags without changing their values.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-021"
+          ]
+        },
+        {
+          "case_id": "MR-002",
+          "behavior": "Represent absent tags explicitly.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-021"
+          ]
+        },
+        {
+          "case_id": "MR-003",
+          "behavior": "Use the file name as title fallback when title is absent.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-021"
+          ]
+        },
+        {
+          "case_id": "MR-004",
+          "behavior": "Sanitize invalid text encoding without crashing.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-023"
+          ]
+        },
+        {
+          "case_id": "MR-005",
+          "behavior": "Discard corrupt embedded artwork.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-023",
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-006",
+          "behavior": "Accept artwork immediately below the encoded-byte limit.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-007",
+          "behavior": "Accept artwork exactly at the encoded-byte limit.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-008",
+          "behavior": "Replace artwork above the encoded-byte limit with a placeholder.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-009",
+          "behavior": "Apply artwork dimension and pixel limits below their boundaries.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-010",
+          "behavior": "Apply artwork dimension and pixel limits exactly at their boundaries.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-011",
+          "behavior": "Reject artwork beyond dimension or pixel boundaries.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-001"
+          ]
+        },
+        {
+          "case_id": "MR-012",
+          "behavior": "Accept one metadata field exactly at 16 KiB.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-002"
+          ]
+        },
+        {
+          "case_id": "MR-013",
+          "behavior": "Diagnose one metadata field above 16 KiB.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-002"
+          ]
+        },
+        {
+          "case_id": "MR-014",
+          "behavior": "Accept aggregate metadata exactly at 256 KiB.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-002"
+          ]
+        },
+        {
+          "case_id": "MR-015",
+          "behavior": "Diagnose aggregate metadata above 256 KiB.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "NFR-LIMIT-002"
+          ]
+        },
+        {
+          "case_id": "MR-016",
+          "behavior": "Discard a result after cancellation.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-024",
+            "NFR-LIMIT-003"
+          ]
+        },
+        {
+          "case_id": "MR-017",
+          "behavior": "Discard a stale generation after a newer load.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-024",
+            "NFR-LIMIT-003"
+          ]
+        },
+        {
+          "case_id": "MR-018",
+          "behavior": "Report technical properties without false zero values.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono",
+            "wrong-extension-wav-as-mp3"
+          ],
+          "requirement_ids": [
+            "FR-020",
+            "FR-022"
+          ]
+        },
+        {
+          "case_id": "MR-019",
+          "behavior": "Identify media by content when the extension is misleading.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wrong-extension-wav-as-mp3"
+          ],
+          "requirement_ids": [
+            "FR-005",
+            "FR-022"
+          ]
+        },
+        {
+          "case_id": "MR-020",
+          "behavior": "Respect the two-second job budget without accumulating work.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-024",
+            "NFR-LIMIT-003"
+          ]
+        },
+        {
+          "case_id": "MR-101",
+          "behavior": "Read WAV PCM properties and absent tags.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-020",
+            "FR-021",
+            "FR-022"
+          ]
+        },
+        {
+          "case_id": "MR-102",
+          "behavior": "Read WAV content stored with an MP3 extension.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wrong-extension-wav-as-mp3"
+          ],
+          "requirement_ids": [
+            "FR-005",
+            "FR-022"
+          ]
+        },
+        {
+          "case_id": "MR-103",
+          "behavior": "Return controlled errors for truncated and empty input.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "empty",
+            "truncated-wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-005",
+            "NFR-REL-001"
+          ]
+        }
+      ]
+    },
+    {
+      "port": "PlaybackBackend",
+      "cases": [
+        {
+          "case_id": "PB-001",
+          "behavior": "A valid load publishes ready and observed capabilities.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-002",
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-002",
+          "behavior": "Play is idempotent.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-003",
+          "behavior": "Pause is idempotent.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-004",
+          "behavior": "A supported seek confirms its destination.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-012"
+          ]
+        },
+        {
+          "case_id": "PB-005",
+          "behavior": "A rejected seek returns a typed error without a false snapshot.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-012",
+            "FR-014"
+          ]
+        },
+        {
+          "case_id": "PB-006",
+          "behavior": "End of media is emitted exactly once.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-007",
+          "behavior": "Unload is idempotent.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-008",
+          "behavior": "Shutdown is idempotent.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-009",
+          "behavior": "A failed load does not contaminate the next valid load.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "empty",
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-005",
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-010",
+          "behavior": "Callbacks preserve the documented event order.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-011",
+          "behavior": "Calls after shutdown return a typed failure.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-010"
+          ]
+        },
+        {
+          "case_id": "PB-012",
+          "behavior": "Events from an old generation are discarded.",
+          "status": "catalogued",
+          "fixture_ids": [],
+          "requirement_ids": [
+            "FR-024",
+            "NFR-LIMIT-003"
+          ]
+        },
+        {
+          "case_id": "PB-101",
+          "behavior": "Load, probe, seek, and finish a valid WAV fixture.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-002",
+            "FR-010",
+            "FR-012"
+          ]
+        },
+        {
+          "case_id": "PB-102",
+          "behavior": "Detect playable WAV content behind an MP3 extension.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "wrong-extension-wav-as-mp3"
+          ],
+          "requirement_ids": [
+            "FR-005"
+          ]
+        },
+        {
+          "case_id": "PB-103",
+          "behavior": "Keep the process alive after hostile input returns a controlled error.",
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "empty",
+            "truncated-wav-pcm-mono"
+          ],
+          "requirement_ids": [
+            "FR-005",
+            "NFR-REL-001"
+          ]
+        }
+      ]
+    }
+  ]
+}

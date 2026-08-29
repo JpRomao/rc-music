@@ -1,0 +1,236 @@
+{
+  "schema_id": "m0.audio-corpus-manifest.v1",
+  "schema_version": 1,
+  "manifest_id": "M0-AUDIO-CORPUS-1-MANIFEST",
+  "corpus_id": "M0-AUDIO-CORPUS-1",
+  "completion": {
+    "m0_5": "in_progress",
+    "catalog_status": "partial",
+    "published_format_support": false
+  },
+  "hash_algorithm": "sha256",
+  "canonical_text": {
+    "encoding": "utf-8",
+    "bom": false,
+    "newline": "lf",
+    "final_newline_count": 1
+  },
+  "artifacts": [
+    {
+      "relative_path": "LICENSE.assets.txt",
+      "role": "license",
+      "media_type": "text/plain",
+      "size_bytes": 463,
+      "sha256": "265ff83d718407309f2463b2501b4129b3b621ce4b0f9e8ae204c1167d222e2d",
+      "origin": "project-authored-synthetic",
+      "license": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "cases.v1.json",
+      "role": "contract_cases",
+      "media_type": "application/json",
+      "size_bytes": 11023,
+      "sha256": "643b9fb26c51bed823dc5bb47323e6557704a7a1788087ea33ff2151db9f91f0",
+      "origin": "generated-from-repository-script",
+      "license": "LicenseRef-MusicPlayer-M0-Private"
+    },
+    {
+      "relative_path": "recipe.v1.json",
+      "role": "generation_recipe",
+      "media_type": "application/json",
+      "size_bytes": 1430,
+      "sha256": "220550989508bd8b3b4ff1c1fefc43a9c437dd7f645316def6fbd325cfd4a3ea",
+      "origin": "generated-from-repository-script",
+      "license": "LicenseRef-MusicPlayer-M0-Private"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "empty",
+      "relative_path": "fixtures/hostile/empty.bin",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "source_or_generation_recipe": "M0-AUDIO-RECIPE-1:empty",
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": null,
+      "codec_and_profile": null,
+      "duration_ms": null,
+      "duration_tolerance_ms": 0,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "not_applicable",
+      "expected_tags": {
+        "state": "absent",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "decodable": false,
+        "duration_known": false,
+        "seekable": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "play_to_end": false
+      },
+      "expected_outcome": "controlled_error",
+      "expected_error_code": "empty_input",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "truncated-wav-pcm-mono",
+      "relative_path": "fixtures/hostile/truncated-wav-pcm-mono.wav",
+      "sha256": "58751e20c4e8403194736fd0f1be0769a09441e73c4a2e0858265465a23e7bff",
+      "size_bytes": 40,
+      "source_or_generation_recipe": "M0-AUDIO-RECIPE-1:truncated-wav-pcm-mono",
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "WAV",
+      "codec_and_profile": "PCM signed 16-bit little-endian",
+      "duration_ms": null,
+      "duration_tolerance_ms": 0,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "unknown",
+      "expected_tags": {
+        "state": "absent",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "decodable": false,
+        "duration_known": false,
+        "seekable": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "play_to_end": false
+      },
+      "expected_outcome": "controlled_error",
+      "expected_error_code": "truncated_input",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "wav-pcm-mono",
+      "relative_path": "fixtures/valid/wav-pcm-mono.wav",
+      "sha256": "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f",
+      "size_bytes": 96044,
+      "source_or_generation_recipe": "M0-AUDIO-RECIPE-1:wav-pcm-mono",
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "WAV",
+      "codec_and_profile": "PCM signed 16-bit little-endian",
+      "duration_ms": 1000,
+      "duration_tolerance_ms": 0,
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "bit_depth_if_known": 16,
+      "bitrate_mode": "uncompressed",
+      "expected_tags": {
+        "state": "absent",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "tags_present": false,
+        "artwork_present": false,
+        "play_to_end": true
+      },
+      "expected_outcome": "valid",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-002",
+        "FR-020",
+        "FR-021",
+        "FR-022"
+      ]
+    },
+    {
+      "id": "wrong-extension-wav-as-mp3",
+      "relative_path": "fixtures/edge/wrong-extension-wav-as-mp3.mp3",
+      "sha256": "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f",
+      "size_bytes": 96044,
+      "source_or_generation_recipe": "M0-AUDIO-RECIPE-1:wrong-extension-wav-as-mp3",
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "WAV",
+      "codec_and_profile": "PCM signed 16-bit little-endian",
+      "duration_ms": 1000,
+      "duration_tolerance_ms": 0,
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "bit_depth_if_known": 16,
+      "bitrate_mode": "uncompressed",
+      "expected_tags": {
+        "state": "absent",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "tags_present": false,
+        "artwork_present": false,
+        "play_to_end": true
+      },
+      "expected_outcome": "valid",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-005",
+        "FR-020",
+        "FR-022"
+      ]
+    }
+  ]
+}

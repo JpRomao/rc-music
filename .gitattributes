@@ -10,6 +10,13 @@
 *.svg text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+*.bin binary
+*.flac binary
+*.m4a binary
+*.mp3 binary
+*.ogg binary
+*.opus binary
+*.wav binary
 LICENSE* text eol=lf
 experiments/m0/candidates/qt/package-v2/PACKAGE-LIMITATIONS.txt text eol=lf
 experiments/m0/candidates/qt/package-v2/qt.conf text eol=lf

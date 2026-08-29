@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; o M0.2 possui preflight Qt validado, core/presenter determinísticos e uma jornada QML tipada vazia/tocando/erro com transporte, fila virtualizada e navegação manual anterior/próxima. Preferências, temas, alto contraste, bandeja e atalhos locais estão implementados. O pacote histórico de receita commitada `63717e5`, com MSVC 14.44, passou nos smokes offscreen original/relocado. O Qtbase 6.11.2 foi reconstruído com o backport FreeType `5a280ec`; depois, o [SDK Qt composto autenticado](docs/m0/evidence/m0-2-qt-composite-sdk.md) publicou e verificou independentemente o run `f75eb9bea8280844c6d1a2b3f4`, com 9.880 folhas/2.400.301.667 bytes. A receita `package-v2` para consumir essa identidade está implementada e congelada, mas ainda não foi executada: não há build, runtime, pacote ou smoke novo do shell contra o SDK composto. A validação nativa permanece parcial e pausada; foco, NVDA, HC/DPI, bandeja/saída nativas e `CHK-SEC` continuam pendentes. Não existe implementação de produto, shell validado integralmente, instalador, formato de áudio comprovado ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; M0.2 permanece aberto com o shell Qt experimental implementado, enquanto empacotamento e benchmarks pesados estão suspensos. A fundação comum de M0.5 agora possui WAV PCM sintético, extensão enganosa, truncado, vazio, manifesto/receita autenticados e catálogo canônico `PlaybackBackend`/`MetadataReader`. Isso ainda não é reprodução real nem suporte publicado: formatos comprimidos, tags/arte/limites, adapters, gates nativos, segurança, stack e engines continuam pendentes. Não existe scaffold do produto, instalador ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -104,6 +104,8 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Visual.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Process.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Summary.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0Layout.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0AudioCorpusTests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\tests\QtShellToolchain.Tests.ps1
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\Test-M0QtShellToolchain.ps1 -RepositoryRoot (Resolve-Path .).Path -ExpectedContractSha256 ac00a56584f2aed24732d44f9b26107084d37a73467fc56a860feeb850181952
 pwsh -NoLogo -NoProfile -NonInteractive -File .\experiments\m0\provisioning\qt-shell\tests\QtShellComposite.Tests.ps1
@@ -126,9 +128,9 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. executar a receita `package-v2` já congelada para configurar e construir o shell exclusivamente contra o SDK composto autenticado e Windows SDK 10.0.26100.0, publicar o pacote e repetir os smokes original/relocado; resolver as pendências de segurança e retomar os gates nativos/manuais de M0.2 quando a interação estiver disponível e puder produzir evidência verificável;
-2. executar M0.3 com o shell Rust/Tauri equivalente, sem áudio ou rede reais;
-3. medir os dois shells em M0.4 e somente depois continuar as comparações de áudio e aceitar/rejeitar os ADRs;
-4. iniciar o MVP guiado por TDD apenas depois da decisão M0.10.
+1. completar o corpus M0.5 com formatos P0, tags/arte e limites hostis pequenos, mantendo os checks rápidos e sem áudio pessoal;
+2. preparar por TDD o harness de áudio Qt somente depois de provisionar Qt Multimedia/FFmpeg e TagLib com origem/licença autenticadas; esses componentes ainda não existem nos SDKs locais;
+3. manter `package-v2`, A/B de shells e benchmarks suspensos até a retomada explícita, sem apresentar M0.2–M0.4 como concluídos;
+4. iniciar o MVP apenas depois da decisão M0.10, salvo nova decisão explícita do mantenedor sobre stack e plano.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

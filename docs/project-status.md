@@ -1,8 +1,8 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-28
+**Atualizado em:** 2026-08-29
 
-**Fase:** M0.2 em andamento; shell/bandeja e atalhos locais implementados; pacote histórico MSVC 14.44 com smokes offscreen original/relocado aprovado; [SDK Qt composto](m0/evidence/m0-2-qt-composite-sdk.md) autenticado e verificado independentemente no run `f75eb9bea8280844c6d1a2b3f4`; receita `package-v2` implementada e congelada, ainda sem execução real de build/pacote/smoke; tentativa nativa inconclusiva e pausada, com gates nativos/manuais e `CHK-SEC` pendentes
+**Fase:** M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos; M0.5 em andamento apenas na fundação comum do corpus, com quatro fixtures WAV/borda autenticadas e catálogo canônico; gates nativos, segurança, adapters, formatos e decisão de stack pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -92,7 +92,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 ## 5. Alegações que ainda não podem ser feitas
 
-- “o app toca MP3/M4A/Opus”: não existe implementação/corpus executado;
+- “o app toca MP3/M4A/Opus”: existe somente uma fundação de corpus WAV validada; nenhum adapter real ou formato comprimido foi comprovado;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
@@ -117,7 +117,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | ADRs | [Índice](architecture/decisions/README.md) | Propostos |
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
-| Corpus | [Corpus](quality/test-corpus.md) | Especificação |
+| Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; fundação WAV autenticada, matriz de formatos pendente |
 | Plano executável | [Plano](development-plan.md) | Baseline de execução |
 | Roadmap | [Roadmap](roadmap.md) | Proposto |
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
@@ -129,11 +129,10 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. executar a receita `package-v2` congelada exclusivamente com o SDK Qt composto autenticado e Windows SDK 10.0.26100.0, publicar o build/pacote real, repetir os smokes original/relocado e resolver as pendências de segurança; retomar os gates nativos/manuais de M0.2 somente com captura/interação verificáveis, sem áudio real;
-2. criar em M0.3 o shell Rust/Tauri equivalente, sem áudio ou rede reais;
-3. medir desempenho, acessibilidade e integrações críticas dos dois shells em M0.4;
-4. comparar separadamente os candidatos de áudio no mesmo corpus mínimo;
-5. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10.
+1. completar M0.5 com fixtures sintéticas pequenas para formatos P0, tags/arte e limites, sem áudio pessoal;
+2. provisionar Qt Multimedia/FFmpeg e TagLib com identidade/licenças fechadas antes de iniciar o adapter M0.6 por TDD;
+3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates como pendentes;
+4. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10, salvo nova decisão explícita do mantenedor sobre stack e plano.
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 

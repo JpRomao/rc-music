@@ -1,10 +1,10 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído e M0.2 em andamento com transporte, fila, navegação, preferências/temas, alto contraste, bandeja e atalhos locais implementados no candidato Qt; pacote MSVC 14.44 da receita commitada `63717e5` validado nos smokes offscreen original/relocado; SDK Qt composto e autenticado com o Qtbase corrigido; receita `package-v2` implementada e congelada, ainda sem execução real de novo build/pacote/smoke; validação nativa parcial e inputs pausados, com gates nativos e `CHK-SEC` ainda abertos; stack e engines não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos por orientação do mantenedor; a fundação comum de M0.5 está em andamento com quatro fixtures WAV/borda autenticadas e catálogo canônico; stack, engines e formatos não escolhidos
 
-**Data:** 2026-08-28
+**Data:** 2026-08-29
 
-**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2 e índice das evidências experimentais
+**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5 e índice das evidências experimentais
 
 ## 1. Autorização D0.9
 
@@ -69,7 +69,8 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | M0.2 — [integração MSVC ao pacote](evidence/m0-2-msvc-package.md) | receita integrada por TDD; 206/206 checks PowerShell, Qt Release 65/65 e core Qt OFF 55/55; diagnóstico preservado e pacote da receita commitada `63717e5` aprovado nos smokes offscreen 2/2 original e 2/2 relocado; validação nativa parcial, sem encerrar M0.2 |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
-| M0.5–M0.8 — corpus e áudio | pendente |
+| M0.5 — corpus e catálogo comum | em andamento; fundação WAV autenticada com quatro fixtures, receita determinística, manifesto, licença privada e catálogo canônico; formatos comprimidos, tags/arte/limites e licença pública pendentes |
+| M0.6–M0.8 — adapters e comparação de áudio | pendente |
 | M0.9 — integração/pacote | pendente |
 | M0.10 — combinação e decisão | pendente |
 
@@ -431,4 +432,27 @@ Naquele checkpoint, somente o Qtbase corrigido e isolado estava autenticado. QML
 
 A [composição autenticada](evidence/m0-2-qt-composite-sdk.md) publicou o run privado `f75eb9bea8280844c6d1a2b3f4` a partir do Qtbase corrigido e das origens oficiais fechadas de Qt Declarative, Qt SVG e D3D. O contrato `f75eb9b…`, o manifesto `221afa…`, o receipt externo `30399b…` e as 9.880 folhas, totalizando 2.400.301.667 bytes, passaram por verificação independente; o processo separado retornou `verified=True`. O contrato v1, o SDK oficial e os builds/pacotes históricos preservam suas identidades e alegações anteriores.
 
-A receita autenticada `package-v2` para consumir esse SDK com Windows SDK `10.0.26100.0` está implementada e congelada; seus comandos estão no [README do candidato Qt](../../experiments/m0/candidates/qt/README.md). O próximo incremento é executá-la para produzir o build/pacote real e então rodar os checks Release e smokes original/relocado. Até lá, a composição e a receita não provam carregabilidade, ABI geral, pacote, máquina limpa, CRT, licenças/notices/SBOM completos, redistribuição, segurança ou stack aceita; `CHK-SEC`, M0.2 e os gates nativos/manuais continuam abertos.
+A receita autenticada `package-v2` para consumir esse SDK com Windows SDK `10.0.26100.0` está implementada e congelada; seus comandos estão no [README do candidato Qt](../../experiments/m0/candidates/qt/README.md). Sua execução foi suspensa por orientação do mantenedor e fica disponível para retomada futura. Até lá, a composição e a receita não provam carregabilidade, ABI geral, pacote, máquina limpa, CRT, licenças/notices/SBOM completos, redistribuição, segurança ou stack aceita; `CHK-SEC`, M0.2 e os gates nativos/manuais continuam abertos.
+
+## 13. Fundação comum do corpus M0.5
+
+Por orientação do mantenedor em 2026-08-29, a execução pesada de `package-v2` e os benchmarks ficaram suspensos para priorizar desenvolvimento funcional. A antecipação desta fundação é limitada a um input comum e neutro: não inicia M1, não aceita Qt/Tauri ou engine de áudio, não publica matriz de suporte e não reclassifica M0.2–M0.4 como concluídos.
+
+O corpus em [`experiments/m0/shared/audio-corpus`](../../experiments/m0/shared/audio-corpus) contém:
+
+- WAV PCM S16LE mono/48 kHz/1 s, gerado por aritmética inteira;
+- cópia byte-idêntica com extensão `.mp3` para exigir identificação por conteúdo;
+- prefixo truncado de 40 bytes e arquivo vazio para erro controlado;
+- manifesto fechado com SHA-256/tamanhos/expectativas, receita determinística e sidecar;
+- catálogo completo dos IDs canônicos `PB-001`–`PB-012`, `PB-101`–`PB-103`, `MR-001`–`MR-020` e `MR-101`–`MR-103`.
+
+O Red inicial falhou pela ausência do módulo público. O Green passou 7/7; uma revisão independente encontrou escrita possível através de junction no gerador, reproduzida por novo Red 7/1 e corrigida para Green 8/8. A revisão final ainda demonstrou que schemas isolados aceitavam segmentos vazios e que o rewrite in-place do corpus commitado era uma capability insegura; o Red 8/2 levou à geração exclusiva em stage fresco, gramática estrita por segmento e Green final 10/10. O runner público também aprovou o corpus com quatro fixtures, duas válidas e duas hostis. O verificador cobre UTF-8/LF, schema fechado, chaves duplicadas, inventário exato, paths e links, hashes, licença, referências da receita/catálogo e estrutura RIFF/WAVE.
+
+Checks:
+
+```powershell
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0AudioCorpusTests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps1
+```
+
+M0.5 continua em andamento. Ainda faltam MP3 CBR/VBR e Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC, truncados por contêiner e casos abaixo/no/acima dos limites de tags e arte. O conteúdo atual usa `LicenseRef-MusicPlayer-M0-Private`; uma licença de redistribuição pública depende de decisão explícita do mantenedor. Nenhum áudio pessoal foi lido ou incorporado.

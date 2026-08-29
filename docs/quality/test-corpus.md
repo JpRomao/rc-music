@@ -1,7 +1,7 @@
 # Corpus de áudio e fixtures
 
-**Estado:** especificação; fixtures ainda não criadas  
-**Última revisão:** 2026-08-23
+**Estado:** M0.5 em andamento; fundação WAV autenticada criada, formatos e limites restantes pendentes
+**Última revisão:** 2026-08-29
 
 ## 1. Objetivo
 
@@ -53,6 +53,17 @@ O teste valida hash antes de usar a fixture. Mudança intencional exige atualiza
 | `oversized-tags` | 16 KiB/campo e 256 KiB total, em/fora do limite | NFR-LIMIT-002, sanitização e UI |
 | `empty` | zero bytes | erro básico |
 
+### 3.1 Fundação executável atual
+
+O primeiro incremento de M0.5 materializa quatro fixtures sintéticas em [`experiments/m0/shared/audio-corpus`](../../experiments/m0/shared/audio-corpus):
+
+- `wav-pcm-mono`: onda quadrada inteira de 500 Hz, PCM S16LE, mono, 48 kHz e 1.000 ms;
+- `wrong-extension-wav-as-mp3`: os mesmos bytes RIFF/WAVE sob extensão `.mp3`;
+- `truncated-wav-pcm-mono`: prefixo exato de 40 bytes do WAV válido;
+- `empty`: zero bytes.
+
+O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), a receita, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo permanece `partial`, nenhum formato foi declarado suportado e M0.5 não está concluído: MP3, M4A/AAC-LC, FLAC, Ogg/Vorbis, Opus/ALAC, truncados por contêiner e casos de tags/arte/limites ainda faltam.
+
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
 
 ## 4. Geração
@@ -63,6 +74,17 @@ Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek pod
 - scripts devem ser determinísticos na medida possível;
 - não exigir que todo desenvolvedor tenha encoders patenteados para rodar unitários;
 - fixtures commitadas precisam de licença explícita do conteúdo e dos arquivos resultantes.
+
+A fundação atual é gerada apenas por APIs inteiras/binárias do .NET, sem rede ou ferramenta descoberta no ambiente. O conteúdo é original e sintético, sob `LicenseRef-MusicPlayer-M0-Private`; redistribuição pública permanece proibida até o mantenedor escolher uma licença pública.
+
+O gerador aceita somente um stage novo ou vazio sob `out/m0`; ele não possui capability de sobrescrever o corpus commitado. Uma atualização é gerada em stage fresco, validada e promovida como diff revisável.
+
+Checks rápidos atuais:
+
+```powershell
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0AudioCorpusTests.ps1
+pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps1
+```
 
 ## 5. Suites
 

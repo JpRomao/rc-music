@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; shell Qt de M0.2 implementado até bandeja, com checks automatizados verdes; pacote histórico com smoke offscreen original/relocado aprovado; [SDK Qt composto](m0/evidence/m0-2-qt-composite-sdk.md) autenticado e verificado independentemente no run `f75eb9bea8280844c6d1a2b3f4`, ainda sem build/package v2; gates nativos/manuais e `CHK-SEC` pendentes.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 foi iniciado somente na fundação comum do corpus, com quatro fixtures WAV/borda autenticadas; adapters, formatos, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
@@ -79,7 +79,7 @@ A bandeja está implementada sob a política comum da seção 8: menu, intençõ
 
 O pacote de avaliação local da seção 9 já tem receita, inventário exato, imports PE e relocação de arquivos verificados. O bloqueio inicial por `RTSSHooks64.dll` foi superado após uma consulta encontrar zero processos RTSS: as duas jornadas offscreen passaram no stage de receita commitada e na cópia com espaços/acentos, sem alterar a whitelist ou aplicações externas. A evidência não aprova desktop nativo, máquina limpa, segurança ou distribuição. M0.2 continua em andamento, sem retomada de Computer Use e sem início de M0.3.
 
-O rebuild Qtbase v2 e o SDK composto preservaram a árvore/contrato v1, o SDK oficial e todos os stages históricos. O [run composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md) contém 9.880 folhas/2.400.301.667 bytes, sem colisões ou fallback, e passou na verificação independente. O passo seguinte é executar build Release exclusivo com essa identidade e Windows SDK `10.0.26100.0`, produzir package v2 e repetir os smokes original/relocado. Build/runtime/ABI, CRT, PCRE2, licenças/notices/SBOM, redistribuição, `CHK-SEC`, gates nativos, M0.2 e decisão de stack permanecem sem aprovação.
+O rebuild Qtbase v2 e o SDK composto preservaram a árvore/contrato v1, o SDK oficial e todos os stages históricos. O [run composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md) contém 9.880 folhas/2.400.301.667 bytes, sem colisões ou fallback, e passou na verificação independente. O build Release exclusivo com essa identidade, package v2 e smokes original/relocado continuam pendentes e suspensos enquanto a fundação funcional de áudio avança. Build/runtime/ABI, CRT, PCRE2, licenças/notices/SBOM, redistribuição, `CHK-SEC`, gates nativos, M0.2 e decisão de stack permanecem sem aprovação.
 
 O teste da fila verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação, não o pool completo nem as instanciações ao longo da execução. Essa prova funcional não fecha NFR-PERF-006 nem substitui a medição externa do stall de 100 ms em M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA continua pendente. Nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
 
@@ -104,6 +104,8 @@ Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movime
 ### M0-B — Áudio e metadata A/B
 
 Usando harness mínimo e o mesmo corpus:
+
+A fundação atual já congela o catálogo canônico e quatro entradas sintéticas (WAV válido, extensão enganosa, truncado e vazio), mas não publica formato suportado. Os formatos comprimidos, tags/arte, limites e adapters permanecem trabalho de M0.5–M0.8.
 
 - Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty satisfazem a mesma suite `PlaybackBackend`/`MetadataReader`;
 - cada fixture abre, toca, pausa, busca e termina, com duração e capacidades registradas;
