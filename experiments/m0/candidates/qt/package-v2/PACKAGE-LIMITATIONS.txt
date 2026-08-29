@@ -46,7 +46,9 @@ separada e nao deve ser extrapolada para os processos das ferramentas de build.
 
 Os smokes offscreen cobrem somente tray-lifecycle e error-recovery no pacote
 original e numa copia relocada com espacos e acentos. Eles amostram modulos do
-processo, nao substituem um trace completo do loader e nao provam desktop/tray
-nativo, NVDA, DPI/high contrast reais, Linux, instalador ou desempenho.
+processo e usam as fontes instaladas em WINDIR\Fonts sem copia-las para o
+pacote. Eles nao substituem um trace completo do loader nem provam comparacao
+visual deterministica, desktop/tray nativo, NVDA, DPI/high contrast reais,
+Linux, instalador ou desempenho.
 
 M0.2, CHK-SEC e a decisao de stack permanecem abertos ate os gates documentados.

@@ -350,6 +350,113 @@ Invoke-TestCase 'wrong receipt path is rejected' {
     }
 }
 
+Invoke-TestCase 'offscreen child environment uses Windows fonts and ignores parent overrides' {
+    $fixture = New-SmokeFixture
+    $hadParentFontDir = Test-Path -LiteralPath 'Env:QT_QPA_FONTDIR'
+    $parentFontDir = $env:QT_QPA_FONTDIR
+    try {
+        $arguments = New-SmokeParameters -Fixture $fixture
+        $captured = [Collections.Generic.List[object]]::new()
+        $original = $arguments.ProcessOperations.RunJourney
+        $arguments.ProcessOperations.RunJourney = {
+            param($executable, $journeyArguments, $workingDirectory, $environment, $timeoutMilliseconds)
+            $captured.Add([pscustomobject][ordered]@{
+                    has_font_dir = $environment.Contains('QT_QPA_FONTDIR')
+                    font_dir = [string]$environment['QT_QPA_FONTDIR']
+                })
+            & $original $executable $journeyArguments $workingDirectory $environment $timeoutMilliseconds
+        }.GetNewClosure()
+        $env:QT_QPA_FONTDIR = Join-Path $fixture.root 'hostile-parent-fonts'
+
+        Test-M0QtShellCompositePackageSmoke @arguments | Out-Null
+
+        $expected = Join-Path (
+            [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)) 'Fonts'
+        Assert-True ([IO.Directory]::Exists($expected)) 'Windows fonts fixture is unavailable.'
+        Assert-True ($captured.Count -eq 2) 'The child environment was not observed for both journeys.'
+        foreach ($entry in $captured) {
+            Assert-True $entry.has_font_dir 'The offscreen child environment omitted QT_QPA_FONTDIR.'
+            Assert-True ($entry.font_dir -ceq $expected) `
+                "The offscreen child environment did not bind Windows fonts: $($entry.font_dir)"
+        }
+    }
+    finally {
+        if ($hadParentFontDir) {
+            $env:QT_QPA_FONTDIR = $parentFontDir
+        }
+        else {
+            Remove-Item -LiteralPath 'Env:QT_QPA_FONTDIR' -ErrorAction SilentlyContinue
+        }
+        Remove-TestDirectory -LiteralPath $fixture.root
+    }
+}
+
+Invoke-TestCase 'module policy uses the same canonical Windows root as the child environment' {
+    $fixture = New-SmokeFixture
+    $parentSystemRoot = $env:SystemRoot
+    try {
+        $arguments = New-SmokeParameters -Fixture $fixture
+        $capturedRoots = [Collections.Generic.List[string]]::new()
+        $original = $arguments.ProcessOperations.RunJourney
+        $arguments.ProcessOperations.RunJourney = {
+            param($executable, $journeyArguments, $workingDirectory, $environment, $timeoutMilliseconds)
+            $capturedRoots.Add([string]$environment.SystemRoot)
+            & $original $executable $journeyArguments $workingDirectory $environment $timeoutMilliseconds
+        }.GetNewClosure()
+        $env:SystemRoot = Join-Path $fixture.root 'hostile-parent-root'
+
+        Test-M0QtShellCompositePackageSmoke @arguments | Out-Null
+
+        $expected = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+        Assert-True ($capturedRoots.Count -eq 2) `
+            'The canonical child Windows root was not observed for both journeys.'
+        foreach ($root in $capturedRoots) {
+            Assert-True ($root -ceq $expected) `
+                "The child environment did not use the canonical Windows root: $root"
+        }
+    }
+    finally {
+        $env:SystemRoot = $parentSystemRoot
+        Remove-TestDirectory -LiteralPath $fixture.root
+    }
+}
+
+Invoke-TestCase 'parent SystemRoot cannot authorize a module outside the canonical Windows root' {
+    $fixture = New-SmokeFixture
+    $parentSystemRoot = $env:SystemRoot
+    try {
+        $arguments = New-SmokeParameters -Fixture $fixture
+        $hostileRoot = Join-Path $fixture.root 'hostile-parent-root'
+        $original = $arguments.ProcessOperations.RunJourney
+        $arguments.ProcessOperations.RunJourney = {
+            param($executable, $journeyArguments, $workingDirectory, $environment, $timeoutMilliseconds)
+            $result = & $original $executable $journeyArguments $workingDirectory $environment $timeoutMilliseconds
+            $result.module_paths = @($result.module_paths | Where-Object {
+                    [IO.Path]::GetFileName([string]$_) -cne 'vcruntime140.dll'
+                })
+            $result.module_paths += Join-Path $hostileRoot 'System32/evil.dll'
+            return $result
+        }.GetNewClosure()
+        $env:SystemRoot = $hostileRoot
+
+        $failureMessage = $null
+        try {
+            Test-M0QtShellCompositePackageSmoke @arguments | Out-Null
+        }
+        catch {
+            $failureMessage = $_.Exception.Message
+        }
+        $hostileModule = [IO.Path]::GetFullPath((Join-Path $hostileRoot 'System32/evil.dll'))
+        $expectedFailure = "Module loaded outside app or approved System32 root: $hostileModule"
+        Assert-True ($failureMessage -ceq $expectedFailure) `
+            "The parent SystemRoot rejection was not causal: $failureMessage"
+    }
+    finally {
+        $env:SystemRoot = $parentSystemRoot
+        Remove-TestDirectory -LiteralPath $fixture.root
+    }
+}
+
 Invoke-TestCase 'open verifier result is rejected' {
     Assert-SmokeRejected {
         param($fixture, $arguments)

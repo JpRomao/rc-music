@@ -909,12 +909,20 @@ function New-M0Environment {
         [string]$WorkingDirectory
     )
 
-    $system32 = Join-Path $env:SystemRoot 'System32'
+    $windowsRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+    if ([string]::IsNullOrWhiteSpace($windowsRoot)) {
+        throw 'Windows system root is unavailable.'
+    }
+    $fontDirectory = Join-Path $windowsRoot 'Fonts'
+    if (-not [IO.Directory]::Exists($fontDirectory)) {
+        throw 'Windows fonts are unavailable.'
+    }
+    $system32 = Join-Path $windowsRoot 'System32'
     $profile = Join-Path $WorkingDirectory 'profile'
     $temporary = Join-Path $WorkingDirectory 'temp'
     return [ordered]@{
-        SystemRoot = $env:SystemRoot
-        WINDIR = $env:SystemRoot
+        SystemRoot = $windowsRoot
+        WINDIR = $windowsRoot
         PATH = $system32
         TEMP = $temporary
         TMP = $temporary
@@ -922,6 +930,7 @@ function New-M0Environment {
         APPDATA = Join-Path $profile 'AppData/Roaming'
         LOCALAPPDATA = Join-Path $profile 'AppData/Local'
         QT_QPA_PLATFORM = 'offscreen'
+        QT_QPA_FONTDIR = $fontDirectory
         QT_QUICK_BACKEND = 'software'
         QT_QUICK_CONTROLS_STYLE = 'Basic'
         QT_FATAL_WARNINGS = '1'
@@ -988,12 +997,15 @@ function Assert-M0LoadedModulePath {
         [string]$AppRoot,
 
         [Parameter(Mandatory)]
-        [Collections.Generic.HashSet[string]]$Payload
+        [Collections.Generic.HashSet[string]]$Payload,
+
+        [Parameter(Mandatory)]
+        [string]$WindowsRoot
     )
 
     $fullPath = [IO.Path]::GetFullPath($ModulePath)
     $moduleName = [IO.Path]::GetFileName($fullPath)
-    $system32 = Join-Path $env:SystemRoot 'System32'
+    $system32 = Join-Path $WindowsRoot 'System32'
     $isCrt = $moduleName -match '^(?i:vcruntime|msvcp|ucrtbase).*\.dll$'
     $isQtOrPlugin = $moduleName -match '^(?i:Qt6|qoffscreen|qsvg|qtquick)'
 
@@ -1023,7 +1035,10 @@ function Assert-M0Modules {
         [string]$AppRoot,
 
         [Parameter(Mandatory)]
-        [Collections.Generic.HashSet[string]]$Payload
+        [Collections.Generic.HashSet[string]]$Payload,
+
+        [Parameter(Mandatory)]
+        [string]$WindowsRoot
     )
 
     if ([double]$Session.capture_elapsed_ms -ge 500) {
@@ -1035,7 +1050,8 @@ function Assert-M0Modules {
         $moduleName = Assert-M0LoadedModulePath `
             -ModulePath $modulePath `
             -AppRoot $AppRoot `
-            -Payload $Payload
+            -Payload $Payload `
+            -WindowsRoot $WindowsRoot
         [void]$required.Remove($moduleName)
     }
     if ($required.Count -ne 0) {
@@ -1314,11 +1330,13 @@ function Invoke-M0SmokeJourney {
     [IO.Directory]::CreateDirectory($workingDirectory) | Out-Null
     $session = $null
     try {
+        $environment = New-M0Environment -WorkingDirectory $workingDirectory
+        $windowsRoot = [string]$environment.SystemRoot
         $session = & $ProcessOperations.RunJourney `
             $Executable `
             $Journey.arguments `
             $workingDirectory `
-            (New-M0Environment -WorkingDirectory $workingDirectory) `
+            $environment `
             $TimeoutMilliseconds
         if ($session.exit_code -ne 0 -or
             $session.stdout -cne '' -or
@@ -1326,7 +1344,11 @@ function Invoke-M0SmokeJourney {
             $session.timed_out -eq $true) {
             throw "Journey $($Journey.id) failed."
         }
-        Assert-M0Modules -Session $session -AppRoot $AppRoot -Payload $payload
+        Assert-M0Modules `
+            -Session $session `
+            -AppRoot $AppRoot `
+            -Payload $payload `
+            -WindowsRoot $windowsRoot
         if ([long]$session.survivor_count -ne 0) {
             throw 'Surviving processes detected.'
         }

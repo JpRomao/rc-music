@@ -30,8 +30,8 @@
       },
       {
         "relative_path": "experiments/m0/candidates/qt/package-v2/M0.QtShellCompositePackageSmoke.psm1",
-      "size_bytes": 50176,
-      "sha256": "67d588b12911fd15e71164055aa6050c1f47611e0f09177176357c9cdf26dec8"
+      "size_bytes": 50897,
+      "sha256": "6436716899b80f286a2f8b36a056a97528df77b5a8b4de16ee763b1be426244f"
       },
       {
         "relative_path": "experiments/m0/candidates/qt/package-v2/Test-M0QtShellCompositePackageSmoke.ps1",
@@ -45,8 +45,8 @@
       },
       {
         "relative_path": "experiments/m0/candidates/qt/package-v2/PACKAGE-LIMITATIONS.txt",
-      "size_bytes": 2971,
-      "sha256": "2be3ede990da0d6da1e8674b6fe9d50a42d77db9e635e057024d81db8f067ab3"
+      "size_bytes": 3080,
+      "sha256": "eb16c70f52a9e5d4703f41e9c9ecded7e6f1d571c55170a9a6ccf302e7fa0590"
       }
     ],
     "core_exports": [
