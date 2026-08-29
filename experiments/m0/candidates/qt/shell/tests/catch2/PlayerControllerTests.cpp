@@ -5,6 +5,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <vector>
 
@@ -13,21 +14,48 @@ namespace {
 
 class RecordingPlaybackBackend final : public PlaybackBackend {
   public:
-    void play() override { ++play_requests; }
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
 
-    void pause() override { ++pause_requests; }
+    void setEventCallback(PlaybackEventCallback) override {}
 
-    void seekTo(const std::int64_t position_ms) override { seek_requests.push_back(position_ms); }
+    PlaybackCommandResult load(const std::filesystem::path&) override { return PlaybackCommandResult::Accepted; }
 
-    void setVolume(const double volume) override { volume_requests.push_back(volume); }
+    PlaybackCommandResult play() override {
+        ++play_requests;
+        return PlaybackCommandResult::Accepted;
+    }
 
-    void setMuted(const bool muted) override { mute_requests.push_back(muted); }
+    PlaybackCommandResult pause() override {
+        ++pause_requests;
+        return PlaybackCommandResult::Accepted;
+    }
+
+    PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
+        seek_requests.push_back(position_ms);
+        return PlaybackCommandResult::Accepted;
+    }
+
+    PlaybackCommandResult setVolume(const double volume) override {
+        volume_requests.push_back(volume);
+        return PlaybackCommandResult::Accepted;
+    }
+
+    PlaybackCommandResult setMuted(const bool muted) override {
+        mute_requests.push_back(muted);
+        return PlaybackCommandResult::Accepted;
+    }
+
+    PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
 
     int play_requests{0};
     int pause_requests{0};
     std::vector<std::int64_t> seek_requests{};
     std::vector<double> volume_requests{};
     std::vector<bool> mute_requests{};
+
+  private:
+    PlaybackSnapshot snapshot_{};
 };
 
 class RecordingPlatformIntegration final : public PlatformIntegration {

@@ -13,6 +13,24 @@ enum class PlaybackStatus {
     Error,
 };
 
+enum class PlaybackErrorCode {
+    None,
+    SourceUnavailable,
+    InvalidMedia,
+    AccessDenied,
+    NetworkFailure,
+    BackendFailure,
+};
+
+enum class PlaybackCommandResult {
+    Accepted,
+    InvalidArgument,
+    NotReady,
+    NotSeekable,
+    Busy,
+    Shutdown,
+};
+
 enum class ThemeMode {
     System,
     Light,
@@ -45,6 +63,20 @@ struct PlaybackSnapshot final {
     std::int64_t position_ms{0};
     std::int64_t duration_ms{0};
     bool seekable{false};
+    std::uint64_t generation{0};
+    PlaybackErrorCode error{PlaybackErrorCode::None};
+
+    [[nodiscard]] bool operator==(const PlaybackSnapshot&) const noexcept = default;
+};
+
+enum class PlaybackEventType {
+    SnapshotChanged,
+    Ended,
+};
+
+struct PlaybackEvent final {
+    PlaybackEventType type{PlaybackEventType::SnapshotChanged};
+    PlaybackSnapshot snapshot{};
 };
 
 struct Preferences final {

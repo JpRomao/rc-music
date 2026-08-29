@@ -3,8 +3,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <filesystem>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace music_player::m0::test {
 
@@ -289,6 +292,75 @@ TEST_CASE("restoring after track selection and error retains the original seed",
     const auto following = backend.tick();
     CHECK(following.snapshot.position_ms == 84'200);
     CHECK_FALSE(following.seek_rejected);
+}
+
+TEST_CASE("playback lifecycle is idempotent and rejects commands after shutdown",
+          "[m0][qt][core][backend][lifecycle]") {
+    DeterministicPlaybackBackend backend;
+
+    CHECK(backend.unload() == PlaybackCommandResult::Accepted);
+    CHECK(backend.unload() == PlaybackCommandResult::Accepted);
+    CHECK(backend.snapshot().status == PlaybackStatus::Empty);
+
+    CHECK(backend.load(std::filesystem::path{L"synthetic.wav"}) == PlaybackCommandResult::Accepted);
+    CHECK(backend.snapshot().status == PlaybackStatus::Ready);
+    CHECK(backend.snapshot().generation == 2);
+
+    CHECK(backend.shutdown() == PlaybackCommandResult::Accepted);
+    CHECK(backend.shutdown() == PlaybackCommandResult::Accepted);
+    CHECK(backend.snapshot().status == PlaybackStatus::Empty);
+    CHECK(backend.load(std::filesystem::path{L"another.wav"}) == PlaybackCommandResult::Shutdown);
+    CHECK(backend.play() == PlaybackCommandResult::Shutdown);
+    CHECK(backend.pause() == PlaybackCommandResult::Shutdown);
+    CHECK(backend.seekTo(10) == PlaybackCommandResult::Shutdown);
+    CHECK(backend.setVolume(0.25) == PlaybackCommandResult::Shutdown);
+    CHECK(backend.setMuted(true) == PlaybackCommandResult::Shutdown);
+    CHECK(backend.unload() == PlaybackCommandResult::Shutdown);
+}
+
+TEST_CASE("pure playback events publish the final snapshot before ended exactly once",
+          "[m0][qt][core][backend][events][end]") {
+    DeterministicPlaybackBackend backend{
+        {.initial_snapshot = {PlaybackStatus::Playing, 900, 1'000, true}, .tick_interval_ms = 200}};
+    std::vector<PlaybackEvent> events;
+    backend.setEventCallback([&](const PlaybackEvent& event) { events.push_back(event); });
+
+    (void)backend.tick();
+
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].type == PlaybackEventType::SnapshotChanged);
+    CHECK(events[0].snapshot.status == PlaybackStatus::Paused);
+    CHECK(events[0].snapshot.position_ms == events[0].snapshot.duration_ms);
+    CHECK(events[1].type == PlaybackEventType::Ended);
+    CHECK(events[1].snapshot == events[0].snapshot);
+
+    (void)backend.tick();
+    CHECK(events.size() == 2);
+}
+
+TEST_CASE("reentrant replacement discards ended from the superseded generation",
+          "[m0][qt][core][backend][events][generation]") {
+    DeterministicPlaybackBackend backend{
+        {.initial_snapshot = {PlaybackStatus::Playing, 900, 1'000, true}, .tick_interval_ms = 200}};
+    std::vector<PlaybackEvent> events;
+    bool replacement_loaded = false;
+    backend.setEventCallback([&](const PlaybackEvent& event) {
+        events.push_back(event);
+        if (!replacement_loaded && event.type == PlaybackEventType::SnapshotChanged &&
+            event.snapshot.status == PlaybackStatus::Paused && event.snapshot.position_ms == 1'000) {
+            replacement_loaded = true;
+            CHECK(backend.load(std::filesystem::path{L"replacement.wav"}) == PlaybackCommandResult::Accepted);
+        }
+    });
+
+    (void)backend.tick();
+
+    REQUIRE(replacement_loaded);
+    CHECK(backend.snapshot().status == PlaybackStatus::Ready);
+    CHECK(backend.snapshot().generation == 1);
+    CHECK(std::none_of(events.cbegin(), events.cend(), [](const PlaybackEvent& event) {
+        return event.type == PlaybackEventType::Ended && event.snapshot.generation == 0;
+    }));
 }
 
 } // namespace music_player::m0::test

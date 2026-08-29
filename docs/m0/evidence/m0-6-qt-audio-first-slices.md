@@ -1,19 +1,20 @@
-# M0.6 — primeiros slices Qt Multimedia e TagLib
+# M0.6 — slices funcionais Qt Multimedia e TagLib
 
 **Data:** 2026-08-29
 
-**Estado:** M0.6 em andamento; load/probe WAV e extração síncrona inicial verdes, sem suporte de formato publicado
+**Estado:** M0.6 em andamento; lifecycle e ciclo WAV no Qt, além da extração síncrona inicial no TagLib, verdes sem suporte de formato publicado
 
 ## Escopo
 
 Este incremento prioriza comportamento funcional do candidato C++ e mantém `package-v2`, A/B e benchmarks suspensos. Ele não integra áudio ao shell/QML e não decide a stack.
 
-Dois recortes independentes foram implementados:
+Os recortes independentes implementados são:
 
-- `QtMultimediaPlaybackBackend` carrega por path o WAV sintético autenticado, publica `Loading` antes de `Ready` e expõe duração/seekability observadas;
+- `PlaybackBackend` expõe snapshot, load/unload/shutdown, play/pause/seek, volume/mudo, callback de eventos e resultados tipados; o fake continua inteiramente C++ e sem Qt;
+- `QtMultimediaPlaybackBackend` cria uma sessão `QMediaPlayer` por geração, publica `Loading` antes de `Ready`, executa play/pause/seek/fim/replay do WAV com saída mutada nos testes, emite `ended` uma vez por término e recupera após vazio/truncado;
 - `TagLibMetadataExtractor` lê propriedades WAV, preserva tags ausentes, aplica fallback de título pelo nome, identifica RIFF/WAVE por conteúdo sob extensão `.mp3` e devolve erro tipado para vazio/truncado.
 
-O nome `MetadataExtractor` é intencional. A chamada TagLib é síncrona e será envolvida por uma porta `MetadataReader` assíncrona, limitada, cancelável e identificada por geração antes de integrar a UI. A extensão concreta de load do adapter Qt também não representa ainda o contrato completo de `PlaybackBackend`.
+O nome `MetadataExtractor` é intencional. A chamada TagLib é síncrona e será envolvida por uma porta `MetadataReader` assíncrona, limitada, cancelável e identificada por geração antes de integrar a UI. Snapshot, comandos e eventos de playback são puros; o bridge de aplicação poderá consumir o mesmo `PlaybackEventCallback` do fake e do adapter Qt.
 
 ## Dependências isoladas
 
@@ -48,21 +49,28 @@ O Red do playback configurou o build Release e falhou em C++ com `C1083` porque 
 
 O Red de metadata falhou em C++ pela ausência de `TagLibMetadataExtractor.hpp`. O Green inicial cobriu `MR-101`–`MR-103`. Uma revisão encontrou o risco de manter referência ao valor de um `variant` temporário; o teste passou a preservar o resultado antes de obter a referência e foi recompilado/reexecutado. Um Red adicional então falhou ao tentar observar ausência em propriedades numéricas ainda representadas por zero; o Green tornou duração, sample rate e canais opcionais.
 
+O Red do lifecycle, executado dentro do Developer PowerShell válido, falhou porque a porta ainda não possuía `load`, `unload`, `shutdown`, `PlaybackCommandResult`, erro/generation no snapshot nem `playbackEnded`. Uma tentativa anterior fora desse ambiente falhou ao localizar o header padrão `cstdint` e foi tratada apenas como precondição de toolchain, não como Red comportamental. O Green adicionou os resultados tipados e os testes do fake e do adapter real.
+
+Na revisão, reutilizar um `QMediaPlayer` foi considerado insuficiente para separar atualizações internas atrasadas. O adapter passou a aposentar a instância anterior, remover sua saída e criar outra por geração; cada callback captura também a identidade física do player. Um teste troca imediatamente o WAV truncado pelo válido e comprova que o erro antigo não contamina a nova geração. As fixtures vazia, truncada e de extensão enganosa também são autenticadas no configure antes de chegarem ao teste.
+
+Reds adicionais fecharam defeitos reais encontrados em revisão. O primeiro reproduziu um `0xc0000005` em `QMediaPlayer::setSource` quando o callback de `Loading` fazia `unload()` de forma síncrona; comandos e callbacks passaram a revalidar player e geração após qualquer publicação reentrante. Outro mostrou que buscar para trás após EOF emitia `ended` novamente antes de reproduzir, porque o FFmpeg publica `positionChanged` ainda sob `EndOfMedia`; uma guarda de reposicionamento agora mantém o latch até a mudança terminar. Por fim, um Red cobriu a busca reentrante no snapshot final antes do `EndOfMedia`: o estado `Stopped` intermediário deixou de publicar um fim prematuro. A ordem pura também é testada no fake e no adapter: snapshot final pausado antes de `ended`, sem `Ready` transitório no término, e nenhum evento antigo atribuído à nova geração ou à posição substituída.
+
 No build integrado, novo e Release:
 
 - configure: MSVC `19.44.35228.0`, sucesso;
-- build: 145 passos, sucesso com `/W4 /WX /permissive-` nos alvos próprios;
-- CTest: **60/60**;
+- build Release integrado: sucesso com `/W4 /WX /permissive-` nos alvos próprios;
+- CTest integral: **63/63**;
 - corpus autenticado: **14/14**;
-- teste Qt `m0.qt.audio.pb-001-wav-load`: `Loading → Ready`, 1.000 ms e seekable;
+- teste Qt `m0.qt.audio.playback-lifecycle`: `Loading → Ready`, 1.000 ms, seekable, play/pause/seek/fim/replay, `ended` ordenado e único, reentrada, lifecycle, troca rápida, conteúdo sob extensão enganosa e erro/recuperação;
 - metadata: **45 asserções em quatro casos**, incluindo `MR-101`, `MR-102`, `MR-103` e ausência sem zero falso;
 - configure/build separado com `M0_QT_AUDIO_SUPPORT=OFF`: `m0_qt_core` verde e cache sem entradas Qt6/TagLib;
+- `clang-format --dry-run --Werror`, corpus 14/14, layout M0 e validação dos 44 Markdown/83 requisitos verdes;
 - nenhum processo de teste permaneceu aberto.
 
 O timeout de dois segundos no teste é um limite funcional para impedir espera indefinida, não uma coleta de benchmark nem prova de `open-to-audible`.
 
 ## Limites e próximo slice
 
-Este resultado não prova áudio audível, play/pause reais, seek, evento `ended`, unload/shutdown, descarte por geração, recuperação após erro, codecs comprimidos, UI, dispositivo, pacote ou Linux. `PB-101` permanece aberto porque exige seek e término reais; `PB-001` possui apenas a linha WAV coberta. Nenhum formato foi publicado e M0.6 não está concluído.
+Este resultado observa play/pause/seek/fim no `QMediaPlayer`, com a saída deliberadamente mutada, mas não prova áudio audível, dispositivo físico, open-to-audible, underrun ou device lost. Também não cobre codecs comprimidos, metadata assíncrona, UI, pacote ou Linux. `PB-101` está verde somente para o WAV autenticado; `PB-001` continua incompleto na matriz de formatos. `PB-005` continua pendente para uma rejeição posterior à aceitação pelo adapter, pois `QMediaPlayer::setPosition` não devolve confirmação/erro; a rejeição síncrona por estado inválido já retorna erro tipado sem alterar o snapshot. Nenhum formato foi publicado e M0.6 não está concluído.
 
-O próximo incremento funcional deve materializar erros/eventos/geração e a lifecycle da porta de playback, completar seek/fim do WAV e adicionar o boundary assíncrono/cancelável de metadata. Depois disso, o shell pode receber a primeira jornada local abrir → tocar → seek → pausar, ainda sem benchmarks ou empacotamento.
+O próximo incremento funcional é o boundary assíncrono/cancelável de metadata, com um worker, um slot pendente, deadline e descarte por geração. Depois, o callback puro de playback e esse reader podem alimentar a primeira jornada local abrir → tocar → seek → pausar no shell, ainda sem benchmarks ou empacotamento.

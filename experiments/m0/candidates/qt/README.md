@@ -163,7 +163,7 @@ Configure com `M0_QT_SHELL_SUPPORT=OFF` — o padrão — continua compilando e 
 
 ## Build dos primeiros slices de áudio reais
 
-`M0_QT_AUDIO_SUPPORT=ON` adiciona dois alvos experimentais e independentes do QML: `m0_qt_audio_adapters`, com Qt Multimedia, e `m0_taglib_metadata_extractor`, com TagLib dinâmico. O primeiro teste cobre somente o load/probe do WAV autenticado de `PB-001`; os testes do extrator cobrem `MR-101`–`MR-103`. O extrator é deliberadamente síncrono e ainda não representa a porta `MetadataReader` assíncrona/cancelável final.
+`M0_QT_AUDIO_SUPPORT=ON` adiciona dois alvos experimentais e independentes do QML: `m0_qt_audio_adapters`, com Qt Multimedia, e `m0_taglib_metadata_extractor`, com TagLib dinâmico. A porta C++ de playback expõe snapshot, load/unload/shutdown, callback de eventos e resultados tipados. O fake e o adapter real compartilham a ordem snapshot final → `ended` e o descarte por geração. O adapter cria uma sessão `QMediaPlayer` por geração e descarta a anterior estruturalmente; seus testes cobrem load, play/pause idempotentes, seek/fim/replay, `ended` único, lifecycle, erro tipado, reentrada, troca rápida, extensão enganosa e recuperação após vazio/truncado no recorte WAV. Os testes do extrator cobrem `MR-101`–`MR-103`. O extrator é deliberadamente síncrono e ainda não representa a porta `MetadataReader` assíncrona/cancelável final.
 
 Use MSVC 14.44 e Windows SDK 10.0.26100.0. O SDK Qt base, o overlay Qt Multimedia e o prefixo TagLib ficam separados; o configure não os copia nem altera:
 
@@ -194,7 +194,7 @@ $ctest = 'C:\Program Files\CMake\bin\ctest.exe'
 & $ctest --test-dir $build -C Release --output-on-failure
 ```
 
-O overlay precisa usar `/` ao atravessar o cache CMake; backslashes em `QT_ADDITIONAL_PACKAGES_PREFIX_PATH` podem virar escapes inválidos em um `try_compile`. Esse recorte não executa benchmark, não usa arquivo pessoal e não publica suporte a WAV ou qualquer outro formato.
+O overlay precisa usar `/` ao atravessar o cache CMake; backslashes em `QT_ADDITIONAL_PACKAGES_PREFIX_PATH` podem virar escapes inválidos em um `try_compile`. Os testes deixam a saída mutada ao executar `play()`. Esse recorte não executa benchmark, não usa arquivo pessoal e não publica suporte a WAV ou qualquer outro formato; estados/seek/EOF do engine não substituem prova de áudio audível ou dispositivo físico.
 
 ## Pacote local de avaliação
 

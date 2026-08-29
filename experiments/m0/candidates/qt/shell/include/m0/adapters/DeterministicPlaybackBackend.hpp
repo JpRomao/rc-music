@@ -24,30 +24,42 @@ class DeterministicPlaybackBackend final : public PlaybackBackend {
   public:
     explicit DeterministicPlaybackBackend(DeterministicPlaybackConfig config = {});
 
-    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept;
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override;
+    void setEventCallback(PlaybackEventCallback callback) override;
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
     [[nodiscard]] bool hasPendingSeek() const noexcept;
 
-    void play() override;
-    void pause() override;
-    void seekTo(std::int64_t position_ms) override;
-    void setVolume(double volume) override;
-    void setMuted(bool muted) override;
+    PlaybackCommandResult load(const std::filesystem::path& source_path) override;
+    PlaybackCommandResult play() override;
+    PlaybackCommandResult pause() override;
+    PlaybackCommandResult seekTo(std::int64_t position_ms) override;
+    PlaybackCommandResult setVolume(double volume) override;
+    PlaybackCommandResult setMuted(bool muted) override;
+    PlaybackCommandResult unload() override;
+    PlaybackCommandResult shutdown() override;
 
-    [[nodiscard]] bool selectTrack(std::int64_t duration_ms, PlaybackStatus status) noexcept;
+    [[nodiscard]] bool selectTrack(std::int64_t duration_ms, PlaybackStatus status);
     void rejectNextSeek() noexcept;
     [[nodiscard]] DeterministicTickResult tick();
-    [[nodiscard]] bool enterUnavailableScenario() noexcept;
-    [[nodiscard]] bool restoreInitialScenario() noexcept;
+    [[nodiscard]] bool enterUnavailableScenario();
+    [[nodiscard]] bool restoreInitialScenario();
 
   private:
+    void publishSnapshot(const PlaybackSnapshot& next);
+    void finishCurrentGenerationAtEnd();
+    void publishEvent(PlaybackEventType type);
+
     DeterministicPlaybackConfig config_;
     PlaybackSnapshot snapshot_{};
     double volume_{0.0};
     bool muted_{false};
     bool reject_next_seek_{false};
     std::optional<std::int64_t> pending_seek_{};
+    std::uint64_t generation_{0};
+    PlaybackEventCallback event_callback_{};
+    bool ended_emitted_{false};
+    bool shutdown_{false};
 };
 
 } // namespace music_player::m0

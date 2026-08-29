@@ -16,26 +16,36 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
 
   public:
     explicit QtMultimediaPlaybackBackend(QObject* parent = nullptr);
+    ~QtMultimediaPlaybackBackend() override;
 
-    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept;
-    void load(const std::filesystem::path& source_path);
-
-    void play() override;
-    void pause() override;
-    void seekTo(std::int64_t position_ms) override;
-    void setVolume(double volume) override;
-    void setMuted(bool muted) override;
-
-  signals:
-    void snapshotChanged();
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override;
+    void setEventCallback(PlaybackEventCallback callback) override;
+    PlaybackCommandResult load(const std::filesystem::path& source_path) override;
+    PlaybackCommandResult play() override;
+    PlaybackCommandResult pause() override;
+    PlaybackCommandResult seekTo(std::int64_t position_ms) override;
+    PlaybackCommandResult setVolume(double volume) override;
+    PlaybackCommandResult setMuted(bool muted) override;
+    PlaybackCommandResult unload() override;
+    PlaybackCommandResult shutdown() override;
 
   private:
-    void refreshSnapshot();
+    void createPlayerForCurrentGeneration();
+    void connectPlayerSignals(QMediaPlayer& player);
+    void refreshSnapshot(const QMediaPlayer* signal_player, std::uint64_t signal_generation);
     void publishSnapshot(const PlaybackSnapshot& next);
+    void publishEvent(PlaybackEventType type);
+    void invalidateCurrentSource();
+    void advanceGeneration() noexcept;
 
     QAudioOutput audio_output_;
-    QMediaPlayer player_;
+    QMediaPlayer* player_{nullptr};
     PlaybackSnapshot snapshot_{};
+    std::uint64_t generation_{0};
+    PlaybackEventCallback event_callback_{};
+    bool ended_emitted_{false};
+    bool repositioning_from_end_{false};
+    bool shutdown_{false};
 };
 
 } // namespace music_player::m0

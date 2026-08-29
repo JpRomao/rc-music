@@ -484,15 +484,52 @@ if(M0_QT_AUDIO_SUPPORT)
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_ROOT)
     set(M0_AUDIO_CORPUS_WAV_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/wav-pcm-mono.wav")
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WAV_FILE)
-    if(NOT EXISTS "${M0_AUDIO_CORPUS_WAV_FILE}" OR IS_DIRECTORY "${M0_AUDIO_CORPUS_WAV_FILE}")
-        message(FATAL_ERROR "The committed WAV audio corpus fixture does not exist")
-    endif()
+    set(M0_AUDIO_CORPUS_EMPTY_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/empty.bin")
+    set(M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
+        "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/truncated-wav-pcm-mono.wav")
+    set(M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE
+        "${M0_AUDIO_CORPUS_ROOT}/fixtures/edge/wrong-extension-wav-as-mp3.mp3")
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_EMPTY_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE)
+    foreach(m0_audio_fixture IN ITEMS
+            M0_AUDIO_CORPUS_WAV_FILE
+            M0_AUDIO_CORPUS_EMPTY_FILE
+            M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
+            M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE)
+        if(NOT EXISTS "${${m0_audio_fixture}}" OR IS_DIRECTORY "${${m0_audio_fixture}}")
+            message(FATAL_ERROR "The committed audio corpus fixture ${m0_audio_fixture} does not exist")
+        endif()
+    endforeach()
     file(SHA256 "${M0_AUDIO_CORPUS_WAV_FILE}" m0_audio_corpus_wav_sha256)
     file(SIZE "${M0_AUDIO_CORPUS_WAV_FILE}" m0_audio_corpus_wav_size)
     if(NOT m0_audio_corpus_wav_sha256 STREQUAL
             "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f" OR
        NOT m0_audio_corpus_wav_size EQUAL 96044)
         message(FATAL_ERROR "The committed WAV audio corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_size)
+    if(NOT m0_audio_corpus_empty_sha256 STREQUAL
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" OR
+       NOT m0_audio_corpus_empty_size EQUAL 0)
+        message(FATAL_ERROR "The committed empty audio corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}" m0_audio_corpus_truncated_wav_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}" m0_audio_corpus_truncated_wav_size)
+    if(NOT m0_audio_corpus_truncated_wav_sha256 STREQUAL
+            "58751e20c4e8403194736fd0f1be0769a09441e73c4a2e0858265465a23e7bff" OR
+       NOT m0_audio_corpus_truncated_wav_size EQUAL 40)
+        message(FATAL_ERROR
+            "The committed truncated WAV audio corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE}" m0_audio_corpus_wrong_extension_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE}" m0_audio_corpus_wrong_extension_size)
+    if(NOT m0_audio_corpus_wrong_extension_sha256 STREQUAL
+            "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f" OR
+       NOT m0_audio_corpus_wrong_extension_size EQUAL 96044)
+        message(FATAL_ERROR
+            "The committed wrong-extension audio corpus fixture does not match its authenticated identity")
     endif()
 
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Multimedia)
@@ -533,6 +570,9 @@ if(M0_QT_AUDIO_SUPPORT)
         target_compile_features(m0_qt_audio_adapter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_audio_adapter_tests PRIVATE
             M0_TEST_AUDIO_WAV_FILE="${M0_AUDIO_CORPUS_WAV_FILE}"
+            M0_TEST_AUDIO_EMPTY_FILE="${M0_AUDIO_CORPUS_EMPTY_FILE}"
+            M0_TEST_AUDIO_TRUNCATED_WAV_FILE="${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}"
+            M0_TEST_AUDIO_WRONG_EXTENSION_FILE="${M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE}"
         )
         set_target_properties(m0_qt_audio_adapter_tests PROPERTIES AUTOMOC ON)
         if(MSVC)
@@ -540,14 +580,14 @@ if(M0_QT_AUDIO_SUPPORT)
         else()
             target_compile_options(m0_qt_audio_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
-        add_test(NAME m0.qt.audio.pb-001-wav-load COMMAND m0_qt_audio_adapter_tests)
+        add_test(NAME m0.qt.audio.playback-lifecycle COMMAND m0_qt_audio_adapter_tests)
         get_target_property(m0_qt_audio_runtime Qt6::Multimedia IMPORTED_LOCATION_RELEASE)
         get_target_property(m0_qt_audio_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)
         get_filename_component(m0_qt_audio_runtime_dir "${m0_qt_audio_runtime}" DIRECTORY)
         get_filename_component(m0_qt_audio_core_runtime_dir "${m0_qt_audio_core_runtime}" DIRECTORY)
         get_filename_component(m0_qt_audio_prefix "${m0_qt_audio_runtime_dir}" DIRECTORY)
-        set_tests_properties(m0.qt.audio.pb-001-wav-load PROPERTIES
-            LABELS "m0;qt;audio;PB-001"
+        set_tests_properties(m0.qt.audio.playback-lifecycle PROPERTIES
+            LABELS "m0;qt;audio;PB-001;PB-002;PB-003;PB-006;PB-007;PB-008;PB-009;PB-010;PB-011;PB-012;PB-101;PB-102;PB-103"
             TIMEOUT 5
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"

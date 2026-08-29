@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.6 iniciado, com empacotamento/A-B/benchmarks pesados suspensos; o primeiro load WAV via Qt Multimedia e a extração TagLib `MR-101`–`MR-103` estão verdes, enquanto porta completa, async/cancelamento, integração UI, formatos, arte/limites, gates nativos e decisão de stack permanecem pendentes
+**Fase:** M0.6 em andamento, com empacotamento/A-B/benchmarks pesados suspensos; lifecycle/eventos tipados, geração isolada e o ciclo load/play/pause/seek/fim do WAV via Qt Multimedia estão verdes, assim como `MR-101`–`MR-103` no TagLib, enquanto async/cancelamento, integração UI, codecs, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -123,14 +123,14 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; primeiros slices M0.6 verdes; pacote v2, integração, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; lifecycle/WAV/TagLib M0.6 verdes; pacote v2, integração, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. completar a porta Qt de playback por TDD e envolver a extração TagLib em leitura assíncrona/cancelável com geração;
-2. integrar a jornada abrir → tocar → seek → pausar no shell candidato antes de ampliar a matriz de codecs;
+1. envolver a extração TagLib em leitura assíncrona/cancelável com geração e fila limitada;
+2. integrar o callback puro da porta e a jornada abrir → tocar → seek → pausar no shell candidato antes de ampliar a matriz de codecs;
 3. fechar em paralelo apenas os casos pequenos de corpus necessários ao comportamento em desenvolvimento, sem áudio pessoal;
 4. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 

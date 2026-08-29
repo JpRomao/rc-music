@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas; M0.6 iniciou com load/probe WAV via Qt Multimedia e extração TagLib `MR-101`–`MR-103`; porta completa, integração, suporte de formatos, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas; M0.6 cobre lifecycle/eventos tipados, geração isolada e load/play/pause/seek/fim do WAV via Qt Multimedia, além de `MR-101`–`MR-103` no TagLib; async/cancelamento, integração, codecs, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
