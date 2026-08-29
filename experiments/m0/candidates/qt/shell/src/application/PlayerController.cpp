@@ -38,12 +38,10 @@ bool PlayerController::seekPending() const noexcept { return seek_pending_; }
 bool PlayerController::togglePlayback() {
     switch (confirmed_snapshot_.status) {
     case PlaybackStatus::Playing:
-        playback_backend_.pause();
-        return true;
+        return playback_backend_.pause() == PlaybackCommandResult::Accepted;
     case PlaybackStatus::Ready:
     case PlaybackStatus::Paused:
-        playback_backend_.play();
-        return true;
+        return playback_backend_.play() == PlaybackCommandResult::Accepted;
     case PlaybackStatus::Empty:
     case PlaybackStatus::Loading:
     case PlaybackStatus::Error:
@@ -62,8 +60,7 @@ bool PlayerController::skipBackward() {
     const auto target =
         confirmed_snapshot_.position_ms <= delta_ms ? std::int64_t{0} : confirmed_snapshot_.position_ms - delta_ms;
     beginSeekPreview(target);
-    commitSeekPreview();
-    return true;
+    return commitSeekPreview();
 }
 
 bool PlayerController::skipForward() {
@@ -77,8 +74,7 @@ bool PlayerController::skipForward() {
     const auto target =
         remaining_ms <= delta_ms ? confirmed_snapshot_.duration_ms : confirmed_snapshot_.position_ms + delta_ms;
     beginSeekPreview(target);
-    commitSeekPreview();
-    return true;
+    return commitSeekPreview();
 }
 
 void PlayerController::beginSeekPreview(const std::int64_t position_ms) {
@@ -100,13 +96,26 @@ void PlayerController::updateSeekPreview(const std::int64_t position_ms) {
     displayed_position_ms_ = preview_position_ms_;
 }
 
-void PlayerController::commitSeekPreview() {
+bool PlayerController::commitSeekPreview() {
     if (!seek_preview_active_ || seek_pending_) {
-        return;
+        return false;
+    }
+
+    if (preview_position_ms_ == confirmed_snapshot_.position_ms) {
+        seek_preview_active_ = false;
+        displayed_position_ms_ = confirmed_snapshot_.position_ms;
+        return true;
     }
 
     seek_pending_ = true;
-    playback_backend_.seekTo(preview_position_ms_);
+    if (playback_backend_.seekTo(preview_position_ms_) == PlaybackCommandResult::Accepted) {
+        return true;
+    }
+
+    seek_pending_ = false;
+    seek_preview_active_ = false;
+    displayed_position_ms_ = confirmed_snapshot_.position_ms;
+    return false;
 }
 
 void PlayerController::rejectPendingSeek() {
@@ -120,8 +129,19 @@ void PlayerController::rejectPendingSeek() {
 }
 
 void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
+    if (snapshot.generation < confirmed_snapshot_.generation) {
+        return;
+    }
+
+    const bool generation_changed = snapshot.generation != confirmed_snapshot_.generation;
     snapshot = normalizedSnapshot(snapshot);
     confirmed_snapshot_ = snapshot;
+
+    if (generation_changed) {
+        seek_pending_ = false;
+        seek_preview_active_ = false;
+        displayed_position_ms_ = snapshot.position_ms;
+    }
 
     if (!supportsTransport(snapshot.status) || !snapshot.seekable) {
         seek_pending_ = false;
@@ -170,21 +190,38 @@ bool PlayerController::setVolume(const double volume) {
         return false;
     }
 
+    if (playback_backend_.setVolume(volume) != PlaybackCommandResult::Accepted) {
+        return false;
+    }
+
     preferences_.volume = volume;
     if (volume > 0.0) {
         last_nonzero_volume_ = volume;
     }
-    playback_backend_.setVolume(volume);
     return true;
 }
 
-void PlayerController::toggleMute() {
-    preferences_.muted = !preferences_.muted;
-    if (!preferences_.muted && preferences_.volume == 0.0) {
-        preferences_.volume = last_nonzero_volume_;
-        playback_backend_.setVolume(preferences_.volume);
+bool PlayerController::toggleMute() {
+    const bool target_muted = !preferences_.muted;
+    const double original_volume = preferences_.volume;
+    double target_volume = preferences_.volume;
+    if (!target_muted && target_volume == 0.0) {
+        target_volume = last_nonzero_volume_;
+        if (playback_backend_.setVolume(target_volume) != PlaybackCommandResult::Accepted) {
+            return false;
+        }
     }
-    playback_backend_.setMuted(preferences_.muted);
+
+    if (playback_backend_.setMuted(target_muted) != PlaybackCommandResult::Accepted) {
+        if (target_volume != original_volume) {
+            (void)playback_backend_.setVolume(original_volume);
+        }
+        return false;
+    }
+
+    preferences_.muted = target_muted;
+    preferences_.volume = target_volume;
+    return true;
 }
 
 void PlayerController::setCloseBehavior(const CloseBehavior behavior) { preferences_.close_behavior = behavior; }

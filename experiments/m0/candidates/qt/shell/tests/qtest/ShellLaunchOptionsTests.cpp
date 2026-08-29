@@ -16,6 +16,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
         QVERIFY(!options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
+        QVERIFY(!options.smoke_combined_startup);
     }
 
     void acceptsTheClosedUnavailableScenario() {
@@ -24,6 +25,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QCOMPARE(options.initial_scenario, InitialShellScenario::Unavailable);
         QVERIFY(!options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
+        QVERIFY(!options.smoke_combined_startup);
     }
 
     void acceptsTheExplicitEmptyScenario() {
@@ -32,6 +34,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
         QVERIFY(!options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
+        QVERIFY(!options.smoke_combined_startup);
     }
 
     void acceptsTheClosedErrorRecoverySmoke_data() {
@@ -50,6 +53,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QCOMPARE(options.initial_scenario, InitialShellScenario::Unavailable);
         QVERIFY(options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
+        QVERIFY(!options.smoke_combined_startup);
     }
 
     void acceptsTheClosedTrayLifecycleSmoke_data() {
@@ -71,9 +75,19 @@ class ShellLaunchOptionsTests final : public QObject {
             QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
             QVERIFY(!options.smoke_error_recovery);
             QVERIFY(options.smoke_tray_lifecycle);
+            QVERIFY(!options.smoke_combined_startup);
         } catch (const std::invalid_argument& error) {
             QFAIL(error.what());
         }
+    }
+
+    void acceptsTheCombinedStartupSmoke() {
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=combined-startup")});
+        QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+        QVERIFY(!options.smoke_error_recovery);
+        QVERIFY(!options.smoke_tray_lifecycle);
+        QVERIFY(options.smoke_combined_startup);
     }
 
     void rejectsMalformedM0Options_data() {
@@ -101,6 +115,9 @@ class ShellLaunchOptionsTests final : public QObject {
                            QStringLiteral("--m0-smoke=tray-lifecycle")};
         QTest::newRow("tray lifecycle with unavailable after smoke")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
+                           QStringLiteral("--m0-scenario=unavailable")};
+        QTest::newRow("combined startup with unavailable scenario")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=combined-startup"),
                            QStringLiteral("--m0-scenario=unavailable")};
         QTest::newRow("duplicate smoke") << QStringList{
             QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),

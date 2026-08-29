@@ -1,7 +1,7 @@
 # Roadmap
 
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  
-**Última revisão:** 2026-08-28
+**Última revisão:** 2026-08-29
 
 ## 1. Como ler
 
@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas; M0.6 cobre lifecycle/eventos tipados, geração isolada e load/play/pause/seek/fim do WAV via Qt Multimedia, além de `MR-101`–`MR-103` no TagLib; async/cancelamento, integração, codecs, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas; M0.6 cobre lifecycle/eventos tipados, geração isolada e load/play/pause/seek/fim do WAV via Qt Multimedia, `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib para WAV/MP3 CBR/VBR/Unicode/content-detection/hostis, polling/cancelamento limitado e a primeira integração aplicação/QML com abertura MP3/WAV, fallback Unicode, autoplay, play/pause, seek e metadata assíncrona; áudio audível, automação nativa, demais codecs, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
@@ -82,6 +82,8 @@ O pacote de avaliação local da seção 9 já tem receita, inventário exato, i
 O rebuild Qtbase v2 e o SDK composto preservaram a árvore/contrato v1, o SDK oficial e todos os stages históricos. O [run composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md) contém 9.880 folhas/2.400.301.667 bytes, sem colisões ou fallback, e passou na verificação independente. O build Release exclusivo com essa identidade, package v2 e smokes original/relocado continuam pendentes e suspensos enquanto a fundação funcional de áudio avança. Build/runtime/ABI, CRT, PCRE2, licenças/notices/SBOM, redistribuição, `CHK-SEC`, gates nativos, M0.2 e decisão de stack permanecem sem aprovação.
 
 O teste da fila verifica menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação, não o pool completo nem as instanciações ao longo da execução. Essa prova funcional não fecha NFR-PERF-006 nem substitui a medição externa do stall de 100 ms em M0.4. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida; nenhuma nova verificação manual é alegada para a navegação, e acessibilidade nativa/NVDA continua pendente. Nenhuma coleta comparativa A/B foi executada e nenhuma stack ou engine foi aceita.
+
+O candidato Qt combinado agora compõe o presenter com Qt Multimedia e o reader TagLib assíncrono. O modo real abre MP3/WAV por seletor nativo, mostra imediatamente o stem Unicode como fallback, inicia metadata fora do caller, toca automaticamente ao receber `Ready` da geração atual e reutiliza o transporte/seek da barra. O teste integrado percorre WAV e MP3 CBR autenticados em path Unicode, com saída mutada e seleção do arquivo injetada no boundary; o MP3 conclui metadata sem erro e publica seu título Unicode embutido. Isso prova a jornada funcional sem bloquear o event loop, mas não automatiza o diálogo visual, não prova áudio audível/dispositivo físico, não publica suporte de formato e não conclui M0-B/M0.6. Empacotamento, A/B, automação nativa e benchmarks continuam suspensos/pendentes por decisão do mantenedor.
 
 ### M0-A — UI e shell A/B
 
@@ -106,6 +108,8 @@ Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movime
 Usando harness mínimo e o mesmo corpus:
 
 O corpus atual já congela o catálogo canônico, a fundação WAV/bordas e oito fixtures de codecs sintéticos com tags Unicode, mas não publica formato suportado. Arte, limites, truncados por contêiner e adapters permanecem trabalho de M0.5–M0.8.
+
+No ramo Qt, a primeira vertical real usa esse corpus para abrir WAV e MP3 CBR pela mesma composição do executável, percorrer autoplay, seek, pausa e polling de metadata com saída mutada. Separadamente, TagLib já lê propriedades MP3 CBR/VBR por conteúdo, preserva ID3v2 Unicode, aceita stream sem tag sob extensão `.audio` com fallback pelo stem e rejeita entradas truncadas/aleatórias com erro tipado. Essa evidência reduz o risco funcional, mas não substitui a matriz completa, áudio audível, medições, soak ou comparação com o ramo desafiante.
 
 - Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty satisfazem a mesma suite `PlaybackBackend`/`MetadataReader`;
 - cada fixture abre, toca, pausa, busca e termina, com duração e capacidades registradas;

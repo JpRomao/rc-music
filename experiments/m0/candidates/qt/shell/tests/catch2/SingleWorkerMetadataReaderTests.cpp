@@ -55,6 +55,12 @@ class ControlledMetadataExtractor final : public MetadataExtractor {
         return changed_.wait_for(lock, timeout, [&] { return calls_.size() >= count; });
     }
 
+    [[nodiscard]] bool waitForCompletedCallCount(const std::size_t count,
+                                                 const std::chrono::milliseconds timeout = 2s) const {
+        std::unique_lock lock{mutex_};
+        return changed_.wait_for(lock, timeout, [&] { return completed_call_count_ >= count; });
+    }
+
     [[nodiscard]] std::vector<std::filesystem::path> calls() const {
         std::lock_guard lock{mutex_};
         return calls_;
@@ -82,6 +88,7 @@ class ControlledMetadataExtractor final : public MetadataExtractor {
             changed_.wait(lock, [&] { return !blocked_.contains(source_path); });
             should_throw = throwing_.contains(source_path);
             --active_count_;
+            ++completed_call_count_;
             changed_.notify_all();
         }
 
@@ -102,6 +109,7 @@ class ControlledMetadataExtractor final : public MetadataExtractor {
     mutable std::set<std::filesystem::path> throwing_{};
     mutable std::vector<std::filesystem::path> calls_{};
     mutable std::size_t active_count_{0};
+    mutable std::size_t completed_call_count_{0};
     mutable std::size_t max_concurrency_{0};
     mutable std::thread::id worker_thread_{};
 };
@@ -160,6 +168,24 @@ struct ReleaseBlockedReads final {
     return std::nullopt;
 }
 
+[[nodiscard]] std::optional<MetadataPollResult> waitForPollStatus(MetadataReader& reader,
+                                                                  const MetadataGeneration generation,
+                                                                  const MetadataPollStatus expected,
+                                                                  const std::chrono::milliseconds timeout = 2s) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto result = reader.poll(generation);
+        if (result.status == expected) {
+            return result;
+        }
+        if (result.status != MetadataPollStatus::Pending) {
+            return result;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return std::nullopt;
+}
+
 [[nodiscard]] std::unique_ptr<ControlledMetadataExtractor> controlledExtractor(ControlledMetadataExtractor*& observer) {
     auto extractor = std::make_unique<ControlledMetadataExtractor>();
     observer = extractor.get();
@@ -167,6 +193,116 @@ struct ReleaseBlockedReads final {
 }
 
 } // namespace
+
+TEST_CASE("typed metadata polling exposes every UI lifecycle state", "[m0][qt][core][metadata-reader][poll]") {
+    const std::filesystem::path source{"current.wav"};
+    ControlledMetadataExtractor* extractor = nullptr;
+    auto owned_extractor = controlledExtractor(extractor);
+    extractor->block(source);
+    SingleWorkerMetadataReader reader{std::move(owned_extractor)};
+    ReleaseBlockedReads release{extractor};
+
+    CHECK(reader.poll(MetadataGeneration{0}).status == MetadataPollStatus::InvalidArgument);
+    CHECK(reader.poll(MetadataGeneration{1}).status == MetadataPollStatus::InvalidArgument);
+    REQUIRE(reader.startRead({MetadataGeneration{2}, source}) == MetadataCommandResult::Accepted);
+    REQUIRE(extractor->waitForCallCount(1));
+
+    CHECK(reader.poll(MetadataGeneration{0}).status == MetadataPollStatus::InvalidArgument);
+    CHECK(reader.poll(MetadataGeneration{3}).status == MetadataPollStatus::InvalidArgument);
+    CHECK(reader.poll(MetadataGeneration{1}).status == MetadataPollStatus::StaleGeneration);
+    const auto pending = reader.poll(MetadataGeneration{2});
+    CHECK(pending.status == MetadataPollStatus::Pending);
+    CHECK_FALSE(pending.completion.has_value());
+
+    extractor->release(source);
+    const auto completed = waitForPollStatus(reader, MetadataGeneration{2}, MetadataPollStatus::Completed);
+    REQUIRE(completed.has_value());
+    REQUIRE(completed->completion.has_value());
+    CHECK(completed->completion->generation == MetadataGeneration{2});
+    CHECK(completed->completion->source_path == source);
+    CHECK(reader.poll(MetadataGeneration{2}).status == MetadataPollStatus::Idle);
+
+    REQUIRE(reader.shutdown() == MetadataCommandResult::Accepted);
+    CHECK(reader.poll(MetadataGeneration{2}).status == MetadataPollStatus::Shutdown);
+    CHECK(reader.poll(MetadataGeneration{0}).status == MetadataPollStatus::Shutdown);
+}
+
+TEST_CASE("poll reports cancellation as a terminal state", "[m0][qt][core][metadata-reader][poll][MR-016]") {
+    const std::filesystem::path source{"cancelled.wav"};
+    ControlledMetadataExtractor* extractor = nullptr;
+    auto owned_extractor = controlledExtractor(extractor);
+    extractor->block(source);
+    SingleWorkerMetadataReader reader{std::move(owned_extractor)};
+    ReleaseBlockedReads release{extractor};
+
+    REQUIRE(reader.startRead({MetadataGeneration{1}, source}) == MetadataCommandResult::Accepted);
+    REQUIRE(extractor->waitForCallCount(1));
+    REQUIRE(reader.cancelRead(MetadataGeneration{1}) == MetadataCommandResult::Accepted);
+
+    const auto cancelled = reader.poll(MetadataGeneration{1});
+    CHECK(cancelled.status == MetadataPollStatus::Cancelled);
+    CHECK_FALSE(cancelled.completion.has_value());
+    CHECK(reader.poll(MetadataGeneration{1}).status == MetadataPollStatus::Cancelled);
+    extractor->release(source);
+    REQUIRE(extractor->waitForCompletedCallCount(1));
+    CHECK_FALSE(reader.tryTakeCompletion().has_value());
+}
+
+TEST_CASE("poll expires an active blocked extraction without waiting for release",
+          "[m0][qt][core][metadata-reader][poll][MR-020]") {
+    const std::filesystem::path source{"blocked.wav"};
+    auto clock = std::make_shared<ManualMetadataClock>();
+    ControlledMetadataExtractor* extractor = nullptr;
+    auto owned_extractor = controlledExtractor(extractor);
+    extractor->block(source);
+    SingleWorkerMetadataReader reader{
+        std::move(owned_extractor),
+        {.job_budget = 2s, .now = [clock] { return clock->now(); }},
+    };
+    ReleaseBlockedReads release{extractor};
+
+    REQUIRE(reader.startRead({MetadataGeneration{1}, source}) == MetadataCommandResult::Accepted);
+    REQUIRE(extractor->waitForCallCount(1));
+    CHECK(reader.poll(MetadataGeneration{1}).status == MetadataPollStatus::Pending);
+
+    clock->advanceAndCount(2s);
+    const auto expired = reader.poll(MetadataGeneration{1});
+    CHECK(expired.status == MetadataPollStatus::Expired);
+    CHECK_FALSE(expired.completion.has_value());
+    CHECK(reader.poll(MetadataGeneration{1}).status == MetadataPollStatus::Expired);
+
+    extractor->release(source);
+    REQUIRE(extractor->waitForCompletedCallCount(1));
+    CHECK_FALSE(reader.tryTakeCompletion().has_value());
+}
+
+TEST_CASE("poll expiration removes current queued work while an older extractor is active",
+          "[m0][qt][core][metadata-reader][poll][MR-017][MR-020]") {
+    const std::filesystem::path active{"active.wav"};
+    const std::filesystem::path expired_pending{"expired-pending.wav"};
+    const std::filesystem::path following{"following.wav"};
+    auto clock = std::make_shared<ManualMetadataClock>();
+    ControlledMetadataExtractor* extractor = nullptr;
+    auto owned_extractor = controlledExtractor(extractor);
+    extractor->block(active);
+    SingleWorkerMetadataReader reader{
+        std::move(owned_extractor),
+        {.job_budget = 2s, .now = [clock] { return clock->now(); }},
+    };
+    ReleaseBlockedReads release{extractor};
+
+    REQUIRE(reader.startRead({MetadataGeneration{1}, active}) == MetadataCommandResult::Accepted);
+    REQUIRE(extractor->waitForCallCount(1));
+    REQUIRE(reader.startRead({MetadataGeneration{2}, expired_pending}) == MetadataCommandResult::Accepted);
+    clock->advanceAndCount(2s);
+    CHECK(reader.poll(MetadataGeneration{2}).status == MetadataPollStatus::Expired);
+
+    extractor->release(active);
+    REQUIRE(extractor->waitForCompletedCallCount(1));
+    REQUIRE(reader.startRead({MetadataGeneration{3}, following}) == MetadataCommandResult::Accepted);
+    REQUIRE(extractor->waitForCallCount(2));
+    CHECK(extractor->calls() == std::vector<std::filesystem::path>{active, following});
+}
 
 TEST_CASE("metadata reader validates generations and completes on its worker", "[m0][qt][core][metadata-reader]") {
     ControlledMetadataExtractor* extractor = nullptr;
@@ -304,6 +440,7 @@ TEST_CASE("MR-020 expires queued work without accumulation and remains usable",
     CHECK(extractor->calls() == std::vector<std::filesystem::path>{first});
     CHECK(extractor->maxConcurrency() == 1);
     CHECK_FALSE(reader.tryTakeCompletion().has_value());
+    CHECK(reader.poll(MetadataGeneration{3}).status == MetadataPollStatus::Expired);
 
     REQUIRE(reader.startRead({MetadataGeneration{4}, following}) == MetadataCommandResult::Accepted);
     REQUIRE(extractor->waitForCallCount(2));

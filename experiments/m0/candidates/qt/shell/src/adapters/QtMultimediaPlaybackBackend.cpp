@@ -25,6 +25,15 @@ namespace {
     return PlaybackErrorCode::BackendFailure;
 }
 
+[[nodiscard]] QString localFilePath(const std::filesystem::path& source_path) {
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(source_path.native());
+#else
+    const auto& native = source_path.native();
+    return QString::fromUtf8(native.data(), static_cast<qsizetype>(native.size()));
+#endif
+}
+
 } // namespace
 
 QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent) : QObject(parent) {}
@@ -84,7 +93,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
     const auto load_generation = generation_;
     publishSnapshot({PlaybackStatus::Loading, 0, 0, false, generation_});
     if (!shutdown_ && generation_ == load_generation && player_ == load_player) {
-        load_player->setSource(QUrl::fromLocalFile(QString::fromStdWString(source_path.wstring())));
+        load_player->setSource(QUrl::fromLocalFile(localFilePath(source_path)));
     }
     return PlaybackCommandResult::Accepted;
 }

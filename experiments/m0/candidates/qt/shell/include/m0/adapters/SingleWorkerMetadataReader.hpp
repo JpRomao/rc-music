@@ -31,6 +31,7 @@ class SingleWorkerMetadataReader final : public MetadataReader {
 
     MetadataCommandResult startRead(MetadataReadRequest request) override;
     MetadataCommandResult cancelRead(MetadataGeneration generation) override;
+    [[nodiscard]] MetadataPollResult poll(MetadataGeneration generation) override;
     [[nodiscard]] std::optional<MetadataReadCompletion> tryTakeCompletion() override;
     MetadataCommandResult shutdown() override;
 
@@ -42,14 +43,20 @@ class SingleWorkerMetadataReader final : public MetadataReader {
         Deadline deadline;
     };
 
-    struct ReadyCompletion final {
-        MetadataReadCompletion completion;
-        Deadline deadline;
+    enum class CurrentState {
+        Idle,
+        Pending,
+        Active,
+        Completed,
+        Cancelled,
+        Expired,
     };
 
     void runWorker();
     [[nodiscard]] static MetadataReadResult exceptionResult();
     [[nodiscard]] std::optional<Deadline> observeTime() const noexcept;
+    [[nodiscard]] MetadataPollResult pollLocked(MetadataGeneration generation, std::optional<Deadline> observed_at);
+    void expireCurrentLocked();
 
     std::unique_ptr<MetadataExtractor> extractor_;
     SingleWorkerMetadataReaderOptions options_;
@@ -57,9 +64,10 @@ class SingleWorkerMetadataReader final : public MetadataReader {
     std::condition_variable changed_{};
     std::mutex shutdown_mutex_{};
     MetadataGeneration highest_generation_{};
-    std::optional<MetadataGeneration> cancelled_generation_{};
+    CurrentState current_state_{CurrentState::Idle};
+    std::optional<Deadline> current_deadline_{};
     std::optional<WorkItem> pending_{};
-    std::optional<ReadyCompletion> completion_{};
+    std::optional<MetadataReadCompletion> completion_{};
     bool stopping_{false};
     std::jthread worker_{};
 };

@@ -32,6 +32,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_error_recovery = true;
             else if (value == QStringLiteral("tray-lifecycle"))
                 options.smoke_tray_lifecycle = true;
+            else if (value == QStringLiteral("combined-startup"))
+                options.smoke_combined_startup = true;
             else
                 throw std::invalid_argument{"unsupported M0 shell smoke"};
             continue;
@@ -43,6 +45,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
         throw std::invalid_argument{"the error recovery smoke requires the unavailable scenario"};
     if (options.smoke_tray_lifecycle && options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the tray lifecycle smoke requires the empty scenario"};
+    if (options.smoke_combined_startup && options.initial_scenario != InitialShellScenario::Empty)
+        throw std::invalid_argument{"the combined startup smoke requires the empty scenario"};
     return options;
 }
 

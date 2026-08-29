@@ -55,7 +55,8 @@ MetadataCommandResult SingleWorkerMetadataReader::startRead(MetadataReadRequest 
         }
 
         highest_generation_ = request.generation;
-        cancelled_generation_.reset();
+        current_state_ = CurrentState::Pending;
+        current_deadline_ = deadline;
         completion_.reset();
         pending_.emplace(WorkItem{std::move(request), deadline});
     }
@@ -75,33 +76,31 @@ MetadataCommandResult SingleWorkerMetadataReader::cancelRead(const MetadataGener
         return MetadataCommandResult::StaleGeneration;
     }
 
-    cancelled_generation_ = generation;
+    current_state_ = CurrentState::Cancelled;
+    current_deadline_.reset();
     if (pending_.has_value() && pending_->request.generation == generation) {
         pending_.reset();
     }
-    if (completion_.has_value() && completion_->completion.generation == generation) {
+    if (completion_.has_value() && completion_->generation == generation) {
         completion_.reset();
     }
     return MetadataCommandResult::Accepted;
 }
 
-std::optional<MetadataReadCompletion> SingleWorkerMetadataReader::tryTakeCompletion() {
+MetadataPollResult SingleWorkerMetadataReader::poll(const MetadataGeneration generation) {
+    const auto observed_at = observeTime();
     std::lock_guard lock{mutex_};
-    if (stopping_ || !completion_.has_value()) {
+    return pollLocked(generation, observed_at);
+}
+
+std::optional<MetadataReadCompletion> SingleWorkerMetadataReader::tryTakeCompletion() {
+    const auto observed_at = observeTime();
+    std::lock_guard lock{mutex_};
+    auto result = pollLocked(highest_generation_, observed_at);
+    if (result.status != MetadataPollStatus::Completed) {
         return std::nullopt;
     }
-
-    const auto observed_at = options_.now();
-    const auto generation = completion_->completion.generation;
-    if (generation != highest_generation_ || cancelled_generation_ == generation ||
-        observed_at >= completion_->deadline) {
-        completion_.reset();
-        return std::nullopt;
-    }
-
-    auto result = std::move(completion_->completion);
-    completion_.reset();
-    return result;
+    return std::move(result.completion);
 }
 
 MetadataCommandResult SingleWorkerMetadataReader::shutdown() {
@@ -112,7 +111,8 @@ MetadataCommandResult SingleWorkerMetadataReader::shutdown() {
             stopping_ = true;
             pending_.reset();
             completion_.reset();
-            cancelled_generation_.reset();
+            current_deadline_.reset();
+            current_state_ = CurrentState::Idle;
         }
     }
     changed_.notify_all();
@@ -135,6 +135,9 @@ void SingleWorkerMetadataReader::runWorker() {
 
             work = std::move(*pending_);
             pending_.reset();
+            if (work.request.generation == highest_generation_ && current_state_ == CurrentState::Pending) {
+                current_state_ = CurrentState::Active;
+            }
         }
 
         std::optional<MetadataReadResult> result{};
@@ -149,18 +152,76 @@ void SingleWorkerMetadataReader::runWorker() {
         const auto finished_at = observeTime();
 
         std::lock_guard lock{mutex_};
-        if (!stopping_ && result.has_value() && finished_at.has_value() && *finished_at < work.deadline &&
-            work.request.generation == highest_generation_ && cancelled_generation_ != work.request.generation) {
-            completion_.emplace(ReadyCompletion{
-                MetadataReadCompletion{
-                    work.request.generation,
-                    std::move(work.request.source_path),
-                    std::move(*result),
-                },
-                work.deadline,
-            });
+        if (stopping_ || work.request.generation != highest_generation_ || current_state_ == CurrentState::Cancelled ||
+            current_state_ == CurrentState::Expired) {
+            continue;
         }
+        if ((started_at.has_value() && *started_at >= work.deadline) ||
+            (finished_at.has_value() && *finished_at >= work.deadline)) {
+            expireCurrentLocked();
+            continue;
+        }
+        if (!result.has_value() || !finished_at.has_value()) {
+            current_state_ = CurrentState::Idle;
+            current_deadline_.reset();
+            continue;
+        }
+
+        completion_.emplace(MetadataReadCompletion{
+            work.request.generation,
+            std::move(work.request.source_path),
+            std::move(*result),
+        });
+        current_state_ = CurrentState::Completed;
     }
+}
+
+MetadataPollResult SingleWorkerMetadataReader::pollLocked(const MetadataGeneration generation,
+                                                          const std::optional<Deadline> observed_at) {
+    if (stopping_) {
+        return {.status = MetadataPollStatus::Shutdown};
+    }
+    if (generation.value == 0 || generation.value > highest_generation_.value) {
+        return {.status = MetadataPollStatus::InvalidArgument};
+    }
+    if (generation.value < highest_generation_.value) {
+        return {.status = MetadataPollStatus::StaleGeneration};
+    }
+    if (current_state_ == CurrentState::Cancelled) {
+        return {.status = MetadataPollStatus::Cancelled};
+    }
+    if (current_state_ == CurrentState::Expired) {
+        return {.status = MetadataPollStatus::Expired};
+    }
+    if (current_state_ != CurrentState::Idle && current_deadline_.has_value() && observed_at.has_value() &&
+        *observed_at >= *current_deadline_) {
+        expireCurrentLocked();
+        return {.status = MetadataPollStatus::Expired};
+    }
+    if (current_state_ == CurrentState::Completed && completion_.has_value()) {
+        auto completion = std::move(*completion_);
+        completion_.reset();
+        current_deadline_.reset();
+        current_state_ = CurrentState::Idle;
+        return {
+            .status = MetadataPollStatus::Completed,
+            .completion = std::move(completion),
+        };
+    }
+    if (current_state_ == CurrentState::Pending || current_state_ == CurrentState::Active) {
+        return {.status = MetadataPollStatus::Pending};
+    }
+
+    return {.status = MetadataPollStatus::Idle};
+}
+
+void SingleWorkerMetadataReader::expireCurrentLocked() {
+    if (pending_.has_value() && pending_->request.generation == highest_generation_) {
+        pending_.reset();
+    }
+    completion_.reset();
+    current_deadline_.reset();
+    current_state_ = CurrentState::Expired;
 }
 
 MetadataReadResult SingleWorkerMetadataReader::exceptionResult() {

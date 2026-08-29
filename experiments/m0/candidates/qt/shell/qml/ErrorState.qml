@@ -8,7 +8,7 @@ ColumnLayout {
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     Accessible.role: Accessible.AlertMessage
-    Accessible.name: contract.errorTitle + ". " + contract.errorBody
+    Accessible.name: contract.errorTitle + (presenter.usesFrozenFixture ? ". " + contract.errorBody : "")
     Text {
         objectName: "error-title"
         text: root.contract.errorTitle
@@ -17,6 +17,7 @@ ColumnLayout {
     }
     Text {
         objectName: "error-body"
+        visible: root.presenter.usesFrozenFixture
         text: root.contract.errorBody
         color: root.contract.textSecondaryColor
         Layout.alignment: Qt.AlignHCenter
@@ -32,10 +33,15 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     AccessibleActionButton {
-        controlId: "error-skip"
+        controlId: root.presenter.usesFrozenFixture ? "error-skip" : "error-open-audio"
         contract: root.contract
-        text: root.contract.actionSkip
+        text: root.presenter.usesFrozenFixture ? root.contract.actionSkip : root.contract.openAudioText
         Layout.alignment: Qt.AlignHCenter
-        onClicked: root.presenter.skipUnavailable()
+        onClicked: {
+            if (root.presenter.usesFrozenFixture)
+                root.presenter.skipUnavailable();
+            else
+                root.presenter.openAudio();
+        }
     }
 }

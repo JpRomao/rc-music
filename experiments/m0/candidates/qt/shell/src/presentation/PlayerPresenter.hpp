@@ -2,6 +2,7 @@
 
 #include "m0/adapters/DeterministicPlaybackBackend.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/LocalTrackSession.hpp"
 #include "m0/application/PlayerController.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/presentation/QueueListModel.hpp"
@@ -13,6 +14,9 @@
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <cstddef>
+#include <filesystem>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -75,8 +79,11 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool exiting READ exiting NOTIFY lifecycleChanged)
     Q_PROPERTY(WindowNotice windowNotice READ windowNotice NOTIFY lifecycleChanged)
     Q_PROPERTY(bool trayNoticeEnabled READ trayNoticeEnabled NOTIFY lifecycleChanged)
+    Q_PROPERTY(bool usesFrozenFixture READ usesFrozenFixture CONSTANT)
 
   public:
+    using AudioFilePicker = std::function<std::optional<std::filesystem::path>()>;
+
     enum class PlaybackState { Unloaded, Loading, Ready, Paused, Playing, Error };
     Q_ENUM(PlaybackState)
     enum class ThemePreference { SystemTheme, LightTheme, DarkTheme };
@@ -91,6 +98,9 @@ class PlayerPresenter final : public QObject {
     Q_ENUM(WindowNotice)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent = nullptr);
+    ~PlayerPresenter() override;
 
     [[nodiscard]] QString stateId() const;
     [[nodiscard]] PlaybackState playbackState() const;
@@ -141,6 +151,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool exiting() const noexcept;
     [[nodiscard]] WindowNotice windowNotice() const noexcept;
     [[nodiscard]] bool trayNoticeEnabled() const noexcept;
+    [[nodiscard]] bool usesFrozenFixture() const noexcept;
     void refreshPlatformAvailability();
     void reportTrayUnavailable();
     Q_INVOKABLE bool requestClose();
@@ -150,6 +161,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool confirmWindowNotice();
     Q_INVOKABLE bool cancelWindowNotice();
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
+    Q_INVOKABLE bool openAudio();
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
@@ -186,7 +198,13 @@ class PlayerPresenter final : public QObject {
     void rejectNextSeekForTest() noexcept;
     [[nodiscard]] std::size_t seekCommitAttemptCountForTest() const noexcept;
     [[nodiscard]] bool enterFrozenUnavailableScenario();
+    void initializeDefaults();
+    void handlePlaybackEvent(PlaybackEvent event);
+    void pollMetadata();
     void reconcileTimer();
+    [[nodiscard]] DeterministicPlaybackBackend* fixtureBackend() noexcept;
+    [[nodiscard]] const DeterministicPlaybackBackend* fixtureBackend() const noexcept;
+    [[nodiscard]] std::optional<std::int64_t> localDurationMs() const noexcept;
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
@@ -195,11 +213,15 @@ class PlayerPresenter final : public QObject {
     std::vector<QueueNavigationItem> navigation_items_;
     PlatformIntegration& platform_;
     bool tray_available_;
-    DeterministicPlaybackBackend backend_;
+    std::unique_ptr<DeterministicPlaybackBackend> owned_backend_;
+    PlaybackBackend& backend_;
     PlayerController controller_;
     QueueListModel queue_model_;
     QTimer timer_;
     FixtureState state_;
+    AudioFilePicker audio_file_picker_{};
+    std::unique_ptr<LocalTrackSession> local_track_session_{};
+    bool uses_frozen_fixture_{true};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
     WindowNotice window_notice_{WindowNotice::NoNotice};

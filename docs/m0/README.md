@@ -1,10 +1,10 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/A-B/benchmarks pesados suspensos por orientação do mantenedor; M0.5 possui 12 fixtures autenticadas e M0.6 já cobre lifecycle/WAV no Qt, extração WAV no TagLib e reader assíncrono limitado em `MR-016`/`MR-017`/`MR-020`; stack, engines e formatos não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos por orientação do mantenedor; M0.5 possui 12 fixtures autenticadas e M0.6 já cobre lifecycle/WAV no Qt, extração WAV/MP3 CBR/VBR/Unicode no TagLib, polling assíncrono limitado e a primeira jornada aplicação/QML com MP3/WAV; stack, engines e formatos não escolhidos
 
 **Data:** 2026-08-29
 
-**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5, slices funcionais de playback/metadata M0.6 e índice das evidências experimentais
+**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5, slices funcionais e primeira integração de playback/metadata M0.6 e índice das evidências experimentais
 
 ## 1. Autorização D0.9
 
@@ -70,7 +70,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5 — corpus e catálogo comum | em andamento; 12 fixtures autenticadas cobrem WAV, MP3 CBR/VBR/Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC e bordas iniciais; arte/limites, truncados por contêiner e licença pública pendentes |
-| M0.6 — [slices Qt Multimedia/TagLib](evidence/m0-6-qt-audio-first-slices.md) | em andamento; lifecycle/eventos tipados, geração isolada, ciclo WAV e entradas hostis/enganosas verdes, além de `MR-101`–`MR-103` e do reader limitado em `MR-016`/`MR-017`/`MR-020`; codecs, integração e pacote pendentes |
+| M0.6 — [slices Qt Multimedia/TagLib](evidence/m0-6-qt-audio-first-slices.md) | em andamento; lifecycle/eventos tipados, geração isolada, ciclo WAV e entradas hostis/enganosas verdes, além de `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` para WAV/MP3 CBR/VBR/Unicode/content-detection/hostis, polling limitado em `MR-016`/`MR-017`/`MR-020` e primeira composição aplicação/QML com abertura MP3/WAV, fallback Unicode, autoplay, play/pause, seek e metadata assíncrona; áudio audível, automação nativa, demais codecs, arte/limites e pacote pendentes |
 | M0.7–M0.8 — adapter desafiante e comparação de áudio | suspensos/pendentes |
 | M0.9 — integração/pacote | pendente |
 | M0.10 — combinação e decisão | pendente |
@@ -102,7 +102,7 @@ Para paridade M0.2/M0.3, os atalhos dos [requisitos](../product/requirements.md)
 
 | Tecla | Política do shell experimental |
 |---|---|
-| `Ctrl+O` | no estado vazio, aciona uma vez a abertura falsa já existente; não abre diálogo/áudio real nem recarrega a fila carregada |
+| `Ctrl+O` | no modo de fixture, aciona uma vez a abertura falsa já existente; no executável combinado, abre o seletor nativo MP3/WAV e também permite substituir a faixa atual; a automação do diálogo visual continua pendente |
 | `Space` | reproduz/pausa com foco genérico ou no título; botões, sliders, fila e editores preservam sua própria interação, sem ativação dupla |
 | `M` | alterna mudo fora de edição de texto, usando o caso de uso existente |
 | `Left` / `Right` | fora de editores, sliders, fila e seletores que usam setas, usa os segundos configurados de retrocesso/avanço e as mesmas guardas de seek dos botões |
@@ -461,3 +461,15 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps
 ```
 
 M0.5 continua em andamento. Ainda faltam truncados por contêiner e casos abaixo/no/acima dos limites de tags e arte. O conteúdo atual usa `LicenseRef-MusicPlayer-M0-Private`; uma licença de redistribuição pública depende de decisão explícita do mantenedor. Nenhum áudio pessoal foi lido ou incorporado.
+
+## 14. Primeira jornada local integrada M0.6
+
+Por orientação do mantenedor, o desenvolvimento funcional avançou sem retomar `package-v2`, A/B, automação nativa ou benchmarks. O candidato Qt agora possui dois modos deliberadamente separados: a fixture congelada preserva o protocolo comparativo do shell, enquanto o executável combinado liga o mesmo presenter ao `QtMultimediaPlaybackBackend`, ao `SingleWorkerMetadataReader`, ao `TagLibMetadataExtractor` e a um `QFileDialog` MP3/WAV.
+
+`LocalTrackSession` mantém domínio/aplicação em C++ puro: aceita o load antes de substituir a sessão, publica imediatamente o stem Unicode como fallback, cancela metadata anterior, carrega gerações nos dois boundaries, ignora evento/resultado obsoleto ou de origem divergente e solicita autoplay quando a geração atual fica pronta. O presenter enfileira callbacks para a thread Qt, usa polling de 200 ms somente enquanto necessário, para em estados terminais e limpa timer/callback/metadata pendente no teardown. O QML reutiliza abrir, play/pause e seek em modo real e permite nova abertura no estado de erro.
+
+O teste integrado copia WAV PCM e MP3 CBR autenticados para um path temporário `ação 日本 ☕`, injeta somente a seleção na fronteira do diálogo e usa backend, reader/TagLib e presenter reais. Ele verifica o mesmo path nos adapters, fallback imediato, event loop responsivo, `Loading → Ready → Playing`, seek, pausa e metadata terminal sem erro; no MP3, o título Unicode embutido substitui o fallback. Como volume zero e mudo antecedem o load, essa evidência não prova áudio audível, dispositivo físico, open-to-audible, underrun ou device lost. Tampouco clica/inspeciona o diálogo nativo, publica formato, atualiza o pacote histórico ou conclui FR-001/FR-010/FR-012/FR-014/FR-021/FR-024.
+
+O extrator TagLib acrescenta regressões locais aos casos canônicos aplicáveis: `MR-001`/`MR-018` cobrem propriedades e tags dos MP3 CBR/VBR autenticados por conteúdo e Unicode; `MR-003`/`MR-018`/`MR-019` cobrem stream sem ID3 sob extensão `.audio` e fallback pelo stem Unicode; `MR-103` cobre ID3 truncado/frame-sync aleatório com erro tipado. O configure autentica tamanho e SHA-256 das fixtures MP3 CBR, VBR e Unicode. O filtro `[mp3]` passou 93 asserções em quatro casos; a suíte do extrator passou 146 em nove, e o CTest de metadata passou 9/9. Esse Green não transforma MP3 em formato publicado antes dos demais gates nem amplia o catálogo canônico.
+
+Os checks focados registrados nessa composição foram core C++ puro com 85 casos/2.148 asserções, `PlayerPresenterTests` 53/53, Quick Test 22/22, `m0.qt.audio.local-integration` 1/1 em 0,42 s com duas linhas e build Release do shell em 122/122 passos, incluindo a cópia de `tag.dll`; `qmllint` também ficou verde. O Red integrado de duração MP3, 2.040 ms fora de ±20 ms, foi alinhado à tolerância de ±50 ms do extrator/corpus antes do Green. A [evidência detalhada](evidence/m0-6-qt-audio-first-slices.md) preserva Reds, Greens e limites. M0.2, M0.5 e M0.6 continuam em andamento; ADR-0001/0002 permanecem `Proposto` e não há stack, engine ou matriz de formatos aceita.

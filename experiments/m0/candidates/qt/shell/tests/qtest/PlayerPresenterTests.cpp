@@ -1,4 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/ports/MetadataReader.hpp"
+#include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
@@ -13,9 +15,14 @@
 #include <QTimer>
 #include <QVariant>
 
+#include <deque>
+#include <filesystem>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace music_player::m0::test {
 namespace {
@@ -39,6 +46,100 @@ class AvailableTrayPlatform final : public PlatformIntegration {
     std::function<void()> on_exit;
 };
 
+class PresenterPlaybackBackend final : public PlaybackBackend {
+  public:
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    void setEventCallback(PlaybackEventCallback callback) override {
+        event_callback_ = std::move(callback);
+        ++callback_assignments;
+    }
+    PlaybackCommandResult load(const std::filesystem::path& source_path) override {
+        loaded_paths.push_back(source_path);
+        if (load_result == PlaybackCommandResult::Accepted) {
+            snapshot_ = {.status = PlaybackStatus::Loading, .generation = ++last_generation_};
+        }
+        return load_result;
+    }
+    PlaybackCommandResult play() override {
+        ++play_calls;
+        return play_result;
+    }
+    PlaybackCommandResult pause() override {
+        ++pause_calls;
+        return pause_result;
+    }
+    PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
+        seek_positions.push_back(position_ms);
+        return seek_result;
+    }
+    PlaybackCommandResult setVolume(const double volume) override {
+        volumes.push_back(volume);
+        return volume_result;
+    }
+    PlaybackCommandResult setMuted(const bool muted) override {
+        muted_values.push_back(muted);
+        return muted_result;
+    }
+    PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
+
+    void publish(PlaybackSnapshot snapshot) {
+        snapshot_ = snapshot;
+        if (event_callback_)
+            event_callback_({PlaybackEventType::SnapshotChanged, snapshot_});
+    }
+
+    [[nodiscard]] bool callbackInstalled() const noexcept { return static_cast<bool>(event_callback_); }
+
+    PlaybackSnapshot snapshot_{};
+    PlaybackEventCallback event_callback_{};
+    PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult seek_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult volume_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult muted_result{PlaybackCommandResult::Accepted};
+    std::vector<std::filesystem::path> loaded_paths;
+    std::vector<std::int64_t> seek_positions;
+    std::vector<double> volumes;
+    std::vector<bool> muted_values;
+    int callback_assignments{0};
+    int play_calls{0};
+    int pause_calls{0};
+
+  private:
+    std::uint64_t last_generation_{0};
+};
+
+class PresenterMetadataReader final : public MetadataReader {
+  public:
+    MetadataCommandResult startRead(MetadataReadRequest request) override {
+        requests.push_back(std::move(request));
+        return start_result;
+    }
+    MetadataCommandResult cancelRead(const MetadataGeneration generation) override {
+        cancelled_generations.push_back(generation);
+        return cancel_result;
+    }
+    [[nodiscard]] MetadataPollResult poll(const MetadataGeneration generation) override {
+        polled_generations.push_back(generation);
+        if (poll_results.empty())
+            return {MetadataPollStatus::Pending, std::nullopt};
+        auto result = std::move(poll_results.front());
+        poll_results.pop_front();
+        return result;
+    }
+    [[nodiscard]] std::optional<MetadataReadCompletion> tryTakeCompletion() override { return std::nullopt; }
+    MetadataCommandResult shutdown() override { return MetadataCommandResult::Accepted; }
+
+    MetadataCommandResult start_result{MetadataCommandResult::Accepted};
+    MetadataCommandResult cancel_result{MetadataCommandResult::Accepted};
+    std::vector<MetadataReadRequest> requests;
+    std::vector<MetadataGeneration> cancelled_generations;
+    std::vector<MetadataGeneration> polled_generations;
+    std::deque<MetadataPollResult> poll_results;
+};
+
 [[nodiscard]] FixtureBundle frozenBundle() {
     return FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
 }
@@ -49,6 +150,15 @@ class PlayerPresenterTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void fixtureOpenAudioPreservesTheFrozenModeContract();
+    void localOpenCancellationIsInert();
+    void localOpenPublishesUnicodeFallbackAndStartsMetadata();
+    void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
+    void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
+    void localTransportAcceptsAsynchronousPlayAndSeekWithoutAQueue();
+    void currentMetadataCompletionReplacesFallbackAndStopsPolling();
+    void terminalMetadataStatusStopsPollingWithoutReplacingFallback();
+    void destructionClearsPlaybackCallbackAndCancelsPendingMetadata();
     void startsFromNullableEmptyStateAndAppliesEveryDefault();
     void appliesDefaultsThatDifferFromTheCoreDefaults();
     void loadsFrozenQueueOnceWithoutReplacingTheModel();
@@ -84,6 +194,265 @@ class PlayerPresenterTests final : public QObject {
     void exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform_data();
     void exitPublishesItsGuardAndStopsTicksBeforeRequestingThePlatform();
 };
+
+void PlayerPresenterTests::fixtureOpenAudioPreservesTheFrozenModeContract() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+
+    QVERIFY(presenter.usesFrozenFixture());
+    QVERIFY(presenter.openAudio());
+
+    QVERIFY(presenter.queueLoaded());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Canção nº 17 — São João, ação e café ☕"));
+}
+
+void PlayerPresenterTests::localOpenCancellationIsInert() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    int picker_calls = 0;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [&]() -> std::optional<std::filesystem::path> {
+                                  ++picker_calls;
+                                  return std::nullopt;
+                              });
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+
+    QVERIFY(!presenter.usesFrozenFixture());
+    QVERIFY(!presenter.openAudio());
+
+    QCOMPARE(picker_calls, 1);
+    QVERIFY(backend.loaded_paths.empty());
+    QVERIFY(metadata.requests.empty());
+    QVERIFY(!presenter.hasCurrentTrack());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(states.size(), 0);
+    QCOMPARE(playback.size(), 0);
+}
+
+void PlayerPresenterTests::localOpenPublishesUnicodeFallbackAndStartsMetadata() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\Música\Abertura 日本語.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+
+    QVERIFY(presenter.openAudio());
+
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{source});
+    QCOMPARE(metadata.requests.size(), std::size_t{1});
+    QCOMPARE(metadata.requests.front().source_path, source);
+    QCOMPARE(metadata.requests.front().generation, MetadataGeneration{1});
+    QVERIFY(presenter.hasCurrentTrack());
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Abertura 日本語"));
+    QCOMPARE(presenter.currentArtist(), QString{});
+    QCOMPARE(presenter.currentAlbum(), QString{});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(presenter.queueLoaded(), false);
+    QCOMPARE(presenter.canGoPrevious(), false);
+    QCOMPARE(presenter.canGoNext(), false);
+    QCOMPARE(states.size(), 1);
+    QCOMPARE(playback.size(), 1);
+    const QList<QTimer*> timers = presenter.findChildren<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(timers.size(), 1);
+    QVERIFY(timers.front()->interval() < 200);
+    QVERIFY(timers.front()->isActive());
+}
+
+void PlayerPresenterTests::rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.load_result = PlaybackCommandResult::NotReady;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\rejected.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+
+    QVERIFY(!presenter.openAudio());
+
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{source});
+    QVERIFY(metadata.requests.empty());
+    QVERIFY(!presenter.hasCurrentTrack());
+    QCOMPARE(presenter.currentTitle(), QString{});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(states.size(), 0);
+    QCOMPARE(playback.size(), 0);
+}
+
+void PlayerPresenterTests::currentReadyEventAutoplaysAndStaleEventsAreIgnored() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\ready.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 9'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 0});
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.play_calls, 0);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QCOMPARE(presenter.durationMs(), 60'000);
+    QVERIFY(presenter.seekable());
+
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 500,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(presenter.positionMs(), 500);
+    QCOMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::localTransportAcceptsAsynchronousPlayAndSeekWithoutAQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\transport.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready,
+                     .position_ms = 5'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QCOMPARE(backend.play_calls, 1);
+
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(backend.play_calls, 2);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QVERIFY(presenter.beginSeekPreview(10'000));
+    QVERIFY(presenter.updateSeekPreview(20'000));
+    QVERIFY(presenter.commitSeekPreview());
+    QCOMPARE(backend.seek_positions, std::vector<std::int64_t>{20'000});
+    QVERIFY(presenter.seekPending());
+
+    backend.publish({.status = PlaybackStatus::Ready,
+                     .position_ms = 20'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_VERIFY(!presenter.seekPending());
+    QCOMPARE(presenter.positionMs(), 20'000);
+
+    QVERIFY(presenter.beginSeekPreview(20'000));
+    QVERIFY(presenter.commitSeekPreview());
+    QVERIFY(!presenter.seekPending());
+    QVERIFY(!presenter.seekPreviewActive());
+    QCOMPARE(backend.seek_positions, std::vector<std::int64_t>{20'000});
+
+    backend.seek_result = PlaybackCommandResult::NotSeekable;
+    QVERIFY(presenter.beginSeekPreview(30'000));
+    QVERIFY(!presenter.commitSeekPreview());
+    QVERIFY(!presenter.seekPending());
+    QVERIFY(!presenter.seekPreviewActive());
+    QCOMPARE(presenter.positionMs(), 20'000);
+
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 60'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(backend.play_calls, 3);
+}
+
+void PlayerPresenterTests::currentMetadataCompletionReplacesFallbackAndStopsPolling() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\metadata.wav)"};
+    TrackMetadata track{
+        .source_path = source,
+        .file_size_bytes = 123,
+        .tags = {.title = std::string{"Decoded title"},
+                 .artist = std::string{"Decoded artist"},
+                 .album = std::string{"Decoded album"}},
+        .display_title = "Decoded title",
+        .audio = {.duration_ms = 91'000, .container = "WAV", .codec = "PCM"},
+    };
+    metadata.poll_results.push_back(
+        {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+
+    QVERIFY(presenter.openAudio());
+    QTRY_COMPARE(presenter.currentTitle(), QStringLiteral("Decoded title"));
+
+    QCOMPARE(presenter.currentArtist(), QStringLiteral("Decoded artist"));
+    QCOMPARE(presenter.currentAlbum(), QStringLiteral("Decoded album"));
+    QVERIFY(presenter.hasDuration());
+    QCOMPARE(presenter.durationMs(), 91'000);
+    QCOMPARE(metadata.polled_generations, std::vector<MetadataGeneration>{MetadataGeneration{1}});
+    const QList<QTimer*> timers = presenter.findChildren<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(timers.size(), 1);
+    QVERIFY(!timers.front()->isActive());
+    QCOMPARE(states.size(), 2);
+    QCOMPARE(playback.size(), 2);
+}
+
+void PlayerPresenterTests::terminalMetadataStatusStopsPollingWithoutReplacingFallback() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.poll_results.push_back({MetadataPollStatus::StaleGeneration, std::nullopt});
+    const std::filesystem::path source{LR"(C:\audio\fallback.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::optional<std::filesystem::path>{source}; });
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+
+    QVERIFY(presenter.openAudio());
+    QTRY_COMPARE(metadata.polled_generations.size(), std::size_t{1});
+
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("fallback"));
+    const QList<QTimer*> timers = presenter.findChildren<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(timers.size(), 1);
+    QVERIFY(!timers.front()->isActive());
+    QCOMPARE(states.size(), 2);
+    QTest::qWait(timers.front()->interval() * 2);
+    QCOMPARE(metadata.polled_generations.size(), std::size_t{1});
+}
+
+void PlayerPresenterTests::destructionClearsPlaybackCallbackAndCancelsPendingMetadata() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\pending.wav)"};
+    auto presenter = std::make_unique<PlayerPresenter>(
+        frozenBundle(), platform, backend, metadata, [source] { return std::optional<std::filesystem::path>{source}; });
+    QVERIFY(backend.callbackInstalled());
+    QVERIFY(presenter->openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 1'000, .generation = 1});
+
+    presenter.reset();
+
+    QVERIFY(!backend.callbackInstalled());
+    QCOMPARE(backend.callback_assignments, 2);
+    QCOMPARE(metadata.cancelled_generations, std::vector<MetadataGeneration>{MetadataGeneration{1}});
+    QCoreApplication::processEvents();
+}
 
 void PlayerPresenterTests::startsFromNullableEmptyStateAndAppliesEveryDefault() {
     AvailableTrayPlatform platform;
@@ -253,6 +622,7 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
 
     PlayerPresenter presenter(frozenBundle(), platform);
     const QMetaObject* meta = presenter.metaObject();
+    QVERIFY(meta->indexOfMethod("openAudio()") >= 0);
     QVERIFY(meta->indexOfMethod("loadFrozenQueue()") >= 0);
     for (const char* method : {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
                                "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)",
@@ -837,7 +1207,15 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QCOMPARE(notice.enumerator().keyToValue("NoNotice"), 0);
     QCOMPARE(notice.enumerator().keyToValue("TrayCloseNotice"), 1);
     QCOMPARE(notice.enumerator().keyToValue("TrayUnavailableNotice"), 2);
-    const QSet<QByteArray> expected{"loadFrozenQueue",
+    const int fixture_mode_index = meta->indexOfProperty("usesFrozenFixture");
+    QVERIFY(fixture_mode_index >= 0);
+    const QMetaProperty fixture_mode = meta->property(fixture_mode_index);
+    QVERIFY(fixture_mode.isReadable());
+    QVERIFY(!fixture_mode.isWritable());
+    QVERIFY(fixture_mode.isConstant());
+    QVERIFY(!fixture_mode.hasNotifySignal());
+    const QSet<QByteArray> expected{"openAudio",
+                                    "loadFrozenQueue",
                                     "togglePlayback",
                                     "skipBackward",
                                     "skipForward",

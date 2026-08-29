@@ -1,5 +1,7 @@
 #include "presentation/PlayerPresenter.hpp"
 
+#include <QMetaObject>
+
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -131,12 +133,54 @@ std::vector<QueueNavigationItem> navigationItems(const FixtureBundle& bundle) {
     return entries;
 }
 
+QString fromUtf8(const std::string& value) {
+    return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()), backend_(backendConfig(bundle_)), controller_(backend_, platform),
-      queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)) {
+      tray_available_(platform.trayAvailable()),
+      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
+      controller_(backend_, platform), queue_model_(this), timer_(this),
+      state_(stateById(bundle_, bundle_.default_state_id)) {
+    initializeDefaults();
+    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, [this] { static_cast<void>(advanceOneTick()); });
+}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent)
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
+      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), timer_(this),
+      state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
+      local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
+      uses_frozen_fixture_(false) {
+    if (!audio_file_picker_)
+        throw std::invalid_argument{"audio file picker is required"};
+    initializeDefaults();
+    timer_.setInterval(25);
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, [this] { pollMetadata(); });
+    backend_.setEventCallback([this](const PlaybackEvent& event) {
+        const PlaybackEvent copy = event;
+        QMetaObject::invokeMethod(this, [this, copy] { handlePlaybackEvent(copy); }, Qt::QueuedConnection);
+    });
+}
+
+PlayerPresenter::~PlayerPresenter() {
+    timer_.stop();
+    if (!uses_frozen_fixture_) {
+        backend_.setEventCallback({});
+        if (local_track_session_ != nullptr)
+            static_cast<void>(local_track_session_->cancelMetadata());
+    }
+}
+
+void PlayerPresenter::initializeDefaults() {
     const FixtureDefaults& defaults = bundle_.preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
     const MotionMode motion = motionMode(defaults.motion);
@@ -148,7 +192,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     static_cast<void>(stateById(bundle_, QStringLiteral("playing")));
     if (defaults.volume_percent < 0 || defaults.volume_percent > 100 || defaults.skip_backward_seconds < 1 ||
         defaults.skip_backward_seconds > 300 || defaults.skip_forward_seconds < 1 ||
-        defaults.skip_forward_seconds > 300 || (defaults.start_minimized && !platform.trayAvailable())) {
+        defaults.skip_forward_seconds > 300 || (defaults.start_minimized && !platform_.trayAvailable())) {
         invalidMapping("preference default");
     }
     controller_.setTheme(theme);
@@ -158,27 +202,34 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
         !controller_.setSkipForwardSeconds(defaults.skip_forward_seconds)) {
         invalidMapping("numeric preference default");
     }
-    if (controller_.preferences().muted != defaults.muted)
-        controller_.toggleMute();
+    if (controller_.preferences().muted != defaults.muted && !controller_.toggleMute())
+        invalidMapping("muted preference default");
     controller_.setCloseBehavior(close);
     controller_.setRestoreLastSession(defaults.restore_last_session);
     if (!controller_.setStartMinimized(defaults.start_minimized))
         invalidMapping("start_minimized");
     controller_.setQueueEndBehavior(queue_end);
-    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
-    timer_.setTimerType(Qt::PreciseTimer);
-    connect(&timer_, &QTimer::timeout, this, [this] { static_cast<void>(advanceOneTick()); });
 }
 
-QString PlayerPresenter::stateId() const { return state_.state_id; }
+QString PlayerPresenter::stateId() const {
+    if (uses_frozen_fixture_)
+        return state_.state_id;
+    if (controller_.confirmedSnapshot().status == PlaybackStatus::Error)
+        return QStringLiteral("error");
+    return local_track_session_->hasTrack() ? QStringLiteral("playing") : QStringLiteral("empty");
+}
 PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
     return mapPlaybackState(controller_.confirmedSnapshot().status);
 }
-bool PlayerPresenter::queueLoaded() const noexcept { return state_.queue_loaded; }
-bool PlayerPresenter::hasCurrentOccurrence() const noexcept { return state_.current_occurrence_id.has_value(); }
-QString PlayerPresenter::currentOccurrenceId() const { return state_.current_occurrence_id.value_or(QString{}); }
+bool PlayerPresenter::queueLoaded() const noexcept { return uses_frozen_fixture_ && state_.queue_loaded; }
+bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
+    return uses_frozen_fixture_ && state_.current_occurrence_id.has_value();
+}
+QString PlayerPresenter::currentOccurrenceId() const {
+    return uses_frozen_fixture_ ? state_.current_occurrence_id.value_or(QString{}) : QString{};
+}
 int PlayerPresenter::currentQueueIndex() const noexcept {
-    if (!state_.current_occurrence_id.has_value())
+    if (!uses_frozen_fixture_ || !state_.current_occurrence_id.has_value())
         return -1;
     for (qsizetype index = 0; index < bundle_.queue.size(); ++index) {
         if (bundle_.queue.at(index).occurrence_id == *state_.current_occurrence_id)
@@ -186,18 +237,31 @@ int PlayerPresenter::currentQueueIndex() const noexcept {
     }
     return -1;
 }
-bool PlayerPresenter::hasContextOccurrence() const noexcept { return state_.context_occurrence_id.has_value(); }
-QString PlayerPresenter::contextOccurrenceId() const { return state_.context_occurrence_id.value_or(QString{}); }
-bool PlayerPresenter::hasPosition() const noexcept { return state_.position_ms.has_value(); }
+bool PlayerPresenter::hasContextOccurrence() const noexcept {
+    return uses_frozen_fixture_ && state_.context_occurrence_id.has_value();
+}
+QString PlayerPresenter::contextOccurrenceId() const {
+    return uses_frozen_fixture_ ? state_.context_occurrence_id.value_or(QString{}) : QString{};
+}
+bool PlayerPresenter::hasPosition() const noexcept {
+    return uses_frozen_fixture_ ? state_.position_ms.has_value() : local_track_session_->hasTrack();
+}
 qint64 PlayerPresenter::positionMs() const noexcept { return controller_.displayedPositionMs(); }
 qint64 PlayerPresenter::confirmedPositionMs() const noexcept { return controller_.confirmedSnapshot().position_ms; }
 bool PlayerPresenter::seekPreviewActive() const noexcept { return controller_.seekPreviewActive(); }
 bool PlayerPresenter::seekPending() const noexcept { return controller_.seekPending(); }
-bool PlayerPresenter::hasDuration() const noexcept { return state_.duration_ms.has_value(); }
-qint64 PlayerPresenter::durationMs() const noexcept {
-    return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
+bool PlayerPresenter::hasDuration() const noexcept {
+    return uses_frozen_fixture_ ? state_.duration_ms.has_value() : localDurationMs().has_value();
 }
-bool PlayerPresenter::seekable() const noexcept { return queueLoaded() && controller_.confirmedSnapshot().seekable; }
+qint64 PlayerPresenter::durationMs() const noexcept {
+    if (uses_frozen_fixture_)
+        return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
+    return localDurationMs().value_or(0);
+}
+bool PlayerPresenter::seekable() const noexcept {
+    return (uses_frozen_fixture_ ? queueLoaded() : local_track_session_->hasTrack()) &&
+           controller_.confirmedSnapshot().seekable;
+}
 std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirection direction) const noexcept {
     const int current = currentQueueIndex();
     if (!queueLoaded() || current < 0)
@@ -208,12 +272,34 @@ std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirectio
 }
 bool PlayerPresenter::canGoPrevious() const noexcept { return navigationTarget(QueueDirection::Previous).has_value(); }
 bool PlayerPresenter::canGoNext() const noexcept { return navigationTarget(QueueDirection::Next).has_value(); }
-QString PlayerPresenter::assetId() const { return state_.asset_id; }
-bool PlayerPresenter::hasMessage() const noexcept { return state_.message_key.has_value(); }
-QString PlayerPresenter::messageKey() const { return state_.message_key.value_or(QString{}); }
-QString PlayerPresenter::primaryActionId() const { return state_.primary_action_id; }
-bool PlayerPresenter::hasError() const noexcept { return state_.error_code.has_value(); }
-QString PlayerPresenter::errorCode() const { return state_.error_code.value_or(QString{}); }
+QString PlayerPresenter::assetId() const {
+    if (uses_frozen_fixture_)
+        return state_.asset_id;
+    return stateById(bundle_, local_track_session_->hasTrack() ? QStringLiteral("playing") : QStringLiteral("empty"))
+        .asset_id;
+}
+bool PlayerPresenter::hasMessage() const noexcept {
+    return uses_frozen_fixture_ ? state_.message_key.has_value() : !local_track_session_->hasTrack();
+}
+QString PlayerPresenter::messageKey() const {
+    return uses_frozen_fixture_
+               ? state_.message_key.value_or(QString{})
+               : (local_track_session_->hasTrack() ? QString{} : state_.message_key.value_or(QString{}));
+}
+QString PlayerPresenter::primaryActionId() const {
+    return uses_frozen_fixture_
+               ? state_.primary_action_id
+               : (local_track_session_->hasTrack() ? QStringLiteral("play-pause") : QStringLiteral("open-audio"));
+}
+bool PlayerPresenter::hasError() const noexcept {
+    return uses_frozen_fixture_ ? state_.error_code.has_value()
+                                : controller_.confirmedSnapshot().status == PlaybackStatus::Error;
+}
+QString PlayerPresenter::errorCode() const {
+    if (uses_frozen_fixture_)
+        return state_.error_code.value_or(QString{});
+    return hasError() ? QStringLiteral("playback_error") : QString{};
+}
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
         return nullptr;
@@ -232,20 +318,28 @@ const QueueItem* PlayerPresenter::contextTrack() const noexcept {
     }
     return nullptr;
 }
-bool PlayerPresenter::hasCurrentTrack() const noexcept { return currentTrack() != nullptr; }
+bool PlayerPresenter::hasCurrentTrack() const noexcept {
+    return uses_frozen_fixture_ ? currentTrack() != nullptr : local_track_session_->hasTrack();
+}
 QString PlayerPresenter::currentTitle() const {
+    if (!uses_frozen_fixture_)
+        return fromUtf8(local_track_session_->displayTitle());
     const QueueItem* const track = currentTrack();
     return track != nullptr ? track->title : QString{};
 }
 QString PlayerPresenter::currentArtist() const {
+    if (!uses_frozen_fixture_)
+        return fromUtf8(local_track_session_->artist());
     const QueueItem* const track = currentTrack();
     return track != nullptr ? track->artist : QString{};
 }
 QString PlayerPresenter::currentAlbum() const {
+    if (!uses_frozen_fixture_)
+        return fromUtf8(local_track_session_->album());
     const QueueItem* const track = currentTrack();
     return track != nullptr ? track->album : QString{};
 }
-bool PlayerPresenter::hasContextTrack() const noexcept { return contextTrack() != nullptr; }
+bool PlayerPresenter::hasContextTrack() const noexcept { return uses_frozen_fixture_ && contextTrack() != nullptr; }
 QString PlayerPresenter::contextTitle() const {
     const QueueItem* const track = contextTrack();
     return track != nullptr ? track->title : QString{};
@@ -309,6 +403,58 @@ bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
 bool PlayerPresenter::exiting() const noexcept { return exiting_; }
 PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { return window_notice_; }
 bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
+bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fixture_; }
+bool PlayerPresenter::openAudio() {
+    if (exiting_)
+        return false;
+    if (uses_frozen_fixture_) {
+        return loadFrozenQueue();
+    }
+
+    const auto selected_path = audio_file_picker_();
+    if (!selected_path.has_value() || !local_track_session_->open(*selected_path))
+        return false;
+
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    return true;
+}
+void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
+    if (uses_frozen_fixture_ || exiting_)
+        return;
+    const PlaybackSnapshot before = controller_.confirmedSnapshot();
+    local_track_session_->applyPlaybackEvent(event);
+    controller_.applyBackendSnapshot(event.snapshot);
+    if (controller_.confirmedSnapshot() == before)
+        return;
+    emit stateChanged();
+    emit playbackChanged();
+}
+void PlayerPresenter::pollMetadata() {
+    if (uses_frozen_fixture_ || exiting_)
+        return;
+    const auto duration_before = localDurationMs();
+    if (!local_track_session_->pollMetadata())
+        return;
+    reconcileTimer();
+    emit stateChanged();
+    if (duration_before != localDurationMs())
+        emit playbackChanged();
+}
+std::optional<std::int64_t> PlayerPresenter::localDurationMs() const noexcept {
+    if (uses_frozen_fixture_ || !local_track_session_->hasTrack())
+        return std::nullopt;
+    if (controller_.confirmedSnapshot().duration_ms > 0)
+        return controller_.confirmedSnapshot().duration_ms;
+    const auto& metadata = local_track_session_->trackMetadata();
+    if (metadata.has_value() && metadata->audio.duration_ms.has_value() && *metadata->audio.duration_ms > 0)
+        return metadata->audio.duration_ms;
+    return std::nullopt;
+}
+DeterministicPlaybackBackend* PlayerPresenter::fixtureBackend() noexcept { return owned_backend_.get(); }
+const DeterministicPlaybackBackend* PlayerPresenter::fixtureBackend() const noexcept { return owned_backend_.get(); }
 void PlayerPresenter::reportTrayUnavailable() {
     if (exiting_ || window_notice_ == WindowNotice::TrayUnavailableNotice)
         return;
@@ -403,15 +549,19 @@ void PlayerPresenter::refreshPlatformAvailability() {
     emit platformChanged();
 }
 bool PlayerPresenter::togglePlayback() {
-    const PlaybackStatus before = controller_.confirmedSnapshot().status;
+    const PlaybackSnapshot before = controller_.confirmedSnapshot();
+    if (uses_frozen_fixture_ && before.status != PlaybackStatus::Playing && before.duration_ms > 0 &&
+        before.position_ms >= before.duration_ms)
+        return false;
     if (!controller_.togglePlayback())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
-    if (before == controller_.confirmedSnapshot().status)
-        return false;
-    reconcileTimer();
-    emit playbackChanged();
-    return true;
+    const bool changed = before != controller_.confirmedSnapshot();
+    if (changed) {
+        reconcileTimer();
+        emit playbackChanged();
+    }
+    return uses_frozen_fixture_ ? changed : true;
 }
 bool PlayerPresenter::skipBackward() {
     if (!controller_.skipBackward())
@@ -437,8 +587,9 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
         return beginSeekPreview(0) && commitSeekPreview();
 
     const QueueItem& track = bundle_.queue.at(static_cast<qsizetype>(*target));
-    if (!track.duration_ms.has_value() ||
-        !backend_.selectTrack(*track.duration_ms, controller_.confirmedSnapshot().status))
+    auto* const fixture_backend = fixtureBackend();
+    if (fixture_backend == nullptr || !track.duration_ms.has_value() ||
+        !fixture_backend->selectTrack(*track.duration_ms, controller_.confirmedSnapshot().status))
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("playing"));
@@ -455,7 +606,8 @@ bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
     const PlaybackStatus status = controller_.confirmedSnapshot().status;
     const bool transport_active =
         status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing;
-    if (!queueLoaded() || !transport_active || !seekable() || controller_.seekPreviewActive() ||
+    const bool has_transport_source = uses_frozen_fixture_ ? queueLoaded() : local_track_session_->hasTrack();
+    if (!has_transport_source || !transport_active || !seekable() || controller_.seekPreviewActive() ||
         controller_.seekPending())
         return false;
     const auto before = controller_.displayedPositionMs();
@@ -480,8 +632,7 @@ bool PlayerPresenter::commitSeekPreview() {
     ++seek_commit_attempt_count_;
     if (!controller_.seekPreviewActive() || controller_.seekPending())
         return false;
-    controller_.commitSeekPreview();
-    if (!controller_.seekPending())
+    if (!controller_.commitSeekPreview())
         return false;
     reconcileTimer();
     emit playbackChanged();
@@ -494,7 +645,8 @@ bool PlayerPresenter::setVolume(const double volume) {
     return true;
 }
 bool PlayerPresenter::toggleMute() {
-    controller_.toggleMute();
+    if (!controller_.toggleMute())
+        return false;
     emit preferencesChanged();
     return true;
 }
@@ -599,7 +751,9 @@ bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
     return true;
 }
 bool PlayerPresenter::enterFrozenUnavailableScenario() {
-    if (!queueLoaded() || state_.state_id != QStringLiteral("playing") || !backend_.enterUnavailableScenario())
+    auto* const fixture_backend = fixtureBackend();
+    if (fixture_backend == nullptr || !queueLoaded() || state_.state_id != QStringLiteral("playing") ||
+        !fixture_backend->enterUnavailableScenario())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("error"));
@@ -609,7 +763,9 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
     return true;
 }
 bool PlayerPresenter::skipUnavailable() {
-    if (state_.state_id != QStringLiteral("error") || !backend_.restoreInitialScenario())
+    auto* const fixture_backend = fixtureBackend();
+    if (fixture_backend == nullptr || state_.state_id != QStringLiteral("error") ||
+        !fixture_backend->restoreInitialScenario())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("playing"));
@@ -622,13 +778,14 @@ bool PlayerPresenter::skipUnavailable() {
     return true;
 }
 bool PlayerPresenter::advanceOneTick() {
-    if (!queueLoaded())
+    auto* const fixture_backend = fixtureBackend();
+    if (fixture_backend == nullptr || !queueLoaded())
         return false;
     const auto before = controller_.confirmedSnapshot();
     const auto before_displayed = controller_.displayedPositionMs();
     const bool before_preview = controller_.seekPreviewActive();
     const bool before_pending = controller_.seekPending();
-    const DeterministicTickResult result = backend_.tick();
+    const DeterministicTickResult result = fixture_backend->tick();
     controller_.applyBackendSnapshot(result.snapshot);
     if (result.seek_rejected)
         controller_.rejectPendingSeek();
@@ -645,19 +802,24 @@ bool PlayerPresenter::advanceOneTick() {
         emit seekRejected();
     return changed;
 }
-void PlayerPresenter::rejectNextSeekForTest() noexcept { backend_.rejectNextSeek(); }
+void PlayerPresenter::rejectNextSeekForTest() noexcept {
+    if (auto* const fixture_backend = fixtureBackend(); fixture_backend != nullptr)
+        fixture_backend->rejectNextSeek();
+}
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 void PlayerPresenter::reconcileTimer() {
     const bool needed =
-        !exiting_ && queueLoaded() &&
-        (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending());
+        uses_frozen_fixture_
+            ? !exiting_ && queueLoaded() &&
+                  (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending())
+            : !exiting_ && local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending;
     if (needed && !timer_.isActive())
         timer_.start();
     else if (!needed && timer_.isActive())
         timer_.stop();
 }
 bool PlayerPresenter::loadFrozenQueue() {
-    if (queue_model_.loaded() || bundle_.queue.isEmpty())
+    if (!uses_frozen_fixture_ || queue_model_.loaded() || bundle_.queue.isEmpty())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("playing"));

@@ -24,7 +24,7 @@ class PlayerController final {
     [[nodiscard]] bool skipForward();
     void beginSeekPreview(std::int64_t position_ms);
     void updateSeekPreview(std::int64_t position_ms);
-    void commitSeekPreview();
+    bool commitSeekPreview();
     void rejectPendingSeek();
     void applyBackendSnapshot(PlaybackSnapshot snapshot);
 
@@ -33,7 +33,7 @@ class PlayerController final {
     [[nodiscard]] bool setSkipBackwardSeconds(int seconds);
     [[nodiscard]] bool setSkipForwardSeconds(int seconds);
     [[nodiscard]] bool setVolume(double volume);
-    void toggleMute();
+    bool toggleMute();
     void setCloseBehavior(CloseBehavior behavior);
     void setRestoreLastSession(bool restore);
     [[nodiscard]] bool setStartMinimized(bool start_minimized);

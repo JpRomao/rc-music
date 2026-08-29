@@ -451,23 +451,25 @@ if(M0_QT_SHELL_SUPPORT)
         set_tests_properties(m0.qt.fixture.repository-and-model m0.qt.presenter.initial-load PROPERTIES
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
-        add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell
-            --m0-scenario=unavailable
-            --m0-smoke=error-recovery
-        )
-        set_tests_properties(m0.qt.shell-executable.error-recovery PROPERTIES
-            LABELS "m0;qt;shell-executable;error-recovery"
-            TIMEOUT 5
-            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
-            ENVIRONMENT "${m0_qt_quick_test_environment}"
-        )
-        add_test(NAME m0.qt.shell-executable.tray-lifecycle COMMAND m0_qt_shell --m0-smoke=tray-lifecycle)
-        set_tests_properties(m0.qt.shell-executable.tray-lifecycle PROPERTIES
-            LABELS "m0;qt;shell-executable;tray;lifecycle"
-            TIMEOUT 5
-            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
-            ENVIRONMENT "${m0_qt_quick_test_environment}"
-        )
+        if(NOT M0_QT_AUDIO_SUPPORT)
+            add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell
+                --m0-scenario=unavailable
+                --m0-smoke=error-recovery
+            )
+            set_tests_properties(m0.qt.shell-executable.error-recovery PROPERTIES
+                LABELS "m0;qt;shell-executable;error-recovery"
+                TIMEOUT 5
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT "${m0_qt_quick_test_environment}"
+            )
+            add_test(NAME m0.qt.shell-executable.tray-lifecycle COMMAND m0_qt_shell --m0-smoke=tray-lifecycle)
+            set_tests_properties(m0.qt.shell-executable.tray-lifecycle PROPERTIES
+                LABELS "m0;qt;shell-executable;tray;lifecycle"
+                TIMEOUT 5
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT "${m0_qt_quick_test_environment}"
+            )
+        endif()
         set_tests_properties(m0.qt.quick.shell-states PROPERTIES
             LABELS "m0;qt;quick;shell-states"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
@@ -484,7 +486,14 @@ if(M0_QT_AUDIO_SUPPORT)
     set(M0_AUDIO_CORPUS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../shared/audio-corpus")
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_ROOT)
     set(M0_AUDIO_CORPUS_WAV_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/wav-pcm-mono.wav")
+    set(M0_AUDIO_CORPUS_MP3_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/mp3-cbr-stereo.mp3")
+    set(M0_AUDIO_CORPUS_MP3_VBR_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/mp3-vbr-stereo.mp3")
+    set(M0_AUDIO_CORPUS_MP3_UNICODE_FILE
+        "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/mp3-unicode-tags.mp3")
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WAV_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_VBR_FILE)
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_MP3_UNICODE_FILE)
     set(M0_AUDIO_CORPUS_EMPTY_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/empty.bin")
     set(M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
         "${M0_AUDIO_CORPUS_ROOT}/fixtures/hostile/truncated-wav-pcm-mono.wav")
@@ -495,6 +504,9 @@ if(M0_QT_AUDIO_SUPPORT)
     cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE)
     foreach(m0_audio_fixture IN ITEMS
             M0_AUDIO_CORPUS_WAV_FILE
+            M0_AUDIO_CORPUS_MP3_FILE
+            M0_AUDIO_CORPUS_MP3_VBR_FILE
+            M0_AUDIO_CORPUS_MP3_UNICODE_FILE
             M0_AUDIO_CORPUS_EMPTY_FILE
             M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE
             M0_AUDIO_CORPUS_WRONG_EXTENSION_FILE)
@@ -508,6 +520,27 @@ if(M0_QT_AUDIO_SUPPORT)
             "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f" OR
        NOT m0_audio_corpus_wav_size EQUAL 96044)
         message(FATAL_ERROR "The committed WAV audio corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_MP3_FILE}" m0_audio_corpus_mp3_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_MP3_FILE}" m0_audio_corpus_mp3_size)
+    if(NOT m0_audio_corpus_mp3_sha256 STREQUAL
+            "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62" OR
+       NOT m0_audio_corpus_mp3_size EQUAL 33318)
+        message(FATAL_ERROR "The committed MP3 audio corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_MP3_VBR_FILE}" m0_audio_corpus_mp3_vbr_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_MP3_VBR_FILE}" m0_audio_corpus_mp3_vbr_size)
+    if(NOT m0_audio_corpus_mp3_vbr_sha256 STREQUAL
+            "74a5c55e50a8a73198525878f1a0463de918b0490910a5f7681bb933c31b29c9" OR
+       NOT m0_audio_corpus_mp3_vbr_size EQUAL 14406)
+        message(FATAL_ERROR "The committed VBR MP3 corpus fixture does not match its authenticated identity")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_MP3_UNICODE_FILE}" m0_audio_corpus_mp3_unicode_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_MP3_UNICODE_FILE}" m0_audio_corpus_mp3_unicode_size)
+    if(NOT m0_audio_corpus_mp3_unicode_sha256 STREQUAL
+            "65e66cf43d999e98cf37cb64003d29b374a1238e454eca138c0dc5be2b18c000" OR
+       NOT m0_audio_corpus_mp3_unicode_size EQUAL 24966)
+        message(FATAL_ERROR "The committed Unicode MP3 corpus fixture does not match its authenticated identity")
     endif()
     file(SHA256 "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_sha256)
     file(SIZE "${M0_AUDIO_CORPUS_EMPTY_FILE}" m0_audio_corpus_empty_size)
@@ -564,6 +597,19 @@ if(M0_QT_AUDIO_SUPPORT)
         target_compile_options(m0_taglib_metadata_extractor PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    if(M0_QT_SHELL_SUPPORT)
+        target_link_libraries(m0_qt_shell PRIVATE
+            m0_qt_audio_adapters
+            m0_taglib_metadata_extractor
+        )
+        target_compile_definitions(m0_qt_shell PRIVATE M0_QT_COMBINED_AUDIO)
+        add_custom_command(TARGET m0_qt_shell POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:TagLib::tag>"
+                "$<TARGET_FILE_DIR:m0_qt_shell>"
+        )
+    endif()
+
     if(BUILD_TESTING)
         find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
         add_executable(m0_qt_audio_adapter_tests tests/qtest/QtMultimediaPlaybackBackendTests.cpp)
@@ -595,6 +641,62 @@ if(M0_QT_AUDIO_SUPPORT)
             ENVIRONMENT
                 "QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
         )
+
+        if(M0_QT_SHELL_SUPPORT)
+            add_test(NAME m0.qt.shell-executable.combined-startup COMMAND m0_qt_shell
+                --m0-smoke=combined-startup
+            )
+            set_tests_properties(m0.qt.shell-executable.combined-startup PROPERTIES
+                LABELS "m0;qt;shell-executable;audio;startup;lifecycle"
+                TIMEOUT 5
+                ENVIRONMENT_MODIFICATION
+                    "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+                ENVIRONMENT
+                    "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
+            )
+            add_executable(m0_qt_local_audio_integration_tests
+                tests/qtest/LocalAudioIntegrationTests.cpp
+            )
+            target_link_libraries(m0_qt_local_audio_integration_tests PRIVATE
+                m0_qt_shell_support
+                m0_qt_shell_ui
+                m0_qt_audio_adapters
+                m0_taglib_metadata_extractor
+                Qt6::Gui
+                Qt6::Test
+                Qt6::Widgets
+            )
+            target_include_directories(m0_qt_local_audio_integration_tests PRIVATE src)
+            target_compile_features(m0_qt_local_audio_integration_tests PRIVATE cxx_std_20)
+            target_compile_definitions(m0_qt_local_audio_integration_tests PRIVATE
+                M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
+                M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
+                M0_TEST_AUDIO_WAV_FILE="${M0_AUDIO_CORPUS_WAV_FILE}"
+                M0_TEST_AUDIO_MP3_FILE="${M0_AUDIO_CORPUS_MP3_FILE}"
+            )
+            set_target_properties(m0_qt_local_audio_integration_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_local_audio_integration_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_local_audio_integration_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_custom_command(TARGET m0_qt_local_audio_integration_tests POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:TagLib::tag>"
+                    "$<TARGET_FILE_DIR:m0_qt_local_audio_integration_tests>"
+            )
+            add_test(NAME m0.qt.audio.local-integration COMMAND m0_qt_local_audio_integration_tests)
+            set_tests_properties(m0.qt.audio.local-integration PROPERTIES
+                LABELS "m0;qt;audio;integration;local"
+                TIMEOUT 10
+                ENVIRONMENT_MODIFICATION
+                    "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+                ENVIRONMENT
+                    "QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins;QT_QPA_PLATFORM=offscreen"
+            )
+        endif()
     endif()
 endif()
 if(NOT EXISTS "${M0_CATCH2_SOURCE_DIR}/CMakeLists.txt")
@@ -614,6 +716,7 @@ add_subdirectory(
 add_library(m0_qt_core STATIC
     src/adapters/DeterministicPlaybackBackend.cpp
     src/adapters/SingleWorkerMetadataReader.cpp
+    src/application/LocalTrackSession.cpp
     src/application/PlayerController.cpp
     src/domain/QueueNavigation.cpp
 )
@@ -630,6 +733,7 @@ endif()
 if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
         tests/catch2/DeterministicPlaybackBackendTests.cpp
+        tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/QueueNavigationTests.cpp
         tests/catch2/SingleWorkerMetadataReaderTests.cpp

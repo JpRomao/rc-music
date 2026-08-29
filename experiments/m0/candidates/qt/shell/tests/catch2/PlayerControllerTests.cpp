@@ -22,27 +22,33 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
 
     PlaybackCommandResult play() override {
         ++play_requests;
-        return PlaybackCommandResult::Accepted;
+        return play_result;
     }
 
     PlaybackCommandResult pause() override {
         ++pause_requests;
-        return PlaybackCommandResult::Accepted;
+        return pause_result;
     }
 
     PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
         seek_requests.push_back(position_ms);
-        return PlaybackCommandResult::Accepted;
+        return seek_result;
     }
 
     PlaybackCommandResult setVolume(const double volume) override {
         volume_requests.push_back(volume);
-        return PlaybackCommandResult::Accepted;
+        if (volume_result == PlaybackCommandResult::Accepted) {
+            backend_volume = volume;
+        }
+        return volume_result;
     }
 
     PlaybackCommandResult setMuted(const bool muted) override {
         mute_requests.push_back(muted);
-        return PlaybackCommandResult::Accepted;
+        if (mute_result == PlaybackCommandResult::Accepted) {
+            backend_muted = muted;
+        }
+        return mute_result;
     }
 
     PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
@@ -50,6 +56,13 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
 
     int play_requests{0};
     int pause_requests{0};
+    PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult seek_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult volume_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult mute_result{PlaybackCommandResult::Accepted};
+    double backend_volume{0.8};
+    bool backend_muted{false};
     std::vector<std::int64_t> seek_requests{};
     std::vector<double> volume_requests{};
     std::vector<bool> mute_requests{};
@@ -132,6 +145,20 @@ TEST_CASE("toggle playback is inert for inactive states", "[m0][qt][core][transp
     }
 }
 
+TEST_CASE("toggle playback reports backend command rejection", "[m0][qt][core][transport][error]") {
+    const auto status = GENERATE(PlaybackStatus::Ready, PlaybackStatus::Paused, PlaybackStatus::Playing);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    backend.play_result = PlaybackCommandResult::Busy;
+    backend.pause_result = PlaybackCommandResult::Shutdown;
+    PlayerController controller{backend, platform, {status, 84'000, 248'000, true}};
+
+    CHECK_FALSE(controller.togglePlayback());
+    CHECK(backend.play_requests == (status == PlaybackStatus::Playing ? 0 : 1));
+    CHECK(backend.pause_requests == (status == PlaybackStatus::Playing ? 1 : 0));
+    CHECK(controller.confirmedSnapshot().status == status);
+}
+
 TEST_CASE("skip actions use confirmed position preferences and publish one pending seek",
           "[m0][qt][core][transport][seek]") {
     RecordingPlaybackBackend backend;
@@ -189,6 +216,21 @@ TEST_CASE("skip is inert when seeking is unavailable or already active", "[m0][q
     CHECK_FALSE(previewing.skipForward());
     REQUIRE(backend.seek_requests.size() == 1);
     CHECK(backend.seek_requests.front() == 100'000);
+}
+
+TEST_CASE("skip reports a rejected seek and restores the confirmed position",
+          "[m0][qt][core][transport][seek][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    backend.seek_result = PlaybackCommandResult::NotSeekable;
+    PlayerController controller{backend, platform, playingSnapshot()};
+
+    CHECK_FALSE(controller.skipForward());
+    REQUIRE(backend.seek_requests.size() == 1);
+    CHECK(backend.seek_requests.front() == 89'000);
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK_FALSE(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 84'000);
 }
 
 TEST_CASE("skip rejects inactive states even when a snapshot claims to be seekable",
@@ -257,6 +299,59 @@ TEST_CASE("controller normalizes invalid snapshot bounds at its public boundary"
     CHECK(controller.displayedPositionMs() == 200);
 }
 
+TEST_CASE("backend snapshots older than the confirmed generation are ignored",
+          "[m0][qt][core][snapshot][generation][regression]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    auto initial = playingSnapshot();
+    initial.generation = 7;
+    PlayerController controller{backend, platform, initial};
+    controller.beginSeekPreview(124'000);
+    controller.commitSeekPreview();
+    REQUIRE(controller.seekPending());
+
+    controller.applyBackendSnapshot(PlaybackSnapshot{
+        .status = PlaybackStatus::Error,
+        .position_ms = 0,
+        .duration_ms = 0,
+        .seekable = false,
+        .generation = 6,
+        .error = PlaybackErrorCode::BackendFailure,
+    });
+
+    CHECK(controller.confirmedSnapshot() == initial);
+    CHECK(controller.seekPreviewActive());
+    CHECK(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 124'000);
+}
+
+TEST_CASE("a newer playback generation clears seek state owned by the previous track",
+          "[m0][qt][core][snapshot][generation][seek][regression]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    auto initial = playingSnapshot();
+    initial.generation = 7;
+    PlayerController controller{backend, platform, initial};
+    controller.beginSeekPreview(124'000);
+    REQUIRE(controller.commitSeekPreview());
+    REQUIRE(controller.seekPreviewActive());
+    REQUIRE(controller.seekPending());
+
+    controller.applyBackendSnapshot(PlaybackSnapshot{
+        .status = PlaybackStatus::Playing,
+        .position_ms = 10'000,
+        .duration_ms = 100'000,
+        .seekable = true,
+        .generation = 8,
+    });
+
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK_FALSE(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 10'000);
+    controller.beginSeekPreview(20'000);
+    CHECK(controller.seekPreviewActive());
+}
+
 TEST_CASE("seek preview owns the displayed position until backend acknowledgement", "[m0][qt][core][seek]") {
     RecordingPlaybackBackend backend;
     RecordingPlatformIntegration platform{true};
@@ -299,6 +394,40 @@ TEST_CASE("seek release clamps to duration and sends exactly one backend command
 
     REQUIRE(backend.seek_requests.size() == 1);
     CHECK(backend.seek_requests.front() == 248'000);
+}
+
+TEST_CASE("committing an unchanged seek completes without waiting for a backend event",
+          "[m0][qt][core][seek][regression]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, playingSnapshot()};
+
+    controller.beginSeekPreview(84'000);
+    REQUIRE(controller.seekPreviewActive());
+
+    CHECK(controller.commitSeekPreview());
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK_FALSE(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 84'000);
+    CHECK(backend.seek_requests.empty());
+}
+
+TEST_CASE("rejected seek commit clears optimistic preview state", "[m0][qt][core][seek][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    backend.seek_result = PlaybackCommandResult::Busy;
+    PlayerController controller{backend, platform, playingSnapshot()};
+
+    controller.beginSeekPreview(124'000);
+    REQUIRE(controller.seekPreviewActive());
+    REQUIRE(controller.displayedPositionMs() == 124'000);
+
+    CHECK_FALSE(controller.commitSeekPreview());
+    REQUIRE(backend.seek_requests.size() == 1);
+    CHECK(backend.seek_requests.front() == 124'000);
+    CHECK_FALSE(controller.seekPreviewActive());
+    CHECK_FALSE(controller.seekPending());
+    CHECK(controller.displayedPositionMs() == 84'000);
 }
 
 TEST_CASE("seek clamps at zero and is ignored when the source is not seekable", "[m0][qt][core][seek]") {
@@ -440,6 +569,70 @@ TEST_CASE("volume and mute update state and the playback port", "[m0][qt][core][
     CHECK_FALSE(controller.setVolume(std::numeric_limits<double>::quiet_NaN()));
     CHECK(controller.preferences().volume == Catch::Approx(0.35));
     CHECK(backend.volume_requests.size() == 1);
+}
+
+TEST_CASE("rejected volume command preserves preferences and the last accepted nonzero volume",
+          "[m0][qt][core][preferences][volume][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    backend.volume_result = PlaybackCommandResult::Busy;
+
+    CHECK_FALSE(controller.setVolume(0.35));
+    CHECK(controller.preferences().volume == Catch::Approx(0.8));
+
+    backend.volume_result = PlaybackCommandResult::Accepted;
+    REQUIRE(controller.setVolume(0.0));
+    REQUIRE(controller.toggleMute());
+    REQUIRE(controller.toggleMute());
+
+    CHECK_FALSE(controller.preferences().muted);
+    CHECK(controller.preferences().volume == Catch::Approx(0.8));
+    CHECK((backend.volume_requests == std::vector<double>{0.35, 0.0, 0.8}));
+}
+
+TEST_CASE("rejected mute command preserves preferences", "[m0][qt][core][preferences][mute][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    backend.mute_result = PlaybackCommandResult::Shutdown;
+    const auto expected = controller.preferences();
+
+    CHECK_FALSE(controller.toggleMute());
+
+    checkUnchangedPreferences(controller.preferences(), expected);
+    CHECK(backend.mute_requests == std::vector<bool>{true});
+}
+
+TEST_CASE("rejected unmute sequence preserves zero-volume preferences", "[m0][qt][core][preferences][mute][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    REQUIRE(controller.setVolume(0.35));
+    REQUIRE(controller.toggleMute());
+    REQUIRE(controller.setVolume(0.0));
+    const auto expected = controller.preferences();
+
+    SECTION("when restoring the logical volume is rejected") {
+        backend.volume_result = PlaybackCommandResult::Busy;
+
+        CHECK_FALSE(controller.toggleMute());
+
+        checkUnchangedPreferences(controller.preferences(), expected);
+        CHECK(backend.mute_requests == std::vector<bool>{true});
+    }
+
+    SECTION("when the unmute command is rejected after restoring the backend volume") {
+        backend.mute_result = PlaybackCommandResult::Shutdown;
+
+        CHECK_FALSE(controller.toggleMute());
+
+        checkUnchangedPreferences(controller.preferences(), expected);
+        CHECK((backend.mute_requests == std::vector<bool>{true, false}));
+        CHECK((backend.volume_requests == std::vector<double>{0.35, 0.0, 0.35, 0.0}));
+        CHECK(backend.backend_volume == 0.0);
+        CHECK(backend.backend_muted);
+    }
 }
 
 TEST_CASE("unmute restores the last nonzero logical volume", "[m0][qt][core][preferences][mute]") {

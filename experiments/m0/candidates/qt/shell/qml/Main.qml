@@ -94,9 +94,9 @@ ApplicationWindow {
     function toggleQueue() {
         setQueueOpen(!queueOpen);
     }
-    function openFrozenAudio() {
+    function openAudio() {
         openAudioRequested();
-        presenter.loadFrozenQueue();
+        presenter.openAudio();
     }
     function changeVolume(percentagePoints) {
         const percent = presenter.volume * 100;
@@ -158,7 +158,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract
-                    onOpenAudioRequested: window.openFrozenAudio()
+                    onOpenAudioRequested: window.openAudio()
                 }
                 NowPlayingState {
                     anchors.centerIn: parent
@@ -230,8 +230,8 @@ ApplicationWindow {
         sequence: "Ctrl+O"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: window.windowShortcutsEnabled && !preferencesPanel.visible && window.presenter.playbackState === PlayerPresenter.Unloaded
-        onActivated: window.openFrozenAudio()
+        enabled: window.windowShortcutsEnabled && !preferencesPanel.visible && (!window.presenter.usesFrozenFixture || window.presenter.playbackState === PlayerPresenter.Unloaded)
+        onActivated: window.openAudio()
     }
     Shortcut {
         sequence: "Space"

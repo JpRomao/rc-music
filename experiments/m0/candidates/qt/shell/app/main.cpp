@@ -8,6 +8,14 @@
 #include "presentation/ShellPlatformBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 
+#ifdef M0_QT_COMBINED_AUDIO
+#include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
+#include "m0/adapters/SingleWorkerMetadataReader.hpp"
+#include "m0/adapters/TagLibMetadataExtractor.hpp"
+
+#include <QFileDialog>
+#endif
+
 #ifdef M0_QT_SHELL_TEST_HOOKS
 #include "ShellLifecycleSmoke.hpp"
 #endif
@@ -24,7 +32,10 @@
 #include <QWindow>
 
 #include <exception>
+#include <filesystem>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -72,8 +83,12 @@ int main(int argc, char* argv[]) {
         const auto options = parseShellLaunchOptions(application.arguments());
 #ifndef M0_QT_SHELL_TEST_HOOKS
         if (options.initial_scenario != InitialShellScenario::Empty || options.smoke_error_recovery ||
-            options.smoke_tray_lifecycle)
+            options.smoke_tray_lifecycle || options.smoke_combined_startup)
             throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
+#endif
+#ifndef M0_QT_COMBINED_AUDIO
+        if (options.smoke_combined_startup)
+            throw std::invalid_argument{"the combined startup smoke requires audio support"};
 #endif
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
@@ -92,7 +107,26 @@ int main(int argc, char* argv[]) {
              lifecycle_text.noTrack()},
             std::move(availability_reader));
         music_player::m0::QtSystemAppearance system_appearance;
+#ifdef M0_QT_COMBINED_AUDIO
+        music_player::m0::QtMultimediaPlaybackBackend backend;
+        music_player::m0::SingleWorkerMetadataReader metadata_reader(
+            std::make_unique<music_player::m0::TagLibMetadataExtractor>());
+        PlayerPresenter::AudioFilePicker audio_file_picker = [&contract]() -> std::optional<std::filesystem::path> {
+            const QString selected =
+                QFileDialog::getOpenFileName(nullptr, contract.openAudioText(), {},
+                                             QStringLiteral("Áudio local (*.mp3 *.wav);;Todos os arquivos (*)"));
+            if (selected.isEmpty())
+                return std::nullopt;
+#ifdef Q_OS_WIN
+            return std::filesystem::path{selected.toStdWString()};
+#else
+            return std::filesystem::path{selected.toUtf8().toStdString()};
+#endif
+        };
+        PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker));
+#else
         PlayerPresenter presenter(bundle, platform);
+#endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
         music_player::m0::bindShellAppearance(presenter, contract, system_appearance);
@@ -111,6 +145,7 @@ int main(int argc, char* argv[]) {
         music_player::m0::bindShellPlatform(presenter, platform, *window);
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_completed = false;
+        bool combined_startup_smoke_completed = false;
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -136,6 +171,29 @@ int main(int argc, char* argv[]) {
                 application.exit(passed ? 0 : 2);
             });
         }
+#ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_combined_startup) {
+            QPointer<QObject> root = engine.rootObjects().constFirst();
+            QTimer::singleShot(
+                0, &application, [&application, root, window, &presenter, &combined_startup_smoke_completed] {
+                    QObject* const empty_state =
+                        root != nullptr ? root->findChild<QObject*>(QStringLiteral("emptyState")) : nullptr;
+                    combined_startup_smoke_completed = root != nullptr && window->isVisible() &&
+                                                       !presenter.usesFrozenFixture() && !presenter.hasCurrentTrack() &&
+                                                       presenter.queueModelObject() != nullptr &&
+                                                       presenter.queueModelObject()->rowCount() == 0 &&
+                                                       isVisible(empty_state) && presenter.requestExit();
+                    if (!combined_startup_smoke_completed) {
+                        qCritical() << "The combined audio shell did not start in its real empty state";
+                        application.exit(2);
+                    }
+                });
+            QTimer::singleShot(3000, &application, [&application] {
+                qCritical() << "The combined audio shell did not exit through its production lifecycle";
+                application.exit(2);
+            });
+        }
+#endif
 #endif
         const int result = application.exec();
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -144,6 +202,13 @@ int main(int argc, char* argv[]) {
             qCritical() << "The shell exited without completing the real, latched window close:"
                         << "result" << result << "completed" << tray_smoke_completed << "exiting" << presenter.exiting()
                         << "visible" << window->isVisible();
+            return 2;
+        }
+        if (options.smoke_combined_startup &&
+            (result != 0 || !combined_startup_smoke_completed || !presenter.exiting() || window->isVisible())) {
+            qCritical() << "The combined audio shell exited without completing its startup smoke:"
+                        << "result" << result << "completed" << combined_startup_smoke_completed << "exiting"
+                        << presenter.exiting() << "visible" << window->isVisible();
             return 2;
         }
 #endif
