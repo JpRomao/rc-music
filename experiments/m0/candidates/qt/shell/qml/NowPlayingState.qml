@@ -7,6 +7,7 @@ ColumnLayout {
     objectName: "playing-state"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    signal openAudioRequested
     Item {
         implicitWidth: 192
         implicitHeight: 192
@@ -61,5 +62,12 @@ ColumnLayout {
         color: root.contract.textSecondaryColor
         Layout.maximumWidth: root.width
         Layout.alignment: Qt.AlignHCenter
+    }
+    AccessibleActionButton {
+        controlId: "open-another-audio"
+        contract: root.contract
+        text: root.contract.openAudioText
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: root.openAudioRequested()
     }
 }

@@ -204,6 +204,26 @@ TestCase {
         verifyInsideWindow(currentTitle);
         verifyInsideWindow(currentArtist);
         verifyInsideWindow(currentAlbum);
+        const openAnotherAudio = findChild(shell, "open-another-audio");
+        verify(openAnotherAudio);
+        compare(openAnotherAudio.text, testShellUiContract.openAudioText); // qmllint disable unqualified
+        compare(openAnotherAudio.Accessible.role, Accessible.Button);
+        compare(openAnotherAudio.Accessible.name, testShellUiContract.openAudioText); // qmllint disable unqualified
+        compare(openAnotherAudio.Accessible.id, "open-another-audio");
+        verify(openAnotherAudio.width >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
+        verify(openAnotherAudio.height >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
+        verifyInsideWindow(openAnotherAudio);
+        const playbackStateBeforeOpenAnother = testPlayerPresenter.playbackState; // qmllint disable unqualified
+        openAnotherAudio.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(openSpy.count, 2);
+        compare(testPlayerPresenter.playbackState, playbackStateBeforeOpenAnother); // qmllint disable unqualified
+        keyClick(Qt.Key_Return);
+        compare(openSpy.count, 3);
+        compare(testPlayerPresenter.playbackState, playbackStateBeforeOpenAnother); // qmllint disable unqualified
+        mouseClick(openAnotherAudio, openAnotherAudio.width / 2, openAnotherAudio.height / 2, Qt.LeftButton);
+        compare(openSpy.count, 4);
+        compare(testPlayerPresenter.playbackState, playbackStateBeforeOpenAnother); // qmllint disable unqualified
         verify(queueButton.enabled);
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
@@ -238,7 +258,7 @@ TestCase {
         verify(currentQueueRow.Accessible.name.indexOf("Canção nº 17 — São João, ação e café ☕") >= 0);
         verify(instantiatedQueueRows(queueList) > 0);
         verify(instantiatedQueueRows(queueList) < 64);
-        const queueOpenFocusOrder = [queueButton, findChild(shell, "preferences"), progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
+        const queueOpenFocusOrder = [queueButton, findChild(shell, "preferences"), openAnotherAudio, progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < queueOpenFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);

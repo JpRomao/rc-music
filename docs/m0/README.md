@@ -4,6 +4,8 @@
 
 **Data:** 2026-08-29
 
+O shell agora mantém “Abrir áudio” visível também durante uma faixa ativa. A ação usa o mesmo fluxo do estado vazio, funciona por mouse, Space e Enter e participa da ordem de Tab; isso não equivale a multiseleção nem à automação do diálogo nativo.
+
 **Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5, slices funcionais e primeira integração de playback/metadata M0.6 e índice das evidências experimentais
 
 ## 1. Autorização D0.9

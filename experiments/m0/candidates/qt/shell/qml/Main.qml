@@ -166,6 +166,7 @@ ApplicationWindow {
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
+                    onOpenAudioRequested: window.openAudio()
                 }
                 ErrorState {
                     anchors.centerIn: parent
