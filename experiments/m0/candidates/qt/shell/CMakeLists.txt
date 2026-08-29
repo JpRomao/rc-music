@@ -787,6 +787,7 @@ add_library(m0_qt_core STATIC
     src/adapters/SingleWorkerMetadataReader.cpp
     src/application/LocalTrackSession.cpp
     src/application/PlayerController.cpp
+    src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
@@ -803,6 +804,7 @@ if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
         tests/catch2/ArtworkLimitsTests.cpp
         tests/catch2/DeterministicPlaybackBackendTests.cpp
+        tests/catch2/LocalFileQueueTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/QueueNavigationTests.cpp
