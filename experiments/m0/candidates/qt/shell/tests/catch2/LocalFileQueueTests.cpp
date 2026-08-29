@@ -63,6 +63,11 @@ TEST_CASE("local file queue selection rejects unavailable and out of range occur
     CHECK(queue.select(2));
     CHECK(queue.currentIndex() == std::optional<std::size_t>{2});
     CHECK(queue.currentOccurrenceId() == std::optional{queue.items()[2].occurrence_id});
+    REQUIRE(queue.clearSelection());
+    CHECK_FALSE(queue.currentIndex().has_value());
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
+    CHECK(queue.size() == 3);
+    CHECK_FALSE(queue.clearSelection());
 }
 
 } // namespace

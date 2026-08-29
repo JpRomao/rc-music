@@ -147,6 +147,22 @@ QString fromUtf8(const std::string& value) {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
 }
 
+QString localPlaybackErrorCode(const PlaybackErrorCode error) {
+    switch (error) {
+    case PlaybackErrorCode::SourceUnavailable:
+        return QStringLiteral("source_unavailable");
+    case PlaybackErrorCode::InvalidMedia:
+        return QStringLiteral("invalid_media");
+    case PlaybackErrorCode::AccessDenied:
+        return QStringLiteral("access_denied");
+    case PlaybackErrorCode::None:
+    case PlaybackErrorCode::NetworkFailure:
+    case PlaybackErrorCode::BackendFailure:
+        return {};
+    }
+    return {};
+}
+
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
@@ -294,6 +310,20 @@ std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirectio
     const int current = currentQueueIndex();
     if (!queueLoaded() || current < 0)
         return std::nullopt;
+    const auto current_index = static_cast<std::size_t>(current);
+    if (!uses_frozen_fixture_ && !navigation_items_[current_index].available &&
+        controller_.confirmedSnapshot().status == PlaybackStatus::Error && !controller_.seekPreviewActive() &&
+        !controller_.seekPending()) {
+        if (direction == QueueDirection::Next) {
+            return nextAvailableLocalIndex();
+        }
+        for (std::size_t index = current_index; index > 0;) {
+            --index;
+            if (navigation_items_[index].available)
+                return index;
+        }
+        return std::nullopt;
+    }
     return queueNavigationTarget(navigation_items_, static_cast<std::size_t>(current), direction,
                                  controller_.confirmedSnapshot(),
                                  controller_.seekPreviewActive() || controller_.seekPending());
@@ -459,6 +489,7 @@ bool PlayerPresenter::openAudio() {
         return false;
 
     local_queue_ = std::move(replacement);
+    local_recovery_intent_.reset();
     navigation_items_ = navigationItems(local_queue_);
     if (!local_queue_model_.replace(local_queue_))
         throw std::logic_error{"accepted local queue could not be projected"};
@@ -473,12 +504,61 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exiting_)
         return;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
-    local_track_session_->applyPlaybackEvent(event);
-    controller_.applyBackendSnapshot(event.snapshot);
-    if (controller_.confirmedSnapshot() == before)
+    const auto result = local_track_session_->applyPlaybackEvent(event);
+    if (result == LocalTrackPlaybackEventResult::Ignored)
         return;
-    emit stateChanged();
-    emit playbackChanged();
+
+    controller_.applyBackendSnapshot(event.snapshot);
+    bool state_projection_changed = false;
+    if (result == LocalTrackPlaybackEventResult::OccurrenceUnavailable) {
+        const auto current = local_queue_.currentIndex();
+        if (!current.has_value())
+            throw std::logic_error{"a current local playback error requires a current queue occurrence"};
+
+        const auto occurrence_id = local_queue_.items()[*current].occurrence_id;
+        if (local_queue_.items()[*current].available) {
+            const QString error_code = localPlaybackErrorCode(event.snapshot.error);
+            if (error_code.isEmpty() || !local_queue_.markUnavailable(*current) ||
+                !local_queue_model_.markUnavailable(occurrence_id, error_code)) {
+                throw std::logic_error{"a typed local playback error could not be projected"};
+            }
+            navigation_items_[*current].available = false;
+            state_projection_changed = true;
+        }
+
+        auto start_intent = local_recovery_intent_.value_or(local_track_session_->startIntent());
+        if (!local_recovery_intent_.has_value()) {
+            if (before.status == PlaybackStatus::Ready || before.status == PlaybackStatus::Paused)
+                start_intent = LocalTrackStartIntent::StayReady;
+            else if (before.status == PlaybackStatus::Playing)
+                start_intent = LocalTrackStartIntent::Autoplay;
+        }
+        local_recovery_intent_ = start_intent;
+        if (const auto next = nextAvailableLocalIndex(); next.has_value() && loadLocalOccurrence(*next, start_intent)) {
+            state_projection_changed = true;
+        }
+    } else if (result == LocalTrackPlaybackEventResult::Ended) {
+        if (const auto next = nextAvailableLocalIndex();
+            next.has_value() && loadLocalOccurrence(*next, LocalTrackStartIntent::Autoplay)) {
+            state_projection_changed = true;
+        } else if (!next.has_value() && preferences().queue_end_behavior == QueueEndBehavior::StopClearSelection &&
+                   local_track_session_->unload()) {
+            if (!local_queue_.clearSelection())
+                throw std::logic_error{"an ended local queue could not clear its current occurrence"};
+            local_recovery_intent_.reset();
+            artwork_cache_->beginGeneration(MetadataGeneration{});
+            state_projection_changed = true;
+        }
+    }
+
+    if (state_projection_changed)
+        controller_.applyBackendSnapshot(backend_.snapshot());
+    reconcileTimer();
+    const bool playback_changed = controller_.confirmedSnapshot() != before;
+    if (state_projection_changed || playback_changed)
+        emit stateChanged();
+    if (playback_changed)
+        emit playbackChanged();
 }
 void PlayerPresenter::pollMetadata() {
     if (uses_frozen_fixture_ || exiting_)
@@ -636,6 +716,27 @@ bool PlayerPresenter::skipForward() {
 }
 bool PlayerPresenter::previousTrack() { return navigate(QueueDirection::Previous); }
 bool PlayerPresenter::nextTrack() { return navigate(QueueDirection::Next); }
+std::optional<std::size_t> PlayerPresenter::nextAvailableLocalIndex() const noexcept {
+    const auto current = local_queue_.currentIndex();
+    if (!current.has_value())
+        return std::nullopt;
+    for (std::size_t index = *current + 1; index < local_queue_.size(); ++index) {
+        if (local_queue_.items()[index].available)
+            return index;
+    }
+    return std::nullopt;
+}
+bool PlayerPresenter::loadLocalOccurrence(const std::size_t index, const LocalTrackStartIntent start_intent) {
+    if (index >= local_queue_.size() || !local_queue_.items()[index].available ||
+        !local_track_session_->open(local_queue_.items()[index].source_path, start_intent)) {
+        return false;
+    }
+    if (!local_queue_.select(index))
+        throw std::logic_error{"an accepted local occurrence could not be selected"};
+    local_recovery_intent_.reset();
+    artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+    return true;
+}
 bool PlayerPresenter::navigate(const QueueDirection direction) {
     const auto target = navigationTarget(direction);
     if (!target.has_value())
@@ -644,15 +745,17 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
         return beginSeekPreview(0) && commitSeekPreview();
 
     if (!uses_frozen_fixture_) {
-        const LocalFileQueueItem& item = local_queue_.items()[*target];
-        const auto start_intent = controller_.confirmedSnapshot().status == PlaybackStatus::Playing
-                                      ? LocalTrackStartIntent::Autoplay
-                                      : LocalTrackStartIntent::StayReady;
-        if (!local_track_session_->open(item.source_path, start_intent)) {
+        const bool recovering_terminal_source =
+            controller_.confirmedSnapshot().status == PlaybackStatus::Error &&
+            !navigation_items_[static_cast<std::size_t>(currentQueueIndex())].available;
+        const auto start_intent = recovering_terminal_source
+                                      ? local_recovery_intent_.value_or(local_track_session_->startIntent())
+                                      : (controller_.confirmedSnapshot().status == PlaybackStatus::Playing
+                                             ? LocalTrackStartIntent::Autoplay
+                                             : LocalTrackStartIntent::StayReady);
+        if (!loadLocalOccurrence(*target, start_intent)) {
             return false;
         }
-        static_cast<void>(local_queue_.select(*target));
-        artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
         controller_.applyBackendSnapshot(backend_.snapshot());
         reconcileTimer();
         emit stateChanged();

@@ -217,6 +217,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
+    [[nodiscard]] std::optional<std::size_t> nextAvailableLocalIndex() const noexcept;
+    [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
@@ -233,6 +235,7 @@ class PlayerPresenter final : public QObject {
     AudioFilePicker audio_file_picker_{};
     std::unique_ptr<LocalTrackSession> local_track_session_{};
     std::shared_ptr<ArtworkImageCache> artwork_cache_{};
+    std::optional<LocalTrackStartIntent> local_recovery_intent_{};
     bool uses_frozen_fixture_{true};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};

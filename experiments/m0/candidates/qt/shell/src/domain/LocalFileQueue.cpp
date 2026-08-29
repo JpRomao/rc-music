@@ -40,6 +40,14 @@ bool LocalFileQueue::markUnavailable(const std::size_t index) noexcept {
     return true;
 }
 
+bool LocalFileQueue::clearSelection() noexcept {
+    if (!current_occurrence_id_.has_value()) {
+        return false;
+    }
+    current_occurrence_id_.reset();
+    return true;
+}
+
 bool LocalFileQueue::empty() const noexcept { return items_.empty(); }
 
 std::size_t LocalFileQueue::size() const noexcept { return items_.size(); }

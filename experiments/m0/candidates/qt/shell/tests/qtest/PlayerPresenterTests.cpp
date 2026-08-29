@@ -84,13 +84,26 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
         muted_values.push_back(muted);
         return muted_result;
     }
-    PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        ++unload_calls;
+        if (unload_result == PlaybackCommandResult::Accepted) {
+            snapshot_ = {.status = PlaybackStatus::Empty, .generation = ++last_generation_};
+        }
+        return unload_result;
+    }
     PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
 
     void publish(PlaybackSnapshot snapshot) {
         snapshot_ = snapshot;
         if (event_callback_)
             event_callback_({PlaybackEventType::SnapshotChanged, snapshot_});
+    }
+
+    void publishEvent(const PlaybackEventType type, PlaybackSnapshot snapshot, const bool update_snapshot = true) {
+        if (update_snapshot)
+            snapshot_ = snapshot;
+        if (event_callback_)
+            event_callback_({type, snapshot});
     }
 
     [[nodiscard]] bool callbackInstalled() const noexcept { return static_cast<bool>(event_callback_); }
@@ -103,6 +116,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     PlaybackCommandResult seek_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult volume_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult muted_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult unload_result{PlaybackCommandResult::Accepted};
     std::vector<std::filesystem::path> loaded_paths;
     std::vector<std::int64_t> seek_positions;
     std::vector<double> volumes;
@@ -110,6 +124,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     int callback_assignments{0};
     int play_calls{0};
     int pause_calls{0};
+    int unload_calls{0};
 
   private:
     std::uint64_t last_generation_{0};
@@ -167,6 +182,16 @@ class PlayerPresenterTests final : public QObject {
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
     void rejectedReplacementPreservesTheCurrentLocalQueue();
     void localPlaybackErrorKeepsContextAndOffersReopen();
+    void localEndedAdvancesToNextOccurrenceWithAutoplay();
+    void localEndedAtQueueTailKeepsSelection();
+    void localEndedAtQueueTailClearsSelectionWhenConfigured();
+    void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data();
+    void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues();
+    void localErrorContinuationPreservesStayReadyIntent();
+    void localErrorContinuationPreservesPausedPlayback();
+    void rejectedAutomaticContinuationRemainsManuallyRecoverable();
+    void rejectedContinuationPreservesConfirmedPlayingIntent();
+    void staleLocalTerminalEventsAreInertAfterAdvance();
     void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
     void localTransportAcceptsAsynchronousPlayAndSeekWithALocalQueue();
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
@@ -489,6 +514,391 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
     QCoreApplication::processEvents();
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
     QCOMPARE(presenter.currentTitle(), QStringLiteral("Recuperada 日本語"));
+}
+
+void PlayerPresenterTests::localEndedAdvancesToNextOccurrenceWithAutoplay() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Primeira 日本語.mp3"),
+        localTestPath(u8"Segunda ☕.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString second_id = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 1'900,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 2'000,
+                                          .duration_ms = 2'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), second_id);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.loaded_paths, selections);
+    QCOMPARE(resets.size(), 0);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::localEndedAtQueueTailKeepsSelection() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source = localTestPath(u8"Última 日本語.mp3");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    QVERIFY(presenter.openAudio());
+    const QString occurrence_id = presenter.currentOccurrenceId();
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 2'000,
+                                          .duration_ms = 2'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence_id);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.positionMs(), 2'000);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{source});
+    QCOMPARE(backend.play_calls, 1);
+    QCOMPARE(backend.unload_calls, 0);
+}
+
+void PlayerPresenterTests::localEndedAtQueueTailClearsSelectionWhenConfigured() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source = localTestPath(u8"Última 日本語.mp3");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection));
+    QVERIFY(presenter.openAudio());
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 2'000,
+                                          .duration_ms = 2'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), -1);
+    QVERIFY(presenter.queueLoaded());
+    QVERIFY(!presenter.hasCurrentOccurrence());
+    QVERIFY(presenter.currentOccurrenceId().isEmpty());
+    QVERIFY(!presenter.hasCurrentTrack());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{source});
+    QCOMPARE(backend.play_calls, 1);
+    QCOMPARE(backend.unload_calls, 1);
+}
+
+void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data() {
+    QTest::addColumn<int>("error_code");
+    QTest::addColumn<QString>("model_error_code");
+    QTest::addColumn<bool>("continues");
+
+    QTest::newRow("source unavailable") << static_cast<int>(PlaybackErrorCode::SourceUnavailable)
+                                        << QStringLiteral("source_unavailable") << true;
+    QTest::newRow("invalid media") << static_cast<int>(PlaybackErrorCode::InvalidMedia)
+                                   << QStringLiteral("invalid_media") << true;
+    QTest::newRow("access denied") << static_cast<int>(PlaybackErrorCode::AccessDenied)
+                                   << QStringLiteral("access_denied") << true;
+    QTest::newRow("backend failure") << static_cast<int>(PlaybackErrorCode::BackendFailure) << QString{} << false;
+}
+
+void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues() {
+    QFETCH(int, error_code);
+    QFETCH(QString, model_error_code);
+    QFETCH(bool, continues);
+
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path duplicate = localTestPath(u8"Duplicada 日本語.mp3");
+    const std::vector<std::filesystem::path> selections{duplicate, duplicate};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString first_id = presenter.currentOccurrenceId();
+    const QString second_id = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
+    QVERIFY(first_id != second_id);
+    QSignalSpy data_changed(model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    backend.publish(
+        {.status = PlaybackStatus::Error, .generation = 1, .error = static_cast<PlaybackErrorCode>(error_code)});
+
+    if (!continues) {
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+        QCOMPARE(presenter.currentQueueIndex(), 0);
+        QCOMPARE(presenter.currentOccurrenceId(), first_id);
+        QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{duplicate});
+        QCOMPARE(data_changed.size(), 0);
+        QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+        QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+        QCOMPARE(resets.size(), 0);
+        return;
+    }
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), second_id);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.loaded_paths, selections);
+    QCOMPARE(data_changed.size(), 1);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).toString(), model_error_code);
+    QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(model->index(1, 0), QueueListModel::ErrorCodeRole).toString(), QString{});
+    QCOMPARE(resets.size(), 0);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::localErrorContinuationPreservesStayReadyIntent() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Primeira.mp3"),
+        localTestPath(u8"Inválida.mp3"),
+        localTestPath(u8"Terceira.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 2, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 2);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QVERIFY(!model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(model->index(1, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("invalid_media"));
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QCOMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::localErrorContinuationPreservesPausedPlayback() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Primeira.mp3"),
+        localTestPath(u8"Segunda.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+
+    QCOMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::rejectedAutomaticContinuationRemainsManuallyRecoverable() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Inválida.mp3"),
+        localTestPath(u8"Recuperável.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString failed_id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.load_result = PlaybackCommandResult::Busy;
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.currentOccurrenceId(), failed_id);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(presenter.canGoNext());
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 600,
+                     .generation = 1,
+                     .error = PlaybackErrorCode::InvalidMedia});
+    QCoreApplication::processEvents();
+
+    backend.load_result = PlaybackCommandResult::Accepted;
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QCOMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::rejectedContinuationPreservesConfirmedPlayingIntent() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Primeira.mp3"),
+        localTestPath(u8"Segunda.mp3"),
+        localTestPath(u8"Terceira.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter.nextTrack());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QCOMPARE(backend.play_calls, 1);
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(backend.play_calls, 2);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    backend.load_result = PlaybackCommandResult::Busy;
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 2, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QVERIFY(presenter.canGoNext());
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 600,
+                     .generation = 2,
+                     .error = PlaybackErrorCode::InvalidMedia});
+    QCoreApplication::processEvents();
+
+    backend.load_result = PlaybackCommandResult::Accepted;
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(presenter.currentQueueIndex(), 2);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.play_calls, 3);
+}
+
+void PlayerPresenterTests::staleLocalTerminalEventsAreInertAfterAdvance() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Primeira.mp3"),
+        localTestPath(u8"Segunda.mp3"),
+    };
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    const PlaybackSnapshot first_final{.status = PlaybackStatus::Paused,
+                                       .position_ms = 2'000,
+                                       .duration_ms = 2'000,
+                                       .seekable = true,
+                                       .generation = 1};
+    backend.publish(first_final);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, first_final);
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 3'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 2);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 200,
+                     .duration_ms = 3'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    const QString current_id = presenter.currentOccurrenceId();
+    QSignalSpy data_changed(model, &QAbstractItemModel::dataChanged);
+    QSignalSpy state_changed(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback_changed(&presenter, &PlayerPresenter::playbackChanged);
+    backend.publishEvent(PlaybackEventType::Ended, first_final, false);
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia},
+                         false);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), current_id);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(backend.loaded_paths, selections);
+    QCOMPARE(backend.play_calls, 2);
+    QCOMPARE(data_changed.size(), 0);
+    QCOMPARE(state_changed.size(), 0);
+    QCOMPARE(playback_changed.size(), 0);
 }
 
 void PlayerPresenterTests::currentReadyEventAutoplaysAndStaleEventsAreIgnored() {

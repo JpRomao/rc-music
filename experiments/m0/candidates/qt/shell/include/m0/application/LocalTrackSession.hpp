@@ -24,13 +24,21 @@ enum class LocalTrackStartIntent {
     StayReady,
 };
 
+enum class LocalTrackPlaybackEventResult {
+    Ignored,
+    Applied,
+    Ended,
+    OccurrenceUnavailable,
+};
+
 class LocalTrackSession final {
   public:
     LocalTrackSession(PlaybackBackend& playback_backend, MetadataReader& metadata_reader);
 
     [[nodiscard]] bool open(const std::filesystem::path& source_path,
                             LocalTrackStartIntent start_intent = LocalTrackStartIntent::Autoplay);
-    void applyPlaybackEvent(const PlaybackEvent& event);
+    [[nodiscard]] bool unload();
+    [[nodiscard]] LocalTrackPlaybackEventResult applyPlaybackEvent(const PlaybackEvent& event);
     [[nodiscard]] bool pollMetadata();
     [[nodiscard]] bool cancelMetadata();
 
@@ -42,6 +50,7 @@ class LocalTrackSession final {
     [[nodiscard]] LocalTrackMetadataStatus metadataStatus() const noexcept;
     [[nodiscard]] MetadataGeneration metadataGeneration() const noexcept;
     [[nodiscard]] std::uint64_t playbackGeneration() const noexcept;
+    [[nodiscard]] LocalTrackStartIntent startIntent() const noexcept;
     [[nodiscard]] const std::optional<TrackMetadata>& trackMetadata() const noexcept;
 
   private:

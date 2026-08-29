@@ -45,7 +45,14 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
     PlaybackCommandResult seekTo(std::int64_t) override { return PlaybackCommandResult::Accepted; }
     PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
     PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
-    PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        ++unload_calls;
+        if (unload_result == PlaybackCommandResult::Accepted) {
+            ++snapshot_.generation;
+            snapshot_ = {PlaybackStatus::Empty, 0, 0, false, snapshot_.generation};
+        }
+        return unload_result;
+    }
     PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
 
     PlaybackSnapshot snapshot_{};
@@ -53,9 +60,11 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult unload_result{PlaybackCommandResult::Accepted};
     std::vector<std::filesystem::path> loaded_paths{};
     int play_calls{0};
     int pause_calls{0};
+    int unload_calls{0};
 };
 
 class ScriptedMetadataReader final : public MetadataReader {
@@ -125,12 +134,14 @@ TEST_CASE("the current ready generation autoplays once and stale events are igno
     LocalTrackSession session{playback, metadata};
     REQUIRE(session.open(L"C:\\Music\\current.wav"));
 
-    session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 0}});
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 0}}) ==
+        LocalTrackPlaybackEventResult::Ignored);
     CHECK(playback.play_calls == 0);
 
     const PlaybackEvent ready{PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}};
-    session.applyPlaybackEvent(ready);
-    session.applyPlaybackEvent(ready);
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
 
     CHECK(playback.play_calls == 1);
 }
@@ -142,26 +153,46 @@ TEST_CASE("a local track can stay ready without autoplaying", "[m0][qt][core][lo
     REQUIRE(session.open(L"C:\\Music\\ready-next.wav", LocalTrackStartIntent::StayReady));
 
     const PlaybackEvent ready{PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}};
-    session.applyPlaybackEvent(ready);
-    session.applyPlaybackEvent(ready);
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
 
     CHECK(playback.play_calls == 0);
     CHECK(playback.pause_calls == 0);
 }
 
-TEST_CASE("a transient current-generation error does not consume pending autoplay",
-          "[m0][qt][core][local-track][playback][recovery]") {
+TEST_CASE("a current-generation playback error cancels pending autoplay",
+          "[m0][qt][core][local-track][playback][error]") {
     RecordingPlaybackBackend playback;
     ScriptedMetadataReader metadata;
     LocalTrackSession session{playback, metadata};
     REQUIRE(session.open(L"C:\\Music\\current.wav"));
+    const auto error = GENERATE(PlaybackErrorCode::SourceUnavailable, PlaybackErrorCode::InvalidMedia,
+                                PlaybackErrorCode::AccessDenied);
 
-    session.applyPlaybackEvent(
-        {PlaybackEventType::SnapshotChanged, {PlaybackStatus::Error, 0, 0, false, 1, PlaybackErrorCode::InvalidMedia}});
-    session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}});
-    session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}});
+    CHECK(session.applyPlaybackEvent(
+              {PlaybackEventType::SnapshotChanged, {PlaybackStatus::Error, 0, 0, false, 1, error}}) ==
+          LocalTrackPlaybackEventResult::OccurrenceUnavailable);
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}}) ==
+        LocalTrackPlaybackEventResult::Applied);
 
-    CHECK(playback.play_calls == 1);
+    CHECK(playback.play_calls == 0);
+}
+
+TEST_CASE("current terminal events are typed and stale terminal events are ignored",
+          "[m0][qt][core][local-track][playback][FR-011][FR-016]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    REQUIRE(session.open(L"C:\\Music\\current.wav", LocalTrackStartIntent::StayReady));
+
+    CHECK(session.startIntent() == LocalTrackStartIntent::StayReady);
+    CHECK(session.applyPlaybackEvent({PlaybackEventType::Ended, {PlaybackStatus::Paused, 2'000, 2'000, true, 0}}) ==
+          LocalTrackPlaybackEventResult::Ignored);
+    CHECK(session.applyPlaybackEvent({PlaybackEventType::Ended, {PlaybackStatus::Paused, 2'000, 2'000, true, 2}}) ==
+          LocalTrackPlaybackEventResult::Ignored);
+    CHECK(session.applyPlaybackEvent({PlaybackEventType::Ended, {PlaybackStatus::Paused, 2'000, 2'000, true, 1}}) ==
+          LocalTrackPlaybackEventResult::Ended);
 }
 
 TEST_CASE("a rejected load preserves the active local track and does not start new metadata work",
@@ -179,6 +210,36 @@ TEST_CASE("a rejected load preserves the active local track and does not start n
     CHECK(session.displayTitle() == "current");
     CHECK(metadata.requests.size() == 1);
     CHECK(metadata.cancellations.empty());
+}
+
+TEST_CASE("unloading a local track is atomic and invalidates its pending work",
+          "[m0][qt][core][local-track][playback][FR-042]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path source{L"C:\\Music\\current.wav"};
+    REQUIRE(session.open(source));
+    playback.unload_result = PlaybackCommandResult::Busy;
+
+    CHECK_FALSE(session.unload());
+    CHECK(session.hasTrack());
+    CHECK(session.sourcePath() == source);
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Pending);
+    CHECK(metadata.cancellations.empty());
+
+    playback.unload_result = PlaybackCommandResult::Accepted;
+    REQUIRE(session.unload());
+    CHECK_FALSE(session.hasTrack());
+    CHECK(session.sourcePath().empty());
+    CHECK(session.displayTitle().empty());
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Idle);
+    CHECK(session.playbackGeneration() == 2);
+    CHECK(metadata.cancellations == std::vector<MetadataGeneration>{MetadataGeneration{1}});
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}}) ==
+        LocalTrackPlaybackEventResult::Ignored);
+    CHECK(session.unload());
+    CHECK(playback.unload_calls == 2);
 }
 
 TEST_CASE("replacing a local track cancels its metadata generation", "[m0][qt][core][local-track][metadata]") {

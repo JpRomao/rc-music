@@ -26,6 +26,7 @@ class LocalFileQueue final {
     [[nodiscard]] bool replace(std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] bool select(std::size_t index) noexcept;
     [[nodiscard]] bool markUnavailable(std::size_t index) noexcept;
+    [[nodiscard]] bool clearSelection() noexcept;
 
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;

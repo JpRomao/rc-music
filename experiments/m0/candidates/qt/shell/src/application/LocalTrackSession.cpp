@@ -38,21 +38,61 @@ bool LocalTrackSession::open(const std::filesystem::path& source_path, const Loc
     return true;
 }
 
-void LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
+bool LocalTrackSession::unload() {
+    if (!has_track_) {
+        return true;
+    }
+    if (playback_backend_.unload() != PlaybackCommandResult::Accepted) {
+        return false;
+    }
+    if (metadata_status_ == LocalTrackMetadataStatus::Pending && metadata_generation_.value != 0) {
+        (void)metadata_reader_.cancelRead(metadata_generation_);
+    }
+    source_path_.clear();
+    display_title_.clear();
+    artist_.clear();
+    album_.clear();
+    track_metadata_.reset();
+    metadata_status_ = LocalTrackMetadataStatus::Idle;
+    playback_generation_ = playback_backend_.snapshot().generation;
+    has_track_ = false;
+    start_intent_ = LocalTrackStartIntent::Autoplay;
+    start_pending_ = false;
+    return true;
+}
+
+LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
     if (!has_track_ || event.snapshot.generation != playback_generation_) {
-        return;
+        return LocalTrackPlaybackEventResult::Ignored;
+    }
+
+    if (event.type == PlaybackEventType::Ended) {
+        start_pending_ = false;
+        return LocalTrackPlaybackEventResult::Ended;
     }
 
     if (event.snapshot.status == PlaybackStatus::Empty) {
         start_pending_ = false;
-        return;
+        return LocalTrackPlaybackEventResult::Applied;
     }
 
     if (event.snapshot.status == PlaybackStatus::Error) {
-        return;
+        start_pending_ = false;
+        switch (event.snapshot.error) {
+        case PlaybackErrorCode::SourceUnavailable:
+        case PlaybackErrorCode::InvalidMedia:
+        case PlaybackErrorCode::AccessDenied:
+            return LocalTrackPlaybackEventResult::OccurrenceUnavailable;
+        case PlaybackErrorCode::None:
+        case PlaybackErrorCode::NetworkFailure:
+        case PlaybackErrorCode::BackendFailure:
+            return LocalTrackPlaybackEventResult::Applied;
+        }
+        return LocalTrackPlaybackEventResult::Applied;
     }
 
     attemptStart(event.snapshot);
+    return LocalTrackPlaybackEventResult::Applied;
 }
 
 bool LocalTrackSession::pollMetadata() {
@@ -117,6 +157,8 @@ LocalTrackMetadataStatus LocalTrackSession::metadataStatus() const noexcept { re
 MetadataGeneration LocalTrackSession::metadataGeneration() const noexcept { return metadata_generation_; }
 
 std::uint64_t LocalTrackSession::playbackGeneration() const noexcept { return playback_generation_; }
+
+LocalTrackStartIntent LocalTrackSession::startIntent() const noexcept { return start_intent_; }
 
 const std::optional<TrackMetadata>& LocalTrackSession::trackMetadata() const noexcept { return track_metadata_; }
 
