@@ -202,7 +202,7 @@ Em C++/Qt, `FakePlaybackBackend` e o adapter Qt Multimedia/FFmpeg precisam satis
 - fallback de título;
 - encoding inválido;
 - capa corrompida e nos limites/fora dos limites NFR-LIMIT;
-- cancelamento e resultado atrasado;
+- cancelamento, geração/resultado atrasado, budget de 2 s e ausência de acúmulo de jobs;
 - propriedades por formato;
 - extensão enganosa.
 

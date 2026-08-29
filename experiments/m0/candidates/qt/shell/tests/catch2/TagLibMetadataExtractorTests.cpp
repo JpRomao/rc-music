@@ -1,10 +1,14 @@
+#include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <variant>
 
 #ifndef M0_TEST_AUDIO_CORPUS_ROOT
@@ -13,6 +17,8 @@
 
 namespace music_player::m0::test {
 namespace {
+
+using namespace std::chrono_literals;
 
 const std::filesystem::path corpus_root{M0_TEST_AUDIO_CORPUS_ROOT};
 
@@ -28,6 +34,18 @@ const std::filesystem::path corpus_root{M0_TEST_AUDIO_CORPUS_ROOT};
 [[nodiscard]] const MetadataReadError& requireError(const MetadataReadResult& result) {
     REQUIRE(std::holds_alternative<MetadataReadError>(result));
     return std::get<MetadataReadError>(result);
+}
+
+[[nodiscard]] std::optional<MetadataReadCompletion> waitForCompletion(MetadataReader& reader,
+                                                                      const std::chrono::milliseconds timeout = 2s) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (auto completion = reader.tryTakeCompletion(); completion.has_value()) {
+            return completion;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -103,6 +121,23 @@ TEST_CASE("MR-103 returns typed errors for empty and truncated input without cra
         CHECK(error.code == MetadataReadErrorCode::InvalidData);
         CHECK_FALSE(error.message.empty());
     }
+}
+
+TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extractor",
+          "[m0][qt][metadata][taglib][metadata-reader][MR-101]") {
+    const auto source = fixture("fixtures/valid/wav-pcm-mono.wav");
+    SingleWorkerMetadataReader reader{std::make_unique<TagLibMetadataExtractor>()};
+
+    REQUIRE(reader.startRead({MetadataGeneration{1}, source}) == MetadataCommandResult::Accepted);
+    const auto completion = waitForCompletion(reader);
+
+    REQUIRE(completion.has_value());
+    CHECK(completion->generation == MetadataGeneration{1});
+    CHECK(completion->source_path == source);
+    const auto& metadata = requireMetadata(completion->result);
+    CHECK(metadata.display_title == "wav-pcm-mono");
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms == 1'000);
 }
 
 } // namespace music_player::m0::test

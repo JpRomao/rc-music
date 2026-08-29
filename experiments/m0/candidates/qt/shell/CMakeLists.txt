@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
+find_package(Threads REQUIRED)
 
 option(M0_QT_SHELL_SUPPORT "Build the Qt fixture repository and queue model" OFF)
 option(M0_QT_AUDIO_SUPPORT "Build the Qt Multimedia playback adapter" OFF)
@@ -612,10 +613,12 @@ add_subdirectory(
 
 add_library(m0_qt_core STATIC
     src/adapters/DeterministicPlaybackBackend.cpp
+    src/adapters/SingleWorkerMetadataReader.cpp
     src/application/PlayerController.cpp
     src/domain/QueueNavigation.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
+target_link_libraries(m0_qt_core PUBLIC Threads::Threads)
 target_compile_features(m0_qt_core PUBLIC cxx_std_20)
 
 if(MSVC)
@@ -629,6 +632,7 @@ if(BUILD_TESTING)
         tests/catch2/DeterministicPlaybackBackendTests.cpp
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/QueueNavigationTests.cpp
+        tests/catch2/SingleWorkerMetadataReaderTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
     target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)
@@ -650,6 +654,7 @@ if(BUILD_TESTING)
             tests/catch2/TagLibMetadataExtractorTests.cpp
         )
         target_link_libraries(m0_taglib_metadata_extractor_tests PRIVATE
+            m0_qt_core
             m0_taglib_metadata_extractor
             Catch2::Catch2WithMain
         )

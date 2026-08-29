@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.6 em andamento, com empacotamento/A-B/benchmarks pesados suspensos; lifecycle/eventos tipados, geração isolada e o ciclo load/play/pause/seek/fim do WAV via Qt Multimedia estão verdes, assim como `MR-101`–`MR-103` no TagLib, enquanto async/cancelamento, integração UI, codecs, arte/limites, gates nativos e decisão de stack permanecem pendentes
+**Fase:** M0.6 em andamento, com empacotamento/A-B/benchmarks pesados suspensos; lifecycle/eventos tipados, geração isolada e o ciclo load/play/pause/seek/fim do WAV via Qt Multimedia estão verdes, assim como `MR-101`–`MR-103` no TagLib e `MR-016`/`MR-017`/`MR-020` no reader assíncrono limitado, enquanto integração UI, codecs, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -123,16 +123,15 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; lifecycle/WAV/TagLib M0.6 verdes; pacote v2, integração, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; lifecycle/WAV/TagLib e reader limitado M0.6 verdes; pacote v2, integração, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. envolver a extração TagLib em leitura assíncrona/cancelável com geração e fila limitada;
-2. integrar o callback puro da porta e a jornada abrir → tocar → seek → pausar no shell candidato antes de ampliar a matriz de codecs;
-3. fechar em paralelo apenas os casos pequenos de corpus necessários ao comportamento em desenvolvimento, sem áudio pessoal;
-4. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
+1. integrar o callback puro das portas de playback/metadata e a jornada abrir → tocar → seek → pausar no shell candidato antes de ampliar a matriz de codecs;
+2. fechar em paralelo apenas os casos pequenos de corpus necessários ao comportamento em desenvolvimento, sem áudio pessoal;
+3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 

@@ -1,10 +1,10 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/A-B/benchmarks pesados suspensos por orientação do mantenedor; M0.5 possui 12 fixtures autenticadas e M0.6 já cobre lifecycle/WAV no Qt e extração WAV no TagLib; stack, engines e formatos não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/A-B/benchmarks pesados suspensos por orientação do mantenedor; M0.5 possui 12 fixtures autenticadas e M0.6 já cobre lifecycle/WAV no Qt, extração WAV no TagLib e reader assíncrono limitado em `MR-016`/`MR-017`/`MR-020`; stack, engines e formatos não escolhidos
 
 **Data:** 2026-08-29
 
-**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5, slices funcionais M0.6 e índice das evidências experimentais
+**Escopo:** autorização, contratos M0.0–M0.1, progresso do candidato Qt em M0.2, fundação comum M0.5, slices funcionais de playback/metadata M0.6 e índice das evidências experimentais
 
 ## 1. Autorização D0.9
 
@@ -70,7 +70,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
 | M0.5 — corpus e catálogo comum | em andamento; 12 fixtures autenticadas cobrem WAV, MP3 CBR/VBR/Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC e bordas iniciais; arte/limites, truncados por contêiner e licença pública pendentes |
-| M0.6 — [slices Qt Multimedia/TagLib](evidence/m0-6-qt-audio-first-slices.md) | em andamento; lifecycle/eventos tipados, geração isolada, ciclo WAV e entradas hostis/enganosas verdes, além de `MR-101`–`MR-103`; async, codecs, integração e pacote pendentes |
+| M0.6 — [slices Qt Multimedia/TagLib](evidence/m0-6-qt-audio-first-slices.md) | em andamento; lifecycle/eventos tipados, geração isolada, ciclo WAV e entradas hostis/enganosas verdes, além de `MR-101`–`MR-103` e do reader limitado em `MR-016`/`MR-017`/`MR-020`; codecs, integração e pacote pendentes |
 | M0.7–M0.8 — adapter desafiante e comparação de áudio | suspensos/pendentes |
 | M0.9 — integração/pacote | pendente |
 | M0.10 — combinação e decisão | pendente |

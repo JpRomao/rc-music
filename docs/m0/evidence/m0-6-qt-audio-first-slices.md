@@ -2,7 +2,7 @@
 
 **Data:** 2026-08-29
 
-**Estado:** M0.6 em andamento; lifecycle e ciclo WAV no Qt, além da extração síncrona inicial no TagLib, verdes sem suporte de formato publicado
+**Estado:** M0.6 em andamento; lifecycle e ciclo WAV no Qt, extração inicial no TagLib e boundary assíncrono limitado de metadata verdes sem suporte de formato publicado
 
 ## Escopo
 
@@ -12,9 +12,10 @@ Os recortes independentes implementados são:
 
 - `PlaybackBackend` expõe snapshot, load/unload/shutdown, play/pause/seek, volume/mudo, callback de eventos e resultados tipados; o fake continua inteiramente C++ e sem Qt;
 - `QtMultimediaPlaybackBackend` cria uma sessão `QMediaPlayer` por geração, publica `Loading` antes de `Ready`, executa play/pause/seek/fim/replay do WAV com saída mutada nos testes, emite `ended` uma vez por término e recupera após vazio/truncado;
-- `TagLibMetadataExtractor` lê propriedades WAV, preserva tags ausentes, aplica fallback de título pelo nome, identifica RIFF/WAVE por conteúdo sob extensão `.mp3` e devolve erro tipado para vazio/truncado.
+- `TagLibMetadataExtractor` lê propriedades WAV, preserva tags ausentes, aplica fallback de título pelo nome, identifica RIFF/WAVE por conteúdo sob extensão `.mp3` e devolve erro tipado para vazio/truncado;
+- `MetadataReader` e `SingleWorkerMetadataReader` permanecem C++ puro, executam o extrator em um worker, mantêm no máximo um trabalho ativo e o pendente mais recente e descartam cancelamento, geração obsoleta e resultado fora do budget de 2 s.
 
-O nome `MetadataExtractor` é intencional. A chamada TagLib é síncrona e será envolvida por uma porta `MetadataReader` assíncrona, limitada, cancelável e identificada por geração antes de integrar a UI. Snapshot, comandos e eventos de playback são puros; o bridge de aplicação poderá consumir o mesmo `PlaybackEventCallback` do fake e do adapter Qt.
+O nome `MetadataExtractor` continua intencional: a chamada TagLib permanece síncrona dentro do worker e, se já começou, pode terminar fisicamente mesmo após cancelamento ou deadline. O boundary torna esse resultado inobservável e não acumula uma fila de novas leituras. Snapshot, comandos e eventos de playback são puros; o bridge de aplicação poderá consumir o mesmo `PlaybackEventCallback` do fake e do adapter Qt.
 
 ## Dependências isoladas
 
@@ -49,6 +50,8 @@ O Red do playback configurou o build Release e falhou em C++ com `C1083` porque 
 
 O Red de metadata falhou em C++ pela ausência de `TagLibMetadataExtractor.hpp`. O Green inicial cobriu `MR-101`–`MR-103`. Uma revisão encontrou o risco de manter referência ao valor de um `variant` temporário; o teste passou a preservar o resultado antes de obter a referência e foi recompilado/reexecutado. Um Red adicional então falhou ao tentar observar ausência em propriedades numéricas ainda representadas por zero; o Green tornou duração, sample rate e canais opcionais.
 
+O Red do boundary assíncrono, no Developer PowerShell válido, falhou em C++ com `C1083` porque `SingleWorkerMetadataReader.hpp` ainda não existia. O Green adicionou a porta pura, ownership exclusivo do extractor, um `std::jthread`, um slot pendente substituível, geração crescente, cancelamento observável, deadline injetável e conversão segura de exceções. Os testes determinísticos cobrem `MR-016`, `MR-017`, `MR-020`, cancelamento atrasado, concorrência máxima um, exceção e shutdown durante leitura ativa; outro teste compõe o reader com o `TagLibMetadataExtractor` real e a fixture WAV autenticada.
+
 O Red do lifecycle, executado dentro do Developer PowerShell válido, falhou porque a porta ainda não possuía `load`, `unload`, `shutdown`, `PlaybackCommandResult`, erro/generation no snapshot nem `playbackEnded`. Uma tentativa anterior fora desse ambiente falhou ao localizar o header padrão `cstdint` e foi tratada apenas como precondição de toolchain, não como Red comportamental. O Green adicionou os resultados tipados e os testes do fake e do adapter real.
 
 Na revisão, reutilizar um `QMediaPlayer` foi considerado insuficiente para separar atualizações internas atrasadas. O adapter passou a aposentar a instância anterior, remover sua saída e criar outra por geração; cada callback captura também a identidade física do player. Um teste troca imediatamente o WAV truncado pelo válido e comprova que o erro antigo não contamina a nova geração. As fixtures vazia, truncada e de extensão enganosa também são autenticadas no configure antes de chegarem ao teste.
@@ -59,18 +62,19 @@ No build integrado, novo e Release:
 
 - configure: MSVC `19.44.35228.0`, sucesso;
 - build Release integrado: sucesso com `/W4 /WX /permissive-` nos alvos próprios;
-- CTest integral: **63/63**;
+- CTest integral: **71/71**;
 - corpus autenticado: **14/14**;
 - teste Qt `m0.qt.audio.playback-lifecycle`: `Loading → Ready`, 1.000 ms, seekable, play/pause/seek/fim/replay, `ended` ordenado e único, reentrada, lifecycle, troca rápida, conteúdo sob extensão enganosa e erro/recuperação;
-- metadata: **45 asserções em quatro casos**, incluindo `MR-101`, `MR-102`, `MR-103` e ausência sem zero falso;
-- configure/build separado com `M0_QT_AUDIO_SUPPORT=OFF`: `m0_qt_core` verde e cache sem entradas Qt6/TagLib;
+- metadata TagLib: **53 asserções em cinco casos**, incluindo `MR-101`, `MR-102`, `MR-103`, ausência sem zero falso e composição assíncrona real;
+- reader puro: **66 asserções em sete casos** para `MR-016`, `MR-017`, `MR-020`, validação, exceção e shutdown ativo;
+- configure/build/test novo com `M0_QT_AUDIO_SUPPORT=OFF`: `m0_qt_core` verde em **65/65**, 1.943 asserções, sem localizar Qt6/TagLib;
 - `clang-format --dry-run --Werror`, corpus 14/14, layout M0 e validação dos 44 Markdown/83 requisitos verdes;
 - nenhum processo de teste permaneceu aberto.
 
-O timeout de dois segundos no teste é um limite funcional para impedir espera indefinida, não uma coleta de benchmark nem prova de `open-to-audible`.
+O budget de dois segundos é um limite funcional determinístico, não uma coleta de benchmark nem prova de `open-to-audible`. Ele descarta o resultado e impede acúmulo além de um ativo e um pendente substituível; não interrompe fisicamente uma chamada TagLib já iniciada. Como `shutdown()` aguarda esse worker, ele não deve ser chamado na thread visual enquanto esse risco não for coordenado fora dela.
 
 ## Limites e próximo slice
 
-Este resultado observa play/pause/seek/fim no `QMediaPlayer`, com a saída deliberadamente mutada, mas não prova áudio audível, dispositivo físico, open-to-audible, underrun ou device lost. Também não cobre codecs comprimidos, metadata assíncrona, UI, pacote ou Linux. `PB-101` está verde somente para o WAV autenticado; `PB-001` continua incompleto na matriz de formatos. `PB-005` continua pendente para uma rejeição posterior à aceitação pelo adapter, pois `QMediaPlayer::setPosition` não devolve confirmação/erro; a rejeição síncrona por estado inválido já retorna erro tipado sem alterar o snapshot. Nenhum formato foi publicado e M0.6 não está concluído.
+Este resultado observa play/pause/seek/fim no `QMediaPlayer`, com a saída deliberadamente mutada, mas não prova áudio audível, dispositivo físico, open-to-audible, underrun ou device lost. Também não cobre codecs comprimidos, integração de metadata na UI, arte/limites, pacote ou Linux. `PB-101` está verde somente para o WAV autenticado; `PB-001` continua incompleto na matriz de formatos. `PB-005` continua pendente para uma rejeição posterior à aceitação pelo adapter, pois `QMediaPlayer::setPosition` não devolve confirmação/erro; a rejeição síncrona por estado inválido já retorna erro tipado sem alterar o snapshot. Nenhum formato foi publicado e M0.6 não está concluído.
 
-O próximo incremento funcional é o boundary assíncrono/cancelável de metadata, com um worker, um slot pendente, deadline e descarte por geração. Depois, o callback puro de playback e esse reader podem alimentar a primeira jornada local abrir → tocar → seek → pausar no shell, ainda sem benchmarks ou empacotamento.
+O próximo incremento funcional é integrar o callback puro de playback e esse reader na primeira jornada local abrir → tocar → seek → pausar do shell, com polling/teardown fora de bloqueios da GUI. Benchmarks e empacotamento continuam suspensos.
