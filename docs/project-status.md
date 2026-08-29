@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos; M0.5 em andamento com 12 fixtures sintéticas autenticadas cobrindo WAV, codecs básicos e bordas iniciais; gates nativos, arte/limites, adapters, suporte de formatos e decisão de stack pendentes
+**Fase:** M0.6 iniciado, com empacotamento/A-B/benchmarks pesados suspensos; o primeiro load WAV via Qt Multimedia e a extração TagLib `MR-101`–`MR-103` estão verdes, enquanto porta completa, async/cancelamento, integração UI, formatos, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -92,7 +92,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 ## 5. Alegações que ainda não podem ser feitas
 
-- “o app toca MP3/M4A/Opus”: o corpus já contém bytes comprimidos autenticados, mas nenhum adapter real os executou e nenhum formato foi aprovado;
+- “o app toca WAV/MP3/M4A/Opus”: o primeiro adapter real somente carrega/proba o WAV até `Ready`; não há prova audível, seek/fim, integração no shell ou formato aprovado;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
@@ -123,16 +123,16 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 e preflight M0.2 concluídos; SDK Qt composto autenticado e verificado; receita `package-v2` congelada, com build/pacote/smokes reais e shell M0.2 ainda pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; primeiros slices M0.6 verdes; pacote v2, integração, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. completar M0.5 com arte, limites e truncados por contêiner pequenos, sem áudio pessoal;
-2. provisionar Qt Multimedia/FFmpeg e TagLib com identidade/licenças fechadas antes de iniciar o adapter M0.6 por TDD;
-3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates como pendentes;
-4. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10, salvo nova decisão explícita do mantenedor sobre stack e plano.
+1. completar a porta Qt de playback por TDD e envolver a extração TagLib em leitura assíncrona/cancelável com geração;
+2. integrar a jornada abrir → tocar → seek → pausar no shell candidato antes de ampliar a matriz de codecs;
+3. fechar em paralelo apenas os casos pequenos de corpus necessários ao comportamento em desenvolvimento, sem áudio pessoal;
+4. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 

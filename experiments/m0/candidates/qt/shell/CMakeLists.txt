@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 
 option(M0_QT_SHELL_SUPPORT "Build the Qt fixture repository and queue model" OFF)
+option(M0_QT_AUDIO_SUPPORT "Build the Qt Multimedia playback adapter" OFF)
 
 set(M0_CATCH2_SOURCE_DIR "" CACHE PATH "Path to the authenticated Catch2 source tree")
 if(NOT IS_ABSOLUTE "${M0_CATCH2_SOURCE_DIR}")
@@ -477,6 +478,84 @@ if(M0_QT_SHELL_SUPPORT)
         )
     endif()
 endif()
+
+if(M0_QT_AUDIO_SUPPORT)
+    set(M0_AUDIO_CORPUS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../shared/audio-corpus")
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_ROOT)
+    set(M0_AUDIO_CORPUS_WAV_FILE "${M0_AUDIO_CORPUS_ROOT}/fixtures/valid/wav-pcm-mono.wav")
+    cmake_path(NORMAL_PATH M0_AUDIO_CORPUS_WAV_FILE)
+    if(NOT EXISTS "${M0_AUDIO_CORPUS_WAV_FILE}" OR IS_DIRECTORY "${M0_AUDIO_CORPUS_WAV_FILE}")
+        message(FATAL_ERROR "The committed WAV audio corpus fixture does not exist")
+    endif()
+    file(SHA256 "${M0_AUDIO_CORPUS_WAV_FILE}" m0_audio_corpus_wav_sha256)
+    file(SIZE "${M0_AUDIO_CORPUS_WAV_FILE}" m0_audio_corpus_wav_size)
+    if(NOT m0_audio_corpus_wav_sha256 STREQUAL
+            "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f" OR
+       NOT m0_audio_corpus_wav_size EQUAL 96044)
+        message(FATAL_ERROR "The committed WAV audio corpus fixture does not match its authenticated identity")
+    endif()
+
+    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Multimedia)
+    find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
+
+    add_library(m0_qt_audio_adapters STATIC
+        include/m0/adapters/QtMultimediaPlaybackBackend.hpp
+        src/adapters/QtMultimediaPlaybackBackend.cpp
+    )
+    target_include_directories(m0_qt_audio_adapters PUBLIC include)
+    target_link_libraries(m0_qt_audio_adapters PUBLIC m0_qt_core Qt6::Multimedia)
+    target_compile_features(m0_qt_audio_adapters PUBLIC cxx_std_20)
+    set_target_properties(m0_qt_audio_adapters PROPERTIES AUTOMOC ON)
+    if(MSVC)
+        target_compile_options(m0_qt_audio_adapters PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_audio_adapters PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
+    add_library(m0_taglib_metadata_extractor STATIC
+        include/m0/adapters/TagLibMetadataExtractor.hpp
+        include/m0/ports/MetadataExtractor.hpp
+        src/adapters/TagLibMetadataExtractor.cpp
+    )
+    target_include_directories(m0_taglib_metadata_extractor PUBLIC include)
+    target_link_libraries(m0_taglib_metadata_extractor PRIVATE TagLib::TagLib)
+    target_compile_features(m0_taglib_metadata_extractor PUBLIC cxx_std_20)
+    if(MSVC)
+        target_compile_options(m0_taglib_metadata_extractor PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_taglib_metadata_extractor PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
+    if(BUILD_TESTING)
+        find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
+        add_executable(m0_qt_audio_adapter_tests tests/qtest/QtMultimediaPlaybackBackendTests.cpp)
+        target_link_libraries(m0_qt_audio_adapter_tests PRIVATE m0_qt_audio_adapters Qt6::Test)
+        target_compile_features(m0_qt_audio_adapter_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_qt_audio_adapter_tests PRIVATE
+            M0_TEST_AUDIO_WAV_FILE="${M0_AUDIO_CORPUS_WAV_FILE}"
+        )
+        set_target_properties(m0_qt_audio_adapter_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_audio_adapter_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_audio_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.audio.pb-001-wav-load COMMAND m0_qt_audio_adapter_tests)
+        get_target_property(m0_qt_audio_runtime Qt6::Multimedia IMPORTED_LOCATION_RELEASE)
+        get_target_property(m0_qt_audio_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)
+        get_filename_component(m0_qt_audio_runtime_dir "${m0_qt_audio_runtime}" DIRECTORY)
+        get_filename_component(m0_qt_audio_core_runtime_dir "${m0_qt_audio_core_runtime}" DIRECTORY)
+        get_filename_component(m0_qt_audio_prefix "${m0_qt_audio_runtime_dir}" DIRECTORY)
+        set_tests_properties(m0.qt.audio.pb-001-wav-load PROPERTIES
+            LABELS "m0;qt;audio;PB-001"
+            TIMEOUT 5
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+            ENVIRONMENT
+                "QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
+        )
+    endif()
+endif()
 if(NOT EXISTS "${M0_CATCH2_SOURCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "M0_CATCH2_SOURCE_DIR does not contain Catch2")
 endif()
@@ -525,4 +604,35 @@ if(BUILD_TESTING)
         TEST_PREFIX "m0.qt.core."
         PROPERTIES LABELS "m0;qt;core"
     )
+
+    if(M0_QT_AUDIO_SUPPORT)
+        add_executable(m0_taglib_metadata_extractor_tests
+            tests/catch2/TagLibMetadataExtractorTests.cpp
+        )
+        target_link_libraries(m0_taglib_metadata_extractor_tests PRIVATE
+            m0_taglib_metadata_extractor
+            Catch2::Catch2WithMain
+        )
+        target_compile_features(m0_taglib_metadata_extractor_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_taglib_metadata_extractor_tests PRIVATE
+            M0_TEST_AUDIO_CORPUS_ROOT="${M0_AUDIO_CORPUS_ROOT}"
+        )
+        if(MSVC)
+            target_compile_options(m0_taglib_metadata_extractor_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_taglib_metadata_extractor_tests PRIVATE
+                -Wall -Wextra -Wpedantic -Werror
+            )
+        endif()
+        add_custom_command(TARGET m0_taglib_metadata_extractor_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:TagLib::tag>"
+                "$<TARGET_FILE_DIR:m0_taglib_metadata_extractor_tests>"
+        )
+        catch_discover_tests(
+            m0_taglib_metadata_extractor_tests
+            TEST_PREFIX "m0.qt.metadata."
+            PROPERTIES LABELS "m0;qt;audio;metadata;taglib"
+        )
+    endif()
 endif()

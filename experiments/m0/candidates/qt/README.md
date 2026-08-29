@@ -161,6 +161,41 @@ Em um diretório novo configurado com `-DBUILD_TESTING=OFF`, os cenários/hooks 
 
 Configure com `M0_QT_SHELL_SUPPORT=OFF` — o padrão — continua compilando e testando o core sem localizar Qt nem ler a fixture.
 
+## Build dos primeiros slices de áudio reais
+
+`M0_QT_AUDIO_SUPPORT=ON` adiciona dois alvos experimentais e independentes do QML: `m0_qt_audio_adapters`, com Qt Multimedia, e `m0_taglib_metadata_extractor`, com TagLib dinâmico. O primeiro teste cobre somente o load/probe do WAV autenticado de `PB-001`; os testes do extrator cobrem `MR-101`–`MR-103`. O extrator é deliberadamente síncrono e ainda não representa a porta `MetadataReader` assíncrona/cancelável final.
+
+Use MSVC 14.44 e Windows SDK 10.0.26100.0. O SDK Qt base, o overlay Qt Multimedia e o prefixo TagLib ficam separados; o configure não os copia nem altera:
+
+```powershell
+$m0VsRoot = 'C:\Program Files\Microsoft Visual Studio\18\BuildTools'
+Import-Module (Join-Path $m0VsRoot 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+Enter-VsDevShell -VsInstallPath $m0VsRoot -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64 -vcvars_ver=14.44 -winsdk=10.0.26100.0'
+
+$repo = (Resolve-Path .).Path
+$source = Join-Path $repo 'experiments\m0\candidates\qt\shell'
+$build = Join-Path $repo 'out\m0\builds\qt-audio\audio-dev-01' # use um nome novo por execução
+$catch2 = (Resolve-Path (Join-Path $repo 'out\m0\toolchains\Catch2-3.15.3')).Path
+$qtBase = (Resolve-Path (Join-Path $repo 'q\f75eb9bea8280844c6d1a2b3f4\sdk')).Path.Replace('\', '/')
+$qtMultimedia = (Resolve-Path (Join-Path $repo 'out\m0\qt-multimedia-archive-probe-20260829-01\stage')).Path.Replace('\', '/')
+$taglib = (Resolve-Path (Join-Path $repo 'out\m0\taglib-2.3.1-msvc144-probe-20260829-01\install')).Path.Replace('\', '/')
+$compiler = 'C:/Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe'
+$linker = 'C:/Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.exe'
+$ninja = 'C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
+$cmake = 'C:\Program Files\CMake\bin\cmake.exe'
+$ctest = 'C:\Program Files\CMake\bin\ctest.exe'
+
+& $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON `
+  -DM0_QT_SHELL_SUPPORT=OFF -DM0_QT_AUDIO_SUPPORT=ON `
+  "-DM0_CATCH2_SOURCE_DIR=$catch2" "-DCMAKE_PREFIX_PATH=$qtBase;$taglib" `
+  "-DQT_ADDITIONAL_PACKAGES_PREFIX_PATH=$qtMultimedia" `
+  "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_LINKER=$linker" "-DCMAKE_MAKE_PROGRAM=$ninja"
+& $cmake --build $build --config Release --parallel 4
+& $ctest --test-dir $build -C Release --output-on-failure
+```
+
+O overlay precisa usar `/` ao atravessar o cache CMake; backslashes em `QT_ADDITIONAL_PACKAGES_PREFIX_PATH` podem virar escapes inválidos em um `try_compile`. Esse recorte não executa benchmark, não usa arquivo pessoal e não publica suporte a WAV ou qualquer outro formato.
+
 ## Pacote local de avaliação
 
 A receita em `package/` prepara somente uma pasta privada para M0.2, não um instalador nem uma release para distribuição. O executável contém os hooks de `BUILD_TESTING=ON`, mas o payload não inclui executáveis de teste ou Qt Test. O runtime C++ do host é um pré-requisito externo; nenhum redistributable é instalado ou copiado. A seção 9 do [registro M0](../../../../docs/m0/README.md) contém a política, proveniência e limitações.
