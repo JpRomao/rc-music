@@ -154,6 +154,7 @@ class PlayerPresenterTests final : public QObject {
     void localOpenCancellationIsInert();
     void localOpenPublishesUnicodeFallbackAndStartsMetadata();
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
+    void localPlaybackErrorKeepsContextAndOffersReopen();
     void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
     void localTransportAcceptsAsynchronousPlayAndSeekWithoutAQueue();
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
@@ -284,6 +285,58 @@ void PlayerPresenterTests::rejectedLocalOpenDoesNotStartMetadataOrPublishTrackSt
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
     QCOMPARE(states.size(), 0);
     QCOMPARE(playback.size(), 0);
+}
+
+void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        std::filesystem::path{LR"(C:\Música\Falha 日本語.mp3)"},
+        std::filesystem::path{LR"(C:\Música\Recuperada 日本語.mp3)"},
+    };
+    std::size_t selection_index = 0;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [&]() -> std::optional<std::filesystem::path> {
+                                  if (selection_index >= selections.size())
+                                      return std::nullopt;
+                                  return selections[selection_index++];
+                              });
+
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+
+    QCOMPARE(presenter.stateId(), QStringLiteral("error"));
+    QVERIFY(presenter.hasError());
+    QCOMPARE(presenter.errorCode(), QStringLiteral("playback_error"));
+    QVERIFY(presenter.hasCurrentTrack());
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Falha 日本語"));
+    QVERIFY(presenter.hasContextTrack());
+    QCOMPARE(presenter.contextTitle(), QStringLiteral("Falha 日本語"));
+    QCOMPARE(presenter.primaryActionId(), QStringLiteral("open-audio"));
+
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(metadata.cancelled_generations, std::vector<MetadataGeneration>{MetadataGeneration{1}});
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Recuperada 日本語"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QVERIFY(!presenter.hasError());
+    QVERIFY(!presenter.hasContextTrack());
+    QCOMPARE(presenter.primaryActionId(), QStringLiteral("play-pause"));
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 100,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Recuperada 日本語"));
 }
 
 void PlayerPresenterTests::currentReadyEventAutoplaysAndStaleEventsAreIgnored() {

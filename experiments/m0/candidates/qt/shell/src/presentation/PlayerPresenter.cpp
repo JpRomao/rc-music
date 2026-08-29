@@ -287,9 +287,11 @@ QString PlayerPresenter::messageKey() const {
                : (local_track_session_->hasTrack() ? QString{} : state_.message_key.value_or(QString{}));
 }
 QString PlayerPresenter::primaryActionId() const {
-    return uses_frozen_fixture_
-               ? state_.primary_action_id
-               : (local_track_session_->hasTrack() ? QStringLiteral("play-pause") : QStringLiteral("open-audio"));
+    if (uses_frozen_fixture_)
+        return state_.primary_action_id;
+    if (hasError() || !local_track_session_->hasTrack())
+        return QStringLiteral("open-audio");
+    return QStringLiteral("play-pause");
 }
 bool PlayerPresenter::hasError() const noexcept {
     return uses_frozen_fixture_ ? state_.error_code.has_value()
@@ -339,16 +341,24 @@ QString PlayerPresenter::currentAlbum() const {
     const QueueItem* const track = currentTrack();
     return track != nullptr ? track->album : QString{};
 }
-bool PlayerPresenter::hasContextTrack() const noexcept { return uses_frozen_fixture_ && contextTrack() != nullptr; }
+bool PlayerPresenter::hasContextTrack() const noexcept {
+    return uses_frozen_fixture_ ? contextTrack() != nullptr : hasError() && local_track_session_->hasTrack();
+}
 QString PlayerPresenter::contextTitle() const {
+    if (!uses_frozen_fixture_)
+        return hasContextTrack() ? currentTitle() : QString{};
     const QueueItem* const track = contextTrack();
     return track != nullptr ? track->title : QString{};
 }
 QString PlayerPresenter::contextArtist() const {
+    if (!uses_frozen_fixture_)
+        return hasContextTrack() ? currentArtist() : QString{};
     const QueueItem* const track = contextTrack();
     return track != nullptr ? track->artist : QString{};
 }
 QString PlayerPresenter::contextAlbum() const {
+    if (!uses_frozen_fixture_)
+        return hasContextTrack() ? currentAlbum() : QString{};
     const QueueItem* const track = contextTrack();
     return track != nullptr ? track->album : QString{};
 }

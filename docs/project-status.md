@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados e geração isolada estão verdes, assim como `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia; `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib cobrem a matriz básica por conteúdo, enquanto polling/`MR-016`/`MR-017`/`MR-020` permanecem verdes no reader assíncrono limitado. Uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, mas playback inicia independentemente e o Qt pode decodificar candidatos, logo não há rejeição ponta a ponta nem classificação de suporte. A composição UI oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas sobre sete fixtures autenticadas com fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais e saída mutada; áudio audível, comportamento ponta a ponta dos candidatos, hostis restantes, arte/limites, gates nativos e decisão de stack permanecem pendentes
+**Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados e geração isolada estão verdes, assim como `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia; `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib cobrem a matriz básica por conteúdo, enquanto polling/`MR-016`/`MR-017`/`MR-020` permanecem verdes no reader assíncrono limitado. Uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, mas playback inicia independentemente e o Qt pode decodificar candidatos, logo não há rejeição ponta a ponta nem classificação de suporte. A composição UI oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas válidas sobre sete fixtures autenticadas com fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais e saída mutada. O erro local agora conserva título/contexto Unicode e oferece reabrir; regressões de metadata/playback/integração usam prefixos temporários de 64 bytes derivados de MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis para cobrir erro tipado, M4A sem faixa de áudio, recuperação e descarte de geração antiga. Esses derivados não são fixtures canônicas; M0.5/M0.6, áudio audível, comportamento ponta a ponta dos candidatos, hostis canônicos restantes, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -117,19 +117,19 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | ADRs | [Índice](architecture/decisions/README.md) | Propostos |
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
-| Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; WAV e matriz básica de codecs autenticados, sem suporte publicado; arte/limites pendentes |
+| Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; WAV e matriz básica de codecs autenticados, sem suporte publicado; os prefixos truncados atuais são derivados temporários, não fixtures canônicas; arte/limites e truncados versionados pendentes |
 | Plano executável | [Plano](development-plan.md) | Baseline de execução |
 | Roadmap | [Roadmap](roadmap.md) | Proposto |
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado e jornada local integrada verdes em nove linhas sobre sete fixtures da matriz básica experimental em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, hostis/limites, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado, jornada local integrada válida e recuperação por quatro derivados temporários truncados verdes em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, corpus hostil canônico/limites, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. ampliar a jornada local já integrada aos truncados por contêiner e estados hostis de maior valor antes de retomar medições;
+1. transformar os cenários truncados de maior valor em fixtures canônicas versionadas e ampliar a jornada além dos prefixos temporários já exercitados, antes de retomar medições;
 2. fechar em paralelo os limites de metadata/arte necessários ao comportamento em desenvolvimento, sem incorporar áudio pessoal ao corpus e sem promover Opus/ALAC além de candidatos;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 

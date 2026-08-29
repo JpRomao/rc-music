@@ -9,6 +9,8 @@
 namespace music_player::m0 {
 namespace {
 
+constexpr int audio_track_validation_grace_ms = 100;
+
 [[nodiscard]] PlaybackErrorCode errorCode(const QMediaPlayer::Error error) noexcept {
     switch (error) {
     case QMediaPlayer::NoError:
@@ -36,7 +38,11 @@ namespace {
 
 } // namespace
 
-QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent) : QObject(parent) {}
+QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent) : QObject(parent) {
+    audio_track_validation_timer_.setSingleShot(true);
+    audio_track_validation_timer_.setInterval(audio_track_validation_grace_ms);
+    connect(&audio_track_validation_timer_, &QTimer::timeout, this, [this] { validateLoadedAudioTrack(); });
+}
 
 QtMultimediaPlaybackBackend::~QtMultimediaPlaybackBackend() {
     const auto players = findChildren<QMediaPlayer*>(QString{}, Qt::FindDirectChildrenOnly);
@@ -66,6 +72,8 @@ void QtMultimediaPlaybackBackend::connectPlayerSignals(QMediaPlayer& player) {
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
     connect(&player, &QMediaPlayer::seekableChanged, this,
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
+    connect(&player, &QMediaPlayer::hasAudioChanged, this,
+            [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
     connect(&player, &QMediaPlayer::errorOccurred, this,
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
 }
@@ -88,6 +96,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
     advanceGeneration();
     ended_emitted_ = false;
     repositioning_from_end_ = false;
+    missing_audio_rejected_ = false;
     createPlayerForCurrentGeneration();
     QMediaPlayer* const load_player = player_;
     const auto load_generation = generation_;
@@ -226,6 +235,8 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::shutdown() {
 }
 
 void QtMultimediaPlaybackBackend::invalidateCurrentSource() {
+    audio_track_validation_timer_.stop();
+    missing_audio_rejected_ = false;
     if (player_ == nullptr) {
         return;
     }
@@ -257,6 +268,7 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
     const bool seekable = player_->isSeekable();
 
     if (player_->error() != QMediaPlayer::NoError) {
+        audio_track_validation_timer_.stop();
         publishSnapshot({PlaybackStatus::Error, position, duration, false, generation_, errorCode(player_->error())});
         return;
     }
@@ -264,15 +276,31 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
     PlaybackStatus status = PlaybackStatus::Loading;
     switch (player_->mediaStatus()) {
     case QMediaPlayer::NoMedia:
+        audio_track_validation_timer_.stop();
         status = PlaybackStatus::Empty;
         break;
     case QMediaPlayer::LoadingMedia:
+        audio_track_validation_timer_.stop();
         status = PlaybackStatus::Loading;
         break;
     case QMediaPlayer::LoadedMedia:
     case QMediaPlayer::BufferingMedia:
     case QMediaPlayer::BufferedMedia:
     case QMediaPlayer::StalledMedia:
+        if (!player_->hasAudio()) {
+            if (missing_audio_rejected_) {
+                publishSnapshot(
+                    {PlaybackStatus::Error, position, duration, false, generation_, PlaybackErrorCode::InvalidMedia});
+                return;
+            }
+            if (!audio_track_validation_timer_.isActive()) {
+                audio_track_validation_timer_.start();
+            }
+            publishSnapshot({PlaybackStatus::Loading, position, duration, false, generation_});
+            return;
+        }
+        audio_track_validation_timer_.stop();
+        missing_audio_rejected_ = false;
         if (player_->playbackState() == QMediaPlayer::PlayingState) {
             status = PlaybackStatus::Playing;
         } else if (player_->playbackState() == QMediaPlayer::PausedState) {
@@ -286,6 +314,7 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
         }
         break;
     case QMediaPlayer::EndOfMedia: {
+        audio_track_validation_timer_.stop();
         if (repositioning_from_end_ && position < duration) {
             publishSnapshot({PlaybackStatus::Paused, position, duration, seekable, generation_});
             return;
@@ -305,12 +334,37 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
         return;
     }
     case QMediaPlayer::InvalidMedia:
+        audio_track_validation_timer_.stop();
         publishSnapshot(
             {PlaybackStatus::Error, position, duration, false, generation_, PlaybackErrorCode::InvalidMedia});
         return;
     }
 
     publishSnapshot({status, position, duration, seekable, generation_});
+}
+
+void QtMultimediaPlaybackBackend::validateLoadedAudioTrack() {
+    if (shutdown_ || player_ == nullptr || player_->error() != QMediaPlayer::NoError || player_->hasAudio()) {
+        return;
+    }
+
+    switch (player_->mediaStatus()) {
+    case QMediaPlayer::LoadedMedia:
+    case QMediaPlayer::BufferingMedia:
+    case QMediaPlayer::BufferedMedia:
+    case QMediaPlayer::StalledMedia:
+        break;
+    case QMediaPlayer::NoMedia:
+    case QMediaPlayer::LoadingMedia:
+    case QMediaPlayer::EndOfMedia:
+    case QMediaPlayer::InvalidMedia:
+        return;
+    }
+
+    missing_audio_rejected_ = true;
+    const auto duration = std::max<std::int64_t>(0, player_->duration());
+    const auto position = std::clamp<std::int64_t>(player_->position(), 0, duration);
+    publishSnapshot({PlaybackStatus::Error, position, duration, false, generation_, PlaybackErrorCode::InvalidMedia});
 }
 
 void QtMultimediaPlaybackBackend::publishSnapshot(const PlaybackSnapshot& next) {

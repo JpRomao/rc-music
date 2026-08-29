@@ -127,6 +127,21 @@ TEST_CASE("the current ready generation autoplays once and stale events are igno
     CHECK(playback.play_calls == 1);
 }
 
+TEST_CASE("a transient current-generation error does not consume pending autoplay",
+          "[m0][qt][core][local-track][playback][recovery]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    REQUIRE(session.open(L"C:\\Music\\current.wav"));
+
+    session.applyPlaybackEvent(
+        {PlaybackEventType::SnapshotChanged, {PlaybackStatus::Error, 0, 0, false, 1, PlaybackErrorCode::InvalidMedia}});
+    session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}});
+    session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}});
+
+    CHECK(playback.play_calls == 1);
+}
+
 TEST_CASE("a rejected load preserves the active local track and does not start new metadata work",
           "[m0][qt][core][local-track][error]") {
     RecordingPlaybackBackend playback;

@@ -422,6 +422,40 @@ TEST_CASE("MR-103 returns typed errors for empty and truncated input without cra
     }
 }
 
+TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures safely",
+          "[m0][qt][metadata][taglib][hostile][codec-matrix][MR-103]") {
+    struct TruncatedCodecCase final {
+        std::filesystem::path relative_path;
+        std::filesystem::path temporary_filename;
+    };
+
+    constexpr std::size_t truncated_size = 64;
+    const ScopedTemporaryDirectory directory;
+    const TagLibMetadataExtractor reader;
+
+    for (const auto& codec_case : {
+             TruncatedCodecCase{"fixtures/valid/mp3-cbr-stereo.mp3", "truncated-mp3-cbr.mp3"},
+             TruncatedCodecCase{"fixtures/valid/m4a-aac-lc.m4a", "truncated-m4a-aac.m4a"},
+             TruncatedCodecCase{"fixtures/valid/flac-16-stereo.flac", "truncated-flac.flac"},
+             TruncatedCodecCase{"fixtures/valid/ogg-vorbis.ogg", "truncated-ogg-vorbis.ogg"},
+         }) {
+        CAPTURE(codec_case.relative_path.string());
+        const auto authenticated = readBytes(fixture(codec_case.relative_path));
+        REQUIRE(authenticated.size() > truncated_size);
+
+        const ScopedTemporaryFile truncated{temporaryPath(directory, codec_case.temporary_filename)};
+        writeBytes(truncated.path(),
+                   std::vector<std::uint8_t>{authenticated.begin(), authenticated.begin() + truncated_size});
+
+        std::optional<MetadataReadResult> result;
+        REQUIRE_NOTHROW(result.emplace(reader.read(truncated.path())));
+        REQUIRE(result.has_value());
+        const auto& read_error = requireError(*result);
+        CHECK(read_error.code == MetadataReadErrorCode::InvalidData);
+        CHECK_FALSE(read_error.message.empty());
+    }
+}
+
 TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extractor",
           "[m0][qt][metadata][taglib][metadata-reader][MR-101]") {
     const auto source = fixture("fixtures/valid/wav-pcm-mono.wav");

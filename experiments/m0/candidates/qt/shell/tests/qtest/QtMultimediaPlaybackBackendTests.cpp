@@ -1,8 +1,10 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 
 #include <QByteArray>
+#include <QFile>
 #include <QList>
 #include <QString>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <algorithm>
@@ -30,6 +32,34 @@ void addBasicCodecRows() {
     QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << qint64{2'000} << qint64{25};
     QTest::newRow("flac") << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << qint64{2'000} << qint64{20};
     QTest::newRow("ogg-vorbis") << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << qint64{2'000} << qint64{20};
+}
+
+void addTruncatedBasicCodecRows() {
+    QTest::newRow("mp3-cbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE) << QStringLiteral("truncated.mp3");
+    QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << QStringLiteral("truncated.m4a");
+    QTest::newRow("flac") << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << QStringLiteral("truncated.flac");
+    QTest::newRow("ogg-vorbis") << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral("truncated.ogg");
+}
+
+[[nodiscard]] QString createTruncatedPrefix(const QString& source_file, const QString& target_file,
+                                            QTemporaryDir& temporary_directory) {
+    constexpr qint64 prefix_size = 64;
+    QFile source{source_file};
+    if (!source.open(QIODevice::ReadOnly) || source.size() <= prefix_size) {
+        return {};
+    }
+    const QByteArray prefix = source.read(prefix_size);
+    if (prefix.size() != prefix_size) {
+        return {};
+    }
+
+    const QString target_path = temporary_directory.filePath(target_file);
+    QFile target{target_path};
+    if (!target.open(QIODevice::WriteOnly | QIODevice::Truncate) || target.write(prefix) != prefix.size()) {
+        return {};
+    }
+    target.close();
+    return target_path;
 }
 
 } // namespace
@@ -243,6 +273,34 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         }
     }
 
+    void truncatedBasicCodecFailsSafelyAndDoesNotContaminateNextLoad_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::addColumn<QString>("truncated_file_name");
+        addTruncatedBasicCodecRows();
+    }
+
+    void truncatedBasicCodecFailsSafelyAndDoesNotContaminateNextLoad() {
+        QFETCH(QString, source_file);
+        QFETCH(QString, truncated_file_name);
+
+        QTemporaryDir temporary_directory;
+        QVERIFY(temporary_directory.isValid());
+        const QString hostile_source = createTruncatedPrefix(source_file, truncated_file_name, temporary_directory);
+        QVERIFY(!hostile_source.isEmpty());
+        QCOMPARE(QFile{hostile_source}.size(), qint64{64});
+
+        QtMultimediaPlaybackBackend backend;
+        QCOMPARE(backend.load(nativePath(hostile_source)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Error, 2'000);
+        QVERIFY(backend.snapshot().error != PlaybackErrorCode::None);
+        const auto failed_generation = backend.snapshot().generation;
+
+        QCOMPARE(backend.load(nativePath(source_file)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QVERIFY(backend.snapshot().generation > failed_generation);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
+    }
+
     void newerLoadDiscardsOlderGenerationCallbacks() {
         QtMultimediaPlaybackBackend backend;
         std::vector<PlaybackEvent> events;
@@ -260,6 +318,45 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         QTest::qWait(100);
         QCOMPARE(backend.snapshot().generation, new_generation);
         QCOMPARE(backend.snapshot().status, PlaybackStatus::Ready);
+        QVERIFY(events.size() > events_before_new_load);
+        for (auto index = events_before_new_load; index < events.size(); ++index) {
+            QCOMPARE(events[index].snapshot.generation, new_generation);
+            QVERIFY(events[index].snapshot.status != PlaybackStatus::Error);
+        }
+    }
+
+    void immediateValidLoadDiscardsCallbacksFromTruncatedBasicCodec_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::addColumn<QString>("truncated_file_name");
+        addTruncatedBasicCodecRows();
+    }
+
+    void immediateValidLoadDiscardsCallbacksFromTruncatedBasicCodec() {
+        QFETCH(QString, source_file);
+        QFETCH(QString, truncated_file_name);
+
+        QTemporaryDir temporary_directory;
+        QVERIFY(temporary_directory.isValid());
+        const QString hostile_source = createTruncatedPrefix(source_file, truncated_file_name, temporary_directory);
+        QVERIFY(!hostile_source.isEmpty());
+        QCOMPARE(QFile{hostile_source}.size(), qint64{64});
+
+        QtMultimediaPlaybackBackend backend;
+        std::vector<PlaybackEvent> events;
+        backend.setEventCallback([&](const PlaybackEvent& event) { events.push_back(event); });
+
+        QCOMPARE(backend.load(nativePath(hostile_source)), PlaybackCommandResult::Accepted);
+        const auto old_generation = backend.snapshot().generation;
+        const auto events_before_new_load = events.size();
+        QCOMPARE(backend.load(nativePath(source_file)), PlaybackCommandResult::Accepted);
+        const auto new_generation = backend.snapshot().generation;
+        QVERIFY(new_generation > old_generation);
+
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QTest::qWait(100);
+        QCOMPARE(backend.snapshot().generation, new_generation);
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Ready);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
         QVERIFY(events.size() > events_before_new_load);
         for (auto index = events_before_new_load; index < events.size(); ++index) {
             QCOMPARE(events[index].snapshot.generation, new_generation);

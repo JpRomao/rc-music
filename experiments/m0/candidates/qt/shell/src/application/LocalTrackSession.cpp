@@ -42,8 +42,12 @@ void LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
         return;
     }
 
-    if (event.snapshot.status == PlaybackStatus::Empty || event.snapshot.status == PlaybackStatus::Error) {
+    if (event.snapshot.status == PlaybackStatus::Empty) {
         autoplay_pending_ = false;
+        return;
+    }
+
+    if (event.snapshot.status == PlaybackStatus::Error) {
         return;
     }
 

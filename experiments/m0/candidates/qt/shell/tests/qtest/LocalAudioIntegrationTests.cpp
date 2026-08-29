@@ -124,6 +124,7 @@ class RecordingMetadataReader final : public MetadataReader {
             if (const auto* track = std::get_if<TrackMetadata>(&result.completion->result); track != nullptr) {
                 metadata_source_path_ = track->source_path;
                 metadata_duration_ms_ = track->audio.duration_ms;
+                metadata_error_.reset();
             } else if (const auto* error = std::get_if<MetadataReadError>(&result.completion->result);
                        error != nullptr) {
                 metadata_error_ = error->code;
@@ -272,6 +273,84 @@ class LocalAudioIntegrationTests final : public QObject {
         QVERIFY(*metadata.metadataDurationMs() <= expected_duration_ms + duration_tolerance_ms);
         QVERIFY(!metadata.metadataError().has_value());
         QCOMPARE(presenter.currentTitle(), expected_final_title);
+    }
+
+    void recoversFromTruncatedContainerThroughTheRealJourney_data() {
+        QTest::addColumn<QString>("source_file");
+        QTest::addColumn<QString>("extension");
+
+        QTest::newRow("mp3-cbr") << QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE) << QStringLiteral(".mp3");
+        QTest::newRow("m4a-aac") << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << QStringLiteral(".m4a");
+        QTest::newRow("flac") << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << QStringLiteral(".flac");
+        QTest::newRow("ogg-vorbis") << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".ogg");
+    }
+
+    void recoversFromTruncatedContainerThroughTheRealJourney() {
+        QFETCH(QString, source_file);
+        QFETCH(QString, extension);
+
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const QString hostile_file = temporary.filePath(QStringLiteral("falha 日本語") + extension);
+        const QString valid_file = temporary.filePath(QStringLiteral("recuperada 日本語") + extension);
+
+        QFile source{source_file};
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        constexpr qint64 hostile_prefix_size = 64;
+        const QByteArray hostile_prefix = source.read(hostile_prefix_size);
+        QCOMPARE(hostile_prefix.size(), hostile_prefix_size);
+        source.close();
+
+        QFile hostile{hostile_file};
+        QVERIFY(hostile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(hostile.write(hostile_prefix), hostile_prefix.size());
+        hostile.close();
+        QVERIFY(QFile::copy(source_file, valid_file));
+
+        const std::vector<std::filesystem::path> selections{nativePath(hostile_file), nativePath(valid_file)};
+        std::size_t selection_index = 0;
+        QtMultimediaPlaybackBackend qt_backend;
+        RecordingPlaybackBackend playback{qt_backend};
+        SingleWorkerMetadataReader worker{std::make_unique<TagLibMetadataExtractor>()};
+        RecordingMetadataReader metadata{worker};
+        TestPlatform platform;
+        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
+                                  [&]() -> std::optional<std::filesystem::path> {
+                                      if (selection_index >= selections.size())
+                                          return std::nullopt;
+                                      return selections[selection_index++];
+                                  }};
+
+        QVERIFY(presenter.setVolume(0.0));
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+
+        QVERIFY(presenter.openAudio());
+        QCOMPARE(presenter.currentTitle(), QStringLiteral("falha 日本語"));
+        bool event_loop_responsive = false;
+        QTimer::singleShot(0, &presenter, [&event_loop_responsive] { event_loop_responsive = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(event_loop_responsive, 1'000);
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Error, 5'000);
+        QVERIFY(presenter.hasError());
+        QVERIFY(presenter.hasContextTrack());
+        QCOMPARE(presenter.contextTitle(), QStringLiteral("falha 日本語"));
+        QCOMPARE(presenter.primaryActionId(), QStringLiteral("open-audio"));
+        QTRY_COMPARE_WITH_TIMEOUT(metadata.lastPollStatus(), MetadataPollStatus::Completed, 5'000);
+        QVERIFY(metadata.metadataError().has_value());
+        QCOMPARE(*metadata.metadataError(), MetadataReadErrorCode::InvalidData);
+
+        QVERIFY(presenter.openAudio());
+        QCOMPARE(presenter.currentTitle(), QStringLiteral("recuperada 日本語"));
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing, 5'000);
+        QVERIFY(playback.loadedPaths() == selections);
+        QVERIFY(metadata.requestedPaths() == selections);
+        QVERIFY(!presenter.hasError());
+        QVERIFY(!presenter.hasContextTrack());
+        QCOMPARE(presenter.primaryActionId(), QStringLiteral("play-pause"));
+        QTRY_VERIFY_WITH_TIMEOUT(
+            metadata.metadataSourcePath().has_value() && *metadata.metadataSourcePath() == selections.back(), 5'000);
+        QVERIFY(!metadata.metadataError().has_value());
+        QCOMPARE(presenter.currentTitle(), QStringLiteral("Canção determinística 日本語 🎵"));
     }
 };
 
