@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QUrl>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include <vector>
 
 namespace music_player::m0 {
+class ArtworkImageCache;
 namespace experiment {
 class PlayerPresenterScenarioControl;
 }
@@ -60,6 +62,7 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString currentTitle READ currentTitle NOTIFY stateChanged)
     Q_PROPERTY(QString currentArtist READ currentArtist NOTIFY stateChanged)
     Q_PROPERTY(QString currentAlbum READ currentAlbum NOTIFY stateChanged)
+    Q_PROPERTY(QUrl currentArtworkSource READ currentArtworkSource NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextTrack READ hasContextTrack NOTIFY stateChanged)
     Q_PROPERTY(QString contextTitle READ contextTitle NOTIFY stateChanged)
     Q_PROPERTY(QString contextArtist READ contextArtist NOTIFY stateChanged)
@@ -100,6 +103,9 @@ class PlayerPresenter final : public QObject {
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                     MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                    std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent = nullptr);
     ~PlayerPresenter() override;
 
     [[nodiscard]] QString stateId() const;
@@ -130,6 +136,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString currentTitle() const;
     [[nodiscard]] QString currentArtist() const;
     [[nodiscard]] QString currentAlbum() const;
+    [[nodiscard]] QUrl currentArtworkSource() const;
     [[nodiscard]] bool hasContextTrack() const noexcept;
     [[nodiscard]] QString contextTitle() const;
     [[nodiscard]] QString contextArtist() const;
@@ -221,6 +228,7 @@ class PlayerPresenter final : public QObject {
     FixtureState state_;
     AudioFilePicker audio_file_picker_{};
     std::unique_ptr<LocalTrackSession> local_track_session_{};
+    std::shared_ptr<ArtworkImageCache> artwork_cache_{};
     bool uses_frozen_fixture_{true};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};

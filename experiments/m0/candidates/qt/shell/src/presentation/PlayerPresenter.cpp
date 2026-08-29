@@ -1,5 +1,7 @@
 #include "presentation/PlayerPresenter.hpp"
 
+#include "presentation/ArtworkImageProvider.hpp"
+
 #include <QMetaObject>
 
 #include <stdexcept>
@@ -144,7 +146,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
       tray_available_(platform.trayAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
       controller_(backend_, platform), queue_model_(this), timer_(this),
-      state_(stateById(bundle_, bundle_.default_state_id)) {
+      state_(stateById(bundle_, bundle_.default_state_id)), artwork_cache_(std::make_shared<ArtworkImageCache>()) {
     initializeDefaults();
     timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
@@ -153,14 +155,22 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent)
+    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
+                      std::make_shared<ArtworkImageCache>(), parent) {}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                                 std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
       controller_(backend_, platform, backend_.snapshot()), queue_model_(this), timer_(this),
       state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
-      uses_frozen_fixture_(false) {
+      artwork_cache_(std::move(artwork_cache)), uses_frozen_fixture_(false) {
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
+    if (artwork_cache_ == nullptr)
+        throw std::invalid_argument{"artwork image cache is required"};
     initializeDefaults();
     timer_.setInterval(25);
     timer_.setTimerType(Qt::PreciseTimer);
@@ -341,6 +351,7 @@ QString PlayerPresenter::currentAlbum() const {
     const QueueItem* const track = currentTrack();
     return track != nullptr ? track->album : QString{};
 }
+QUrl PlayerPresenter::currentArtworkSource() const { return artwork_cache_->currentSource(); }
 bool PlayerPresenter::hasContextTrack() const noexcept {
     return uses_frozen_fixture_ ? contextTrack() != nullptr : hasError() && local_track_session_->hasTrack();
 }
@@ -425,6 +436,7 @@ bool PlayerPresenter::openAudio() {
     if (!selected_path.has_value() || !local_track_session_->open(*selected_path))
         return false;
 
+    artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
     controller_.applyBackendSnapshot(backend_.snapshot());
     reconcileTimer();
     emit stateChanged();
@@ -448,6 +460,9 @@ void PlayerPresenter::pollMetadata() {
     const auto duration_before = localDurationMs();
     if (!local_track_session_->pollMetadata())
         return;
+    const auto& metadata = local_track_session_->trackMetadata();
+    if (metadata.has_value() && metadata->artwork.has_value())
+        static_cast<void>(artwork_cache_->publish(local_track_session_->metadataGeneration(), *metadata->artwork));
     reconcileTimer();
     emit stateChanged();
     if (duration_before != localDurationMs())

@@ -3,9 +3,18 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <QBuffer>
+#include <QByteArray>
+#include <QImage>
+
+#include <attachedpictureframe.h>
+#include <flacfile.h>
 #include <id3v2tag.h>
+#include <mp4file.h>
 #include <mpegfile.h>
 #include <tag.h>
+#include <tvariant.h>
+#include <vorbisfile.h>
 
 #include <atomic>
 #include <chrono>
@@ -142,6 +151,62 @@ void writeMp3Title(const std::filesystem::path& destination, const std::string& 
     tag->setTitle(TagLib::String{title, TagLib::String::UTF8});
     REQUIRE(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
                       TagLib::MPEG::File::DoNotDuplicate));
+}
+
+[[nodiscard]] std::vector<std::uint8_t> onePixelPng() {
+    const auto bytes = QByteArray::fromBase64(QByteArrayLiteral(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+    REQUIRE_FALSE(bytes.isEmpty());
+    return {reinterpret_cast<const std::uint8_t*>(bytes.constData()),
+            reinterpret_cast<const std::uint8_t*>(bytes.constData() + bytes.size())};
+}
+
+[[nodiscard]] std::vector<std::uint8_t> encodedImage(const std::uint32_t width_pixels,
+                                                     const std::uint32_t height_pixels, const char* format) {
+    QImage image{static_cast<int>(width_pixels), static_cast<int>(height_pixels), QImage::Format_Grayscale8};
+    REQUIRE_FALSE(image.isNull());
+
+    image.fill(Qt::black);
+    QByteArray encoded;
+    QBuffer destination{&encoded};
+    REQUIRE(destination.open(QIODevice::WriteOnly));
+    REQUIRE(image.save(&destination, format));
+    REQUIRE_FALSE(encoded.isEmpty());
+    return {reinterpret_cast<const std::uint8_t*>(encoded.constData()),
+            reinterpret_cast<const std::uint8_t*>(encoded.constData() + encoded.size())};
+}
+
+void writeMp3Artwork(const std::filesystem::path& destination, const std::vector<std::uint8_t>& artwork,
+                     const std::string& mime_type = "image/png") {
+    TagLib::MPEG::File file{destination.c_str()};
+    REQUIRE(file.isValid());
+    auto* tag = file.ID3v2Tag(true);
+    REQUIRE(tag != nullptr);
+    tag->removeFrames("APIC");
+    auto* frame = new TagLib::ID3v2::AttachedPictureFrame;
+    frame->setType(TagLib::ID3v2::AttachedPictureFrame::FrontCover);
+    frame->setMimeType(TagLib::String{mime_type, TagLib::String::Latin1});
+    frame->setPicture(
+        TagLib::ByteVector{reinterpret_cast<const char*>(artwork.data()), static_cast<unsigned int>(artwork.size())});
+    tag->addFrame(frame);
+    REQUIRE(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
+                      TagLib::MPEG::File::DoNotDuplicate));
+}
+
+template <typename TagLibFile>
+void writeComplexArtwork(const std::filesystem::path& destination, const std::vector<std::uint8_t>& artwork,
+                         const std::string& mime_type = "image/png") {
+    TagLibFile file{destination.c_str()};
+    REQUIRE(file.isValid());
+
+    const TagLib::VariantMap picture{
+        {"data",
+         TagLib::ByteVector{reinterpret_cast<const char*>(artwork.data()), static_cast<unsigned int>(artwork.size())}},
+        {"pictureType", "Front Cover"},
+        {"mimeType", TagLib::String{mime_type, TagLib::String::Latin1}},
+    };
+    REQUIRE(file.setComplexProperties("PICTURE", {picture}));
+    REQUIRE(file.save());
 }
 
 [[nodiscard]] std::vector<std::uint8_t> withoutId3Tags(std::vector<std::uint8_t> bytes) {
@@ -483,6 +548,208 @@ TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures saf
         CHECK(read_error.code == MetadataReadErrorCode::InvalidData);
         CHECK_FALSE(read_error.message.empty());
     }
+}
+
+TEST_CASE("FR-021 extracts bounded RGBA thumbnails from valid PNG and JPEG embedded MP3 artwork",
+          "[m0][qt][metadata][taglib][artwork][FR-021]") {
+    struct EncodedArtworkCase final {
+        std::filesystem::path filename;
+        std::vector<std::uint8_t> bytes;
+        std::string mime_type;
+        std::uint32_t expected_width;
+        std::uint32_t expected_height;
+    };
+
+    const ScopedTemporaryDirectory directory;
+    const std::vector<EncodedArtworkCase> artwork_cases{
+        {"embedded-cover-png.mp3", onePixelPng(), "image/png", 1, 1},
+        {"embedded-cover-jpeg.mp3", encodedImage(2, 1, "JPEG"), "image/jpeg", 2, 1},
+    };
+    for (const auto& artwork_case : artwork_cases) {
+        CAPTURE(artwork_case.filename.string(), artwork_case.mime_type);
+        const ScopedTemporaryFile source{temporaryPath(directory, artwork_case.filename)};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+        writeMp3Artwork(source.path(), artwork_case.bytes, artwork_case.mime_type);
+
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+
+        REQUIRE(metadata.artwork.has_value());
+        CHECK(metadata.artwork->width_pixels == artwork_case.expected_width);
+        CHECK(metadata.artwork->height_pixels == artwork_case.expected_height);
+        REQUIRE(metadata.artwork->rgba8888 != nullptr);
+        CHECK(metadata.artwork->rgba8888->size() ==
+              static_cast<std::size_t>(artwork_case.expected_width) * artwork_case.expected_height * 4U);
+        CHECK(metadata.artwork_diagnostics.empty());
+        REQUIRE(metadata.audio.duration_ms.has_value());
+        CHECK(*metadata.audio.duration_ms > 0);
+    }
+}
+
+TEST_CASE("FR-021 extracts embedded artwork across the authenticated local codec matrix",
+          "[m0][qt][metadata][taglib][artwork][codec-matrix][FR-021]") {
+    enum class Container { M4a, Flac, Vorbis };
+    struct ArtworkCase final {
+        Container container;
+        std::filesystem::path relative_path;
+        std::filesystem::path temporary_filename;
+        std::string expected_container;
+        std::string expected_codec;
+    };
+
+    const ScopedTemporaryDirectory directory;
+    for (const auto& artwork_case : {
+             ArtworkCase{Container::M4a, "fixtures/valid/m4a-aac-lc.m4a", "embedded-cover.m4a", "ISO MP4/M4A", "AAC"},
+             ArtworkCase{Container::Flac, "fixtures/valid/flac-16-stereo.flac", "embedded-cover.flac", "FLAC", "FLAC"},
+             ArtworkCase{Container::Vorbis, "fixtures/valid/ogg-vorbis.ogg", "embedded-cover.ogg", "Ogg", "Vorbis"},
+         }) {
+        CAPTURE(artwork_case.relative_path.string());
+        const ScopedTemporaryFile source{temporaryPath(directory, artwork_case.temporary_filename)};
+        writeBytes(source.path(), readBytes(fixture(artwork_case.relative_path)));
+        const auto artwork = onePixelPng();
+        switch (artwork_case.container) {
+        case Container::M4a:
+            writeComplexArtwork<TagLib::MP4::File>(source.path(), artwork);
+            break;
+        case Container::Flac:
+            writeComplexArtwork<TagLib::FLAC::File>(source.path(), artwork);
+            break;
+        case Container::Vorbis:
+            writeComplexArtwork<TagLib::Vorbis::File>(source.path(), artwork);
+            break;
+        }
+
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+
+        REQUIRE(metadata.artwork.has_value());
+        CHECK(metadata.artwork->width_pixels == 1);
+        CHECK(metadata.artwork->height_pixels == 1);
+        REQUIRE(metadata.artwork->rgba8888 != nullptr);
+        CHECK(metadata.artwork->rgba8888->size() == 4);
+        CHECK(metadata.artwork_diagnostics.empty());
+        CHECK(metadata.audio.container == artwork_case.expected_container);
+        CHECK(metadata.audio.codec == artwork_case.expected_codec);
+        REQUIRE(metadata.audio.duration_ms.has_value());
+        CHECK(*metadata.audio.duration_ms >= 1'975);
+        CHECK(*metadata.audio.duration_ms <= 2'025);
+        REQUIRE(metadata.audio.sample_rate_hz.has_value());
+        CHECK(*metadata.audio.sample_rate_hz == 48'000);
+        REQUIRE(metadata.audio.channels.has_value());
+        CHECK(*metadata.audio.channels == 2);
+        CHECK(metadata.tags.title == std::optional<std::string>{"Canção determinística 日本語 🎵"});
+        CHECK(metadata.tags.artist == std::optional<std::string>{"João – Codex"});
+        CHECK(metadata.tags.album == std::optional<std::string>{"Álbum de teste Ω"});
+    }
+}
+
+TEST_CASE("MR-005 discards corrupt embedded MP3 artwork without failing metadata or audio properties",
+          "[m0][qt][metadata][taglib][artwork][MR-005]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "corrupt-cover.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Artwork(source.path(), {'n', 'o', 't', '-', 'a', 'n', '-', 'i', 'm', 'a', 'g', 'e'});
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    CHECK_FALSE(metadata.artwork.has_value());
+    REQUIRE(metadata.artwork_diagnostics.size() == 1);
+    CHECK(metadata.artwork_diagnostics.front().code == ArtworkDiagnosticCode::InvalidData);
+    CHECK(metadata.artwork_diagnostics.front().encoded_bytes == 12);
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("NFR-LIMIT-001 scales embedded MP3 artwork down while preserving its aspect ratio",
+          "[m0][qt][metadata][taglib][artwork][limits][NFR-LIMIT-001]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "large-cover.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Artwork(source.path(), encodedImage(2'048, 1'024, "PNG"));
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    REQUIRE(metadata.artwork.has_value());
+    CHECK(metadata.artwork->width_pixels == 1'024);
+    CHECK(metadata.artwork->height_pixels == 512);
+    REQUIRE(metadata.artwork->rgba8888 != nullptr);
+    CHECK(metadata.artwork->rgba8888->size() == 1'024U * 512U * 4U);
+    CHECK(metadata.artwork_diagnostics.empty());
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("MR-008 rejects embedded MP3 artwork above the encoded byte limit before image decoding",
+          "[m0][qt][metadata][taglib][artwork][limits][MR-008]") {
+    constexpr std::size_t encoded_byte_limit = 10U * 1'024U * 1'024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "oversized-cover.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Artwork(source.path(), std::vector<std::uint8_t>(encoded_byte_limit + 1U, 0x5a));
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    CHECK_FALSE(metadata.artwork.has_value());
+    REQUIRE(metadata.artwork_diagnostics.size() == 1);
+    CHECK(metadata.artwork_diagnostics.front().code == ArtworkDiagnosticCode::EncodedBytesExceeded);
+    CHECK(metadata.artwork_diagnostics.front().encoded_bytes == encoded_byte_limit + 1U);
+    CHECK(metadata.artwork_diagnostics.front().width_pixels == 0);
+    CHECK(metadata.artwork_diagnostics.front().height_pixels == 0);
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("MR-011 rejects real embedded MP3 artwork beyond dimension and pixel boundaries",
+          "[m0][qt][metadata][taglib][artwork][limits][MR-011]") {
+    struct BoundaryCase final {
+        std::filesystem::path filename;
+        std::uint32_t width_pixels;
+        std::uint32_t height_pixels;
+        ArtworkDiagnosticCode diagnostic;
+    };
+
+    const ScopedTemporaryDirectory directory;
+    for (const auto& boundary_case : {
+             BoundaryCase{"axis-limit-cover.mp3", 4'097, 1, ArtworkDiagnosticCode::AxisPixelsExceeded},
+             BoundaryCase{"pixel-limit-cover.mp3", 4'001, 4'000, ArtworkDiagnosticCode::PixelCountExceeded},
+         }) {
+        CAPTURE(boundary_case.filename.string(), boundary_case.width_pixels, boundary_case.height_pixels);
+        const ScopedTemporaryFile source{temporaryPath(directory, boundary_case.filename)};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+        const auto encoded_artwork = encodedImage(boundary_case.width_pixels, boundary_case.height_pixels, "PNG");
+        writeMp3Artwork(source.path(), encoded_artwork);
+
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+
+        CHECK_FALSE(metadata.artwork.has_value());
+        REQUIRE(metadata.artwork_diagnostics.size() == 1);
+        CHECK(metadata.artwork_diagnostics.front().code == boundary_case.diagnostic);
+        CHECK(metadata.artwork_diagnostics.front().encoded_bytes == encoded_artwork.size());
+        CHECK(metadata.artwork_diagnostics.front().width_pixels == boundary_case.width_pixels);
+        CHECK(metadata.artwork_diagnostics.front().height_pixels == boundary_case.height_pixels);
+        REQUIRE(metadata.audio.duration_ms.has_value());
+        CHECK(*metadata.audio.duration_ms > 0);
+    }
+}
+
+TEST_CASE("NFR-LIMIT-001 discards an embedded image format outside the artwork allowlist without failing metadata",
+          "[m0][qt][metadata][taglib][artwork][limits][NFR-LIMIT-001]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "bmp-cover.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Artwork(source.path(), encodedImage(2, 2, "BMP"), "image/bmp");
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    CHECK_FALSE(metadata.artwork.has_value());
+    REQUIRE(metadata.artwork_diagnostics.size() == 1);
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
 }
 
 TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limit",

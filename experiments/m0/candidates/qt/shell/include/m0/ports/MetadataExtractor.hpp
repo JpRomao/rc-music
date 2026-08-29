@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -39,6 +40,21 @@ struct MetadataDiagnostic final {
     std::size_t limit_bytes{0};
 };
 
+struct ArtworkThumbnail final {
+    std::uint32_t width_pixels{0};
+    std::uint32_t height_pixels{0};
+    std::shared_ptr<const std::vector<std::uint8_t>> rgba8888{};
+};
+
+enum class ArtworkDiagnosticCode { InvalidData, EncodedBytesExceeded, AxisPixelsExceeded, PixelCountExceeded };
+
+struct ArtworkDiagnostic final {
+    ArtworkDiagnosticCode code{ArtworkDiagnosticCode::InvalidData};
+    std::size_t encoded_bytes{0};
+    std::uint32_t width_pixels{0};
+    std::uint32_t height_pixels{0};
+};
+
 struct TrackMetadata final {
     std::filesystem::path source_path{};
     std::uintmax_t file_size_bytes{0};
@@ -46,6 +62,8 @@ struct TrackMetadata final {
     std::string display_title{};
     AudioStreamProperties audio{};
     std::vector<MetadataDiagnostic> diagnostics{};
+    std::optional<ArtworkThumbnail> artwork{};
+    std::vector<ArtworkDiagnostic> artwork_diagnostics{};
 };
 
 enum class MetadataReadErrorCode {

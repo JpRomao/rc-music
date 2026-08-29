@@ -181,6 +181,8 @@ if(M0_QT_SHELL_SUPPORT)
         SOURCES
             src/presentation/ShellUiContract.hpp
             src/presentation/ShellUiContract.cpp
+            src/presentation/ArtworkImageProvider.hpp
+            src/presentation/ArtworkImageProvider.cpp
             src/presentation/PlayerPresenter.hpp
             src/presentation/PlayerPresenter.cpp
             src/presentation/PlayerPresenterScenarioControl.hpp
@@ -341,7 +343,8 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
         add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
-        target_link_libraries(m0_qt_presenter_tests PRIVATE m0_qt_shell_support m0_qt_shell_ui Qt6::Gui Qt6::Test)
+        target_link_libraries(m0_qt_presenter_tests PRIVATE
+            m0_qt_shell_support m0_qt_shell_ui Qt6::Gui Qt6::Quick Qt6::Test)
         target_include_directories(m0_qt_presenter_tests PRIVATE src)
         target_compile_features(m0_qt_presenter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_presenter_tests PRIVATE
@@ -618,7 +621,7 @@ if(M0_QT_AUDIO_SUPPORT)
             "The committed wrong-extension audio corpus fixture does not match its authenticated identity")
     endif()
 
-    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Multimedia)
+    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Gui Multimedia)
     find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
 
     add_library(m0_qt_audio_adapters STATIC
@@ -637,11 +640,12 @@ if(M0_QT_AUDIO_SUPPORT)
 
     add_library(m0_taglib_metadata_extractor STATIC
         include/m0/adapters/TagLibMetadataExtractor.hpp
+        include/m0/domain/ArtworkLimits.hpp
         include/m0/ports/MetadataExtractor.hpp
         src/adapters/TagLibMetadataExtractor.cpp
     )
     target_include_directories(m0_taglib_metadata_extractor PUBLIC include)
-    target_link_libraries(m0_taglib_metadata_extractor PRIVATE TagLib::TagLib)
+    target_link_libraries(m0_taglib_metadata_extractor PRIVATE TagLib::TagLib Qt6::Gui)
     target_compile_features(m0_taglib_metadata_extractor PUBLIC cxx_std_20)
     if(MSVC)
         target_compile_options(m0_taglib_metadata_extractor PRIVATE /W4 /WX /permissive-)
@@ -688,8 +692,10 @@ if(M0_QT_AUDIO_SUPPORT)
         add_test(NAME m0.qt.audio.playback-lifecycle COMMAND m0_qt_audio_adapter_tests)
         get_target_property(m0_qt_audio_runtime Qt6::Multimedia IMPORTED_LOCATION_RELEASE)
         get_target_property(m0_qt_audio_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)
+        get_target_property(m0_qt_audio_gui_runtime Qt6::Gui IMPORTED_LOCATION_RELEASE)
         get_filename_component(m0_qt_audio_runtime_dir "${m0_qt_audio_runtime}" DIRECTORY)
         get_filename_component(m0_qt_audio_core_runtime_dir "${m0_qt_audio_core_runtime}" DIRECTORY)
+        get_filename_component(m0_qt_audio_gui_runtime_dir "${m0_qt_audio_gui_runtime}" DIRECTORY)
         get_filename_component(m0_qt_audio_prefix "${m0_qt_audio_runtime_dir}" DIRECTORY)
         set_tests_properties(m0.qt.audio.playback-lifecycle PROPERTIES
             LABELS "m0;qt;audio;PB-001;PB-002;PB-003;PB-004;PB-006;PB-007;PB-008;PB-009;PB-010;PB-011;PB-012;PB-101;PB-102;PB-103"
@@ -795,6 +801,7 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
+        tests/catch2/ArtworkLimitsTests.cpp
         tests/catch2/DeterministicPlaybackBackendTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp
@@ -825,6 +832,7 @@ if(BUILD_TESTING)
             m0_taglib_metadata_extractor
             TagLib::TagLib
             Catch2::Catch2WithMain
+            Qt6::Gui
         )
         target_compile_features(m0_taglib_metadata_extractor_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_taglib_metadata_extractor_tests PRIVATE
@@ -846,6 +854,7 @@ if(BUILD_TESTING)
             m0_taglib_metadata_extractor_tests
             TEST_PREFIX "m0.qt.metadata."
             PROPERTIES LABELS "m0;qt;audio;metadata;taglib"
+            DL_PATHS "${m0_qt_audio_runtime_dir}" "${m0_qt_audio_gui_runtime_dir}"
         )
     endif()
 endif()

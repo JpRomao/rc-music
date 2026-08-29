@@ -193,6 +193,13 @@ TestCase {
         compare(cover.source.toString(), testShellUiContract.trackSource.toString()); // qmllint disable unqualified
         verify(cover.Accessible.ignored);
         tryCompare(cover, "status", Image.Ready, 500);
+        const embeddedArtwork = findChild(shell, "embedded-artwork");
+        compare(embeddedArtwork.source.toString(), "");
+        compare(embeddedArtwork.asynchronous, true);
+        compare(embeddedArtwork.cache, false);
+        compare(embeddedArtwork.retainWhileLoading, false);
+        verify(!embeddedArtwork.visible);
+        verify(embeddedArtwork.Accessible.ignored);
         verifyInsideWindow(cover);
         verifyInsideWindow(currentTitle);
         verifyInsideWindow(currentArtist);

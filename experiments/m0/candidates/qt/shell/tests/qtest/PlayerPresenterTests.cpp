@@ -1,10 +1,14 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/domain/ArtworkLimits.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
+#include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModelTester>
+#include <QColor>
+#include <QImage>
 #include <QMetaMethod>
 #include <QMetaProperty>
 #include <QPersistentModelIndex>
@@ -158,6 +162,8 @@ class PlayerPresenterTests final : public QObject {
     void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
     void localTransportAcceptsAsynchronousPlayAndSeekWithoutAQueue();
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
+    void artworkCacheServesOnlyTheCurrentGenerationWithoutCopyingPixels();
+    void currentArtworkUsesAnOpaqueUrlAndAcceptedOpenClearsIt();
     void terminalMetadataStatusStopsPollingWithoutReplacingFallback();
     void destructionClearsPlaybackCallbackAndCancelsPendingMetadata();
     void startsFromNullableEmptyStateAndAppliesEveryDefault();
@@ -464,6 +470,103 @@ void PlayerPresenterTests::currentMetadataCompletionReplacesFallbackAndStopsPoll
     QVERIFY(!timers.front()->isActive());
     QCOMPARE(states.size(), 2);
     QCOMPARE(playback.size(), 2);
+}
+
+void PlayerPresenterTests::artworkCacheServesOnlyTheCurrentGenerationWithoutCopyingPixels() {
+    auto cache = std::make_shared<ArtworkImageCache>();
+    ArtworkImageProvider provider(cache);
+    auto pixels =
+        std::make_shared<const std::vector<std::uint8_t>>(std::vector<std::uint8_t>{255, 0, 0, 255, 0, 255, 0, 255});
+    const ArtworkThumbnail artwork{.width_pixels = 2, .height_pixels = 1, .rgba8888 = pixels};
+
+    cache->beginGeneration(MetadataGeneration{7});
+    QVERIFY(cache->publish(MetadataGeneration{7}, artwork));
+    const QUrl source = cache->currentSource();
+    QCOMPARE(source.scheme(), QStringLiteral("image"));
+    QCOMPARE(source.host(), ArtworkImageProvider::providerId());
+    QVERIFY(!source.toString().startsWith(QStringLiteral("data:")));
+    QCOMPARE(source.path().size(), 25);
+    QVERIFY(provider.flags().testFlag(QQmlImageProviderBase::ForceAsynchronousImageLoading));
+
+    QSize decoded_size;
+    QImage decoded = provider.requestImage(source.path().sliced(1), &decoded_size, {});
+    QCOMPARE(decoded_size, QSize(2, 1));
+    QCOMPARE(decoded.size(), QSize(2, 1));
+    QCOMPARE(decoded.constBits(), pixels->data());
+    QCOMPARE(decoded.pixelColor(0, 0), QColor(255, 0, 0, 255));
+    QCOMPARE(decoded.pixelColor(1, 0), QColor(0, 255, 0, 255));
+
+    cache->beginGeneration(MetadataGeneration{8});
+    QVERIFY(cache->currentSource().isEmpty());
+    QVERIFY(!cache->publish(MetadataGeneration{7}, artwork));
+    const ArtworkThumbnail oversized{
+        .width_pixels = ArtworkLimits::thumbnail_max_axis_pixels + 1,
+        .height_pixels = 1,
+        .rgba8888 = std::make_shared<const std::vector<std::uint8_t>>(
+            (ArtworkLimits::thumbnail_max_axis_pixels + 1) * 4, std::uint8_t{0}),
+    };
+    QVERIFY(!cache->publish(MetadataGeneration{8}, oversized));
+    QVERIFY(provider.requestImage(source.path().sliced(1), nullptr, {}).isNull());
+    pixels.reset();
+    QCOMPARE(decoded.pixelColor(1, 0), QColor(0, 255, 0, 255));
+}
+
+void PlayerPresenterTests::currentArtworkUsesAnOpaqueUrlAndAcceptedOpenClearsIt() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path first_source{LR"(C:\audio\first.mp3)"};
+    const std::filesystem::path rejected_source{LR"(C:\audio\rejected.mp3)"};
+    const std::filesystem::path second_source{LR"(C:\audio\second.mp3)"};
+    const std::vector<std::filesystem::path> selections{first_source, rejected_source, second_source};
+    std::size_t selection_index = 0;
+    auto pixels = std::make_shared<const std::vector<std::uint8_t>>(std::vector<std::uint8_t>{10, 20, 30, 255});
+    TrackMetadata first_track{
+        .source_path = first_source,
+        .file_size_bytes = 123,
+        .display_title = "First",
+        .audio = {.duration_ms = 1'000, .container = "MP3", .codec = "MP3"},
+        .artwork = ArtworkThumbnail{.width_pixels = 1, .height_pixels = 1, .rgba8888 = pixels},
+    };
+    metadata.poll_results.push_back({
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{1}, first_source, std::move(first_track)},
+    });
+    auto cache = std::make_shared<ArtworkImageCache>();
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata,
+        [&]() -> std::optional<std::filesystem::path> {
+            if (selection_index >= selections.size())
+                return std::nullopt;
+            return selections[selection_index++];
+        },
+        cache);
+
+    QVERIFY(presenter.currentArtworkSource().isEmpty());
+    QVERIFY(presenter.openAudio());
+    QTRY_VERIFY(!presenter.currentArtworkSource().isEmpty());
+    const QUrl first_url = presenter.currentArtworkSource();
+    QCOMPARE(first_url.scheme(), QStringLiteral("image"));
+    QCOMPARE(first_url.host(), ArtworkImageProvider::providerId());
+
+    backend.load_result = PlaybackCommandResult::NotReady;
+    QVERIFY(!presenter.openAudio());
+    QCOMPARE(presenter.currentArtworkSource(), first_url);
+
+    metadata.poll_results.push_back({
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{
+            MetadataGeneration{1}, first_source,
+            TrackMetadata{.source_path = first_source,
+                          .artwork = ArtworkThumbnail{.width_pixels = 1, .height_pixels = 1, .rgba8888 = pixels}}},
+    });
+    backend.load_result = PlaybackCommandResult::Accepted;
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.currentArtworkSource().isEmpty());
+    QTRY_COMPARE(metadata.polled_generations.back(), MetadataGeneration{2});
+    QVERIFY(presenter.currentArtworkSource().isEmpty());
+    ArtworkImageProvider provider(cache);
+    QVERIFY(provider.requestImage(first_url.path().sliced(1), nullptr, {}).isNull());
 }
 
 void PlayerPresenterTests::terminalMetadataStatusStopsPollingWithoutReplacingFallback() {

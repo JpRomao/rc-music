@@ -7,13 +7,30 @@ ColumnLayout {
     objectName: "playing-state"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
-    Image {
-        objectName: "cover-track"
-        source: root.contract.trackSource
-        sourceSize.width: 192
-        sourceSize.height: 192
+    Item {
+        implicitWidth: 192
+        implicitHeight: 192
         Layout.alignment: Qt.AlignHCenter
-        Accessible.ignored: true
+
+        Image {
+            objectName: "cover-track"
+            anchors.fill: parent
+            source: root.contract.trackSource
+            sourceSize.width: 192
+            sourceSize.height: 192
+            Accessible.ignored: true
+        }
+        Image {
+            objectName: "embedded-artwork"
+            anchors.fill: parent
+            source: root.presenter.currentArtworkSource
+            asynchronous: true
+            cache: false
+            retainWhileLoading: false
+            fillMode: Image.PreserveAspectFit
+            visible: status === Image.Ready
+            Accessible.ignored: true
+        }
     }
     Text {
         objectName: "current-title"

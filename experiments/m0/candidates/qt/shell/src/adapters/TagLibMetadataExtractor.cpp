@@ -1,4 +1,10 @@
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
+#include "m0/domain/ArtworkLimits.hpp"
+
+#include <QBuffer>
+#include <QByteArray>
+#include <QImage>
+#include <QImageReader>
 
 #include <audioproperties.h>
 #include <flacfile.h>
@@ -9,6 +15,8 @@
 #include <mpegheader.h>
 #include <mpegproperties.h>
 #include <tag.h>
+#include <tfile.h>
+#include <tvariant.h>
 #include <vorbisfile.h>
 #include <vorbisproperties.h>
 #include <wavfile.h>
@@ -17,8 +25,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -170,6 +180,142 @@ struct ReadTagsResult final {
     std::vector<MetadataDiagnostic> diagnostics{};
 };
 
+[[nodiscard]] std::optional<TagLib::ByteVector> embeddedArtwork(const TagLib::File& file) {
+    const auto pictures = file.complexProperties("PICTURE");
+    if (pictures.isEmpty()) {
+        return std::nullopt;
+    }
+
+    std::optional<TagLib::ByteVector> first_valid_picture;
+    for (const auto& picture : pictures) {
+        bool data_valid = false;
+        auto data = picture.value("data").toByteVector(&data_valid);
+        if (!data_valid) {
+            continue;
+        }
+        if (!first_valid_picture.has_value()) {
+            first_valid_picture = data;
+        }
+        bool type_valid = false;
+        const auto type = picture.value("pictureType").toString(&type_valid);
+        if (type_valid && type == "Front Cover") {
+            return data;
+        }
+    }
+    if (first_valid_picture.has_value()) {
+        return first_valid_picture;
+    }
+    return TagLib::ByteVector{};
+}
+
+void recordArtworkDiagnostic(TrackMetadata& metadata, const ArtworkDiagnosticCode code, const std::size_t encoded_bytes,
+                             const std::uint32_t width_pixels = 0, const std::uint32_t height_pixels = 0) {
+    metadata.artwork_diagnostics.push_back(
+        {.code = code, .encoded_bytes = encoded_bytes, .width_pixels = width_pixels, .height_pixels = height_pixels});
+}
+
+[[nodiscard]] ArtworkDiagnosticCode diagnosticCode(const ArtworkLimitViolation violation) noexcept {
+    switch (violation) {
+    case ArtworkLimitViolation::EncodedBytes:
+        return ArtworkDiagnosticCode::EncodedBytesExceeded;
+    case ArtworkLimitViolation::AxisPixels:
+        return ArtworkDiagnosticCode::AxisPixelsExceeded;
+    case ArtworkLimitViolation::PixelCount:
+        return ArtworkDiagnosticCode::PixelCountExceeded;
+    case ArtworkLimitViolation::InvalidDimensions:
+    case ArtworkLimitViolation::None:
+        return ArtworkDiagnosticCode::InvalidData;
+    }
+    return ArtworkDiagnosticCode::InvalidData;
+}
+
+void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVector>& encoded_artwork) {
+    if (!encoded_artwork.has_value()) {
+        return;
+    }
+
+    const auto encoded_bytes = static_cast<std::size_t>(encoded_artwork->size());
+    const auto encoded_violation = validateArtworkLimits(encoded_bytes, 1, 1);
+    if (encoded_violation != ArtworkLimitViolation::None) {
+        recordArtworkDiagnostic(metadata, diagnosticCode(encoded_violation), encoded_bytes);
+        return;
+    }
+
+    const auto bytes = QByteArray::fromRawData(encoded_artwork->data(), static_cast<qsizetype>(encoded_bytes));
+    QBuffer buffer;
+    buffer.setData(bytes);
+    if (!buffer.open(QIODevice::ReadOnly)) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes);
+        return;
+    }
+
+    QImageReader reader(&buffer);
+    reader.setAutoDetectImageFormat(true);
+    reader.setAutoTransform(true);
+    if (!reader.canRead()) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes);
+        return;
+    }
+    const auto format = reader.format().toLower();
+    if (format != QByteArrayLiteral("png") && format != QByteArrayLiteral("jpeg") &&
+        format != QByteArrayLiteral("jpg")) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes);
+        return;
+    }
+
+    const auto source_size = reader.size();
+    if (!source_size.isValid() || source_size.width() <= 0 || source_size.height() <= 0) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes);
+        return;
+    }
+    const auto width_pixels = static_cast<std::uint32_t>(source_size.width());
+    const auto height_pixels = static_cast<std::uint32_t>(source_size.height());
+    const auto dimensions_violation = validateArtworkLimits(encoded_bytes, width_pixels, height_pixels);
+    if (dimensions_violation != ArtworkLimitViolation::None) {
+        recordArtworkDiagnostic(metadata, diagnosticCode(dimensions_violation), encoded_bytes, width_pixels,
+                                height_pixels);
+        return;
+    }
+
+    if (source_size.width() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels) ||
+        source_size.height() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels)) {
+        auto thumbnail_size = source_size;
+        thumbnail_size.scale(static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels),
+                             static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels), Qt::KeepAspectRatio);
+        reader.setScaledSize(thumbnail_size);
+    }
+
+    auto image = reader.read();
+    if (image.isNull()) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes, width_pixels,
+                                height_pixels);
+        return;
+    }
+    if (image.width() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels) ||
+        image.height() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels)) {
+        image = image.scaled(static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels),
+                             static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels), Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+    }
+    image = image.convertToFormat(QImage::Format_RGBA8888);
+    if (image.isNull()) {
+        recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes, width_pixels,
+                                height_pixels);
+        return;
+    }
+
+    ArtworkThumbnail thumbnail{};
+    thumbnail.width_pixels = static_cast<std::uint32_t>(image.width());
+    thumbnail.height_pixels = static_cast<std::uint32_t>(image.height());
+    const auto row_bytes = static_cast<std::size_t>(image.width()) * 4U;
+    auto pixels = std::make_shared<std::vector<std::uint8_t>>(row_bytes * static_cast<std::size_t>(image.height()));
+    for (int row = 0; row < image.height(); ++row) {
+        std::memcpy(pixels->data() + static_cast<std::size_t>(row) * row_bytes, image.constScanLine(row), row_bytes);
+    }
+    thumbnail.rgba8888 = std::move(pixels);
+    metadata.artwork = std::move(thumbnail);
+}
+
 [[nodiscard]] std::optional<std::string> retainedUtf8(const TagLib::String& value, const MetadataField field,
                                                       std::vector<MetadataDiagnostic>& diagnostics) {
     if (value.isEmpty()) {
@@ -275,6 +421,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
     metadata.audio.container = "WAV";
@@ -298,6 +445,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "MP3";
     metadata.audio.codec = codec;
@@ -312,6 +460,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
     metadata.audio.container = "FLAC";
@@ -333,6 +482,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "ISO MP4/M4A";
     metadata.audio.codec = "AAC";
@@ -347,6 +497,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "Ogg";
     metadata.audio.codec = "Vorbis";

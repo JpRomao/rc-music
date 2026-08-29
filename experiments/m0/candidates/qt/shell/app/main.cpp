@@ -1,6 +1,7 @@
 #include "ShellLaunchOptions.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
@@ -108,6 +109,7 @@ int main(int argc, char* argv[]) {
             std::move(availability_reader));
         music_player::m0::QtSystemAppearance system_appearance;
 #ifdef M0_QT_COMBINED_AUDIO
+        auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
@@ -124,12 +126,17 @@ int main(int argc, char* argv[]) {
             return std::filesystem::path{selected.toUtf8().toStdString()};
 #endif
         };
-        PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker));
+        PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
+                                  artwork_cache);
 #else
         PlayerPresenter presenter(bundle, platform);
 #endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
+#ifdef M0_QT_COMBINED_AUDIO
+        engine.addImageProvider(music_player::m0::ArtworkImageProvider::providerId(),
+                                new music_player::m0::ArtworkImageProvider(artwork_cache));
+#endif
         music_player::m0::bindShellAppearance(presenter, contract, system_appearance);
         if (options.initial_scenario == InitialShellScenario::Unavailable &&
             (!presenter.loadFrozenQueue() || !PlayerPresenterScenarioControl::enterUnavailable(presenter))) {

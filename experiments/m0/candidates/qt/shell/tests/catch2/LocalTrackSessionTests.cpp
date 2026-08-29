@@ -175,7 +175,7 @@ TEST_CASE("replacing a local track cancels its metadata generation", "[m0][qt][c
 }
 
 TEST_CASE("completed metadata replaces the filename fallback only for the current request",
-          "[m0][qt][core][local-track][metadata]") {
+          "[m0][qt][core][local-track][metadata][FR-024]") {
     RecordingPlaybackBackend playback;
     ScriptedMetadataReader metadata;
     LocalTrackSession session{playback, metadata};
