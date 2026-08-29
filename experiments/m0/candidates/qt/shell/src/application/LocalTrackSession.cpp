@@ -64,10 +64,12 @@ bool LocalTrackSession::pollMetadata() {
     case MetadataPollStatus::Pending:
         return false;
     case MetadataPollStatus::Completed:
-        if (!result.completion.has_value() || result.completion->generation != metadata_generation_ ||
-            result.completion->source_path != source_path_) {
+        if (!result.completion.has_value()) {
             metadata_status_ = LocalTrackMetadataStatus::Failed;
             return true;
+        }
+        if (result.completion->generation != metadata_generation_ || result.completion->source_path != source_path_) {
+            return false;
         }
         applyMetadataCompletion(std::move(*result.completion));
         return true;

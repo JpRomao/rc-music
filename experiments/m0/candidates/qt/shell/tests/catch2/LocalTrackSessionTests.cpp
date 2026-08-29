@@ -195,19 +195,6 @@ TEST_CASE("completed metadata replaces the filename fallback only for the curren
     REQUIRE(session.trackMetadata().has_value());
     CHECK(session.trackMetadata()->audio.duration_ms == 2'000);
 
-    RecordingPlaybackBackend stale_playback;
-    ScriptedMetadataReader stale_metadata;
-    LocalTrackSession stale_session{stale_playback, stale_metadata};
-    REQUIRE(stale_session.open(path));
-    stale_metadata.next_poll = {
-        MetadataPollStatus::Completed,
-        MetadataReadCompletion{MetadataGeneration{9}, path, MetadataReadResult{taggedMetadata(path)}},
-    };
-    REQUIRE(stale_session.pollMetadata());
-    CHECK(stale_session.metadataGeneration() == MetadataGeneration{1});
-    CHECK(stale_session.metadataStatus() == LocalTrackMetadataStatus::Failed);
-    CHECK(stale_session.displayTitle() == "fallback");
-
     RecordingPlaybackBackend wrong_source_playback;
     ScriptedMetadataReader wrong_source_reader;
     LocalTrackSession wrong_source_session{wrong_source_playback, wrong_source_reader};
@@ -220,6 +207,35 @@ TEST_CASE("completed metadata replaces the filename fallback only for the curren
     REQUIRE(wrong_source_session.pollMetadata());
     CHECK(wrong_source_session.metadataStatus() == LocalTrackMetadataStatus::Failed);
     CHECK(wrong_source_session.displayTitle() == "fallback");
+}
+
+TEST_CASE("stale metadata completion leaves the current track pending",
+          "[m0][qt][core][local-track][metadata][recovery][FR-024][MR-017]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path first{L"C:\\Music\\first.wav"};
+    const std::filesystem::path current{L"C:\\Music\\current.wav"};
+    REQUIRE(session.open(first));
+    REQUIRE(session.open(current));
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{1}, first, MetadataReadResult{taggedMetadata(first)}},
+    };
+
+    CHECK_FALSE(session.pollMetadata());
+    CHECK(session.metadataGeneration() == MetadataGeneration{2});
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Pending);
+    CHECK(session.displayTitle() == "current");
+    CHECK_FALSE(session.trackMetadata().has_value());
+
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{2}, current, MetadataReadResult{taggedMetadata(current)}},
+    };
+    REQUIRE(session.pollMetadata());
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Ready);
+    CHECK(session.displayTitle() == "Embedded title");
 }
 
 TEST_CASE("metadata failures and deadlines preserve the immediate filename fallback",
