@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-> **Estado atual:** D0, M0.0 e M0.1 concluídos; M0.2 permanece aberto com o shell Qt experimental implementado, enquanto empacotamento e benchmarks pesados estão suspensos. A fundação comum de M0.5 agora possui WAV PCM sintético, extensão enganosa, truncado, vazio, manifesto/receita autenticados e catálogo canônico `PlaybackBackend`/`MetadataReader`. Isso ainda não é reprodução real nem suporte publicado: formatos comprimidos, tags/arte/limites, adapters, gates nativos, segurança, stack e engines continuam pendentes. Não existe scaffold do produto, instalador ou stack aceita.
+> **Estado atual:** D0, M0.0 e M0.1 concluídos; M0.2 permanece aberto com o shell Qt experimental implementado, enquanto empacotamento e benchmarks pesados estão suspensos. O corpus comum M0.5 agora inclui bytes sintéticos autenticados para WAV, MP3 CBR/VBR/Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis e os candidatos Opus/ALAC, além de extensão enganosa, truncado e vazio. Isso ainda não é reprodução real nem suporte publicado: arte/limites, truncados por contêiner, adapters, gates nativos, segurança, stack e engines continuam pendentes. Não existe scaffold do produto, instalador ou stack aceita.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -128,7 +128,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. completar o corpus M0.5 com formatos P0, tags/arte e limites hostis pequenos, mantendo os checks rápidos e sem áudio pessoal;
+1. completar o corpus M0.5 com arte, limites hostis pequenos e truncados por contêiner, mantendo os checks rápidos e sem áudio pessoal;
 2. preparar por TDD o harness de áudio Qt somente depois de provisionar Qt Multimedia/FFmpeg e TagLib com origem/licença autenticadas; esses componentes ainda não existem nos SDKs locais;
 3. manter `package-v2`, A/B de shells e benchmarks suspensos até a retomada explícita, sem apresentar M0.2–M0.4 como concluídos;
 4. iniciar o MVP apenas depois da decisão M0.10, salvo nova decisão explícita do mantenedor sobre stack e plano.

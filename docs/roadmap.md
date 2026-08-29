@@ -63,7 +63,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 4. M0 — Spikes de decisão
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 foi iniciado somente na fundação comum do corpus, com quatro fixtures WAV/borda autenticadas; adapters, formatos, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
+**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas para WAV, codecs básicos e bordas iniciais; adapters, suporte de formatos, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack pendentes.
 
 **Objetivo:** eliminar riscos estruturais antes de construir o produto.
 
@@ -105,7 +105,7 @@ Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movime
 
 Usando harness mínimo e o mesmo corpus:
 
-A fundação atual já congela o catálogo canônico e quatro entradas sintéticas (WAV válido, extensão enganosa, truncado e vazio), mas não publica formato suportado. Os formatos comprimidos, tags/arte, limites e adapters permanecem trabalho de M0.5–M0.8.
+O corpus atual já congela o catálogo canônico, a fundação WAV/bordas e oito fixtures de codecs sintéticos com tags Unicode, mas não publica formato suportado. Arte, limites, truncados por contêiner e adapters permanecem trabalho de M0.5–M0.8.
 
 - Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty satisfazem a mesma suite `PlaybackBackend`/`MetadataReader`;
 - cada fixture abre, toca, pausa, busca e termina, com duração e capacidades registradas;

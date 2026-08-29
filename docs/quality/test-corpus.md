@@ -1,6 +1,6 @@
 # Corpus de áudio e fixtures
 
-**Estado:** M0.5 em andamento; fundação WAV autenticada criada, formatos e limites restantes pendentes
+**Estado:** M0.5 em andamento; WAV e matriz básica de codecs autenticados, arte/limites e truncados por contêiner pendentes
 **Última revisão:** 2026-08-29
 
 ## 1. Objetivo
@@ -53,16 +53,18 @@ O teste valida hash antes de usar a fixture. Mudança intencional exige atualiza
 | `oversized-tags` | 16 KiB/campo e 256 KiB total, em/fora do limite | NFR-LIMIT-002, sanitização e UI |
 | `empty` | zero bytes | erro básico |
 
-### 3.1 Fundação executável atual
+### 3.1 Corpus executável atual
 
-O primeiro incremento de M0.5 materializa quatro fixtures sintéticas em [`experiments/m0/shared/audio-corpus`](../../experiments/m0/shared/audio-corpus):
+Os dois primeiros incrementos de M0.5 materializam 12 fixtures sintéticas em [`experiments/m0/shared/audio-corpus`](../../experiments/m0/shared/audio-corpus):
 
 - `wav-pcm-mono`: onda quadrada inteira de 500 Hz, PCM S16LE, mono, 48 kHz e 1.000 ms;
 - `wrong-extension-wav-as-mp3`: os mesmos bytes RIFF/WAVE sob extensão `.mp3`;
 - `truncated-wav-pcm-mono`: prefixo exato de 40 bytes do WAV válido;
 - `empty`: zero bytes.
 
-O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), a receita, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo permanece `partial`, nenhum formato foi declarado suportado e M0.5 não está concluído: MP3, M4A/AAC-LC, FLAC, Ogg/Vorbis, Opus/ALAC, truncados por contêiner e casos de tags/arte/limites ainda faltam.
+O segundo incremento acrescenta sinais estéreo determinísticos de 2 s/48 kHz em `mp3-cbr-stereo`, `mp3-vbr-stereo`, `mp3-unicode-tags`, `m4a-aac-lc`, `flac-16-stereo`, `ogg-vorbis`, `opus-candidate` e `m4a-alac-candidate`. Todos carregam tags Unicode fixas; Opus e ALAC continuam apenas candidatos. Os bytes foram gerados por uma ferramenta FFmpeg local autenticada e reproduzidos duas vezes, mas os checks cotidianos validam somente os arquivos commitados, receitas, recibos e hashes, sem exigir FFmpeg.
+
+O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), as receitas/recibo, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo permanece `partial`, nenhum formato foi declarado suportado e M0.5 não está concluído: truncados por contêiner e casos de arte/limites ainda faltam.
 
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
 
@@ -75,7 +77,7 @@ Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek pod
 - não exigir que todo desenvolvedor tenha encoders patenteados para rodar unitários;
 - fixtures commitadas precisam de licença explícita do conteúdo e dos arquivos resultantes.
 
-A fundação atual é gerada apenas por APIs inteiras/binárias do .NET, sem rede ou ferramenta descoberta no ambiente. O conteúdo é original e sintético, sob `LicenseRef-MusicPlayer-M0-Private`; redistribuição pública permanece proibida até o mantenedor escolher uma licença pública.
+A fundação WAV é gerada apenas por APIs inteiras/binárias do .NET. Os codecs usam somente caminhos explícitos para executáveis FFmpeg/ffprobe com versão, tamanho e SHA-256 fixados; não há rede nem descoberta ambiental. Esse build GPL é ferramenta de autoria de fixtures e não integra runtime ou pacote. O conteúdo é original e sintético, sob `LicenseRef-MusicPlayer-M0-Private`; redistribuição pública permanece proibida até o mantenedor escolher uma licença pública.
 
 O gerador aceita somente um stage novo ou vazio sob `out/m0`; ele não possui capability de sobrescrever o corpus commitado. Uma atualização é gerada em stage fresco, validada e promovida como diff revisável.
 

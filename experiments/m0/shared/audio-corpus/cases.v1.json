@@ -10,8 +10,17 @@
         {
           "case_id": "MR-001",
           "behavior": "Read present tags without changing their values.",
-          "status": "catalogued",
-          "fixture_ids": [],
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "flac-16-stereo",
+            "m4a-aac-lc",
+            "m4a-alac-candidate",
+            "mp3-cbr-stereo",
+            "mp3-unicode-tags",
+            "mp3-vbr-stereo",
+            "ogg-vorbis",
+            "opus-candidate"
+          ],
           "requirement_ids": [
             "FR-021"
           ]
@@ -172,6 +181,14 @@
           "behavior": "Report technical properties without false zero values.",
           "status": "fixture_bound",
           "fixture_ids": [
+            "flac-16-stereo",
+            "m4a-aac-lc",
+            "m4a-alac-candidate",
+            "mp3-cbr-stereo",
+            "mp3-unicode-tags",
+            "mp3-vbr-stereo",
+            "ogg-vorbis",
+            "opus-candidate",
             "wav-pcm-mono",
             "wrong-extension-wav-as-mp3"
           ],
@@ -250,6 +267,14 @@
           "behavior": "A valid load publishes ready and observed capabilities.",
           "status": "fixture_bound",
           "fixture_ids": [
+            "flac-16-stereo",
+            "m4a-aac-lc",
+            "m4a-alac-candidate",
+            "mp3-cbr-stereo",
+            "mp3-unicode-tags",
+            "mp3-vbr-stereo",
+            "ogg-vorbis",
+            "opus-candidate",
             "wav-pcm-mono"
           ],
           "requirement_ids": [
@@ -278,8 +303,11 @@
         {
           "case_id": "PB-004",
           "behavior": "A supported seek confirms its destination.",
-          "status": "catalogued",
-          "fixture_ids": [],
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "m4a-aac-lc",
+            "mp3-vbr-stereo"
+          ],
           "requirement_ids": [
             "FR-012"
           ]
@@ -297,8 +325,18 @@
         {
           "case_id": "PB-006",
           "behavior": "End of media is emitted exactly once.",
-          "status": "catalogued",
-          "fixture_ids": [],
+          "status": "fixture_bound",
+          "fixture_ids": [
+            "flac-16-stereo",
+            "m4a-aac-lc",
+            "m4a-alac-candidate",
+            "mp3-cbr-stereo",
+            "mp3-unicode-tags",
+            "mp3-vbr-stereo",
+            "ogg-vorbis",
+            "opus-candidate",
+            "wav-pcm-mono"
+          ],
           "requirement_ids": [
             "FR-010"
           ]

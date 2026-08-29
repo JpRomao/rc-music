@@ -2,7 +2,7 @@
 
 **Atualizado em:** 2026-08-29
 
-**Fase:** M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos; M0.5 em andamento apenas na fundação comum do corpus, com quatro fixtures WAV/borda autenticadas e catálogo canônico; gates nativos, segurança, adapters, formatos e decisão de stack pendentes
+**Fase:** M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos; M0.5 em andamento com 12 fixtures sintéticas autenticadas cobrindo WAV, codecs básicos e bordas iniciais; gates nativos, arte/limites, adapters, suporte de formatos e decisão de stack pendentes
 
 **Código do produto:** ainda não iniciado
 
@@ -92,7 +92,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 ## 5. Alegações que ainda não podem ser feitas
 
-- “o app toca MP3/M4A/Opus”: existe somente uma fundação de corpus WAV validada; nenhum adapter real ou formato comprimido foi comprovado;
+- “o app toca MP3/M4A/Opus”: o corpus já contém bytes comprimidos autenticados, mas nenhum adapter real os executou e nenhum formato foi aprovado;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
@@ -117,7 +117,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | ADRs | [Índice](architecture/decisions/README.md) | Propostos |
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
-| Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; fundação WAV autenticada, matriz de formatos pendente |
+| Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; WAV e matriz básica de codecs autenticados, sem suporte publicado; arte/limites pendentes |
 | Plano executável | [Plano](development-plan.md) | Baseline de execução |
 | Roadmap | [Roadmap](roadmap.md) | Proposto |
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
@@ -129,7 +129,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. completar M0.5 com fixtures sintéticas pequenas para formatos P0, tags/arte e limites, sem áudio pessoal;
+1. completar M0.5 com arte, limites e truncados por contêiner pequenos, sem áudio pessoal;
 2. provisionar Qt Multimedia/FFmpeg e TagLib com identidade/licenças fechadas antes de iniciar o adapter M0.6 por TDD;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates como pendentes;
 4. voltar aos ADRs com evidência reproduzível e escolher somente em M0.10, salvo nova decisão explícita do mantenedor sobre stack e plano.

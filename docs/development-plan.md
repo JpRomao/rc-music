@@ -3,7 +3,7 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-08-29
-**Marco atual:** M0.2 — em andamento e com empacotamento/benchmarks pesados suspensos por orientação do mantenedor; M0.5 iniciado apenas na fundação comum e neutra do corpus, com WAV sintético, extensão enganosa, truncado, vazio, manifesto/receita e catálogo canônico; stack, engine e formatos continuam sem aceitação
+**Marco atual:** M0.2 — em andamento e com empacotamento/benchmarks pesados suspensos por orientação do mantenedor; M0.5 possui WAV e a matriz básica sintética de codecs autenticados, além de extensão enganosa, truncado, vazio, receitas e catálogo canônico; arte/limites, adapters, stack, engine e formatos aceitos continuam pendentes
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
@@ -271,7 +271,7 @@ Código M0 é experimental, mas comportamento observável de shell, adapter, tra
 | M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | Em andamento; shell/bandeja implementados sob a [política comum](m0/README.md); pacote histórico MSVC 14.44 com smokes offscreen original/relocado aprovados; [SDK Qt composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md), ainda sem build/package v2; validação nativa parcial e segurança pendente; [preflight concluído](m0/evidence/m0-2-preflight.md); FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
 | M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
 | M0.4 | Comparação cega ao resultado dos shells | NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | `CHK-PERF`, `CHK-A11Y`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-TRACE`, `CHK-CLOSE` | Eliminar candidato com P0, build ausente ou budget sem exceção |
-| M0.5 | Corpus licenciado, manifesto, receitas, hashes e catálogo canônico de casos `PlaybackBackend`/`MetadataReader` | Em andamento: fundação WAV autenticada; FR-002, FR-005, FR-020–024; NFR-LIMIT-001–003, NFR-REL-001, NFR-REL-006 | `CHK-CORPUS`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | Expectativas e tolerâncias versionadas; nenhum arquivo pessoal/comercial |
+| M0.5 | Corpus licenciado, manifesto, receitas, hashes e catálogo canônico de casos `PlaybackBackend`/`MetadataReader` | Em andamento: WAV e codecs básicos autenticados; arte/limites e truncados por contêiner pendentes; FR-002, FR-005, FR-020–024; NFR-LIMIT-001–003, NFR-REL-001, NFR-REL-006 | `CHK-CORPUS`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | Expectativas e tolerâncias versionadas; nenhum arquivo pessoal/comercial |
 | M0.6 | Adapter Qt Multimedia/FFmpeg + TagLib no harness comum | FR-002, FR-010, FR-012, FR-014, FR-020–024; NFR-STACK-005 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Pacote usa backend/plugins esperados; erros controlados |
 | M0.7 | Adapter Rodio/CPAL/Symphonia + Lofty no mesmo harness | mesmos IDs de M0.6 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Uma cadeia Symphonia; sem bloqueio inaceitável do callback |
 | M0.8 | Comparação de áudio, 500 trocas/seeks, armazenamento lento e soak de oito horas nos ramos viáveis | NFR-PERF-002–003, NFR-PERF-007; NFR-REL-001–002; NFR-STACK-002–003, NFR-STACK-005–006 | `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-TRACE`, `CHK-CLOSE` | Formatos P0, estabilidade e cancelamento passam |
@@ -606,6 +606,6 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
 3. M0.1 fechou gates e commit antes de qualquer shell, preservando um cenário comum contra benchmark enviesado.
 4. O preflight Qt/QML, `clang-format`, NVDA e o SDK Qt composto foram autenticados; para concluir o shell M0.2, reconstruir/empacotar contra a nova identidade, repetir smokes e gates nativos/segurança; depois executar M0.3 com o mesmo recorte.
-5. Enquanto empacotamento e benchmarks estiverem suspensos por orientação do mantenedor, a fundação comum de M0.5 pode avançar sem coleta e sem aceitar stack; adapters, alegações de formato e decisão final continuam sujeitos aos gates M0.
+5. Enquanto empacotamento e benchmarks estiverem suspensos por orientação do mantenedor, o corpus e o desenvolvimento funcional dos adapters podem avançar sem coleta e sem aceitar stack; alegações de formato e decisão final continuam sujeitos aos gates M0.
 
 Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.

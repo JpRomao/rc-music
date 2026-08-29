@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M0 normalized real-codec fixture probe receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "probe_id",
+    "recipe",
+    "tools",
+    "source",
+    "expected_tags",
+    "fixtures"
+  ],
+  "properties": {
+    "schema_id": { "const": "m0.audio-codec-probe.v1" },
+    "schema_version": { "const": 1 },
+    "probe_id": { "const": "M0-AUDIO-CODEC-PROBE-1" },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "size_bytes", "sha256"],
+      "properties": {
+        "relative_path": { "const": "codec-recipe.v1.json" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/tool" }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "size_bytes",
+        "sha256",
+        "sample_rate_hz",
+        "channels",
+        "decoded_sample_count_per_channel",
+        "duration_ms"
+      ],
+      "properties": {
+        "kind": { "const": "lavfi_aevalsrc_sine_pair" },
+        "size_bytes": { "const": 384044 },
+        "sha256": { "const": "249a7a355a3c84b5a8d2de3737b637a27b5e3be59a3ff0b6e5bb6ff7e43753a8" },
+        "sample_rate_hz": { "const": 48000 },
+        "channels": { "const": 2 },
+        "decoded_sample_count_per_channel": { "const": 96000 },
+        "duration_ms": { "const": 2000 }
+      }
+    },
+    "expected_tags": { "$ref": "#/definitions/exact_tags" },
+    "fixtures": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixture_id",
+          "status",
+          "relative_path",
+          "size_bytes",
+          "sha256",
+          "decoded_pcm_sha256",
+          "format_name",
+          "container_duration_ms",
+          "codec_name",
+          "profile",
+          "sample_format",
+          "sample_rate_hz",
+          "channels",
+          "channel_layout",
+          "bits_per_sample",
+          "bits_per_raw_sample",
+          "bit_rate_bps",
+          "tag_location",
+          "tags"
+        ],
+        "properties": {
+          "fixture_id": {
+            "enum": [
+              "mp3-cbr-stereo",
+              "mp3-vbr-stereo",
+              "mp3-unicode-tags",
+              "m4a-aac-lc",
+              "flac-16-stereo",
+              "ogg-vorbis",
+              "opus-candidate",
+              "m4a-alac-candidate"
+            ]
+          },
+          "status": { "enum": ["valid", "candidate"] },
+          "relative_path": {
+            "type": "string",
+            "pattern": "^fixtures/(?:valid|candidate)/[a-z0-9]+(?:-[a-z0-9]+)*\\.(?:mp3|m4a|flac|ogg|opus)$"
+          },
+          "size_bytes": { "type": "integer", "minimum": 1 },
+          "sha256": { "$ref": "#/definitions/sha256" },
+          "decoded_pcm_sha256": { "$ref": "#/definitions/sha256" },
+          "format_name": { "type": "string", "minLength": 1 },
+          "container_duration_ms": { "type": "number", "minimum": 1900, "maximum": 2100 },
+          "codec_name": { "enum": ["mp3", "aac", "flac", "vorbis", "opus", "alac"] },
+          "profile": { "type": ["string", "null"] },
+          "sample_format": { "type": "string", "minLength": 1 },
+          "sample_rate_hz": { "const": 48000 },
+          "channels": { "const": 2 },
+          "channel_layout": { "type": ["string", "null"] },
+          "bits_per_sample": { "type": ["integer", "null"], "minimum": 0 },
+          "bits_per_raw_sample": { "type": ["integer", "null"], "minimum": 0 },
+          "bit_rate_bps": { "type": ["integer", "null"], "minimum": 1 },
+          "tag_location": { "enum": ["format", "stream"] },
+          "tags": { "$ref": "#/definitions/exact_tags" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "exact_tags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "artist", "album", "comment", "date"],
+      "properties": {
+        "title": { "const": "Canção determinística 日本語 🎵" },
+        "artist": { "const": "João – Codex" },
+        "album": { "const": "Álbum de teste Ω" },
+        "comment": { "const": "fixture local • 2026-08-29" },
+        "date": { "const": "2026-08-29" }
+      }
+    },
+    "tool": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool_id", "version_line", "size_bytes", "sha256", "usage_scope"],
+          "properties": {
+            "tool_id": { "const": "ffmpeg" },
+            "version_line": { "const": "ffmpeg version 8.1.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers" },
+            "size_bytes": { "const": 227398656 },
+            "sha256": { "const": "09948d4cdd0650da6ff5a87577469f2a218dc2615ae379f8f734d24c49de0f73" },
+            "usage_scope": { "const": "fixture-generation-only; never runtime or packaged" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool_id", "version_line", "size_bytes", "sha256", "usage_scope"],
+          "properties": {
+            "tool_id": { "const": "ffprobe" },
+            "version_line": { "const": "ffprobe version 8.1.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers" },
+            "size_bytes": { "const": 227193344 },
+            "sha256": { "const": "a6618e99bb58869ded3c6f37b53aa1a8d701c3591dbb7b5b317d47369c112be2" },
+            "usage_scope": { "const": "fixture-generation-only; never runtime or packaged" }
+          }
+        }
+      ]
+    }
+  }
+}

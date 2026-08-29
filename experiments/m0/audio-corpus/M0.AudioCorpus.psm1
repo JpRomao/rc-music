@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 $script:M0ACUtf8 = [Text.UTF8Encoding]::new($false, $true)
 $script:M0ACPrivateLicense = 'LicenseRef-MusicPlayer-M0-Private'
+$script:M0ACCodecRecipeSha256 = 'd3ac52181be002560fbe750d999943ceb5b62e25c203be9eb5863a50474bb884'
 $script:M0ACKnownRequirements = @(
     'FR-002',
     'FR-005',
@@ -31,11 +32,80 @@ $script:M0ACMetadataCaseIds = @(
     'MR-013', 'MR-014', 'MR-015', 'MR-016', 'MR-017', 'MR-018',
     'MR-019', 'MR-020', 'MR-101', 'MR-102', 'MR-103'
 )
-$script:M0ACFixturePaths = [ordered]@{
+$script:M0ACFoundationFixturePaths = [ordered]@{
     'wrong-extension-wav-as-mp3' = 'fixtures/edge/wrong-extension-wav-as-mp3.mp3'
     'empty' = 'fixtures/hostile/empty.bin'
     'truncated-wav-pcm-mono' = 'fixtures/hostile/truncated-wav-pcm-mono.wav'
     'wav-pcm-mono' = 'fixtures/valid/wav-pcm-mono.wav'
+}
+$script:M0ACCodecFixturePaths = [ordered]@{
+    'flac-16-stereo' = 'fixtures/valid/flac-16-stereo.flac'
+    'm4a-aac-lc' = 'fixtures/valid/m4a-aac-lc.m4a'
+    'm4a-alac-candidate' = 'fixtures/candidate/m4a-alac-candidate.m4a'
+    'mp3-cbr-stereo' = 'fixtures/valid/mp3-cbr-stereo.mp3'
+    'mp3-unicode-tags' = 'fixtures/valid/mp3-unicode-tags.mp3'
+    'mp3-vbr-stereo' = 'fixtures/valid/mp3-vbr-stereo.mp3'
+    'ogg-vorbis' = 'fixtures/valid/ogg-vorbis.ogg'
+    'opus-candidate' = 'fixtures/candidate/opus-candidate.opus'
+}
+$script:M0ACFixturePaths = [ordered]@{}
+foreach ($entry in $script:M0ACFoundationFixturePaths.GetEnumerator()) {
+    $script:M0ACFixturePaths[$entry.Key] = $entry.Value
+}
+foreach ($entry in $script:M0ACCodecFixturePaths.GetEnumerator()) {
+    $script:M0ACFixturePaths[$entry.Key] = $entry.Value
+}
+$script:M0ACCodecContracts = [ordered]@{
+    'flac-16-stereo' = @('FLAC', 'FLAC 16-bit compression level 5', 'lossless', 16)
+    'm4a-aac-lc' = @('ISO MP4/M4A', 'AAC Low Complexity 128 kb/s in ISO BMFF/M4A', 'constant', $null)
+    'm4a-alac-candidate' = @('ISO MP4/M4A', 'ALAC 16-bit in ISO BMFF/M4A', 'lossless', 16)
+    'mp3-cbr-stereo' = @('MP3', 'MP3 Layer III CBR 128 kb/s', 'constant', $null)
+    'mp3-unicode-tags' = @('MP3', 'MP3 Layer III CBR 96 kb/s with ID3v2.4 Unicode tags', 'constant', $null)
+    'mp3-vbr-stereo' = @('MP3', 'MP3 Layer III VBR quality 4', 'variable', $null)
+    'ogg-vorbis' = @('Ogg', 'Vorbis quality 4 in Ogg', 'variable', $null)
+    'opus-candidate' = @('Ogg', 'Opus VBR 96 kb/s in Ogg', 'variable', $null)
+}
+$script:M0ACCodecProbeContracts = [ordered]@{
+    'flac-16-stereo' = [pscustomobject]@{
+        format_name = 'flac'; codec_name = 'flac'; profile = $null; sample_format = 's16'
+        tag_location = 'format'; bits_per_raw_sample = 16
+        decoded_pcm_sha256 = '2f1969d5f3caa79047f0a51aca03e99a7da9d9bb7a9feceecb99c625e992cf36'
+    }
+    'm4a-aac-lc' = [pscustomobject]@{
+        format_name = 'mov,mp4,m4a,3gp,3g2,mj2'; codec_name = 'aac'; profile = 'LC'; sample_format = 'fltp'
+        tag_location = 'format'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = '14b73e8a79e31e8ceab643a086a5283a9e85d359317cc60fa2761a5f8d62a1e1'
+    }
+    'm4a-alac-candidate' = [pscustomobject]@{
+        format_name = 'mov,mp4,m4a,3gp,3g2,mj2'; codec_name = 'alac'; profile = $null; sample_format = 's16p'
+        tag_location = 'format'; bits_per_raw_sample = 16
+        decoded_pcm_sha256 = '2f1969d5f3caa79047f0a51aca03e99a7da9d9bb7a9feceecb99c625e992cf36'
+    }
+    'mp3-cbr-stereo' = [pscustomobject]@{
+        format_name = 'mp3'; codec_name = 'mp3'; profile = $null; sample_format = 'fltp'
+        tag_location = 'format'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = 'abd62d8a3cb53fa231dd1d8b6f377e838d385bbe775b320dfac841310b48134e'
+    }
+    'mp3-unicode-tags' = [pscustomobject]@{
+        format_name = 'mp3'; codec_name = 'mp3'; profile = $null; sample_format = 'fltp'
+        tag_location = 'format'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = 'a46d3cbab2810241e882d4b493d0ba07f53b3d3df805ab41476e2f217b6a0320'
+    }
+    'mp3-vbr-stereo' = [pscustomobject]@{
+        format_name = 'mp3'; codec_name = 'mp3'; profile = $null; sample_format = 'fltp'
+        tag_location = 'format'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = 'faf2d38e9cf339d6bfaa320a87a61493c6d36e719b67aed060580ba748999b80'
+    }
+    'ogg-vorbis' = [pscustomobject]@{
+        format_name = 'ogg'; codec_name = 'vorbis'; profile = $null; sample_format = 'fltp'
+        tag_location = 'stream'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = '1ad419ef2c32c7914eff0e89bb9de160fba2137618ccbc07d24b1e8f7aadf6b9'
+    }
+    'opus-candidate' = [pscustomobject]@{
+        format_name = 'ogg'; codec_name = 'opus'; profile = $null; sample_format = 'fltp'
+        tag_location = 'stream'; bits_per_raw_sample = $null
+        decoded_pcm_sha256 = 'afe443a59c56d8a300355d1e6d44d3da23d59e85e09d898965e6f00ad3e47506'
+    }
 }
 
 function Get-M0ACSha256 {
@@ -483,57 +553,87 @@ function Assert-M0ACByteSequenceEqual {
 }
 
 function Assert-M0ACFixtureMetadata {
-    param(
-        [Parameter(Mandatory)] [psobject] $Fixture,
-        [Parameter(Mandatory)] [bool] $ExpectedValid
-    )
+    param([Parameter(Mandatory)] [psobject] $Fixture)
 
-    Assert-M0ACKnownRequirements -RequirementIds @($Fixture.requirement_ids) -Name "fixture '$($Fixture.id)'"
+    $fixtureId = [string]$Fixture.id
+    Assert-M0ACKnownRequirements -RequirementIds @($Fixture.requirement_ids) -Name "fixture '$fixtureId'"
     if ($Fixture.license -cne $script:M0ACPrivateLicense) {
-        throw [IO.InvalidDataException]::new("M0AC008 fixture '$($Fixture.id)' is not privately licensed.")
+        throw [IO.InvalidDataException]::new("M0AC008 fixture '$fixtureId' is not privately licensed.")
     }
-    if ($ExpectedValid) {
-        if ($Fixture.expected_outcome -cne 'valid' -or $null -ne $Fixture.expected_error_code -or
-            $Fixture.container -cne 'WAV' -or
-            [string]::IsNullOrWhiteSpace([string]$Fixture.codec_and_profile) -or
-            [string]$Fixture.codec_and_profile -notmatch '(?i)pcm' -or
-            [long]$Fixture.duration_ms -ne 1000 -or
-            [long]$Fixture.sample_rate_hz -ne 48000 -or [int]$Fixture.channels -ne 1 -or
-            [int]$Fixture.bit_depth_if_known -ne 16 -or $Fixture.bitrate_mode -cne 'uncompressed' -or
-            [int]$Fixture.duration_tolerance_ms -gt 20) {
-            throw [IO.InvalidDataException]::new("M0AC014 valid WAV fixture '$($Fixture.id)' metadata differs.")
-        }
-        $capabilities = $Fixture.expected_capabilities
-        if (-not $capabilities.decodable -or -not $capabilities.duration_known -or
-            -not $capabilities.seekable -or $capabilities.tags_present -or
-            $capabilities.artwork_present -or -not $capabilities.play_to_end) {
-            throw [IO.InvalidDataException]::new("M0AC014 valid WAV fixture '$($Fixture.id)' capabilities differ.")
-        }
+
+    $isHostile = $fixtureId -in @('empty', 'truncated-wav-pcm-mono')
+    $isFoundationWav = $fixtureId -in @('wav-pcm-mono', 'wrong-extension-wav-as-mp3')
+    $isCodec = $script:M0ACCodecContracts.Contains($fixtureId)
+    if (-not $isHostile -and -not $isFoundationWav -and -not $isCodec) {
+        throw [IO.InvalidDataException]::new("M0AC014 fixture '$fixtureId' has no closed metadata contract.")
     }
-    else {
+
+    $capabilities = $Fixture.expected_capabilities
+    if ($isHostile) {
         if ($Fixture.expected_outcome -cne 'controlled_error' -or
             [string]::IsNullOrWhiteSpace([string]$Fixture.expected_error_code) -or
             $null -ne $Fixture.duration_ms -or $null -ne $Fixture.sample_rate_hz -or
             $null -ne $Fixture.channels -or $null -ne $Fixture.bit_depth_if_known -or
-            [int]$Fixture.duration_tolerance_ms -ne 0) {
-            throw [IO.InvalidDataException]::new("M0AC014 hostile fixture '$($Fixture.id)' metadata differs.")
-        }
-        $capabilities = $Fixture.expected_capabilities
-        if ($capabilities.decodable -or $capabilities.duration_known -or $capabilities.seekable -or
+            [int]$Fixture.duration_tolerance_ms -ne 0 -or
+            $capabilities.decodable -or $capabilities.duration_known -or $capabilities.seekable -or
             $capabilities.tags_present -or $capabilities.artwork_present -or $capabilities.play_to_end) {
-            throw [IO.InvalidDataException]::new("M0AC014 hostile fixture '$($Fixture.id)' capabilities differ.")
+            throw [IO.InvalidDataException]::new("M0AC014 hostile fixture '$fixtureId' metadata differs.")
         }
     }
-    $tags = $Fixture.expected_tags
-    if ($tags.state -cne 'absent' -or $null -ne $tags.title -or $null -ne $tags.artist -or
-        $null -ne $tags.album -or $null -ne $tags.track -or $null -ne $tags.year) {
-        throw [IO.InvalidDataException]::new("M0AC014 fixture '$($Fixture.id)' tag expectation differs.")
+    elseif ($isFoundationWav) {
+        if ($Fixture.expected_outcome -cne 'valid' -or $null -ne $Fixture.expected_error_code -or
+            $Fixture.container -cne 'WAV' -or
+            [string]$Fixture.codec_and_profile -notmatch '(?i)pcm' -or
+            [long]$Fixture.duration_ms -ne 1000 -or [int]$Fixture.duration_tolerance_ms -ne 0 -or
+            [long]$Fixture.sample_rate_hz -ne 48000 -or [int]$Fixture.channels -ne 1 -or
+            [int]$Fixture.bit_depth_if_known -ne 16 -or $Fixture.bitrate_mode -cne 'uncompressed' -or
+            -not $capabilities.decodable -or -not $capabilities.duration_known -or
+            -not $capabilities.seekable -or $capabilities.tags_present -or
+            $capabilities.artwork_present -or -not $capabilities.play_to_end) {
+            throw [IO.InvalidDataException]::new("M0AC014 valid WAV fixture '$fixtureId' metadata differs.")
+        }
     }
+    else {
+        $contract = $script:M0ACCodecContracts[$fixtureId]
+        $expectedBitDepth = $contract[3]
+        $bitDepthMatches = if ($null -eq $expectedBitDepth) {
+            $null -eq $Fixture.bit_depth_if_known
+        }
+        else {
+            [int]$Fixture.bit_depth_if_known -eq [int]$expectedBitDepth
+        }
+        if ($Fixture.expected_outcome -cne 'valid' -or $null -ne $Fixture.expected_error_code -or
+            $Fixture.container -cne $contract[0] -or $Fixture.codec_and_profile -cne $contract[1] -or
+            [long]$Fixture.duration_ms -ne 2000 -or [int]$Fixture.duration_tolerance_ms -ne 20 -or
+            [long]$Fixture.sample_rate_hz -ne 48000 -or [int]$Fixture.channels -ne 2 -or
+            -not $bitDepthMatches -or $Fixture.bitrate_mode -cne $contract[2] -or
+            -not $capabilities.decodable -or -not $capabilities.duration_known -or
+            -not $capabilities.seekable -or -not $capabilities.tags_present -or
+            $capabilities.artwork_present -or -not $capabilities.play_to_end) {
+            throw [IO.InvalidDataException]::new("M0AC014 codec fixture '$fixtureId' metadata differs.")
+        }
+    }
+
+    $tags = $Fixture.expected_tags
+    if ($isCodec) {
+        if ($tags.state -cne 'present' -or
+            $tags.title -cne 'Canção determinística 日本語 🎵' -or
+            $tags.artist -cne 'João – Codex' -or
+            $tags.album -cne 'Álbum de teste Ω' -or
+            $null -ne $tags.track -or [int]$tags.year -ne 2026) {
+            throw [IO.InvalidDataException]::new("M0AC014 codec fixture '$fixtureId' tag expectation differs.")
+        }
+    }
+    elseif ($tags.state -cne 'absent' -or $null -ne $tags.title -or $null -ne $tags.artist -or
+        $null -ne $tags.album -or $null -ne $tags.track -or $null -ne $tags.year) {
+        throw [IO.InvalidDataException]::new("M0AC014 fixture '$fixtureId' tag expectation differs.")
+    }
+
     $artwork = $Fixture.expected_artwork
     if ($artwork.state -cne 'absent' -or [long]$artwork.encoded_size_bytes -ne 0 -or
         $null -ne $artwork.width_px -or $null -ne $artwork.height_px -or
         $null -ne $artwork.pixel_count -or $artwork.expected_action -cne 'none') {
-        throw [IO.InvalidDataException]::new("M0AC014 fixture '$($Fixture.id)' artwork expectation differs.")
+        throw [IO.InvalidDataException]::new("M0AC014 fixture '$fixtureId' artwork expectation differs.")
     }
 }
 
@@ -667,11 +767,14 @@ function Assert-M0ACRecipe {
         throw [IO.InvalidDataException]::new('M0AC011 recipe dependency/parameter closure differs.')
     }
 
+    $prefix = "$($Recipe.recipe_id):"
     foreach ($fixture in $Manifest.fixtures) {
-        $prefix = "$($Recipe.recipe_id):"
+        if (-not $script:M0ACFoundationFixturePaths.Contains([string]$fixture.id)) {
+            continue
+        }
         if (-not ([string]$fixture.source_or_generation_recipe).StartsWith($prefix, [StringComparison]::Ordinal)) {
             throw [IO.InvalidDataException]::new(
-                "M0AC011 fixture '$($fixture.id)' references another recipe."
+                "M0AC011 foundation fixture '$($fixture.id)' references another recipe."
             )
         }
         $actionId = ([string]$fixture.source_or_generation_recipe).Substring($prefix.Length)
@@ -713,6 +816,168 @@ function Assert-M0ACIntegerSquareWave {
     }
 }
 
+function Assert-M0ACCodecRecipeAndProbe {
+    param(
+        [Parameter(Mandatory)] [psobject] $Recipe,
+        [Parameter(Mandatory)] [psobject] $Probe,
+        [Parameter(Mandatory)] [psobject] $Manifest,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $expectedIds = [string[]]@($script:M0ACCodecFixturePaths.Keys)
+    [Array]::Sort($expectedIds, [StringComparer]::Ordinal)
+    $actionIds = [string[]]@($Recipe.actions.fixture_id)
+    [Array]::Sort($actionIds, [StringComparer]::Ordinal)
+    Assert-M0ACExactSequence -Actual $actionIds -Expected $expectedIds -Name 'codec recipe fixture IDs'
+    Assert-M0ACUniqueStrings -Values @($Recipe.actions.output_relative_path) `
+        -Name 'codec recipe output paths' `
+        -Comparer $(if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal })
+
+    $probeIds = [string[]]@($Probe.fixtures.fixture_id)
+    [Array]::Sort($probeIds, [StringComparer]::Ordinal)
+    Assert-M0ACExactSequence -Actual $probeIds -Expected $expectedIds -Name 'codec probe fixture IDs'
+    Assert-M0ACUniqueStrings -Values @($Probe.fixtures.relative_path) `
+        -Name 'codec probe paths' `
+        -Comparer $(if ($IsWindows) { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal })
+
+    $generatorPath = Resolve-M0ACContainedPath -Root $RepositoryRoot `
+        -RelativePath ([string]$Recipe.generator.relative_path)
+    if (-not (Test-Path -LiteralPath $generatorPath -PathType Leaf)) {
+        throw [IO.FileNotFoundException]::new('M0AC016 codec recipe generator is missing.')
+    }
+    $generator = Get-Item -LiteralPath $generatorPath -Force -ErrorAction Stop
+    if ($generator.Length -ne [long]$Recipe.generator.size_bytes -or
+        (Get-M0ACSha256 -LiteralPath $generatorPath) -cne [string]$Recipe.generator.sha256) {
+        throw [IO.InvalidDataException]::new('M0AC016 codec recipe generator identity differs.')
+    }
+
+    $actionsById = @{}
+    foreach ($action in $Recipe.actions) {
+        $fixtureId = [string]$action.fixture_id
+        if ($actionsById.ContainsKey($fixtureId)) {
+            throw [IO.InvalidDataException]::new("M0AC016 duplicate codec recipe fixture '$fixtureId'.")
+        }
+        if (-not (Test-M0ACSafeRelativePath -RelativePath ([string]$action.output_relative_path))) {
+            throw [IO.InvalidDataException]::new("M0AC016 unsafe codec recipe path for '$fixtureId'.")
+        }
+        $actionsById[$fixtureId] = $action
+    }
+    $probeById = @{}
+    foreach ($entry in $Probe.fixtures) {
+        $fixtureId = [string]$entry.fixture_id
+        if ($probeById.ContainsKey($fixtureId)) {
+            throw [IO.InvalidDataException]::new("M0AC016 duplicate codec probe fixture '$fixtureId'.")
+        }
+        if (-not (Test-M0ACSafeRelativePath -RelativePath ([string]$entry.relative_path))) {
+            throw [IO.InvalidDataException]::new("M0AC016 unsafe codec probe path for '$fixtureId'.")
+        }
+        $probeById[$fixtureId] = $entry
+    }
+    $manifestById = @{}
+    foreach ($fixture in $Manifest.fixtures) {
+        $manifestById[[string]$fixture.id] = $fixture
+    }
+
+    foreach ($fixtureId in $expectedIds) {
+        $action = $actionsById[$fixtureId]
+        $entry = $probeById[$fixtureId]
+        $fixture = $manifestById[$fixtureId]
+        $expectedStatus = if ($fixtureId -in @('m4a-alac-candidate', 'opus-candidate')) {
+            'candidate'
+        }
+        else {
+            'valid'
+        }
+        $probeContract = $script:M0ACCodecProbeContracts[$fixtureId]
+        $profileMatches = if ($null -eq $probeContract.profile) {
+            $null -eq $entry.profile
+        }
+        else {
+            $entry.profile -ceq $probeContract.profile
+        }
+        $rawBitsMatch = if ($null -eq $probeContract.bits_per_raw_sample) {
+            $null -eq $entry.bits_per_raw_sample
+        }
+        else {
+            [int]$entry.bits_per_raw_sample -eq [int]$probeContract.bits_per_raw_sample
+        }
+        $expectedSource = "$($Recipe.recipe_id):$fixtureId"
+        if ($action.status -cne $expectedStatus -or $entry.status -cne $expectedStatus -or
+            $action.output_relative_path -cne $script:M0ACCodecFixturePaths[$fixtureId] -or
+            $entry.relative_path -cne $action.output_relative_path -or
+            $fixture.relative_path -cne $action.output_relative_path -or
+            $fixture.source_or_generation_recipe -cne $expectedSource -or
+            $fixture.codec_and_profile -cne $action.codec_and_profile -or
+            $fixture.bitrate_mode -cne $action.bitrate_mode -or
+            $entry.format_name -cne $probeContract.format_name -or
+            $entry.codec_name -cne $probeContract.codec_name -or
+            -not $profileMatches -or $entry.sample_format -cne $probeContract.sample_format -or
+            $entry.tag_location -cne $probeContract.tag_location -or -not $rawBitsMatch -or
+            $entry.decoded_pcm_sha256 -cne $probeContract.decoded_pcm_sha256 -or
+            [long]$fixture.size_bytes -ne [long]$entry.size_bytes -or
+            $fixture.sha256 -cne $entry.sha256 -or
+            [Math]::Abs([double]$entry.container_duration_ms - [double]$fixture.duration_ms) -gt
+                [double]$fixture.duration_tolerance_ms) {
+            throw [IO.InvalidDataException]::new("M0AC016 codec recipe/probe/manifest differ for '$fixtureId'.")
+        }
+    }
+
+    if ($Probe.recipe.relative_path -cne 'codec-recipe.v1.json') {
+        throw [IO.InvalidDataException]::new('M0AC016 codec probe recipe path differs.')
+    }
+    $codecRecipeArtifact = @($Manifest.artifacts | Where-Object role -ceq 'codec_generation_recipe')
+    if ($codecRecipeArtifact.Count -ne 1 -or
+        [long]$Probe.recipe.size_bytes -ne [long]$codecRecipeArtifact[0].size_bytes -or
+        $Probe.recipe.sha256 -cne $codecRecipeArtifact[0].sha256) {
+        throw [IO.InvalidDataException]::new('M0AC016 codec probe does not authenticate its recipe artifact.')
+    }
+    if ($codecRecipeArtifact[0].sha256 -cne $script:M0ACCodecRecipeSha256) {
+        throw [IO.InvalidDataException]::new('M0AC016 codec recipe arguments or semantic identity differ.')
+    }
+}
+
+function Assert-M0ACCodecSignature {
+    param(
+        [Parameter(Mandatory)] [string] $FixtureId,
+        [Parameter(Mandatory)] [string] $LiteralPath
+    )
+
+    $bytes = [IO.File]::ReadAllBytes($LiteralPath)
+    if ($bytes.Length -lt 16) {
+        throw [IO.InvalidDataException]::new("M0AC015 codec fixture '$FixtureId' is too small.")
+    }
+    $asciiPrefixLength = [Math]::Min($bytes.Length, 128)
+    $asciiPrefix = [Text.Encoding]::ASCII.GetString($bytes, 0, $asciiPrefixLength)
+    $matches = switch -Regex ($FixtureId) {
+        '^mp3-' {
+            [Text.Encoding]::ASCII.GetString($bytes, 0, 3) -ceq 'ID3'
+            break
+        }
+        '^m4a-' {
+            [Text.Encoding]::ASCII.GetString($bytes, 4, 4) -ceq 'ftyp'
+            break
+        }
+        '^flac-' {
+            [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ceq 'fLaC'
+            break
+        }
+        '^ogg-' {
+            [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ceq 'OggS' -and
+                $asciiPrefix.Contains('vorbis', [StringComparison]::Ordinal)
+            break
+        }
+        '^opus-' {
+            [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ceq 'OggS' -and
+                $asciiPrefix.Contains('OpusHead', [StringComparison]::Ordinal)
+            break
+        }
+        default { $false }
+    }
+    if (-not $matches) {
+        throw [IO.InvalidDataException]::new("M0AC015 codec signature differs for '$FixtureId'.")
+    }
+}
+
 function Assert-M0AudioCorpus {
     [CmdletBinding()]
     param(
@@ -731,7 +996,17 @@ function Assert-M0AudioCorpus {
         -RelativePath 'audio-contract-cases.schema.json'
     $recipeSchema = Resolve-M0ACContainedPath -Root $schemas `
         -RelativePath 'audio-corpus-recipe.schema.json'
-    foreach ($schemaPath in @($manifestSchema, $casesSchema, $recipeSchema)) {
+    $codecRecipeSchema = Resolve-M0ACContainedPath -Root $schemas `
+        -RelativePath 'audio-codec-recipe.schema.json'
+    $codecProbeSchema = Resolve-M0ACContainedPath -Root $schemas `
+        -RelativePath 'audio-codec-probe.schema.json'
+    foreach ($schemaPath in @(
+        $manifestSchema,
+        $casesSchema,
+        $recipeSchema,
+        $codecRecipeSchema,
+        $codecProbeSchema
+    )) {
         if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) {
             throw [IO.FileNotFoundException]::new("M0AC003 schema is missing: '$schemaPath'.")
         }
@@ -775,6 +1050,8 @@ function Assert-M0AudioCorpus {
     $expectedArtifactPaths = [ordered]@{
         license = @('LICENSE.assets.txt', 'text/plain')
         contract_cases = @('cases.v1.json', 'application/json')
+        codec_probe_receipt = @('codec-probe.v1.json', 'application/json')
+        codec_generation_recipe = @('codec-recipe.v1.json', 'application/json')
         generation_recipe = @('recipe.v1.json', 'application/json')
     }
     foreach ($role in $expectedArtifactPaths.Keys) {
@@ -802,8 +1079,7 @@ function Assert-M0AudioCorpus {
         if ($fixture.relative_path -cne $script:M0ACFixturePaths[$fixtureId]) {
             throw [IO.InvalidDataException]::new("M0AC009 fixture '$fixtureId' path differs.")
         }
-        Assert-M0ACFixtureMetadata -Fixture $fixture `
-            -ExpectedValid ($fixtureId -in @('wav-pcm-mono', 'wrong-extension-wav-as-mp3'))
+        Assert-M0ACFixtureMetadata -Fixture $fixture
     }
 
     [string[]] $expectedInventory = @('manifest.v1.json', 'manifest.v1.sha256') + $declaredPaths
@@ -850,6 +1126,14 @@ function Assert-M0AudioCorpus {
         -Name 'audio corpus recipe'
     $repositoryRoot = Get-M0ACRepositoryRootFromSchemaRoot -SchemaRoot $schemas
     Assert-M0ACRecipe -Recipe $recipe -Manifest $manifest -RepositoryRoot $repositoryRoot
+    $codecRecipePath = Resolve-M0ACContainedPath -Root $root -RelativePath 'codec-recipe.v1.json'
+    $codecRecipe = Read-M0ACJsonDocument -DocumentPath $codecRecipePath `
+        -SchemaPath $codecRecipeSchema -Name 'audio codec recipe'
+    $codecProbePath = Resolve-M0ACContainedPath -Root $root -RelativePath 'codec-probe.v1.json'
+    $codecProbe = Read-M0ACJsonDocument -DocumentPath $codecProbePath `
+        -SchemaPath $codecProbeSchema -Name 'audio codec probe receipt'
+    Assert-M0ACCodecRecipeAndProbe -Recipe $codecRecipe -Probe $codecProbe `
+        -Manifest $manifest -RepositoryRoot $repositoryRoot
 
     $wavPath = Resolve-M0ACContainedPath -Root $root -RelativePath $script:M0ACFixturePaths['wav-pcm-mono']
     $wrongExtensionPath = Resolve-M0ACContainedPath -Root $root `
@@ -873,10 +1157,15 @@ function Assert-M0AudioCorpus {
     if ((Get-Item -LiteralPath $emptyPath -Force).Length -ne 0) {
         throw [IO.InvalidDataException]::new('M0AC013 empty fixture must contain zero bytes.')
     }
+    foreach ($fixtureId in $script:M0ACCodecFixturePaths.Keys) {
+        $codecPath = Resolve-M0ACContainedPath -Root $root `
+            -RelativePath $script:M0ACCodecFixturePaths[$fixtureId]
+        Assert-M0ACCodecSignature -FixtureId $fixtureId -LiteralPath $codecPath
+    }
 
     $validFixtureCount = @($manifest.fixtures | Where-Object expected_outcome -ceq 'valid').Count
     $hostileFixtureCount = @($manifest.fixtures | Where-Object expected_outcome -ceq 'controlled_error').Count
-    if ($validFixtureCount -ne 2 -or $hostileFixtureCount -ne 2) {
+    if ($validFixtureCount -ne 10 -or $hostileFixtureCount -ne 2) {
         throw [IO.InvalidDataException]::new('M0AC014 fixture outcome counts differ.')
     }
     return [pscustomobject][ordered]@{

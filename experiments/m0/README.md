@@ -5,7 +5,7 @@ Este namespace contém somente os spikes comparativos autorizados. Ele não é o
 Regras:
 
 - `protocol/` contém inputs executáveis comuns e schemas;
-- `shared/` contém a fixture sintética do shell e a fundação autenticada do corpus M0.5;
+- `shared/` contém a fixture sintética do shell e o corpus autenticado em evolução de M0.5;
 - `candidates/qt` e `candidates/tauri` não compartilham código de produto;
 - `harness/` contém instrumentação neutra e testes;
 - todo output gerado fica em `out/m0`, fora do Git;
@@ -31,7 +31,7 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0AudioCorpusT
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps1
 ```
 
-O corpus atual é uma fundação de M0.5, não uma matriz de suporte: quatro fixtures pequenas cobrem WAV PCM válido, extensão enganosa, truncamento e entrada vazia. O gerador determinístico usa somente APIs .NET, e o verificador fecha schema, propriedades JSON duplicadas, paths/links, inventário, hashes, licença, receita, catálogo e estrutura RIFF/WAVE. Formatos comprimidos, tags, arte e limites NFR permanecem pendentes.
+O corpus atual é um input de M0.5, não uma matriz de suporte publicada: 12 fixtures pequenas cobrem WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC, extensão enganosa, truncamento WAV e entrada vazia. A fundação usa APIs .NET; os codecs usam FFmpeg/ffprobe somente por paths e identidades autenticados. O verificador cotidiano não depende dessas ferramentas e fecha schemas, propriedades JSON duplicadas, paths/links, inventário, hashes, licença, receitas/recibo, catálogo, RIFF/WAVE e assinaturas de contêiner. Arte, limites NFR e truncados por contêiner permanecem pendentes.
 
 Uma publicação manual do piloto sintético requer um processo limpo e um root novo e vazio sob `out/m0`:
 

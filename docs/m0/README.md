@@ -1,6 +1,6 @@
 # Registro de autorização e evidências M0
 
-**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos por orientação do mantenedor; a fundação comum de M0.5 está em andamento com quatro fixtures WAV/borda autenticadas e catálogo canônico; stack, engines e formatos não escolhidos
+**Estado:** M0 autorizado; M0.1 concluído; M0.2 permanece aberto, com empacotamento/benchmarks pesados suspensos por orientação do mantenedor; M0.5 está em andamento com 12 fixtures sintéticas autenticadas para WAV, codecs básicos e bordas iniciais; stack, engines e formatos não escolhidos
 
 **Data:** 2026-08-29
 
@@ -69,7 +69,7 @@ Enquanto o repositório permanecer local/pessoal e os protótipos não forem pub
 | M0.2 — [integração MSVC ao pacote](evidence/m0-2-msvc-package.md) | receita integrada por TDD; 206/206 checks PowerShell, Qt Release 65/65 e core Qt OFF 55/55; diagnóstico preservado e pacote da receita commitada `63717e5` aprovado nos smokes offscreen 2/2 original e 2/2 relocado; validação nativa parcial, sem encerrar M0.2 |
 | M0.3 — shell Rust/Tauri equivalente | pendente |
 | M0.4 — resultados de shell | pendente |
-| M0.5 — corpus e catálogo comum | em andamento; fundação WAV autenticada com quatro fixtures, receita determinística, manifesto, licença privada e catálogo canônico; formatos comprimidos, tags/arte/limites e licença pública pendentes |
+| M0.5 — corpus e catálogo comum | em andamento; 12 fixtures autenticadas cobrem WAV, MP3 CBR/VBR/Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC e bordas iniciais; arte/limites, truncados por contêiner e licença pública pendentes |
 | M0.6–M0.8 — adapters e comparação de áudio | pendente |
 | M0.9 — integração/pacote | pendente |
 | M0.10 — combinação e decisão | pendente |
@@ -434,7 +434,7 @@ A [composição autenticada](evidence/m0-2-qt-composite-sdk.md) publicou o run p
 
 A receita autenticada `package-v2` para consumir esse SDK com Windows SDK `10.0.26100.0` está implementada e congelada; seus comandos estão no [README do candidato Qt](../../experiments/m0/candidates/qt/README.md). Sua execução foi suspensa por orientação do mantenedor e fica disponível para retomada futura. Até lá, a composição e a receita não provam carregabilidade, ABI geral, pacote, máquina limpa, CRT, licenças/notices/SBOM completos, redistribuição, segurança ou stack aceita; `CHK-SEC`, M0.2 e os gates nativos/manuais continuam abertos.
 
-## 13. Fundação comum do corpus M0.5
+## 13. Corpus comum M0.5
 
 Por orientação do mantenedor em 2026-08-29, a execução pesada de `package-v2` e os benchmarks ficaram suspensos para priorizar desenvolvimento funcional. A antecipação desta fundação é limitada a um input comum e neutro: não inicia M1, não aceita Qt/Tauri ou engine de áudio, não publica matriz de suporte e não reclassifica M0.2–M0.4 como concluídos.
 
@@ -446,7 +446,11 @@ O corpus em [`experiments/m0/shared/audio-corpus`](../../experiments/m0/shared/a
 - manifesto fechado com SHA-256/tamanhos/expectativas, receita determinística e sidecar;
 - catálogo completo dos IDs canônicos `PB-001`–`PB-012`, `PB-101`–`PB-103`, `MR-001`–`MR-020` e `MR-101`–`MR-103`.
 
+O incremento seguinte adiciona MP3 CBR/VBR e uma fixture MP3 dedicada a tags Unicode, M4A/AAC-LC, FLAC 16-bit, Ogg/Vorbis e os candidatos Opus/ALAC. Todos derivam do mesmo sinal estéreo sintético de 2 s, 48 kHz, com tags Unicode fixas. A receita exige caminhos explícitos e autentica FFmpeg/ffprobe 8.1.1 por versão, tamanho e SHA-256; as ferramentas são usadas somente para autoria/reprodução de fixtures e não entram no runtime ou pacote.
+
 O Red inicial falhou pela ausência do módulo público. O Green passou 7/7; uma revisão independente encontrou escrita possível através de junction no gerador, reproduzida por novo Red 7/1 e corrigida para Green 8/8. A revisão final ainda demonstrou que schemas isolados aceitavam segmentos vazios e que o rewrite in-place do corpus commitado era uma capability insegura; o Red 8/2 levou à geração exclusiva em stage fresco, gramática estrita por segmento e Green final 10/10. O runner público também aprovou o corpus com quatro fixtures, duas válidas e duas hostis. O verificador cobre UTF-8/LF, schema fechado, chaves duplicadas, inventário exato, paths e links, hashes, licença, referências da receita/catálogo e estrutura RIFF/WAVE.
+
+No segundo incremento, o Red falhou pela ausência de `flac-16-stereo`. O gerador autenticado produziu as oito fixtures de codecs em três execuções byte-idênticas; Reds posteriores demonstraram que um recibo re-hasheado ainda podia rotular MP3 como AAC e que a receita re-hasheada podia trocar argumentos do encoder. O fechamento passou a validar semântica por fixture e a identidade exata da receita. O Green final passou 14/14 e o runner público aprovou 12 fixtures, sendo 10 válidas e duas hostis. Os checks cotidianos continuam independentes de FFmpeg e também fecham os schemas/recibos de codecs, a identidade do gerador, tags Unicode, candidatos explícitos e assinaturas físicas dos contêineres.
 
 Checks:
 
@@ -455,4 +459,4 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Invoke-M0AudioCorpusT
 pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\m0\Test-M0AudioCorpus.ps1
 ```
 
-M0.5 continua em andamento. Ainda faltam MP3 CBR/VBR e Unicode, M4A/AAC-LC, FLAC, Ogg/Vorbis, candidatos Opus/ALAC, truncados por contêiner e casos abaixo/no/acima dos limites de tags e arte. O conteúdo atual usa `LicenseRef-MusicPlayer-M0-Private`; uma licença de redistribuição pública depende de decisão explícita do mantenedor. Nenhum áudio pessoal foi lido ou incorporado.
+M0.5 continua em andamento. Ainda faltam truncados por contêiner e casos abaixo/no/acima dos limites de tags e arte. O conteúdo atual usa `LicenseRef-MusicPlayer-M0-Private`; uma licença de redistribuição pública depende de decisão explícita do mantenedor. Nenhum áudio pessoal foi lido ou incorporado.

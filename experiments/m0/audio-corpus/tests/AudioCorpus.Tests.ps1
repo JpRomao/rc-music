@@ -2,6 +2,7 @@ $modulePath = Join-Path $RepositoryRoot 'experiments\m0\audio-corpus\M0.AudioCor
 $schemaRoot = Join-Path $RepositoryRoot 'experiments\m0\audio-corpus\schemas'
 $corpusRoot = Join-Path $RepositoryRoot 'experiments\m0\shared\audio-corpus'
 $generator = Join-Path $RepositoryRoot 'scripts\m0\New-M0AudioCorpus.ps1'
+$codecGenerator = Join-Path $RepositoryRoot 'scripts\m0\New-M0AudioCodecFixtures.ps1'
 
 Import-Module $modulePath -Force -ErrorAction Stop
 
@@ -50,26 +51,110 @@ function Assert-ByteSequenceEqual {
     }
 }
 
-Test-Case 'The authenticated WAV corpus foundation satisfies its public contract' {
+Test-Case 'The authenticated corpus satisfies its public contract' {
     $result = Assert-M0AudioCorpus -CorpusRoot $corpusRoot -SchemaRoot $schemaRoot
     Assert-Equal $result.corpus_id 'M0-AUDIO-CORPUS-1'
-    Assert-Equal $result.fixture_count 4
-    Assert-Equal $result.valid_fixture_count 2
+    Assert-Equal $result.fixture_count 12
+    Assert-Equal $result.valid_fixture_count 10
     Assert-Equal $result.hostile_fixture_count 2
     Assert-Equal $result.catalog_status 'partial'
     Assert-True ($result.manifest_sha256 -match '^[a-f0-9]{64}$')
 }
 
-Test-Case 'The integer WAV recipe is byte-identical across roots and matches committed bytes' {
+Test-Case 'The corpus includes the real P0 codecs and records Opus and ALAC as candidates' {
+    $manifest = Get-Content -LiteralPath (Join-Path $corpusRoot 'manifest.v1.json') -Raw -Encoding UTF8 |
+        ConvertFrom-Json -Depth 100
+    [string[]] $fixtureIds = @($manifest.fixtures | ForEach-Object { [string]$_.id })
+    [string[]] $requiredCodecFixtureIds = @(
+        'flac-16-stereo'
+        'm4a-aac-lc'
+        'm4a-alac-candidate'
+        'mp3-cbr-stereo'
+        'mp3-unicode-tags'
+        'mp3-vbr-stereo'
+        'ogg-vorbis'
+        'opus-candidate'
+    )
+    foreach ($fixtureId in $requiredCodecFixtureIds) {
+        Assert-True ($fixtureIds -ccontains $fixtureId) "Missing real codec fixture '$fixtureId'."
+    }
+    Assert-Equal $manifest.completion.catalog_status 'partial'
+    Assert-True (-not $manifest.completion.published_format_support) 'Codec bytes alone must not publish format support.'
+}
+
+Test-Case 'The codec probe cannot mislabel a fixture even when outer hashes are refreshed' {
+    $tampered = Copy-TestCorpus 'mislabelled-codec-probe'
+    $probePath = Join-Path $tampered 'codec-probe.v1.json'
+    $probeText = [IO.File]::ReadAllText($probePath, [Text.UTF8Encoding]::new($false))
+    $probeText = $probeText.Replace('"codec_name": "mp3"', '"codec_name": "aac"')
+    [IO.File]::WriteAllText($probePath, $probeText, [Text.UTF8Encoding]::new($false))
+
+    $manifestPath = Join-Path $tampered 'manifest.v1.json'
+    $manifestText = [IO.File]::ReadAllText($manifestPath, [Text.UTF8Encoding]::new($false))
+    $manifestText = $manifestText.Replace(
+        '32e92e09a352d675a7cbd4f89dac05c885ea98cecc72b823877bfb76fe4254e1',
+        (Get-FileHash -LiteralPath $probePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    )
+    [IO.File]::WriteAllText($manifestPath, $manifestText, [Text.UTF8Encoding]::new($false))
+    Update-TestManifestSidecar $tampered
+
+    Assert-Throws { Assert-M0AudioCorpus -CorpusRoot $tampered -SchemaRoot $schemaRoot } `
+        'codec recipe/probe/manifest'
+}
+
+Test-Case 'The codec recipe cannot change encoder arguments even when all outer hashes are refreshed' {
+    $tampered = Copy-TestCorpus 'misdescribed-codec-recipe'
+    $recipePath = Join-Path $tampered 'codec-recipe.v1.json'
+    $recipeText = [IO.File]::ReadAllText($recipePath, [Text.UTF8Encoding]::new($false))
+    $recipeText = $recipeText.Replace('"aac_low"', '"aac_main"')
+    [IO.File]::WriteAllText($recipePath, $recipeText, [Text.UTF8Encoding]::new($false))
+    $recipeSize = (Get-Item -LiteralPath $recipePath).Length
+    $recipeHash = (Get-FileHash -LiteralPath $recipePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $probePath = Join-Path $tampered 'codec-probe.v1.json'
+    $probeText = [IO.File]::ReadAllText($probePath, [Text.UTF8Encoding]::new($false))
+    $probeText = $probeText.Replace('"size_bytes": 7810', "`"size_bytes`": $recipeSize")
+    $probeText = $probeText.Replace(
+        'd3ac52181be002560fbe750d999943ceb5b62e25c203be9eb5863a50474bb884',
+        $recipeHash
+    )
+    [IO.File]::WriteAllText($probePath, $probeText, [Text.UTF8Encoding]::new($false))
+    $probeSize = (Get-Item -LiteralPath $probePath).Length
+    $probeHash = (Get-FileHash -LiteralPath $probePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $manifestPath = Join-Path $tampered 'manifest.v1.json'
+    $manifestText = [IO.File]::ReadAllText($manifestPath, [Text.UTF8Encoding]::new($false))
+    $manifestText = $manifestText.Replace('"size_bytes": 7810', "`"size_bytes`": $recipeSize")
+    $manifestText = $manifestText.Replace(
+        'd3ac52181be002560fbe750d999943ceb5b62e25c203be9eb5863a50474bb884',
+        $recipeHash
+    )
+    $manifestText = $manifestText.Replace('"size_bytes": 9103', "`"size_bytes`": $probeSize")
+    $manifestText = $manifestText.Replace(
+        '32e92e09a352d675a7cbd4f89dac05c885ea98cecc72b823877bfb76fe4254e1',
+        $probeHash
+    )
+    [IO.File]::WriteAllText($manifestPath, $manifestText, [Text.UTF8Encoding]::new($false))
+    Update-TestManifestSidecar $tampered
+
+    Assert-Throws { Assert-M0AudioCorpus -CorpusRoot $tampered -SchemaRoot $schemaRoot } `
+        'codec recipe arguments'
+}
+
+Test-Case 'The integer WAV foundation recipe is byte-identical across roots and matches its committed subset' {
     $first = Join-Path $RepositoryRoot "out\m0\audio-corpus-test-runs\$([Guid]::NewGuid().ToString('N'))-first"
     $second = Join-Path $RepositoryRoot "out\m0\audio-corpus-test-runs\$([Guid]::NewGuid().ToString('N'))-second"
     try {
         & $generator -DestinationRoot $first | Out-Null
         & $generator -DestinationRoot $second | Out-Null
-        $expectedFiles = Get-TestRelativeFiles $corpusRoot
-        Assert-SequenceEqual (Get-TestRelativeFiles $first) $expectedFiles
-        Assert-SequenceEqual (Get-TestRelativeFiles $second) $expectedFiles
-        foreach ($relativePath in $expectedFiles) {
+        [string[]] $foundationFiles = @(
+            'fixtures/edge/wrong-extension-wav-as-mp3.mp3'
+            'fixtures/hostile/empty.bin'
+            'fixtures/hostile/truncated-wav-pcm-mono.wav'
+            'fixtures/valid/wav-pcm-mono.wav'
+        )
+        Assert-SequenceEqual (Get-TestRelativeFiles $first) (Get-TestRelativeFiles $second)
+        foreach ($relativePath in $foundationFiles) {
             $expectedHash = (Get-FileHash -LiteralPath (Join-Path $corpusRoot $relativePath) -Algorithm SHA256).Hash
             Assert-Equal (Get-FileHash -LiteralPath (Join-Path $first $relativePath) -Algorithm SHA256).Hash $expectedHash "First generated hash differs for $relativePath."
             Assert-Equal (Get-FileHash -LiteralPath (Join-Path $second $relativePath) -Algorithm SHA256).Hash $expectedHash "Second generated hash differs for $relativePath."
@@ -185,4 +270,23 @@ Test-Case 'The generator refuses overwrite and destinations outside out/m0' {
     finally {
         if (Test-Path -LiteralPath $outside) { Remove-Item -LiteralPath $outside -Recurse -Force }
     }
+}
+
+Test-Case 'The codec generator requires explicit tools and rejects unsafe stages before execution' {
+    $command = Get-Command -Name $codecGenerator -CommandType ExternalScript
+    Assert-True $command.Parameters.ContainsKey('FfmpegPath')
+    Assert-True $command.Parameters.ContainsKey('FfprobePath')
+    Assert-True $command.Parameters.ContainsKey('DestinationRoot')
+    Assert-True (-not $command.Parameters.ContainsKey('AllowCommittedCorpusWrite'))
+
+    $fakeFfmpeg = Join-Path $TestTempRoot 'fake-ffmpeg.exe'
+    $fakeFfprobe = Join-Path $TestTempRoot 'fake-ffprobe.exe'
+    [IO.File]::WriteAllBytes($fakeFfmpeg, [byte[]]@(0))
+    [IO.File]::WriteAllBytes($fakeFfprobe, [byte[]]@(0))
+    $outside = Join-Path $RepositoryRoot 'experiments\m0\unsafe-codec-stage'
+    Assert-Throws {
+        & $codecGenerator -FfmpegPath $fakeFfmpeg -FfprobePath $fakeFfprobe `
+            -DestinationRoot $outside | Out-Null
+    } 'out/m0'
+    Assert-True (-not (Test-Path -LiteralPath $outside)) 'Unsafe codec stage must not be created.'
 }

@@ -72,7 +72,7 @@
       "required": ["relative_path", "role", "media_type", "size_bytes", "sha256", "origin", "license"],
       "properties": {
         "relative_path": { "$ref": "#/definitions/safe_path" },
-        "role": { "enum": ["license", "contract_cases", "generation_recipe"] },
+        "role": { "enum": ["license", "contract_cases", "generation_recipe", "codec_generation_recipe", "codec_probe_receipt"] },
         "media_type": { "enum": ["text/plain", "application/json"] },
         "size_bytes": { "type": "integer", "minimum": 1 },
         "sha256": { "$ref": "#/definitions/sha256" },
@@ -149,7 +149,7 @@
         "relative_path": { "$ref": "#/definitions/safe_path" },
         "sha256": { "$ref": "#/definitions/sha256" },
         "size_bytes": { "type": "integer", "minimum": 0 },
-        "source_or_generation_recipe": { "type": "string", "pattern": "^M0-AUDIO-RECIPE-1:[a-z0-9-]+$" },
+        "source_or_generation_recipe": { "type": "string", "pattern": "^M0-AUDIO-(?:CODEC-)?RECIPE-1:[a-z0-9-]+$" },
         "license": { "const": "LicenseRef-MusicPlayer-M0-Private" },
         "container": { "type": ["string", "null"] },
         "codec_and_profile": { "type": ["string", "null"] },
