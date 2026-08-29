@@ -9,7 +9,7 @@ namespace music_player::m0 {
 LocalTrackSession::LocalTrackSession(PlaybackBackend& playback_backend, MetadataReader& metadata_reader)
     : playback_backend_(playback_backend), metadata_reader_(metadata_reader) {}
 
-bool LocalTrackSession::open(const std::filesystem::path& source_path) {
+bool LocalTrackSession::open(const std::filesystem::path& source_path, const LocalTrackStartIntent start_intent) {
     if (source_path.empty() || playback_backend_.load(source_path) != PlaybackCommandResult::Accepted) {
         return false;
     }
@@ -27,13 +27,14 @@ bool LocalTrackSession::open(const std::filesystem::path& source_path) {
     metadata_generation_ = next_metadata_generation;
     playback_generation_ = playback_backend_.snapshot().generation;
     has_track_ = true;
-    autoplay_pending_ = true;
+    start_intent_ = start_intent;
+    start_pending_ = true;
 
     const auto metadata_result = metadata_reader_.startRead(MetadataReadRequest{metadata_generation_, source_path_});
     metadata_status_ = metadata_result == MetadataCommandResult::Accepted ? LocalTrackMetadataStatus::Pending
                                                                           : LocalTrackMetadataStatus::Failed;
 
-    attemptAutoplay(playback_backend_.snapshot());
+    attemptStart(playback_backend_.snapshot());
     return true;
 }
 
@@ -43,7 +44,7 @@ void LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
     }
 
     if (event.snapshot.status == PlaybackStatus::Empty) {
-        autoplay_pending_ = false;
+        start_pending_ = false;
         return;
     }
 
@@ -51,7 +52,7 @@ void LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
         return;
     }
 
-    attemptAutoplay(event.snapshot);
+    attemptStart(event.snapshot);
 }
 
 bool LocalTrackSession::pollMetadata() {
@@ -135,12 +136,16 @@ MetadataGeneration LocalTrackSession::nextGeneration(const MetadataGeneration cu
     return MetadataGeneration{current.value + 1};
 }
 
-void LocalTrackSession::attemptAutoplay(const PlaybackSnapshot& snapshot) {
-    if (!autoplay_pending_ || snapshot.generation != playback_generation_ || snapshot.status != PlaybackStatus::Ready) {
+void LocalTrackSession::attemptStart(const PlaybackSnapshot& snapshot) {
+    if (!start_pending_ || snapshot.generation != playback_generation_ || snapshot.status != PlaybackStatus::Ready) {
+        return;
+    }
+    if (start_intent_ == LocalTrackStartIntent::StayReady) {
+        start_pending_ = false;
         return;
     }
     if (playback_backend_.play() == PlaybackCommandResult::Accepted) {
-        autoplay_pending_ = false;
+        start_pending_ = false;
     }
 }
 

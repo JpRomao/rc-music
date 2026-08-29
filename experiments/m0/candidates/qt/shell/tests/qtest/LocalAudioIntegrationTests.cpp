@@ -4,6 +4,7 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
+#include <QAbstractItemModel>
 #include <QFile>
 #include <QList>
 #include <QTemporaryDir>
@@ -224,9 +225,9 @@ class LocalAudioIntegrationTests final : public QObject {
         int picker_calls = 0;
 
         PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::optional<std::filesystem::path> {
+                                  [&]() -> std::vector<std::filesystem::path> {
                                       ++picker_calls;
-                                      return selected_path;
+                                      return {selected_path};
                                   }};
 
         QVERIFY(presenter.setVolume(0.0));
@@ -275,6 +276,58 @@ class LocalAudioIntegrationTests final : public QObject {
         QCOMPARE(presenter.currentTitle(), expected_final_title);
     }
 
+    void opensTwoSelectedFilesAndNavigatesWithTheRealBackend() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const QString source_file = QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE);
+        const QString first_file = temporary.filePath(QStringLiteral("primeira 日本語.mp3"));
+        const QString second_file = temporary.filePath(QStringLiteral("segunda ação.mp3"));
+        QVERIFY(QFile::copy(source_file, first_file));
+        QVERIFY(QFile::copy(source_file, second_file));
+        const std::vector<std::filesystem::path> selected_paths{nativePath(first_file), nativePath(second_file)};
+
+        QtMultimediaPlaybackBackend qt_backend;
+        RecordingPlaybackBackend playback{qt_backend};
+        SingleWorkerMetadataReader worker{std::make_unique<TagLibMetadataExtractor>()};
+        RecordingMetadataReader metadata{worker};
+        TestPlatform platform;
+        int picker_calls = 0;
+        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
+                                  [&]() -> std::vector<std::filesystem::path> {
+                                      ++picker_calls;
+                                      return selected_paths;
+                                  }};
+
+        QVERIFY(presenter.setVolume(0.0));
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+        QAbstractItemModel* const model = presenter.queueModelObject();
+        QCOMPARE(picker_calls, 1);
+        QVERIFY(presenter.queueLoaded());
+        QCOMPARE(model->rowCount(), 2);
+        QCOMPARE(presenter.currentQueueIndex(), 0);
+        const QString first_occurrence_id = presenter.currentOccurrenceId();
+        QVERIFY(!first_occurrence_id.isEmpty());
+        QVERIFY(playback.loadedPaths() == std::vector<std::filesystem::path>{selected_paths.front()});
+        QVERIFY(metadata.requestedPaths() == std::vector<std::filesystem::path>{selected_paths.front()});
+
+        QTRY_VERIFY_WITH_TIMEOUT(qt_backend.snapshot().generation == 1 &&
+                                     presenter.playbackState() == PlayerPresenter::PlaybackState::Playing,
+                                 5'000);
+        QVERIFY(presenter.nextTrack());
+        QCOMPARE(presenter.currentQueueIndex(), 1);
+        QVERIFY(presenter.currentOccurrenceId() != first_occurrence_id);
+        QVERIFY(playback.loadedPaths() == selected_paths);
+        QVERIFY(metadata.requestedPaths() == selected_paths);
+        QVERIFY(!presenter.canGoNext());
+
+        QTRY_VERIFY_WITH_TIMEOUT(qt_backend.snapshot().generation == 2 &&
+                                     presenter.playbackState() == PlayerPresenter::PlaybackState::Playing,
+                                 5'000);
+        QVERIFY(presenter.canGoPrevious());
+    }
+
     void recoversFromTruncatedContainerThroughTheRealJourney_data() {
         QTest::addColumn<QString>("source_file");
         QTest::addColumn<QString>("extension");
@@ -315,10 +368,10 @@ class LocalAudioIntegrationTests final : public QObject {
         RecordingMetadataReader metadata{worker};
         TestPlatform platform;
         PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::optional<std::filesystem::path> {
+                                  [&]() -> std::vector<std::filesystem::path> {
                                       if (selection_index >= selections.size())
-                                          return std::nullopt;
-                                      return selections[selection_index++];
+                                          return {};
+                                      return {selections[selection_index++]};
                                   }};
 
         QVERIFY(presenter.setVolume(0.0));

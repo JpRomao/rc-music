@@ -133,7 +133,7 @@ O M0 está autorizado sem aceitar stack. A sequência atual é:
 2. fechar em paralelo os limites de metadata/arte necessários ao comportamento em desenvolvimento, sem incorporar áudio pessoal ao corpus e sem promover Opus/ALAC além de candidatos;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
-A navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
+No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
 A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 

@@ -4,7 +4,9 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/LocalTrackSession.hpp"
 #include "m0/application/PlayerController.hpp"
+#include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
+#include "m0/presentation/LocalQueueListModel.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
 #include <QAbstractItemModel>
@@ -85,7 +87,7 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool usesFrozenFixture READ usesFrozenFixture CONSTANT)
 
   public:
-    using AudioFilePicker = std::function<std::optional<std::filesystem::path>()>;
+    using AudioFilePicker = std::function<std::vector<std::filesystem::path>()>;
 
     enum class PlaybackState { Unloaded, Loading, Ready, Paused, Playing, Error };
     Q_ENUM(PlaybackState)
@@ -223,7 +225,9 @@ class PlayerPresenter final : public QObject {
     std::unique_ptr<DeterministicPlaybackBackend> owned_backend_;
     PlaybackBackend& backend_;
     PlayerController controller_;
+    LocalFileQueue local_queue_;
     QueueListModel queue_model_;
+    LocalQueueListModel local_queue_model_;
     QTimer timer_;
     FixtureState state_;
     AudioFilePicker audio_file_picker_{};

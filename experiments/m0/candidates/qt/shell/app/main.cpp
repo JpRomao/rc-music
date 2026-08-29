@@ -36,9 +36,9 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using music_player::m0::FixtureRepository;
 using music_player::m0::PlayerPresenter;
@@ -113,18 +113,21 @@ int main(int argc, char* argv[]) {
         music_player::m0::QtMultimediaPlaybackBackend backend;
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
-        PlayerPresenter::AudioFilePicker audio_file_picker = [&contract]() -> std::optional<std::filesystem::path> {
-            const QString selected = QFileDialog::getOpenFileName(
+        PlayerPresenter::AudioFilePicker audio_file_picker = [&contract] {
+            const QStringList selected = QFileDialog::getOpenFileNames(
                 nullptr, contract.openAudioText(), {},
                 QStringLiteral("Áudio local (*.mp3 *.MP3 *.m4a *.M4A *.mp4 *.MP4 *.flac *.FLAC *.ogg *.OGG *.oga "
                                "*.OGA *.wav *.WAV);;Todos os arquivos (*)"));
-            if (selected.isEmpty())
-                return std::nullopt;
+            std::vector<std::filesystem::path> paths;
+            paths.reserve(static_cast<std::size_t>(selected.size()));
+            for (const QString& source : selected) {
 #ifdef Q_OS_WIN
-            return std::filesystem::path{selected.toStdWString()};
+                paths.emplace_back(source.toStdWString());
 #else
-            return std::filesystem::path{selected.toUtf8().toStdString()};
+                paths.emplace_back(source.toUtf8().toStdString());
 #endif
+            }
+            return paths;
         };
         PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
                                   artwork_cache);

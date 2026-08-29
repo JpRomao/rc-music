@@ -145,8 +145,10 @@ if(M0_QT_SHELL_SUPPORT)
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
+        include/m0/presentation/LocalQueueListModel.hpp
         src/adapters/fixture/FixtureDecoder.hpp
         src/adapters/fixture/FixtureRepository.cpp
+        src/presentation/LocalQueueListModel.cpp
         src/presentation/QueueListModel.cpp
     )
     target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)

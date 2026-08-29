@@ -19,11 +19,17 @@ enum class LocalTrackMetadataStatus {
     Expired,
 };
 
+enum class LocalTrackStartIntent {
+    Autoplay,
+    StayReady,
+};
+
 class LocalTrackSession final {
   public:
     LocalTrackSession(PlaybackBackend& playback_backend, MetadataReader& metadata_reader);
 
-    [[nodiscard]] bool open(const std::filesystem::path& source_path);
+    [[nodiscard]] bool open(const std::filesystem::path& source_path,
+                            LocalTrackStartIntent start_intent = LocalTrackStartIntent::Autoplay);
     void applyPlaybackEvent(const PlaybackEvent& event);
     [[nodiscard]] bool pollMetadata();
     [[nodiscard]] bool cancelMetadata();
@@ -41,7 +47,7 @@ class LocalTrackSession final {
   private:
     [[nodiscard]] static std::string fallbackTitle(const std::filesystem::path& source_path);
     [[nodiscard]] static MetadataGeneration nextGeneration(MetadataGeneration current) noexcept;
-    void attemptAutoplay(const PlaybackSnapshot& snapshot);
+    void attemptStart(const PlaybackSnapshot& snapshot);
     void applyMetadataCompletion(MetadataReadCompletion completion);
 
     PlaybackBackend& playback_backend_;
@@ -55,7 +61,8 @@ class LocalTrackSession final {
     MetadataGeneration metadata_generation_{};
     std::uint64_t playback_generation_{0};
     bool has_track_{false};
-    bool autoplay_pending_{false};
+    LocalTrackStartIntent start_intent_{LocalTrackStartIntent::Autoplay};
+    bool start_pending_{false};
 };
 
 } // namespace music_player::m0

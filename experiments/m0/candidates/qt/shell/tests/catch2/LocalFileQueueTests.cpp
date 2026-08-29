@@ -18,6 +18,7 @@ TEST_CASE("local file queue preserves order and gives duplicate paths distinct o
 
     REQUIRE(queue.size() == 3);
     REQUIRE(queue.currentIndex() == std::optional<std::size_t>{0});
+    REQUIRE(queue.currentOccurrenceId() == std::optional{queue.items()[0].occurrence_id});
     CHECK(queue.items()[0].source_path == duplicate);
     CHECK(queue.items()[1].source_path == duplicate);
     CHECK(queue.items()[2].source_path == third);
@@ -51,14 +52,17 @@ TEST_CASE("local file queue selection rejects unavailable and out of range occur
 
     REQUIRE(queue.select(1));
     CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    CHECK(queue.currentOccurrenceId() == std::optional{queue.items()[1].occurrence_id});
     REQUIRE(queue.markUnavailable(1));
     CHECK_FALSE(queue.items()[1].available);
     CHECK_FALSE(queue.select(1));
     CHECK_FALSE(queue.select(3));
     CHECK_FALSE(queue.markUnavailable(3));
     CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    CHECK(queue.currentOccurrenceId() == std::optional{queue.items()[1].occurrence_id});
     CHECK(queue.select(2));
     CHECK(queue.currentIndex() == std::optional<std::size_t>{2});
+    CHECK(queue.currentOccurrenceId() == std::optional{queue.items()[2].occurrence_id});
 }
 
 } // namespace

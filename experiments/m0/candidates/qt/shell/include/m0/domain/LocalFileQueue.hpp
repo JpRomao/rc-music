@@ -29,6 +29,7 @@ class LocalFileQueue final {
 
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] std::optional<LocalQueueOccurrenceId> currentOccurrenceId() const noexcept;
     [[nodiscard]] std::optional<std::size_t> currentIndex() const noexcept;
     [[nodiscard]] std::span<const LocalFileQueueItem> items() const noexcept;
 
@@ -36,7 +37,7 @@ class LocalFileQueue final {
     [[nodiscard]] LocalQueueOccurrenceId nextOccurrenceId() noexcept;
 
     std::vector<LocalFileQueueItem> items_{};
-    std::optional<std::size_t> current_index_{};
+    std::optional<LocalQueueOccurrenceId> current_occurrence_id_{};
     std::uint64_t next_occurrence_id_{1};
 };
 

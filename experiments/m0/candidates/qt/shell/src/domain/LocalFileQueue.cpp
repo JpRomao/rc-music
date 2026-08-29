@@ -20,7 +20,7 @@ bool LocalFileQueue::replace(std::vector<std::filesystem::path> source_paths) {
     }
 
     items_ = std::move(replacement);
-    current_index_ = 0;
+    current_occurrence_id_ = items_.front().occurrence_id;
     return true;
 }
 
@@ -28,7 +28,7 @@ bool LocalFileQueue::select(const std::size_t index) noexcept {
     if (index >= items_.size() || !items_[index].available) {
         return false;
     }
-    current_index_ = index;
+    current_occurrence_id_ = items_[index].occurrence_id;
     return true;
 }
 
@@ -44,7 +44,20 @@ bool LocalFileQueue::empty() const noexcept { return items_.empty(); }
 
 std::size_t LocalFileQueue::size() const noexcept { return items_.size(); }
 
-std::optional<std::size_t> LocalFileQueue::currentIndex() const noexcept { return current_index_; }
+std::optional<LocalQueueOccurrenceId> LocalFileQueue::currentOccurrenceId() const noexcept {
+    return current_occurrence_id_;
+}
+
+std::optional<std::size_t> LocalFileQueue::currentIndex() const noexcept {
+    if (!current_occurrence_id_.has_value()) {
+        return std::nullopt;
+    }
+    const auto current = std::ranges::find(items_, *current_occurrence_id_, &LocalFileQueueItem::occurrence_id);
+    if (current == items_.end()) {
+        return std::nullopt;
+    }
+    return static_cast<std::size_t>(std::distance(items_.begin(), current));
+}
 
 std::span<const LocalFileQueueItem> LocalFileQueue::items() const noexcept { return items_; }
 

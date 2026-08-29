@@ -135,6 +135,14 @@ std::vector<QueueNavigationItem> navigationItems(const FixtureBundle& bundle) {
     return entries;
 }
 
+std::vector<QueueNavigationItem> navigationItems(const LocalFileQueue& queue) {
+    std::vector<QueueNavigationItem> entries;
+    entries.reserve(queue.size());
+    for (const LocalFileQueueItem& item : queue.items())
+        entries.push_back({item.available});
+    return entries;
+}
+
 QString fromUtf8(const std::string& value) {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
 }
@@ -145,7 +153,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
-      controller_(backend_, platform), queue_model_(this), timer_(this),
+      controller_(backend_, platform), queue_model_(this), local_queue_model_(this), timer_(this),
       state_(stateById(bundle_, bundle_.default_state_id)), artwork_cache_(std::make_shared<ArtworkImageCache>()) {
     initializeDefaults();
     timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
@@ -163,7 +171,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
                                  std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
-      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), timer_(this),
+      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), local_queue_model_(this), timer_(this),
       state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)), uses_frozen_fixture_(false) {
@@ -231,19 +239,29 @@ QString PlayerPresenter::stateId() const {
 PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
     return mapPlaybackState(controller_.confirmedSnapshot().status);
 }
-bool PlayerPresenter::queueLoaded() const noexcept { return uses_frozen_fixture_ && state_.queue_loaded; }
+bool PlayerPresenter::queueLoaded() const noexcept {
+    return uses_frozen_fixture_ ? state_.queue_loaded : !local_queue_.empty();
+}
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
-    return uses_frozen_fixture_ && state_.current_occurrence_id.has_value();
+    return uses_frozen_fixture_ ? state_.current_occurrence_id.has_value()
+                                : local_queue_.currentOccurrenceId().has_value();
 }
 QString PlayerPresenter::currentOccurrenceId() const {
-    return uses_frozen_fixture_ ? state_.current_occurrence_id.value_or(QString{}) : QString{};
+    if (uses_frozen_fixture_)
+        return state_.current_occurrence_id.value_or(QString{});
+    const auto current = local_queue_.currentOccurrenceId();
+    return current.has_value() ? LocalQueueListModel::occurrenceId(*current) : QString{};
 }
 int PlayerPresenter::currentQueueIndex() const noexcept {
-    if (!uses_frozen_fixture_ || !state_.current_occurrence_id.has_value())
-        return -1;
-    for (qsizetype index = 0; index < bundle_.queue.size(); ++index) {
-        if (bundle_.queue.at(index).occurrence_id == *state_.current_occurrence_id)
-            return static_cast<int>(index);
+    if (!uses_frozen_fixture_) {
+        const auto current = local_queue_.currentIndex();
+        return current.has_value() ? static_cast<int>(*current) : -1;
+    }
+    if (state_.current_occurrence_id.has_value()) {
+        for (qsizetype index = 0; index < bundle_.queue.size(); ++index) {
+            if (bundle_.queue.at(index).occurrence_id == *state_.current_occurrence_id)
+                return static_cast<int>(index);
+        }
     }
     return -1;
 }
@@ -374,7 +392,10 @@ QString PlayerPresenter::contextAlbum() const {
     return track != nullptr ? track->album : QString{};
 }
 QueueListModel* PlayerPresenter::queueModel() noexcept { return &queue_model_; }
-QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept { return &queue_model_; }
+QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept {
+    return uses_frozen_fixture_ ? static_cast<QAbstractItemModel*>(&queue_model_)
+                                : static_cast<QAbstractItemModel*>(&local_queue_model_);
+}
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
@@ -432,10 +453,15 @@ bool PlayerPresenter::openAudio() {
         return loadFrozenQueue();
     }
 
-    const auto selected_path = audio_file_picker_();
-    if (!selected_path.has_value() || !local_track_session_->open(*selected_path))
+    const auto selected_paths = audio_file_picker_();
+    auto replacement = local_queue_;
+    if (!replacement.replace(selected_paths) || !local_track_session_->open(selected_paths.front()))
         return false;
 
+    local_queue_ = std::move(replacement);
+    navigation_items_ = navigationItems(local_queue_);
+    if (!local_queue_model_.replace(local_queue_))
+        throw std::logic_error{"accepted local queue could not be projected"};
     artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
     controller_.applyBackendSnapshot(backend_.snapshot());
     reconcileTimer();
@@ -463,6 +489,12 @@ void PlayerPresenter::pollMetadata() {
     const auto& metadata = local_track_session_->trackMetadata();
     if (metadata.has_value() && metadata->artwork.has_value())
         static_cast<void>(artwork_cache_->publish(local_track_session_->metadataGeneration(), *metadata->artwork));
+    const auto current = local_queue_.currentIndex();
+    if (current.has_value()) {
+        static_cast<void>(local_queue_model_.updateMetadata(local_queue_.items()[*current].occurrence_id,
+                                                            currentTitle(), currentArtist(), currentAlbum(),
+                                                            localDurationMs()));
+    }
     reconcileTimer();
     emit stateChanged();
     if (duration_before != localDurationMs())
@@ -610,6 +642,23 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
         return false;
     if (*target == static_cast<std::size_t>(currentQueueIndex()))
         return beginSeekPreview(0) && commitSeekPreview();
+
+    if (!uses_frozen_fixture_) {
+        const LocalFileQueueItem& item = local_queue_.items()[*target];
+        const auto start_intent = controller_.confirmedSnapshot().status == PlaybackStatus::Playing
+                                      ? LocalTrackStartIntent::Autoplay
+                                      : LocalTrackStartIntent::StayReady;
+        if (!local_track_session_->open(item.source_path, start_intent)) {
+            return false;
+        }
+        static_cast<void>(local_queue_.select(*target));
+        artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+        controller_.applyBackendSnapshot(backend_.snapshot());
+        reconcileTimer();
+        emit stateChanged();
+        emit playbackChanged();
+        return true;
+    }
 
     const QueueItem& track = bundle_.queue.at(static_cast<qsizetype>(*target));
     auto* const fixture_backend = fixtureBackend();

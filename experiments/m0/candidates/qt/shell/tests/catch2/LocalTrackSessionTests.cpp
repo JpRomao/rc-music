@@ -35,7 +35,13 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
         return play_result;
     }
 
-    PlaybackCommandResult pause() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult pause() override {
+        ++pause_calls;
+        if (pause_result == PlaybackCommandResult::Accepted) {
+            snapshot_.status = PlaybackStatus::Paused;
+        }
+        return pause_result;
+    }
     PlaybackCommandResult seekTo(std::int64_t) override { return PlaybackCommandResult::Accepted; }
     PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
     PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
@@ -46,8 +52,10 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
     PlaybackEventCallback callback_{};
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
     std::vector<std::filesystem::path> loaded_paths{};
     int play_calls{0};
+    int pause_calls{0};
 };
 
 class ScriptedMetadataReader final : public MetadataReader {
@@ -125,6 +133,20 @@ TEST_CASE("the current ready generation autoplays once and stale events are igno
     session.applyPlaybackEvent(ready);
 
     CHECK(playback.play_calls == 1);
+}
+
+TEST_CASE("a local track can stay ready without autoplaying", "[m0][qt][core][local-track][playback][FR-011]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    REQUIRE(session.open(L"C:\\Music\\ready-next.wav", LocalTrackStartIntent::StayReady));
+
+    const PlaybackEvent ready{PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}};
+    session.applyPlaybackEvent(ready);
+    session.applyPlaybackEvent(ready);
+
+    CHECK(playback.play_calls == 0);
+    CHECK(playback.pause_calls == 0);
 }
 
 TEST_CASE("a transient current-generation error does not consume pending autoplay",
