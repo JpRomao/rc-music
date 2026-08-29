@@ -823,6 +823,7 @@ if(BUILD_TESTING)
         target_link_libraries(m0_taglib_metadata_extractor_tests PRIVATE
             m0_qt_core
             m0_taglib_metadata_extractor
+            TagLib::TagLib
             Catch2::Catch2WithMain
         )
         target_compile_features(m0_taglib_metadata_extractor_tests PRIVATE cxx_std_20)

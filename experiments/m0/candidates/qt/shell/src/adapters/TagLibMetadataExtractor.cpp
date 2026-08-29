@@ -24,12 +24,14 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace music_player::m0 {
 namespace {
 
 constexpr std::size_t minimum_container_header_size = 12;
 constexpr std::size_t container_header_size = 512;
+constexpr std::size_t retained_metadata_field_limit_bytes = 16U * 1024U;
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
@@ -163,11 +165,25 @@ enum class OggCodec { Unknown, Vorbis, Opus };
            bitrate_index != 0x00U && bitrate_index != 0x0fU && sample_rate_index != 0x03U;
 }
 
-[[nodiscard]] std::optional<std::string> optionalUtf8(const TagLib::String& value) {
+struct ReadTagsResult final {
+    MetadataTags tags{};
+    std::vector<MetadataDiagnostic> diagnostics{};
+};
+
+[[nodiscard]] std::optional<std::string> retainedUtf8(const TagLib::String& value, const MetadataField field,
+                                                      std::vector<MetadataDiagnostic>& diagnostics) {
     if (value.isEmpty()) {
         return std::nullopt;
     }
-    return value.to8Bit(true);
+    auto text = value.to8Bit(true);
+    if (text.size() > retained_metadata_field_limit_bytes) {
+        diagnostics.push_back({.code = MetadataDiagnosticCode::FieldTooLarge,
+                               .field = field,
+                               .observed_bytes = text.size(),
+                               .limit_bytes = retained_metadata_field_limit_bytes});
+        return std::nullopt;
+    }
+    return text;
 }
 
 [[nodiscard]] std::string stemUtf8(const std::filesystem::path& source_path) {
@@ -203,31 +219,32 @@ enum class OggCodec { Unknown, Vorbis, Opus };
     return {};
 }
 
-[[nodiscard]] MetadataTags readTags(const TagLib::Tag* tag) {
-    MetadataTags tags{};
+[[nodiscard]] ReadTagsResult readTags(const TagLib::Tag* tag) {
+    ReadTagsResult result{};
     if (tag == nullptr) {
-        return tags;
+        return result;
     }
 
-    tags.title = optionalUtf8(tag->title());
-    tags.artist = optionalUtf8(tag->artist());
-    tags.album = optionalUtf8(tag->album());
+    result.tags.title = retainedUtf8(tag->title(), MetadataField::Title, result.diagnostics);
+    result.tags.artist = retainedUtf8(tag->artist(), MetadataField::Artist, result.diagnostics);
+    result.tags.album = retainedUtf8(tag->album(), MetadataField::Album, result.diagnostics);
     if (tag->track() != 0) {
-        tags.track_number = tag->track();
+        result.tags.track_number = tag->track();
     }
     if (tag->year() != 0) {
-        tags.year = tag->year();
+        result.tags.year = tag->year();
     }
-    return tags;
+    return result;
 }
 
 [[nodiscard]] TrackMetadata baseMetadata(const std::filesystem::path& source_path, const std::uintmax_t file_size,
-                                         MetadataTags tags) {
+                                         ReadTagsResult read_result) {
     TrackMetadata metadata{};
     metadata.source_path = source_path;
     metadata.file_size_bytes = file_size;
-    metadata.display_title = tags.title.value_or(stemUtf8(source_path));
-    metadata.tags = std::move(tags);
+    metadata.display_title = read_result.tags.title.value_or(stemUtf8(source_path));
+    metadata.tags = std::move(read_result.tags);
+    metadata.diagnostics = std::move(read_result.diagnostics);
     return metadata;
 }
 

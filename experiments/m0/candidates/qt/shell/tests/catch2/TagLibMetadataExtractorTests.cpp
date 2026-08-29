@@ -3,6 +3,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <id3v2tag.h>
+#include <mpegfile.h>
+#include <tag.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -12,6 +16,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -113,6 +118,30 @@ void writeBytes(const std::filesystem::path& destination, const std::vector<std:
     REQUIRE(stream);
     stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     REQUIRE(stream);
+}
+
+[[nodiscard]] std::string utf8TextFieldWithSize(const std::size_t size_bytes) {
+    constexpr std::string_view multibyte_character{"\xC3\xA9"};
+    std::string value;
+    value.reserve(size_bytes);
+    while (value.size() + multibyte_character.size() <= size_bytes) {
+        value.append(multibyte_character);
+    }
+    value.append(size_bytes - value.size(), 'a');
+    REQUIRE(value.size() == size_bytes);
+    return value;
+}
+
+[[nodiscard]] bool hasSameText(const std::string& left, const std::string& right) { return left == right; }
+
+void writeMp3Title(const std::filesystem::path& destination, const std::string& title) {
+    TagLib::MPEG::File file{destination.c_str()};
+    REQUIRE(file.isValid());
+    auto* tag = file.ID3v2Tag(true);
+    REQUIRE(tag != nullptr);
+    tag->setTitle(TagLib::String{title, TagLib::String::UTF8});
+    REQUIRE(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
+                      TagLib::MPEG::File::DoNotDuplicate));
 }
 
 [[nodiscard]] std::vector<std::uint8_t> withoutId3Tags(std::vector<std::uint8_t> bytes) {
@@ -454,6 +483,50 @@ TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures saf
         CHECK(read_error.code == MetadataReadErrorCode::InvalidData);
         CHECK_FALSE(read_error.message.empty());
     }
+}
+
+TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limit",
+          "[m0][qt][metadata][taglib][limits][MR-012]") {
+    constexpr std::size_t field_limit_bytes = 16U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "exact-field-limit.mp3")};
+    const auto title = utf8TextFieldWithSize(field_limit_bytes);
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Title(source.path(), title);
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    REQUIRE(metadata.tags.title.has_value());
+    CHECK(metadata.tags.title->size() == title.size());
+    CHECK(hasSameText(*metadata.tags.title, title));
+    CHECK(metadata.display_title.size() == title.size());
+    CHECK(hasSameText(metadata.display_title, title));
+    CHECK(metadata.diagnostics.empty());
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("MR-013 discards one metadata field above the retained byte limit without failing the read",
+          "[m0][qt][metadata][taglib][limits][MR-013]") {
+    constexpr std::size_t field_limit_bytes = 16U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "above-field-limit.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Title(source.path(), utf8TextFieldWithSize(field_limit_bytes + 1));
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    CHECK_FALSE(metadata.tags.title.has_value());
+    CHECK(metadata.display_title == "above-field-limit");
+    REQUIRE(metadata.diagnostics.size() == 1);
+    CHECK(metadata.diagnostics.front().code == MetadataDiagnosticCode::FieldTooLarge);
+    CHECK(metadata.diagnostics.front().field == MetadataField::Title);
+    CHECK(metadata.diagnostics.front().observed_bytes == field_limit_bytes + 1);
+    CHECK(metadata.diagnostics.front().limit_bytes == field_limit_bytes);
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms > 0);
 }
 
 TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extractor",

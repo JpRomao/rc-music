@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace music_player::m0 {
 
@@ -26,12 +28,24 @@ struct AudioStreamProperties final {
     std::string codec{};
 };
 
+enum class MetadataField { Title, Artist, Album };
+
+enum class MetadataDiagnosticCode { FieldTooLarge };
+
+struct MetadataDiagnostic final {
+    MetadataDiagnosticCode code{MetadataDiagnosticCode::FieldTooLarge};
+    MetadataField field{MetadataField::Title};
+    std::size_t observed_bytes{0};
+    std::size_t limit_bytes{0};
+};
+
 struct TrackMetadata final {
     std::filesystem::path source_path{};
     std::uintmax_t file_size_bytes{0};
     MetadataTags tags{};
     std::string display_title{};
     AudioStreamProperties audio{};
+    std::vector<MetadataDiagnostic> diagnostics{};
 };
 
 enum class MetadataReadErrorCode {
