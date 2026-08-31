@@ -9,11 +9,13 @@
 #include "presentation/ShellUiContract.hpp"
 
 #include <QAccessible>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QGuiApplication>
 #include <QMimeData>
 #include <QPointer>
 #include <QQmlContext>
@@ -117,7 +119,11 @@ class QuickTestMetadataReader final : public music_player::m0::MetadataReader {
         return music_player::m0::MetadataCommandResult::Accepted;
     }
     [[nodiscard]] music_player::m0::MetadataPollResult poll(music_player::m0::MetadataGeneration) override {
-        return {music_player::m0::MetadataPollStatus::Pending, std::nullopt};
+        if (poll_results.empty())
+            return {music_player::m0::MetadataPollStatus::Pending, std::nullopt};
+        auto result = std::move(poll_results.front());
+        poll_results.pop_front();
+        return result;
     }
     [[nodiscard]] std::optional<music_player::m0::MetadataReadCompletion> tryTakeCompletion() override {
         return std::nullopt;
@@ -126,7 +132,13 @@ class QuickTestMetadataReader final : public music_player::m0::MetadataReader {
         return music_player::m0::MetadataCommandResult::Accepted;
     }
 
+    void reset() {
+        requests.clear();
+        poll_results.clear();
+    }
+
     std::vector<music_player::m0::MetadataReadRequest> requests{};
+    std::deque<music_player::m0::MetadataPollResult> poll_results{};
 };
 
 class FakeLocalSourceDiscovery final : public music_player::m0::LocalSourceDiscovery {
@@ -250,11 +262,12 @@ class ScenarioDriver final : public QObject {
                    std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state,
                    std::deque<std::vector<std::filesystem::path>>& local_selections,
                    music_player::m0::PlayerPresenter& local_presenter, QuickTestPlaybackBackend& local_backend,
-                   FakeLocalSourceDiscovery& local_source_discovery, QObject* parent = nullptr)
+                   QuickTestMetadataReader& local_metadata_reader, FakeLocalSourceDiscovery& local_source_discovery,
+                   QObject* parent = nullptr)
         : QObject(parent), presenter_(presenter), platform_(platform), appearance_(appearance),
           appearance_state_(std::move(appearance_state)), local_selections_(local_selections),
           local_presenter_(local_presenter), local_backend_(local_backend),
-          local_source_discovery_(local_source_discovery) {}
+          local_metadata_reader_(local_metadata_reader), local_source_discovery_(local_source_discovery) {}
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
@@ -287,6 +300,76 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
+    Q_INVOKABLE void publishLocalError() {
+        local_backend_.snapshot_.error = music_player::m0::PlaybackErrorCode::InvalidMedia;
+        local_backend_.publish(music_player::m0::PlaybackStatus::Error);
+    }
+    Q_INVOKABLE void publishCompleteLocalMetadata() {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        const auto& request = local_metadata_reader_.requests.back();
+        music_player::m0::TrackMetadata track{
+            .source_path = request.source_path,
+            .file_size_bytes = 4'096,
+            .tags = {.title = std::string{"Título controlado"},
+                     .artist = std::string{"Artista"},
+                     .album = std::string{"Álbum"},
+                     .track_number = 7,
+                     .year = 2026},
+            .display_title = "Título controlado",
+            .audio = {.duration_ms = 123'456,
+                      .sample_rate_hz = 48'000,
+                      .channels = 2,
+                      .bit_depth = 24,
+                      .bitrate_kbps = 320,
+                      .container = "MP3",
+                      .codec = "MPEG-1 Audio Layer III"},
+            .diagnostics = {{.code = music_player::m0::MetadataDiagnosticCode::FieldTooLarge,
+                             .field = music_player::m0::MetadataField::Title,
+                             .observed_bytes = 16'385,
+                             .limit_bytes = 16'384}},
+            .artwork_diagnostics = {{.code = music_player::m0::ArtworkDiagnosticCode::AxisPixelsExceeded,
+                                     .encoded_bytes = 1'024,
+                                     .width_pixels = 4'097,
+                                     .height_pixels = 320}},
+        };
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
+    }
+    Q_INVOKABLE void publishExactLargeLocalMetadata() {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        constexpr std::uint64_t beyond_javascript_safe_integer = 9'007'199'254'740'993ULL;
+        const auto diagnostic_bytes = static_cast<std::size_t>(beyond_javascript_safe_integer);
+        const auto& request = local_metadata_reader_.requests.back();
+        music_player::m0::TrackMetadata track{
+            .source_path = request.source_path,
+            .file_size_bytes = beyond_javascript_safe_integer,
+            .display_title = "Contagens exatas",
+            .diagnostics = {{.code = music_player::m0::MetadataDiagnosticCode::FieldTooLarge,
+                             .field = music_player::m0::MetadataField::Title,
+                             .observed_bytes = diagnostic_bytes,
+                             .limit_bytes = diagnostic_bytes - 1}},
+            .artwork_diagnostics = {{.code = music_player::m0::ArtworkDiagnosticCode::EncodedBytesExceeded,
+                                     .encoded_bytes = diagnostic_bytes - 2}},
+        };
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
+    }
+    Q_INVOKABLE void publishFailedLocalMetadata() {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        const auto& request = local_metadata_reader_.requests.back();
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{
+                 request.generation, request.source_path,
+                 music_player::m0::MetadataReadError{music_player::m0::MetadataReadErrorCode::InvalidData,
+                                                     "DO NOT EXPOSE: C:\\private\\reader-secret.flac"}}});
+    }
+    Q_INVOKABLE QString clipboardText() const { return QGuiApplication::clipboard()->text(); }
     Q_INVOKABLE void resetLocalScenario() {
         if (local_presenter_.sourceImportActive()) {
             static_cast<void>(local_presenter_.cancelSourceImport());
@@ -300,6 +383,7 @@ class ScenarioDriver final : public QObject {
             static_cast<void>(local_presenter_.clearQueue());
         local_selections_.clear();
         local_source_discovery_.reset();
+        local_metadata_reader_.reset();
         local_backend_.resetObservations();
         drag_mime_.reset();
         clearAccessibleAnnouncements();
@@ -456,6 +540,7 @@ class ScenarioDriver final : public QObject {
     std::deque<std::vector<std::filesystem::path>>& local_selections_;
     music_player::m0::PlayerPresenter& local_presenter_;
     QuickTestPlaybackBackend& local_backend_;
+    QuickTestMetadataReader& local_metadata_reader_;
     FakeLocalSourceDiscovery& local_source_discovery_;
     std::unique_ptr<QMimeData> drag_mime_{};
 };
@@ -480,8 +565,10 @@ class EmptyShellQuickTestSetup final : public QObject {
 
     void qmlEngineAvailable(QQmlEngine* engine) {
         platform_ = QuickTestPlatform{};
+        details_platform_ = QuickTestPlatform{};
         auto* contract = new music_player::m0::ShellUiContract(*bundle_, engine);
         auto* presenter = new music_player::m0::PlayerPresenter(*bundle_, platform_, engine);
+        auto* details_presenter = new music_player::m0::PlayerPresenter(*bundle_, details_platform_, engine);
         auto* local_presenter = new music_player::m0::PlayerPresenter(
             *bundle_, platform_, local_backend_, local_metadata_reader_,
             [this] {
@@ -498,16 +585,19 @@ class EmptyShellQuickTestSetup final : public QObject {
         music_player::m0::bindShellAppearance(*presenter, *contract, *appearance);
         engine->rootContext()->setContextProperty(QStringLiteral("testShellUiContract"), contract);
         engine->rootContext()->setContextProperty(QStringLiteral("testPlayerPresenter"), presenter);
+        engine->rootContext()->setContextProperty(QStringLiteral("testDetailsFixturePresenter"), details_presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testLocalPlayerPresenter"), local_presenter);
         engine->rootContext()->setContextProperty(
             QStringLiteral("testScenarioDriver"),
             new ScenarioDriver(*presenter, platform_, *appearance, appearance_state, local_selections_,
-                               *local_presenter, local_backend_, local_source_discovery_, engine));
+                               *local_presenter, local_backend_, local_metadata_reader_, local_source_discovery_,
+                               engine));
     }
 
   private:
     std::unique_ptr<music_player::m0::FixtureBundle> bundle_;
     QuickTestPlatform platform_;
+    QuickTestPlatform details_platform_;
     QuickTestPlaybackBackend local_backend_{};
     QuickTestMetadataReader local_metadata_reader_{};
     FakeLocalSourceDiscovery local_source_discovery_{};

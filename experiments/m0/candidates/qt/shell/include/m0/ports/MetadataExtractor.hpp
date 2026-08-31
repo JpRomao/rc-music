@@ -31,13 +31,42 @@ struct AudioStreamProperties final {
 
 enum class MetadataField { Title, Artist, Album };
 
-enum class MetadataDiagnosticCode { FieldTooLarge };
+enum class MetadataDiagnosticCode { FieldTooLarge, RetainedMetadataTooLarge };
 
 struct MetadataDiagnostic final {
     MetadataDiagnosticCode code{MetadataDiagnosticCode::FieldTooLarge};
     MetadataField field{MetadataField::Title};
     std::size_t observed_bytes{0};
     std::size_t limit_bytes{0};
+};
+
+class MetadataRetentionBudget final {
+  public:
+    static constexpr std::size_t field_limit_bytes = 16U * 1024U;
+    static constexpr std::size_t total_limit_bytes = 256U * 1024U;
+
+    [[nodiscard]] std::optional<MetadataDiagnostic> tryRetain(const MetadataField field,
+                                                              const std::size_t field_bytes) noexcept {
+        if (field_bytes > field_limit_bytes) {
+            return MetadataDiagnostic{.code = MetadataDiagnosticCode::FieldTooLarge,
+                                      .field = field,
+                                      .observed_bytes = field_bytes,
+                                      .limit_bytes = field_limit_bytes};
+        }
+        if (field_bytes > total_limit_bytes - retained_bytes_) {
+            return MetadataDiagnostic{.code = MetadataDiagnosticCode::RetainedMetadataTooLarge,
+                                      .field = field,
+                                      .observed_bytes = retained_bytes_ + field_bytes,
+                                      .limit_bytes = total_limit_bytes};
+        }
+        retained_bytes_ += field_bytes;
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::size_t retainedBytes() const noexcept { return retained_bytes_; }
+
+  private:
+    std::size_t retained_bytes_{0};
 };
 
 struct ArtworkThumbnail final {
@@ -58,6 +87,7 @@ struct ArtworkDiagnostic final {
 struct TrackMetadata final {
     std::filesystem::path source_path{};
     std::uintmax_t file_size_bytes{0};
+    std::optional<std::filesystem::file_time_type> last_modified_time{};
     MetadataTags tags{};
     std::string display_title{};
     AudioStreamProperties audio{};

@@ -8,6 +8,7 @@ ColumnLayout {
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     signal openAudioRequested
+    signal detailsRequested(Item opener)
     Item {
         implicitWidth: 192
         implicitHeight: 192
@@ -69,5 +70,15 @@ ColumnLayout {
         text: root.contract.openAudioText
         Layout.alignment: Qt.AlignHCenter
         onClicked: root.openAudioRequested()
+    }
+    AccessibleTransportButton {
+        id: detailsButton
+        objectName: "track-details-playing"
+        contract: root.contract
+        text: root.contract.detailsTitle
+        accessibleName: root.contract.detailsTitle
+        enabled: root.presenter.detailsAvailable
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: root.detailsRequested(detailsButton)
     }
 }

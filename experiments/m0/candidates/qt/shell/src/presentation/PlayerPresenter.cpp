@@ -3,9 +3,13 @@
 #include "m0/adapters/SingleWorkerLocalSourceDiscovery.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 
+#include <QDateTime>
 #include <QMetaObject>
+#include <QTimeZone>
+#include <QVariantMap>
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -148,6 +152,82 @@ std::vector<QueueNavigationItem> navigationItems(const LocalFileQueue& queue) {
 
 QString fromUtf8(const std::string& value) {
     return QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size()));
+}
+
+QString displayPath(const std::filesystem::path& value) {
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(value.native());
+#else
+    const auto& native = value.native();
+    return QString::fromUtf8(native.data(), static_cast<qsizetype>(native.size()));
+#endif
+}
+
+QString metadataFieldId(const MetadataField field) {
+    switch (field) {
+    case MetadataField::Title:
+        return QStringLiteral("title");
+    case MetadataField::Artist:
+        return QStringLiteral("artist");
+    case MetadataField::Album:
+        return QStringLiteral("album");
+    }
+    return QStringLiteral("unknown");
+}
+
+QString metadataDiagnosticId(const MetadataDiagnosticCode code) {
+    switch (code) {
+    case MetadataDiagnosticCode::FieldTooLarge:
+        return QStringLiteral("metadata_field_too_large");
+    case MetadataDiagnosticCode::RetainedMetadataTooLarge:
+        return QStringLiteral("metadata_total_too_large");
+    }
+    return QStringLiteral("metadata_invalid_data");
+}
+
+QString metadataReadErrorId(const MetadataReadErrorCode code) {
+    switch (code) {
+    case MetadataReadErrorCode::SourceUnavailable:
+        return QStringLiteral("source_unavailable");
+    case MetadataReadErrorCode::UnsupportedFormat:
+        return QStringLiteral("unsupported_format");
+    case MetadataReadErrorCode::InvalidData:
+        return QStringLiteral("invalid_data");
+    case MetadataReadErrorCode::ReadFailed:
+        return QStringLiteral("read_failed");
+    }
+    return QStringLiteral("read_failed");
+}
+
+QString artworkDiagnosticId(const ArtworkDiagnosticCode code) {
+    switch (code) {
+    case ArtworkDiagnosticCode::InvalidData:
+        return QStringLiteral("artwork_invalid_data");
+    case ArtworkDiagnosticCode::EncodedBytesExceeded:
+        return QStringLiteral("artwork_encoded_bytes_exceeded");
+    case ArtworkDiagnosticCode::AxisPixelsExceeded:
+        return QStringLiteral("artwork_axis_pixels_exceeded");
+    case ArtworkDiagnosticCode::PixelCountExceeded:
+        return QStringLiteral("artwork_pixel_count_exceeded");
+    }
+    return QStringLiteral("artwork_invalid_data");
+}
+
+QVariant unsignedVariant(const std::uint64_t value) {
+    return QVariant::fromValue<qulonglong>(static_cast<qulonglong>(value));
+}
+
+QString unsignedDecimal(const std::uint64_t value) { return QString::number(static_cast<qulonglong>(value)); }
+
+QString modifiedUtc(const std::filesystem::file_time_type value) {
+    const auto file_now = std::filesystem::file_time_type::clock::now();
+    const auto system_now = std::chrono::system_clock::now();
+    const auto offset = std::chrono::duration_cast<std::chrono::system_clock::duration>(value - file_now);
+    const auto system_time = std::chrono::time_point_cast<std::chrono::milliseconds>(system_now + offset);
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(system_time.time_since_epoch());
+    const QDateTime timestamp =
+        QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(milliseconds.count()), QTimeZone::UTC);
+    return timestamp.isValid() ? timestamp.toString(QStringLiteral("yyyy-MM-dd'T'HH:mm:ss'Z'")) : QString{};
 }
 
 QString localPlaybackErrorCode(const PlaybackErrorCode error) {
@@ -434,6 +514,17 @@ const QueueItem* PlayerPresenter::contextTrack() const noexcept {
     }
     return nullptr;
 }
+const FixtureTrackDetails* PlayerPresenter::currentFixtureTrackDetails() const noexcept {
+    const QueueItem* const track = currentTrack();
+    return track != nullptr && track->occurrence_id == bundle_.track_details.occurrence_id ? &bundle_.track_details
+                                                                                           : nullptr;
+}
+const TrackMetadata* PlayerPresenter::currentLocalTrackMetadata() const noexcept {
+    if (uses_frozen_fixture_ || local_track_session_ == nullptr)
+        return nullptr;
+    const auto& metadata = local_track_session_->trackMetadata();
+    return metadata.has_value() ? &*metadata : nullptr;
+}
 bool PlayerPresenter::hasCurrentTrack() const noexcept {
     return uses_frozen_fixture_ ? currentTrack() != nullptr : local_track_session_->hasTrack();
 }
@@ -456,6 +547,264 @@ QString PlayerPresenter::currentAlbum() const {
     return track != nullptr ? track->album : QString{};
 }
 QUrl PlayerPresenter::currentArtworkSource() const { return artwork_cache_->currentSource(); }
+bool PlayerPresenter::detailsAvailable() const noexcept {
+    return uses_frozen_fixture_ ? currentTrack() != nullptr
+                                : local_track_session_ != nullptr && local_track_session_->hasTrack();
+}
+bool PlayerPresenter::hasDetailsFileName() const { return !detailsFileName().isEmpty(); }
+QString PlayerPresenter::detailsFileName() const {
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->file_name : QString{};
+    }
+    if (!detailsAvailable())
+        return {};
+    return displayPath(local_track_session_->sourcePath().filename());
+}
+bool PlayerPresenter::hasDetailsFilePath() const noexcept {
+    return !uses_frozen_fixture_ && detailsAvailable() && !local_track_session_->sourcePath().empty();
+}
+QString PlayerPresenter::detailsFilePath() const {
+    return hasDetailsFilePath() ? displayPath(local_track_session_->sourcePath()) : QString{};
+}
+bool PlayerPresenter::hasDetailsFileSize() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && details->size_bytes > 0;
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->file_size_bytes > 0;
+}
+QVariant PlayerPresenter::detailsFileSizeBytes() const {
+    if (!hasDetailsFileSize())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->size_bytes));
+    return unsignedVariant(static_cast<std::uint64_t>(currentLocalTrackMetadata()->file_size_bytes));
+}
+QString PlayerPresenter::detailsFileSizeBytesText() const {
+    if (!hasDetailsFileSize())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedDecimal(static_cast<std::uint64_t>(currentFixtureTrackDetails()->size_bytes));
+    return unsignedDecimal(static_cast<std::uint64_t>(currentLocalTrackMetadata()->file_size_bytes));
+}
+bool PlayerPresenter::hasDetailsModifiedUtc() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && !details->modified_utc.isEmpty();
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->last_modified_time.has_value() &&
+           !modifiedUtc(*metadata->last_modified_time).isEmpty();
+}
+QString PlayerPresenter::detailsModifiedUtc() const {
+    if (!hasDetailsModifiedUtc())
+        return {};
+    return uses_frozen_fixture_ ? currentFixtureTrackDetails()->modified_utc
+                                : modifiedUtc(*currentLocalTrackMetadata()->last_modified_time);
+}
+bool PlayerPresenter::hasDetailsTitle() const { return !detailsTitle().isEmpty(); }
+QString PlayerPresenter::detailsTitle() const {
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->title : QString{};
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->tags.title.has_value() ? fromUtf8(*metadata->tags.title) : QString{};
+}
+bool PlayerPresenter::hasDetailsArtist() const { return !detailsArtist().isEmpty(); }
+QString PlayerPresenter::detailsArtist() const {
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->artist : QString{};
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->tags.artist.has_value() ? fromUtf8(*metadata->tags.artist) : QString{};
+}
+bool PlayerPresenter::hasDetailsAlbum() const { return !detailsAlbum().isEmpty(); }
+QString PlayerPresenter::detailsAlbum() const {
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->album : QString{};
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->tags.album.has_value() ? fromUtf8(*metadata->tags.album) : QString{};
+}
+bool PlayerPresenter::hasDetailsTrackNumber() const noexcept {
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->tags.track_number.has_value() && *metadata->tags.track_number > 0;
+}
+QVariant PlayerPresenter::detailsTrackNumber() const {
+    return hasDetailsTrackNumber() ? unsignedVariant(*currentLocalTrackMetadata()->tags.track_number) : QVariant{};
+}
+bool PlayerPresenter::hasDetailsYear() const noexcept {
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->tags.year.has_value() && *metadata->tags.year > 0;
+}
+QVariant PlayerPresenter::detailsYear() const {
+    return hasDetailsYear() ? unsignedVariant(*currentLocalTrackMetadata()->tags.year) : QVariant{};
+}
+bool PlayerPresenter::hasDetailsDuration() const noexcept {
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr && track->duration_ms.has_value() && *track->duration_ms > 0;
+    }
+    return localDurationMs().has_value();
+}
+QVariant PlayerPresenter::detailsDurationMs() const {
+    if (!hasDetailsDuration())
+        return {};
+    if (uses_frozen_fixture_)
+        return QVariant::fromValue<qint64>(*currentTrack()->duration_ms);
+    return QVariant::fromValue<qint64>(*localDurationMs());
+}
+bool PlayerPresenter::hasDetailsContainer() const { return !detailsContainer().isEmpty(); }
+QString PlayerPresenter::detailsContainer() const {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr ? details->container : QString{};
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr ? fromUtf8(metadata->audio.container) : QString{};
+}
+bool PlayerPresenter::hasDetailsCodec() const { return !detailsCodec().isEmpty(); }
+QString PlayerPresenter::detailsCodec() const {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr ? details->codec : QString{};
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr ? fromUtf8(metadata->audio.codec) : QString{};
+}
+bool PlayerPresenter::hasDetailsBitrate() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && details->bitrate_bps > 0;
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->audio.bitrate_kbps.has_value() && *metadata->audio.bitrate_kbps > 0;
+}
+QVariant PlayerPresenter::detailsBitrateBps() const {
+    if (!hasDetailsBitrate())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->bitrate_bps));
+    return unsignedVariant(static_cast<std::uint64_t>(*currentLocalTrackMetadata()->audio.bitrate_kbps) * 1'000U);
+}
+bool PlayerPresenter::hasDetailsSampleRate() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && details->sample_rate_hz > 0;
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->audio.sample_rate_hz.has_value() && *metadata->audio.sample_rate_hz > 0;
+}
+QVariant PlayerPresenter::detailsSampleRateHz() const {
+    if (!hasDetailsSampleRate())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->sample_rate_hz));
+    return unsignedVariant(*currentLocalTrackMetadata()->audio.sample_rate_hz);
+}
+bool PlayerPresenter::hasDetailsChannels() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && details->channels > 0;
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->audio.channels.has_value() && *metadata->audio.channels > 0;
+}
+QVariant PlayerPresenter::detailsChannels() const {
+    if (!hasDetailsChannels())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->channels));
+    return unsignedVariant(*currentLocalTrackMetadata()->audio.channels);
+}
+bool PlayerPresenter::hasDetailsBitDepth() const noexcept {
+    if (uses_frozen_fixture_) {
+        const auto* const details = currentFixtureTrackDetails();
+        return details != nullptr && details->bit_depth.has_value() && *details->bit_depth > 0;
+    }
+    const auto* const metadata = currentLocalTrackMetadata();
+    return metadata != nullptr && metadata->audio.bit_depth.has_value() && *metadata->audio.bit_depth > 0;
+}
+QVariant PlayerPresenter::detailsBitDepth() const {
+    if (!hasDetailsBitDepth())
+        return {};
+    if (uses_frozen_fixture_)
+        return unsignedVariant(static_cast<std::uint64_t>(*currentFixtureTrackDetails()->bit_depth));
+    return unsignedVariant(*currentLocalTrackMetadata()->audio.bit_depth);
+}
+bool PlayerPresenter::hasDetailsDiagnostics() const { return !detailsDiagnostics().isEmpty(); }
+QVariantList PlayerPresenter::detailsDiagnostics() const {
+    QVariantList diagnostics;
+    if (!uses_frozen_fixture_) {
+        if (const auto* const metadata = currentLocalTrackMetadata(); metadata != nullptr) {
+            for (const MetadataDiagnostic& diagnostic : metadata->diagnostics) {
+                QVariantMap entry{{QStringLiteral("code"), metadataDiagnosticId(diagnostic.code)},
+                                  {QStringLiteral("field"), metadataFieldId(diagnostic.field)}};
+                if (diagnostic.observed_bytes > 0) {
+                    entry.insert(QStringLiteral("observedBytes"),
+                                 unsignedVariant(static_cast<std::uint64_t>(diagnostic.observed_bytes)));
+                    entry.insert(QStringLiteral("observedBytesText"),
+                                 unsignedDecimal(static_cast<std::uint64_t>(diagnostic.observed_bytes)));
+                }
+                if (diagnostic.limit_bytes > 0) {
+                    entry.insert(QStringLiteral("limitBytes"),
+                                 unsignedVariant(static_cast<std::uint64_t>(diagnostic.limit_bytes)));
+                    entry.insert(QStringLiteral("limitBytesText"),
+                                 unsignedDecimal(static_cast<std::uint64_t>(diagnostic.limit_bytes)));
+                }
+                diagnostics.push_back(entry);
+            }
+            for (const ArtworkDiagnostic& diagnostic : metadata->artwork_diagnostics) {
+                QVariantMap entry{{QStringLiteral("code"), artworkDiagnosticId(diagnostic.code)}};
+                if (diagnostic.encoded_bytes > 0) {
+                    entry.insert(QStringLiteral("encodedBytes"),
+                                 unsignedVariant(static_cast<std::uint64_t>(diagnostic.encoded_bytes)));
+                    entry.insert(QStringLiteral("encodedBytesText"),
+                                 unsignedDecimal(static_cast<std::uint64_t>(diagnostic.encoded_bytes)));
+                }
+                if (diagnostic.width_pixels > 0)
+                    entry.insert(QStringLiteral("widthPixels"), unsignedVariant(diagnostic.width_pixels));
+                if (diagnostic.height_pixels > 0)
+                    entry.insert(QStringLiteral("heightPixels"), unsignedVariant(diagnostic.height_pixels));
+                diagnostics.push_back(entry);
+            }
+        }
+        if (local_track_session_ != nullptr) {
+            switch (local_track_session_->metadataStatus()) {
+            case LocalTrackMetadataStatus::Failed: {
+                QVariantMap entry{{QStringLiteral("code"), QStringLiteral("metadata_read_failed")}};
+                if (const auto error = local_track_session_->metadataErrorCode(); error.has_value())
+                    entry.insert(QStringLiteral("errorCode"), metadataReadErrorId(*error));
+                diagnostics.push_back(entry);
+                break;
+            }
+            case LocalTrackMetadataStatus::Cancelled:
+                diagnostics.push_back(QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_read_cancelled")}});
+                break;
+            case LocalTrackMetadataStatus::Expired:
+                diagnostics.push_back(QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_read_expired")}});
+                break;
+            case LocalTrackMetadataStatus::Idle:
+            case LocalTrackMetadataStatus::Pending:
+            case LocalTrackMetadataStatus::Ready:
+                break;
+            }
+        }
+    }
+    if (hasError()) {
+        const QString code = errorCode();
+        QVariantMap entry{{QStringLiteral("code"), QStringLiteral("playback_error")}};
+        if (!code.isEmpty())
+            entry.insert(QStringLiteral("errorCode"), code);
+        diagnostics.push_back(entry);
+    }
+    return diagnostics;
+}
 bool PlayerPresenter::hasContextTrack() const noexcept {
     return uses_frozen_fixture_ ? contextTrack() != nullptr : hasError() && local_track_session_->hasTrack();
 }

@@ -263,7 +263,7 @@ TestCase {
         verify(currentQueueRow.Accessible.name.indexOf("Canção nº 17 — São João, ação e café ☕") >= 0);
         verify(instantiatedQueueRows(queueList) > 0);
         verify(instantiatedQueueRows(queueList) < 64);
-        const queueOpenFocusOrder = [queueButton, findChild(shell, "preferences"), openAnotherAudio, progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
+        const queueOpenFocusOrder = [queueButton, findChild(shell, "preferences"), openAnotherAudio, findChild(shell, "track-details-playing"), progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < queueOpenFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);
@@ -559,7 +559,7 @@ TestCase {
         const selectedUnavailableQueueRow = revealQueueRow(queueList, 998);
         compare(selectedUnavailableQueueRow.occurrenceId, "queue-0999");
         compare(selectedUnavailableQueueRow.Accessible.selected, true);
-        const errorQueueFocusOrder = [queueButton, findChild(shell, "preferences"), errorSkip, queueList];
+        const errorQueueFocusOrder = [queueButton, findChild(shell, "preferences"), errorSkip, findChild(shell, "track-details-error"), queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < errorQueueFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);

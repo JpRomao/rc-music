@@ -41,7 +41,6 @@ namespace {
 
 constexpr std::size_t minimum_container_header_size = 12;
 constexpr std::size_t container_header_size = 512;
-constexpr std::size_t retained_metadata_field_limit_bytes = 16U * 1024U;
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
@@ -317,16 +316,14 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
 }
 
 [[nodiscard]] std::optional<std::string> retainedUtf8(const TagLib::String& value, const MetadataField field,
+                                                      MetadataRetentionBudget& budget,
                                                       std::vector<MetadataDiagnostic>& diagnostics) {
     if (value.isEmpty()) {
         return std::nullopt;
     }
     auto text = value.to8Bit(true);
-    if (text.size() > retained_metadata_field_limit_bytes) {
-        diagnostics.push_back({.code = MetadataDiagnosticCode::FieldTooLarge,
-                               .field = field,
-                               .observed_bytes = text.size(),
-                               .limit_bytes = retained_metadata_field_limit_bytes});
+    if (auto diagnostic = budget.tryRetain(field, text.size()); diagnostic.has_value()) {
+        diagnostics.push_back(*diagnostic);
         return std::nullopt;
     }
     return text;
@@ -371,9 +368,10 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
         return result;
     }
 
-    result.tags.title = retainedUtf8(tag->title(), MetadataField::Title, result.diagnostics);
-    result.tags.artist = retainedUtf8(tag->artist(), MetadataField::Artist, result.diagnostics);
-    result.tags.album = retainedUtf8(tag->album(), MetadataField::Album, result.diagnostics);
+    MetadataRetentionBudget budget;
+    result.tags.title = retainedUtf8(tag->title(), MetadataField::Title, budget, result.diagnostics);
+    result.tags.artist = retainedUtf8(tag->artist(), MetadataField::Artist, budget, result.diagnostics);
+    result.tags.album = retainedUtf8(tag->album(), MetadataField::Album, budget, result.diagnostics);
     if (tag->track() != 0) {
         result.tags.track_number = tag->track();
     }
@@ -506,6 +504,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
 
 } // namespace
 
+TagLibMetadataExtractor::TagLibMetadataExtractor(TagLibMetadataExtractorOptions options)
+    : options_{std::move(options)} {}
+
 MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& source_path) const {
     try {
         std::error_code file_error;
@@ -522,6 +523,26 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return error(MetadataReadErrorCode::InvalidData, "metadata source is empty");
         }
 
+        std::optional<std::filesystem::file_time_type> last_modified_time;
+        try {
+            std::error_code modification_time_error;
+            const auto value = options_.last_write_time
+                                   ? options_.last_write_time(source_path, modification_time_error)
+                                   : std::filesystem::last_write_time(source_path, modification_time_error);
+            if (!modification_time_error) {
+                last_modified_time = value;
+            }
+        } catch (...) {
+            last_modified_time.reset();
+        }
+
+        const auto completed = [&](MetadataReadResult result) {
+            if (auto* metadata = std::get_if<TrackMetadata>(&result); metadata != nullptr) {
+                metadata->last_modified_time = last_modified_time;
+            }
+            return result;
+        };
+
         std::ifstream stream{source_path, std::ios::binary};
         if (!stream) {
             return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be opened");
@@ -533,17 +554,17 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return error(MetadataReadErrorCode::InvalidData, "metadata source has a truncated container header");
         }
         if (isRiffWave(header)) {
-            return readWave(source_path, file_size);
+            return completed(readWave(source_path, file_size));
         }
         if (isFlac(header)) {
-            return readFlac(source_path, file_size);
+            return completed(readFlac(source_path, file_size));
         }
         if (isIsoBaseMedia(header, file_size, bytes_read)) {
-            return readM4aAac(source_path, file_size);
+            return completed(readM4aAac(source_path, file_size));
         }
         switch (oggCodec(header, bytes_read)) {
         case OggCodec::Vorbis:
-            return readVorbis(source_path, file_size);
+            return completed(readVorbis(source_path, file_size));
         case OggCodec::Opus:
             return error(MetadataReadErrorCode::UnsupportedFormat, "Ogg Opus remains a candidate format");
         case OggCodec::Unknown:
@@ -553,10 +574,10 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             if (!hasValidId3v2Header(header, file_size)) {
                 return error(MetadataReadErrorCode::InvalidData, "metadata source has an invalid ID3v2 header");
             }
-            return readMp3(source_path, file_size);
+            return completed(readMp3(source_path, file_size));
         }
         if (hasMpegLayer3FrameSync(header)) {
-            return readMp3(source_path, file_size);
+            return completed(readMp3(source_path, file_size));
         }
         return error(MetadataReadErrorCode::UnsupportedFormat, "metadata source container is not supported");
     } catch (const std::exception&) {

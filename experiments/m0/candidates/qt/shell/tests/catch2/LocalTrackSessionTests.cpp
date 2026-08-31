@@ -398,7 +398,64 @@ TEST_CASE("a typed metadata read error is terminal without discarding the select
     CHECK(session.sourcePath() == path);
     CHECK(session.displayTitle() == "fallback");
     CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Failed);
+    CHECK(session.metadataErrorCode() == MetadataReadErrorCode::InvalidData);
     CHECK_FALSE(session.trackMetadata().has_value());
+}
+
+TEST_CASE("a typed metadata error belongs only to its accepted current track",
+          "[m0][qt][core][local-track][metadata][error][recovery]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path first{L"C:\\Music\\first.wav"};
+    const std::filesystem::path current{L"C:\\Music\\current.wav"};
+    const std::filesystem::path final{L"C:\\Music\\final.wav"};
+    REQUIRE(session.open(first));
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{1}, first,
+                               MetadataReadResult{MetadataReadError{MetadataReadErrorCode::UnsupportedFormat,
+                                                                    "untrusted adapter detail"}}},
+    };
+    REQUIRE(session.pollMetadata());
+    REQUIRE(session.metadataErrorCode() == MetadataReadErrorCode::UnsupportedFormat);
+
+    playback.load_result = PlaybackCommandResult::Busy;
+    CHECK_FALSE(session.open(L"C:\\Music\\rejected.wav"));
+    CHECK(session.metadataErrorCode() == MetadataReadErrorCode::UnsupportedFormat);
+
+    playback.load_result = PlaybackCommandResult::Accepted;
+    REQUIRE(session.open(current));
+    CHECK_FALSE(session.metadataErrorCode().has_value());
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{
+            MetadataGeneration{1}, first,
+            MetadataReadResult{MetadataReadError{MetadataReadErrorCode::ReadFailed, "stale adapter detail"}}},
+    };
+    CHECK_FALSE(session.pollMetadata());
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Pending);
+    CHECK_FALSE(session.metadataErrorCode().has_value());
+
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{2}, current, MetadataReadResult{taggedMetadata(current)}},
+    };
+    REQUIRE(session.pollMetadata());
+    CHECK(session.metadataStatus() == LocalTrackMetadataStatus::Ready);
+    CHECK_FALSE(session.metadataErrorCode().has_value());
+
+    REQUIRE(session.open(final));
+    metadata.next_poll = {
+        MetadataPollStatus::Completed,
+        MetadataReadCompletion{MetadataGeneration{3}, final,
+                               MetadataReadResult{MetadataReadError{MetadataReadErrorCode::SourceUnavailable,
+                                                                    "do not retain this message"}}},
+    };
+    REQUIRE(session.pollMetadata());
+    REQUIRE(session.metadataErrorCode() == MetadataReadErrorCode::SourceUnavailable);
+    REQUIRE(session.unload());
+    CHECK_FALSE(session.metadataErrorCode().has_value());
 }
 
 } // namespace

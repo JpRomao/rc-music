@@ -45,6 +45,7 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString actionMute READ actionMute CONSTANT)
     Q_PROPERTY(QString actionUnmute READ actionUnmute CONSTANT)
     Q_PROPERTY(QString queueTitle READ queueTitle CONSTANT)
+    Q_PROPERTY(QString detailsTitle READ detailsTitle CONSTANT)
     Q_PROPERTY(QString notInformed READ notInformed CONSTANT)
     Q_PROPERTY(QString errorTitle READ errorTitle CONSTANT)
     Q_PROPERTY(QString errorBody READ errorBody CONSTANT)
@@ -111,6 +112,7 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString actionMute() const;
     [[nodiscard]] QString actionUnmute() const;
     [[nodiscard]] QString queueTitle() const;
+    [[nodiscard]] QString detailsTitle() const;
     [[nodiscard]] QString notInformed() const;
     [[nodiscard]] QString errorTitle() const;
     [[nodiscard]] QString errorBody() const;

@@ -16,6 +16,8 @@
 #include <QString>
 #include <QTimer>
 #include <QUrl>
+#include <QVariant>
+#include <QVariantList>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <cstddef>
@@ -67,6 +69,42 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString currentArtist READ currentArtist NOTIFY stateChanged)
     Q_PROPERTY(QString currentAlbum READ currentAlbum NOTIFY stateChanged)
     Q_PROPERTY(QUrl currentArtworkSource READ currentArtworkSource NOTIFY stateChanged)
+    Q_PROPERTY(bool detailsAvailable READ detailsAvailable NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsFileName READ hasDetailsFileName NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsFileName READ detailsFileName NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsFilePath READ hasDetailsFilePath NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsFilePath READ detailsFilePath NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsFileSize READ hasDetailsFileSize NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsFileSizeBytes READ detailsFileSizeBytes NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsFileSizeBytesText READ detailsFileSizeBytesText NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsModifiedUtc READ hasDetailsModifiedUtc NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsModifiedUtc READ detailsModifiedUtc NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsTitle READ hasDetailsTitle NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsTitle READ detailsTitle NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsArtist READ hasDetailsArtist NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsArtist READ detailsArtist NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsAlbum READ hasDetailsAlbum NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsAlbum READ detailsAlbum NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsTrackNumber READ hasDetailsTrackNumber NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsTrackNumber READ detailsTrackNumber NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsYear READ hasDetailsYear NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsYear READ detailsYear NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsDuration READ hasDetailsDuration NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsDurationMs READ detailsDurationMs NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsContainer READ hasDetailsContainer NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsContainer READ detailsContainer NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsCodec READ hasDetailsCodec NOTIFY stateChanged)
+    Q_PROPERTY(QString detailsCodec READ detailsCodec NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsBitrate READ hasDetailsBitrate NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsBitrateBps READ detailsBitrateBps NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsSampleRate READ hasDetailsSampleRate NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsSampleRateHz READ detailsSampleRateHz NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsChannels READ hasDetailsChannels NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsChannels READ detailsChannels NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsBitDepth READ hasDetailsBitDepth NOTIFY stateChanged)
+    Q_PROPERTY(QVariant detailsBitDepth READ detailsBitDepth NOTIFY stateChanged)
+    Q_PROPERTY(bool hasDetailsDiagnostics READ hasDetailsDiagnostics NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList detailsDiagnostics READ detailsDiagnostics NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextTrack READ hasContextTrack NOTIFY stateChanged)
     Q_PROPERTY(QString contextTitle READ contextTitle NOTIFY stateChanged)
     Q_PROPERTY(QString contextArtist READ contextArtist NOTIFY stateChanged)
@@ -155,6 +193,42 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString currentArtist() const;
     [[nodiscard]] QString currentAlbum() const;
     [[nodiscard]] QUrl currentArtworkSource() const;
+    [[nodiscard]] bool detailsAvailable() const noexcept;
+    [[nodiscard]] bool hasDetailsFileName() const;
+    [[nodiscard]] QString detailsFileName() const;
+    [[nodiscard]] bool hasDetailsFilePath() const noexcept;
+    [[nodiscard]] QString detailsFilePath() const;
+    [[nodiscard]] bool hasDetailsFileSize() const noexcept;
+    [[nodiscard]] QVariant detailsFileSizeBytes() const;
+    [[nodiscard]] QString detailsFileSizeBytesText() const;
+    [[nodiscard]] bool hasDetailsModifiedUtc() const noexcept;
+    [[nodiscard]] QString detailsModifiedUtc() const;
+    [[nodiscard]] bool hasDetailsTitle() const;
+    [[nodiscard]] QString detailsTitle() const;
+    [[nodiscard]] bool hasDetailsArtist() const;
+    [[nodiscard]] QString detailsArtist() const;
+    [[nodiscard]] bool hasDetailsAlbum() const;
+    [[nodiscard]] QString detailsAlbum() const;
+    [[nodiscard]] bool hasDetailsTrackNumber() const noexcept;
+    [[nodiscard]] QVariant detailsTrackNumber() const;
+    [[nodiscard]] bool hasDetailsYear() const noexcept;
+    [[nodiscard]] QVariant detailsYear() const;
+    [[nodiscard]] bool hasDetailsDuration() const noexcept;
+    [[nodiscard]] QVariant detailsDurationMs() const;
+    [[nodiscard]] bool hasDetailsContainer() const;
+    [[nodiscard]] QString detailsContainer() const;
+    [[nodiscard]] bool hasDetailsCodec() const;
+    [[nodiscard]] QString detailsCodec() const;
+    [[nodiscard]] bool hasDetailsBitrate() const noexcept;
+    [[nodiscard]] QVariant detailsBitrateBps() const;
+    [[nodiscard]] bool hasDetailsSampleRate() const noexcept;
+    [[nodiscard]] QVariant detailsSampleRateHz() const;
+    [[nodiscard]] bool hasDetailsChannels() const noexcept;
+    [[nodiscard]] QVariant detailsChannels() const;
+    [[nodiscard]] bool hasDetailsBitDepth() const noexcept;
+    [[nodiscard]] QVariant detailsBitDepth() const;
+    [[nodiscard]] bool hasDetailsDiagnostics() const;
+    [[nodiscard]] QVariantList detailsDiagnostics() const;
     [[nodiscard]] bool hasContextTrack() const noexcept;
     [[nodiscard]] QString contextTitle() const;
     [[nodiscard]] QString contextArtist() const;
@@ -255,6 +329,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] std::optional<std::int64_t> localDurationMs() const noexcept;
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
+    [[nodiscard]] const FixtureTrackDetails* currentFixtureTrackDetails() const noexcept;
+    [[nodiscard]] const TrackMetadata* currentLocalTrackMetadata() const noexcept;
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(const QString& occurrence_id) const noexcept;
     [[nodiscard]] std::optional<std::size_t> nextAvailableLocalIndex() const noexcept;

@@ -224,7 +224,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ## 7. M3 — Experiência completa do player
 
-**Estado:** Em andamento no candidato Qt/Windows; fila/CRUD e importação incremental estão funcionais, com gates de desempenho, E2E real, persistência e validação nativa ainda abertos.
+**Estado:** Em andamento no candidato Qt/Windows; fila/CRUD, importação incremental e painel de detalhes/diagnóstico estão funcionais, com gates de desempenho, E2E real, persistência e validação nativa ainda abertos.
 **Objetivo:** transformar o vertical slice em produto agradável.
 
 ### Escopo

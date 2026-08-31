@@ -180,6 +180,9 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
     set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
     set_source_files_properties(qml/PreferenceSecondsField.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceSecondsField.qml")
+    set_source_files_properties(qml/TrackDetailsField.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsField.qml")
+    set_source_files_properties(qml/TrackDetailsPanel.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsPanel.qml")
+    set_source_files_properties(qml/TrackDetailsText.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsText.qml")
     qt_add_library(m0_qt_shell_ui STATIC)
     qt_add_qml_module(m0_qt_shell_ui
         URI MusicPlayer.M0
@@ -215,6 +218,9 @@ if(M0_QT_SHELL_SUPPORT)
             qml/PreferenceChoice.qml
             qml/PreferenceToggle.qml
             qml/PreferenceSecondsField.qml
+            qml/TrackDetailsField.qml
+            qml/TrackDetailsPanel.qml
+            qml/TrackDetailsText.qml
     )
     target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
     target_link_libraries(m0_qt_shell_ui PRIVATE

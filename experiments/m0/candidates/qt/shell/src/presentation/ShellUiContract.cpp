@@ -137,6 +137,7 @@ QString ShellUiContract::volumeName() const { return strings_.volume_name; }
 QString ShellUiContract::actionMute() const { return strings_.action_mute; }
 QString ShellUiContract::actionUnmute() const { return strings_.action_unmute; }
 QString ShellUiContract::queueTitle() const { return strings_.queue_title; }
+QString ShellUiContract::detailsTitle() const { return strings_.details_title; }
 QString ShellUiContract::notInformed() const { return strings_.not_informed; }
 QString ShellUiContract::errorTitle() const { return strings_.error_title; }
 QString ShellUiContract::errorBody() const { return strings_.error_body; }

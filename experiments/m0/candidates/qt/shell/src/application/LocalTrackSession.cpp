@@ -31,6 +31,7 @@ PlaybackCommandResult LocalTrackSession::openWithResult(const std::filesystem::p
     artist_.clear();
     album_.clear();
     track_metadata_.reset();
+    metadata_error_code_.reset();
     metadata_generation_ = next_metadata_generation;
     playback_generation_ = playback_backend_.snapshot().generation;
     has_track_ = true;
@@ -47,6 +48,7 @@ PlaybackCommandResult LocalTrackSession::openWithResult(const std::filesystem::p
 
 bool LocalTrackSession::unload() {
     if (!has_track_) {
+        metadata_error_code_.reset();
         return true;
     }
     if (playback_backend_.unload() != PlaybackCommandResult::Accepted) {
@@ -60,6 +62,7 @@ bool LocalTrackSession::unload() {
     artist_.clear();
     album_.clear();
     track_metadata_.reset();
+    metadata_error_code_.reset();
     metadata_status_ = LocalTrackMetadataStatus::Idle;
     playback_generation_ = playback_backend_.snapshot().generation;
     has_track_ = false;
@@ -169,6 +172,10 @@ const std::string& LocalTrackSession::album() const noexcept { return album_; }
 
 LocalTrackMetadataStatus LocalTrackSession::metadataStatus() const noexcept { return metadata_status_; }
 
+std::optional<MetadataReadErrorCode> LocalTrackSession::metadataErrorCode() const noexcept {
+    return metadata_error_code_;
+}
+
 MetadataGeneration LocalTrackSession::metadataGeneration() const noexcept { return metadata_generation_; }
 
 std::uint64_t LocalTrackSession::playbackGeneration() const noexcept { return playback_generation_; }
@@ -214,6 +221,7 @@ void LocalTrackSession::applyMetadataCompletion(MetadataReadCompletion completio
             return;
         }
         track_metadata_ = std::move(*metadata);
+        metadata_error_code_.reset();
         if (!track_metadata_->display_title.empty()) {
             display_title_ = track_metadata_->display_title;
         } else if (track_metadata_->tags.title.has_value() && !track_metadata_->tags.title->empty()) {
@@ -226,6 +234,7 @@ void LocalTrackSession::applyMetadataCompletion(MetadataReadCompletion completio
     }
 
     track_metadata_.reset();
+    metadata_error_code_ = std::get<MetadataReadError>(completion.result).code;
     metadata_status_ = LocalTrackMetadataStatus::Failed;
 }
 

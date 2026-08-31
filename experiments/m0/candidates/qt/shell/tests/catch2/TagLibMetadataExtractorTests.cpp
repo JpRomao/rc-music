@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -256,6 +257,73 @@ TEST_CASE("Unknown audio properties are absent instead of false zero values", "[
     CHECK_FALSE(properties.channels.has_value());
     CHECK_FALSE(properties.bit_depth.has_value());
     CHECK_FALSE(properties.bitrate_kbps.has_value());
+}
+
+TEST_CASE("FR-022 reports the source modification time without inventing a timestamp",
+          "[m0][qt][metadata][taglib][filesystem][FR-022]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "modified-at.wav")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/wav-pcm-mono.wav")));
+
+    const auto requested_time = std::filesystem::file_time_type::clock::now() - 24h;
+    std::error_code write_error;
+    std::filesystem::last_write_time(source.path(), requested_time, write_error);
+    REQUIRE_FALSE(write_error);
+    std::error_code read_error;
+    const auto expected_time = std::filesystem::last_write_time(source.path(), read_error);
+    REQUIRE_FALSE(read_error);
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    REQUIRE(metadata.last_modified_time.has_value());
+    CHECK(*metadata.last_modified_time == expected_time);
+}
+
+TEST_CASE("FR-022 keeps readable metadata when the optional modification time is unavailable",
+          "[m0][qt][metadata][taglib][filesystem][FR-022]") {
+    TagLibMetadataExtractorOptions options;
+    SECTION("filesystem reports an error code") {
+        options.last_write_time = [](const std::filesystem::path&, std::error_code& error) {
+            error = std::make_error_code(std::errc::permission_denied);
+            return std::filesystem::file_time_type{};
+        };
+    }
+    SECTION("filesystem accessor throws") {
+        options.last_write_time = [](const std::filesystem::path&,
+                                     std::error_code&) -> std::filesystem::file_time_type {
+            throw std::filesystem::filesystem_error{"mtime unavailable", std::make_error_code(std::errc::io_error)};
+        };
+    }
+    TagLibMetadataExtractor reader{std::move(options)};
+
+    const auto result = reader.read(fixture("fixtures/valid/wav-pcm-mono.wav"));
+    const auto& metadata = requireMetadata(result);
+
+    CHECK_FALSE(metadata.last_modified_time.has_value());
+    CHECK(metadata.display_title == "wav-pcm-mono");
+    REQUIRE(metadata.audio.duration_ms.has_value());
+    CHECK(*metadata.audio.duration_ms == 1'000);
+}
+
+TEST_CASE("MR-014 and MR-015 enforce the retained metadata aggregate boundary without overflow",
+          "[m0][qt][metadata][limits][MR-014][MR-015]") {
+    MetadataRetentionBudget budget;
+
+    for (std::size_t index = 0;
+         index < MetadataRetentionBudget::total_limit_bytes / MetadataRetentionBudget::field_limit_bytes; ++index) {
+        CAPTURE(index);
+        CHECK_FALSE(budget.tryRetain(MetadataField::Title, MetadataRetentionBudget::field_limit_bytes).has_value());
+    }
+    CHECK(budget.retainedBytes() == MetadataRetentionBudget::total_limit_bytes);
+
+    const auto diagnostic = budget.tryRetain(MetadataField::Artist, 1);
+    REQUIRE(diagnostic.has_value());
+    CHECK(diagnostic->code == MetadataDiagnosticCode::RetainedMetadataTooLarge);
+    CHECK(diagnostic->field == MetadataField::Artist);
+    CHECK(diagnostic->observed_bytes == MetadataRetentionBudget::total_limit_bytes + 1);
+    CHECK(diagnostic->limit_bytes == MetadataRetentionBudget::total_limit_bytes);
+    CHECK(budget.retainedBytes() == MetadataRetentionBudget::total_limit_bytes);
 }
 
 TEST_CASE("MR-101 reads WAV PCM properties, absent tags, and title fallback", "[m0][qt][metadata][taglib][MR-101]") {
@@ -754,7 +822,7 @@ TEST_CASE("NFR-LIMIT-001 discards an embedded image format outside the artwork a
 
 TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limit",
           "[m0][qt][metadata][taglib][limits][MR-012]") {
-    constexpr std::size_t field_limit_bytes = 16U * 1024U;
+    constexpr std::size_t field_limit_bytes = MetadataRetentionBudget::field_limit_bytes;
     const ScopedTemporaryDirectory directory;
     const ScopedTemporaryFile source{temporaryPath(directory, "exact-field-limit.mp3")};
     const auto title = utf8TextFieldWithSize(field_limit_bytes);
@@ -776,7 +844,7 @@ TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limi
 
 TEST_CASE("MR-013 discards one metadata field above the retained byte limit without failing the read",
           "[m0][qt][metadata][taglib][limits][MR-013]") {
-    constexpr std::size_t field_limit_bytes = 16U * 1024U;
+    constexpr std::size_t field_limit_bytes = MetadataRetentionBudget::field_limit_bytes;
     const ScopedTemporaryDirectory directory;
     const ScopedTemporaryFile source{temporaryPath(directory, "above-field-limit.mp3")};
     writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
@@ -799,7 +867,17 @@ TEST_CASE("MR-013 discards one metadata field above the retained byte limit with
 TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extractor",
           "[m0][qt][metadata][taglib][metadata-reader][MR-101]") {
     const auto source = fixture("fixtures/valid/wav-pcm-mono.wav");
-    SingleWorkerMetadataReader reader{std::make_unique<TagLibMetadataExtractor>()};
+    const auto caller_thread = std::this_thread::get_id();
+    std::atomic_bool modification_time_read_on_worker{false};
+    auto extractor = std::make_unique<TagLibMetadataExtractor>(TagLibMetadataExtractorOptions{
+        .last_write_time =
+            [&](const std::filesystem::path& path, std::error_code& error) {
+                modification_time_read_on_worker.store(std::this_thread::get_id() != caller_thread,
+                                                       std::memory_order_relaxed);
+                return std::filesystem::last_write_time(path, error);
+            },
+    });
+    SingleWorkerMetadataReader reader{std::move(extractor)};
 
     REQUIRE(reader.startRead({MetadataGeneration{1}, source}) == MetadataCommandResult::Accepted);
     const auto completion = waitForCompletion(reader);
@@ -808,6 +886,8 @@ TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extracto
     CHECK(completion->generation == MetadataGeneration{1});
     CHECK(completion->source_path == source);
     const auto& metadata = requireMetadata(completion->result);
+    CHECK(modification_time_read_on_worker.load(std::memory_order_relaxed));
+    CHECK(metadata.last_modified_time.has_value());
     CHECK(metadata.display_title == "wav-pcm-mono");
     REQUIRE(metadata.audio.duration_ms.has_value());
     CHECK(*metadata.audio.duration_ms == 1'000);

@@ -10,6 +10,7 @@
 #include <QAbstractItemModelTester>
 #include <QColor>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QImage>
 #include <QMetaMethod>
 #include <QMetaProperty>
@@ -21,6 +22,8 @@
 #include <QTimer>
 #include <QVariant>
 
+#include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -239,6 +242,15 @@ class FakeLocalSourceDiscovery final : public LocalSourceDiscovery {
 #endif
 }
 
+[[nodiscard]] QString displayPath(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return QString::fromStdWString(path.native());
+#else
+    const auto& native = path.native();
+    return QString::fromUtf8(native.data(), static_cast<qsizetype>(native.size()));
+#endif
+}
+
 [[nodiscard]] QStringList queueFileNames(const QAbstractItemModel& model) {
     QStringList names;
     names.reserve(model.rowCount());
@@ -295,6 +307,9 @@ class PlayerPresenterTests final : public QObject {
     void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
     void localTransportAcceptsAsynchronousPlayAndSeekWithALocalQueue();
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
+    void projectsCompleteFixtureDetailsWithExplicitUnknowns();
+    void projectsStructuredLocalDetailsWithoutLeakingReaderMessages();
+    void projectsExactDecimalByteCountsBeyondJavascriptSafeInteger();
     void artworkCacheServesOnlyTheCurrentGenerationWithoutCopyingPixels();
     void currentArtworkUsesAnOpaqueUrlAndAcceptedOpenClearsIt();
     void terminalMetadataStatusStopsPollingWithoutReplacingFallback();
@@ -1390,6 +1405,16 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
     QCOMPARE(presenter.stateId(), QStringLiteral("error"));
     QVERIFY(presenter.hasError());
     QCOMPARE(presenter.errorCode(), QStringLiteral("playback_error"));
+    QVERIFY(presenter.detailsAvailable());
+    QVERIFY(presenter.hasDetailsFileName());
+    QCOMPARE(presenter.detailsFileName(), displayPath(selections.front().filename()));
+    QVERIFY(presenter.hasDetailsFilePath());
+    QCOMPARE(presenter.detailsFilePath(), displayPath(selections.front()));
+    const QVariantList local_error_diagnostics{
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("playback_error")},
+                    {QStringLiteral("errorCode"), QStringLiteral("playback_error")}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), local_error_diagnostics);
     QVERIFY(presenter.hasCurrentTrack());
     QCOMPARE(presenter.currentTitle(), QStringLiteral("Falha 日本語"));
     QVERIFY(presenter.hasContextTrack());
@@ -1935,6 +1960,263 @@ void PlayerPresenterTests::currentMetadataCompletionReplacesFallbackAndStopsPoll
     QCOMPARE(playback.size(), 2);
 }
 
+void PlayerPresenterTests::projectsCompleteFixtureDetailsWithExplicitUnknowns() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+
+    QVERIFY(!presenter.detailsAvailable());
+    QVERIFY(!presenter.hasDetailsFileName());
+    QVERIFY(presenter.detailsFileName().isEmpty());
+    QVERIFY(!presenter.hasDetailsFilePath());
+    QVERIFY(presenter.detailsFilePath().isEmpty());
+    QVERIFY(!presenter.hasDetailsFileSize());
+    QVERIFY(!presenter.detailsFileSizeBytes().isValid());
+    QVERIFY(presenter.detailsFileSizeBytesText().isEmpty());
+    QVERIFY(!presenter.hasDetailsModifiedUtc());
+    QVERIFY(presenter.detailsModifiedUtc().isEmpty());
+    QVERIFY(!presenter.hasDetailsTrackNumber());
+    QVERIFY(!presenter.detailsTrackNumber().isValid());
+    QVERIFY(!presenter.hasDetailsYear());
+    QVERIFY(!presenter.detailsYear().isValid());
+    QVERIFY(!presenter.hasDetailsDuration());
+    QVERIFY(!presenter.detailsDurationMs().isValid());
+    QVERIFY(!presenter.hasDetailsBitDepth());
+    QVERIFY(!presenter.detailsBitDepth().isValid());
+    QVERIFY(!presenter.hasDetailsDiagnostics());
+    QVERIFY(presenter.detailsDiagnostics().isEmpty());
+
+    QVERIFY(presenter.loadFrozenQueue());
+
+    QVERIFY(presenter.detailsAvailable());
+    QVERIFY(presenter.hasDetailsFileName());
+    QCOMPARE(presenter.detailsFileName(), QStringLiteral("Canção nº 17 — São João, ação e café ☕.m4a"));
+    QVERIFY(!presenter.hasDetailsFilePath());
+    QVERIFY(presenter.detailsFilePath().isEmpty());
+    QVERIFY(presenter.hasDetailsFileSize());
+    QCOMPARE(presenter.detailsFileSizeBytes().toULongLong(), qulonglong{7'483'921});
+    QCOMPARE(presenter.detailsFileSizeBytesText(), QStringLiteral("7483921"));
+    QVERIFY(presenter.hasDetailsModifiedUtc());
+    QCOMPARE(presenter.detailsModifiedUtc(), QStringLiteral("2026-08-23T00:00:00Z"));
+    QVERIFY(presenter.hasDetailsTitle());
+    QCOMPARE(presenter.detailsTitle(), QStringLiteral("Canção nº 17 — São João, ação e café ☕"));
+    QVERIFY(presenter.hasDetailsArtist());
+    QCOMPARE(presenter.detailsArtist(), QStringLiteral("Artista Sintética Ç"));
+    QVERIFY(presenter.hasDetailsAlbum());
+    QCOMPARE(presenter.detailsAlbum(), QStringLiteral("Coleção Ação e Emoção"));
+    QVERIFY(!presenter.hasDetailsTrackNumber());
+    QVERIFY(!presenter.detailsTrackNumber().isValid());
+    QVERIFY(!presenter.hasDetailsYear());
+    QVERIFY(!presenter.detailsYear().isValid());
+    QVERIFY(presenter.hasDetailsDuration());
+    QCOMPARE(presenter.detailsDurationMs().toLongLong(), qint64{248'000});
+    QVERIFY(presenter.hasDetailsContainer());
+    QCOMPARE(presenter.detailsContainer(), QStringLiteral("M4A"));
+    QVERIFY(presenter.hasDetailsCodec());
+    QCOMPARE(presenter.detailsCodec(), QStringLiteral("AAC-LC"));
+    QVERIFY(presenter.hasDetailsBitrate());
+    QCOMPARE(presenter.detailsBitrateBps().toULongLong(), qulonglong{256'000});
+    QVERIFY(presenter.hasDetailsSampleRate());
+    QCOMPARE(presenter.detailsSampleRateHz().toULongLong(), qulonglong{48'000});
+    QVERIFY(presenter.hasDetailsChannels());
+    QCOMPARE(presenter.detailsChannels().toUInt(), 2U);
+    QVERIFY(!presenter.hasDetailsBitDepth());
+    QVERIFY(!presenter.detailsBitDepth().isValid());
+    QVERIFY(!presenter.hasDetailsDiagnostics());
+    QVERIFY(presenter.detailsDiagnostics().isEmpty());
+}
+
+void PlayerPresenterTests::projectsStructuredLocalDetailsWithoutLeakingReaderMessages() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source = localTestPath(u8"Coleção 日本/Faixa número 07.mp3");
+    TrackMetadata track{
+        .source_path = source,
+        .file_size_bytes = 4'096,
+        .last_modified_time = std::filesystem::file_time_type::clock::now() - std::chrono::hours{24},
+        .tags = {.title = std::string{"Título controlado"},
+                 .artist = std::string{"Artista"},
+                 .album = std::string{"Álbum"},
+                 .track_number = 7,
+                 .year = 2026},
+        .display_title = "Título controlado",
+        .audio = {.duration_ms = 123'456,
+                  .sample_rate_hz = 48'000,
+                  .channels = 2,
+                  .bit_depth = 24,
+                  .bitrate_kbps = 320,
+                  .container = "MP3",
+                  .codec = "MPEG-1 Audio Layer III"},
+        .diagnostics = {{.code = MetadataDiagnosticCode::FieldTooLarge,
+                         .field = MetadataField::Title,
+                         .observed_bytes = 16'385,
+                         .limit_bytes = 16'384},
+                        {.code = MetadataDiagnosticCode::RetainedMetadataTooLarge,
+                         .field = MetadataField::Album,
+                         .observed_bytes = 262'145,
+                         .limit_bytes = 262'144}},
+        .artwork_diagnostics = {{.code = ArtworkDiagnosticCode::AxisPixelsExceeded,
+                                 .encoded_bytes = 1'024,
+                                 .width_pixels = 4'097,
+                                 .height_pixels = 320}},
+    };
+    metadata.poll_results.push_back(
+        {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
+    const std::filesystem::path failed_source = localTestPath(u8"Falha secreta.flac");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata,
+        [selections = std::deque<std::vector<std::filesystem::path>>{{source}, {failed_source}}]() mutable {
+            auto selection = std::move(selections.front());
+            selections.pop_front();
+            return selection;
+        });
+
+    QVERIFY(presenter.openAudio());
+    QTRY_VERIFY(presenter.hasDetailsContainer());
+
+    QVERIFY(presenter.detailsAvailable());
+    QVERIFY(presenter.hasDetailsFileName());
+    QCOMPARE(presenter.detailsFileName(), displayPath(source.filename()));
+    QVERIFY(presenter.hasDetailsFilePath());
+    QCOMPARE(presenter.detailsFilePath(), displayPath(source));
+    QVERIFY(presenter.hasDetailsFileSize());
+    QCOMPARE(presenter.detailsFileSizeBytes().toULongLong(), qulonglong{4'096});
+    QCOMPARE(presenter.detailsFileSizeBytesText(), QStringLiteral("4096"));
+    QVERIFY(presenter.hasDetailsModifiedUtc());
+    const QString modified_utc = presenter.detailsModifiedUtc();
+    QVERIFY(modified_utc.endsWith(QLatin1Char('Z')));
+    const QDateTime parsed_modified_utc = QDateTime::fromString(modified_utc, Qt::ISODate);
+    QVERIFY(parsed_modified_utc.isValid());
+    QCOMPARE(parsed_modified_utc.offsetFromUtc(), 0);
+    QVERIFY(std::abs(parsed_modified_utc.secsTo(QDateTime::currentDateTimeUtc().addSecs(-24 * 60 * 60))) <= 2);
+    QVERIFY(presenter.hasDetailsTitle());
+    QCOMPARE(presenter.detailsTitle(), QStringLiteral("Título controlado"));
+    QVERIFY(presenter.hasDetailsArtist());
+    QCOMPARE(presenter.detailsArtist(), QStringLiteral("Artista"));
+    QVERIFY(presenter.hasDetailsAlbum());
+    QCOMPARE(presenter.detailsAlbum(), QStringLiteral("Álbum"));
+    QVERIFY(presenter.hasDetailsTrackNumber());
+    QCOMPARE(presenter.detailsTrackNumber().toUInt(), 7U);
+    QVERIFY(presenter.hasDetailsYear());
+    QCOMPARE(presenter.detailsYear().toUInt(), 2026U);
+    QVERIFY(presenter.hasDetailsDuration());
+    QCOMPARE(presenter.detailsDurationMs().toLongLong(), qint64{123'456});
+    QVERIFY(presenter.hasDetailsContainer());
+    QCOMPARE(presenter.detailsContainer(), QStringLiteral("MP3"));
+    QVERIFY(presenter.hasDetailsCodec());
+    QCOMPARE(presenter.detailsCodec(), QStringLiteral("MPEG-1 Audio Layer III"));
+    QVERIFY(presenter.hasDetailsBitrate());
+    QCOMPARE(presenter.detailsBitrateBps().toULongLong(), qulonglong{320'000});
+    QVERIFY(presenter.hasDetailsSampleRate());
+    QCOMPARE(presenter.detailsSampleRateHz().toULongLong(), qulonglong{48'000});
+    QVERIFY(presenter.hasDetailsChannels());
+    QCOMPARE(presenter.detailsChannels().toUInt(), 2U);
+    QVERIFY(presenter.hasDetailsBitDepth());
+    QCOMPARE(presenter.detailsBitDepth().toUInt(), 24U);
+    QVERIFY(presenter.hasDetailsDiagnostics());
+    const QVariantList expected_diagnostics{
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_field_too_large")},
+                    {QStringLiteral("field"), QStringLiteral("title")},
+                    {QStringLiteral("observedBytes"), QVariant::fromValue<qulonglong>(16'385)},
+                    {QStringLiteral("observedBytesText"), QStringLiteral("16385")},
+                    {QStringLiteral("limitBytes"), QVariant::fromValue<qulonglong>(16'384)},
+                    {QStringLiteral("limitBytesText"), QStringLiteral("16384")}},
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_total_too_large")},
+                    {QStringLiteral("field"), QStringLiteral("album")},
+                    {QStringLiteral("observedBytes"), QVariant::fromValue<qulonglong>(262'145)},
+                    {QStringLiteral("observedBytesText"), QStringLiteral("262145")},
+                    {QStringLiteral("limitBytes"), QVariant::fromValue<qulonglong>(262'144)},
+                    {QStringLiteral("limitBytesText"), QStringLiteral("262144")}},
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("artwork_axis_pixels_exceeded")},
+                    {QStringLiteral("encodedBytes"), QVariant::fromValue<qulonglong>(1'024)},
+                    {QStringLiteral("encodedBytesText"), QStringLiteral("1024")},
+                    {QStringLiteral("widthPixels"), QVariant::fromValue<qulonglong>(4'097)},
+                    {QStringLiteral("heightPixels"), QVariant::fromValue<qulonglong>(320)}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), expected_diagnostics);
+
+    metadata.poll_results.push_back(
+        {MetadataPollStatus::Completed,
+         MetadataReadCompletion{
+             MetadataGeneration{2}, failed_source,
+             MetadataReadError{MetadataReadErrorCode::InvalidData, "DO NOT EXPOSE: C:\\private\\reader-secret.flac"}}});
+    QVERIFY(presenter.openAudio());
+
+    // Accepting a new generation clears every detail owned by the replaced metadata immediately.
+    QVERIFY(presenter.detailsAvailable());
+    QVERIFY(!presenter.hasDetailsFileSize());
+    QVERIFY(!presenter.detailsFileSizeBytes().isValid());
+    QVERIFY(presenter.detailsFileSizeBytesText().isEmpty());
+    QVERIFY(!presenter.hasDetailsModifiedUtc());
+    QVERIFY(presenter.detailsModifiedUtc().isEmpty());
+    QVERIFY(!presenter.hasDetailsTitle());
+    QVERIFY(!presenter.hasDetailsDiagnostics());
+
+    QTRY_VERIFY(presenter.hasDetailsDiagnostics());
+
+    QVERIFY(presenter.detailsAvailable());
+    QCOMPARE(presenter.detailsFileName(), displayPath(failed_source.filename()));
+    QCOMPARE(presenter.detailsFilePath(), displayPath(failed_source));
+    QVERIFY(!presenter.hasDetailsFileSize());
+    QVERIFY(!presenter.detailsFileSizeBytes().isValid());
+    QVERIFY(presenter.detailsFileSizeBytesText().isEmpty());
+    QVERIFY(!presenter.hasDetailsTitle());
+    QVERIFY(presenter.detailsTitle().isEmpty());
+    QVERIFY(!presenter.hasDetailsContainer());
+    QVERIFY(presenter.detailsContainer().isEmpty());
+    const QVariantList failed_diagnostics{
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_read_failed")},
+                    {QStringLiteral("errorCode"), QStringLiteral("invalid_data")}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), failed_diagnostics);
+    QVERIFY(!presenter.detailsDiagnostics().front().toMap().values().contains(
+        QStringLiteral("DO NOT EXPOSE: C:\\private\\reader-secret.flac")));
+}
+
+void PlayerPresenterTests::projectsExactDecimalByteCountsBeyondJavascriptSafeInteger() {
+    if constexpr (std::numeric_limits<std::size_t>::digits <= 53)
+        QSKIP("This contract requires a platform with size_t wider than JavaScript's safe integer range.");
+
+    constexpr std::uint64_t beyond_javascript_safe_integer = 9'007'199'254'740'993ULL;
+    const auto diagnostic_bytes = static_cast<std::size_t>(beyond_javascript_safe_integer);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source = localTestPath(u8"Exact byte counts.flac");
+    TrackMetadata track{
+        .source_path = source,
+        .file_size_bytes = beyond_javascript_safe_integer,
+        .display_title = "Exact byte counts",
+        .diagnostics = {{.code = MetadataDiagnosticCode::FieldTooLarge,
+                         .field = MetadataField::Title,
+                         .observed_bytes = diagnostic_bytes,
+                         .limit_bytes = diagnostic_bytes - 1}},
+        .artwork_diagnostics = {{.code = ArtworkDiagnosticCode::EncodedBytesExceeded,
+                                 .encoded_bytes = diagnostic_bytes - 2}},
+    };
+    metadata.poll_results.push_back(
+        {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+
+    QVERIFY(presenter.openAudio());
+    QTRY_VERIFY(presenter.hasDetailsDiagnostics());
+
+    QCOMPARE(presenter.detailsFileSizeBytes().toULongLong(), qulonglong{beyond_javascript_safe_integer});
+    QCOMPARE(presenter.detailsFileSizeBytesText(), QStringLiteral("9007199254740993"));
+    const QVariantList diagnostics = presenter.detailsDiagnostics();
+    QCOMPARE(diagnostics.size(), 2);
+    const QVariantMap metadata_diagnostic = diagnostics.at(0).toMap();
+    QCOMPARE(metadata_diagnostic.value(QStringLiteral("observedBytes")).toULongLong(),
+             qulonglong{beyond_javascript_safe_integer});
+    QCOMPARE(metadata_diagnostic.value(QStringLiteral("observedBytesText")).toString(),
+             QStringLiteral("9007199254740993"));
+    QCOMPARE(metadata_diagnostic.value(QStringLiteral("limitBytesText")).toString(),
+             QStringLiteral("9007199254740992"));
+    const QVariantMap artwork_diagnostic = diagnostics.at(1).toMap();
+    QCOMPARE(artwork_diagnostic.value(QStringLiteral("encodedBytesText")).toString(),
+             QStringLiteral("9007199254740991"));
+}
+
 void PlayerPresenterTests::artworkCacheServesOnlyTheCurrentGenerationWithoutCopyingPixels() {
     auto cache = std::make_shared<ArtworkImageCache>();
     ArtworkImageProvider provider(cache);
@@ -2254,6 +2536,26 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
         QVERIFY(property_index >= 0);
         QVERIFY(meta->property(property_index).hasNotifySignal());
     }
+    for (const char* property_name : {
+             "detailsAvailable",      "hasDetailsFileName",  "detailsFileName",       "hasDetailsFilePath",
+             "detailsFilePath",       "hasDetailsFileSize",  "detailsFileSizeBytes",  "detailsFileSizeBytesText",
+             "hasDetailsModifiedUtc", "detailsModifiedUtc",  "hasDetailsTitle",       "detailsTitle",
+             "hasDetailsArtist",      "detailsArtist",       "hasDetailsAlbum",       "detailsAlbum",
+             "hasDetailsTrackNumber", "detailsTrackNumber",  "hasDetailsYear",        "detailsYear",
+             "hasDetailsDuration",    "detailsDurationMs",   "hasDetailsContainer",   "detailsContainer",
+             "hasDetailsCodec",       "detailsCodec",        "hasDetailsBitrate",     "detailsBitrateBps",
+             "hasDetailsSampleRate",  "detailsSampleRateHz", "hasDetailsChannels",    "detailsChannels",
+             "hasDetailsBitDepth",    "detailsBitDepth",     "hasDetailsDiagnostics", "detailsDiagnostics",
+         }) {
+        const int property_index = meta->indexOfProperty(property_name);
+        QVERIFY2(property_index >= 0, property_name);
+        const QMetaProperty property = meta->property(property_index);
+        QVERIFY2(property.hasNotifySignal(), property_name);
+        QCOMPARE(property.notifySignal().name(), QByteArrayView{"stateChanged"});
+    }
+    QCOMPARE(meta->property(meta->indexOfProperty("detailsFileSizeBytes")).metaType().id(), QMetaType::QVariant);
+    QCOMPARE(meta->property(meta->indexOfProperty("detailsFileSizeBytesText")).metaType().id(), QMetaType::QString);
+    QCOMPARE(meta->property(meta->indexOfProperty("detailsDiagnostics")).metaType().id(), QMetaType::QVariantList);
     QCOMPARE(meta->indexOfProperty("fixturePath"), -1);
     QCOMPARE(meta->indexOfProperty("queuePath"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
@@ -2489,6 +2791,15 @@ void PlayerPresenterTests::projectsTypedMetadataAndRecoversFrozenUnavailableScen
     QCOMPARE(presenter.seekPending(), false);
     QCOMPARE(presenter.hasError(), true);
     QCOMPARE(presenter.errorCode(), QStringLiteral("fixture_source_unavailable"));
+    QCOMPARE(presenter.detailsAvailable(), true);
+    QCOMPARE(presenter.detailsFileName(), QStringLiteral("faixa-indisponivel-0999.mp3"));
+    QCOMPARE(presenter.hasDetailsFileSize(), false);
+    QCOMPARE(presenter.detailsFileSizeBytes().isValid(), false);
+    const QVariantList fixture_error_diagnostics{
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("playback_error")},
+                    {QStringLiteral("errorCode"), QStringLiteral("fixture_source_unavailable")}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), fixture_error_diagnostics);
     QCOMPARE(presenter.assetId(), QStringLiteral("cover-track"));
     QCOMPARE(presenter.messageKey(), QStringLiteral("error_body"));
     QCOMPARE(presenter.primaryActionId(), QStringLiteral("skip"));

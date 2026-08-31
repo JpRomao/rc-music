@@ -7,6 +7,7 @@ ColumnLayout {
     objectName: "error-state"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    signal detailsRequested(Item opener)
     Accessible.role: Accessible.AlertMessage
     Accessible.name: contract.errorTitle + (presenter.usesFrozenFixture ? ". " + contract.errorBody : "")
     Text {
@@ -43,5 +44,15 @@ ColumnLayout {
             else
                 root.presenter.openAudio();
         }
+    }
+    AccessibleTransportButton {
+        id: detailsButton
+        objectName: "track-details-error"
+        contract: root.contract
+        text: root.contract.detailsTitle
+        accessibleName: root.contract.detailsTitle
+        enabled: root.presenter.detailsAvailable
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: root.detailsRequested(detailsButton)
     }
 }

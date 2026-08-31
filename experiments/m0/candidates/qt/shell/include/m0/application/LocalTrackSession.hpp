@@ -52,6 +52,7 @@ class LocalTrackSession final {
     [[nodiscard]] const std::string& artist() const noexcept;
     [[nodiscard]] const std::string& album() const noexcept;
     [[nodiscard]] LocalTrackMetadataStatus metadataStatus() const noexcept;
+    [[nodiscard]] std::optional<MetadataReadErrorCode> metadataErrorCode() const noexcept;
     [[nodiscard]] MetadataGeneration metadataGeneration() const noexcept;
     [[nodiscard]] std::uint64_t playbackGeneration() const noexcept;
     [[nodiscard]] LocalTrackStartIntent startIntent() const noexcept;
@@ -70,6 +71,7 @@ class LocalTrackSession final {
     std::string artist_{};
     std::string album_{};
     std::optional<TrackMetadata> track_metadata_{};
+    std::optional<MetadataReadErrorCode> metadata_error_code_{};
     LocalTrackMetadataStatus metadata_status_{LocalTrackMetadataStatus::Idle};
     MetadataGeneration metadata_generation_{};
     std::uint64_t playback_generation_{0};

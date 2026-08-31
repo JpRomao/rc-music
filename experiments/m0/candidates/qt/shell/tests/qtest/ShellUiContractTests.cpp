@@ -109,6 +109,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.actionMute(), QStringLiteral("Silenciar"));
     QCOMPARE(contract.actionUnmute(), QStringLiteral("Ativar som"));
     QCOMPARE(contract.queueTitle(), QStringLiteral("Fila"));
+    QCOMPARE(contract.detailsTitle(), QStringLiteral("Detalhes da faixa"));
     QCOMPARE(contract.notInformed(), QStringLiteral("Não informado"));
     QCOMPARE(contract.errorTitle(), QStringLiteral("Não foi possível abrir esta faixa"));
     QCOMPARE(contract.errorBody(), QStringLiteral("A faixa de teste está indisponível."));
@@ -172,6 +173,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("actionMute"),
         QStringLiteral("actionUnmute"),
         QStringLiteral("queueTitle"),
+        QStringLiteral("detailsTitle"),
         QStringLiteral("notInformed"),
         QStringLiteral("errorTitle"),
         QStringLiteral("errorBody"),

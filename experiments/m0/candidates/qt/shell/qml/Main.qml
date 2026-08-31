@@ -32,7 +32,7 @@ ApplicationWindow {
     visible: true
     signal openAudioRequested
     property bool queueOpen: false
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !presenter.exiting
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !presenter.exiting
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
@@ -83,7 +83,7 @@ ApplicationWindow {
             return;
         queueOpen = open;
         Qt.callLater(function () {
-            if (windowNotice.visible || preferencesPanel.visible || window.presenter.exiting)
+            if (windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || window.presenter.exiting)
                 return;
             if (window.queueOpen)
                 queuePanel.focusCurrent();
@@ -111,8 +111,12 @@ ApplicationWindow {
         else
             preferencesPanel.open();
     }
+    function openTrackDetails(opener) {
+        queueOpen = false;
+        trackDetailsPanel.openFrom(opener);
+    }
     function restoreFocusAfterSourceImport() {
-        if (window.presenter.exiting || preferencesPanel.visible || windowNotice.visible || queuePanel.clearConfirmationOpen)
+        if (window.presenter.exiting || preferencesPanel.visible || trackDetailsPanel.visible || windowNotice.visible || queuePanel.clearConfirmationOpen)
             return;
         if (window.queueOpen && queuePanel.visible)
             queuePanel.focusCurrent();
@@ -174,18 +178,22 @@ ApplicationWindow {
                     onOpenAudioRequested: window.openAudio()
                 }
                 NowPlayingState {
+                    id: nowPlayingState
                     anchors.centerIn: parent
                     width: Math.min(parent.width, 560)
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
                     onOpenAudioRequested: window.openAudio()
+                    onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
                 ErrorState {
+                    id: errorState
                     anchors.centerIn: parent
                     visible: window.presenter.playbackState === PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
+                    onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
             }
         }
@@ -221,7 +229,7 @@ ApplicationWindow {
         z: 30
         contract: window.uiContract
         presenter: window.presenter
-        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onFocusRestoreRequested: window.restoreFocusAfterSourceImport()
     }
     PreferencesPanel {
@@ -242,6 +250,18 @@ ApplicationWindow {
             }
         }
     }
+    TrackDetailsPanel {
+        id: trackDetailsPanel
+        parent: window.contentItem
+        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
+        height: Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
+        x: (window.width - width) / 2
+        y: (window.height - height) / 2
+        contract: window.uiContract
+        presenter: window.presenter
+        fallbackFocusItem: preferencesButton
+        focusRestoreAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+    }
     WindowNotice {
         id: windowNotice
         parent: window.contentItem
@@ -259,7 +279,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction
