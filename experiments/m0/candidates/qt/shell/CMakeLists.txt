@@ -754,6 +754,7 @@ if(M0_QT_AUDIO_SUPPORT)
                 M0_TEST_AUDIO_M4A_AAC_FILE="${M0_AUDIO_CORPUS_M4A_AAC_FILE}"
                 M0_TEST_AUDIO_FLAC_FILE="${M0_AUDIO_CORPUS_FLAC_FILE}"
                 M0_TEST_AUDIO_OGG_VORBIS_FILE="${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}"
+                M0_TEST_AUDIO_TRUNCATED_WAV_FILE="${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}"
             )
             set_target_properties(m0_qt_local_audio_integration_tests PROPERTIES AUTOMOC ON)
             if(MSVC)

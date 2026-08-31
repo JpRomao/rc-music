@@ -2,11 +2,13 @@
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/presentation/LocalQueueListModel.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
 #include <QAbstractItemModel>
 #include <QFile>
 #include <QList>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -53,6 +55,7 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
         }
         backend_.setEventCallback([this](const PlaybackEvent& event) {
             observed_statuses_.append(event.snapshot.status);
+            observed_events_.push_back(event);
             callback_(event);
         });
     }
@@ -93,10 +96,30 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
         return std::find(observed_statuses_.cbegin(), observed_statuses_.cend(), status) != observed_statuses_.cend();
     }
 
+    [[nodiscard]] bool observed(const PlaybackEventType type, const std::uint64_t generation) const {
+        return std::ranges::any_of(observed_events_, [type, generation](const PlaybackEvent& event) {
+            return event.type == type && event.snapshot.generation == generation;
+        });
+    }
+
+    [[nodiscard]] bool observed(const PlaybackStatus status, const PlaybackErrorCode error,
+                                const std::uint64_t generation) const {
+        return std::ranges::any_of(observed_events_, [status, error, generation](const PlaybackEvent& event) {
+            return event.snapshot.status == status && event.snapshot.error == error &&
+                   event.snapshot.generation == generation;
+        });
+    }
+
+    [[nodiscard]] std::size_t eventCount(const PlaybackEventType type) const {
+        return static_cast<std::size_t>(
+            std::ranges::count_if(observed_events_, [type](const PlaybackEvent& event) { return event.type == type; }));
+    }
+
   private:
     QtMultimediaPlaybackBackend& backend_;
     PlaybackEventCallback callback_{};
     QList<PlaybackStatus> observed_statuses_{};
+    std::vector<PlaybackEvent> observed_events_{};
     std::vector<std::filesystem::path> loaded_paths_{};
     double last_volume_{-1.0};
     double volume_at_load_{-1.0};
@@ -326,6 +349,89 @@ class LocalAudioIntegrationTests final : public QObject {
                                      presenter.playbackState() == PlayerPresenter::PlaybackState::Playing,
                                  5'000);
         QVERIFY(presenter.canGoPrevious());
+    }
+
+    void realEndedSkipsInvalidBetweenValidTracksAndStopsAtTail() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+
+        const QString first_file = temporary.filePath(QStringLiteral("válida A 日本.wav"));
+        const QString invalid_file = temporary.filePath(QStringLiteral("inválida 中間.wav"));
+        const QString second_file = temporary.filePath(QStringLiteral("válida B ☕.wav"));
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE), first_file));
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_TRUNCATED_WAV_FILE), invalid_file));
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE), second_file));
+
+        const std::vector<std::filesystem::path> selected_paths{
+            nativePath(first_file),
+            nativePath(invalid_file),
+            nativePath(second_file),
+        };
+        QtMultimediaPlaybackBackend qt_backend;
+        RecordingPlaybackBackend playback{qt_backend};
+        SingleWorkerMetadataReader worker{std::make_unique<TagLibMetadataExtractor>()};
+        RecordingMetadataReader metadata{worker};
+        TestPlatform platform;
+        int picker_calls = 0;
+        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
+                                  [&]() -> std::vector<std::filesystem::path> {
+                                      ++picker_calls;
+                                      return selected_paths;
+                                  }};
+
+        QVERIFY(presenter.setVolume(0.0));
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+
+        QAbstractItemModel* const model = presenter.queueModelObject();
+        QSignalSpy model_resets(model, &QAbstractItemModel::modelReset);
+        QCOMPARE(picker_calls, 1);
+        QCOMPARE(model->rowCount(), 3);
+        QCOMPARE(presenter.currentQueueIndex(), 0);
+        QCOMPARE(playback.loadedPaths(), std::vector<std::filesystem::path>{selected_paths.front()});
+        QTRY_VERIFY_WITH_TIMEOUT(qt_backend.snapshot().generation == 1 &&
+                                     presenter.playbackState() == PlayerPresenter::PlaybackState::Playing,
+                                 5'000);
+
+        const qint64 first_near_end_ms = std::max<qint64>(0, presenter.durationMs() - 100);
+        QVERIFY(presenter.beginSeekPreview(first_near_end_ms));
+        QVERIFY(presenter.commitSeekPreview());
+        QTRY_VERIFY_WITH_TIMEOUT(playback.observed(PlaybackEventType::Ended, 1), 2'000);
+        QTRY_VERIFY_WITH_TIMEOUT(qt_backend.snapshot().generation == 3 &&
+                                     presenter.playbackState() == PlayerPresenter::PlaybackState::Playing,
+                                 5'000);
+
+        QCOMPARE(playback.loadedPaths(), selected_paths);
+        QCOMPARE(metadata.requestedPaths(), selected_paths);
+        QVERIFY(playback.observed(PlaybackStatus::Error, PlaybackErrorCode::InvalidMedia, 2));
+        QCOMPARE(presenter.currentQueueIndex(), 2);
+        QVERIFY(model->data(model->index(0, 0), LocalQueueListModel::AvailableRole).toBool());
+        QVERIFY(!model->data(model->index(1, 0), LocalQueueListModel::AvailableRole).toBool());
+        QCOMPARE(model->data(model->index(1, 0), LocalQueueListModel::ErrorCodeRole).toString(),
+                 QStringLiteral("invalid_media"));
+        QVERIFY(model->data(model->index(2, 0), LocalQueueListModel::AvailableRole).toBool());
+        QCOMPARE(model_resets.size(), 0);
+
+        const QString second_occurrence_id = presenter.currentOccurrenceId();
+        const qint64 second_near_end_ms = std::max<qint64>(0, presenter.durationMs() - 100);
+        QVERIFY(presenter.beginSeekPreview(second_near_end_ms));
+        QVERIFY(presenter.commitSeekPreview());
+        QTRY_VERIFY_WITH_TIMEOUT(playback.observed(PlaybackEventType::Ended, 3), 2'000);
+        bool terminal_events_drained = false;
+        QVERIFY(QMetaObject::invokeMethod(
+            &presenter, [&terminal_events_drained] { terminal_events_drained = true; }, Qt::QueuedConnection));
+        QTRY_VERIFY_WITH_TIMEOUT(terminal_events_drained, 2'000);
+
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(playback.eventCount(PlaybackEventType::Ended), std::size_t{2});
+        QCOMPARE(playback.loadedPaths(), selected_paths);
+        QCOMPARE(presenter.currentQueueIndex(), 2);
+        QCOMPARE(presenter.currentOccurrenceId(), second_occurrence_id);
+        QCOMPARE(qt_backend.snapshot().generation, std::uint64_t{3});
+        QCOMPARE(presenter.confirmedPositionMs(), presenter.durationMs());
+        QVERIFY(!presenter.canGoNext());
+        QCOMPARE(model_resets.size(), 0);
     }
 
     void recoversFromTruncatedContainerThroughTheRealJourney_data() {
