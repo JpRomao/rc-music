@@ -6,10 +6,12 @@
 #include "m0/application/PlayerController.hpp"
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
+#include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
 #include <QAbstractItemModel>
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -70,6 +72,11 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString contextArtist READ contextArtist NOTIFY stateChanged)
     Q_PROPERTY(QString contextAlbum READ contextAlbum NOTIFY stateChanged)
     Q_PROPERTY(QAbstractItemModel* queueModel READ queueModelObject CONSTANT)
+    Q_PROPERTY(SourceImportState sourceImportState READ sourceImportState NOTIFY sourceImportChanged)
+    Q_PROPERTY(bool sourceImportActive READ sourceImportActive NOTIFY sourceImportChanged)
+    Q_PROPERTY(qulonglong sourceImportAcceptedCount READ sourceImportAcceptedCount NOTIFY sourceImportChanged)
+    Q_PROPERTY(qulonglong sourceImportIssueCount READ sourceImportIssueCount NOTIFY sourceImportChanged)
+    Q_PROPERTY(qulonglong sourceImportInspectedCount READ sourceImportInspectedCount NOTIFY sourceImportChanged)
     Q_PROPERTY(double volume READ volume NOTIFY preferencesChanged)
     Q_PROPERTY(bool muted READ muted NOTIFY preferencesChanged)
     Q_PROPERTY(int skipBackwardSeconds READ skipBackwardSeconds NOTIFY preferencesChanged)
@@ -101,6 +108,8 @@ class PlayerPresenter final : public QObject {
     Q_ENUM(QueueEndPreference)
     enum class WindowNotice { NoNotice, TrayCloseNotice, TrayUnavailableNotice };
     Q_ENUM(WindowNotice)
+    enum class SourceImportState { Idle, Discovering, Cancelling, Completed, CompletedWithIssues, Cancelled, Rejected };
+    Q_ENUM(SourceImportState)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
@@ -108,6 +117,13 @@ class PlayerPresenter final : public QObject {
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                     MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                     std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                    LocalSourceDiscovery& source_discovery, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                    LocalSourceDiscovery& source_discovery, std::shared_ptr<ArtworkImageCache> artwork_cache,
+                    QObject* parent = nullptr);
     ~PlayerPresenter() override;
 
     [[nodiscard]] QString stateId() const;
@@ -145,6 +161,11 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString contextAlbum() const;
     [[nodiscard]] QueueListModel* queueModel() noexcept;
     [[nodiscard]] QAbstractItemModel* queueModelObject() noexcept;
+    [[nodiscard]] SourceImportState sourceImportState() const noexcept;
+    [[nodiscard]] bool sourceImportActive() const noexcept;
+    [[nodiscard]] qulonglong sourceImportAcceptedCount() const noexcept;
+    [[nodiscard]] qulonglong sourceImportIssueCount() const noexcept;
+    [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
@@ -172,6 +193,9 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool openAudio();
     Q_INVOKABLE bool addAudio();
+    Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
+    Q_INVOKABLE bool cancelSourceImport();
+    Q_INVOKABLE bool dismissSourceImportStatus();
     Q_INVOKABLE bool playQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool moveQueueOccurrence(const QString& occurrence_id, int destination_index);
     Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
@@ -206,6 +230,7 @@ class PlayerPresenter final : public QObject {
     void platformChanged();
     void lifecycleChanged();
     void queueFocusRequested(int index);
+    void sourceImportChanged();
 
   private:
     friend class experiment::PlayerPresenterScenarioControl;
@@ -216,6 +241,14 @@ class PlayerPresenter final : public QObject {
     void initializeDefaults();
     void handlePlaybackEvent(PlaybackEvent event);
     void pollMetadata();
+    void pollSourceImport();
+    void initializeLocalMode();
+    void rejectSourceImport(std::uint64_t issue_count);
+    void finishSourceImport(SourceImportState terminal_state);
+    [[nodiscard]] bool applySourceImportBatch(LocalSourceDiscoveryBatch batch);
+    [[nodiscard]] std::size_t sourceImportInsertionIndex() const noexcept;
+    [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(LocalQueueOccurrenceId occurrence_id) const noexcept;
+    [[nodiscard]] static DiscoveryGeneration nextDiscoveryGeneration(DiscoveryGeneration current) noexcept;
     void reconcileTimer();
     [[nodiscard]] DeterministicPlaybackBackend* fixtureBackend() noexcept;
     [[nodiscard]] const DeterministicPlaybackBackend* fixtureBackend() const noexcept;
@@ -225,6 +258,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(const QString& occurrence_id) const noexcept;
     [[nodiscard]] std::optional<std::size_t> nextAvailableLocalIndex() const noexcept;
+    [[nodiscard]] PlaybackCommandResult loadLocalOccurrenceWithResult(std::size_t index,
+                                                                      LocalTrackStartIntent start_intent);
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
@@ -242,6 +277,21 @@ class PlayerPresenter final : public QObject {
     AudioFilePicker audio_file_picker_{};
     std::unique_ptr<LocalTrackSession> local_track_session_{};
     std::shared_ptr<ArtworkImageCache> artwork_cache_{};
+    std::unique_ptr<LocalSourceDiscovery> owned_source_discovery_{};
+    LocalSourceDiscovery* source_discovery_{nullptr};
+    DiscoveryGeneration source_import_generation_{};
+    std::uint64_t source_import_sequence_{0};
+    std::uint64_t source_import_accepted_count_{0};
+    std::uint64_t source_import_issue_count_{0};
+    std::uint64_t source_import_discovery_issue_count_{0};
+    std::uint64_t source_import_inspected_count_{0};
+    SourceImportState source_import_state_{SourceImportState::Idle};
+    std::optional<LocalQueueOccurrenceId> source_import_before_occurrence_{};
+    std::optional<LocalQueueOccurrenceId> source_import_predecessor_occurrence_{};
+    std::optional<LocalQueueOccurrenceId> source_import_last_inserted_occurrence_{};
+    std::vector<LocalQueueOccurrenceId> source_import_occurrences_{};
+    bool source_import_autoplay_enabled_{false};
+    bool source_import_needs_autoplay_{false};
     std::optional<LocalTrackStartIntent> local_recovery_intent_{};
     bool uses_frozen_fixture_{true};
     std::size_t seek_commit_attempt_count_{0};

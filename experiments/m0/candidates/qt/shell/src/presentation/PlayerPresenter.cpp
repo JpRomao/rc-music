@@ -1,10 +1,12 @@
 #include "presentation/PlayerPresenter.hpp"
 
+#include "m0/adapters/SingleWorkerLocalSourceDiscovery.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 
 #include <QMetaObject>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -164,6 +166,25 @@ QString localPlaybackErrorCode(const PlaybackErrorCode error) {
     return {};
 }
 
+[[nodiscard]] std::optional<std::filesystem::path> localSourcePath(const QUrl& url) {
+    if (!url.isValid() || !url.isLocalFile())
+        return std::nullopt;
+    const QString local_file = url.toLocalFile();
+    if (local_file.isEmpty())
+        return std::nullopt;
+#ifdef Q_OS_WIN
+    return std::filesystem::path{local_file.toStdWString()};
+#else
+    const QByteArray utf8 = local_file.toUtf8();
+    return std::filesystem::path{std::string{utf8.constData(), static_cast<std::size_t>(utf8.size())}};
+#endif
+}
+
+void addSaturated(std::uint64_t& target, const std::uint64_t increment) noexcept {
+    target = increment > std::numeric_limits<std::uint64_t>::max() - target ? std::numeric_limits<std::uint64_t>::max()
+                                                                            : target + increment;
+}
+
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
@@ -191,15 +212,45 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
       controller_(backend_, platform, backend_.snapshot()), queue_model_(this), local_queue_model_(this), timer_(this),
       state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
-      artwork_cache_(std::move(artwork_cache)), uses_frozen_fixture_(false) {
+      artwork_cache_(std::move(artwork_cache)),
+      owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
+      source_discovery_(owned_source_discovery_.get()), uses_frozen_fixture_(false) {
+    initializeLocalMode();
+}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                                 LocalSourceDiscovery& source_discovery, QObject* parent)
+    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
+                      source_discovery, std::make_shared<ArtworkImageCache>(), parent) {}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                                 LocalSourceDiscovery& source_discovery,
+                                 std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
+      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), local_queue_model_(this), timer_(this),
+      state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
+      local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
+      artwork_cache_(std::move(artwork_cache)), source_discovery_(&source_discovery), uses_frozen_fixture_(false) {
+    initializeLocalMode();
+}
+
+void PlayerPresenter::initializeLocalMode() {
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
     if (artwork_cache_ == nullptr)
         throw std::invalid_argument{"artwork image cache is required"};
+    if (source_discovery_ == nullptr)
+        throw std::invalid_argument{"local source discovery is required"};
     initializeDefaults();
     timer_.setInterval(25);
     timer_.setTimerType(Qt::PreciseTimer);
-    connect(&timer_, &QTimer::timeout, this, [this] { pollMetadata(); });
+    connect(&timer_, &QTimer::timeout, this, [this] {
+        pollMetadata();
+        pollSourceImport();
+    });
     backend_.setEventCallback([this](const PlaybackEvent& event) {
         const PlaybackEvent copy = event;
         QMetaObject::invokeMethod(this, [this, copy] { handlePlaybackEvent(copy); }, Qt::QueuedConnection);
@@ -209,6 +260,10 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
 PlayerPresenter::~PlayerPresenter() {
     timer_.stop();
     if (!uses_frozen_fixture_) {
+        if (sourceImportActive() && source_discovery_ != nullptr)
+            static_cast<void>(source_discovery_->cancel(source_import_generation_));
+        if (owned_source_discovery_ != nullptr)
+            static_cast<void>(owned_source_discovery_->shutdown());
         backend_.setEventCallback({});
         if (local_track_session_ != nullptr)
             static_cast<void>(local_track_session_->cancelMetadata());
@@ -427,6 +482,14 @@ QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept {
     return uses_frozen_fixture_ ? static_cast<QAbstractItemModel*>(&queue_model_)
                                 : static_cast<QAbstractItemModel*>(&local_queue_model_);
 }
+PlayerPresenter::SourceImportState PlayerPresenter::sourceImportState() const noexcept { return source_import_state_; }
+bool PlayerPresenter::sourceImportActive() const noexcept {
+    return source_import_state_ == SourceImportState::Discovering ||
+           source_import_state_ == SourceImportState::Cancelling;
+}
+qulonglong PlayerPresenter::sourceImportAcceptedCount() const noexcept { return source_import_accepted_count_; }
+qulonglong PlayerPresenter::sourceImportIssueCount() const noexcept { return source_import_issue_count_; }
+qulonglong PlayerPresenter::sourceImportInspectedCount() const noexcept { return source_import_inspected_count_; }
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
@@ -544,6 +607,90 @@ bool PlayerPresenter::addAudio() {
     emit playbackChanged();
     if (needs_current_track)
         emit queueFocusRequested(static_cast<int>(first_inserted));
+    return true;
+}
+bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int insertion_index) {
+    if (uses_frozen_fixture_ || exiting_ || source_discovery_ == nullptr || sourceImportActive())
+        return false;
+    source_import_occurrences_.clear();
+    source_import_autoplay_enabled_ = false;
+    source_import_needs_autoplay_ = false;
+    if (insertion_index < 0 || static_cast<std::size_t>(insertion_index) > local_queue_.size()) {
+        rejectSourceImport(1);
+        return false;
+    }
+
+    std::vector<std::filesystem::path> roots;
+    roots.reserve(static_cast<std::size_t>(urls.size()));
+    std::uint64_t boundary_issue_count = 0;
+    for (const QUrl& url : urls) {
+        auto source_path = localSourcePath(url);
+        if (!source_path.has_value()) {
+            ++boundary_issue_count;
+            continue;
+        }
+        roots.push_back(std::move(*source_path));
+    }
+    if (roots.empty()) {
+        rejectSourceImport(std::max<std::uint64_t>(1, boundary_issue_count));
+        return false;
+    }
+
+    const DiscoveryGeneration generation = nextDiscoveryGeneration(source_import_generation_);
+    if (source_discovery_->start({generation, std::move(roots)}) != DiscoveryCommandResult::Accepted) {
+        rejectSourceImport(boundary_issue_count + 1);
+        return false;
+    }
+
+    const auto index = static_cast<std::size_t>(insertion_index);
+    source_import_generation_ = generation;
+    source_import_sequence_ = 0;
+    source_import_accepted_count_ = 0;
+    source_import_issue_count_ = boundary_issue_count;
+    source_import_discovery_issue_count_ = 0;
+    source_import_inspected_count_ = 0;
+    source_import_state_ = SourceImportState::Discovering;
+    source_import_before_occurrence_ =
+        index < local_queue_.size() ? std::optional{local_queue_.items()[index].occurrence_id} : std::nullopt;
+    source_import_predecessor_occurrence_ =
+        index > 0 ? std::optional{local_queue_.items()[index - 1].occurrence_id} : std::nullopt;
+    source_import_last_inserted_occurrence_.reset();
+    source_import_autoplay_enabled_ = !local_track_session_->hasTrack();
+    source_import_needs_autoplay_ = source_import_autoplay_enabled_;
+    reconcileTimer();
+    emit sourceImportChanged();
+    return true;
+}
+
+bool PlayerPresenter::cancelSourceImport() {
+    if (source_import_state_ == SourceImportState::Cancelling)
+        return true;
+    if (source_import_state_ != SourceImportState::Discovering || source_discovery_ == nullptr ||
+        source_discovery_->cancel(source_import_generation_) != DiscoveryCommandResult::Accepted) {
+        return false;
+    }
+    source_import_state_ = SourceImportState::Cancelling;
+    reconcileTimer();
+    emit sourceImportChanged();
+    return true;
+}
+
+bool PlayerPresenter::dismissSourceImportStatus() {
+    if (source_import_state_ == SourceImportState::Idle || sourceImportActive())
+        return false;
+    source_import_state_ = SourceImportState::Idle;
+    source_import_sequence_ = 0;
+    source_import_accepted_count_ = 0;
+    source_import_issue_count_ = 0;
+    source_import_discovery_issue_count_ = 0;
+    source_import_inspected_count_ = 0;
+    source_import_before_occurrence_.reset();
+    source_import_predecessor_occurrence_.reset();
+    source_import_last_inserted_occurrence_.reset();
+    source_import_occurrences_.clear();
+    source_import_autoplay_enabled_ = false;
+    source_import_needs_autoplay_ = false;
+    emit sourceImportChanged();
     return true;
 }
 bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
@@ -668,8 +815,10 @@ bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
     return true;
 }
 bool PlayerPresenter::clearQueue() {
-    if (uses_frozen_fixture_ || exiting_ || local_queue_.empty() || !local_track_session_->unload())
+    if (uses_frozen_fixture_ || exiting_ || (sourceImportActive() && !cancelSourceImport()) || local_queue_.empty() ||
+        !local_track_session_->unload()) {
         return false;
+    }
     if (!local_queue_.clear())
         throw std::logic_error{"a non-empty local queue could not be cleared"};
     if (!local_queue_model_.clear())
@@ -694,12 +843,15 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
 
     controller_.applyBackendSnapshot(event.snapshot);
     bool state_projection_changed = false;
+    bool source_import_changed = false;
     if (result == LocalTrackPlaybackEventResult::OccurrenceUnavailable) {
         const auto current = local_queue_.currentIndex();
         if (!current.has_value())
             throw std::logic_error{"a current local playback error requires a current queue occurrence"};
 
         const auto occurrence_id = local_queue_.items()[*current].occurrence_id;
+        const bool imported_occurrence = std::find(source_import_occurrences_.begin(), source_import_occurrences_.end(),
+                                                   occurrence_id) != source_import_occurrences_.end();
         if (local_queue_.items()[*current].available) {
             const QString error_code = localPlaybackErrorCode(event.snapshot.error);
             if (error_code.isEmpty() || !local_queue_.markUnavailable(*current) ||
@@ -708,6 +860,12 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
             }
             navigation_items_[*current].available = false;
             state_projection_changed = true;
+            if (imported_occurrence) {
+                addSaturated(source_import_issue_count_, 1);
+                if (source_import_state_ == SourceImportState::Completed)
+                    source_import_state_ = SourceImportState::CompletedWithIssues;
+                source_import_changed = true;
+            }
         }
 
         auto start_intent = local_recovery_intent_.value_or(local_track_session_->startIntent());
@@ -718,9 +876,14 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
                 start_intent = LocalTrackStartIntent::Autoplay;
         }
         local_recovery_intent_ = start_intent;
+        bool recovered = false;
         if (const auto next = nextAvailableLocalIndex(); next.has_value() && loadLocalOccurrence(*next, start_intent)) {
             state_projection_changed = true;
+            recovered = true;
         }
+        if (imported_occurrence && source_import_state_ == SourceImportState::Discovering &&
+            source_import_autoplay_enabled_ && !recovered)
+            source_import_needs_autoplay_ = true;
     } else if (result == LocalTrackPlaybackEventResult::Ended) {
         if (const auto next = nextAvailableLocalIndex();
             next.has_value() && loadLocalOccurrence(*next, LocalTrackStartIntent::Autoplay)) {
@@ -743,6 +906,8 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         emit stateChanged();
     if (playback_changed)
         emit playbackChanged();
+    if (source_import_changed)
+        emit sourceImportChanged();
 }
 void PlayerPresenter::pollMetadata() {
     if (uses_frozen_fixture_ || exiting_)
@@ -763,6 +928,179 @@ void PlayerPresenter::pollMetadata() {
     emit stateChanged();
     if (duration_before != localDurationMs())
         emit playbackChanged();
+}
+void PlayerPresenter::pollSourceImport() {
+    if (!sourceImportActive() || source_discovery_ == nullptr || exiting_)
+        return;
+
+    auto result = source_discovery_->poll(source_import_generation_);
+    switch (result.status) {
+    case DiscoveryPollStatus::Pending:
+        return;
+    case DiscoveryPollStatus::BatchReady:
+        if (source_import_state_ == SourceImportState::Cancelling)
+            return;
+        if (!result.batch.has_value() || result.batch->generation != source_import_generation_ ||
+            result.batch->sequence <= source_import_sequence_) {
+            static_cast<void>(source_discovery_->cancel(source_import_generation_));
+            addSaturated(source_import_issue_count_, 1);
+            finishSourceImport(SourceImportState::Rejected);
+            return;
+        }
+        source_import_sequence_ = result.batch->sequence;
+        if (!applySourceImportBatch(std::move(*result.batch))) {
+            static_cast<void>(source_discovery_->cancel(source_import_generation_));
+            addSaturated(source_import_issue_count_, 1);
+            finishSourceImport(SourceImportState::Rejected);
+            return;
+        }
+        emit sourceImportChanged();
+        return;
+    case DiscoveryPollStatus::Completed:
+        if (!result.summary.has_value()) {
+            addSaturated(source_import_issue_count_, 1);
+            finishSourceImport(SourceImportState::Rejected);
+            return;
+        }
+        source_import_inspected_count_ = std::max(source_import_inspected_count_, result.summary->inspected_count);
+        if (result.summary->issue_count > source_import_discovery_issue_count_) {
+            addSaturated(source_import_issue_count_,
+                         result.summary->issue_count - source_import_discovery_issue_count_);
+            source_import_discovery_issue_count_ = result.summary->issue_count;
+        }
+        if (result.summary->accepted_count != source_import_accepted_count_)
+            addSaturated(source_import_issue_count_, 1);
+        finishSourceImport(source_import_issue_count_ == 0 ? SourceImportState::Completed
+                                                           : SourceImportState::CompletedWithIssues);
+        return;
+    case DiscoveryPollStatus::Cancelled:
+        finishSourceImport(SourceImportState::Cancelled);
+        return;
+    case DiscoveryPollStatus::InvalidArgument:
+    case DiscoveryPollStatus::StaleGeneration:
+    case DiscoveryPollStatus::Shutdown:
+    case DiscoveryPollStatus::Idle:
+        addSaturated(source_import_issue_count_, 1);
+        finishSourceImport(SourceImportState::Rejected);
+        return;
+    }
+}
+
+bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
+    addSaturated(source_import_inspected_count_, batch.inspected_count);
+    addSaturated(source_import_issue_count_, static_cast<std::uint64_t>(batch.issues.size()));
+    addSaturated(source_import_discovery_issue_count_, static_cast<std::uint64_t>(batch.issues.size()));
+    if (batch.accepted_paths.empty())
+        return true;
+
+    const std::size_t insertion_index = sourceImportInsertionIndex();
+    const std::size_t insertion_count = batch.accepted_paths.size();
+    if (!local_queue_.insert(std::move(batch.accepted_paths), insertion_index))
+        return false;
+    if (!local_queue_model_.insert(local_queue_.items().subspan(insertion_index, insertion_count), insertion_index))
+        throw std::logic_error{"accepted source discovery batch could not be projected"};
+
+    source_import_occurrences_.reserve(source_import_occurrences_.size() + insertion_count);
+    for (const auto& item : local_queue_.items().subspan(insertion_index, insertion_count))
+        source_import_occurrences_.push_back(item.occurrence_id);
+    source_import_last_inserted_occurrence_ = local_queue_.items()[insertion_index + insertion_count - 1].occurrence_id;
+    addSaturated(source_import_accepted_count_, static_cast<std::uint64_t>(insertion_count));
+    navigation_items_ = navigationItems(local_queue_);
+
+    if (source_import_needs_autoplay_) {
+        const auto current = local_queue_.currentIndex();
+        const bool has_available_track =
+            local_track_session_->hasTrack() && current.has_value() && local_queue_.items()[*current].available;
+        if (has_available_track) {
+            source_import_needs_autoplay_ = false;
+        } else {
+            for (std::size_t index = insertion_index; index < insertion_index + insertion_count; ++index) {
+                const PlaybackCommandResult load_result =
+                    loadLocalOccurrenceWithResult(index, LocalTrackStartIntent::Autoplay);
+                if (load_result == PlaybackCommandResult::Accepted) {
+                    source_import_needs_autoplay_ = false;
+                    controller_.applyBackendSnapshot(backend_.snapshot());
+                    reconcileTimer();
+                    break;
+                }
+                if (load_result != PlaybackCommandResult::InvalidArgument) {
+                    if (load_result == PlaybackCommandResult::Shutdown)
+                        break;
+                    continue;
+                }
+                const LocalQueueOccurrenceId occurrence_id = local_queue_.items()[index].occurrence_id;
+                if (!local_queue_.markUnavailable(index) ||
+                    !local_queue_model_.markUnavailable(occurrence_id, QStringLiteral("open_rejected"))) {
+                    throw std::logic_error{"rejected discovered occurrence could not be isolated"};
+                }
+                navigation_items_[index].available = false;
+                addSaturated(source_import_issue_count_, 1);
+            }
+        }
+    }
+
+    emit stateChanged();
+    emit playbackChanged();
+    return true;
+}
+
+std::size_t PlayerPresenter::sourceImportInsertionIndex() const noexcept {
+    if (source_import_before_occurrence_.has_value()) {
+        if (const auto index = localOccurrenceIndex(*source_import_before_occurrence_); index.has_value())
+            return *index;
+    }
+    if (source_import_last_inserted_occurrence_.has_value()) {
+        if (const auto index = localOccurrenceIndex(*source_import_last_inserted_occurrence_); index.has_value())
+            return *index + 1;
+    }
+    if (source_import_predecessor_occurrence_.has_value()) {
+        if (const auto index = localOccurrenceIndex(*source_import_predecessor_occurrence_); index.has_value())
+            return *index + 1;
+    }
+    return local_queue_.size();
+}
+
+std::optional<std::size_t>
+PlayerPresenter::localOccurrenceIndex(const LocalQueueOccurrenceId occurrence_id) const noexcept {
+    const auto items = local_queue_.items();
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        if (items[index].occurrence_id == occurrence_id)
+            return index;
+    }
+    return std::nullopt;
+}
+
+DiscoveryGeneration PlayerPresenter::nextDiscoveryGeneration(const DiscoveryGeneration current) noexcept {
+    return current.value == std::numeric_limits<std::uint64_t>::max() ? DiscoveryGeneration{1}
+                                                                      : DiscoveryGeneration{current.value + 1};
+}
+
+void PlayerPresenter::rejectSourceImport(const std::uint64_t issue_count) {
+    source_import_sequence_ = 0;
+    source_import_accepted_count_ = 0;
+    source_import_issue_count_ = issue_count;
+    source_import_discovery_issue_count_ = 0;
+    source_import_inspected_count_ = 0;
+    source_import_state_ = SourceImportState::Rejected;
+    source_import_before_occurrence_.reset();
+    source_import_predecessor_occurrence_.reset();
+    source_import_last_inserted_occurrence_.reset();
+    source_import_occurrences_.clear();
+    source_import_autoplay_enabled_ = false;
+    source_import_needs_autoplay_ = false;
+    reconcileTimer();
+    emit sourceImportChanged();
+}
+
+void PlayerPresenter::finishSourceImport(const SourceImportState terminal_state) {
+    source_import_state_ = terminal_state;
+    source_import_before_occurrence_.reset();
+    source_import_predecessor_occurrence_.reset();
+    source_import_last_inserted_occurrence_.reset();
+    source_import_autoplay_enabled_ = false;
+    source_import_needs_autoplay_ = false;
+    reconcileTimer();
+    emit sourceImportChanged();
 }
 std::optional<std::int64_t> PlayerPresenter::localDurationMs() const noexcept {
     if (uses_frozen_fixture_ || !local_track_session_->hasTrack())
@@ -828,6 +1166,10 @@ bool PlayerPresenter::requestRestore() {
 bool PlayerPresenter::requestExit() {
     if (exiting_)
         return false;
+    if (sourceImportActive() && source_discovery_ != nullptr) {
+        static_cast<void>(source_discovery_->cancel(source_import_generation_));
+        finishSourceImport(SourceImportState::Cancelled);
+    }
     exiting_ = true;
     window_notice_ = WindowNotice::NoNotice;
     timer_.stop();
@@ -918,16 +1260,22 @@ std::optional<std::size_t> PlayerPresenter::nextAvailableLocalIndex() const noex
     }
     return std::nullopt;
 }
-bool PlayerPresenter::loadLocalOccurrence(const std::size_t index, const LocalTrackStartIntent start_intent) {
-    if (index >= local_queue_.size() || !local_queue_.items()[index].available ||
-        !local_track_session_->open(local_queue_.items()[index].source_path, start_intent)) {
-        return false;
-    }
+PlaybackCommandResult PlayerPresenter::loadLocalOccurrenceWithResult(const std::size_t index,
+                                                                     const LocalTrackStartIntent start_intent) {
+    if (index >= local_queue_.size() || !local_queue_.items()[index].available)
+        return PlaybackCommandResult::InvalidArgument;
+    const PlaybackCommandResult result =
+        local_track_session_->openWithResult(local_queue_.items()[index].source_path, start_intent);
+    if (result != PlaybackCommandResult::Accepted)
+        return result;
     if (!local_queue_.select(index))
         throw std::logic_error{"an accepted local occurrence could not be selected"};
     local_recovery_intent_.reset();
     artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
-    return true;
+    return PlaybackCommandResult::Accepted;
+}
+bool PlayerPresenter::loadLocalOccurrence(const std::size_t index, const LocalTrackStartIntent start_intent) {
+    return loadLocalOccurrenceWithResult(index, start_intent) == PlaybackCommandResult::Accepted;
 }
 bool PlayerPresenter::navigate(const QueueDirection direction) {
     const auto target = navigationTarget(direction);
@@ -1181,7 +1529,8 @@ void PlayerPresenter::reconcileTimer() {
         uses_frozen_fixture_
             ? !exiting_ && queueLoaded() &&
                   (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending())
-            : !exiting_ && local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending;
+            : !exiting_ &&
+                  (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending || sourceImportActive());
     if (needed && !timer_.isActive())
         timer_.start();
     else if (!needed && timer_.isActive())

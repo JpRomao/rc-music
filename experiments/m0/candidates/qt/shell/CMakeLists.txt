@@ -175,6 +175,8 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/QueueText.qml PROPERTIES QT_RESOURCE_ALIAS "QueueText.qml")
     set_source_files_properties(qml/QueueActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "QueueActionButton.qml")
     set_source_files_properties(qml/QueueClearConfirmation.qml PROPERTIES QT_RESOURCE_ALIAS "QueueClearConfirmation.qml")
+    set_source_files_properties(qml/SourceImportStatus.qml PROPERTIES QT_RESOURCE_ALIAS "SourceImportStatus.qml")
+    set_source_files_properties(qml/SourceImportText.qml PROPERTIES QT_RESOURCE_ALIAS "SourceImportText.qml")
     set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
     set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
     set_source_files_properties(qml/PreferenceSecondsField.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceSecondsField.qml")
@@ -205,6 +207,8 @@ if(M0_QT_SHELL_SUPPORT)
             qml/QueueText.qml
             qml/QueueActionButton.qml
             qml/QueueClearConfirmation.qml
+            qml/SourceImportStatus.qml
+            qml/SourceImportText.qml
             qml/PreferencesPanel.qml
             qml/WindowNotice.qml
             qml/PreferencesText.qml
@@ -792,9 +796,11 @@ add_subdirectory(
 
 add_library(m0_qt_core STATIC
     src/adapters/DeterministicPlaybackBackend.cpp
+    src/adapters/SingleWorkerLocalSourceDiscovery.cpp
     src/adapters/SingleWorkerMetadataReader.cpp
     src/application/LocalTrackSession.cpp
     src/application/PlayerController.cpp
+    src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
 )
@@ -812,7 +818,9 @@ if(BUILD_TESTING)
     add_executable(m0_qt_core_tests
         tests/catch2/ArtworkLimitsTests.cpp
         tests/catch2/DeterministicPlaybackBackendTests.cpp
+        tests/catch2/LocalAudioFilePolicyTests.cpp
         tests/catch2/LocalFileQueueTests.cpp
+        tests/catch2/SingleWorkerLocalSourceDiscoveryTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/QueueNavigationTests.cpp

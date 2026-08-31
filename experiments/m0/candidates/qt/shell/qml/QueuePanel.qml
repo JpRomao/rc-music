@@ -122,6 +122,38 @@ FocusScope {
         clearConfirmation.accepted = true;
         clearConfirmation.close();
     }
+    function dropInsertionIndexAt(panelX, panelY) {
+        if (!root.visible)
+            return -1;
+        const point = queueList.mapFromItem(root, panelX, panelY);
+        if (point.x < 0 || point.x > queueList.width || point.y < 0 || point.y > queueList.height)
+            return -1;
+        if (queueList.count === 0)
+            return 0;
+        queueList.forceLayout();
+        const contentX = queueList.contentX + point.x;
+        const contentY = queueList.contentY + point.y;
+        const rowIndex = queueList.indexAt(contentX, contentY);
+        if (rowIndex < 0)
+            return queueList.count;
+        const row = queueList.itemAtIndex(rowIndex);
+        if (!row)
+            return queueList.count;
+        return rowIndex + (contentY >= row.y + row.height / 2 ? 1 : 0);
+    }
+    function dropIndicatorViewportY(index) {
+        queueList.forceLayout();
+        if (queueList.count === 0 || index <= 0) {
+            const first = queueList.itemAtIndex(0);
+            return first ? first.mapToItem(queueList, 0, 0).y : 0;
+        }
+        if (index >= queueList.count) {
+            const last = queueList.itemAtIndex(queueList.count - 1);
+            return last ? last.mapToItem(queueList, 0, last.height).y : queueList.height;
+        }
+        const row = queueList.itemAtIndex(index);
+        return row ? row.mapToItem(queueList, 0, 0).y : queueList.height;
+    }
 
     onObservedCurrentOccurrenceIdChanged: {
         if (visible)

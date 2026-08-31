@@ -1,4 +1,5 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -8,11 +9,18 @@
 #include "presentation/ShellUiContract.hpp"
 
 #include <QAccessible>
+#include <QCoreApplication>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QPointer>
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QStringList>
+#include <QWindow>
 #include <QtQuickTest/quicktest.h>
 #include <QtTest/qtestkeyboard.h>
 
@@ -83,6 +91,11 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         if (event_callback_)
             event_callback_({music_player::m0::PlaybackEventType::SnapshotChanged, snapshot_});
     }
+    void resetObservations() {
+        loaded_paths.clear();
+        play_calls = 0;
+        unload_calls = 0;
+    }
 
     music_player::m0::PlaybackSnapshot snapshot_{};
     music_player::m0::PlaybackEventCallback event_callback_{};
@@ -114,6 +127,85 @@ class QuickTestMetadataReader final : public music_player::m0::MetadataReader {
     }
 
     std::vector<music_player::m0::MetadataReadRequest> requests{};
+};
+
+class FakeLocalSourceDiscovery final : public music_player::m0::LocalSourceDiscovery {
+  public:
+    music_player::m0::DiscoveryCommandResult start(music_player::m0::LocalSourceDiscoveryRequest request) override {
+        requests.push_back(std::move(request));
+        next_sequence_ = 0;
+        return music_player::m0::DiscoveryCommandResult::Accepted;
+    }
+
+    music_player::m0::DiscoveryCommandResult cancel(const music_player::m0::DiscoveryGeneration generation) override {
+        cancelled_generations.push_back(generation);
+        return music_player::m0::DiscoveryCommandResult::Accepted;
+    }
+
+    [[nodiscard]] music_player::m0::DiscoveryPollResult
+    poll(const music_player::m0::DiscoveryGeneration generation) override {
+        polled_generations.push_back(generation);
+        if (poll_results.empty())
+            return {.status = music_player::m0::DiscoveryPollStatus::Pending};
+        auto result = std::move(poll_results.front());
+        poll_results.pop_front();
+        return result;
+    }
+
+    music_player::m0::DiscoveryCommandResult shutdown() override {
+        ++shutdown_calls;
+        return music_player::m0::DiscoveryCommandResult::Accepted;
+    }
+
+    [[nodiscard]] bool hasRequest() const noexcept { return !requests.empty(); }
+
+    void publishBatch(std::vector<std::filesystem::path> accepted_paths, const std::uint64_t issue_count,
+                      const std::uint64_t inspected_count) {
+        if (!hasRequest())
+            return;
+        std::vector<music_player::m0::LocalSourceDiscoveryIssue> issues;
+        issues.reserve(static_cast<std::size_t>(issue_count));
+        for (std::uint64_t index = 0; index < issue_count; ++index) {
+            issues.push_back(
+                {music_player::m0::LocalSourceDiscoveryIssueCode::UnsupportedFile,
+                 std::filesystem::path{"unsupported"} / std::filesystem::path{std::to_string(index) + ".txt"}});
+        }
+        poll_results.push_back(
+            {.status = music_player::m0::DiscoveryPollStatus::BatchReady,
+             .batch = music_player::m0::LocalSourceDiscoveryBatch{.generation = requests.back().generation,
+                                                                  .sequence = ++next_sequence_,
+                                                                  .inspected_count = inspected_count,
+                                                                  .accepted_paths = std::move(accepted_paths),
+                                                                  .issues = std::move(issues)}});
+    }
+
+    void publishCompleted(const std::uint64_t inspected_count, const std::uint64_t accepted_count,
+                          const std::uint64_t issue_count) {
+        poll_results.push_back(
+            {.status = music_player::m0::DiscoveryPollStatus::Completed,
+             .summary = music_player::m0::LocalSourceDiscoverySummary{
+                 .inspected_count = inspected_count, .accepted_count = accepted_count, .issue_count = issue_count}});
+    }
+
+    void publishCancelled() { poll_results.push_back({.status = music_player::m0::DiscoveryPollStatus::Cancelled}); }
+
+    void reset() {
+        requests.clear();
+        cancelled_generations.clear();
+        polled_generations.clear();
+        poll_results.clear();
+        next_sequence_ = 0;
+        shutdown_calls = 0;
+    }
+
+    std::vector<music_player::m0::LocalSourceDiscoveryRequest> requests{};
+    std::vector<music_player::m0::DiscoveryGeneration> cancelled_generations{};
+    std::vector<music_player::m0::DiscoveryGeneration> polled_generations{};
+    std::deque<music_player::m0::DiscoveryPollResult> poll_results{};
+    int shutdown_calls{0};
+
+  private:
+    std::uint64_t next_sequence_{0};
 };
 
 QAccessible::UpdateHandler previous_accessibility_update_handler = nullptr;
@@ -157,10 +249,12 @@ class ScenarioDriver final : public QObject {
                    music_player::m0::QtSystemAppearance& appearance,
                    std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state,
                    std::deque<std::vector<std::filesystem::path>>& local_selections,
-                   QuickTestPlaybackBackend& local_backend, QObject* parent = nullptr)
+                   music_player::m0::PlayerPresenter& local_presenter, QuickTestPlaybackBackend& local_backend,
+                   FakeLocalSourceDiscovery& local_source_discovery, QObject* parent = nullptr)
         : QObject(parent), presenter_(presenter), platform_(platform), appearance_(appearance),
           appearance_state_(std::move(appearance_state)), local_selections_(local_selections),
-          local_backend_(local_backend) {}
+          local_presenter_(local_presenter), local_backend_(local_backend),
+          local_source_discovery_(local_source_discovery) {}
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
@@ -193,6 +287,112 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
+    Q_INVOKABLE void resetLocalScenario() {
+        if (local_presenter_.sourceImportActive()) {
+            static_cast<void>(local_presenter_.cancelSourceImport());
+            local_source_discovery_.poll_results.clear();
+            local_source_discovery_.publishCancelled();
+            music_player::m0::test::PlayerPresenterTestAccess::pollSourceImport(local_presenter_);
+        }
+        if (local_presenter_.sourceImportState() != music_player::m0::PlayerPresenter::SourceImportState::Idle)
+            static_cast<void>(local_presenter_.dismissSourceImportStatus());
+        if (local_presenter_.queueLoaded())
+            static_cast<void>(local_presenter_.clearQueue());
+        local_selections_.clear();
+        local_source_discovery_.reset();
+        local_backend_.resetObservations();
+        drag_mime_.reset();
+        clearAccessibleAnnouncements();
+    }
+    Q_INVOKABLE int sourceRequestCount() const noexcept {
+        return static_cast<int>(local_source_discovery_.requests.size());
+    }
+    Q_INVOKABLE qulonglong sourceRequestGeneration(const int request_index) const noexcept {
+        if (request_index < 0 || request_index >= sourceRequestCount())
+            return 0;
+        return static_cast<qulonglong>(
+            local_source_discovery_.requests[static_cast<std::size_t>(request_index)].generation.value);
+    }
+    Q_INVOKABLE int sourceRequestRootCount(const int request_index) const noexcept {
+        if (request_index < 0 || request_index >= sourceRequestCount())
+            return 0;
+        return static_cast<int>(local_source_discovery_.requests[static_cast<std::size_t>(request_index)].roots.size());
+    }
+    Q_INVOKABLE QString sourceRequestRoot(const int request_index, const int root_index) const {
+        if (request_index < 0 || request_index >= sourceRequestCount())
+            return {};
+        const auto& roots = local_source_discovery_.requests[static_cast<std::size_t>(request_index)].roots;
+        if (root_index < 0 || root_index >= static_cast<int>(roots.size()))
+            return {};
+        return displayPath(roots[static_cast<std::size_t>(root_index)]);
+    }
+    Q_INVOKABLE int sourceCancelCount() const noexcept {
+        return static_cast<int>(local_source_discovery_.cancelled_generations.size());
+    }
+    Q_INVOKABLE qulonglong sourceCancelledGeneration(const int cancel_index) const noexcept {
+        if (cancel_index < 0 || cancel_index >= sourceCancelCount())
+            return 0;
+        return static_cast<qulonglong>(
+            local_source_discovery_.cancelled_generations[static_cast<std::size_t>(cancel_index)].value);
+    }
+    Q_INVOKABLE void enqueueSourceBatch(const QStringList& accepted_sources, const qulonglong issue_count,
+                                        const qulonglong inspected_count) {
+        std::vector<std::filesystem::path> paths;
+        paths.reserve(static_cast<std::size_t>(accepted_sources.size()));
+        for (const QString& source : accepted_sources)
+            paths.push_back(localPath(source));
+        local_source_discovery_.publishBatch(std::move(paths), static_cast<std::uint64_t>(issue_count),
+                                             static_cast<std::uint64_t>(inspected_count));
+    }
+    Q_INVOKABLE void enqueueSourceCompletion(const qulonglong inspected_count, const qulonglong accepted_count,
+                                             const qulonglong issue_count) {
+        local_source_discovery_.publishCompleted(static_cast<std::uint64_t>(inspected_count),
+                                                 static_cast<std::uint64_t>(accepted_count),
+                                                 static_cast<std::uint64_t>(issue_count));
+    }
+    Q_INVOKABLE void enqueueSourceCancelled() { local_source_discovery_.publishCancelled(); }
+    Q_INVOKABLE void pollSourceImport() {
+        music_player::m0::test::PlayerPresenterTestAccess::pollSourceImport(local_presenter_);
+    }
+    Q_INVOKABLE int beginUrlDrag(QObject* target, const qreal x, const qreal y, const QStringList& sources) {
+        drag_mime_ = std::make_unique<QMimeData>();
+        QList<QUrl> urls;
+        urls.reserve(sources.size());
+        for (const QString& source : sources)
+            urls.push_back(sourceToUrl(source));
+        drag_mime_->setUrls(urls);
+        QDragEnterEvent event{QPointF{x, y}.toPoint(), Qt::CopyAction, drag_mime_.get(), Qt::LeftButton,
+                              Qt::NoModifier};
+        return sendDropEvent(target, event);
+    }
+    Q_INVOKABLE int beginTextDrag(QObject* target, const qreal x, const qreal y, const QString& text) {
+        drag_mime_ = std::make_unique<QMimeData>();
+        drag_mime_->setText(text);
+        QDragEnterEvent event{QPointF{x, y}.toPoint(), Qt::CopyAction, drag_mime_.get(), Qt::LeftButton,
+                              Qt::NoModifier};
+        return sendDropEvent(target, event);
+    }
+    Q_INVOKABLE int moveDrag(QObject* target, const qreal x, const qreal y) {
+        if (!drag_mime_)
+            return static_cast<int>(Qt::IgnoreAction);
+        QDragMoveEvent event{QPointF{x, y}.toPoint(), Qt::CopyAction, drag_mime_.get(), Qt::LeftButton, Qt::NoModifier};
+        return sendDropEvent(target, event);
+    }
+    Q_INVOKABLE int dropDrag(QObject* target, const qreal x, const qreal y) {
+        if (!drag_mime_)
+            return static_cast<int>(Qt::IgnoreAction);
+        QDropEvent event{QPointF{x, y}, Qt::CopyAction, drag_mime_.get(), Qt::LeftButton, Qt::NoModifier};
+        const int action = sendDropEvent(target, event);
+        drag_mime_.reset();
+        return action;
+    }
+    Q_INVOKABLE void cancelDrag(QObject* target) {
+        if (auto* const window = qobject_cast<QWindow*>(target); window != nullptr) {
+            QDragLeaveEvent event;
+            QCoreApplication::sendEvent(window, &event);
+        }
+        drag_mime_.reset();
+    }
     Q_INVOKABLE void clearAccessibleAnnouncements() {
         last_accessible_announcement.clear();
         accessible_announcement_count = 0;
@@ -233,12 +433,31 @@ class ScenarioDriver final : public QObject {
     }
 
   private:
+    [[nodiscard]] static QUrl sourceToUrl(const QString& source) {
+        const bool windows_path =
+            source.size() >= 3 && source.at(1) == u':' && (source.at(2) == u'/' || source.at(2) == u'\\');
+        if (windows_path || source.startsWith(u'/'))
+            return QUrl::fromLocalFile(source);
+        return QUrl{source};
+    }
+
+    template <typename Event> static int sendDropEvent(QObject* target, Event& event) {
+        auto* const window = qobject_cast<QWindow*>(target);
+        if (window == nullptr)
+            return static_cast<int>(Qt::IgnoreAction);
+        QCoreApplication::sendEvent(window, &event);
+        return static_cast<int>(event.isAccepted() ? event.dropAction() : Qt::IgnoreAction);
+    }
+
     music_player::m0::PlayerPresenter& presenter_;
     QuickTestPlatform& platform_;
     music_player::m0::QtSystemAppearance& appearance_;
     std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state_;
     std::deque<std::vector<std::filesystem::path>>& local_selections_;
+    music_player::m0::PlayerPresenter& local_presenter_;
     QuickTestPlaybackBackend& local_backend_;
+    FakeLocalSourceDiscovery& local_source_discovery_;
+    std::unique_ptr<QMimeData> drag_mime_{};
 };
 
 class EmptyShellQuickTestSetup final : public QObject {
@@ -272,7 +491,7 @@ class EmptyShellQuickTestSetup final : public QObject {
                 local_selections_.pop_front();
                 return selection;
             },
-            engine);
+            local_source_discovery_, engine);
         auto appearance_state = std::make_shared<music_player::m0::SystemAppearanceSnapshot>(false, false);
         auto* appearance =
             new music_player::m0::QtSystemAppearance([appearance_state] { return *appearance_state; }, engine);
@@ -280,10 +499,10 @@ class EmptyShellQuickTestSetup final : public QObject {
         engine->rootContext()->setContextProperty(QStringLiteral("testShellUiContract"), contract);
         engine->rootContext()->setContextProperty(QStringLiteral("testPlayerPresenter"), presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testLocalPlayerPresenter"), local_presenter);
-        engine->rootContext()->setContextProperty(QStringLiteral("testScenarioDriver"),
-                                                  new ScenarioDriver(*presenter, platform_, *appearance,
-                                                                     appearance_state, local_selections_,
-                                                                     local_backend_, engine));
+        engine->rootContext()->setContextProperty(
+            QStringLiteral("testScenarioDriver"),
+            new ScenarioDriver(*presenter, platform_, *appearance, appearance_state, local_selections_,
+                               *local_presenter, local_backend_, local_source_discovery_, engine));
     }
 
   private:
@@ -291,6 +510,7 @@ class EmptyShellQuickTestSetup final : public QObject {
     QuickTestPlatform platform_;
     QuickTestPlaybackBackend local_backend_{};
     QuickTestMetadataReader local_metadata_reader_{};
+    FakeLocalSourceDiscovery local_source_discovery_{};
     std::deque<std::vector<std::filesystem::path>> local_selections_{};
 };
 

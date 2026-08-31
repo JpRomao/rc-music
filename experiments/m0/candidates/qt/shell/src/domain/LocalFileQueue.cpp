@@ -26,9 +26,13 @@ bool LocalFileQueue::replace(std::vector<std::filesystem::path> source_paths) {
 }
 
 bool LocalFileQueue::append(std::vector<std::filesystem::path> source_paths) {
-    if (source_paths.empty() || std::ranges::any_of(source_paths, [](const std::filesystem::path& source_path) {
-            return source_path.empty();
-        })) {
+    return insert(std::move(source_paths), items_.size());
+}
+
+bool LocalFileQueue::insert(std::vector<std::filesystem::path> source_paths, const std::size_t insertion_index) {
+    if (insertion_index > items_.size() || source_paths.empty() ||
+        std::ranges::any_of(source_paths,
+                            [](const std::filesystem::path& source_path) { return source_path.empty(); })) {
         return false;
     }
 
@@ -39,7 +43,8 @@ bool LocalFileQueue::append(std::vector<std::filesystem::path> source_paths) {
     }
 
     items_.reserve(items_.size() + appended_items.size());
-    std::ranges::move(appended_items, std::back_inserter(items_));
+    items_.insert(std::next(items_.begin(), static_cast<std::ptrdiff_t>(insertion_index)),
+                  std::make_move_iterator(appended_items.begin()), std::make_move_iterator(appended_items.end()));
     return true;
 }
 

@@ -94,6 +94,34 @@ TEST_CASE("local file queue appends valid paths atomically without changing the 
     CHECK(queue.currentOccurrenceId() == current);
 }
 
+TEST_CASE("local file queue inserts a batch at a requested position without changing the current occurrence",
+          "[m0][qt][core][local-queue][FR-003][FR-016]") {
+    LocalFileQueue queue;
+    REQUIRE(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\D.wav)"}));
+    REQUIRE(queue.select(1));
+    const auto current = queue.currentOccurrenceId();
+    const auto first_id = queue.items().front().occurrence_id;
+    const auto last_id = queue.items().back().occurrence_id;
+
+    REQUIRE(queue.insert({LR"(C:\Music\B.mp3)", LR"(C:\Music\C.flac)"}, 1));
+
+    REQUIRE(queue.size() == 4);
+    CHECK(queue.items()[0].occurrence_id == first_id);
+    CHECK(queue.items()[0].source_path == std::filesystem::path{LR"(C:\Music\A.wav)"});
+    CHECK(queue.items()[1].source_path == std::filesystem::path{LR"(C:\Music\B.mp3)"});
+    CHECK(queue.items()[2].source_path == std::filesystem::path{LR"(C:\Music\C.flac)"});
+    CHECK(queue.items()[3].occurrence_id == last_id);
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{3});
+    CHECK(queue.items()[1].occurrence_id != queue.items()[2].occurrence_id);
+
+    CHECK_FALSE(queue.insert({}, 0));
+    CHECK_FALSE(queue.insert({LR"(C:\Music\Aceita.wav)", {}}, 0));
+    CHECK_FALSE(queue.insert({LR"(C:\Music\Fora.wav)"}, 5));
+    CHECK(queue.size() == 4);
+    CHECK(queue.currentOccurrenceId() == current);
+}
+
 TEST_CASE("local file queue moves occurrences while preserving the current id", "[m0][qt][core][local-queue][FR-016]") {
     LocalFileQueue queue;
     REQUIRE(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\B.wav)", LR"(C:\Music\C.wav)", LR"(C:\Music\D.wav)"}));

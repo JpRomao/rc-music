@@ -6,6 +6,7 @@
 #include <QAbstractItemModelTester>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -36,6 +37,7 @@ class FixtureRepositoryTests final : public QObject {
     void queueModelExposesTypedRolesInSourceOrder();
     void queueModelLoadsExactlyOnce();
     void localQueueModelAppliesFineGrainedMutations();
+    void localQueueModelInsertsBatchAtRequestedIndex();
     void rejectsSemanticFixtureDrift_data();
     void rejectsSemanticFixtureDrift();
     void rejectsQueueCountDrift();
@@ -709,6 +711,58 @@ void FixtureRepositoryTests::localQueueModelAppliesFineGrainedMutations() {
     QCOMPARE(loaded_changed.size(), 2);
     QCOMPARE(model.data(model.index(0, 0), LocalQueueListModel::FileNameRole).toString(),
              QStringLiteral("Reaberta.wav"));
+}
+
+void FixtureRepositoryTests::localQueueModelInsertsBatchAtRequestedIndex() {
+    LocalFileQueue queue;
+    QVERIFY(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\D.wav)"}));
+    QVERIFY(queue.select(1));
+    const auto current_occurrence_id = queue.currentOccurrenceId();
+    QVERIFY(current_occurrence_id.has_value());
+
+    LocalQueueListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QVERIFY(model.replace(queue));
+
+    QItemSelectionModel selection(&model);
+    selection.setCurrentIndex(model.index(1, 0), QItemSelectionModel::ClearAndSelect);
+    const QPersistentModelIndex selected_before{selection.currentIndex()};
+    const QString selected_id = selected_before.data(LocalQueueListModel::OccurrenceIdRole).toString();
+    QCOMPARE(selected_id, LocalQueueListModel::occurrenceId(*current_occurrence_id));
+
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    const std::size_t insertion_index = 1;
+    const std::size_t insertion_count = 2;
+    QVERIFY(queue.insert({LR"(C:\Music\B.mp3)", LR"(C:\Music\C.flac)"}, insertion_index));
+
+    QVERIFY(model.insert(queue.items().subspan(insertion_index, insertion_count), insertion_index));
+
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(inserted.front().at(1).toInt(), 1);
+    QCOMPARE(inserted.front().at(2).toInt(), 2);
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(changed.front().at(0).value<QModelIndex>().row(), 3);
+    QCOMPARE(changed.front().at(1).value<QModelIndex>().row(), 3);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(model.rowCount(), 4);
+    QVERIFY(selected_before.isValid());
+    QCOMPARE(selected_before.row(), 3);
+    QCOMPARE(selection.currentIndex(), QModelIndex{selected_before});
+    QCOMPARE(selection.selectedIndexes().size(), 1);
+    QCOMPARE(selection.selectedIndexes().front().data(LocalQueueListModel::OccurrenceIdRole).toString(), selected_id);
+    QCOMPARE(queue.currentOccurrenceId(), current_occurrence_id);
+    QCOMPARE(queue.currentIndex(), std::optional<std::size_t>{3});
+
+    for (int row = 0; row < model.rowCount(); ++row) {
+        const QModelIndex index = model.index(row, 0);
+        QCOMPARE(model.data(index, LocalQueueListModel::OrderIndexRole).toInt(), row);
+        QCOMPARE(model.data(index, LocalQueueListModel::OccurrenceIdRole).toString(),
+                 LocalQueueListModel::occurrenceId(queue.items()[static_cast<std::size_t>(row)].occurrence_id));
+    }
+    QCOMPARE(model.data(model.index(1, 0), LocalQueueListModel::FileNameRole).toString(), QStringLiteral("B.mp3"));
+    QCOMPARE(model.data(model.index(2, 0), LocalQueueListModel::FileNameRole).toString(), QStringLiteral("C.flac"));
 }
 
 void FixtureRepositoryTests::rejectsSemanticFixtureDrift_data() {

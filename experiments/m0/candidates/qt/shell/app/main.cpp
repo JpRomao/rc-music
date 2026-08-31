@@ -13,6 +13,7 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
+#include "m0/domain/LocalAudioFilePolicy.hpp"
 
 #include <QFileDialog>
 #endif
@@ -37,6 +38,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -48,6 +50,17 @@ using music_player::m0::experiment::parseShellLaunchOptions;
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
 
 namespace {
+#ifdef M0_QT_COMBINED_AUDIO
+[[nodiscard]] QString localAudioDialogFilter() {
+    QStringList patterns;
+    for (const std::string_view extension : music_player::m0::LocalAudioFilePolicy::candidateExtensions()) {
+        const QString suffix = QString::fromLatin1(extension.data(), static_cast<qsizetype>(extension.size()));
+        patterns.append(QStringLiteral("*") + suffix);
+        patterns.append(QStringLiteral("*") + suffix.toUpper());
+    }
+    return QStringLiteral("Áudio local (%1);;Todos os arquivos (*)").arg(patterns.join(QLatin1Char{' '}));
+}
+#endif
 #ifdef M0_QT_SHELL_TEST_HOOKS
 [[nodiscard]] bool isVisible(const QObject* object) {
     return object != nullptr && object->property("visible").toBool();
@@ -114,10 +127,8 @@ int main(int argc, char* argv[]) {
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
         PlayerPresenter::AudioFilePicker audio_file_picker = [&contract] {
-            const QStringList selected = QFileDialog::getOpenFileNames(
-                nullptr, contract.openAudioText(), {},
-                QStringLiteral("Áudio local (*.mp3 *.MP3 *.m4a *.M4A *.mp4 *.MP4 *.flac *.FLAC *.ogg *.OGG *.oga "
-                               "*.OGA *.wav *.WAV);;Todos os arquivos (*)"));
+            const QStringList selected =
+                QFileDialog::getOpenFileNames(nullptr, contract.openAudioText(), {}, localAudioDialogFilter());
             std::vector<std::filesystem::path> paths;
             paths.reserve(static_cast<std::size_t>(selected.size()));
             for (const QString& source : selected) {

@@ -9,6 +9,7 @@ struct PlayerPresenterTestAccess final {
     [[nodiscard]] static std::size_t seekCommitAttemptCount(const PlayerPresenter& presenter) noexcept {
         return presenter.seekCommitAttemptCountForTest();
     }
+    static void pollSourceImport(PlayerPresenter& presenter) { presenter.pollSourceImport(); }
 };
 
 } // namespace music_player::m0::test

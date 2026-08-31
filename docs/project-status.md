@@ -6,6 +6,8 @@
 
 No modo real, a fila local também coordena eventos terminais por geração e ID: `Ended` avança sem circular com autoplay; no tail, as duas opções em memória mantêm ou limpam a seleção. Erros de origem marcam somente a ocorrência corrente e tentam continuar preservando reprodução/pausa; `Busy` mantém recuperação manual e snapshots terminais repetidos/antigos não alteram a intenção nem a nova faixa. Essa cobertura está no core/presenter, não em E2E Qt real de término/erro, e não conclui FR-011/FR-016/M3.3.
 
+A entrada por drag-and-drop de arquivos e diretórios locais está funcional no candidato Qt/Windows. A descoberta recursiva usa worker único, batches limitados, mailbox com backpressure, cancelamento por geração e profundidade máxima; resultados são inseridos incrementalmente por âncoras de ocorrência. A UI cobre posição antes/depois/fim sobre a fila, append fora dela, lote misto, erro parcial, progresso, cancelamento, foco e anúncios acessíveis. Handles Windows são abertos sem seguir reparse points, a identidade do diretório é revalidada e a interrupção de I/O é repetida até o reconhecimento do cancelamento ou a saída confirmada no teardown. M3.2 permanece parcial porque não houve `CHK-PERF` de 1.000 itens/stall de 100 ms, volume lento com deadline, validação nativa de symlink/NVDA nem E2E empacotado.
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -67,7 +69,7 @@ Estes comportamentos não foram todos pedidos literalmente, mas foram autorizado
 
 - fila básica;
 - volume/mudo e anterior/próxima;
-- drag-and-drop, CLI e instância única;
+- CLI e instância única;
 - atalhos/SMTC/MPRIS;
 - restauração pausada de sessão;
 - preferências atômicas e versionadas;
@@ -125,19 +127,19 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado, jornada local integrada válida e recuperação por quatro derivados temporários truncados verdes em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, corpus hostil canônico/limites, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado, jornada local integrada, recuperação por quatro derivados temporários truncados e importação incremental de arquivos/diretórios verdes em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, corpus hostil canônico/limites, gates e decisão pendentes |
 
 ## 7. Próximo passo recomendado
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. implementar drag-and-drop de arquivos/diretórios com descoberta incremental, cancelamento e erro parcial, preservando a responsividade da UI;
-2. acrescentar E2E Qt real de `Ended` e válido → inválido → válido, e então continuar fixtures canônicas e limites de metadata/arte sem incorporar áudio pessoal ao corpus;
+1. acrescentar E2E Qt real de `Ended`, válido → inválido → válido e fim sem circular;
+2. continuar fixtures canônicas e limites de metadata/arte sem incorporar áudio pessoal ao corpus;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
-No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha e CRUD/reordenação estão ligados por IDs estáveis. Adicionar preserva a atual; `Ctrl+O` anexa e toca a primeira nova ocorrência. Mover, remover e limpar têm botões, teclado e menu; toda limpeza não vazia pede confirmação, e a reordenação emite anúncio coberto por Quick. Remover a atual tenta apenas o sucessor à frente, sem circular. Drag-and-drop/diretórios, persistência, NVDA/manual e E2E com adapters reais continuam pendentes; os requisitos e M3.1/M3.3 permanecem parciais.
+No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha e CRUD/reordenação estão ligados por IDs estáveis. Adicionar preserva a atual; `Ctrl+O` anexa e toca a primeira nova ocorrência. Mover, remover e limpar têm botões, teclado e menu; toda limpeza não vazia pede confirmação, e a reordenação emite anúncio coberto por Quick. Remover a atual tenta apenas o sucessor à frente, sem circular. Drag-and-drop/diretórios já usam descoberta incremental no worker e projeção em lotes; persistência, `CHK-PERF`, NVDA/manual e E2E terminal com adapters reais continuam pendentes. M3.1/M3.2/M3.3 permanecem parciais pelos gates residuais.
 
 A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 

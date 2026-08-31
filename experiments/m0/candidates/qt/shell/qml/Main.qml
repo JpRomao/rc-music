@@ -111,6 +111,16 @@ ApplicationWindow {
         else
             preferencesPanel.open();
     }
+    function restoreFocusAfterSourceImport() {
+        if (window.presenter.exiting || preferencesPanel.visible || windowNotice.visible || queuePanel.clearConfirmationOpen)
+            return;
+        if (window.queueOpen && queuePanel.visible)
+            queuePanel.focusCurrent();
+        else if (queueButton.enabled)
+            queueButton.forceActiveFocus(Qt.TabFocusReason);
+        else
+            emptyState.focusPrimary();
+    }
 
     ColumnLayout {
         id: mainLayout
@@ -202,6 +212,18 @@ ApplicationWindow {
         onCloseRequested: window.setQueueOpen(false)
         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
     }
+    SourceImportStatus {
+        id: sourceImportStatus
+        parent: window.contentItem
+        x: mainLayout.x
+        y: Math.max(mainLayout.y, mainLayout.y + transport.y - height - window.uiContract.spacingUnit * 2)
+        width: mainLayout.width
+        z: 30
+        contract: window.uiContract
+        presenter: window.presenter
+        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        onFocusRestoreRequested: window.restoreFocusAfterSourceImport()
+    }
     PreferencesPanel {
         id: preferencesPanel
         parent: window.contentItem
@@ -229,6 +251,138 @@ ApplicationWindow {
         contract: window.uiContract
         presenter: window.presenter
         fallbackFocusItem: preferencesButton
+    }
+
+    DropArea {
+        id: sourceDropArea
+        parent: window.contentItem
+        objectName: "source-drop-area"
+        anchors.fill: parent
+        z: 100
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        property bool dragActive: false
+        property bool overQueue: false
+        property int acceptedDropAction: Qt.IgnoreAction
+        property int insertionIndex: window.presenter.queueModel.rowCount()
+
+        function updateInsertion(x, y) {
+            const queuePoint = queuePanel.mapFromItem(sourceDropArea, x, y);
+            const queueIndex = queuePanel.dropInsertionIndexAt(queuePoint.x, queuePoint.y);
+            overQueue = queueIndex >= 0;
+            insertionIndex = overQueue ? queueIndex : window.presenter.queueModel.rowCount();
+        }
+
+        function rejectDrag(drag) {
+            drag.accepted = false;
+            dragActive = false;
+            overQueue = false;
+            acceptedDropAction = Qt.IgnoreAction;
+        }
+
+        onEntered: drag => {
+            if (!drag.hasUrls) {
+                rejectDrag(drag);
+                return;
+            }
+            updateInsertion(drag.x, drag.y);
+            drag.accept(Qt.CopyAction);
+            acceptedDropAction = Qt.CopyAction;
+            dragActive = true;
+        }
+        onPositionChanged: drag => {
+            if (!drag.hasUrls) {
+                rejectDrag(drag);
+                return;
+            }
+            updateInsertion(drag.x, drag.y);
+            drag.accept(Qt.CopyAction);
+            acceptedDropAction = Qt.CopyAction;
+            dragActive = true;
+        }
+        onExited: {
+            dragActive = false;
+            overQueue = false;
+            acceptedDropAction = Qt.IgnoreAction;
+        }
+        onDropped: drop => {
+            if (!drop.hasUrls) {
+                rejectDrag(drop);
+                return;
+            }
+            updateInsertion(drop.x, drop.y);
+            const imported = window.presenter.importDroppedUrls(drop.urls, insertionIndex);
+            if (imported)
+                drop.accept(Qt.CopyAction);
+            else
+                drop.accepted = false;
+            dragActive = false;
+            overQueue = false;
+            acceptedDropAction = Qt.IgnoreAction;
+        }
+
+        Rectangle {
+            id: sourceDropOverlay
+            objectName: "source-drop-overlay"
+            anchors.fill: parent
+            visible: sourceDropArea.dragActive
+            color: window.uiContract.highContrast ? "transparent" : Qt.alpha(window.uiContract.accentColor, 0.12)
+            border.width: window.uiContract.highContrast ? 4 : 2
+            border.color: window.uiContract.focusColor
+            radius: window.uiContract.radiusMedium
+            z: 1
+            Accessible.ignored: true
+
+            Rectangle {
+                objectName: "source-drop-prompt"
+                anchors.centerIn: parent
+                width: Math.min(parent.width - window.uiContract.spacingUnit * 12, prompt.implicitWidth + window.uiContract.spacingUnit * 8)
+                height: prompt.implicitHeight + window.uiContract.spacingUnit * 6
+                color: window.uiContract.surfaceRaisedColor
+                radius: window.uiContract.radiusMedium
+                border.width: window.uiContract.highContrast ? 2 : 1
+                border.color: window.uiContract.focusColor
+
+                SourceImportText {
+                    id: sourceImportText
+                }
+
+                Text {
+                    id: prompt
+                    anchors.centerIn: parent
+                    width: Math.max(0, parent.width - window.uiContract.spacingUnit * 4)
+                    text: sourceImportText.dropPrompt
+                    textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    color: window.uiContract.textPrimaryColor
+                    font.bold: true
+                    Accessible.ignored: true
+                }
+            }
+        }
+
+        Rectangle {
+            id: queueDropIndicator
+            objectName: "queue-drop-indicator"
+            property int insertionIndex: sourceDropArea.insertionIndex
+            readonly property point listOrigin: visible ? sourceDropArea.mapFromItem(queuePanel.listView, 0, 0) : Qt.point(0, 0)
+            x: listOrigin.x
+            y: {
+                if (!visible)
+                    return 0;
+                const top = listOrigin.y;
+                const bottom = top + queuePanel.listView.height - height;
+                const proposed = top + queuePanel.dropIndicatorViewportY(insertionIndex) - height / 2;
+                return Math.max(top, Math.min(bottom, proposed));
+            }
+            width: queuePanel.listView.width
+            height: window.uiContract.highContrast ? 4 : 3
+            radius: height / 2
+            color: window.uiContract.focusColor
+            visible: sourceDropArea.dragActive && sourceDropArea.overQueue && insertionIndex >= 0
+            z: 2
+            Accessible.ignored: true
+        }
     }
 
     Shortcut {

@@ -229,6 +229,25 @@ TEST_CASE("a rejected load preserves the active local track and does not start n
     CHECK(metadata.cancellations.empty());
 }
 
+TEST_CASE("a rejected load exposes its typed backend result without mutating the session",
+          "[m0][qt][core][local-track][error]") {
+    const auto rejection =
+        GENERATE(PlaybackCommandResult::Busy, PlaybackCommandResult::NotReady, PlaybackCommandResult::InvalidArgument);
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path current{L"C:\\Music\\current.wav"};
+    REQUIRE(session.open(current));
+    playback.load_result = rejection;
+
+    CHECK(session.openWithResult(L"C:\\Music\\rejected.wav") == rejection);
+
+    CHECK(session.hasTrack());
+    CHECK(session.sourcePath() == current);
+    CHECK(metadata.requests.size() == 1);
+    CHECK(metadata.cancellations.empty());
+}
+
 TEST_CASE("unloading a local track is atomic and invalidates its pending work",
           "[m0][qt][core][local-track][playback][FR-042]") {
     RecordingPlaybackBackend playback;

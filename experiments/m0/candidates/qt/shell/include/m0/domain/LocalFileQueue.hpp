@@ -25,6 +25,7 @@ class LocalFileQueue final {
   public:
     [[nodiscard]] bool replace(std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] bool append(std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] bool insert(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     [[nodiscard]] bool move(LocalQueueOccurrenceId occurrence_id, std::size_t destination_index) noexcept;
     [[nodiscard]] bool remove(LocalQueueOccurrenceId occurrence_id) noexcept;
     [[nodiscard]] bool clear() noexcept;

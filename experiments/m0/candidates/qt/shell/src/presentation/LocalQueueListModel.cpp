@@ -3,6 +3,7 @@
 #include <QList>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace music_player::m0 {
@@ -34,33 +35,47 @@ bool LocalQueueListModel::replace(const LocalFileQueue& queue) {
 }
 
 bool LocalQueueListModel::append(const std::span<const LocalFileQueueItem> source_items) {
-    if (source_items.empty()) {
+    return insert(source_items, static_cast<std::size_t>(items_.size()));
+}
+
+bool LocalQueueListModel::insert(const std::span<const LocalFileQueueItem> source_items,
+                                 const std::size_t insertion_index) {
+    const auto item_count = static_cast<std::size_t>(items_.size());
+    constexpr auto max_row_count = static_cast<std::size_t>(std::numeric_limits<int>::max());
+    if (source_items.empty() || insertion_index > item_count || item_count > max_row_count ||
+        source_items.size() > max_row_count - item_count) {
         return false;
     }
 
-    QList<Item> appended_items;
-    appended_items.reserve(static_cast<qsizetype>(source_items.size()));
-    int order_index = rowCount();
+    QList<Item> inserted_items;
+    inserted_items.reserve(static_cast<qsizetype>(source_items.size()));
+    int order_index = static_cast<int>(insertion_index);
     for (const LocalFileQueueItem& source : source_items) {
         if (source.source_path.empty() || source.occurrence_id.value == 0 ||
             find(source.occurrence_id) != items_.end() ||
-            std::ranges::find(appended_items, source.occurrence_id, &Item::occurrence_id) != appended_items.end()) {
+            std::ranges::find(inserted_items, source.occurrence_id, &Item::occurrence_id) != inserted_items.end()) {
             return false;
         }
-        appended_items.append(makeItem(source, order_index++));
+        inserted_items.append(makeItem(source, order_index++));
     }
 
-    const int first_row = rowCount();
-    const int last_row = first_row + static_cast<int>(appended_items.size()) - 1;
+    const int first_row = static_cast<int>(insertion_index);
+    const int inserted_count = static_cast<int>(inserted_items.size());
+    const int last_row = first_row + inserted_count - 1;
     const bool loaded_changed = !loaded_;
-    items_.reserve(items_.size() + appended_items.size());
+    items_.reserve(items_.size() + inserted_items.size());
     beginInsertRows({}, first_row, last_row);
-    for (Item& item : appended_items)
-        items_.append(std::move(item));
+    for (int offset = 0; offset < inserted_count; ++offset)
+        items_.insert(first_row + offset, std::move(inserted_items[offset]));
+    for (std::size_t index = insertion_index; index < static_cast<std::size_t>(items_.size()); ++index)
+        items_[static_cast<qsizetype>(index)].order_index = static_cast<int>(index);
     loaded_ = true;
     endInsertRows();
     if (loaded_changed)
         emit loadedChanged();
+    if (insertion_index < item_count) {
+        emit dataChanged(index(last_row + 1, 0), index(rowCount() - 1, 0), {OrderIndexRole});
+    }
     return true;
 }
 

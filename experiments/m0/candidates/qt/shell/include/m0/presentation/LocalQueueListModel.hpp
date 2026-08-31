@@ -42,6 +42,7 @@ class LocalQueueListModel final : public QAbstractListModel {
     [[nodiscard]] bool loaded() const noexcept;
     [[nodiscard]] bool replace(const LocalFileQueue& queue);
     [[nodiscard]] bool append(std::span<const LocalFileQueueItem> source_items);
+    [[nodiscard]] bool insert(std::span<const LocalFileQueueItem> source_items, std::size_t insertion_index);
     [[nodiscard]] bool move(std::size_t source_index, std::size_t destination_index);
     [[nodiscard]] bool remove(std::size_t index);
     [[nodiscard]] bool clear();

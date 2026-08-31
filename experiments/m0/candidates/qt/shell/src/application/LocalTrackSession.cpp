@@ -10,9 +10,16 @@ LocalTrackSession::LocalTrackSession(PlaybackBackend& playback_backend, Metadata
     : playback_backend_(playback_backend), metadata_reader_(metadata_reader) {}
 
 bool LocalTrackSession::open(const std::filesystem::path& source_path, const LocalTrackStartIntent start_intent) {
-    if (source_path.empty() || playback_backend_.load(source_path) != PlaybackCommandResult::Accepted) {
-        return false;
-    }
+    return openWithResult(source_path, start_intent) == PlaybackCommandResult::Accepted;
+}
+
+PlaybackCommandResult LocalTrackSession::openWithResult(const std::filesystem::path& source_path,
+                                                        const LocalTrackStartIntent start_intent) {
+    if (source_path.empty())
+        return PlaybackCommandResult::InvalidArgument;
+    const PlaybackCommandResult load_result = playback_backend_.load(source_path);
+    if (load_result != PlaybackCommandResult::Accepted)
+        return load_result;
 
     const auto next_metadata_generation = nextGeneration(metadata_generation_);
     if (metadata_generation_.value != 0) {
@@ -35,7 +42,7 @@ bool LocalTrackSession::open(const std::filesystem::path& source_path, const Loc
                                                                           : LocalTrackMetadataStatus::Failed;
 
     attemptStart(playback_backend_.snapshot());
-    return true;
+    return PlaybackCommandResult::Accepted;
 }
 
 bool LocalTrackSession::unload() {

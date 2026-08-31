@@ -1,5 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
+#include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
@@ -8,6 +9,7 @@
 
 #include <QAbstractItemModelTester>
 #include <QColor>
+#include <QCoreApplication>
 #include <QImage>
 #include <QMetaMethod>
 #include <QMetaProperty>
@@ -59,10 +61,17 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     }
     PlaybackCommandResult load(const std::filesystem::path& source_path) override {
         loaded_paths.push_back(source_path);
-        if (load_result == PlaybackCommandResult::Accepted) {
+        const PlaybackCommandResult result = [this] {
+            if (load_results.empty())
+                return load_result;
+            const PlaybackCommandResult next = load_results.front();
+            load_results.pop_front();
+            return next;
+        }();
+        if (result == PlaybackCommandResult::Accepted) {
             snapshot_ = {.status = PlaybackStatus::Loading, .generation = ++last_generation_};
         }
-        return load_result;
+        return result;
     }
     PlaybackCommandResult play() override {
         ++play_calls;
@@ -111,6 +120,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     PlaybackSnapshot snapshot_{};
     PlaybackEventCallback event_callback_{};
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
+    std::deque<PlaybackCommandResult> load_results;
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult seek_result{PlaybackCommandResult::Accepted};
@@ -159,12 +169,82 @@ class PresenterMetadataReader final : public MetadataReader {
     std::deque<MetadataPollResult> poll_results;
 };
 
+class FakeLocalSourceDiscovery final : public LocalSourceDiscovery {
+  public:
+    DiscoveryCommandResult start(LocalSourceDiscoveryRequest request) override {
+        requests.push_back(std::move(request));
+        return start_result;
+    }
+
+    DiscoveryCommandResult cancel(const DiscoveryGeneration generation) override {
+        cancelled_generations.push_back(generation);
+        return cancel_result;
+    }
+
+    [[nodiscard]] DiscoveryPollResult poll(const DiscoveryGeneration generation) override {
+        polled_generations.push_back(generation);
+        if (poll_results.empty())
+            return {.status = DiscoveryPollStatus::Pending};
+        DiscoveryPollResult result = std::move(poll_results.front());
+        poll_results.pop_front();
+        return result;
+    }
+
+    DiscoveryCommandResult shutdown() override {
+        ++shutdown_calls;
+        return shutdown_result;
+    }
+
+    void publishBatch(const DiscoveryGeneration generation, const std::uint64_t sequence,
+                      std::vector<std::filesystem::path> accepted_paths, std::vector<LocalSourceDiscoveryIssue> issues,
+                      const std::uint64_t inspected_count) {
+        poll_results.push_back({.status = DiscoveryPollStatus::BatchReady,
+                                .batch = LocalSourceDiscoveryBatch{.generation = generation,
+                                                                   .sequence = sequence,
+                                                                   .inspected_count = inspected_count,
+                                                                   .accepted_paths = std::move(accepted_paths),
+                                                                   .issues = std::move(issues)}});
+    }
+
+    void publishCompleted(const LocalSourceDiscoverySummary summary) {
+        poll_results.push_back({.status = DiscoveryPollStatus::Completed, .summary = summary});
+    }
+
+    void publishCancelled() { poll_results.push_back({.status = DiscoveryPollStatus::Cancelled}); }
+
+    DiscoveryCommandResult start_result{DiscoveryCommandResult::Accepted};
+    DiscoveryCommandResult cancel_result{DiscoveryCommandResult::Accepted};
+    DiscoveryCommandResult shutdown_result{DiscoveryCommandResult::Accepted};
+    std::vector<LocalSourceDiscoveryRequest> requests;
+    std::vector<DiscoveryGeneration> cancelled_generations;
+    std::vector<DiscoveryGeneration> polled_generations;
+    std::deque<DiscoveryPollResult> poll_results;
+    int shutdown_calls{0};
+};
+
 [[nodiscard]] FixtureBundle frozenBundle() {
     return FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
 }
 
 [[nodiscard]] std::filesystem::path localTestPath(const std::u8string& file_name) {
     return std::filesystem::path{u8"local-test"} / std::filesystem::path{file_name};
+}
+
+[[nodiscard]] QUrl localTestUrl(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return QUrl::fromLocalFile(QString::fromStdWString(path.native()));
+#else
+    const auto& native = path.native();
+    return QUrl::fromLocalFile(QString::fromUtf8(native.data(), static_cast<qsizetype>(native.size())));
+#endif
+}
+
+[[nodiscard]] QStringList queueFileNames(const QAbstractItemModel& model) {
+    QStringList names;
+    names.reserve(model.rowCount());
+    for (int row = 0; row < model.rowCount(); ++row)
+        names.push_back(model.data(model.index(row, 0), QueueListModel::FileNameRole).toString());
+    return names;
 }
 
 } // namespace
@@ -185,6 +265,18 @@ class PlayerPresenterTests final : public QObject {
     void removingCurrentUsesAForwardSuccessorOrLeavesPlaybackEmpty();
     void removingPausedCurrentKeepsTheSuccessorReady();
     void addingAfterTheQueueBecomesEmptyStartsTheFirstNewOccurrence();
+    void droppedSourceImportValidatesBoundaryAndKeepsStableAnchor();
+    void sourceImportTracksMovedAnchorAndFallsBackAfterItsRemoval();
+    void sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext_data();
+    void sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext();
+    void sourceImportMarksInvalidArgumentLoadUnavailableAndContinues();
+    void sourceImportCountsAnAsynchronousFailureOnceAfterCompletion();
+    void dismissingSourceImportStopsTrackingCompletedOccurrences();
+    void startingANewSourceImportStopsTrackingPreviousOccurrences();
+    void sourceImportResumesAutoplayWhenALaterBatchFollowsAnAsynchronousFailure();
+    void sourceImportDoesNotArmAutoplayAfterItsInitialTrackIsRemoved();
+    void sourceImportIssuesBetweenBatchesDoNotCancelValidFiles();
+    void cancellingSourceImportKeepsConsumedBatchesAndDiscardsLateOnes();
     void rejectedQueuePlaybackTransitionsLeaveTheQueueAtomic();
     void transientNavigationRejectionKeepsTheTargetAvailable();
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
@@ -752,6 +844,394 @@ void PlayerPresenterTests::addingAfterTheQueueBecomesEmptyStartsTheFirstNewOccur
     QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>({first, duplicate}));
     QCOMPARE(metadata.requests.size(), std::size_t{2});
     QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::droppedSourceImportValidatesBoundaryAndKeepsStableAnchor() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto first = localTestPath(u8"Primeira.mp3");
+    const auto anchor = localTestPath(u8"Ancora.flac");
+    const auto inserted_first = localTestPath(u8"Inserida 1.ogg");
+    const auto inserted_second = localTestPath(u8"Inserida 2.wav");
+    const std::vector<std::filesystem::path> selection{first, anchor};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString current_id = presenter.currentOccurrenceId();
+    QSignalSpy inserted(model, &QAbstractItemModel::rowsInserted);
+
+    QVERIFY(!presenter.importDroppedUrls({QUrl{QStringLiteral("https://example.invalid/audio.mp3")}}, 1));
+    QCOMPARE(discovery.requests.size(), std::size_t{0});
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Rejected);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QVERIFY(presenter.dismissSourceImportStatus());
+
+    const QList<QUrl> dropped{localTestUrl(inserted_first),
+                              QUrl{QStringLiteral("https://example.invalid/ignored.wav")}};
+    QVERIFY(presenter.importDroppedUrls(dropped, 1));
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Discovering);
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    QCOMPARE(discovery.requests.front().roots, std::vector<std::filesystem::path>{inserted_first});
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {inserted_first, inserted_second}, {}, 2);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(queueFileNames(*model), QStringList({QStringLiteral("Primeira.mp3"), QStringLiteral("Inserida 1.ogg"),
+                                                  QStringLiteral("Inserida 2.wav"), QStringLiteral("Ancora.flac")}));
+    QCOMPARE(presenter.currentOccurrenceId(), current_id);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{first});
+    QCOMPARE(inserted.front().at(1).toInt(), 1);
+    QCOMPARE(inserted.front().at(2).toInt(), 2);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 2ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(presenter.sourceImportInspectedCount(), 2ULL);
+
+    discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+}
+
+void PlayerPresenterTests::sourceImportTracksMovedAnchorAndFallsBackAfterItsRemoval() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto first = localTestPath(u8"A.mp3");
+    const auto predecessor = localTestPath(u8"B.mp3");
+    const auto anchor = localTestPath(u8"C.mp3");
+    const auto tail = localTestPath(u8"D.mp3");
+    const auto batch_one = localTestPath(u8"X.mp3");
+    const auto batch_two = localTestPath(u8"Y.mp3");
+    const auto batch_three = localTestPath(u8"Z.mp3");
+    const std::vector<std::filesystem::path> selection{first, predecessor, anchor, tail};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString anchor_id = model->data(model->index(2, 0), QueueListModel::OccurrenceIdRole).toString();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 2));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {batch_one}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*model),
+             QStringList({QStringLiteral("A.mp3"), QStringLiteral("B.mp3"), QStringLiteral("X.mp3"),
+                          QStringLiteral("C.mp3"), QStringLiteral("D.mp3")}));
+
+    QVERIFY(presenter.moveQueueOccurrence(anchor_id, 1));
+    discovery.publishBatch(generation, 2, {batch_two}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*model),
+             QStringList({QStringLiteral("A.mp3"), QStringLiteral("Y.mp3"), QStringLiteral("C.mp3"),
+                          QStringLiteral("B.mp3"), QStringLiteral("X.mp3"), QStringLiteral("D.mp3")}));
+
+    QVERIFY(presenter.removeQueueOccurrence(anchor_id));
+    discovery.publishBatch(generation, 3, {batch_three}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*model),
+             QStringList({QStringLiteral("A.mp3"), QStringLiteral("Y.mp3"), QStringLiteral("Z.mp3"),
+                          QStringLiteral("B.mp3"), QStringLiteral("X.mp3"), QStringLiteral("D.mp3")}));
+}
+
+void PlayerPresenterTests::sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext_data() {
+    QTest::addColumn<int>("transient_result");
+    QTest::newRow("busy") << static_cast<int>(PlaybackCommandResult::Busy);
+    QTest::newRow("not-ready") << static_cast<int>(PlaybackCommandResult::NotReady);
+}
+
+void PlayerPresenterTests::sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext() {
+    QFETCH(int, transient_result);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto rejected = localTestPath(u8"Corrompida.bin");
+    const auto playable = localTestPath(u8"Valida.mp3");
+    backend.load_results = {static_cast<PlaybackCommandResult>(transient_result), PlaybackCommandResult::Accepted};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(rejected), localTestUrl(playable)}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {rejected, playable}, {}, 2);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>({rejected, playable}));
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), true);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).isValid());
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Valida"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(metadata.requests.size(), std::size_t{1});
+    QCOMPARE(metadata.requests.front().source_path, playable);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 2ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+
+    discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+}
+
+void PlayerPresenterTests::sourceImportMarksInvalidArgumentLoadUnavailableAndContinues() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto invalid = localTestPath(u8"Inválida.bin");
+    const auto playable = localTestPath(u8"Válida.mp3");
+    backend.load_results = {PlaybackCommandResult::InvalidArgument, PlaybackCommandResult::Accepted};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(invalid), localTestUrl(playable)}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {invalid, playable}, {}, 2);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>({invalid, playable}));
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("open_rejected"));
+    QCOMPARE(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool(), true);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+
+    discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+}
+
+void PlayerPresenterTests::sourceImportCountsAnAsynchronousFailureOnceAfterCompletion() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto invalid = localTestPath(u8"Corrompida.bin");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QSignalSpy source_import_changed(&presenter, &PlayerPresenter::sourceImportChanged);
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(invalid)}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {invalid}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+
+    QTRY_COMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), false);
+    const int notifications_after_first_error = source_import_changed.size();
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QCoreApplication::processEvents();
+
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(source_import_changed.size(), notifications_after_first_error);
+}
+
+void PlayerPresenterTests::dismissingSourceImportStopsTrackingCompletedOccurrences() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto imported = localTestPath(u8"Importada.mp3");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(imported)}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {imported}, {}, 1);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QVERIFY(presenter.dismissSourceImportStatus());
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+
+    QTRY_COMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Idle);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+}
+
+void PlayerPresenterTests::startingANewSourceImportStopsTrackingPreviousOccurrences() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto previous = localTestPath(u8"Anterior.mp3");
+    const auto next = localTestPath(u8"Nova.mp3");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(previous)}, 0));
+    const DiscoveryGeneration previous_generation = discovery.requests.back().generation;
+    discovery.publishBatch(previous_generation, 1, {previous}, {}, 1);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(next)}, 1));
+    const DiscoveryGeneration next_generation = discovery.requests.back().generation;
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Discovering);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+
+    discovery.publishBatch(next_generation, 1, {next}, {}, 1);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+}
+
+void PlayerPresenterTests::sourceImportResumesAutoplayWhenALaterBatchFollowsAnAsynchronousFailure() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto invalid = localTestPath(u8"Primeira corrompida.bin");
+    const auto playable = localTestPath(u8"Segunda válida.mp3");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {invalid}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{invalid});
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), false);
+
+    discovery.publishBatch(generation, 2, {playable}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>({invalid, playable}));
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Segunda válida"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+
+    discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+}
+
+void PlayerPresenterTests::sourceImportDoesNotArmAutoplayAfterItsInitialTrackIsRemoved() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto existing = localTestPath(u8"Existente.mp3");
+    const auto imported = localTestPath(u8"Importada.mp3");
+    const std::vector<std::filesystem::path> selection{existing};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString existing_id = presenter.currentOccurrenceId();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(imported)}, 1));
+    const DiscoveryGeneration generation = discovery.requests.back().generation;
+    QVERIFY(presenter.removeQueueOccurrence(existing_id));
+    QCOMPARE(model->rowCount(), 0);
+
+    discovery.publishBatch(generation, 1, {imported}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{existing});
+    QCOMPARE(presenter.currentQueueIndex(), -1);
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), true);
+}
+
+void PlayerPresenterTests::sourceImportIssuesBetweenBatchesDoNotCancelValidFiles() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto first = localTestPath(u8"Primeira.flac");
+    const auto ignored = localTestPath(u8"ignorada.txt");
+    const auto second = localTestPath(u8"Segunda.ogg");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {first}, {}, 1);
+    discovery.publishBatch(generation, 2, {}, {{LocalSourceDiscoveryIssueCode::UnsupportedFile, ignored}}, 1);
+    discovery.publishBatch(generation, 3, {second}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(queueFileNames(*model), QStringList({QStringLiteral("Primeira.flac"), QStringLiteral("Segunda.ogg")}));
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{first});
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 2ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(presenter.sourceImportInspectedCount(), 3ULL);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Discovering);
+
+    discovery.publishCompleted({.inspected_count = 3, .accepted_count = 2, .issue_count = 1});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+}
+
+void PlayerPresenterTests::cancellingSourceImportKeepsConsumedBatchesAndDiscardsLateOnes() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto consumed = localTestPath(u8"Consumida.wav");
+    const auto late = localTestPath(u8"Tardia.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {consumed}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(model->rowCount(), 1);
+
+    QVERIFY(presenter.cancelSourceImport());
+    QVERIFY(presenter.cancelSourceImport());
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Cancelling);
+    QCOMPARE(discovery.cancelled_generations, std::vector<DiscoveryGeneration>{generation});
+    discovery.publishCancelled();
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Cancelled);
+    QCOMPARE(model->rowCount(), 1);
+
+    discovery.publishBatch(generation, 2, {late}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*model), QStringList{QStringLiteral("Consumida.wav")});
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 1ULL);
+    QVERIFY(presenter.dismissSourceImportStatus());
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Idle);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 0ULL);
 }
 
 void PlayerPresenterTests::rejectedQueuePlaybackTransitionsLeaveTheQueueAtomic() {
@@ -2354,6 +2834,9 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QVERIFY(!fixture_mode.hasNotifySignal());
     const QSet<QByteArray> expected{"openAudio",
                                     "addAudio",
+                                    "importDroppedUrls",
+                                    "cancelSourceImport",
+                                    "dismissSourceImportStatus",
                                     "playQueueOccurrence",
                                     "moveQueueOccurrence",
                                     "removeQueueOccurrence",
