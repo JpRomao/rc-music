@@ -131,13 +131,13 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. completar tocar linha e CRUD/reordenação da fila local, preservando IDs, foco e trabalho assíncrono;
+1. completar CRUD/reordenação da fila local, preservando IDs, foco e trabalho assíncrono; tocar linha já está verde no core, presenter e Quick;
 2. acrescentar E2E Qt real de `Ended` e válido → inválido → válido, e então continuar fixtures canônicas e limites de metadata/arte sem incorporar áudio pessoal ao corpus;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
-No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha, CRUD/reordenação, persistência, anúncio acessível do item pulado e E2E com adapters reais continuam pendentes; por isso os mesmos requisitos e M3.3 permanecem parciais.
+No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha por ID estável está ligado a Enter, Space, duplo clique e ação acessível, sem confundir duplicatas nem recarregar um start ainda pendente. CRUD/reordenação, persistência, anúncio acessível do item pulado e E2E com adapters reais continuam pendentes; por isso os mesmos requisitos e M3.3 permanecem parciais.
 
 A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 

@@ -61,6 +61,14 @@ bool LocalTrackSession::unload() {
     return true;
 }
 
+bool LocalTrackSession::promotePendingStartToAutoplay() noexcept {
+    if (!has_track_ || !start_pending_) {
+        return false;
+    }
+    start_intent_ = LocalTrackStartIntent::Autoplay;
+    return true;
+}
+
 LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
     if (!has_track_ || event.snapshot.generation != playback_generation_) {
         return LocalTrackPlaybackEventResult::Ignored;

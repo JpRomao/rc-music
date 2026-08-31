@@ -38,6 +38,7 @@ class LocalTrackSession final {
     [[nodiscard]] bool open(const std::filesystem::path& source_path,
                             LocalTrackStartIntent start_intent = LocalTrackStartIntent::Autoplay);
     [[nodiscard]] bool unload();
+    [[nodiscard]] bool promotePendingStartToAutoplay() noexcept;
     [[nodiscard]] LocalTrackPlaybackEventResult applyPlaybackEvent(const PlaybackEvent& event);
     [[nodiscard]] bool pollMetadata();
     [[nodiscard]] bool cancelMetadata();

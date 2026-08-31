@@ -171,6 +171,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool cancelWindowNotice();
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool openAudio();
+    Q_INVOKABLE bool playQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
@@ -217,6 +218,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
+    [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(const QString& occurrence_id) const noexcept;
     [[nodiscard]] std::optional<std::size_t> nextAvailableLocalIndex() const noexcept;
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
     [[nodiscard]] bool navigate(QueueDirection direction);

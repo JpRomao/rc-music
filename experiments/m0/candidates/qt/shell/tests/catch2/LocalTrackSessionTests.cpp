@@ -160,6 +160,23 @@ TEST_CASE("a local track can stay ready without autoplaying", "[m0][qt][core][lo
     CHECK(playback.pause_calls == 0);
 }
 
+TEST_CASE("play now promotes only the pending start of the current local track",
+          "[m0][qt][core][local-track][playback][FR-016]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    REQUIRE(session.open(L"C:\\Music\\queued.wav", LocalTrackStartIntent::StayReady));
+
+    REQUIRE(session.promotePendingStartToAutoplay());
+    CHECK(session.startIntent() == LocalTrackStartIntent::Autoplay);
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}}) ==
+        LocalTrackPlaybackEventResult::Applied);
+
+    CHECK(playback.play_calls == 1);
+    CHECK_FALSE(session.promotePendingStartToAutoplay());
+}
+
 TEST_CASE("a current-generation playback error cancels pending autoplay",
           "[m0][qt][core][local-track][playback][error]") {
     RecordingPlaybackBackend playback;

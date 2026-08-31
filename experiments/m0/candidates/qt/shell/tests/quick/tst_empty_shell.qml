@@ -31,6 +31,11 @@ TestCase {
         target: testCase.shell
         signalName: "openAudioRequested"
     }
+    SignalSpy {
+        id: queuePlaySpy
+        target: testCase.shell ? findChild(testCase.shell, "queue-panel") : null
+        signalName: "playRequested"
+    }
     function verifyInsideWindow(item) {
         const position = item.mapToItem(shell.contentItem, 0, 0);
         verify(item.visible);
@@ -495,6 +500,26 @@ TestCase {
         tryVerify(function () {
             return queuePanel.visible && queueList.activeFocus;
         });
+        verify(queuePlaySpy.valid);
+        queuePlaySpy.clear();
+        queueList.currentIndex = 16;
+        const playableQueueRow = revealQueueRow(queueList, 16);
+        queueList.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(queuePlaySpy.count, 1);
+        compare(queuePlaySpy.signalArguments[0][0], "queue-0017");
+        verify(queueList.activeFocus);
+        keyClick(Qt.Key_Space);
+        compare(queuePlaySpy.count, 2);
+        compare(queuePlaySpy.signalArguments[1][0], "queue-0017");
+        mouseDoubleClickSequence(playableQueueRow);
+        compare(queuePlaySpy.count, 3);
+        compare(queuePlaySpy.signalArguments[2][0], "queue-0017");
+        playableQueueRow.Accessible.pressAction();
+        compare(queuePlaySpy.count, 4);
+        compare(queuePlaySpy.signalArguments[3][0], "queue-0017");
+        verify(queueList.activeFocus);
+        queueList.currentIndex = 998;
         compare(queueList.currentIndex, 998);
         const selectedUnavailableQueueRow = revealQueueRow(queueList, 998);
         compare(selectedUnavailableQueueRow.occurrenceId, "queue-0999");

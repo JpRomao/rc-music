@@ -500,6 +500,39 @@ bool PlayerPresenter::openAudio() {
     emit playbackChanged();
     return true;
 }
+bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
+    if (uses_frozen_fixture_ || exiting_)
+        return false;
+    const auto target = localOccurrenceIndex(occurrence_id);
+    if (!target.has_value() || !local_queue_.items()[*target].available)
+        return false;
+
+    const auto current = local_queue_.currentIndex();
+    if (current == target) {
+        switch (controller_.confirmedSnapshot().status) {
+        case PlaybackStatus::Loading:
+            return local_track_session_->promotePendingStartToAutoplay();
+        case PlaybackStatus::Ready:
+        case PlaybackStatus::Paused:
+            return togglePlayback();
+        case PlaybackStatus::Playing:
+            return true;
+        case PlaybackStatus::Empty:
+        case PlaybackStatus::Error:
+            break;
+        }
+    }
+
+    const PlaybackSnapshot before = controller_.confirmedSnapshot();
+    if (!loadLocalOccurrence(*target, LocalTrackStartIntent::Autoplay))
+        return false;
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    reconcileTimer();
+    emit stateChanged();
+    if (controller_.confirmedSnapshot() != before)
+        emit playbackChanged();
+    return true;
+}
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exiting_)
         return;
@@ -716,6 +749,14 @@ bool PlayerPresenter::skipForward() {
 }
 bool PlayerPresenter::previousTrack() { return navigate(QueueDirection::Previous); }
 bool PlayerPresenter::nextTrack() { return navigate(QueueDirection::Next); }
+std::optional<std::size_t> PlayerPresenter::localOccurrenceIndex(const QString& occurrence_id) const noexcept {
+    const auto items = local_queue_.items();
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        if (LocalQueueListModel::occurrenceId(items[index].occurrence_id) == occurrence_id)
+            return index;
+    }
+    return std::nullopt;
+}
 std::optional<std::size_t> PlayerPresenter::nextAvailableLocalIndex() const noexcept {
     const auto current = local_queue_.currentIndex();
     if (!current.has_value())

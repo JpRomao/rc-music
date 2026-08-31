@@ -197,6 +197,7 @@ ApplicationWindow {
         contract: window.uiContract
         presenter: window.presenter
         onCloseRequested: window.setQueueOpen(false)
+        onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
     }
     PreferencesPanel {
         id: preferencesPanel

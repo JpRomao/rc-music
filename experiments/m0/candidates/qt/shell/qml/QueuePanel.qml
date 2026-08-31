@@ -14,6 +14,7 @@ FocusScope {
     property bool overlayMode: false
     property alias listView: queueList
     signal closeRequested
+    signal playRequested(string occurrenceId)
 
     function formatDuration(milliseconds) {
         if (typeof milliseconds !== "number" || !isFinite(milliseconds))
@@ -44,6 +45,13 @@ FocusScope {
     function focusCurrent() {
         syncCurrent();
         queueList.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function playRow(row, focusReason) {
+        if (!row || !row.available)
+            return;
+        queueList.currentIndex = row.index;
+        queueList.forceActiveFocus(focusReason);
+        root.playRequested(row.occurrenceId);
     }
 
     Rectangle {
@@ -90,6 +98,13 @@ FocusScope {
             Accessible.name: root.contract.queueTitle
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
+            Keys.priority: Keys.BeforeItem
+            Keys.onPressed: event => {
+                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+                    return;
+                root.playRow(queueList.currentItem, Qt.TabFocusReason);
+                event.accepted = true;
+            }
 
             delegate: ItemDelegate {
                 id: row
@@ -119,14 +134,12 @@ FocusScope {
                 Accessible.focused: activeFocus
                 Accessible.selectable: true
                 Accessible.selected: ListView.isCurrentItem
-                Accessible.onPressAction: {
-                    queueList.currentIndex = row.index;
-                    queueList.forceActiveFocus(Qt.TabFocusReason);
-                }
+                Accessible.onPressAction: root.playRow(row, Qt.TabFocusReason)
                 onClicked: {
                     queueList.currentIndex = row.index;
                     queueList.forceActiveFocus(Qt.MouseFocusReason);
                 }
+                onDoubleClicked: root.playRow(row, Qt.MouseFocusReason)
 
                 background: Rectangle {
                     color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent"))
@@ -223,6 +236,14 @@ FocusScope {
     Keys.onEscapePressed: event => {
         root.closeRequested();
         event.accepted = true;
+    }
+
+    Shortcut {
+        sequence: "Space"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: root.visible && queueList.activeFocus
+        onActivated: root.playRow(queueList.currentItem, Qt.TabFocusReason)
     }
 
     Connections {
