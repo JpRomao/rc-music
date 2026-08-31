@@ -1,6 +1,7 @@
 #include "m0/domain/LocalFileQueue.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <utility>
 
@@ -21,6 +22,69 @@ bool LocalFileQueue::replace(std::vector<std::filesystem::path> source_paths) {
 
     items_ = std::move(replacement);
     current_occurrence_id_ = items_.front().occurrence_id;
+    return true;
+}
+
+bool LocalFileQueue::append(std::vector<std::filesystem::path> source_paths) {
+    if (source_paths.empty() || std::ranges::any_of(source_paths, [](const std::filesystem::path& source_path) {
+            return source_path.empty();
+        })) {
+        return false;
+    }
+
+    std::vector<LocalFileQueueItem> appended_items;
+    appended_items.reserve(source_paths.size());
+    for (auto& source_path : source_paths) {
+        appended_items.push_back({nextOccurrenceId(), std::move(source_path), true});
+    }
+
+    items_.reserve(items_.size() + appended_items.size());
+    std::ranges::move(appended_items, std::back_inserter(items_));
+    return true;
+}
+
+bool LocalFileQueue::move(const LocalQueueOccurrenceId occurrence_id, const std::size_t destination_index) noexcept {
+    if (destination_index >= items_.size()) {
+        return false;
+    }
+
+    const auto source = std::ranges::find(items_, occurrence_id, &LocalFileQueueItem::occurrence_id);
+    if (source == items_.end()) {
+        return false;
+    }
+    const auto source_index = static_cast<std::size_t>(std::distance(items_.begin(), source));
+    if (source_index == destination_index) {
+        return false;
+    }
+
+    if (source_index < destination_index) {
+        std::rotate(source, std::next(source),
+                    std::next(items_.begin(), static_cast<std::ptrdiff_t>(destination_index + 1)));
+    } else {
+        const auto destination = std::next(items_.begin(), static_cast<std::ptrdiff_t>(destination_index));
+        std::rotate(destination, source, std::next(source));
+    }
+    return true;
+}
+
+bool LocalFileQueue::remove(const LocalQueueOccurrenceId occurrence_id) noexcept {
+    const auto item = std::ranges::find(items_, occurrence_id, &LocalFileQueueItem::occurrence_id);
+    if (item == items_.end()) {
+        return false;
+    }
+    if (current_occurrence_id_ == occurrence_id) {
+        current_occurrence_id_.reset();
+    }
+    items_.erase(item);
+    return true;
+}
+
+bool LocalFileQueue::clear() noexcept {
+    if (items_.empty()) {
+        return false;
+    }
+    items_.clear();
+    current_occurrence_id_.reset();
     return true;
 }
 

@@ -172,6 +172,9 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
     set_source_files_properties(qml/WindowNotice.qml PROPERTIES QT_RESOURCE_ALIAS "WindowNotice.qml")
     set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
+    set_source_files_properties(qml/QueueText.qml PROPERTIES QT_RESOURCE_ALIAS "QueueText.qml")
+    set_source_files_properties(qml/QueueActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "QueueActionButton.qml")
+    set_source_files_properties(qml/QueueClearConfirmation.qml PROPERTIES QT_RESOURCE_ALIAS "QueueClearConfirmation.qml")
     set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
     set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
     set_source_files_properties(qml/PreferenceSecondsField.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceSecondsField.qml")
@@ -199,6 +202,9 @@ if(M0_QT_SHELL_SUPPORT)
             qml/TransportBar.qml
             qml/TransportSlider.qml
             qml/QueuePanel.qml
+            qml/QueueText.qml
+            qml/QueueActionButton.qml
+            qml/QueueClearConfirmation.qml
             qml/PreferencesPanel.qml
             qml/WindowNotice.qml
             qml/PreferencesText.qml

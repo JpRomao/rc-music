@@ -32,7 +32,7 @@ ApplicationWindow {
     visible: true
     signal openAudioRequested
     property bool queueOpen: false
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !presenter.exiting
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !presenter.exiting
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
@@ -87,8 +87,10 @@ ApplicationWindow {
                 return;
             if (window.queueOpen)
                 queuePanel.focusCurrent();
-            else
+            else if (queueButton.enabled)
                 queueButton.forceActiveFocus(Qt.TabFocusReason);
+            else
+                emptyState.focusPrimary();
         });
     }
     function toggleQueue() {
@@ -155,6 +157,7 @@ ApplicationWindow {
                 anchors.right: parent.right
                 anchors.rightMargin: queuePanel.visible && !queuePanel.overlayMode ? queuePanel.width + window.uiContract.spacingUnit * 4 : 0
                 EmptyState {
+                    id: emptyState
                     anchors.centerIn: parent
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract

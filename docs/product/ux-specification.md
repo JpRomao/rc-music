@@ -2,7 +2,7 @@
 
 **Estado:** proposta para protótipo e teste  
 **Relaciona-se a:** [requisitos](requirements.md)
-**Última revisão:** 2026-08-23
+**Última revisão:** 2026-08-31
 
 ## 1. Direção
 
@@ -123,16 +123,16 @@ Cada ocorrência possui ID próprio, mesmo que o path se repita. Uma linha cont�
 - artista quando conhecido;
 - duração;
 - estado indisponível/erro;
-- menu contextual para tocar agora, remover, localizar e ver detalhes.
+- menu contextual para tocar agora, mover para cima/baixo e remover; localizar e ver detalhes permanecem em recorte posterior.
 
 Regras:
 
 - abrir um único arquivo no estado vazio toca imediatamente;
 - abrir arquivos adicionais oferece comportamento previsível: a primeira seleção toca e as demais entram em ordem, sem apagar silenciosamente a fila;
 - drag-and-drop na fila mostra posição de inserção;
-- limpar exige ação explícita; confirmação só é necessária quando evita perda real de uma fila extensa;
-- remover a faixa atual avança ou deixa o player vazio conforme a fila;
-- o foco acompanha reordenação e remoção para uso por teclado.
+- limpar exige confirmação para toda fila não vazia, inclusive com um único item; cancelar ou fechar o diálogo preserva fila, seleção e reprodução;
+- remover a faixa atual tenta somente a próxima ocorrência à frente, sem circular nem voltar; se não houver sucessor, descarrega a sessão e deixa a reprodução vazia, preservando as ocorrências anteriores;
+- o foco acompanha reordenação e remoção; mover anuncia título e nova posição por uma região acessível. A cobertura automatizada não substitui NVDA/manual.
 
 ## 6. Detalhes da faixa
 

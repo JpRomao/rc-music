@@ -70,5 +70,83 @@ TEST_CASE("local file queue selection rejects unavailable and out of range occur
     CHECK_FALSE(queue.clearSelection());
 }
 
+TEST_CASE("local file queue appends valid paths atomically without changing the current occurrence",
+          "[m0][qt][core][local-queue][FR-001][FR-016]") {
+    LocalFileQueue queue;
+    const std::filesystem::path duplicate{LR"(C:\Music\Duplicada 日本語.mp3)"};
+    REQUIRE(queue.replace({duplicate, LR"(C:\Music\Segunda.flac)"}));
+    REQUIRE(queue.select(1));
+    const auto current = queue.currentOccurrenceId();
+    const auto first_duplicate_id = queue.items().front().occurrence_id;
+
+    REQUIRE(queue.append({duplicate, LR"(C:\Music\Final.ogg)"}));
+
+    REQUIRE(queue.size() == 4);
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    CHECK(queue.items()[2].source_path == duplicate);
+    CHECK(queue.items()[2].occurrence_id != first_duplicate_id);
+    CHECK(queue.items()[3].source_path == std::filesystem::path{LR"(C:\Music\Final.ogg)"});
+
+    CHECK_FALSE(queue.append({}));
+    CHECK_FALSE(queue.append({LR"(C:\Music\Aceita.wav)", {}}));
+    CHECK(queue.size() == 4);
+    CHECK(queue.currentOccurrenceId() == current);
+}
+
+TEST_CASE("local file queue moves occurrences while preserving the current id", "[m0][qt][core][local-queue][FR-016]") {
+    LocalFileQueue queue;
+    REQUIRE(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\B.wav)", LR"(C:\Music\C.wav)", LR"(C:\Music\D.wav)"}));
+    REQUIRE(queue.select(2));
+    const auto current = queue.currentOccurrenceId();
+    const auto first = queue.items()[0].occurrence_id;
+
+    REQUIRE(queue.move(first, 3));
+    CHECK(queue.items()[0].source_path == std::filesystem::path{LR"(C:\Music\B.wav)"});
+    CHECK(queue.items()[1].source_path == std::filesystem::path{LR"(C:\Music\C.wav)"});
+    CHECK(queue.items()[3].source_path == std::filesystem::path{LR"(C:\Music\A.wav)"});
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+
+    REQUIRE(queue.move(*current, 3));
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{3});
+    CHECK_FALSE(queue.move(*current, 3));
+    CHECK_FALSE(queue.move(LocalQueueOccurrenceId{999'999}, 0));
+    CHECK_FALSE(queue.move(first, 4));
+}
+
+TEST_CASE("local file queue removals preserve unrelated ids and clearing never reuses an occurrence id",
+          "[m0][qt][core][local-queue][FR-016]") {
+    LocalFileQueue queue;
+    REQUIRE(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\B.wav)", LR"(C:\Music\C.wav)", LR"(C:\Music\D.wav)"}));
+    REQUIRE(queue.select(2));
+    const auto current = queue.currentOccurrenceId();
+    const auto highest_initial_id = queue.items().back().occurrence_id.value;
+    const auto before = queue.items()[0].occurrence_id;
+    const auto after = queue.items()[3].occurrence_id;
+
+    REQUIRE(queue.remove(before));
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    REQUIRE(queue.remove(after));
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    REQUIRE(queue.remove(*current));
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
+    CHECK_FALSE(queue.currentIndex().has_value());
+    CHECK(queue.size() == 1);
+    CHECK_FALSE(queue.remove(*current));
+
+    REQUIRE(queue.clear());
+    CHECK(queue.empty());
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
+    CHECK_FALSE(queue.clear());
+    REQUIRE(queue.append({LR"(C:\Music\Nova.wav)"}));
+    REQUIRE(queue.size() == 1);
+    CHECK(queue.items().front().occurrence_id.value > highest_initial_id);
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
+}
+
 } // namespace
 } // namespace music_player::m0::test

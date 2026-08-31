@@ -13,8 +13,18 @@ FocusScope {
     required property PlayerPresenter presenter
     property bool overlayMode: false
     property alias listView: queueList
+    property string selectedOccurrenceId: ""
+    property string selectedTitle: ""
+    property bool selectedAvailable: false
+    property string accessibilityAnnouncement: ""
+    readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
+    readonly property bool clearConfirmationOpen: clearConfirmation.opened
     signal closeRequested
     signal playRequested(string occurrenceId)
+
+    QueueText {
+        id: queueText
+    }
 
     function formatDuration(milliseconds) {
         if (typeof milliseconds !== "number" || !isFinite(milliseconds))
@@ -35,8 +45,12 @@ FocusScope {
         return parts.join(". ");
     }
     function syncCurrent() {
-        if (queueList.count === 0)
+        if (queueList.count === 0) {
+            root.selectedOccurrenceId = "";
+            root.selectedTitle = "";
+            root.selectedAvailable = false;
             return;
+        }
         const targetIndex = root.presenter.currentQueueIndex >= 0 ? root.presenter.currentQueueIndex : 0;
         queueList.currentIndex = targetIndex;
         queueList.positionViewAtIndex(targetIndex, ListView.Center);
@@ -46,12 +60,72 @@ FocusScope {
         syncCurrent();
         queueList.forceActiveFocus(Qt.TabFocusReason);
     }
+    function focusIndex(index) {
+        if (queueList.count === 0 || index < 0) {
+            queueList.currentIndex = -1;
+            root.selectedOccurrenceId = "";
+            root.selectedTitle = "";
+            root.selectedAvailable = false;
+            queueList.forceActiveFocus(Qt.TabFocusReason);
+            return;
+        }
+        const targetIndex = Math.min(index, queueList.count - 1);
+        queueList.currentIndex = targetIndex;
+        queueList.positionViewAtIndex(targetIndex, ListView.Contain);
+        queueList.forceLayout();
+        queueList.forceActiveFocus(Qt.TabFocusReason);
+    }
     function playRow(row, focusReason) {
         if (!row || !row.available)
             return;
         queueList.currentIndex = row.index;
         queueList.forceActiveFocus(focusReason);
         root.playRequested(row.occurrenceId);
+    }
+    function addFiles() {
+        const selectedIndex = queueList.currentIndex;
+        const hadCurrentTrack = root.presenter.hasCurrentTrack;
+        if (!root.presenter.addAudio())
+            return;
+        Qt.callLater(function () {
+            root.focusIndex(hadCurrentTrack && selectedIndex >= 0 ? selectedIndex : root.presenter.currentQueueIndex);
+        });
+    }
+    function moveSelected(offset) {
+        if (root.selectedOccurrenceId.length === 0)
+            return;
+        const destination = queueList.currentIndex + offset;
+        const displayTitle = root.selectedTitle.length > 0 ? root.selectedTitle : root.selectedOccurrenceId;
+        if (!root.presenter.moveQueueOccurrence(root.selectedOccurrenceId, destination))
+            return;
+        const message = queueText.movedAnnouncement.replace("{position}", destination + 1).replace("{total}", queueList.count).split("{title}").join(displayTitle);
+        root.accessibilityAnnouncement = message;
+        queueList.Accessible.announce(message, Accessible.Polite);
+    }
+    function removeSelected() {
+        if (root.selectedOccurrenceId.length > 0)
+            root.presenter.removeQueueOccurrence(root.selectedOccurrenceId);
+    }
+    function openRowMenu(row) {
+        if (!row)
+            return;
+        queueList.currentIndex = row.index;
+        rowMenu.popup(row, 0, row.height);
+    }
+    function requestClear() {
+        if (queueList.count > 0)
+            clearConfirmation.open();
+    }
+    function confirmClear() {
+        if (!root.presenter.clearQueue())
+            return;
+        clearConfirmation.accepted = true;
+        clearConfirmation.close();
+    }
+
+    onObservedCurrentOccurrenceIdChanged: {
+        if (visible)
+            Qt.callLater(root.syncCurrent);
     }
 
     Rectangle {
@@ -77,6 +151,65 @@ FocusScope {
             Accessible.name: text
         }
 
+        RowLayout {
+            id: queueActions
+            objectName: "queue-actions"
+            Layout.fillWidth: true
+            spacing: root.contract.spacingUnit
+
+            QueueActionButton {
+                id: addButton
+                controlId: "queue-add"
+                accessibleName: queueText.add
+                text: "+"
+                contract: root.contract
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture
+                onClicked: root.addFiles()
+            }
+            QueueActionButton {
+                id: moveUpButton
+                controlId: "queue-move-up"
+                accessibleName: queueText.moveUp
+                shortcutHint: queueText.shortcutMoveUp
+                text: "↑"
+                contract: root.contract
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
+                onClicked: root.moveSelected(-1)
+            }
+            QueueActionButton {
+                id: moveDownButton
+                controlId: "queue-move-down"
+                accessibleName: queueText.moveDown
+                shortcutHint: queueText.shortcutMoveDown
+                text: "↓"
+                contract: root.contract
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
+                onClicked: root.moveSelected(1)
+            }
+            QueueActionButton {
+                id: removeButton
+                controlId: "queue-remove"
+                accessibleName: queueText.remove
+                shortcutHint: queueText.shortcutRemove
+                text: "−"
+                contract: root.contract
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
+                onClicked: root.removeSelected()
+            }
+            Item {
+                Layout.fillWidth: true
+            }
+            QueueActionButton {
+                id: clearButton
+                controlId: "queue-clear"
+                accessibleName: queueText.clear
+                text: "×"
+                contract: root.contract
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.count > 0
+                onClicked: root.requestClear()
+            }
+        }
+
         ListView {
             id: queueList
             objectName: "queue-list"
@@ -100,10 +233,30 @@ FocusScope {
             Accessible.focused: activeFocus
             Keys.priority: Keys.BeforeItem
             Keys.onPressed: event => {
-                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    root.playRow(queueList.currentItem, Qt.TabFocusReason);
+                    event.accepted = true;
                     return;
-                root.playRow(queueList.currentItem, Qt.TabFocusReason);
-                event.accepted = true;
+                }
+                if (event.key === Qt.Key_Delete) {
+                    root.removeSelected();
+                    event.accepted = true;
+                    return;
+                }
+                if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_Up) {
+                    root.moveSelected(-1);
+                    event.accepted = true;
+                    return;
+                }
+                if ((event.modifiers & Qt.AltModifier) && event.key === Qt.Key_Down) {
+                    root.moveSelected(1);
+                    event.accepted = true;
+                    return;
+                }
+                if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                    root.openRowMenu(queueList.currentItem);
+                    event.accepted = true;
+                }
             }
 
             delegate: ItemDelegate {
@@ -134,12 +287,32 @@ FocusScope {
                 Accessible.focused: activeFocus
                 Accessible.selectable: true
                 Accessible.selected: ListView.isCurrentItem
+                ListView.onIsCurrentItemChanged: {
+                    if (ListView.isCurrentItem) {
+                        root.selectedOccurrenceId = row.occurrenceId;
+                        root.selectedTitle = row.title.length > 0 ? row.title : row.fileName;
+                        root.selectedAvailable = row.available;
+                    }
+                }
+                onAvailableChanged: {
+                    if (ListView.isCurrentItem)
+                        root.selectedAvailable = row.available;
+                }
+                onTitleChanged: {
+                    if (ListView.isCurrentItem)
+                        root.selectedTitle = row.title.length > 0 ? row.title : row.fileName;
+                }
                 Accessible.onPressAction: root.playRow(row, Qt.TabFocusReason)
                 onClicked: {
                     queueList.currentIndex = row.index;
                     queueList.forceActiveFocus(Qt.MouseFocusReason);
                 }
                 onDoubleClicked: root.playRow(row, Qt.MouseFocusReason)
+
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: root.openRowMenu(row)
+                }
 
                 background: Rectangle {
                     color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent"))
@@ -233,6 +406,48 @@ FocusScope {
         }
     }
 
+    Menu {
+        id: rowMenu
+        objectName: "queue-row-menu"
+        MenuItem {
+            objectName: "queue-menu-play-now"
+            text: queueText.playNow
+            enabled: root.selectedOccurrenceId.length > 0 && root.selectedAvailable
+            onTriggered: root.playRow(queueList.currentItem, Qt.TabFocusReason)
+        }
+        MenuSeparator {}
+        MenuItem {
+            objectName: "queue-menu-move-up"
+            text: queueText.moveUp
+            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
+            onTriggered: root.moveSelected(-1)
+        }
+        MenuItem {
+            objectName: "queue-menu-move-down"
+            text: queueText.moveDown
+            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
+            onTriggered: root.moveSelected(1)
+        }
+        MenuItem {
+            objectName: "queue-menu-remove"
+            text: queueText.remove
+            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
+            onTriggered: root.removeSelected()
+        }
+    }
+
+    QueueClearConfirmation {
+        id: clearConfirmation
+        parent: root
+        width: Math.min(root.width - root.contract.spacingUnit * 8, 320)
+        x: (root.width - width) / 2
+        y: Math.max(root.contract.spacingUnit * 4, (root.height - implicitHeight) / 2)
+        contract: root.contract
+        queueCount: queueList.count
+        fallbackFocusItem: clearButton
+        onConfirmed: root.confirmClear()
+    }
+
     Keys.onEscapePressed: event => {
         root.closeRequested();
         event.accepted = true;
@@ -248,9 +463,15 @@ FocusScope {
 
     Connections {
         target: root.presenter
-        function onStateChanged() {
+        function onQueueFocusRequested(index) {
+            if (index < 0) {
+                root.closeRequested();
+                return;
+            }
             if (root.visible)
-                Qt.callLater(root.syncCurrent);
+                Qt.callLater(function () {
+                    root.focusIndex(index);
+                });
         }
     }
 }

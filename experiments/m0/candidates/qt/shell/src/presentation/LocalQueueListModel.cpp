@@ -19,18 +19,8 @@ bool LocalQueueListModel::replace(const LocalFileQueue& queue) {
     QList<Item> replacement;
     replacement.reserve(static_cast<qsizetype>(queue.size()));
     int order_index = 0;
-    for (const LocalFileQueueItem& source : queue.items()) {
-        const auto file_name = pathComponent(source.source_path.filename());
-        auto title = pathComponent(source.source_path.stem());
-        if (title.isEmpty()) {
-            title = file_name;
-        }
-        replacement.append({.order_index = order_index++,
-                            .occurrence_id = source.occurrence_id,
-                            .file_name = file_name,
-                            .title = std::move(title),
-                            .available = source.available});
-    }
+    for (const LocalFileQueueItem& source : queue.items())
+        replacement.append(makeItem(source, order_index++));
 
     const bool loaded_changed = !loaded_;
     beginResetModel();
@@ -40,6 +30,88 @@ bool LocalQueueListModel::replace(const LocalFileQueue& queue) {
     if (loaded_changed) {
         emit loadedChanged();
     }
+    return true;
+}
+
+bool LocalQueueListModel::append(const std::span<const LocalFileQueueItem> source_items) {
+    if (source_items.empty()) {
+        return false;
+    }
+
+    QList<Item> appended_items;
+    appended_items.reserve(static_cast<qsizetype>(source_items.size()));
+    int order_index = rowCount();
+    for (const LocalFileQueueItem& source : source_items) {
+        if (source.source_path.empty() || source.occurrence_id.value == 0 ||
+            find(source.occurrence_id) != items_.end() ||
+            std::ranges::find(appended_items, source.occurrence_id, &Item::occurrence_id) != appended_items.end()) {
+            return false;
+        }
+        appended_items.append(makeItem(source, order_index++));
+    }
+
+    const int first_row = rowCount();
+    const int last_row = first_row + static_cast<int>(appended_items.size()) - 1;
+    const bool loaded_changed = !loaded_;
+    items_.reserve(items_.size() + appended_items.size());
+    beginInsertRows({}, first_row, last_row);
+    for (Item& item : appended_items)
+        items_.append(std::move(item));
+    loaded_ = true;
+    endInsertRows();
+    if (loaded_changed)
+        emit loadedChanged();
+    return true;
+}
+
+bool LocalQueueListModel::move(const std::size_t source_index, const std::size_t destination_index) {
+    const auto item_count = static_cast<std::size_t>(items_.size());
+    if (source_index >= item_count || destination_index >= item_count || source_index == destination_index) {
+        return false;
+    }
+
+    const int source_row = static_cast<int>(source_index);
+    const int destination_row = static_cast<int>(destination_index);
+    const int destination_child = destination_index > source_index ? destination_row + 1 : destination_row;
+    if (!beginMoveRows({}, source_row, source_row, {}, destination_child)) {
+        return false;
+    }
+    items_.move(source_row, destination_row);
+    endMoveRows();
+    reindex(std::min(source_index, destination_index));
+    return true;
+}
+
+bool LocalQueueListModel::remove(const std::size_t index_to_remove) {
+    if (index_to_remove >= static_cast<std::size_t>(items_.size())) {
+        return false;
+    }
+
+    const int row = static_cast<int>(index_to_remove);
+    beginRemoveRows({}, row, row);
+    items_.removeAt(row);
+    const bool loaded_changed = items_.empty() && loaded_;
+    if (loaded_changed)
+        loaded_ = false;
+    endRemoveRows();
+    reindex(index_to_remove);
+    if (loaded_changed)
+        emit loadedChanged();
+    return true;
+}
+
+bool LocalQueueListModel::clear() {
+    if (items_.empty()) {
+        return false;
+    }
+
+    beginRemoveRows({}, 0, rowCount() - 1);
+    items_.clear();
+    const bool loaded_changed = loaded_;
+    loaded_ = false;
+    endRemoveRows();
+    if (loaded_changed)
+        emit loadedChanged();
     return true;
 }
 
@@ -126,6 +198,27 @@ QHash<int, QByteArray> LocalQueueListModel::roleNames() const {
         {AvailableRole, QByteArrayLiteral("available")},
         {ErrorCodeRole, QByteArrayLiteral("errorCode")},
     };
+}
+
+LocalQueueListModel::Item LocalQueueListModel::makeItem(const LocalFileQueueItem& source, const int order_index) {
+    const auto file_name = pathComponent(source.source_path.filename());
+    auto title = pathComponent(source.source_path.stem());
+    if (title.isEmpty())
+        title = file_name;
+    return {.order_index = order_index,
+            .occurrence_id = source.occurrence_id,
+            .file_name = file_name,
+            .title = std::move(title),
+            .available = source.available};
+}
+
+void LocalQueueListModel::reindex(const std::size_t first_index) {
+    if (first_index >= static_cast<std::size_t>(items_.size()))
+        return;
+
+    for (std::size_t index = first_index; index < static_cast<std::size_t>(items_.size()); ++index)
+        items_[static_cast<qsizetype>(index)].order_index = static_cast<int>(index);
+    emit dataChanged(this->index(static_cast<int>(first_index), 0), this->index(rowCount() - 1, 0), {OrderIndexRole});
 }
 
 QString LocalQueueListModel::pathComponent(const std::filesystem::path& value) {

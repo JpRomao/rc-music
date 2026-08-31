@@ -24,6 +24,10 @@ struct LocalFileQueueItem final {
 class LocalFileQueue final {
   public:
     [[nodiscard]] bool replace(std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] bool append(std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] bool move(LocalQueueOccurrenceId occurrence_id, std::size_t destination_index) noexcept;
+    [[nodiscard]] bool remove(LocalQueueOccurrenceId occurrence_id) noexcept;
+    [[nodiscard]] bool clear() noexcept;
     [[nodiscard]] bool select(std::size_t index) noexcept;
     [[nodiscard]] bool markUnavailable(std::size_t index) noexcept;
     [[nodiscard]] bool clearSelection() noexcept;

@@ -1,5 +1,6 @@
 #include "adapters/fixture/FixtureDecoder.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/presentation/LocalQueueListModel.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
 #include <QAbstractItemModelTester>
@@ -9,6 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaType>
+#include <QPersistentModelIndex>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -33,6 +35,7 @@ class FixtureRepositoryTests final : public QObject {
     void preservesHostileFixedCases();
     void queueModelExposesTypedRolesInSourceOrder();
     void queueModelLoadsExactlyOnce();
+    void localQueueModelAppliesFineGrainedMutations();
     void rejectsSemanticFixtureDrift_data();
     void rejectsSemanticFixtureDrift();
     void rejectsQueueCountDrift();
@@ -643,6 +646,69 @@ void FixtureRepositoryTests::queueModelLoadsExactlyOnce() {
     const FixtureBundle bundle =
         FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
     verifySingleLoadModel<QueueListModel>(bundle.queue);
+}
+
+void FixtureRepositoryTests::localQueueModelAppliesFineGrainedMutations() {
+    LocalFileQueue queue;
+    const std::filesystem::path duplicate{LR"(C:\Music\Duplicada 日本語.mp3)"};
+    QVERIFY(queue.replace({duplicate, LR"(C:\Music\Segunda.flac)"}));
+    LocalQueueListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QVERIFY(model.replace(queue));
+    const QString first_id = model.data(model.index(0, 0), LocalQueueListModel::OccurrenceIdRole).toString();
+    const QPersistentModelIndex second{model.index(1, 0)};
+    const QString second_id = second.data(LocalQueueListModel::OccurrenceIdRole).toString();
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy moved(&model, &QAbstractItemModel::rowsMoved);
+    QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy loaded_changed(&model, &LocalQueueListModel::loadedChanged);
+
+    const std::size_t append_index = queue.size();
+    QVERIFY(queue.append({duplicate, LR"(C:\Music\Final.ogg)"}));
+    QVERIFY(model.append(queue.items().subspan(append_index)));
+    QCOMPARE(model.rowCount(), 4);
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(model.data(model.index(2, 0), LocalQueueListModel::OccurrenceIdRole).toString() == first_id, false);
+    QCOMPARE(model.data(model.index(2, 0), LocalQueueListModel::FileNameRole).toString(),
+             QStringLiteral("Duplicada 日本語.mp3"));
+
+    QVERIFY(queue.move(queue.items()[3].occurrence_id, 0));
+    QVERIFY(model.move(3, 0));
+    QCOMPARE(moved.size(), 1);
+    QVERIFY(second.isValid());
+    QCOMPARE(second.row(), 2);
+    QCOMPARE(second.data(LocalQueueListModel::OccurrenceIdRole).toString(), second_id);
+    for (int row = 0; row < model.rowCount(); ++row)
+        QCOMPARE(model.data(model.index(row, 0), LocalQueueListModel::OrderIndexRole).toInt(), row);
+
+    QVERIFY(queue.remove(queue.items()[1].occurrence_id));
+    QVERIFY(model.remove(1));
+    QCOMPARE(removed.size(), 1);
+    QVERIFY(second.isValid());
+    QCOMPARE(second.row(), 1);
+    QCOMPARE(second.data(LocalQueueListModel::OccurrenceIdRole).toString(), second_id);
+    QCOMPARE(model.rowCount(), 3);
+
+    QVERIFY(queue.clear());
+    QVERIFY(model.clear());
+    QCOMPARE(removed.size(), 2);
+    QCOMPARE(model.rowCount(), 0);
+    QCOMPARE(model.loaded(), false);
+    QCOMPARE(loaded_changed.size(), 1);
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(!second.isValid());
+    QVERIFY(!model.clear());
+
+    QVERIFY(queue.append({LR"(C:\Music\Reaberta.wav)"}));
+    QVERIFY(model.append(queue.items()));
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.loaded(), true);
+    QCOMPARE(inserted.size(), 2);
+    QCOMPARE(loaded_changed.size(), 2);
+    QCOMPARE(model.data(model.index(0, 0), LocalQueueListModel::FileNameRole).toString(),
+             QStringLiteral("Reaberta.wav"));
 }
 
 void FixtureRepositoryTests::rejectsSemanticFixtureDrift_data() {

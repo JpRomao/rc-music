@@ -9,6 +9,10 @@ ColumnLayout {
     signal openAudioRequested
     spacing: contract.spacingUnit * 4
 
+    function focusPrimary() {
+        openAudioButton.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     Image {
         objectName: "cover-placeholder"
         source: root.contract.placeholderSource
@@ -30,6 +34,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     AccessibleActionButton {
+        id: openAudioButton
         controlId: "open-audio"
         contract: root.contract
         text: root.contract.openAudioText

@@ -14,6 +14,18 @@ TestCase {
             presenter: testPlayerPresenter // qmllint disable unqualified
         }
     }
+    Component {
+        id: queueActionComponent
+        QueueActionButton {
+            controlId: "queue-action-probe"
+            accessibleName: "Mover para cima"
+            contract: testShellUiContract // qmllint disable unqualified
+            text: "↑"
+            onClicked: testCase.queueActionClicks += 1
+        }
+    }
+
+    property int queueActionClicks: 0
 
     function luminance(color) {
         function linear(value) {
@@ -77,6 +89,32 @@ TestCase {
         verify(testShellUiContract.highContrast); // qmllint disable unqualified
         compare(shell.color.toString(), "#010102");
         compare(findChild(shell, "empty-title").color.toString(), "#fafafa");
+        const queueAction = createTemporaryObject(queueActionComponent, shell.contentItem, {
+            "x": 8,
+            "y": 8,
+            "z": 20
+        });
+        verify(queueAction);
+        queueAction.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Enter);
+        queueAction.Accessible.pressAction();
+        compare(queueActionClicks, 4);
+        mouseMove(queueAction, queueAction.width / 2, queueAction.height / 2);
+        compare(queueAction.background.color.toString(), "#f8f800");
+        compare(queueAction.contentItem.color.toString(), "#010101");
+        const hoveredBackground = queueAction.background.color.toString();
+        mousePress(queueAction, queueAction.width / 2, queueAction.height / 2, Qt.LeftButton);
+        verify(queueAction.background.color.toString() !== hoveredBackground);
+        verifyTextContrast(queueAction.contentItem.color, queueAction.background.color);
+        mouseRelease(queueAction, queueAction.width / 2, queueAction.height / 2, Qt.LeftButton);
+        queueAction.enabled = false;
+        compare(queueAction.opacity, 1);
+        compare(queueAction.background.color.toString(), "#010102");
+        compare(queueAction.background.border.color.toString(), "#bbbbbb");
+        compare(queueAction.contentItem.color.toString(), "#bbbbbb");
+        queueAction.destroy();
         const playPause = findChild(shell, "play-pause");
         verify(!playPause.enabled);
         compare(playPause.opacity, 1);

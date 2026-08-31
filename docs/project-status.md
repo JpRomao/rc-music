@@ -1,6 +1,6 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-08-29
+**Atualizado em:** 2026-08-31
 
 **Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados e geração isolada estão verdes, assim como `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia; `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib cobrem a matriz básica por conteúdo, enquanto polling/`MR-016`/`MR-017`/`MR-020` permanecem verdes no reader assíncrono limitado. Uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, mas playback inicia independentemente e o Qt pode decodificar candidatos, logo não há rejeição ponta a ponta nem classificação de suporte. A composição UI oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas válidas sobre sete fixtures autenticadas com fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais e saída mutada. O erro local agora conserva título/contexto Unicode e oferece reabrir; regressões de metadata/playback/integração usam prefixos temporários de 64 bytes derivados de MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis para cobrir erro tipado, M4A sem faixa de áudio, recuperação e descarte de geração antiga. Esses derivados não são fixtures canônicas; M0.5/M0.6, áudio audível, comportamento ponta a ponta dos candidatos, hostis canônicos restantes, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
@@ -131,13 +131,13 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. completar CRUD/reordenação da fila local, preservando IDs, foco e trabalho assíncrono; tocar linha já está verde no core, presenter e Quick;
+1. implementar drag-and-drop de arquivos/diretórios com descoberta incremental, cancelamento e erro parcial, preservando a responsividade da UI;
 2. acrescentar E2E Qt real de `Ended` e válido → inválido → válido, e então continuar fixtures canônicas e limites de metadata/arte sem incorporar áudio pessoal ao corpus;
 3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
-No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha por ID estável está ligado a Enter, Space, duplo clique e ação acessível, sem confundir duplicatas nem recarregar um start ainda pendente. CRUD/reordenação, persistência, anúncio acessível do item pulado e E2E com adapters reais continuam pendentes; por isso os mesmos requisitos e M3.3 permanecem parciais.
+No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágrafo de fase acima, inclusive as duas opções de fim somente em memória. Tocar linha e CRUD/reordenação estão ligados por IDs estáveis. Adicionar preserva a atual; `Ctrl+O` anexa e toca a primeira nova ocorrência. Mover, remover e limpar têm botões, teclado e menu; toda limpeza não vazia pede confirmação, e a reordenação emite anúncio coberto por Quick. Remover a atual tenta apenas o sucessor à frente, sem circular. Drag-and-drop/diretórios, persistência, NVDA/manual e E2E com adapters reais continuam pendentes; os requisitos e M3.1/M3.3 permanecem parciais.
 
 A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 

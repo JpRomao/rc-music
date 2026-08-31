@@ -500,6 +500,41 @@ TestCase {
         tryVerify(function () {
             return queuePanel.visible && queueList.activeFocus;
         });
+        const queueAdd = findChild(shell, "queue-add");
+        const queueMoveUp = findChild(shell, "queue-move-up");
+        const queueMoveDown = findChild(shell, "queue-move-down");
+        const queueRemove = findChild(shell, "queue-remove");
+        const queueClear = findChild(shell, "queue-clear");
+        const queueActions = [queueAdd, queueMoveUp, queueMoveDown, queueRemove, queueClear];
+        const queueActionNames = ["Adicionar arquivos", "Mover para cima", "Mover para baixo", "Remover", "Limpar fila"];
+        const queueActionIds = ["queue-add", "queue-move-up", "queue-move-down", "queue-remove", "queue-clear"];
+        for (let queueActionIndex = 0; queueActionIndex < queueActions.length; ++queueActionIndex) {
+            const queueAction = queueActions[queueActionIndex];
+            verify(queueAction);
+            compare(queueAction.Accessible.role, Accessible.Button);
+            compare(queueAction.Accessible.name, queueActionNames[queueActionIndex]);
+            compare(queueAction.Accessible.id, queueActionIds[queueActionIndex]);
+            verify(queueAction.width >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
+            verify(queueAction.height >= testShellUiContract.controlTargetPreferred); // qmllint disable unqualified
+            verifyInsideWindow(queueAction);
+        }
+        verify(!queueAdd.enabled);
+        verify(!queueMoveUp.enabled);
+        verify(!queueMoveDown.enabled);
+        verify(!queueRemove.enabled);
+        verify(!queueClear.enabled);
+        const queueRowMenu = findChild(shell, "queue-row-menu");
+        verify(queueRowMenu);
+        keyClick(Qt.Key_Menu);
+        tryVerify(function () {
+            return queueRowMenu.visible;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queueRowMenu.visible;
+        });
+        verify(queuePanel.visible);
+        verify(queueList.activeFocus);
         verify(queuePlaySpy.valid);
         queuePlaySpy.clear();
         queueList.currentIndex = 16;

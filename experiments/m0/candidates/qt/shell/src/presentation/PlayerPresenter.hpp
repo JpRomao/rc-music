@@ -171,7 +171,11 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool cancelWindowNotice();
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool openAudio();
+    Q_INVOKABLE bool addAudio();
     Q_INVOKABLE bool playQueueOccurrence(const QString& occurrence_id);
+    Q_INVOKABLE bool moveQueueOccurrence(const QString& occurrence_id, int destination_index);
+    Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
+    Q_INVOKABLE bool clearQueue();
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
@@ -201,6 +205,7 @@ class PlayerPresenter final : public QObject {
     void seekRejected();
     void platformChanged();
     void lifecycleChanged();
+    void queueFocusRequested(int index);
 
   private:
     friend class experiment::PlayerPresenterScenarioControl;

@@ -4,6 +4,7 @@
 
 #include <QMetaObject>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -484,20 +485,65 @@ bool PlayerPresenter::openAudio() {
     }
 
     const auto selected_paths = audio_file_picker_();
-    auto replacement = local_queue_;
-    if (!replacement.replace(selected_paths) || !local_track_session_->open(selected_paths.front()))
+    auto candidate = local_queue_;
+    const std::size_t first_inserted = candidate.size();
+    const bool queue_was_empty = candidate.empty();
+    if (!candidate.append(selected_paths) ||
+        !local_track_session_->open(candidate.items()[first_inserted].source_path, LocalTrackStartIntent::Autoplay)) {
         return false;
+    }
+    if (!candidate.select(first_inserted))
+        throw std::logic_error{"an accepted opened local occurrence could not be selected"};
 
-    local_queue_ = std::move(replacement);
+    local_queue_ = std::move(candidate);
     local_recovery_intent_.reset();
     navigation_items_ = navigationItems(local_queue_);
-    if (!local_queue_model_.replace(local_queue_))
-        throw std::logic_error{"accepted local queue could not be projected"};
+    const bool model_updated = queue_was_empty
+                                   ? local_queue_model_.replace(local_queue_)
+                                   : local_queue_model_.append(local_queue_.items().subspan(first_inserted));
+    if (!model_updated)
+        throw std::logic_error{"accepted opened local queue could not be projected"};
     artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
     controller_.applyBackendSnapshot(backend_.snapshot());
     reconcileTimer();
     emit stateChanged();
     emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::addAudio() {
+    if (uses_frozen_fixture_ || exiting_)
+        return false;
+
+    const auto selected_paths = audio_file_picker_();
+    auto candidate = local_queue_;
+    const std::size_t first_inserted = candidate.size();
+    if (!candidate.append(selected_paths))
+        return false;
+
+    const bool needs_current_track = !local_track_session_->hasTrack();
+    if (needs_current_track) {
+        if (!local_track_session_->open(candidate.items()[first_inserted].source_path,
+                                        LocalTrackStartIntent::Autoplay)) {
+            return false;
+        }
+        if (!candidate.select(first_inserted))
+            throw std::logic_error{"an accepted appended local occurrence could not be selected"};
+    }
+
+    local_queue_ = std::move(candidate);
+    navigation_items_ = navigationItems(local_queue_);
+    if (!local_queue_model_.append(local_queue_.items().subspan(first_inserted)))
+        throw std::logic_error{"accepted local queue append could not be projected"};
+    if (needs_current_track) {
+        local_recovery_intent_.reset();
+        artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+        controller_.applyBackendSnapshot(backend_.snapshot());
+        reconcileTimer();
+    }
+    emit stateChanged();
+    emit playbackChanged();
+    if (needs_current_track)
+        emit queueFocusRequested(static_cast<int>(first_inserted));
     return true;
 }
 bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
@@ -531,6 +577,111 @@ bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
     emit stateChanged();
     if (controller_.confirmedSnapshot() != before)
         emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::moveQueueOccurrence(const QString& occurrence_id, const int destination_index) {
+    if (uses_frozen_fixture_ || exiting_ || destination_index < 0)
+        return false;
+    const auto source_index = localOccurrenceIndex(occurrence_id);
+    const auto destination = static_cast<std::size_t>(destination_index);
+    if (!source_index.has_value() || destination >= local_queue_.size())
+        return false;
+    const auto occurrence = local_queue_.items()[*source_index].occurrence_id;
+    if (!local_queue_.move(occurrence, destination))
+        return false;
+    if (!local_queue_model_.move(*source_index, destination))
+        throw std::logic_error{"accepted local queue move could not be projected"};
+    navigation_items_ = navigationItems(local_queue_);
+    emit stateChanged();
+    emit playbackChanged();
+    emit queueFocusRequested(destination_index);
+    return true;
+}
+bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
+    if (uses_frozen_fixture_ || exiting_)
+        return false;
+    const auto source_index = localOccurrenceIndex(occurrence_id);
+    if (!source_index.has_value())
+        return false;
+    const LocalQueueOccurrenceId removed_occurrence = local_queue_.items()[*source_index].occurrence_id;
+    const bool removes_current = local_queue_.currentOccurrenceId() == std::optional{removed_occurrence};
+
+    auto candidate = local_queue_;
+    if (!candidate.remove(removed_occurrence))
+        throw std::logic_error{"resolved local occurrence could not be removed"};
+
+    if (removes_current) {
+        std::optional<std::size_t> next_index;
+        for (std::size_t index = *source_index + 1; index < local_queue_.size(); ++index) {
+            if (local_queue_.items()[index].available) {
+                next_index = index;
+                break;
+            }
+        }
+
+        if (next_index.has_value()) {
+            auto start_intent = local_track_session_->startIntent();
+            switch (controller_.confirmedSnapshot().status) {
+            case PlaybackStatus::Playing:
+                start_intent = LocalTrackStartIntent::Autoplay;
+                break;
+            case PlaybackStatus::Ready:
+            case PlaybackStatus::Paused:
+                start_intent = LocalTrackStartIntent::StayReady;
+                break;
+            case PlaybackStatus::Error:
+                start_intent = local_recovery_intent_.value_or(start_intent);
+                break;
+            case PlaybackStatus::Empty:
+            case PlaybackStatus::Loading:
+                break;
+            }
+            if (!local_track_session_->open(local_queue_.items()[*next_index].source_path, start_intent))
+                return false;
+            const std::size_t adjusted_next = *next_index - 1;
+            if (!candidate.select(adjusted_next))
+                throw std::logic_error{"accepted local removal successor could not be selected"};
+            local_recovery_intent_.reset();
+            artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+        } else {
+            if (!local_track_session_->unload())
+                return false;
+            local_recovery_intent_.reset();
+            artwork_cache_->beginGeneration(MetadataGeneration{});
+        }
+    }
+
+    local_queue_ = std::move(candidate);
+    if (!local_queue_model_.remove(*source_index))
+        throw std::logic_error{"accepted local queue removal could not be projected"};
+    navigation_items_ = navigationItems(local_queue_);
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    const auto current = local_queue_.currentIndex();
+    const int focus_index =
+        removes_current && current.has_value()
+            ? static_cast<int>(*current)
+            : (local_queue_.empty() ? -1 : static_cast<int>(std::min(*source_index, local_queue_.size() - 1)));
+    emit queueFocusRequested(focus_index);
+    return true;
+}
+bool PlayerPresenter::clearQueue() {
+    if (uses_frozen_fixture_ || exiting_ || local_queue_.empty() || !local_track_session_->unload())
+        return false;
+    if (!local_queue_.clear())
+        throw std::logic_error{"a non-empty local queue could not be cleared"};
+    if (!local_queue_model_.clear())
+        throw std::logic_error{"an accepted local queue clear could not be projected"};
+    navigation_items_.clear();
+    local_recovery_intent_.reset();
+    artwork_cache_->beginGeneration(MetadataGeneration{});
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    emit queueFocusRequested(-1);
     return true;
 }
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {

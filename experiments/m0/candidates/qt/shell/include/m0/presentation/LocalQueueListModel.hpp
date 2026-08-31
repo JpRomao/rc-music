@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace music_player::m0 {
 
@@ -40,6 +41,10 @@ class LocalQueueListModel final : public QAbstractListModel {
 
     [[nodiscard]] bool loaded() const noexcept;
     [[nodiscard]] bool replace(const LocalFileQueue& queue);
+    [[nodiscard]] bool append(std::span<const LocalFileQueueItem> source_items);
+    [[nodiscard]] bool move(std::size_t source_index, std::size_t destination_index);
+    [[nodiscard]] bool remove(std::size_t index);
+    [[nodiscard]] bool clear();
     [[nodiscard]] bool updateMetadata(LocalQueueOccurrenceId occurrence_id, QString title, QString artist,
                                       QString album, std::optional<std::int64_t> duration_ms);
     [[nodiscard]] bool markUnavailable(LocalQueueOccurrenceId occurrence_id, QString error_code);
@@ -64,6 +69,8 @@ class LocalQueueListModel final : public QAbstractListModel {
         std::optional<QString> error_code;
     };
 
+    [[nodiscard]] static Item makeItem(const LocalFileQueueItem& source, int order_index);
+    void reindex(std::size_t first_index);
     [[nodiscard]] static QString pathComponent(const std::filesystem::path& value);
     [[nodiscard]] QList<Item>::iterator find(LocalQueueOccurrenceId occurrence_id);
 
