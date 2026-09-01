@@ -15,6 +15,7 @@ Popup {
     property bool diagnosticsExpanded: false
     property int focusTransferRevision: 0
     property int focusVisibilityRevision: 0
+    property bool focusVisibilityUpdatePending: false
     readonly property string diagnosticsText: formatDiagnostics(presenter.detailsDiagnostics)
     modal: true
     dim: false
@@ -152,8 +153,9 @@ Popup {
         content.Accessible.announce(announcement, Accessible.Polite);
     }
 
-    function applyFocusedItemVisibility(item, revision, remainingPasses) {
-        if (revision !== focusVisibilityRevision || !opened || !item || !item.activeFocus)
+    function applyFocusedItemVisibility() {
+        const item = activePanelControl();
+        if (!opened || !item)
             return;
         const flickable = detailsScroll.contentItem;
         const mapped = item.mapToItem(flickable.contentItem, 0, 0);
@@ -167,19 +169,24 @@ Popup {
             targetY = mapped.y + item.height + margin - flickable.height;
         const maximumY = Math.max(0, flickable.contentHeight - flickable.height);
         flickable.contentY = Math.max(0, Math.min(maximumY, targetY));
-        if (remainingPasses > 0)
-            Qt.callLater(function () {
-                root.applyFocusedItemVisibility(item, revision, remainingPasses - 1);
-            });
+    }
+
+    function scheduleFocusedItemVisibility() {
+        if (!opened || !activePanelControl() || focusVisibilityUpdatePending)
+            return;
+        focusVisibilityUpdatePending = true;
+        const revision = focusVisibilityRevision;
+        Qt.callLater(function () {
+            if (revision !== root.focusVisibilityRevision)
+                return;
+            root.focusVisibilityUpdatePending = false;
+            root.applyFocusedItemVisibility();
+        });
     }
 
     function keepFocusedItemVisible(item) {
-        if (!opened || !item || !item.activeFocus)
-            return;
-        const revision = ++focusVisibilityRevision;
-        Qt.callLater(function () {
-            root.applyFocusedItemVisibility(item, revision, 2);
-        });
+        if (opened && item && item.activeFocus)
+            scheduleFocusedItemVisibility();
     }
 
     function isUsableFocusTarget(item) {
@@ -255,6 +262,7 @@ Popup {
     onClosed: {
         diagnosticsExpanded = false;
         ++focusVisibilityRevision;
+        focusVisibilityUpdatePending = false;
         const target = restoreFocusItem;
         restoreFocusItem = null;
         lastPanelFocusItem = null;
@@ -331,10 +339,13 @@ Popup {
             clip: true
             contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            onAvailableHeightChanged: root.scheduleFocusedItemVisibility()
+            onHeightChanged: root.scheduleFocusedItemVisibility()
 
             ColumnLayout {
                 width: detailsScroll.availableWidth
                 spacing: root.contract.spacingUnit
+                onHeightChanged: root.scheduleFocusedItemVisibility()
 
                 Text {
                     text: labels.trackSection

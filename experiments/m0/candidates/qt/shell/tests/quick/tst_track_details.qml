@@ -151,7 +151,7 @@ TestCase {
 
     function test_localPartialDetailsUpdateCopyAndRemainActionableOnError() {
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
-        testScenarioDriver.setSystemAppearance(false, true); // qmllint disable unqualified
+        testScenarioDriver.setSystemAppearance(false, false); // qmllint disable unqualified
         const shell = createTemporaryObject(localShellComponent, null);
         verify(shell);
         shell.width = 720;
@@ -211,6 +211,19 @@ TestCase {
         const close = findChild(shell, "track-details-close");
         const scroll = findChild(shell, "track-details-scroll");
         verifyFocusCycle([close, path, copyPath, diagnosticsToggle, diagnostics, copyDiagnostics], scroll);
+        shell.height = 800;
+        tryCompare(panel, "height", 640);
+        copyDiagnostics.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(function () {
+            return isFullyVisibleInViewport(copyDiagnostics, scroll);
+        });
+        wait(1);
+        shell.height = 520;
+        tryCompare(panel, "height", 472);
+        verify(copyDiagnostics.activeFocus);
+        tryVerify(function () {
+            return isFullyVisibleInViewport(copyDiagnostics, scroll);
+        }, 5000, "Focused diagnostics action should remain visible after viewport reflow");
         copyDiagnostics.Accessible.pressAction();
         compare(testScenarioDriver.clipboardText(), diagnostics.text); // qmllint disable unqualified
 
