@@ -393,6 +393,8 @@ class PlayerPresenterTests final : public QObject {
     void removingCurrentUsesAForwardSuccessorOrLeavesPlaybackEmpty();
     void removingPausedCurrentKeepsTheSuccessorReady();
     void addingAfterTheQueueBecomesEmptyStartsTheFirstNewOccurrence();
+    void typedSourceImportPreservesOrderDuplicatesAndNativeMetacharacters();
+    void typedSourceImportRejectsBusyWithoutMutatingTheActiveBatch();
     void droppedSourceImportValidatesBoundaryAndKeepsStableAnchor();
     void sourceImportTracksMovedAnchorAndFallsBackAfterItsRemoval();
     void sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext_data();
@@ -1018,6 +1020,79 @@ void PlayerPresenterTests::addingAfterTheQueueBecomesEmptyStartsTheFirstNewOccur
     QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>({first, duplicate}));
     QCOMPARE(metadata.requests.size(), std::size_t{2});
     QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::typedSourceImportPreservesOrderDuplicatesAndNativeMetacharacters() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto current = localTestPath(u8"Atual.mp3");
+    const auto anchor = localTestPath(u8"Ancora.flac");
+    const auto duplicate = localTestPath(u8"Duplicada 日本語.mp3");
+    const auto metacharacters = localTestPath(u8R"(Abertura "aspas" & ^ % ! [x].ogg)");
+    const std::vector<std::filesystem::path> selection{current, anchor};
+    const std::vector<std::filesystem::path> sources{duplicate, metacharacters, duplicate};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString current_id = presenter.currentOccurrenceId();
+    QSignalSpy inserted(model, &QAbstractItemModel::rowsInserted);
+
+    QVERIFY(presenter.openSourcePaths(sources, 1));
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    QCOMPARE(discovery.requests.front().roots, sources);
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, sources, {}, 3);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+
+    QCOMPARE(queueFileNames(*model), QStringList({displayPath(current.filename()), displayPath(duplicate.filename()),
+                                                  displayPath(metacharacters.filename()),
+                                                  displayPath(duplicate.filename()), displayPath(anchor.filename())}));
+    QCOMPARE(presenter.currentOccurrenceId(), current_id);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{current});
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(inserted.front().at(1).toInt(), 1);
+    QCOMPARE(inserted.front().at(2).toInt(), 3);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 3ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+    QCOMPARE(presenter.sourceImportInspectedCount(), 3ULL);
+}
+
+void PlayerPresenterTests::typedSourceImportRejectsBusyWithoutMutatingTheActiveBatch() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto first = localTestPath(u8"Primeira.mp3");
+    const auto ignored = localTestPath(u8"Ignorada 日本語 & ^.flac");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QSignalSpy import_changed(&presenter, &PlayerPresenter::sourceImportChanged);
+
+    QVERIFY(presenter.openSourcePaths({first}, 0));
+    QCOMPARE(import_changed.size(), 1);
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+
+    QVERIFY(!presenter.openSourcePaths({ignored}, 0));
+    QCOMPARE(import_changed.size(), 1);
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    QCOMPARE(discovery.requests.front().roots, std::vector<std::filesystem::path>{first});
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Discovering);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 0ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+    QCOMPARE(presenter.sourceImportInspectedCount(), 0ULL);
+    QCOMPARE(model->rowCount(), 0);
+    QVERIFY(backend.loaded_paths.empty());
+
+    discovery.publishBatch(generation, 1, {first}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*model), QStringList({displayPath(first.filename())}));
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{first});
 }
 
 void PlayerPresenterTests::droppedSourceImportValidatesBoundaryAndKeepsStableAnchor() {

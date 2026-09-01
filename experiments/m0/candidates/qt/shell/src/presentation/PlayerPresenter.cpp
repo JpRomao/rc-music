@@ -1309,16 +1309,16 @@ bool PlayerPresenter::addAudio() {
         emit queueFocusRequested(static_cast<int>(first_inserted));
     return true;
 }
+bool PlayerPresenter::openSourcePaths(std::vector<std::filesystem::path> source_paths,
+                                      const std::size_t insertion_index) {
+    return beginSourceImport(std::move(source_paths), insertion_index, 0);
+}
+
 bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int insertion_index) {
     if (uses_frozen_fixture_ || exiting_ || source_discovery_ == nullptr || sourceImportActive())
         return false;
-    source_import_occurrences_.clear();
-    source_import_autoplay_enabled_ = false;
-    source_import_needs_autoplay_ = false;
-    if (insertion_index < 0 || static_cast<std::size_t>(insertion_index) > local_queue_.size()) {
-        rejectSourceImport(1);
-        return false;
-    }
+    if (insertion_index < 0 || static_cast<std::size_t>(insertion_index) > local_queue_.size())
+        return beginSourceImport({}, std::nullopt, 0);
 
     std::vector<std::filesystem::path> roots;
     roots.reserve(static_cast<std::size_t>(urls.size()));
@@ -1331,6 +1331,22 @@ bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int inser
         }
         roots.push_back(std::move(*source_path));
     }
+
+    return beginSourceImport(std::move(roots), static_cast<std::size_t>(insertion_index), boundary_issue_count);
+}
+
+bool PlayerPresenter::beginSourceImport(std::vector<std::filesystem::path> roots,
+                                        const std::optional<std::size_t> insertion_index,
+                                        const std::uint64_t boundary_issue_count) {
+    if (uses_frozen_fixture_ || exiting_ || source_discovery_ == nullptr || sourceImportActive())
+        return false;
+    source_import_occurrences_.clear();
+    source_import_autoplay_enabled_ = false;
+    source_import_needs_autoplay_ = false;
+    if (!insertion_index.has_value() || *insertion_index > local_queue_.size()) {
+        rejectSourceImport(1);
+        return false;
+    }
     if (roots.empty()) {
         rejectSourceImport(std::max<std::uint64_t>(1, boundary_issue_count));
         return false;
@@ -1342,7 +1358,7 @@ bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int inser
         return false;
     }
 
-    const auto index = static_cast<std::size_t>(insertion_index);
+    const std::size_t index = *insertion_index;
     source_import_generation_ = generation;
     source_import_sequence_ = 0;
     source_import_accepted_count_ = 0;

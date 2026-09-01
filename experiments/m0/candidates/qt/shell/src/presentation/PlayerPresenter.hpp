@@ -325,6 +325,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool openAudio();
     Q_INVOKABLE bool addAudio();
+    [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
     Q_INVOKABLE bool cancelSourceImport();
     Q_INVOKABLE bool dismissSourceImportStatus();
@@ -397,6 +398,9 @@ class PlayerPresenter final : public QObject {
     void pollMetadata();
     void pollSourceImport();
     void initializeLocalMode(const PlayerPresenterPreferences* preferences = nullptr);
+    [[nodiscard]] bool beginSourceImport(std::vector<std::filesystem::path> roots,
+                                         std::optional<std::size_t> insertion_index,
+                                         std::uint64_t boundary_issue_count);
     void rejectSourceImport(std::uint64_t issue_count);
     void finishSourceImport(SourceImportState terminal_state);
     [[nodiscard]] bool applySourceImportBatch(LocalSourceDiscoveryBatch batch);
