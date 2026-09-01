@@ -242,10 +242,11 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 
 ### `SessionStore`
 
-- carregar última versão válida ou default;
-- salvar preferências e sessão atomicamente;
+- carregar a última sessão válida ou o snapshot vazio default;
+- salvar somente a sessão em arquivo próprio, atomicamente; preferências pertencem ao `PreferencesStore`;
 - migrar formatos conhecidos;
-- manter backup limitado da última gravação válida.
+- manter backup limitado da última gravação válida;
+- preservar versões futuras contra downgrade ou sobrescrita sem confirmação explícita.
 
 ### `PlatformIntegration`
 
@@ -366,7 +367,29 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 }
 ```
 
-O schema acima está materializado no adapter experimental Windows. O arquivo de sessão separado, a restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4; `PreferencesStore` não substitui o futuro `SessionStore`.
+O schema acima está materializado no adapter experimental Windows. O codec/porta de sessão separados são descritos abaixo; seu arquivo, a restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
+
+O schema v1 separado da sessão é:
+
+```json
+{
+  "schemaVersion": 1,
+  "queue": {
+    "items": [
+      {
+        "occurrenceId": "9007199254740993",
+        "sourcePath": "C:\\Música\\Abertura 日本語.mp3"
+      }
+    ],
+    "currentOccurrenceId": "9007199254740993"
+  },
+  "positionMs": "123456"
+}
+```
+
+`queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths Unicode são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras são toleradas, mas todas as chaves v1 são obrigatórias.
+
+`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. A porta e o codec v1 estão materializados no candidato Qt; arquivo, backup, writer e composição no bootstrap continuam pendentes em M4.1.
 
 Gravação:
 

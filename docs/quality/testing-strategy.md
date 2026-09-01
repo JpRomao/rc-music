@@ -188,6 +188,8 @@ Em C++/Qt, `FakePlaybackBackend` e o adapter Qt Multimedia/FFmpeg precisam satis
 ### `SessionStore`
 
 - round-trip;
+- IDs e posição acima de `2^53` sem perda, com strings decimais não canônicas e overflow rejeitados;
+- documento abaixo/no/acima do limite próprio de 16 MiB;
 - escrita atômica;
 - defaults quando ausente;
 - migração de cada versão conhecida;

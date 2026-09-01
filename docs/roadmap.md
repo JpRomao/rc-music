@@ -256,10 +256,10 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ## 8. M4 — Desktop, sessão e recuperação
 
-**Estado:** Em andamento no candidato C++/Qt/Windows; a fundação pura de M4.1 está verde, sem ainda concluir persistência ou restauração.
+**Estado:** Em andamento no candidato C++/Qt/Windows; snapshot, porta e codec v1 de M4.1 estão verdes, sem ainda concluir I/O, autosave ou restauração.
 **Objetivo:** tornar o player um cidadão confiável do Windows e suportável no Linux.
 
-O primeiro recorte de M4.1 adiciona snapshot validado de fila, ocorrência atual e posição, com restauração transacional que preserva IDs/duplicatas e revalida disponibilidade em runtime. O core Qt OFF passou 142/142. Codec/arquivo atômico, autosave, bootstrap sempre pausado e E2E de corrupção/restart/kill permanecem pendentes; Linux, A/B e benchmarks seguem adiados até a paridade funcional Windows.
+O primeiro recorte de M4.1 adiciona snapshot validado de fila, ocorrência atual e posição, com restauração transacional que preserva IDs/duplicatas e revalida disponibilidade em runtime. O core Qt OFF passou 142/142. O recorte seguinte materializa `SessionStore` separado e o codec JSON v1 com inteiros exatos, paths Unicode, versão futura e limite de 16 MiB. Arquivo Windows atômico, autosave, bootstrap sempre pausado e E2E de corrupção/restart/kill permanecem pendentes; Linux, A/B e benchmarks seguem adiados até a paridade funcional Windows.
 
 ### Escopo Windows
 

@@ -162,6 +162,19 @@ if(M0_QT_SHELL_SUPPORT)
         target_compile_options(m0_qt_preferences_persistence PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    add_library(m0_qt_session_persistence STATIC
+        src/adapters/SessionJsonCodec.hpp
+        src/adapters/SessionJsonCodec.cpp
+    )
+    target_include_directories(m0_qt_session_persistence PUBLIC include src)
+    target_link_libraries(m0_qt_session_persistence PUBLIC m0_qt_core Qt6::Core)
+    target_compile_features(m0_qt_session_persistence PUBLIC cxx_std_20)
+    if(MSVC)
+        target_compile_options(m0_qt_session_persistence PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_session_persistence PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
@@ -385,6 +398,17 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_preferences_json_codec_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.preferences.json-codec COMMAND m0_qt_preferences_json_codec_tests)
+        add_executable(m0_qt_session_json_codec_tests tests/qtest/SessionJsonCodecTests.cpp)
+        target_link_libraries(m0_qt_session_json_codec_tests PRIVATE m0_qt_session_persistence Qt6::Test)
+        target_include_directories(m0_qt_session_json_codec_tests PRIVATE src)
+        target_compile_features(m0_qt_session_json_codec_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_session_json_codec_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_session_json_codec_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_session_json_codec_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.session.json-codec COMMAND m0_qt_session_json_codec_tests)
         if(WIN32)
             add_executable(m0_qt_preferences_windows_store_tests
                 tests/qtest/QtJsonWindowsPreferencesStoreTests.cpp
@@ -539,6 +563,10 @@ if(M0_QT_SHELL_SUPPORT)
         )
         set_tests_properties(m0.qt.preferences.json-codec PROPERTIES
             LABELS "m0;qt;preferences;json"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.session.json-codec PROPERTIES
+            LABELS "m0;qt;session;json"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
         if(WIN32)
@@ -970,6 +998,7 @@ if(BUILD_TESTING)
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/PreferencesAutosaveTests.cpp
         tests/catch2/QueueNavigationTests.cpp
+        tests/catch2/SessionStorePortTests.cpp
         tests/catch2/SessionSnapshotTests.cpp
         tests/catch2/SingleWorkerMetadataReaderTests.cpp
         tests/catch2/SingleWorkerPreferencesWriterTests.cpp
