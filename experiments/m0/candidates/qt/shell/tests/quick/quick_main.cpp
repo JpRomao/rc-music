@@ -24,6 +24,7 @@
 #include <QQuickStyle>
 #include <QStringList>
 #include <QTranslator>
+#include <QVariantMap>
 #include <QWindow>
 #include <QtQuickTest/quicktest.h>
 #include <QtTest/qtestkeyboard.h>
@@ -507,6 +508,32 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int accessibleAnnouncementCount() const noexcept { return accessible_announcement_count; }
     Q_INVOKABLE int lastAccessibleAnnouncementPoliteness() const noexcept {
         return last_accessible_announcement_politeness;
+    }
+    Q_INVOKABLE QVariantMap accessibleSnapshot(QObject* object) const {
+        QVariantMap snapshot{{QStringLiteral("valid"), false},     {QStringLiteral("parentValid"), false},
+                             {QStringLiteral("role"), -1},         {QStringLiteral("parentRole"), -1},
+                             {QStringLiteral("name"), QString{}},  {QStringLiteral("description"), QString{}},
+                             {QStringLiteral("focusable"), false}, {QStringLiteral("focused"), false},
+                             {QStringLiteral("childCount"), 0}};
+        QAccessibleInterface* const interface = QAccessible::queryAccessibleInterface(object);
+        if (interface == nullptr || !interface->isValid())
+            return snapshot;
+
+        const QAccessible::State state = interface->state();
+        snapshot.insert(QStringLiteral("valid"), true);
+        snapshot.insert(QStringLiteral("role"), static_cast<int>(interface->role()));
+        snapshot.insert(QStringLiteral("name"), interface->text(QAccessible::Name));
+        snapshot.insert(QStringLiteral("description"), interface->text(QAccessible::Description));
+        snapshot.insert(QStringLiteral("focusable"), state.focusable != 0);
+        snapshot.insert(QStringLiteral("focused"), state.focused != 0);
+        snapshot.insert(QStringLiteral("childCount"), interface->childCount());
+
+        QAccessibleInterface* const parent = interface->parent();
+        if (parent != nullptr && parent->isValid()) {
+            snapshot.insert(QStringLiteral("parentValid"), true);
+            snapshot.insert(QStringLiteral("parentRole"), static_cast<int>(parent->role()));
+        }
+        return snapshot;
     }
     Q_INVOKABLE bool repeatKey(const int key, const int modifiers) {
         QPointer<QWindow> window = QGuiApplication::focusWindow();
