@@ -116,9 +116,11 @@ QueueEndBehavior queueEndBehavior(const QString& value) {
     default:
         return false;
     }
+    const bool valid_window_placement = !preferences.window_placement || (preferences.window_placement->width > 0 &&
+                                                                          preferences.window_placement->height > 0);
     return std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0 &&
            preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
-           preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300;
+           preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300 && valid_window_placement;
 }
 
 PlayerPresenter::PlaybackState mapPlaybackState(const QString& value) {
@@ -1909,6 +1911,7 @@ bool PlayerPresenter::requestExit() {
     if (exiting_)
         return false;
 
+    emit windowPlacementFlushRequested();
     if (session_autosave_ != nullptr) {
         observeSessionPosition(true);
         session_autosave_->requestSaveNow();
@@ -2291,16 +2294,29 @@ bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
     return true;
 }
 
+bool PlayerPresenter::recordWindowPlacement(const WindowPlacement placement) {
+    if (exiting_ || (preferences().window_placement && *preferences().window_placement == placement) ||
+        !controller_.setWindowPlacement(placement)) {
+        return false;
+    }
+    schedulePreferencePersistence();
+    return true;
+}
+
 PlayerPresenter::PreferenceWarning PlayerPresenter::preferenceWarning() const noexcept { return preference_warning_; }
 
 PlayerPresenter::PersistenceWarningScope PlayerPresenter::persistenceWarningScope() const noexcept {
     return persistence_warning_scope_;
 }
 
-void PlayerPresenter::preferenceDidChange() {
+void PlayerPresenter::schedulePreferencePersistence() {
     if (preferences_autosave_ != nullptr)
         static_cast<void>(preferences_autosave_->schedule(preferences()));
     reconcileTimer();
+}
+
+void PlayerPresenter::preferenceDidChange() {
+    schedulePreferencePersistence();
     emit preferencesChanged();
 }
 

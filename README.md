@@ -30,6 +30,10 @@ O sexto recorte acrescenta a prova destrutiva local da sessão no executável Re
 
 O fechamento automatizado final desse sexto recorte passou 214/214 no CTest Release combinado; um core fresco sem Qt, compilado com MSVC 19.44/toolset 14.44, passou 172/172; e o alvo Quick final passou 1/1, cobrindo 99 casos. `all_qmllint` ficou verde. O formato cobriu 109 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, os QML foram conferidos pela saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de crash com exit 1, sem criar a raiz de configuração solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Essa consolidação não altera os limites: pacote/nativo, `CHK-E2E`, M4.1 e os demais gates indicados continuam abertos.
 
+M4.2 está funcional localmente no candidato Qt/Windows. Preferências agora emitem JSON schema v2 com `WindowPlacement` opcional e leem v1 sem promoção ou regravação. Uma policy pura restaura somente retângulos que, após o mínimo de 720 × 520, cabem integralmente numa única área útil atual; monitor removido, mudança de DPI, gaps, dados inválidos e overflow usam o posicionamento padrão. O root QML permanece oculto até a tela e a geometria serem resolvidas, e somente a geometria normal-visível estabilizada alimenta o autosave, com flush antes de ocultar, minimizar ou sair. Quando uma transição nativa não normal vence o debounce, o candidato ambíguo é descartado em favor do último placement normal já persistido; voltar ao normal agenda nova captura. Um restart Release instrumentado entre dois processos persiste e restaura a posição sem consumir a sessão deliberadamente ignorada.
+
+O fechamento automatizado de M4.2 passou 225/225 no CTest Release combinado e 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44. O alvo Quick passou 1/1 com 100 casos, `all_qmllint` ficou verde e o formato cobriu 112 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, os QML foram comparados à saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Pacote/nativo, DPI e monitores físicos, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e o fechamento global de M4.2 permanecem pendentes.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -156,8 +160,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. continuar M4.1 pelo bootstrap, restauração sempre pausada, integração dos checkpoints de sessão e E2E de corrupção/restart/kill;
-2. seguir por geometria/start minimized, argumentos/instância única, tray completo, SMTC e recuperação, mantendo cada fechamento pequeno e verificável;
+1. manter M4.1 e M4.2 formalmente abertos até as jornadas empacotadas/nativas correspondentes, sem apagar a evidência funcional local já verde;
+2. avançar pelo desenvolvimento funcional Windows de M4.3: instância única, CLI/shell e IPC limitado; depois seguir por tray/start behavior, SMTC e recuperação, mantendo cada fechamento pequeno e verificável;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

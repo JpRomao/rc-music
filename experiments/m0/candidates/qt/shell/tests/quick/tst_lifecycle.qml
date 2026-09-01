@@ -15,6 +15,15 @@ TestCase {
         }
     }
 
+    Component {
+        id: deferredShellComponent
+        Main {
+            startupReady: false
+            uiContract: testShellUiContract // qmllint disable unqualified
+            presenter: testPlayerPresenter // qmllint disable unqualified
+        }
+    }
+
     function isInside(item, ancestor) {
         while (item) {
             if (item === ancestor)
@@ -22,6 +31,16 @@ TestCase {
             item = item.parent;
         }
         return false;
+    }
+
+    function test_startupVisibilityWaitsForPlacementResolution() {
+        const shell = createTemporaryObject(deferredShellComponent, null);
+        verify(shell);
+        compare(shell.visible, false);
+
+        shell.startupReady = true;
+
+        tryCompare(shell, "visible", true);
     }
 
     function test_closeNoticeFallbackAndExitJourney() {

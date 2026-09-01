@@ -450,6 +450,7 @@ class PlayerPresenterTests final : public QObject {
     void editsPreferencesWithoutChangingPlaybackOrTheQueue();
     void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
     void refreshesTrayAvailabilityAndGuardsStartMinimized();
+    void rejectsPersistedWindowPlacementWithNonPositiveSize();
     void loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument();
     void restoresPersistedSessionPausedBeforePresentationWithoutAutoplay();
     void acceptsAnApproximateConfirmedPositionWhenRestoring();
@@ -474,6 +475,8 @@ class PlayerPresenterTests final : public QObject {
     void mixedFutureVersionAndDefaultsRevealTheResidualWarning_data();
     void mixedFutureVersionAndDefaultsRevealTheResidualWarning();
     void sessionOnlyExitTimeoutUsesTheExistingFailureWarning();
+    void recordsWindowPlacementAsASilentPreferenceMutation();
+    void flushesPendingWindowPlacementBeforeRequestingPreferenceSaveOnExit();
     void coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit();
     void pendingPreferenceExitKeepsBackgroundTicksReversible();
     void preferenceSaveTimeoutKeepsTheApplicationResponsiveAndOpen();
@@ -3387,6 +3390,23 @@ void PlayerPresenterTests::refreshesTrayAvailabilityAndGuardsStartMinimized() {
     QCOMPARE(preferences.size(), 1);
 }
 
+void PlayerPresenterTests::rejectsPersistedWindowPlacementWithNonPositiveSize() {
+    AvailableTrayPlatform platform;
+    for (const WindowPlacement placement : {WindowPlacement{0, 0, 0, 520}, WindowPlacement{0, 0, 720, -1}}) {
+        PresenterPreferencesWriter writer;
+        Preferences invalid{};
+        invalid.window_placement = placement;
+        PreferencesAutosave autosave{writer, invalid};
+
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            static_cast<void>(PlayerPresenter(frozenBundle(), platform,
+                                              PlayerPresenterPreferences{.initial = invalid,
+                                                                         .load_status = PreferencesLoadStatus::Loaded,
+                                                                         .autosave = &autosave})));
+    }
+}
+
 void PlayerPresenterTests::loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument() {
     AvailableTrayPlatform platform;
     platform.available = false;
@@ -4454,6 +4474,70 @@ void PlayerPresenterTests::sessionOnlyExitTimeoutUsesTheExistingFailureWarning()
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
     QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::SessionPersistence);
     QVERIFY(presenter.retryPreferenceSave());
+}
+
+void PlayerPresenterTests::recordsWindowPlacementAsASilentPreferenceMutation() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+    QSignalSpy preferences_changed(&presenter, &PlayerPresenter::preferencesChanged);
+    constexpr WindowPlacement placement{-1'800, 40, 960, 640};
+
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{0});
+    QVERIFY(presenter.recordWindowPlacement(placement));
+
+    QVERIFY(presenter.preferences().window_placement.has_value());
+    QCOMPARE(*presenter.preferences().window_placement, placement);
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{1});
+    QVERIFY(autosave.dirty());
+    QVERIFY(writer.starts.empty());
+    QCOMPARE(preferences_changed.size(), 0);
+
+    QVERIFY(!presenter.recordWindowPlacement(placement));
+    QVERIFY(!presenter.recordWindowPlacement(WindowPlacement{0, 0, 0, 640}));
+    QVERIFY(!presenter.recordWindowPlacement(WindowPlacement{0, 0, 960, -1}));
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{1});
+    QCOMPARE(preferences_changed.size(), 0);
+}
+
+void PlayerPresenterTests::flushesPendingWindowPlacementBeforeRequestingPreferenceSaveOnExit() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+    constexpr WindowPlacement pending{-1'760, 60, 900, 600};
+    bool recorded_during_flush = false;
+    QObject::connect(
+        &presenter, &PlayerPresenter::windowPlacementFlushRequested, &presenter,
+        [&] { recorded_during_flush = presenter.recordWindowPlacement(pending); }, Qt::DirectConnection);
+    QSignalSpy flush_requested(&presenter, &PlayerPresenter::windowPlacementFlushRequested);
+    QSignalSpy preferences_changed(&presenter, &PlayerPresenter::preferencesChanged);
+
+    QVERIFY(presenter.requestExit());
+
+    QVERIFY(recorded_during_flush);
+    QCOMPARE(flush_requested.size(), 1);
+    QCOMPARE(preferences_changed.size(), 0);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(writer.starts.back().preferences.window_placement.has_value());
+    QCOMPARE(*writer.starts.back().preferences.window_placement, pending);
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+
+    QVERIFY(!presenter.requestExit());
+    QCOMPARE(flush_requested.size(), 1);
 }
 
 void PlayerPresenterTests::coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit() {

@@ -120,6 +120,66 @@ TEST_CASE("preferences autosave waits for the trailing debounce and writes the l
     CHECK(autosave.notice() == PreferencesAutosaveNotice::None);
 }
 
+TEST_CASE("window placement creates a revision and survives later preference changes",
+          "[preferences][window-placement]") {
+    RecordingWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    const WindowPlacement placement{-1'920, 40, 960, 640};
+    Preferences placement_only;
+    placement_only.window_placement = placement;
+
+    REQUIRE(autosave.schedule(placement_only));
+    CHECK(autosave.dirty());
+    CHECK(autosave.latestRevision() == 1);
+
+    Preferences latest = placement_only;
+    latest.theme = ThemeMode::Dark;
+    REQUIRE(autosave.schedule(latest));
+    CHECK(autosave.latestRevision() == 2);
+
+    clock.advance(500ms);
+    autosave.poll();
+
+    REQUIRE(writer.starts.size() == 1);
+    CHECK(writer.starts.front().revision == 2);
+    CHECK(writer.starts.front().preferences == latest);
+    REQUIRE(writer.starts.front().preferences.window_placement.has_value());
+    CHECK(*writer.starts.front().preferences.window_placement == placement);
+}
+
+TEST_CASE("newer window placement remains dirty after an older revision completes", "[preferences][window-placement]") {
+    RecordingWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    Preferences first;
+    first.window_placement = WindowPlacement{-1'920, 40, 960, 640};
+    Preferences latest = first;
+    const WindowPlacement latest_placement{120, 80, 1'200, 760};
+    latest.window_placement = latest_placement;
+
+    REQUIRE(autosave.schedule(first));
+    clock.advance(500ms);
+    autosave.poll();
+    REQUIRE(writer.starts.size() == 1);
+
+    REQUIRE(autosave.schedule(latest));
+    writer.complete(PreferencesSaveStatus::Saved);
+    autosave.poll();
+
+    CHECK(autosave.dirty());
+    CHECK_FALSE(autosave.writeActive());
+    CHECK(autosave.latestRevision() == 2);
+    CHECK(writer.starts.size() == 1);
+
+    clock.advance(500ms);
+    autosave.poll();
+    REQUIRE(writer.starts.size() == 2);
+    CHECK(writer.starts.back().revision == 2);
+    REQUIRE(writer.starts.back().preferences.window_placement.has_value());
+    CHECK(*writer.starts.back().preferences.window_placement == latest_placement);
+}
+
 TEST_CASE("a newer revision remains dirty while an older save finishes", "[preferences]") {
     RecordingWriter writer;
     ManualClock clock;

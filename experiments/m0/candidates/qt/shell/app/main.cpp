@@ -12,6 +12,7 @@
 #endif
 #endif
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/domain/WindowPlacement.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
@@ -43,10 +44,13 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QRect>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QTranslator>
@@ -59,6 +63,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -73,6 +78,38 @@ using music_player::m0::experiment::PlayerPresenterScenarioControl;
 using music_player::m0::experiment::validateShellLaunchOptions;
 
 namespace {
+constexpr music_player::m0::WindowSize minimum_window_size{720, 520};
+
+[[nodiscard]] bool
+applyRestoredWindowPlacement(QWindow& window, const std::optional<music_player::m0::WindowPlacement>& saved_placement) {
+    if (!saved_placement.has_value())
+        return false;
+
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    std::vector<music_player::m0::WindowWorkArea> work_areas;
+    work_areas.reserve(static_cast<std::size_t>(screens.size()));
+    for (const QScreen* const screen : screens) {
+        if (screen == nullptr) {
+            work_areas.push_back({});
+            continue;
+        }
+        const QRect available = screen->availableGeometry();
+        work_areas.push_back({available.x(), available.y(), available.width(), available.height()});
+    }
+
+    const auto resolved = music_player::m0::resolveWindowPlacement(*saved_placement, work_areas, minimum_window_size);
+    if (!resolved.has_value() || resolved->screen_index >= static_cast<std::size_t>(screens.size()))
+        return false;
+    QScreen* const target_screen = screens.at(static_cast<qsizetype>(resolved->screen_index));
+    if (target_screen == nullptr)
+        return false;
+
+    window.setScreen(target_screen);
+    const auto& placement = resolved->placement;
+    window.setGeometry(placement.x, placement.y, placement.width, placement.height);
+    return true;
+}
+
 #ifdef M0_QT_COMBINED_AUDIO
 [[nodiscard]] QString localAudioDialogFilter() {
     QStringList patterns;
@@ -119,7 +156,8 @@ namespace {
             .close_behavior = music_player::m0::CloseBehavior::Exit,
             .restore_last_session = false,
             .start_minimized = true,
-            .queue_end_behavior = music_player::m0::QueueEndBehavior::StopClearSelection};
+            .queue_end_behavior = music_player::m0::QueueEndBehavior::StopClearSelection,
+            .window_placement = music_player::m0::WindowPlacement{20, 30, 720, 520}};
 }
 
 [[nodiscard]] bool writeRestartPreferences(PlayerPresenter& presenter) {
@@ -133,7 +171,11 @@ namespace {
     const bool restore = presenter.setRestoreLastSession(false);
     const bool minimized = presenter.setStartMinimized(true);
     const bool queue_end = presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection);
-    const bool snapshot = presenter.preferences() == restartPreferences();
+    auto expected_before_geometry = restartPreferences();
+    expected_before_geometry.window_placement.reset();
+    auto actual_before_geometry = presenter.preferences();
+    actual_before_geometry.window_placement.reset();
+    const bool snapshot = actual_before_geometry == expected_before_geometry;
     if (!(theme && motion && volume && muted && backward && forward && close && restore && minimized && queue_end &&
           snapshot)) {
         qCritical() << "Unable to apply the complete restart preference snapshot" << theme << motion << volume << muted
@@ -317,18 +359,25 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
         }
         engine.setInitialProperties({{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
-                                     {QStringLiteral("presenter"), QVariant::fromValue(&presenter)}});
+                                     {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
+                                     {QStringLiteral("startupReady"), false}});
         engine.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));
         if (engine.rootObjects().isEmpty())
             return 1;
         auto* const window = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
         if (window == nullptr)
             return 1;
+        if (window->isVisible())
+            throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
+        (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);
         music_player::m0::bindShellPlatform(presenter, platform, *window);
+        if (!window->setProperty("startupReady", true))
+            throw std::runtime_error{"the QML root rejected the startup-ready transition"};
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_completed = false;
         bool combined_startup_smoke_completed = false;
         bool preferences_restart_completed = false;
+#ifdef M0_QT_COMBINED_AUDIO
         bool session_restart_completed = false;
         bool session_recovery_completed = false;
         bool session_defaults_completed = false;
@@ -337,6 +386,8 @@ int main(int argc, char* argv[]) {
         QTimer session_restart_timer;
         QTimer session_recovery_timer;
         QTimer session_crash_timer;
+#endif
+        QTimer preferences_restart_timer;
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -386,21 +437,39 @@ int main(int argc, char* argv[]) {
         }
 #endif
         if (options.smoke_preferences_restart_write) {
-            QTimer::singleShot(0, &application, [&application, &presenter, &preferences_restart_completed] {
-                const bool written = writeRestartPreferences(presenter);
-                const bool exited = presenter.requestExit();
-                preferences_restart_completed =
-                    written && exited &&
-                    presenter.preferenceWarning() != PlayerPresenter::PreferenceWarning::SaveFailed;
-                if (!preferences_restart_completed)
-                    application.exit(2);
-            });
+            QTimer::singleShot(
+                0, &application,
+                [&application, window, &presenter, &preferences_restart_completed, &preferences_restart_timer] {
+                    const bool written = writeRestartPreferences(presenter);
+                    if (!written) {
+                        application.exit(2);
+                        return;
+                    }
+                    const auto placement = restartPreferences().window_placement.value();
+                    window->setGeometry(placement.x, placement.y, placement.width, placement.height);
+                    preferences_restart_timer.setInterval(10);
+                    QObject::connect(
+                        &preferences_restart_timer, &QTimer::timeout, &application,
+                        [&application, &presenter, &preferences_restart_completed, &preferences_restart_timer] {
+                            if (presenter.preferences() != restartPreferences())
+                                return;
+                            preferences_restart_timer.stop();
+                            const bool exited = presenter.requestExit();
+                            preferences_restart_completed =
+                                exited &&
+                                presenter.preferenceWarning() != PlayerPresenter::PreferenceWarning::SaveFailed;
+                            if (!preferences_restart_completed)
+                                application.exit(2);
+                        });
+                    preferences_restart_timer.start();
+                });
         }
         if (options.smoke_preferences_restart_read) {
             QTimer::singleShot(0, &application,
                                [&application, window, &contract, &presenter, &preferences_restart_completed] {
                                    preferences_restart_completed =
                                        presenter.preferences() == restartPreferences() && contract.darkTheme() &&
+                                       window->isVisible() && window->geometry() == QRect{20, 30, 720, 520} &&
                                        window->property("color").value<QColor>() == QColor{contract.canvasColor()} &&
                                        presenter.requestExit();
                                    if (!preferences_restart_completed)

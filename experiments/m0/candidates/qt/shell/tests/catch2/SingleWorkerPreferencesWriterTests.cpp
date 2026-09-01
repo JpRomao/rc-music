@@ -79,14 +79,21 @@ TEST_CASE("single worker writes off the caller and reports a typed completion", 
     CHECK(writer.shutdown());
 }
 
-TEST_CASE("flush waits for an active revision and then persists the supplied latest revision", "[preferences]") {
+TEST_CASE("flush waits for an active revision and then persists the supplied latest revision",
+          "[preferences][window-placement]") {
     ControlledStore store;
     SingleWorkerPreferencesWriter writer{store};
-    REQUIRE(writer.start(request(1, 20)) == PreferencesWriterCommand::Accepted);
+    PreferencesWriteRequest active_request = request(1, 20);
+    const WindowPlacement active_placement{-1'920, 40, 960, 640};
+    active_request.preferences.window_placement = active_placement;
+    REQUIRE(writer.start(active_request) == PreferencesWriterCommand::Accepted);
     store.waitUntilEntered();
 
+    PreferencesWriteRequest latest_request = request(2, 33, true);
+    const WindowPlacement latest_placement{120, 80, 1'200, 760};
+    latest_request.preferences.window_placement = latest_placement;
     std::optional<PreferencesWriteCompletion> flushed;
-    std::thread flushing{[&] { flushed = writer.flush(request(2, 33, true)); }};
+    std::thread flushing{[&] { flushed = writer.flush(latest_request); }};
     store.release();
     store.waitUntilEntered(2);
     store.release();
@@ -97,7 +104,11 @@ TEST_CASE("flush waits for an active revision and then persists the supplied lat
     CHECK(flushed->status == PreferencesSaveStatus::Saved);
     REQUIRE(store.requests.size() == 2);
     CHECK(store.requests[0].preferences.skip_forward_seconds == 20);
+    REQUIRE(store.requests[0].preferences.window_placement.has_value());
+    CHECK(*store.requests[0].preferences.window_placement == active_placement);
     CHECK(store.requests[1].preferences.skip_forward_seconds == 33);
+    REQUIRE(store.requests[1].preferences.window_placement.has_value());
+    CHECK(*store.requests[1].preferences.window_placement == latest_placement);
     CHECK(store.requests[1].replace_future_version);
     CHECK(writer.shutdown());
 }

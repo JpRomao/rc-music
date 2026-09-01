@@ -20,6 +20,11 @@ namespace {
     return title;
 }
 
+[[nodiscard]] bool isNonNormalWindowState(const Qt::WindowStates states) noexcept {
+    return states.testFlag(Qt::WindowMinimized) || states.testFlag(Qt::WindowMaximized) ||
+           states.testFlag(Qt::WindowFullScreen);
+}
+
 } // namespace
 
 QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels labels,
@@ -27,7 +32,8 @@ QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels la
                                  QObject* parent)
     : QObject(parent), labels_(std::move(labels)), availability_reader_(std::move(availability_reader)),
       quit_request_(std::move(quit_request)), menu_(std::make_unique<QMenu>()),
-      tray_icon_(new QSystemTrayIcon(std::move(icon), this)), availability_timer_(new QTimer(this)) {
+      tray_icon_(new QSystemTrayIcon(std::move(icon), this)), availability_timer_(new QTimer(this)),
+      window_placement_timer_(std::make_unique<QTimer>()) {
     if (!availability_reader_)
         availability_reader_ = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
 
@@ -84,6 +90,9 @@ QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels la
     availability_timer_->setInterval(1000);
     availability_timer_->setTimerType(Qt::CoarseTimer);
     connect(availability_timer_, &QTimer::timeout, this, &QtShellPlatform::refreshAvailability);
+    window_placement_timer_->setInterval(0);
+    window_placement_timer_->setSingleShot(true);
+    connect(window_placement_timer_.get(), &QTimer::timeout, this, &QtShellPlatform::publishWindowPlacement);
     connect(menu_.get(), &QMenu::aboutToShow, this, &QtShellPlatform::refreshAvailability);
     tray_icon_->setContextMenu(menu_.get());
     tray_icon_->setToolTip(app_name);
@@ -102,27 +111,60 @@ QtShellPlatform::~QtShellPlatform() {
 }
 
 void QtShellPlatform::bindWindow(QWindow& window) {
+    ++window_binding_generation_;
+    window_placement_timer_->stop();
+    pending_window_placement_.reset();
     if (window_)
         disconnect(window_, nullptr, this, nullptr);
     window_ = &window;
     restore_states_ = Qt::WindowNoState;
     rememberWindowState();
     connect(&window, &QWindow::windowStateChanged, this, [this] {
+        if (isNonNormalWindowState(window_->windowStates())) {
+            // Windows can report expanded geometry before publishing the new state. Until the coalesced
+            // candidate survives a normal-state event-loop turn, the last persisted normal placement is safer.
+            window_placement_timer_->stop();
+            pending_window_placement_.reset();
+        } else {
+            const std::uint64_t binding_generation = window_binding_generation_;
+            QTimer::singleShot(0, this, [this, binding_generation] {
+                if (binding_generation == window_binding_generation_)
+                    scheduleWindowPlacementCapture();
+            });
+        }
         rememberWindowState();
         updateMenu();
         updatePolling();
     });
     connect(&window, &QWindow::visibleChanged, this, [this] {
+        scheduleWindowPlacementCapture();
         updateMenu();
         updatePolling();
     });
+    connect(&window, &QWindow::xChanged, this, [this] { scheduleWindowPlacementCapture(); });
+    connect(&window, &QWindow::yChanged, this, [this] { scheduleWindowPlacementCapture(); });
+    connect(&window, &QWindow::widthChanged, this, [this] { scheduleWindowPlacementCapture(); });
+    connect(&window, &QWindow::heightChanged, this, [this] { scheduleWindowPlacementCapture(); });
+    connect(&window, &QWindow::screenChanged, this, [this] { scheduleWindowPlacementCapture(); });
     connect(&window, &QObject::destroyed, this, [this] {
+        ++window_binding_generation_;
+        window_placement_timer_->stop();
+        pending_window_placement_.reset();
         window_.clear();
         updateMenu();
         updatePolling();
     });
     updateMenu();
     updatePolling();
+}
+
+void QtShellPlatform::flushPendingWindowPlacement() {
+    if (!window_ || exit_requested_ || window_placement_flush_in_progress_)
+        return;
+    window_placement_flush_in_progress_ = true;
+    scheduleWindowPlacementCapture();
+    publishWindowPlacement();
+    window_placement_flush_in_progress_ = false;
 }
 
 void QtShellPlatform::updateTrayState(const TrayMenuState& state) {
@@ -166,8 +208,12 @@ bool QtShellPlatform::trayAvailable() const noexcept {
 void QtShellPlatform::hideWindow() {
     if (!window_ || exit_requested_)
         return;
+    const std::uint64_t binding_generation = window_binding_generation_;
+    flushPendingWindowPlacement();
+    if (!window_ || exit_requested_ || binding_generation != window_binding_generation_)
+        return;
     refreshAvailability();
-    if (!window_ || exit_requested_)
+    if (!window_ || exit_requested_ || binding_generation != window_binding_generation_)
         return;
     if (!available_) {
         minimizeWindow();
@@ -184,6 +230,10 @@ void QtShellPlatform::hideWindow() {
 void QtShellPlatform::minimizeWindow() {
     if (!window_ || exit_requested_)
         return;
+    const std::uint64_t binding_generation = window_binding_generation_;
+    flushPendingWindowPlacement();
+    if (!window_ || exit_requested_ || binding_generation != window_binding_generation_)
+        return;
     rememberWindowState();
     window_->setWindowStates(restore_states_ | Qt::WindowMinimized);
     window_->setVisible(true);
@@ -199,6 +249,9 @@ void QtShellPlatform::showAndActivateWindow() {
 }
 
 void QtShellPlatform::requestExit() {
+    if (exit_requested_)
+        return;
+    flushPendingWindowPlacement();
     if (exit_requested_)
         return;
     exit_requested_ = true;
@@ -250,6 +303,36 @@ void QtShellPlatform::rememberWindowState() {
         states.testFlag(Qt::WindowFullScreen)) {
         restore_states_ = states & ~Qt::WindowStates{Qt::WindowMinimized};
     }
+}
+
+void QtShellPlatform::scheduleWindowPlacementCapture() {
+    if (!window_ || exit_requested_)
+        return;
+    const Qt::WindowStates states = window_->windowStates();
+    if (!window_->isVisible() || isNonNormalWindowState(states)) {
+        return;
+    }
+    const QRect geometry = window_->geometry();
+    if (geometry.width() <= 0 || geometry.height() <= 0)
+        return;
+    pending_window_placement_ = {
+        .x = geometry.x(), .y = geometry.y(), .width = geometry.width(), .height = geometry.height()};
+    scheduled_window_binding_generation_ = window_binding_generation_;
+    window_placement_timer_->start();
+}
+
+void QtShellPlatform::publishWindowPlacement() {
+    window_placement_timer_->stop();
+    if (!pending_window_placement_)
+        return;
+    if (!window_ || exit_requested_ || scheduled_window_binding_generation_ != window_binding_generation_ ||
+        !window_->isVisible() || isNonNormalWindowState(window_->windowStates())) {
+        pending_window_placement_.reset();
+        return;
+    }
+    const WindowPlacement placement = *pending_window_placement_;
+    pending_window_placement_.reset();
+    emit windowPlacementChanged(placement);
 }
 
 } // namespace music_player::m0

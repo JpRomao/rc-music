@@ -1,5 +1,7 @@
 #include "adapters/PreferencesJsonCodec.hpp"
 
+#include "m0/domain/WindowPlacement.hpp"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -13,7 +15,7 @@ using namespace Qt::StringLiterals;
 namespace music_player::m0::test {
 namespace {
 
-[[nodiscard]] QJsonObject validObject() {
+[[nodiscard]] QJsonObject validVersionOneObject() {
     return {{u"schemaVersion"_s, 1},
             {u"theme"_s, u"system"_s},
             {u"motion"_s, u"system"_s},
@@ -25,6 +27,13 @@ namespace {
             {u"restoreLastSession"_s, true},
             {u"startMinimized"_s, false},
             {u"queueEndBehavior"_s, u"stop_keep_selection"_s}};
+}
+
+[[nodiscard]] QJsonObject validObject() {
+    QJsonObject object = validVersionOneObject();
+    object.insert(u"schemaVersion"_s, 2);
+    object.insert(u"windowPlacement"_s, QJsonValue::Null);
+    return object;
 }
 
 [[nodiscard]] QByteArray bytes(const QJsonObject& object) {
@@ -55,6 +64,15 @@ namespace {
     return behavior == QueueEndBehavior::StopClearSelection ? u"stop_clear_selection"_s : u"stop_keep_selection"_s;
 }
 
+[[nodiscard]] QJsonValue windowPlacementValue(const std::optional<WindowPlacement>& placement) {
+    if (!placement)
+        return QJsonValue::Null;
+    return QJsonObject{{u"x"_s, placement->x},
+                       {u"y"_s, placement->y},
+                       {u"width"_s, placement->width},
+                       {u"height"_s, placement->height}};
+}
+
 [[nodiscard]] QJsonObject expectedObject(const Preferences& preferences) {
     return {{u"schemaVersion"_s, PreferencesJsonCodec::schema_version},
             {u"theme"_s, themeName(preferences.theme)},
@@ -66,7 +84,8 @@ namespace {
             {u"closeBehavior"_s, closeBehaviorName(preferences.close_behavior)},
             {u"restoreLastSession"_s, preferences.restore_last_session},
             {u"startMinimized"_s, preferences.start_minimized},
-            {u"queueEndBehavior"_s, queueEndBehaviorName(preferences.queue_end_behavior)}};
+            {u"queueEndBehavior"_s, queueEndBehaviorName(preferences.queue_end_behavior)},
+            {u"windowPlacement"_s, windowPlacementValue(preferences.window_placement)}};
 }
 
 void comparePreferences(const Preferences& actual, const Preferences& expected) {
@@ -80,14 +99,16 @@ void comparePreferences(const Preferences& actual, const Preferences& expected) 
     QCOMPARE(actual.restore_last_session, expected.restore_last_session);
     QCOMPARE(actual.start_minimized, expected.start_minimized);
     QCOMPARE(actual.queue_end_behavior, expected.queue_end_behavior);
+    QVERIFY(actual.window_placement == expected.window_placement);
 }
 
 [[nodiscard]] QByteArray jsonWithVolumeToken(const QByteArrayView token) {
-    return QByteArray{"{\"schemaVersion\":1,\"theme\":\"system\",\"motion\":\"system\",\"volume\":"} +
+    return QByteArray{"{\"schemaVersion\":2,\"theme\":\"system\",\"motion\":\"system\",\"volume\":"} +
            token.toByteArray() +
            QByteArray{",\"muted\":false,\"skipBackwardSeconds\":5,\"skipForwardSeconds\":5,"
                       "\"closeBehavior\":\"minimize_to_tray\",\"restoreLastSession\":true,"
-                      "\"startMinimized\":false,\"queueEndBehavior\":\"stop_keep_selection\"}"};
+                      "\"startMinimized\":false,\"queueEndBehavior\":\"stop_keep_selection\","
+                      "\"windowPlacement\":null}"};
 }
 
 } // namespace
@@ -110,17 +131,21 @@ class PreferencesJsonCodecTests final : public QObject {
                            .close_behavior = CloseBehavior::Exit,
                            .restore_last_session = false,
                            .start_minimized = true,
-                           .queue_end_behavior = QueueEndBehavior::StopClearSelection};
-        QTest::newRow("numeric boundaries") << Preferences{.theme = ThemeMode::Light,
-                                                           .motion = MotionMode::System,
-                                                           .volume = 1.0,
-                                                           .muted = false,
-                                                           .skip_backward_seconds = 1,
-                                                           .skip_forward_seconds = 300,
-                                                           .close_behavior = CloseBehavior::MinimizeToTray,
-                                                           .restore_last_session = true,
-                                                           .start_minimized = false,
-                                                           .queue_end_behavior = QueueEndBehavior::StopKeepSelection};
+                           .queue_end_behavior = QueueEndBehavior::StopClearSelection,
+                           .window_placement = WindowPlacement{-1'920, 40, 960, 640}};
+        QTest::newRow("numeric boundaries") << Preferences{
+            .theme = ThemeMode::Light,
+            .motion = MotionMode::System,
+            .volume = 1.0,
+            .muted = false,
+            .skip_backward_seconds = 1,
+            .skip_forward_seconds = 300,
+            .close_behavior = CloseBehavior::MinimizeToTray,
+            .restore_last_session = true,
+            .start_minimized = false,
+            .queue_end_behavior = QueueEndBehavior::StopKeepSelection,
+            .window_placement = WindowPlacement{std::numeric_limits<int>::min(), std::numeric_limits<int>::max(),
+                                                std::numeric_limits<int>::max(), std::numeric_limits<int>::max()}};
     }
 
     void encodesEveryFieldAndRoundTripsDeterministically() {
@@ -135,7 +160,7 @@ class PreferencesJsonCodecTests final : public QObject {
         QCOMPARE(parse_error.error, QJsonParseError::NoError);
         QVERIFY(document.isObject());
         const QJsonObject object = document.object();
-        QCOMPARE(object.size(), 11);
+        QCOMPARE(object.size(), 12);
         QSet<QString> actual_keys;
         for (auto iterator = object.constBegin(); iterator != object.constEnd(); ++iterator)
             actual_keys.insert(iterator.key());
@@ -151,9 +176,10 @@ class PreferencesJsonCodecTests final : public QObject {
             u"restoreLastSession"_s,
             u"startMinimized"_s,
             u"queueEndBehavior"_s,
+            u"windowPlacement"_s,
         };
         QCOMPARE(actual_keys, expected_keys);
-        QCOMPARE(object.value(u"schemaVersion"_s), QJsonValue{1});
+        QCOMPARE(object.value(u"schemaVersion"_s), QJsonValue{2});
         QCOMPARE(object, expectedObject(expected));
 
         const PreferencesJsonDecodeResult decoded = PreferencesJsonCodec::decode(first);
@@ -196,6 +222,12 @@ class PreferencesJsonCodecTests final : public QObject {
         invalid = {};
         invalid.queue_end_behavior = static_cast<QueueEndBehavior>(99);
         QTest::newRow("unknown queue end behavior") << invalid;
+        invalid = {};
+        invalid.window_placement = WindowPlacement{0, 0, 0, 520};
+        QTest::newRow("zero window width") << invalid;
+        invalid = {};
+        invalid.window_placement = WindowPlacement{0, 0, 720, -1};
+        QTest::newRow("negative window height") << invalid;
     }
 
     void refusesToEncodeValuesOutsideTheSchema() {
@@ -219,12 +251,36 @@ class PreferencesJsonCodecTests final : public QObject {
         QCOMPARE(result.preferences->skip_forward_seconds, 300);
     }
 
+    void decodesVersionOneWithoutRequiringWindowPlacement() {
+        QJsonObject object = validVersionOneObject();
+        object.insert(u"futureOptionalField"_s, QJsonObject{{u"nested"_s, true}});
+
+        const PreferencesJsonDecodeResult result = PreferencesJsonCodec::decode(bytes(object));
+
+        QCOMPARE(result.status, PreferencesJsonDecodeStatus::Valid);
+        QVERIFY(result.preferences.has_value());
+        QVERIFY(!result.preferences->window_placement.has_value());
+    }
+
+    void decodesVersionTwoWindowPlacementWithNegativeCoordinates() {
+        QJsonObject object = validObject();
+        object.insert(u"windowPlacement"_s,
+                      QJsonObject{{u"x"_s, -1'920}, {u"y"_s, -40}, {u"width"_s, 960}, {u"height"_s, 640}});
+
+        const PreferencesJsonDecodeResult result = PreferencesJsonCodec::decode(bytes(object));
+
+        QCOMPARE(result.status, PreferencesJsonDecodeStatus::Valid);
+        QVERIFY(result.preferences.has_value());
+        const std::optional<WindowPlacement> expected{WindowPlacement{-1'920, -40, 960, 640}};
+        QCOMPARE(result.preferences->window_placement, expected);
+    }
+
     void classifiesFutureVersionBeforeReadingItsFields_data() {
         QTest::addColumn<QByteArray>("json");
-        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":2})"};
+        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":3})"};
         QTest::newRow("missing current fields") << QByteArray{R"({"schemaVersion":99,"theme":false})"};
         QTest::newRow("future fields have hostile types")
-            << QByteArray{R"({"schemaVersion":2,"volume":"C:\\private\\preferences.json"})"};
+            << QByteArray{R"({"schemaVersion":3,"volume":"C:\\private\\preferences.json"})"};
     }
 
     void classifiesFutureVersionBeforeReadingItsFields() {
@@ -287,6 +343,7 @@ class PreferencesJsonCodecTests final : public QObject {
             {u"restoreLastSession"_s, QJsonArray{}},
             {u"startMinimized"_s, QJsonValue::Null},
             {u"queueEndBehavior"_s, true},
+            {u"windowPlacement"_s, QJsonArray{}},
         };
         for (const auto& [key, wrong_value] : wrong_values) {
             QJsonObject object = validObject();
@@ -352,6 +409,54 @@ class PreferencesJsonCodecTests final : public QObject {
     void rejectsInvalidNumbers() {
         QFETCH(QByteArray, json);
         QCOMPARE(PreferencesJsonCodec::decode(json).status, PreferencesJsonDecodeStatus::Invalid);
+    }
+
+    void rejectsInvalidWindowPlacement_data() {
+        QTest::addColumn<QJsonValue>("windowPlacement");
+
+        const QJsonObject valid{{u"x"_s, 0}, {u"y"_s, 0}, {u"width"_s, 720}, {u"height"_s, 520}};
+        for (const QString& key : {u"x"_s, u"y"_s, u"width"_s, u"height"_s}) {
+            QJsonObject missing = valid;
+            missing.remove(key);
+            QTest::newRow(qPrintable(u"missing "_s + key)) << QJsonValue{missing};
+        }
+
+        QJsonObject invalid = valid;
+        invalid.insert(u"x"_s, u"0"_s);
+        QTest::newRow("string x") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"height"_s, false);
+        QTest::newRow("boolean height") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"x"_s, 0.5);
+        QTest::newRow("fractional x") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"width"_s, 720.5);
+        QTest::newRow("fractional width") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"x"_s, static_cast<double>(std::numeric_limits<int>::max()) + 1.0);
+        QTest::newRow("x above int") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"y"_s, static_cast<double>(std::numeric_limits<int>::min()) - 1.0);
+        QTest::newRow("y below int") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"width"_s, 0);
+        QTest::newRow("zero width") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"height"_s, -1);
+        QTest::newRow("negative height") << QJsonValue{invalid};
+        invalid = valid;
+        invalid.insert(u"height"_s, static_cast<double>(std::numeric_limits<int>::max()) + 1.0);
+        QTest::newRow("height above int") << QJsonValue{invalid};
+        QTest::newRow("wrong outer type") << QJsonValue{u"automatic"_s};
+    }
+
+    void rejectsInvalidWindowPlacement() {
+        QFETCH(QJsonValue, windowPlacement);
+        QJsonObject object = validObject();
+        object.insert(u"windowPlacement"_s, windowPlacement);
+
+        QCOMPARE(PreferencesJsonCodec::decode(bytes(object)).status, PreferencesJsonDecodeStatus::Invalid);
     }
 };
 

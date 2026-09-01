@@ -1,4 +1,5 @@
 #include "adapters/QtShellPlatform.hpp"
+#include "m0/domain/WindowPlacement.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -411,6 +412,212 @@ class QtShellPlatformTests final : public QObject {
         platform.showAndActivateWindow();
         QCOMPARE(third.windowStates(), Qt::WindowStates{Qt::WindowFullScreen});
         QVERIFY(!second.isVisible());
+    }
+
+    void normalGeometryChangesAreCoalescedIntoOnePlacement() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        window.setX(11);
+        window.setY(13);
+        window.resize(740, 540);
+
+        QTRY_COMPARE(observed.size(), 1);
+        const WindowPlacement expected{.x = 11, .y = 13, .width = 740, .height = 540};
+        QCOMPARE(observed.constFirst(), expected);
+    }
+
+    void pendingNormalPlacementIsFlushedBeforeLeavingTheNormalVisibleState_data() {
+        QTest::addColumn<bool>("hide");
+
+        QTest::newRow("hide") << true;
+        QTest::newRow("minimize") << false;
+    }
+
+    void pendingNormalPlacementIsFlushedBeforeLeavingTheNormalVisibleState() {
+        QFETCH(bool, hide);
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        window.setGeometry(23, 29, 740, 540);
+        if (hide)
+            platform.hideWindow();
+        else
+            platform.minimizeWindow();
+
+        QCOMPARE(observed.size(), 1);
+        const WindowPlacement expected{.x = 23, .y = 29, .width = 740, .height = 540};
+        QCOMPARE(observed.constFirst(), expected);
+    }
+
+    void pendingNormalPlacementCanBeFlushedSynchronously() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        window.setGeometry(31, 37, 760, 560);
+        platform.flushPendingWindowPlacement();
+
+        QCOMPARE(observed.size(), 1);
+        const WindowPlacement expected{.x = 31, .y = 37, .width = 760, .height = 560};
+        QCOMPARE(observed.constFirst(), expected);
+    }
+
+    void ambiguousPlacementIsDiscardedWhenANativeWindowStateTransitionWinsTheDebounce_data() {
+        QTest::addColumn<int>("window_state");
+
+        QTest::newRow("minimized") << static_cast<int>(Qt::WindowMinimized);
+        QTest::newRow("maximized") << static_cast<int>(Qt::WindowMaximized);
+        QTest::newRow("full screen") << static_cast<int>(Qt::WindowFullScreen);
+    }
+
+    void ambiguousPlacementIsDiscardedWhenANativeWindowStateTransitionWinsTheDebounce() {
+        QFETCH(int, window_state);
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        // Establish a previously committed normal placement. It is the conservative fallback if the native
+        // backend reports expanded geometry before it reports a non-normal state.
+        window.xChanged(window.x());
+        QTRY_COMPARE(observed.size(), 1);
+        const WindowPlacement stable{.x = 5, .y = 7, .width = 720, .height = 520};
+        QCOMPARE(observed.constFirst(), stable);
+
+        window.setX(0);
+        window.setY(0);
+        window.resize(1'600, 900);
+        // The offscreen QPA defers its geometry notification. Model the direct native notification so the
+        // coalescing timer is pending when the state transition arrives in the same event-loop turn.
+        window.xChanged(window.x());
+        window.setWindowStates(Qt::WindowStates::fromInt(window_state));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(observed.size(), 1);
+        QCOMPARE(observed.constFirst(), stable);
+
+        window.setWindowStates(Qt::WindowNoState);
+        window.setGeometry(41, 43, 750, 550);
+        window.xChanged(window.x());
+
+        QTRY_COMPARE(observed.size(), 2);
+        const WindowPlacement restored{.x = 41, .y = 43, .width = 750, .height = 550};
+        QCOMPARE(observed.constLast(), restored);
+    }
+
+    void nonNormalOrHiddenGeometryNeverReplacesTheLastNormalPlacement_data() {
+        QTest::addColumn<int>("window_state");
+        QTest::addColumn<bool>("visible");
+
+        QTest::newRow("minimized") << static_cast<int>(Qt::WindowMinimized) << true;
+        QTest::newRow("maximized") << static_cast<int>(Qt::WindowMaximized) << true;
+        QTest::newRow("full screen") << static_cast<int>(Qt::WindowFullScreen) << true;
+        QTest::newRow("hidden") << static_cast<int>(Qt::WindowNoState) << false;
+    }
+
+    void nonNormalOrHiddenGeometryNeverReplacesTheLastNormalPlacement() {
+        QFETCH(int, window_state);
+        QFETCH(bool, visible);
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        window.setWindowStates(static_cast<Qt::WindowState>(window_state));
+        window.setVisible(visible);
+        window.setGeometry(31, 37, 760, 560);
+        QCoreApplication::processEvents();
+
+        QVERIFY(observed.isEmpty());
+    }
+
+    void rebindingInvalidatesAQueuedPlacementFromThePreviousWindow() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow first;
+        first.setGeometry(5, 7, 720, 520);
+        first.show();
+        QWindow second;
+        second.setGeometry(17, 19, 720, 520);
+        second.show();
+        platform.bindWindow(first);
+        QList<WindowPlacement> observed;
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&observed](const WindowPlacement placement) { observed.append(placement); });
+
+        first.setGeometry(23, 29, 740, 540);
+        platform.bindWindow(second);
+        QCoreApplication::processEvents();
+        QVERIFY(observed.isEmpty());
+
+        second.setGeometry(41, 43, 750, 550);
+        QTRY_COMPARE(observed.size(), 1);
+        const WindowPlacement expected{.x = 41, .y = 43, .width = 750, .height = 550};
+        QCOMPARE(observed.constFirst(), expected);
+    }
+
+    void reentrantExitDuringPlacementFlushQuitsExactlyOnce() {
+        int quits{0};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [&] { ++quits; });
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform.bindWindow(window);
+        QMetaObject::Connection reentrant_exit;
+        reentrant_exit = connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform, [&] {
+            disconnect(reentrant_exit);
+            platform.requestExit();
+        });
+
+        window.setGeometry(31, 37, 760, 560);
+        platform.requestExit();
+
+        QCOMPARE(quits, 1);
+    }
+
+    void rebindingDuringPlacementFlushDoesNotMinimizeTheReplacementWindow() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow first;
+        first.setGeometry(5, 7, 720, 520);
+        first.show();
+        QWindow replacement;
+        replacement.setGeometry(17, 19, 720, 520);
+        replacement.show();
+        platform.bindWindow(first);
+        connect(&platform, &QtShellPlatform::windowPlacementChanged, &platform,
+                [&] { platform.bindWindow(replacement); });
+
+        first.setGeometry(31, 37, 760, 560);
+        platform.minimizeWindow();
+
+        QVERIFY(!first.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!replacement.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(replacement.isVisible());
     }
 
     void explicitExitIsIdempotentAndLatchedBeforeTheCallback() {

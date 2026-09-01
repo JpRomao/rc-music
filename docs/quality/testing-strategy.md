@@ -223,6 +223,21 @@ O sexto recorte amplia os alvos de processo e store sem usar sleeps nem arquivos
 
 O fechamento automatizado final do sexto recorte passou 214/214 no CTest Release combinado. O core foi configurado e compilado de forma fresca, sem Qt, com MSVC 19.44/toolset 14.44, e passou 172/172; o alvo Quick final passou 1/1, executando 99 casos. `all_qmllint` ficou verde. O formato cobriu 109 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não fornece `--check`, a validação dos QML comparou a saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de crash com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Essas provas continuam locais/instrumentadas: pacote/nativo, `CHK-E2E`, M4.1 e os demais gates contratuais permanecem abertos.
 
+### M4.2 — geometria da janela
+
+O incremento funcional de M4.2 separa as provas por fronteira e mantém o comportamento determinístico:
+
+- testes puros da policy cobrem mínimo `720 × 520`, coordenadas negativas, contenção integral em uma única `availableGeometry` em DIPs, preservação do índice da tela, monitor removido, área reduzida por mudança de DPI, lacunas entre monitores, dados inválidos e overflow;
+- testes do codec e do store cobrem `Preferences` com `std::optional<WindowPlacement>`, emissão do schema v2 com objeto ou `null`, leitura v1 válida sem promoção/regravação, rejeição estrutural do v2 e proteção de v3 ou superior antes dos campos conhecidos;
+- testes de autosave e writer provam que uma mudança somente de placement cria nova revisão, que a revisão mais nova vence uma conclusão antiga e que mudanças posteriores de outras preferências preservam o placement;
+- testes do adapter Qt cobrem captura apenas em estado normal e visível, coalescência das mudanças, descarte conservador do candidato ambíguo quando minimizar/maximizar/tela cheia vence o timer, recaptura ao voltar a normal, flush antes de ocultar/minimizar/sair e proteção contra reentrância ou rebind durante esse flush;
+- o teste Quick mantém o root QML oculto até o sinal de conclusão do startup; o bootstrap sequencia `setScreen()` e depois `setGeometry()` antes desse sinal, e o restart verifica o resultado já restaurado após a revelação no harness; e
+- um teste de restart instrumentado usa dois processos, persistindo a geometria no primeiro e verificando a restauração no segundo antes da exposição da janela.
+
+Essas provas não substituem execução empacotada ou desktop nativo. `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e validação física de DPI/múltiplos monitores continuam abertos; M4.2 não é considerada globalmente concluída por este incremento.
+
+O fechamento automatizado passou 225/225 no CTest Release combinado, 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44 e 1/1 no alvo Quick com 100 casos. `all_qmllint` ficou verde. O formato cobriu 112 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não fornece `--check`, a validação QML comparou sua saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

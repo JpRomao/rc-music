@@ -20,6 +20,10 @@ O sexto recorte cobre localmente os cenários destrutivos que faltavam. Um shell
 
 O fechamento automatizado final desse recorte passou 214/214 no CTest Release combinado, 172/172 num core fresco sem Qt com MSVC 19.44/toolset 14.44 e 1/1 no alvo Quick final, que cobriu 99 casos. `all_qmllint` ficou verde. O formato cobriu 109 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, a conferência QML usou sua saída padrão normalizada em LF. O rebuild `BUILD_TESTING=OFF` listou zero testes e rejeitou o hook reservado de crash com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Isso não fecha pacote/nativo, `CHK-E2E`, M4.1 nem qualquer dos demais gates ainda abertos.
 
+M4.2 está funcional localmente no candidato Qt/Windows. Preferências agora usam JSON schema v2 com `WindowPlacement` opcional; v1 é migrado em leitura para placement ausente sem promoção/regravação, e versões futuras continuam protegidas. A policy pura restaura apenas quando o retângulo, normalizado ao mínimo `720 × 520`, cabe integralmente em uma `availableGeometry` individual em DIPs, com coordenadas negativas aceitas e overflow rejeitado; monitor removido ou DPI alterado levam ao fallback seguro. O root QML nasce oculto e recebe tela/geometria antes da revelação, enquanto a captura normal-visível é coalescida e drenada antes de ocultar, minimizar ou sair pelos casos de uso. Transições nativas não normais descartam qualquer candidato ainda ambíguo, preservam o último normal estabilizado e recapturam ao retornar a normal. Um restart instrumentado entre dois processos persiste e restaura a geometria. Isso acrescenta agora a migração que o marco histórico M3.5 ainda não exercitava, mas não prova pacote, desktop nativo ou DPI físico: `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e M4.2 permanecem abertos globalmente.
+
+Os checks finais de M4.2 passaram 225/225 no CTest Release combinado, 183/183 num core fresco sem Qt e 1/1 no alvo Quick com 100 casos. `all_qmllint`, formato de 112 C++/46 QML e a composição `BUILD_TESTING=OFF` também ficaram verdes; esta listou zero testes e rejeitou o hook reservado com exit 1 sem criar sua raiz. O QML foi comparado à saída padrão normalizada em LF porque `qmlformat` 6.11.2 não possui `--check`. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -146,7 +150,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
 1. manter M4.1 formalmente aberta até as jornadas empacotadas/nativas correspondentes, registrando que restart, kill, corrupção, replace/retry, defaults e lock multiprocesso já possuem prova local;
-2. seguir pelo desenvolvimento funcional Windows com geometria/start minimized, argumentos/instância única, tray completo, SMTC e recuperação, com TDD e checks proporcionais;
+2. avançar para M4.3 como próximo desenvolvimento funcional Windows, cobrindo instância única, CLI/shell e IPC limitado, enquanto pacote/nativo e `CHK-WIN`/`CHK-E2E`/`CHK-CLOSE` de M4.2 permanecem pendentes;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.

@@ -315,6 +315,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool usesFrozenFixture() const noexcept;
     void refreshPlatformAvailability();
     void reportTrayUnavailable();
+    [[nodiscard]] bool recordWindowPlacement(WindowPlacement placement);
     Q_INVOKABLE bool requestClose();
     Q_INVOKABLE bool requestHide();
     Q_INVOKABLE bool requestRestore();
@@ -367,6 +368,7 @@ class PlayerPresenter final : public QObject {
     void lifecycleChanged();
     void queueFocusRequested(int index);
     void sourceImportChanged();
+    void windowPlacementFlushRequested();
 
   private:
     friend class experiment::PlayerPresenterScenarioControl;
@@ -383,6 +385,7 @@ class PlayerPresenter final : public QObject {
     void sessionStructureDidChange();
     void observeSessionPosition(bool checkpoint);
     void reconcileRestoredPosition();
+    void schedulePreferencePersistence();
     void preferenceDidChange();
     void pollPreferencePersistence();
     void pollPersistence();

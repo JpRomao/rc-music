@@ -10,6 +10,10 @@ namespace music_player::m0 {
 
 inline void bindShellPlatform(PlayerPresenter& presenter, QtShellPlatform& platform, QWindow& window) {
     platform.bindWindow(window);
+    QObject::connect(&platform, &QtShellPlatform::windowPlacementChanged, &presenter,
+                     &PlayerPresenter::recordWindowPlacement);
+    QObject::connect(&presenter, &PlayerPresenter::windowPlacementFlushRequested, &platform,
+                     &QtShellPlatform::flushPendingWindowPlacement, Qt::DirectConnection);
     QObject::connect(&platform, &QtShellPlatform::playPauseRequested, &presenter, &PlayerPresenter::togglePlayback);
     QObject::connect(&platform, &QtShellPlatform::previousRequested, &presenter, &PlayerPresenter::previousTrack);
     QObject::connect(&platform, &QtShellPlatform::nextRequested, &presenter, &PlayerPresenter::nextTrack);

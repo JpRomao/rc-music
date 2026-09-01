@@ -9,6 +9,7 @@ ApplicationWindow {
     objectName: "mainWindow"
     required property ShellUiContract uiContract
     required property PlayerPresenter presenter
+    property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
     minimumWidth: uiContract.minimumWidth
@@ -30,7 +31,7 @@ ApplicationWindow {
     palette.light: uiContract.surfaceRaisedColor
     palette.placeholderText: uiContract.textSecondaryColor
     contentItem.enabled: !presenter.exiting
-    visible: true
+    visible: startupReady
     signal openAudioRequested
     property bool queueOpen: false
     ErrorText {

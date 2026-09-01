@@ -129,6 +129,7 @@ void checkUnchangedPreferences(const Preferences& actual, const Preferences& exp
     CHECK(actual.restore_last_session == expected.restore_last_session);
     CHECK(actual.start_minimized == expected.start_minimized);
     CHECK(actual.queue_end_behavior == expected.queue_end_behavior);
+    CHECK(actual.window_placement == expected.window_placement);
 }
 
 TEST_CASE("controller rejects an invalid initial preferences snapshot", "[m0][qt][core][preferences]") {
@@ -136,10 +137,11 @@ TEST_CASE("controller rejects an invalid initial preferences snapshot", "[m0][qt
     RecordingPlatformIntegration platform{true};
     Preferences invalid = persistedPreferences();
 
-    const auto invalid_case = GENERATE_COPY(
-        std::pair{0, std::numeric_limits<double>::quiet_NaN()}, std::pair{0, std::numeric_limits<double>::infinity()},
-        std::pair{0, -0.01}, std::pair{0, 1.01}, std::pair{1, 0.0}, std::pair{1, 301.0}, std::pair{2, 0.0},
-        std::pair{2, 301.0}, std::pair{3, 0.0}, std::pair{4, 0.0}, std::pair{5, 0.0}, std::pair{6, 0.0});
+    const auto invalid_case =
+        GENERATE_COPY(std::pair{0, std::numeric_limits<double>::quiet_NaN()},
+                      std::pair{0, std::numeric_limits<double>::infinity()}, std::pair{0, -0.01}, std::pair{0, 1.01},
+                      std::pair{1, 0.0}, std::pair{1, 301.0}, std::pair{2, 0.0}, std::pair{2, 301.0}, std::pair{3, 0.0},
+                      std::pair{4, 0.0}, std::pair{5, 0.0}, std::pair{6, 0.0}, std::pair{7, 0.0}, std::pair{8, -1.0});
 
     switch (invalid_case.first) {
     case 0:
@@ -163,11 +165,40 @@ TEST_CASE("controller rejects an invalid initial preferences snapshot", "[m0][qt
     case 6:
         invalid.queue_end_behavior = static_cast<QueueEndBehavior>(99);
         break;
+    case 7:
+        invalid.window_placement = WindowPlacement{0, 0, static_cast<int>(invalid_case.second), 520};
+        break;
+    case 8:
+        invalid.window_placement = WindowPlacement{0, 0, 720, static_cast<int>(invalid_case.second)};
+        break;
     }
 
     CHECK_THROWS_AS(PlayerController(backend, platform, playingSnapshot(), invalid), std::invalid_argument);
     CHECK(backend.volume_requests.empty());
     CHECK(backend.mute_requests.empty());
+}
+
+TEST_CASE("window placement setter accepts only a positive normal geometry",
+          "[m0][qt][core][preferences][window-placement]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    constexpr WindowPlacement expected{-1'800, 40, 960, 640};
+
+    REQUIRE(controller.setWindowPlacement(expected));
+    REQUIRE(controller.preferences().window_placement.has_value());
+    CHECK(*controller.preferences().window_placement == expected);
+
+    CHECK_FALSE(controller.setWindowPlacement(WindowPlacement{0, 0, 0, 640}));
+    CHECK_FALSE(controller.setWindowPlacement(WindowPlacement{0, 0, 960, -1}));
+    REQUIRE(controller.preferences().window_placement.has_value());
+    CHECK(*controller.preferences().window_placement == expected);
+    CHECK(backend.volume_requests.empty());
+    CHECK(backend.mute_requests.empty());
+    CHECK(platform.hide_calls == 0);
+    CHECK(platform.minimize_calls == 0);
+    CHECK(platform.exit_calls == 0);
+    CHECK(platform.restore_calls == 0);
 }
 
 TEST_CASE("toggle playback maps active states to exactly one backend command", "[m0][qt][core][transport]") {

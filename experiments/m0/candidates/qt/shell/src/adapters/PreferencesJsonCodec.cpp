@@ -5,6 +5,7 @@
 #include <QJsonParseError>
 
 #include <cmath>
+#include <limits>
 
 namespace music_player::m0 {
 namespace {
@@ -49,6 +50,15 @@ namespace {
         return QStringLiteral("stop_clear_selection");
     }
     return {};
+}
+
+[[nodiscard]] QJsonValue encodeWindowPlacement(const std::optional<WindowPlacement>& placement) {
+    if (!placement)
+        return QJsonValue::Null;
+    return QJsonObject{{QStringLiteral("x"), placement->x},
+                       {QStringLiteral("y"), placement->y},
+                       {QStringLiteral("width"), placement->width},
+                       {QStringLiteral("height"), placement->height}};
 }
 
 [[nodiscard]] std::optional<ThemeMode> decodeTheme(const QJsonValue& value) {
@@ -106,13 +116,42 @@ namespace {
     return static_cast<int>(number);
 }
 
+struct WindowPlacementDecodeResult final {
+    bool valid{false};
+    std::optional<WindowPlacement> placement{std::nullopt};
+};
+
+[[nodiscard]] WindowPlacementDecodeResult decodeWindowPlacement(const QJsonValue& value) {
+    if (value.isNull())
+        return {.valid = true};
+    if (!value.isObject())
+        return {};
+
+    const QJsonObject object = value.toObject();
+    constexpr int minimum_coordinate = std::numeric_limits<int>::min();
+    constexpr int maximum_coordinate = std::numeric_limits<int>::max();
+    const std::optional<int> x =
+        decodeBoundedInteger(object.value(QStringLiteral("x")), minimum_coordinate, maximum_coordinate);
+    const std::optional<int> y =
+        decodeBoundedInteger(object.value(QStringLiteral("y")), minimum_coordinate, maximum_coordinate);
+    const std::optional<int> width = decodeBoundedInteger(object.value(QStringLiteral("width")), 1, maximum_coordinate);
+    const std::optional<int> height =
+        decodeBoundedInteger(object.value(QStringLiteral("height")), 1, maximum_coordinate);
+    if (!x || !y || !width || !height)
+        return {};
+
+    return {.valid = true, .placement = WindowPlacement{*x, *y, *width, *height}};
+}
+
 [[nodiscard]] bool validPreferences(const Preferences& preferences) {
     return !encodeTheme(preferences.theme).isEmpty() && !encodeMotion(preferences.motion).isEmpty() &&
            std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0 &&
            preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
            preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300 &&
            !encodeCloseBehavior(preferences.close_behavior).isEmpty() &&
-           !encodeQueueEndBehavior(preferences.queue_end_behavior).isEmpty();
+           !encodeQueueEndBehavior(preferences.queue_end_behavior).isEmpty() &&
+           (!preferences.window_placement ||
+            (preferences.window_placement->width > 0 && preferences.window_placement->height > 0));
 }
 
 } // namespace
@@ -133,6 +172,7 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     object.insert(QStringLiteral("restoreLastSession"), preferences.restore_last_session);
     object.insert(QStringLiteral("startMinimized"), preferences.start_minimized);
     object.insert(QStringLiteral("queueEndBehavior"), encodeQueueEndBehavior(preferences.queue_end_behavior));
+    object.insert(QStringLiteral("windowPlacement"), encodeWindowPlacement(preferences.window_placement));
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -151,7 +191,7 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
         return {};
     if (version > schema_version)
         return {.status = PreferencesJsonDecodeStatus::FutureVersion};
-    if (version != schema_version)
+    if (version != 1.0 && version != schema_version)
         return {};
 
     const std::optional<ThemeMode> theme = decodeTheme(object.value(QStringLiteral("theme")));
@@ -169,11 +209,14 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
     const QJsonValue start_minimized_value = object.value(QStringLiteral("startMinimized"));
     const std::optional<QueueEndBehavior> queue_end_behavior =
         decodeQueueEndBehavior(object.value(QStringLiteral("queueEndBehavior")));
+    WindowPlacementDecodeResult window_placement{.valid = true};
+    if (version == schema_version)
+        window_placement = decodeWindowPlacement(object.value(QStringLiteral("windowPlacement")));
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
         !skip_forward.has_value() || !close_behavior.has_value() || !restore_last_session_value.isBool() ||
-        !start_minimized_value.isBool() || !queue_end_behavior.has_value()) {
+        !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid) {
         return {};
     }
 
@@ -187,7 +230,8 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .close_behavior = *close_behavior,
                                        .restore_last_session = restore_last_session_value.toBool(),
                                        .start_minimized = start_minimized_value.toBool(),
-                                       .queue_end_behavior = *queue_end_behavior}};
+                                       .queue_end_behavior = *queue_end_behavior,
+                                       .window_placement = window_placement.placement}};
 }
 
 } // namespace music_player::m0

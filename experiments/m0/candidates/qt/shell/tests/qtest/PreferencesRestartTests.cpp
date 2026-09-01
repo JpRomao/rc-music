@@ -1,8 +1,14 @@
+#include "adapters/QtJsonWindowsPreferencesStore.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTemporaryDir>
@@ -12,10 +18,13 @@
 #include <utility>
 
 using music_player::m0::LocalQueueOccurrenceId;
+using music_player::m0::PreferencesLoadStatus;
+using music_player::m0::QtJsonWindowsPreferencesStore;
 using music_player::m0::QtJsonWindowsSessionStore;
 using music_player::m0::SessionSaveRequest;
 using music_player::m0::SessionSaveStatus;
 using music_player::m0::SessionSnapshot;
+using music_player::m0::WindowPlacement;
 
 class PreferencesRestartTests final : public QObject {
     Q_OBJECT
@@ -47,7 +56,25 @@ class PreferencesRestartTests final : public QObject {
         };
 
         run(QStringLiteral("preferences-restart-write"));
-        QVERIFY(QFileInfo::exists(config_root.filePath(QStringLiteral("preferences.json"))));
+        const QString preferences_path = config_root.filePath(QStringLiteral("preferences.json"));
+        QVERIFY(QFileInfo::exists(preferences_path));
+
+        QFile preferences_file{preferences_path};
+        QVERIFY(preferences_file.open(QIODevice::ReadOnly));
+        QJsonParseError preferences_parse_error;
+        const QJsonDocument preferences_document =
+            QJsonDocument::fromJson(preferences_file.readAll(), &preferences_parse_error);
+        QCOMPARE(preferences_parse_error.error, QJsonParseError::NoError);
+        QVERIFY(preferences_document.isObject());
+        QCOMPARE(preferences_document.object().value(QStringLiteral("schemaVersion")), QJsonValue{2});
+
+        QtJsonWindowsPreferencesStore preferences_store{config_root.path()};
+        const auto loaded_preferences = preferences_store.load();
+        QCOMPARE(loaded_preferences.status, PreferencesLoadStatus::Loaded);
+        QVERIFY(loaded_preferences.preferences.window_placement.has_value());
+        const WindowPlacement expected_placement{.x = 20, .y = 30, .width = 720, .height = 520};
+        QVERIFY(*loaded_preferences.preferences.window_placement == expected_placement);
+
         QtJsonWindowsSessionStore session_store{config_root.path()};
         const SessionSnapshot ignored_session{
             .queue =

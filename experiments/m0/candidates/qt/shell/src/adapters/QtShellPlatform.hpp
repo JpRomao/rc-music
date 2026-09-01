@@ -1,5 +1,6 @@
 #pragma once
 
+#include "m0/domain/WindowPlacement.hpp"
 #include "m0/ports/PlatformIntegration.hpp"
 
 #include <QIcon>
@@ -7,8 +8,10 @@
 #include <QPointer>
 #include <QString>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 class QAction;
 class QMenu;
@@ -48,6 +51,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     ~QtShellPlatform() override;
 
     void bindWindow(QWindow& window);
+    void flushPendingWindowPlacement();
     void updateTrayState(const TrayMenuState& state);
     void refreshAvailability();
     [[nodiscard]] QMenu* menu() const noexcept;
@@ -69,6 +73,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     void restoreRequested();
     void exitRequested();
     void availabilityChanged();
+    void windowPlacementChanged(WindowPlacement placement);
     // An explicit hide was converted to a normal minimization after a fresh capability read.
     void hideFellBackToMinimize();
 
@@ -76,6 +81,8 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     void updateMenu();
     void updatePolling();
     void rememberWindowState();
+    void scheduleWindowPlacementCapture();
+    void publishWindowPlacement();
 
     TrayMenuLabels labels_;
     TrayMenuState state_;
@@ -84,6 +91,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     std::unique_ptr<QMenu> menu_;
     QSystemTrayIcon* tray_icon_;
     QTimer* availability_timer_;
+    std::unique_ptr<QTimer> window_placement_timer_;
     QAction* current_track_{nullptr};
     QAction* play_pause_{nullptr};
     QAction* previous_{nullptr};
@@ -91,9 +99,13 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     QAction* show_hide_{nullptr};
     QAction* exit_{nullptr};
     QPointer<QWindow> window_;
+    std::uint64_t window_binding_generation_{0};
+    std::uint64_t scheduled_window_binding_generation_{0};
+    std::optional<WindowPlacement> pending_window_placement_;
     Qt::WindowStates restore_states_{Qt::WindowNoState};
     bool available_{false};
     bool exit_requested_{false};
+    bool window_placement_flush_in_progress_{false};
 };
 
 } // namespace music_player::m0

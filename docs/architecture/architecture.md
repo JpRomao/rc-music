@@ -369,6 +369,40 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 
 O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows, a coordenação assíncrona e a restauração pausada no presenter/bootstrap dos recortes de M4.1 são descritos abaixo; o efeito de iniciar minimizado continua pendente em M4.4. `PreferencesStore` não substitui `SessionStore`.
 
+Em M4.2, a evolução funcional preserva o schema v1 acima como formato conhecido de leitura e passa a emitir sempre o schema v2:
+
+```json
+{
+  "schemaVersion": 2,
+  "theme": "system",
+  "motion": "system",
+  "volume": 0.8,
+  "muted": false,
+  "skipBackwardSeconds": 5,
+  "skipForwardSeconds": 5,
+  "closeBehavior": "minimize_to_tray",
+  "restoreLastSession": true,
+  "startMinimized": false,
+  "queueEndBehavior": "stop_keep_selection",
+  "windowPlacement": {
+    "x": -1920,
+    "y": 40,
+    "width": 960,
+    "height": 640
+  }
+}
+```
+
+`Preferences` acrescenta `std::optional<WindowPlacement>` ao fim do snapshot, e `windowPlacement` pode ser o objeto mostrado ou `null`. O decoder reconhece v1 como `Valid` com placement ausente, sem exigir a chave nova nem promover ou reescrever o documento durante `load()`. Em v2, a chave é obrigatória e aceita somente `null` ou quatro inteiros representáveis por `int`, com dimensões positivas; v3 ou superior é classificado como versão futura antes da leitura dos demais campos. A tolerância a chaves desconhecidas, o limite de 64 KiB e a substituição atômica do store permanecem.
+
+A decisão de restaurar é uma policy pura, sem dependência de Qt: recebe o placement salvo, as áreas de trabalho conectadas e o tamanho mínimo `720 × 520`. O adapter fornece cada `QScreen::availableGeometry()` em DIPs e na ordem observada; a policy normaliza largura e altura ao mínimo, aceita coordenadas negativas, faz os limites em `int64_t` com rejeição de overflow e só devolve placement e índice quando o retângulo inteiro cabe em uma área válida individual. Áreas adjacentes nunca são tratadas como uma união virtual. Dados inválidos, nenhuma tela ou ausência de contenção integral produzem fallback, inclusive quando uma tela foi removida ou a área disponível mudou com o DPI.
+
+O root QML nasce oculto. No bootstrap, a aplicação resolve o placement, chama `setScreen()` e depois `setGeometry()` antes de liberar a revelação da janela. Durante o uso, o adapter captura somente geometria de janela visível em estado normal, coalesce rajadas de mudanças e entrega o último placement ao autosave de preferências. A amostra pendente é drenada antes de ocultar, minimizar ou sair pelos casos de uso. Como o backend Windows pode publicar a geometria expandida antes do novo estado, uma transição nativa para minimizado, maximizado ou tela cheia cancela qualquer candidato que ainda não estabilizou; o último placement normal já persistido permanece autoritativo, e o retorno a normal agenda nova captura. Assim, estados oculto ou não normais não substituem a última geometria normal válida.
+
+Um restart instrumentado entre dois processos exercita a persistência no primeiro processo e a restauração antes da revelação no segundo. Essa prova continua local e instrumentada: pacote/nativo, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e cenários físicos de DPI/múltiplos monitores permanecem abertos. Portanto, este incremento não marca M4.2 globalmente concluída.
+
+O fechamento automatizado do recorte passou 225/225 no CTest Release combinado e 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44. O alvo Quick passou 1/1 com 100 casos, `all_qmllint` ficou verde e o formato cobriu 112 arquivos C++ e 46 QML. Como `qmlformat` 6.11.2 não oferece `--check`, a validação QML comparou sua saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas; nenhum benchmark foi executado.
+
 O schema v1 separado da sessão é:
 
 ```json

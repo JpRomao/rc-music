@@ -1,6 +1,9 @@
 #pragma once
 
+#include "m0/domain/WindowPlacement.hpp"
+
 #include <cstdint>
+#include <optional>
 
 namespace music_player::m0 {
 
@@ -90,6 +93,7 @@ struct Preferences final {
     bool restore_last_session{true};
     bool start_minimized{false};
     QueueEndBehavior queue_end_behavior{QueueEndBehavior::StopKeepSelection};
+    std::optional<WindowPlacement> window_placement{std::nullopt};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

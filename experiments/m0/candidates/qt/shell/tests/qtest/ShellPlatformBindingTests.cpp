@@ -1,5 +1,6 @@
 #include "adapters/QtShellPlatform.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/PreferencesAutosave.hpp"
 #include "presentation/ShellPlatformBinding.hpp"
 
 #include <QApplication>
@@ -13,6 +14,9 @@
 #include <QWindow>
 
 #include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
 
 namespace music_player::m0::test {
 namespace {
@@ -32,6 +36,29 @@ namespace {
 [[nodiscard]] FixtureBundle frozenBundle() {
     return FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
 }
+
+class BindingPreferencesWriter final : public PreferencesWriter {
+  public:
+    PreferencesWriterCommand start(PreferencesWriteRequest request) override {
+        starts.push_back(request);
+        active = std::move(request);
+        return PreferencesWriterCommand::Accepted;
+    }
+
+    [[nodiscard]] std::optional<PreferencesWriteCompletion> poll() override { return std::nullopt; }
+
+    [[nodiscard]] std::optional<PreferencesWriteCompletion> flush(PreferencesWriteRequest request) override {
+        flushes.push_back(request);
+        active.reset();
+        return PreferencesWriteCompletion{.revision = request.revision, .status = PreferencesSaveStatus::Saved};
+    }
+
+    [[nodiscard]] bool shutdown() override { return true; }
+
+    std::optional<PreferencesWriteRequest> active;
+    std::vector<PreferencesWriteRequest> starts;
+    std::vector<PreferencesWriteRequest> flushes;
+};
 
 [[nodiscard]] QVariantMap playbackAndPreferences(const PlayerPresenter& presenter) {
     QVariantMap result;
@@ -248,6 +275,61 @@ class ShellPlatformBindingTests final : public QObject {
         QCOMPARE(lifecycle.size(), 0);
         QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
         QVERIFY(!presenter.trayAvailable());
+    }
+
+    void normalPlacementSchedulesPersistenceWithoutPublishingUiPreferences() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
+        BindingPreferencesWriter writer;
+        const Preferences initial{};
+        PreferencesAutosave autosave{writer, initial};
+        PlayerPresenter presenter(frozenBundle(), platform,
+                                  PlayerPresenterPreferences{.initial = initial,
+                                                             .load_status = PreferencesLoadStatus::Missing,
+                                                             .autosave = &autosave});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        bindShellPlatform(presenter, platform, window);
+        QSignalSpy preferences_changed(&presenter, &PlayerPresenter::preferencesChanged);
+        constexpr WindowPlacement expected{31, 37, 760, 560};
+
+        window.setGeometry(expected.x, expected.y, expected.width, expected.height);
+
+        QTRY_COMPARE(autosave.latestRevision(), PreferencesRevision{1});
+        QVERIFY(presenter.preferences().window_placement.has_value());
+        QCOMPARE(*presenter.preferences().window_placement, expected);
+        QVERIFY(autosave.dirty());
+        QVERIFY(writer.starts.empty());
+        QCOMPARE(preferences_changed.size(), 0);
+    }
+
+    void exitFlushesTheQueuedPlacementBeforeStartingPreferencePersistence() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
+        BindingPreferencesWriter writer;
+        const Preferences initial{};
+        PreferencesAutosave autosave{writer, initial};
+        PlayerPresenter presenter(frozenBundle(), platform,
+                                  PlayerPresenterPreferences{.initial = initial,
+                                                             .load_status = PreferencesLoadStatus::Missing,
+                                                             .autosave = &autosave});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        bindShellPlatform(presenter, platform, window);
+        QSignalSpy preferences_changed(&presenter, &PlayerPresenter::preferencesChanged);
+        QSignalSpy flush_requested(&presenter, &PlayerPresenter::windowPlacementFlushRequested);
+        constexpr WindowPlacement pending{41, 43, 750, 550};
+
+        window.setGeometry(pending.x, pending.y, pending.width, pending.height);
+        QVERIFY(presenter.requestExit());
+
+        QCOMPARE(flush_requested.size(), 1);
+        QCOMPARE(preferences_changed.size(), 0);
+        QCOMPARE(writer.starts.size(), std::size_t{1});
+        QVERIFY(writer.starts.back().preferences.window_placement.has_value());
+        QCOMPARE(*writer.starts.back().preferences.window_placement, pending);
+        QVERIFY(presenter.exiting());
+        QVERIFY(!presenter.exitCommitted());
     }
 };
 

@@ -467,6 +467,7 @@ if(M0_QT_SHELL_SUPPORT)
         if(WIN32)
             add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
             target_link_libraries(m0_qt_preferences_restart_tests PRIVATE
+                m0_qt_preferences_persistence
                 m0_qt_session_persistence
                 Qt6::Core
                 Qt6::Test
@@ -1040,6 +1041,7 @@ add_library(m0_qt_core STATIC
     src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
     src/domain/SessionSnapshot.cpp
+    src/domain/WindowPlacement.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
 target_link_libraries(m0_qt_core PUBLIC Threads::Threads)
@@ -1068,6 +1070,7 @@ if(BUILD_TESTING)
         tests/catch2/SingleWorkerMetadataReaderTests.cpp
         tests/catch2/SingleWorkerPreferencesWriterTests.cpp
         tests/catch2/SingleWorkerSessionWriterTests.cpp
+        tests/catch2/WindowPlacementTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
     target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)

@@ -2,6 +2,8 @@
 
 #include "adapters/PreferencesJsonCodec.hpp"
 
+#include "m0/domain/WindowPlacement.hpp"
+
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -23,7 +25,8 @@ namespace {
                        .close_behavior = CloseBehavior::Exit,
                        .restore_last_session = false,
                        .start_minimized = true,
-                       .queue_end_behavior = QueueEndBehavior::StopClearSelection};
+                       .queue_end_behavior = QueueEndBehavior::StopClearSelection,
+                       .window_placement = WindowPlacement{-1'920, 40, 960, 640}};
 }
 
 [[nodiscard]] QByteArray readAll(const QString& path) {
@@ -55,6 +58,7 @@ class QtJsonWindowsPreferencesStoreTests final : public QObject {
 
   private slots:
     void loadsDefaultsWhenBothFilesAreAbsent();
+    void loadsVersionOneWithoutRewritingIt();
     void roundTripsAllPreferencesInAUnicodeDirectory();
     void enforcesTheExactFileSizeBoundaryWithValidJson();
     void recoversFromAValidBackupWithoutRewritingDuringLoad();
@@ -79,6 +83,25 @@ void QtJsonWindowsPreferencesStoreTests::loadsDefaultsWhenBothFilesAreAbsent() {
     QCOMPARE(result.status, PreferencesLoadStatus::Missing);
     QCOMPARE(result.preferences, Preferences{});
     QVERIFY(!QFile::exists(preferencesPath(root)));
+    QVERIFY(!QFile::exists(backupPath(root)));
+}
+
+void QtJsonWindowsPreferencesStoreTests::loadsVersionOneWithoutRewritingIt() {
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const QString root = temporary.path();
+    const QByteArray version_one{
+        R"({"schemaVersion":1,"theme":"dark","motion":"reduced","volume":0.35,"muted":true,"skipBackwardSeconds":7,"skipForwardSeconds":20,"closeBehavior":"exit","restoreLastSession":false,"startMinimized":true,"queueEndBehavior":"stop_clear_selection"})"};
+    QVERIFY(writeAll(preferencesPath(root), version_one));
+
+    QtJsonWindowsPreferencesStore store{root};
+    const PreferencesLoadResult result = store.load();
+
+    Preferences expected = nonDefaultPreferences();
+    expected.window_placement = std::nullopt;
+    QCOMPARE(result.status, PreferencesLoadStatus::Loaded);
+    QCOMPARE(result.preferences, expected);
+    QCOMPARE(readAll(preferencesPath(root)), version_one);
     QVERIFY(!QFile::exists(backupPath(root)));
 }
 
@@ -194,7 +217,7 @@ void QtJsonWindowsPreferencesStoreTests::blocksFuturePrimaryUntilReplacementIsEx
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
-    const QByteArray future{"{\"schemaVersion\":2,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
     QVERIFY(writeAll(preferencesPath(root), future));
     QtJsonWindowsPreferencesStore store{root};
 
@@ -215,7 +238,7 @@ void QtJsonWindowsPreferencesStoreTests::blocksFutureBackupUntilReplacementIsExp
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
-    const QByteArray future{"{\"schemaVersion\":2,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
     QVERIFY(writeAll(backupPath(root), future));
     QtJsonWindowsPreferencesStore store{root};
 

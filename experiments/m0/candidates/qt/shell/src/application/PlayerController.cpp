@@ -30,8 +30,12 @@ namespace {
         std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0;
     const bool valid_skips = preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
                              preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300;
-    if (!valid_theme || !valid_motion || !valid_close || !valid_queue_end || !valid_volume || !valid_skips)
+    const bool valid_window_placement = !preferences.window_placement || (preferences.window_placement->width > 0 &&
+                                                                          preferences.window_placement->height > 0);
+    if (!valid_theme || !valid_motion || !valid_close || !valid_queue_end || !valid_volume || !valid_skips ||
+        !valid_window_placement) {
         throw std::invalid_argument{"invalid initial preferences"};
+    }
     return preferences;
 }
 
@@ -262,6 +266,13 @@ bool PlayerController::setStartMinimized(const bool start_minimized) {
 
 void PlayerController::setQueueEndBehavior(const QueueEndBehavior behavior) {
     preferences_.queue_end_behavior = behavior;
+}
+
+bool PlayerController::setWindowPlacement(const WindowPlacement placement) {
+    if (placement.width <= 0 || placement.height <= 0)
+        return false;
+    preferences_.window_placement = placement;
+    return true;
 }
 
 CloseDisposition PlayerController::requestClose() {
