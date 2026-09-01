@@ -316,6 +316,8 @@ if(M0_QT_SHELL_SUPPORT)
     endif()
 
     add_library(m0_qt_shell_bootstrap STATIC
+        app/OpenSourcesCommand.hpp
+        app/OpenSourcesCommand.cpp
         app/ShellLaunchOptions.hpp
         app/ShellLaunchOptions.cpp
     )
@@ -464,6 +466,16 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_launch_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-launch-options COMMAND m0_qt_shell_launch_tests)
+        add_executable(m0_qt_open_sources_command_tests tests/qtest/OpenSourcesCommandTests.cpp)
+        target_link_libraries(m0_qt_open_sources_command_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
+        target_compile_features(m0_qt_open_sources_command_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_open_sources_command_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_open_sources_command_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_open_sources_command_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.open-sources.command COMMAND m0_qt_open_sources_command_tests)
         if(WIN32)
             add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
             target_link_libraries(m0_qt_preferences_restart_tests PRIVATE
@@ -590,6 +602,10 @@ if(M0_QT_SHELL_SUPPORT)
         )
         set_tests_properties(m0.qt.shell-launch-options PROPERTIES
             LABELS "m0;qt;shell-launch"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.open-sources.command PROPERTIES
+            LABELS "m0;qt;ipc;open-sources;FR-004;FR-033;NFR-LIMIT-004;NFR-REL-004"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
         set_tests_properties(m0.qt.preferences.json-codec PROPERTIES
