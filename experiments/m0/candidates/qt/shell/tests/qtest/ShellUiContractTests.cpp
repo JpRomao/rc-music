@@ -95,6 +95,7 @@ class ShellUiContractTests final : public QObject {
     void rejectsUnsupportedTransportStrings();
     void rejectsUnsupportedPreferenceStrings();
     void essentialQmlTextIsCentralizedAndExtractable();
+    void classifiesSingleInstanceFailuresThroughTheTextCatalog();
     void shellTextCanBeTranslatedWithoutChangingTheFixture();
     void themeModesUseFixturePalettesWithExplicitPrecedence();
     void motionModesUseFixtureTimingsWithExplicitPrecedence();
@@ -393,6 +394,24 @@ void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {
     QVERIFY2(violations.isEmpty(), qPrintable(violations.join(QLatin1Char{'\n'})));
 }
 
+void ShellUiContractTests::classifiesSingleInstanceFailuresThroughTheTextCatalog() {
+    QCOMPARE(ApplicationText::openSourcesFailureTitle(), QStringLiteral("Não foi possível abrir os arquivos"));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("tooManyPaths"), false),
+             QStringLiteral("A solicitação contém arquivos demais ou excede o limite permitido."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("payloadTooLarge"), false),
+             QStringLiteral("A solicitação contém arquivos demais ou excede o limite permitido."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("queueFull"), false),
+             QStringLiteral("O player está processando muitas solicitações. Tente novamente em instantes."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("temporarilyUnavailable"), false),
+             QStringLiteral("O player está concluindo uma operação. Tente novamente em instantes."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("shuttingDown"), false),
+             QStringLiteral("O player está sendo encerrado. Tente abrir os arquivos novamente."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("ignored"), true),
+             QStringLiteral("O player já está aberto, mas não respondeu a tempo."));
+    QCOMPARE(ApplicationText::openSourcesFailureMessage(QStringLiteral("invalidResponse"), false),
+             QStringLiteral("Não foi possível encaminhar os arquivos para o player."));
+}
+
 void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
     const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
     ShellUiContract contract(bundle);
@@ -434,6 +453,13 @@ void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
         contract.motionSystem(),
         contract.motionReduced(),
         ApplicationText::localAudioDialogFilter({QStringLiteral("*.wav")}),
+        ApplicationText::openSourcesFailureTitle(),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("tooManyPaths"), false),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("queueFull"), false),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("temporarilyUnavailable"), false),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("shuttingDown"), false),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("ignored"), true),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("invalidResponse"), false),
         lifecycle_text.showAction(),
         lifecycle_text.hideAction(),
         lifecycle_text.exitAction(),

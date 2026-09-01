@@ -256,7 +256,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ## 8. M4 — Desktop, sessão e recuperação
 
-**Estado:** Em andamento no candidato C++/Qt/Windows; snapshot, porta, codec v1, store Windows atômico, writer/autosave, bootstrap condicional, presenter, restart Release ligado/desligado, recuperação destrutiva local e lock multiprocesso de M4.1 estão cobertos. M4.2 está funcional localmente com Preferences JSON v2/migração v1, policy de placement segura e restart em dois processos. As jornadas empacotadas/nativas e `CHK-WIN`, `CHK-E2E` e `CHK-CLOSE` ainda impedem o fechamento global.
+**Estado:** Em andamento no candidato C++/Qt/Windows; snapshot, porta, codec v1, store Windows atômico, writer/autosave, bootstrap condicional, presenter, restart Release ligado/desligado, recuperação destrutiva local e lock multiprocesso de M4.1 estão cobertos. M4.2 está funcional localmente com Preferences JSON v2/migração v1, policy de placement segura e restart em dois processos. M4.3 está funcional localmente com instância única, CLI/shell, IPC tipado limitado e drenagem antes da saída. As jornadas empacotadas/nativas e `CHK-WIN`, `CHK-E2E`, `CHK-SEC` e `CHK-CLOSE` ainda impedem o fechamento global.
 **Objetivo:** tornar o player um cidadão confiável do Windows e suportável no Linux.
 
 O primeiro recorte de M4.1 adiciona snapshot validado de fila, ocorrência atual e posição, com restauração transacional que preserva IDs/duplicatas e revalida disponibilidade em runtime. O recorte seguinte materializa `SessionStore` separado e o codec JSON v1 com inteiros exatos, paths Unicode, versão futura e limite de 16 MiB. O terceiro implementa `session.json`/`.bak` no Windows com replace atômico, lock cooperativo, recuperação sem reescrita, backup byte a byte, falha fechada para arquivos ilegíveis e substituição futura somente explícita.
@@ -273,7 +273,15 @@ O recorte funcional local de M4.2 evolui preferências para o schema v2 com `Win
 
 O fechamento automatizado de M4.2 passou 225/225 no CTest Release combinado, 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44 e 1/1 no alvo Quick com 100 casos. `all_qmllint` ficou verde. O formato cobriu 112 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, os QML foram comparados pela saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, registrou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
 
-Essa evidência não encerra M4.2: pacote/nativo, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e DPI físico/múltiplos monitores continuam pendentes. O próximo desenvolvimento funcional é M4.3, com instância única, CLI/shell e IPC limitado para paths Unicode, longos e múltiplos.
+Essa evidência não encerra M4.2: pacote/nativo, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e DPI físico/múltiplos monitores continuam pendentes.
+
+O recorte funcional local de M4.3 adquire a instância principal antes de preferências, sessão, backend e QML. Invocações secundárias não criam outro backend: resolvem os argumentos no CWD invocador, enviam um comando `openSources` v1 por um `QLocalServer` com `UserAccessOption`, aguardam ACK/NACK limitado e cedem permissão de foreground best-effort. A principal ativa a janela e serializa os lotes no pipeline real de importação.
+
+O codec aceita até 1.000 paths e 1 MiB de JSON UTF-8, excluindo o prefixo de quatro bytes, e rejeita o lote inteiro acima do limite. Fila/bytes de bootstrap, conexões ativas, buffers e timeouts são limitados. Paths Unicode relativos, rooted-only, drive/UNC/extended canônico e CWDs diferentes são resolvidos antes do wire; recursos Qt, drive-relative, NUL, namespaces Win32 de dispositivo e grafias pseudo-extended são recusados. Ao sair, a principal pausa ingressos e drena tudo que já recebeu ACK antes do checkpoint final; timeout cancela a intenção sem descartar trabalho.
+
+Essa evidência local/instrumentada não encerra M4.3: pacote instalado, Explorer/double-click, quoting nativo, foreground real, ACL entre usuários, fuzz/property e revisão global de segurança permanecem pendentes. O próximo desenvolvimento funcional é M4.4, com tray, comportamento de início/fechamento, menu e saída real.
+
+O fechamento automatizado de M4.3 passou 229/229 no CTest Release combinado. O teste de processo Release instrumentado confirmou dois ACKs, path Windows comum acima de 260 caracteres, NACK durante a drenagem, A+B persistidos e backend único. `m0_qt_shell_ui_qmllint`, formato de 122 C++/46 QML e validação documental passaram; o QML foi comparado à saída normalizada porque `qmlformat` 6.11.2 não oferece `--check`. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes, rejeitou o hook reservado com exit 1 usando o runtime autenticado e manteve `longPathAware=true` no manifesto. Nenhum benchmark foi executado.
 
 ### Escopo Windows
 

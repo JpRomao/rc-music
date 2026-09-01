@@ -82,9 +82,13 @@ class OpenSourcesDispatcherTests final : public QObject {
         QVERIFY(started.isEmpty());
 
         start_allowed = true;
-        dispatcher.importerStateChanged();
+        dispatcher.retryPending();
         QCOMPARE(started, QList<QStringList>({{QStringLiteral("C:/later.mp3")}}));
         QCOMPARE(dispatcher.pendingCommandCount(), 0);
+        QVERIFY(!dispatcher.hasDrainedAcceptedWork());
+
+        dispatcher.importerStateChanged();
+        QVERIFY(dispatcher.hasDrainedAcceptedWork());
     }
 
     void rejectsNewCommandsWhenTheBoundedPendingQueueIsFull() {
@@ -117,6 +121,34 @@ class OpenSourcesDispatcherTests final : public QObject {
         QVERIFY(!dispatcher.enqueue(OpenSourcesCommand{}));
         QVERIFY(!dispatcher.enqueue(OpenSourcesCommand{{QStringLiteral("C:/rejected.mp3")}}));
         QCOMPARE(dispatcher.pendingCommandCount(), 1);
+    }
+
+    void reportsDrainedOnlyAfterEveryAcceptedImportFinishes() {
+        bool importer_busy = true;
+        OpenSourcesDispatcher dispatcher{[] { return true; }, [&] { return importer_busy; },
+                                         [&](const QStringList&) {
+                                             importer_busy = true;
+                                             return true;
+                                         }};
+
+        QVERIFY(dispatcher.enqueue(OpenSourcesCommand{{QStringLiteral("C:/accepted.mp3")}}));
+        QVERIFY(!dispatcher.hasDrainedAcceptedWork());
+
+        importer_busy = false;
+        dispatcher.importerStateChanged();
+        QCOMPARE(dispatcher.pendingCommandCount(), 0);
+        QVERIFY(!dispatcher.hasDrainedAcceptedWork());
+
+        importer_busy = false;
+        dispatcher.importerStateChanged();
+        QVERIFY(dispatcher.hasDrainedAcceptedWork());
+    }
+
+    void ignoresImportsItDidNotStartWhenReportingAcceptedWorkDrain() {
+        OpenSourcesDispatcher dispatcher{[] { return true; }, [] { return true; },
+                                         [](const QStringList&) { return true; }};
+
+        QVERIFY(dispatcher.hasDrainedAcceptedWork());
     }
 };
 

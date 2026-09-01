@@ -26,10 +26,12 @@ class OpenSourcesDispatcher final {
 
     [[nodiscard]] bool enqueue(OpenSourcesCommand command);
     void importerStateChanged();
+    void retryPending();
     void stopAccepting() noexcept;
 
     [[nodiscard]] bool accepting() const noexcept;
     [[nodiscard]] std::size_t pendingCommandCount() const noexcept;
+    [[nodiscard]] bool hasDrainedAcceptedWork() const noexcept;
 
   private:
     struct PendingCommand final {
@@ -45,6 +47,7 @@ class OpenSourcesDispatcher final {
     StartImport start_import_;
     Limits limits_;
     bool accepting_{true};
+    bool owned_import_active_{false};
     std::size_t pending_path_count_{0};
     qsizetype pending_payload_bytes_{0};
     std::deque<PendingCommand> pending_{};

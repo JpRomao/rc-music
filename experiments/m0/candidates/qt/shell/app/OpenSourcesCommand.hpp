@@ -34,6 +34,7 @@ struct OpenSourcesDecodingResult final {
     OpenSourcesCommand command{};
 };
 
+[[nodiscard]] bool isFullyQualifiedFilesystemPath(const QString& path);
 [[nodiscard]] OpenSourcesEncodingResult encodeOpenSourcesCommand(const OpenSourcesCommand& command);
 [[nodiscard]] OpenSourcesDecodingResult decodeOpenSourcesCommand(const QByteArray& payload);
 

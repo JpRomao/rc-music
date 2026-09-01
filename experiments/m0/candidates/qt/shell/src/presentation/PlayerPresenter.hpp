@@ -294,6 +294,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] qulonglong sourceImportAcceptedCount() const noexcept;
     [[nodiscard]] qulonglong sourceImportIssueCount() const noexcept;
     [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
+    void setSourceExitDrainedProbe(std::function<bool()> probe);
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
@@ -392,6 +393,8 @@ class PlayerPresenter final : public QObject {
     void pollPersistence();
     void synchronizePreferenceWarning();
     void projectPersistenceWarning();
+    [[nodiscard]] bool sourceExitDrained() const;
+    [[nodiscard]] bool beginPersistenceExit();
     void completeExit();
     void cancelPendingExit();
     void handlePlaybackEvent(PlaybackEvent event);
@@ -399,8 +402,8 @@ class PlayerPresenter final : public QObject {
     void pollSourceImport();
     void initializeLocalMode(const PlayerPresenterPreferences* preferences = nullptr);
     [[nodiscard]] bool beginSourceImport(std::vector<std::filesystem::path> roots,
-                                         std::optional<std::size_t> insertion_index,
-                                         std::uint64_t boundary_issue_count);
+                                         std::optional<std::size_t> insertion_index, std::uint64_t boundary_issue_count,
+                                         bool allow_during_source_exit_drain = false);
     void rejectSourceImport(std::uint64_t issue_count);
     void finishSourceImport(SourceImportState terminal_state);
     [[nodiscard]] bool applySourceImportBatch(LocalSourceDiscoveryBatch batch);
@@ -457,6 +460,8 @@ class PlayerPresenter final : public QObject {
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
     bool exit_committed_{false};
+    bool source_exit_drain_active_{false};
+    std::function<bool()> source_exit_drained_probe_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};
@@ -468,7 +473,8 @@ class PlayerPresenter final : public QObject {
     PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};
     PersistenceWarningScope persistence_warning_scope_{PersistenceWarningScope::NoPersistenceWarningScope};
     std::chrono::milliseconds preference_exit_flush_timeout_{2'000};
-    std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{};
+    std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{
+        [] { return std::chrono::steady_clock::now(); }};
     std::optional<PlayerPresenterPreferences::TimePoint> preference_exit_deadline_{};
     std::function<SessionAutosave::TimePoint()> session_now_{};
     struct RestoredPosition final {

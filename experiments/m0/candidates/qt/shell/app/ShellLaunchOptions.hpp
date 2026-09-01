@@ -20,6 +20,7 @@ struct ShellLaunchOptions final {
     bool smoke_session_crash_before_primary_commit{false};
     bool smoke_session_recovery_repair{false};
     bool smoke_session_defaults_read{false};
+    bool smoke_single_instance_executable{false};
     std::optional<QString> test_config_root{};
     QStringList source_paths{};
 };

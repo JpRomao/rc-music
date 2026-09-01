@@ -1,10 +1,44 @@
 #include "ShellLaunchOptions.hpp"
 
+#include "OpenSourcesCommand.hpp"
+
 #include <QDir>
 
 #include <stdexcept>
 
 namespace music_player::m0::experiment {
+namespace {
+
+#ifdef Q_OS_WIN
+[[nodiscard]] bool isWindowsSeparator(const QChar character) {
+    return character == QLatin1Char('/') || character == QLatin1Char('\\');
+}
+
+[[nodiscard]] qsizetype nextWindowsSeparator(const QString& path, const qsizetype offset) {
+    for (qsizetype index = offset; index < path.size(); ++index) {
+        if (isWindowsSeparator(path.at(index)))
+            return index;
+    }
+    return -1;
+}
+
+[[nodiscard]] QString windowsVolumeRoot(const QString& fully_qualified_path) {
+    if (fully_qualified_path.size() >= 3 && fully_qualified_path.at(1) == QLatin1Char(':'))
+        return fully_qualified_path.first(2);
+
+    const bool extended = fully_qualified_path.size() >= 4 && fully_qualified_path.at(2) == QLatin1Char('?') &&
+                          isWindowsSeparator(fully_qualified_path.at(3));
+    if (extended && fully_qualified_path.size() >= 7 && fully_qualified_path.at(5) == QLatin1Char(':'))
+        return fully_qualified_path.first(6);
+
+    const qsizetype server_start = extended ? 8 : 2;
+    const qsizetype server_end = nextWindowsSeparator(fully_qualified_path, server_start);
+    const qsizetype share_end = nextWindowsSeparator(fully_qualified_path, server_end + 1);
+    return fully_qualified_path.first(share_end < 0 ? fully_qualified_path.size() : share_end);
+}
+#endif
+
+} // namespace
 
 ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     ShellLaunchOptions options;
@@ -59,6 +93,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_session_recovery_repair = true;
             else if (value == QStringLiteral("session-defaults-read"))
                 options.smoke_session_defaults_read = true;
+            else if (value == QStringLiteral("single-instance-executable"))
+                options.smoke_single_instance_executable = true;
             else
                 throw std::invalid_argument{"unsupported M0 shell smoke"};
             continue;
@@ -88,35 +124,60 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                                  options.smoke_session_crash_before_primary_commit ||
                                  options.smoke_session_recovery_repair || options.smoke_session_defaults_read;
     const bool executable_smoke = options.smoke_error_recovery || options.smoke_tray_lifecycle ||
-                                  options.smoke_combined_startup || preferences_restart || session_restart;
-    if ((preferences_restart || session_restart) && !options.test_config_root.has_value())
+                                  options.smoke_combined_startup || preferences_restart || session_restart ||
+                                  options.smoke_single_instance_executable;
+    if ((preferences_restart || session_restart || options.smoke_single_instance_executable) &&
+        !options.test_config_root.has_value())
         throw std::invalid_argument{"the restart smoke requires its test config root"};
     if (options.test_config_root.has_value() && !executable_smoke)
         throw std::invalid_argument{"the M0 test config root requires an executable smoke"};
-    if ((preferences_restart || session_restart) && options.initial_scenario != InitialShellScenario::Empty)
+    if ((preferences_restart || session_restart || options.smoke_single_instance_executable) &&
+        options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the restart smoke requires the empty scenario"};
     return options;
 }
 
 QStringList resolveShellSourcePaths(const QStringList& source_paths, const QString& working_directory) {
-    if (working_directory.isEmpty() || !QDir::isAbsolutePath(working_directory))
-        throw std::invalid_argument{"the shell working directory must be absolute"};
+    if (!music_player::m0::isFullyQualifiedFilesystemPath(working_directory))
+        throw std::invalid_argument{"the shell working directory must be fully qualified"};
 
     const QDir base{QDir::cleanPath(working_directory)};
     QStringList resolved;
     resolved.reserve(source_paths.size());
     for (const QString& source_path : source_paths) {
-        if (source_path.isEmpty())
+        if (source_path.isEmpty() || source_path.contains(QChar::Null))
             throw std::invalid_argument{"a shell source path cannot be empty"};
+        if (source_path.startsWith(QStringLiteral(":/")))
+            throw std::invalid_argument{"Qt resource paths are not shell filesystem sources"};
 #ifdef Q_OS_WIN
         const bool drive_relative = source_path.size() >= 2 && source_path.at(1) == QLatin1Char(':') &&
                                     (source_path.size() == 2 ||
                                      (source_path.at(2) != QLatin1Char('/') && source_path.at(2) != QLatin1Char('\\')));
         if (drive_relative)
             throw std::invalid_argument{"drive-relative shell source paths are ambiguous"};
+
+        if (music_player::m0::isFullyQualifiedFilesystemPath(source_path)) {
+            resolved.push_back(source_path);
+            continue;
+        }
+
+        const bool starts_with_separator =
+            source_path.startsWith(QLatin1Char('/')) || source_path.startsWith(QLatin1Char('\\'));
+        if (starts_with_separator) {
+            const bool starts_with_two_separators = source_path.size() >= 2 && (source_path.at(1) == QLatin1Char('/') ||
+                                                                                source_path.at(1) == QLatin1Char('\\'));
+            if (starts_with_two_separators)
+                throw std::invalid_argument{"the rooted shell source path requires the invoking drive"};
+            resolved.push_back(windowsVolumeRoot(working_directory) + source_path);
+            continue;
+        }
+#else
+        if (music_player::m0::isFullyQualifiedFilesystemPath(source_path)) {
+            resolved.push_back(source_path);
+            continue;
+        }
 #endif
-        resolved.push_back(QDir::isAbsolutePath(source_path) ? source_path
-                                                             : QDir::cleanPath(base.absoluteFilePath(source_path)));
+        resolved.push_back(QDir::cleanPath(base.absoluteFilePath(source_path)));
     }
     return resolved;
 }
@@ -128,11 +189,14 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
          options.smoke_combined_startup || options.smoke_preferences_restart_write ||
          options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
          options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
-         options.smoke_session_defaults_read || options.test_config_root.has_value())) {
+         options.smoke_session_defaults_read || options.smoke_single_instance_executable ||
+         options.test_config_root.has_value())) {
         throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
         throw std::invalid_argument{"the combined startup smoke requires audio support"};
+    if (!combined_audio_enabled && options.smoke_single_instance_executable)
+        throw std::invalid_argument{"the single-instance executable smoke requires audio support"};
     if (!combined_audio_enabled && !options.source_paths.isEmpty())
         throw std::invalid_argument{"shell source paths require audio support"};
     if (!combined_audio_enabled &&

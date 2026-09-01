@@ -34,7 +34,12 @@ bool OpenSourcesDispatcher::enqueue(OpenSourcesCommand command) {
     return true;
 }
 
-void OpenSourcesDispatcher::importerStateChanged() { drain(); }
+void OpenSourcesDispatcher::importerStateChanged() {
+    owned_import_active_ = false;
+    drain();
+}
+
+void OpenSourcesDispatcher::retryPending() { drain(); }
 
 void OpenSourcesDispatcher::stopAccepting() noexcept { accepting_ = false; }
 
@@ -42,14 +47,20 @@ bool OpenSourcesDispatcher::accepting() const noexcept { return accepting_; }
 
 std::size_t OpenSourcesDispatcher::pendingCommandCount() const noexcept { return pending_.size(); }
 
+bool OpenSourcesDispatcher::hasDrainedAcceptedWork() const noexcept {
+    return pending_.empty() && !owned_import_active_;
+}
+
 void OpenSourcesDispatcher::drain() {
-    while (!pending_.empty() && !importer_busy_()) {
+    while (!owned_import_active_ && !pending_.empty() && !importer_busy_()) {
         PendingCommand& pending = pending_.front();
         if (!start_import_(pending.command.paths))
             return;
+        owned_import_active_ = true;
         pending_path_count_ -= static_cast<std::size_t>(pending.command.paths.size());
         pending_payload_bytes_ -= pending.payload_bytes;
         pending_.pop_front();
+        return;
     }
 }
 

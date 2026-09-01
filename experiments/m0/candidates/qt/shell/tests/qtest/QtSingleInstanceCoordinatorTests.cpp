@@ -19,8 +19,10 @@
 #include <QUuid>
 #include <QtEndian>
 
+#include <atomic>
 #include <chrono>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -36,10 +38,37 @@ using music_player::m0::QtSingleInstanceOptions;
 using music_player::m0::QtSingleInstanceOutcome;
 using music_player::m0::QtSingleInstanceStartResult;
 
+namespace music_player::m0::detail {
+
+struct QtSingleInstanceCoordinatorTestAccess final {
+    using Transfer = bool (*)(quint32);
+
+    [[nodiscard]] static std::unique_ptr<QtSingleInstanceCoordinator> create(QtSingleInstanceOptions options,
+                                                                             Transfer transfer) {
+        return std::unique_ptr<QtSingleInstanceCoordinator>{
+            new QtSingleInstanceCoordinator(std::move(options), transfer, nullptr)};
+    }
+
+    [[nodiscard]] static bool tryTransfer(const qint64 owner_pid, Transfer transfer) noexcept {
+        return QtSingleInstanceCoordinator::tryTransferForegroundPermission(owner_pid, transfer);
+    }
+};
+
+} // namespace music_player::m0::detail
+
 namespace {
 
 constexpr int process_start_timeout_ms = 5'000;
 constexpr int process_finish_timeout_ms = 10'000;
+
+std::atomic<int> foreground_transfer_attempts{0};
+std::atomic<quint32> foreground_transfer_pid{0};
+
+[[nodiscard]] bool denyForegroundTransfer(const quint32 owner_pid) {
+    foreground_transfer_pid.store(owner_pid);
+    foreground_transfer_attempts.fetch_add(1);
+    return false;
+}
 
 [[nodiscard]] QtSingleInstanceOptions optionsFor(const QTemporaryDir& root) {
     return {
@@ -47,6 +76,7 @@ constexpr int process_finish_timeout_ms = 10'000;
         .server_name_prefix = QStringLiteral("music-player-test-") + QUuid::createUuid().toString(QUuid::WithoutBraces),
         .max_bootstrap_commands = 16,
         .max_bootstrap_payload_bytes = 4 * open_sources_max_payload_bytes,
+        .max_active_connections = 8,
         .secondary_retry_timeout = 1'500ms,
         .secondary_retry_interval = 10ms,
         .frame_timeout = 1'000ms,
@@ -96,6 +126,14 @@ constexpr int process_finish_timeout_ms = 10'000;
         if (!socket.waitForBytesWritten(2'000))
             return std::nullopt;
     }
+    return readFrame(socket, 2'000);
+}
+
+[[nodiscard]] std::optional<QByteArray> connectAndReadReply(const QString& server_name) {
+    QLocalSocket socket;
+    socket.connectToServer(server_name);
+    if (socket.state() != QLocalSocket::ConnectedState && !socket.waitForConnected(2'000))
+        return std::nullopt;
     return readFrame(socket, 2'000);
 }
 
@@ -267,6 +305,195 @@ class QtSingleInstanceCoordinatorTests final : public QObject {
         QCOMPARE(queued->paths, forwarded.paths);
     }
 
+    void forwardsAfterTheListeningPrimaryDelaysEventProcessingBeyondThePreviousTimeout() {
+        constexpr auto previous_secondary_timeout = 1'500ms;
+        constexpr auto maximum_default_timeout = 10'000ms;
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QtSingleInstanceOptions options = optionsFor(root);
+        options.secondary_retry_timeout = QtSingleInstanceOptions{}.secondary_retry_timeout;
+        QtSingleInstanceCoordinator primary{options};
+        QCOMPARE(primary.start(OpenSourcesCommand{}).outcome, QtSingleInstanceOutcome::Primary);
+        foreground_transfer_attempts.store(0);
+        foreground_transfer_pid.store(0);
+        const OpenSourcesCommand forwarded{{sourcePath(root, QStringLiteral("delayed cold start.wav"))}};
+
+        auto result_future = std::async(std::launch::async, [options, forwarded] {
+            auto secondary = music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::create(
+                options, &denyForegroundTransfer);
+            return secondary->start(forwarded);
+        });
+
+        QDeadlineTimer connection_deadline{1'000};
+        while (foreground_transfer_attempts.load() == 0 && !connection_deadline.hasExpired())
+            QThread::msleep(1);
+        QCOMPARE(foreground_transfer_attempts.load(), 1);
+        QThread::msleep(static_cast<unsigned long>((previous_secondary_timeout + 250ms).count()));
+        QVERIFY(result_future.wait_for(0ms) == std::future_status::timeout);
+
+        QTRY_VERIFY_WITH_TIMEOUT(result_future.wait_for(0ms) == std::future_status::ready, 4'000);
+        QCOMPARE(result_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(primary.takeNextCommand()->paths, forwarded.paths);
+        QVERIFY(QtSingleInstanceOptions{}.secondary_retry_timeout > previous_secondary_timeout);
+        QVERIFY(QtSingleInstanceOptions{}.secondary_retry_timeout <= maximum_default_timeout);
+    }
+
+    void attemptsForegroundPermissionOnceForTheLockOwnerBeforeForwardingAndIgnoresFailure() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QtSingleInstanceOptions options = optionsFor(root);
+        QtSingleInstanceCoordinator primary{options};
+        QCOMPARE(primary.start(OpenSourcesCommand{}).outcome, QtSingleInstanceOutcome::Primary);
+        foreground_transfer_attempts.store(0);
+        foreground_transfer_pid.store(0);
+        bool permission_attempted_before_delivery = false;
+        connect(&primary, &QtSingleInstanceCoordinator::commandAvailable, &primary,
+                [&] { permission_attempted_before_delivery = foreground_transfer_attempts.load() == 1; });
+        const OpenSourcesCommand forwarded{{sourcePath(root, QStringLiteral("foreground 日本.wav"))}};
+
+        auto result_future = std::async(std::launch::async, [options, forwarded] {
+            auto secondary = music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::create(
+                options, &denyForegroundTransfer);
+            return secondary->start(forwarded);
+        });
+
+        QTRY_VERIFY_WITH_TIMEOUT(result_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        const auto result = result_future.get();
+        QCOMPARE(result.outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(foreground_transfer_attempts.load(), 1);
+        QCOMPARE(foreground_transfer_pid.load(), static_cast<quint32>(QCoreApplication::applicationPid()));
+        QVERIFY(permission_attempted_before_delivery);
+        QCOMPARE(primary.takeNextCommand()->paths, forwarded.paths);
+    }
+
+    void validatesTheOwnerPidBeforeCallingTheForegroundPermissionApi() {
+        foreground_transfer_attempts.store(0);
+        foreground_transfer_pid.store(0);
+        const qint64 above_dword = static_cast<qint64>(std::numeric_limits<quint32>::max()) + 1;
+
+        QVERIFY(
+            !music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::tryTransfer(-1, &denyForegroundTransfer));
+        QVERIFY(
+            !music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::tryTransfer(0, &denyForegroundTransfer));
+        QVERIFY(!music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::tryTransfer(above_dword,
+                                                                                              &denyForegroundTransfer));
+        QCOMPARE(foreground_transfer_attempts.load(), 0);
+
+        QVERIFY(!music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::tryTransfer(
+            std::numeric_limits<quint32>::max(), &denyForegroundTransfer));
+        QCOMPARE(foreground_transfer_attempts.load(), 1);
+        QCOMPARE(foreground_transfer_pid.load(), std::numeric_limits<quint32>::max());
+    }
+
+    void pausesAndResumesAcceptanceUntilShutdownBecomesFinal() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QtSingleInstanceOptions options = optionsFor(root);
+        QtSingleInstanceCoordinator primary{options};
+        primary.setAccepting(false);
+        QVERIFY(!primary.isAccepting());
+        QCOMPARE(primary.start(OpenSourcesCommand{}).outcome, QtSingleInstanceOutcome::Primary);
+        QVERIFY(primary.isAccepting());
+
+        primary.setAccepting(false);
+        QVERIFY(!primary.isAccepting());
+        const OpenSourcesCommand paused{{sourcePath(root, QStringLiteral("paused.wav"))}};
+        auto paused_future = std::async(std::launch::async, [options, paused] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(paused);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(paused_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        const auto paused_result = paused_future.get();
+        QCOMPARE(paused_result.outcome, QtSingleInstanceOutcome::Rejected);
+        QCOMPARE(paused_result.detail, QStringLiteral("temporarilyUnavailable"));
+        QCOMPARE(primary.pendingCommandCount(), 0);
+
+        primary.setAccepting(true);
+        QVERIFY(primary.isAccepting());
+        const OpenSourcesCommand resumed{{sourcePath(root, QStringLiteral("resumed.wav"))}};
+        auto resumed_future = std::async(std::launch::async, [options, resumed] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(resumed);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(resumed_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        QCOMPARE(resumed_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(primary.takeNextCommand()->paths, resumed.paths);
+
+        primary.beginShutdown();
+        QVERIFY(!primary.isAccepting());
+        primary.setAccepting(true);
+        QVERIFY(!primary.isAccepting());
+        const OpenSourcesCommand after_shutdown{{sourcePath(root, QStringLiteral("after shutdown.wav"))}};
+        auto shutdown_future = std::async(std::launch::async, [options, after_shutdown] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(after_shutdown);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(shutdown_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        const auto shutdown_result = shutdown_future.get();
+        QCOMPARE(shutdown_result.outcome, QtSingleInstanceOutcome::Rejected);
+        QCOMPARE(shutdown_result.detail, QStringLiteral("shuttingDown"));
+        QCOMPARE(primary.pendingCommandCount(), 0);
+    }
+
+    void rejectsConnectionsBeyondTheActiveLimitWithoutWaitingForTheirPayloadAndRecovers() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QtSingleInstanceOptions options = optionsFor(root);
+        options.max_active_connections = 2;
+        options.frame_timeout = 500ms;
+        QtSingleInstanceCoordinator primary{options};
+        QCOMPARE(primary.start(OpenSourcesCommand{}).outcome, QtSingleInstanceOutcome::Primary);
+
+        QLocalSocket closed_partial;
+        QLocalSocket expired_partial;
+        for (QLocalSocket* socket : {&closed_partial, &expired_partial}) {
+            socket->connectToServer(primary.serverName());
+            QVERIFY2(socket->state() == QLocalSocket::ConnectedState || socket->waitForConnected(2'000),
+                     qPrintable(socket->errorString()));
+            QCOMPARE(socket->write(QByteArray(1, '\0')), 1);
+            static_cast<void>(socket->flush());
+        }
+        QTest::qWait(25);
+
+        const QString server_name = primary.serverName();
+        auto rejected_future =
+            std::async(std::launch::async, [server_name] { return connectAndReadReply(server_name); });
+        QTRY_VERIFY_WITH_TIMEOUT(rejected_future.wait_for(0ms) == std::future_status::ready, 2'000);
+        const auto rejected_reply = rejected_future.get();
+        QVERIFY(rejected_reply.has_value());
+        QCOMPARE(responseField(*rejected_reply, QStringLiteral("status")), QStringLiteral("nack"));
+        QCOMPARE(responseField(*rejected_reply, QStringLiteral("reason")), QStringLiteral("tooManyConnections"));
+        QCOMPARE(primary.pendingCommandCount(), 0);
+
+        closed_partial.abort();
+        QCOMPARE(closed_partial.state(), QLocalSocket::UnconnectedState);
+        QTRY_COMPARE_WITH_TIMEOUT(expired_partial.state(), QLocalSocket::UnconnectedState, 2'000);
+        QTest::qWait(25);
+
+        const OpenSourcesCommand recovered{{sourcePath(root, QStringLiteral("after connection limit.wav"))}};
+        auto recovered_future = std::async(std::launch::async, [options, recovered] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(recovered);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(recovered_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        QCOMPARE(recovered_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(primary.takeNextCommand()->paths, recovered.paths);
+    }
+
+    void rejectsAnInvalidActiveConnectionLimit() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QtSingleInstanceOptions options = optionsFor(root);
+        options.max_active_connections = 0;
+        QtSingleInstanceCoordinator coordinator{options};
+
+        const auto result = coordinator.start(OpenSourcesCommand{});
+
+        QCOMPARE(result.outcome, QtSingleInstanceOutcome::Failed);
+        QCOMPARE(result.detail, QStringLiteral("invalidConnectionLimit"));
+        QVERIFY(!coordinator.isPrimary());
+    }
+
     void nacksACommandWhenTheBoundedBootstrapQueueIsFull() {
         QTemporaryDir root;
         QVERIFY(root.isValid());
@@ -288,6 +515,60 @@ class QtSingleInstanceCoordinatorTests final : public QObject {
         QCOMPARE(result.detail, QStringLiteral("queueFull"));
         QCOMPARE(primary.pendingCommandCount(), 1);
         QCOMPARE(primary.takeNextCommand()->paths, first.paths);
+    }
+
+    void boundsAggregateBootstrapPayloadBytesAndRecoversAfterDequeue() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QtSingleInstanceOptions options = optionsFor(root);
+        const OpenSourcesCommand first{{sourcePath(root, QStringLiteral("alpha.wav"))}};
+        const OpenSourcesCommand at_boundary{{sourcePath(root, QStringLiteral("bravo.wav"))}};
+        const OpenSourcesCommand initially_rejected{{sourcePath(root, QStringLiteral("cello.wav"))}};
+        const auto first_encoded = encodeOpenSourcesCommand(first);
+        const auto boundary_encoded = encodeOpenSourcesCommand(at_boundary);
+        const auto rejected_encoded = encodeOpenSourcesCommand(initially_rejected);
+        QVERIFY(first_encoded.error == music_player::m0::OpenSourcesCommandError::None);
+        QVERIFY(boundary_encoded.error == music_player::m0::OpenSourcesCommandError::None);
+        QVERIFY(rejected_encoded.error == music_player::m0::OpenSourcesCommandError::None);
+        options.max_bootstrap_payload_bytes = first_encoded.payload.size() + boundary_encoded.payload.size();
+
+        QtSingleInstanceCoordinator primary{options};
+        QCOMPARE(primary.start(first).outcome, QtSingleInstanceOutcome::Primary);
+
+        auto boundary_future = std::async(std::launch::async, [options, at_boundary] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(at_boundary);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(boundary_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        QCOMPARE(boundary_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(primary.pendingCommandCount(), 2);
+        QCOMPARE(primary.pendingPayloadBytes(), options.max_bootstrap_payload_bytes);
+
+        auto rejected_future = std::async(std::launch::async, [options, initially_rejected] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(initially_rejected);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(rejected_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        const auto rejected_result = rejected_future.get();
+        QCOMPARE(rejected_result.outcome, QtSingleInstanceOutcome::Rejected);
+        QCOMPARE(rejected_result.detail, QStringLiteral("queueFull"));
+        QCOMPARE(primary.pendingCommandCount(), 2);
+        QCOMPARE(primary.pendingPayloadBytes(), options.max_bootstrap_payload_bytes);
+
+        QCOMPARE(primary.takeNextCommand()->paths, first.paths);
+        QCOMPARE(primary.pendingPayloadBytes(), boundary_encoded.payload.size());
+
+        auto recovered_future = std::async(std::launch::async, [options, initially_rejected] {
+            QtSingleInstanceCoordinator secondary{options};
+            return secondary.start(initially_rejected);
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(recovered_future.wait_for(0ms) == std::future_status::ready, 3'000);
+        QCOMPARE(recovered_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        QCOMPARE(primary.pendingCommandCount(), 2);
+        QCOMPARE(primary.pendingPayloadBytes(), boundary_encoded.payload.size() + rejected_encoded.payload.size());
+        QCOMPARE(primary.takeNextCommand()->paths, at_boundary.paths);
+        QCOMPARE(primary.takeNextCommand()->paths, initially_rejected.paths);
+        QCOMPARE(primary.pendingPayloadBytes(), 0);
     }
 
     void rejectsAnOversizedLengthBeforeParsingAndStillAcceptsTheNextClient() {

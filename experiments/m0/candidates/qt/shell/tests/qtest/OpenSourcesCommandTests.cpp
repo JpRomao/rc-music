@@ -93,13 +93,49 @@ class OpenSourcesCommandTests final : public QObject {
         QTest::addColumn<QString>("path");
         QTest::newRow("empty") << QString{};
         QTest::newRow("relative") << QStringLiteral("relative/song.mp3");
+        QTest::newRow("QResource") << QStringLiteral(":/audio/song.mp3");
+#ifdef Q_OS_WIN
+        QTest::newRow("rooted with backslash") << QStringLiteral(R"(\audio\song.mp3)");
+        QTest::newRow("rooted with slash") << QStringLiteral("/audio/song.mp3");
+        QTest::newRow("drive relative") << QStringLiteral("C:audio/song.mp3");
+        QTest::newRow("Win32 physical device") << QStringLiteral(R"(\\.\PhysicalDrive0)");
+        QTest::newRow("Win32 named pipe") << QStringLiteral(R"(\\.\pipe\audio.wav)");
+        QTest::newRow("object manager alias") << QStringLiteral(R"(\\??\C:\audio.wav)");
+        QTest::newRow("forward-slash device namespace") << QStringLiteral("//./pipe/audio.wav");
+        QTest::newRow("forward-slash extended prefix") << QStringLiteral("//?/C:/audio.wav");
+        QTest::newRow("extended drive with slash") << QStringLiteral(R"(\\?\C:/audio.wav)");
+        QTest::newRow("extended UNC with slash") << QStringLiteral(R"(\\?\UNC/servidor/share/audio.wav)");
+#endif
         QTest::newRow("embedded nul") << (absolutePath(QStringLiteral("song")) + QChar{0} + QStringLiteral(".mp3"));
     }
 
     void rejectsInvalidPathsAsData() {
         QFETCH(QString, path);
         QCOMPARE(encodeOpenSourcesCommand(OpenSourcesCommand{{path}}).error, OpenSourcesCommandError::InvalidPath);
+
+        const QByteArray payload = jsonPayload({{QStringLiteral("version"), 1},
+                                                {QStringLiteral("command"), QStringLiteral("openSources")},
+                                                {QStringLiteral("paths"), QJsonArray{path}}});
+        QCOMPARE(decodeOpenSourcesCommand(payload).error, OpenSourcesCommandError::InvalidPath);
     }
+
+#ifdef Q_OS_WIN
+    void roundTripsFullyQualifiedWindowsFilesystemPaths() {
+        const QStringList paths{
+            QStringLiteral(R"(C:\Música\faixa.wav)"),
+            QStringLiteral(R"(\\servidor\Música\faixa.wav)"),
+            QStringLiteral("//servidor/Música/faixa.wav"),
+            QStringLiteral(R"(\\?\C:\Música\muito longa\faixa.wav)"),
+            QStringLiteral(R"(\\?\UNC\servidor\Música\muito longa\faixa.wav)"),
+        };
+
+        const auto encoded = encodeOpenSourcesCommand(OpenSourcesCommand{paths});
+        QCOMPARE(encoded.error, OpenSourcesCommandError::None);
+        const auto decoded = decodeOpenSourcesCommand(encoded.payload);
+        QCOMPARE(decoded.error, OpenSourcesCommandError::None);
+        QCOMPARE(decoded.command.paths, paths);
+    }
+#endif
 
     void rejectsMalformedOrUnexpectedSchemas_data() {
         QTest::addColumn<QByteArray>("payload");

@@ -15,6 +15,10 @@
 #include <QTimer>
 #include <QtEndian>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -26,6 +30,7 @@ namespace {
 
 constexpr qsizetype frame_prefix_bytes = sizeof(quint32);
 constexpr qsizetype max_response_payload_bytes = 4'096;
+constexpr qint64 pending_connection_read_buffer_bytes = 1;
 constexpr int listen_backlog_size = 32;
 constexpr int max_pending_connections = 32;
 
@@ -42,6 +47,15 @@ struct ClientReply final {
     ClientReplyKind kind{ClientReplyKind::Failed};
     QString detail{};
 };
+
+[[nodiscard]] bool allowSetForegroundWindowForOwner(const quint32 owner_pid) {
+#ifdef Q_OS_WIN
+    return ::AllowSetForegroundWindow(static_cast<DWORD>(owner_pid)) != FALSE;
+#else
+    Q_UNUSED(owner_pid);
+    return false;
+#endif
+}
 
 [[nodiscard]] int boundedMilliseconds(const std::chrono::milliseconds duration) {
     return static_cast<int>(std::clamp<std::int64_t>(duration.count(), 0, std::numeric_limits<int>::max()));
@@ -142,7 +156,7 @@ struct ClientReply final {
 }
 
 [[nodiscard]] ClientReply exchangeWithPrimary(const QString& server_name, const QByteArray& payload,
-                                              QDeadlineTimer& deadline) {
+                                              QDeadlineTimer& deadline, const std::function<void()>& before_write) {
     QLocalSocket socket;
     socket.setReadBufferSize(max_response_payload_bytes + frame_prefix_bytes + 1);
     socket.connectToServer(server_name);
@@ -155,6 +169,7 @@ struct ClientReply final {
         }
     }
 
+    before_write();
     if (!writeAll(socket, makeFrame(payload), deadline)) {
         if (deadline.hasExpired())
             return {.kind = ClientReplyKind::TimedOut, .detail = QStringLiteral("ackTimeout")};
@@ -291,8 +306,10 @@ class InboundConnection final : public QObject {
 
 class QtSingleInstanceCoordinator::Impl final {
   public:
-    Impl(QtSingleInstanceCoordinator* owner, QtSingleInstanceOptions options)
-        : owner_(owner), options_(std::move(options)) {}
+    Impl(QtSingleInstanceCoordinator* owner, QtSingleInstanceOptions options,
+         const ForegroundPermissionTransfer foreground_permission_transfer)
+        : owner_(owner), options_(std::move(options)), foreground_permission_transfer_(foreground_permission_transfer) {
+    }
 
     ~Impl() { closeServerAndReleaseLock(); }
 
@@ -337,7 +354,11 @@ class QtSingleInstanceCoordinator::Impl final {
                 Q_UNUSED(owner_application);
                 const QString endpoint = endpointForPid(owner_pid);
                 QDeadlineTimer exchange_deadline{retry_deadline.remainingTime()};
-                const ClientReply reply = exchangeWithPrimary(endpoint, encoded.payload, exchange_deadline);
+                const ClientReply reply =
+                    exchangeWithPrimary(endpoint, encoded.payload, exchange_deadline, [this, owner_pid] {
+                        static_cast<void>(QtSingleInstanceCoordinator::tryTransferForegroundPermission(
+                            owner_pid, foreground_permission_transfer_));
+                    });
                 if (reply.kind == ClientReplyKind::Ack)
                     return {.outcome = QtSingleInstanceOutcome::Forwarded};
                 if (reply.kind == ClientReplyKind::Nack)
@@ -366,7 +387,9 @@ class QtSingleInstanceCoordinator::Impl final {
     }
 
     [[nodiscard]] bool isPrimary() const noexcept { return primary_; }
-    [[nodiscard]] bool isAccepting() const noexcept { return primary_ && accepting_; }
+    [[nodiscard]] bool isAccepting() const noexcept {
+        return primary_ && server_ != nullptr && server_->isListening() && accepting_ && !shutdown_started_;
+    }
     [[nodiscard]] QString serverName() const { return server_name_; }
     [[nodiscard]] qsizetype pendingCommandCount() const noexcept { return queue_.size(); }
     [[nodiscard]] qsizetype pendingPayloadBytes() const noexcept { return queued_payload_bytes_; }
@@ -380,7 +403,18 @@ class QtSingleInstanceCoordinator::Impl final {
         return std::move(queued.command);
     }
 
-    void beginShutdown() { accepting_ = false; }
+    void setAccepting(const bool accepting) noexcept {
+        if (!primary_ || server_ == nullptr || !server_->isListening() || shutdown_started_)
+            return;
+        accepting_ = accepting;
+    }
+
+    void beginShutdown() {
+        if (!primary_ || server_ == nullptr || !server_->isListening())
+            return;
+        shutdown_started_ = true;
+        accepting_ = false;
+    }
 
   private:
     struct QueuedCommand final {
@@ -395,6 +429,8 @@ class QtSingleInstanceCoordinator::Impl final {
             return QStringLiteral("invalidServerName");
         if (options_.max_bootstrap_commands < 1 || options_.max_bootstrap_payload_bytes < 1)
             return QStringLiteral("invalidQueueLimit");
+        if (options_.max_active_connections < 1)
+            return QStringLiteral("invalidConnectionLimit");
         if (options_.secondary_retry_timeout.count() <= 0 || options_.secondary_retry_interval.count() <= 0 ||
             options_.frame_timeout.count() <= 0) {
             return QStringLiteral("invalidTimeout");
@@ -412,7 +448,7 @@ class QtSingleInstanceCoordinator::Impl final {
 #ifndef Q_OS_WIN
         static_cast<void>(QLocalServer::removeServer(server_name_));
 #endif
-        server_ = std::make_unique<BoundedLocalServer>(open_sources_max_payload_bytes + frame_prefix_bytes + 1);
+        server_ = std::make_unique<BoundedLocalServer>(pending_connection_read_buffer_bytes);
         server_->setSocketOptions(QLocalServer::UserAccessOption);
         server_->setListenBacklogSize(listen_backlog_size);
         server_->setMaxPendingConnections(max_pending_connections);
@@ -436,6 +472,11 @@ class QtSingleInstanceCoordinator::Impl final {
             QLocalSocket* socket = server_->nextPendingConnection();
             if (socket == nullptr)
                 continue;
+            if (connections_.size() >= options_.max_active_connections) {
+                rejectExcessConnection(socket);
+                continue;
+            }
+            socket->setReadBufferSize(open_sources_max_payload_bytes + frame_prefix_bytes + 1);
             auto* connection = new InboundConnection(
                 socket, boundedMilliseconds(options_.frame_timeout),
                 [this](const QByteArray& payload) { return handlePayload(payload); }, owner_);
@@ -445,9 +486,30 @@ class QtSingleInstanceCoordinator::Impl final {
         }
     }
 
+    void rejectExcessConnection(QLocalSocket* socket) {
+        socket->setReadBufferSize(pending_connection_read_buffer_bytes);
+        socket->setParent(owner_);
+        QObject::connect(socket, &QLocalSocket::disconnected, socket, &QObject::deleteLater);
+        QObject::connect(socket, &QLocalSocket::errorOccurred, socket, [socket](QLocalSocket::LocalSocketError) {
+            socket->abort();
+            socket->deleteLater();
+        });
+        const QByteArray response =
+            makeFrame(encodeReply({.kind = WireReplyKind::Nack, .reason = QStringLiteral("tooManyConnections")}));
+        if (socket->write(response) != response.size()) {
+            socket->abort();
+            socket->deleteLater();
+            return;
+        }
+        socket->disconnectFromServer();
+        if (socket->state() == QLocalSocket::UnconnectedState)
+            socket->deleteLater();
+    }
+
     [[nodiscard]] WireReply handlePayload(const QByteArray& payload) {
         if (!accepting_)
-            return {.reason = QStringLiteral("shuttingDown")};
+            return {.reason =
+                        shutdown_started_ ? QStringLiteral("shuttingDown") : QStringLiteral("temporarilyUnavailable")};
         const auto decoded = decodeOpenSourcesCommand(payload);
         if (decoded.error != OpenSourcesCommandError::None)
             return {.reason = commandErrorDetail(decoded.error)};
@@ -484,6 +546,7 @@ class QtSingleInstanceCoordinator::Impl final {
 
     QtSingleInstanceCoordinator* owner_;
     QtSingleInstanceOptions options_;
+    ForegroundPermissionTransfer foreground_permission_transfer_;
     std::unique_ptr<QLockFile> lock_;
     std::unique_ptr<BoundedLocalServer> server_;
     QSet<InboundConnection*> connections_;
@@ -493,10 +556,29 @@ class QtSingleInstanceCoordinator::Impl final {
     bool started_{false};
     bool primary_{false};
     bool accepting_{false};
+    bool shutdown_started_{false};
 };
 
 QtSingleInstanceCoordinator::QtSingleInstanceCoordinator(QtSingleInstanceOptions options, QObject* parent)
-    : QObject(parent), impl_(std::make_unique<Impl>(this, std::move(options))) {}
+    : QtSingleInstanceCoordinator(std::move(options), &allowSetForegroundWindowForOwner, parent) {}
+
+QtSingleInstanceCoordinator::QtSingleInstanceCoordinator(QtSingleInstanceOptions options,
+                                                         const ForegroundPermissionTransfer transfer, QObject* parent)
+    : QObject(parent),
+      impl_(std::make_unique<Impl>(this, std::move(options),
+                                   transfer != nullptr ? transfer : &allowSetForegroundWindowForOwner)) {}
+
+bool QtSingleInstanceCoordinator::tryTransferForegroundPermission(
+    const qint64 owner_pid, const ForegroundPermissionTransfer transfer) noexcept {
+#ifdef Q_OS_WIN
+    constexpr qint64 maximum_pid = static_cast<qint64>(std::numeric_limits<DWORD>::max());
+#else
+    constexpr qint64 maximum_pid = static_cast<qint64>(std::numeric_limits<quint32>::max());
+#endif
+    if (owner_pid <= 0 || owner_pid > maximum_pid || transfer == nullptr)
+        return false;
+    return transfer(static_cast<quint32>(owner_pid));
+}
 
 QtSingleInstanceCoordinator::~QtSingleInstanceCoordinator() = default;
 
@@ -515,6 +597,8 @@ qsizetype QtSingleInstanceCoordinator::pendingCommandCount() const noexcept { re
 qsizetype QtSingleInstanceCoordinator::pendingPayloadBytes() const noexcept { return impl_->pendingPayloadBytes(); }
 
 std::optional<OpenSourcesCommand> QtSingleInstanceCoordinator::takeNextCommand() { return impl_->takeNextCommand(); }
+
+void QtSingleInstanceCoordinator::setAccepting(const bool accepting) noexcept { impl_->setAccepting(accepting); }
 
 void QtSingleInstanceCoordinator::beginShutdown() { impl_->beginShutdown(); }
 

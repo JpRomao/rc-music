@@ -468,10 +468,9 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
-        if (!exiting_) {
+        if (!exiting_)
             pollMetadata();
-            pollSourceImport();
-        }
+        pollSourceImport();
     });
     reconcileTimer();
 }
@@ -1176,6 +1175,9 @@ bool PlayerPresenter::sourceImportActive() const noexcept {
 qulonglong PlayerPresenter::sourceImportAcceptedCount() const noexcept { return source_import_accepted_count_; }
 qulonglong PlayerPresenter::sourceImportIssueCount() const noexcept { return source_import_issue_count_; }
 qulonglong PlayerPresenter::sourceImportInspectedCount() const noexcept { return source_import_inspected_count_; }
+void PlayerPresenter::setSourceExitDrainedProbe(std::function<bool()> probe) {
+    source_exit_drained_probe_ = std::move(probe);
+}
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
@@ -1311,7 +1313,7 @@ bool PlayerPresenter::addAudio() {
 }
 bool PlayerPresenter::openSourcePaths(std::vector<std::filesystem::path> source_paths,
                                       const std::size_t insertion_index) {
-    return beginSourceImport(std::move(source_paths), insertion_index, 0);
+    return beginSourceImport(std::move(source_paths), insertion_index, 0, true);
 }
 
 bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int insertion_index) {
@@ -1337,8 +1339,10 @@ bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int inser
 
 bool PlayerPresenter::beginSourceImport(std::vector<std::filesystem::path> roots,
                                         const std::optional<std::size_t> insertion_index,
-                                        const std::uint64_t boundary_issue_count) {
-    if (uses_frozen_fixture_ || exiting_ || source_discovery_ == nullptr || sourceImportActive())
+                                        const std::uint64_t boundary_issue_count,
+                                        const bool allow_during_source_exit_drain) {
+    if (uses_frozen_fixture_ || (exiting_ && !(allow_during_source_exit_drain && source_exit_drain_active_)) ||
+        source_discovery_ == nullptr || sourceImportActive())
         return false;
     source_import_occurrences_.clear();
     source_import_autoplay_enabled_ = false;
@@ -1689,7 +1693,7 @@ void PlayerPresenter::pollMetadata() {
         emit playbackChanged();
 }
 void PlayerPresenter::pollSourceImport() {
-    if (!sourceImportActive() || source_discovery_ == nullptr || exiting_)
+    if (!sourceImportActive() || source_discovery_ == nullptr || (exiting_ && !source_exit_drain_active_))
         return;
 
     auto result = source_discovery_->poll(source_import_generation_);
@@ -1918,6 +1922,8 @@ bool PlayerPresenter::requestHide() {
     return true;
 }
 bool PlayerPresenter::requestRestore() {
+    if (source_exit_drain_active_)
+        return true;
     if (exiting_)
         return false;
     controller_.requestRestore();
@@ -1927,9 +1933,35 @@ bool PlayerPresenter::requestExit() {
     if (exiting_)
         return false;
 
+    if (!sourceExitDrained()) {
+        deferred_playback_event_.reset();
+        exiting_ = true;
+        exit_committed_ = false;
+        source_exit_drain_active_ = true;
+        window_notice_ = WindowNotice::NoNotice;
+        preference_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
+        emit lifecycleChanged();
+        reconcileTimer();
+        pollPersistence();
+        return true;
+    }
+
+    return beginPersistenceExit();
+}
+
+bool PlayerPresenter::sourceExitDrained() const {
+    return source_exit_drained_probe_ ? source_exit_drained_probe_() : !sourceImportActive();
+}
+
+bool PlayerPresenter::beginPersistenceExit() {
+    source_exit_drain_active_ = false;
+
     emit windowPlacementFlushRequested();
     if (session_autosave_ != nullptr) {
-        observeSessionPosition(true);
+        if (!uses_frozen_fixture_)
+            static_cast<void>(session_autosave_->scheduleStructural(currentSessionSnapshot()));
+        if (!exiting_)
+            observeSessionPosition(true);
         session_autosave_->requestSaveNow();
     }
     if (preferences_autosave_ != nullptr)
@@ -1947,15 +1979,21 @@ bool PlayerPresenter::requestExit() {
                                 !session_autosave_->writeActive() &&
                                 session_autosave_->notice() != SessionAutosaveNotice::None;
     if (preferences_failed || session_failed) {
-        reconcileTimer();
+        if (exiting_)
+            cancelPendingExit();
+        else
+            reconcileTimer();
         return false;
     }
     if (preferences_pending || session_pending) {
         deferred_playback_event_.reset();
+        const bool publish_exit_intent = !exiting_;
         exiting_ = true;
         window_notice_ = WindowNotice::NoNotice;
-        preference_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
-        emit lifecycleChanged();
+        if (!preference_exit_deadline_.has_value())
+            preference_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
+        if (publish_exit_intent)
+            emit lifecycleChanged();
         reconcileTimer();
         pollPersistence();
         return true;
@@ -1968,6 +2006,7 @@ bool PlayerPresenter::requestExit() {
 void PlayerPresenter::completeExit() {
     preference_exit_deadline_.reset();
     deferred_playback_event_.reset();
+    source_exit_drain_active_ = false;
     if (sourceImportActive() && source_discovery_ != nullptr) {
         static_cast<void>(source_discovery_->cancel(source_import_generation_));
         finishSourceImport(SourceImportState::Cancelled);
@@ -1989,6 +2028,7 @@ void PlayerPresenter::cancelPendingExit() {
     preference_exit_deadline_.reset();
     exiting_ = false;
     exit_committed_ = false;
+    source_exit_drain_active_ = false;
     emit lifecycleChanged();
     controller_.requestRestore();
     if (deferred_playback_event.has_value()) {
@@ -2345,6 +2385,19 @@ void PlayerPresenter::pollPersistence() {
         session_autosave_->poll();
     synchronizePreferenceWarning();
 
+    if (source_exit_drain_active_) {
+        if (sourceExitDrained()) {
+            static_cast<void>(beginPersistenceExit());
+            return;
+        }
+        if (preference_exit_deadline_.has_value() && preference_now_() >= *preference_exit_deadline_) {
+            cancelPendingExit();
+            return;
+        }
+        reconcileTimer();
+        return;
+    }
+
     if (preference_exit_deadline_.has_value()) {
         const bool preferences_clean = preferences_autosave_ == nullptr ||
                                        (!preferences_autosave_->dirty() && !preferences_autosave_->writeActive());
@@ -2578,10 +2631,12 @@ std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { re
 void PlayerPresenter::reconcileTimer() {
     const bool application_needed =
         uses_frozen_fixture_
-            ? !exit_committed_ && queueLoaded() &&
-                  (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending())
-            : !exiting_ &&
-                  (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending || sourceImportActive());
+            ? source_exit_drain_active_ ||
+                  (!exit_committed_ && queueLoaded() &&
+                   (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending()))
+            : source_exit_drain_active_ ||
+                  (!exiting_ && (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending ||
+                                 sourceImportActive()));
     const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
     const bool session_needed = session_autosave_ != nullptr && session_autosave_->needsPolling();
     const bool needed = application_needed || preferences_needed || session_needed;

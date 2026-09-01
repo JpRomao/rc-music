@@ -1011,6 +1011,36 @@ if(M0_QT_AUDIO_SUPPORT)
                     ENVIRONMENT
                         "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
                 )
+                add_executable(m0_qt_single_instance_executable_tests
+                    tests/qtest/SingleInstanceExecutableTests.cpp
+                )
+                target_link_libraries(m0_qt_single_instance_executable_tests PRIVATE
+                    m0_qt_shell_bootstrap
+                    Qt6::Network
+                    Qt6::Test
+                )
+                target_compile_features(m0_qt_single_instance_executable_tests PRIVATE cxx_std_20)
+                set_target_properties(m0_qt_single_instance_executable_tests PROPERTIES AUTOMOC ON)
+                if(MSVC)
+                    target_compile_options(m0_qt_single_instance_executable_tests PRIVATE /W4 /WX /permissive-)
+                else()
+                    target_compile_options(m0_qt_single_instance_executable_tests PRIVATE
+                        -Wall -Wextra -Wpedantic -Werror
+                    )
+                endif()
+                add_dependencies(m0_qt_single_instance_executable_tests m0_qt_shell)
+                add_test(NAME m0.qt.single-instance.executable COMMAND m0_qt_single_instance_executable_tests
+                    $<TARGET_FILE:m0_qt_shell>
+                    "${M0_AUDIO_CORPUS_WAV_FILE}"
+                )
+                set_tests_properties(m0.qt.single-instance.executable PROPERTIES
+                    LABELS "m0;qt;audio;single-instance;ipc;FR-004;FR-033;NFR-LIMIT-004;NFR-REL-004"
+                    TIMEOUT 45
+                    ENVIRONMENT_MODIFICATION
+                        "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+                    ENVIRONMENT
+                        "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
+                )
             endif()
             add_test(NAME m0.qt.shell-executable.combined-startup COMMAND m0_qt_shell_executable_smoke_tests
                 $<TARGET_FILE:m0_qt_shell>

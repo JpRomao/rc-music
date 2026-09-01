@@ -39,6 +39,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(!options.smoke_session_crash_before_primary_commit);
         QVERIFY(!options.smoke_session_recovery_repair);
         QVERIFY(!options.smoke_session_defaults_read);
+        QVERIFY(!options.smoke_single_instance_executable);
         QVERIFY(!options.test_config_root.has_value());
         QVERIFY(options.source_paths.isEmpty());
     }
@@ -71,6 +72,18 @@ class ShellLaunchOptionsTests final : public QObject {
                               QDir::cleanPath(absolute)}));
     }
 
+    void rejectsQResourceSourcesBeforeIpc() {
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)resolveShellSourcePaths({QStringLiteral(":/audio/faixa.wav")}, QDir::currentPath()));
+    }
+
+    void rejectsQResourceAsTheInvokingWorkingDirectory() {
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)resolveShellSourcePaths({QStringLiteral("faixa.wav")}, QStringLiteral(":/invoking/cwd")));
+    }
+
     void rejectsAnEmptySourceArgument() {
         const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QString{}});
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
@@ -96,6 +109,53 @@ class ShellLaunchOptionsTests final : public QObject {
     }
 
 #ifdef Q_OS_WIN
+    void resolvesRootedOnlySourcesAgainstTheInvokingDrive() {
+        const QString working_directory = QStringLiteral("D:/invoking/process/cwd");
+
+        QCOMPARE(
+            resolveShellSourcePaths({QStringLiteral(R"(\album\faixa 01.wav)"), QStringLiteral("/Música/faixa 02.wav")},
+                                    working_directory),
+            QStringList({QStringLiteral(R"(D:\album\faixa 01.wav)"), QStringLiteral("D:/Música/faixa 02.wav")}));
+    }
+
+    void resolvesRootedOnlySourcesAgainstTheInvokingUncShare() {
+        const QString working_directory = QStringLiteral(R"(\\servidor\share\invoking\cwd)");
+
+        QCOMPARE(resolveShellSourcePaths({QStringLiteral(R"(\album\faixa.wav)")}, working_directory),
+                 QStringList({QStringLiteral(R"(\\servidor\share\album\faixa.wav)")}));
+    }
+
+    void preservesFullyQualifiedWindowsPathSpelling_data() {
+        QTest::addColumn<QString>("path");
+        QTest::newRow("drive") << QStringLiteral(R"(C:\Música\..\faixa.wav)");
+        QTest::newRow("UNC") << QStringLiteral(R"(\\servidor\Música\..\faixa.wav)");
+        QTest::newRow("UNC with forward separators") << QStringLiteral("//servidor/Música/../faixa.wav");
+        QTest::newRow("extended drive") << QStringLiteral(R"(\\?\C:\Música\..\faixa.wav)");
+        QTest::newRow("extended UNC") << QStringLiteral(R"(\\?\UNC\servidor\Música\..\faixa.wav)");
+    }
+
+    void preservesFullyQualifiedWindowsPathSpelling() {
+        QFETCH(QString, path);
+        QCOMPARE(resolveShellSourcePaths({path}, QStringLiteral("D:/invoking/process/cwd")), QStringList({path}));
+    }
+
+    void rejectsWin32DeviceAndPseudoExtendedSourcesBeforeIpc_data() {
+        QTest::addColumn<QString>("path");
+        QTest::newRow("Win32 physical device") << QStringLiteral(R"(\\.\PhysicalDrive0)");
+        QTest::newRow("Win32 named pipe") << QStringLiteral(R"(\\.\pipe\audio.wav)");
+        QTest::newRow("object manager alias") << QStringLiteral(R"(\\??\C:\audio.wav)");
+        QTest::newRow("forward-slash device namespace") << QStringLiteral("//./pipe/audio.wav");
+        QTest::newRow("forward-slash extended prefix") << QStringLiteral("//?/C:/audio.wav");
+        QTest::newRow("extended drive with slash") << QStringLiteral(R"(\\?\C:/audio.wav)");
+        QTest::newRow("extended UNC with slash") << QStringLiteral(R"(\\?\UNC/servidor/share/audio.wav)");
+    }
+
+    void rejectsWin32DeviceAndPseudoExtendedSourcesBeforeIpc() {
+        QFETCH(QString, path);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 (void)resolveShellSourcePaths({path}, QStringLiteral("D:/invoking/process/cwd")));
+    }
+
     void rejectsAmbiguousDriveRelativePaths() {
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, (void)resolveShellSourcePaths(
                                                             {QStringLiteral("C:relative.mp3")}, QDir::currentPath()));
@@ -226,6 +286,20 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
     }
 
+    void acceptsTheClosedSingleInstanceExecutableHookOnlyForTheCombinedShell() {
+        const QString root = testConfigRoot(QStringLiteral("single instance"));
+        const auto options = parseShellLaunchOptions(
+            {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=single-instance-executable"),
+             QStringLiteral("--m0-test-config-root=") + root, QStringLiteral("--"),
+             QStringLiteral("Música & abertura 日本 (01).wav")});
+
+        QVERIFY(options.smoke_single_instance_executable);
+        QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+        QCOMPARE(options.source_paths, QStringList{QStringLiteral("Música & abertura 日本 (01).wav")});
+        validateShellLaunchOptions(options, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+    }
+
     void acceptsIsolatedConfigForEveryExecutableSmoke_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("error recovery") << QStringList{
@@ -237,6 +311,9 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("combined startup")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=combined-startup"),
                            testConfigArgument(QStringLiteral("isolated combined"))};
+        QTest::newRow("single instance") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                        QStringLiteral("--m0-smoke=single-instance-executable"),
+                                                        testConfigArgument(QStringLiteral("isolated single instance"))};
     }
 
     void acceptsIsolatedConfigForEveryExecutableSmoke() {
@@ -272,6 +349,9 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("session defaults")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-defaults-read"),
                            testConfigArgument(QStringLiteral("temporary defaults"))};
+        QTest::newRow("single instance") << QStringList{
+            QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=single-instance-executable"),
+            testConfigArgument(QStringLiteral("temporary single instance"))};
     }
 
     void rejectsEveryClosedControlInProduction() {
@@ -331,6 +411,8 @@ class ShellLaunchOptionsTests final : public QObject {
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-recovery-repair")};
         QTest::newRow("session defaults without root")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-defaults-read")};
+        QTest::newRow("single instance without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=single-instance-executable")};
         QTest::newRow("root without restart")
             << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
         QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),

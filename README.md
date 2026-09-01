@@ -34,6 +34,12 @@ M4.2 está funcional localmente no candidato Qt/Windows. Preferências agora emi
 
 O fechamento automatizado de M4.2 passou 225/225 no CTest Release combinado e 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44. O alvo Quick passou 1/1 com 100 casos, `all_qmllint` ficou verde e o formato cobriu 112 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, os QML foram comparados à saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Pacote/nativo, DPI e monitores físicos, `CHK-WIN`, `CHK-E2E`, `CHK-CLOSE` e o fechamento global de M4.2 permanecem pendentes.
 
+M4.3 está funcional localmente no candidato Qt/Windows. A primeira instância adquire cedo um lock na raiz de configuração do usuário e abre um `QLocalServer` solicitando `UserAccessOption`; novas invocações resolvem os argumentos no próprio CWD, encaminham somente o comando tipado `openSources` e saem sem inicializar outro backend de áudio. A principal restaura a janela e envia os paths ao mesmo importador limitado da UI. Unicode, espaços, aspas/metacaracteres, CWDs diferentes, paths relativos, rooted-only, drive/UNC/extended e lotes múltiplos têm cobertura automatizada; namespaces Win32 de dispositivo e grafias pseudo-extended são recusados.
+
+O canal rejeita o lote inteiro acima de 1.000 paths ou de 1 MiB de JSON, excluindo o prefixo de frame de quatro bytes. Fila de bootstrap, bytes, conexões ativas, buffers e timeouts possuem tetos; um frame excessivo ou conexão N+1 não derruba a principal. Comandos já confirmados são drenados antes da persistência/saída. Ainda faltam pacote instalado, Explorer/double-click, foreground nativo, ACL entre usuários e fuzz/property do protocolo; por isso M4.3 e `CHK-WIN`/`CHK-E2E`/`CHK-SEC`/`CHK-CLOSE` permanecem abertos globalmente. Nenhum benchmark foi executado.
+
+O fechamento automatizado de M4.3 passou 229/229 no CTest Release combinado. O teste de processo Release instrumentado manteve A em importação, recebeu ACK para B em um path Windows comum acima de 260 caracteres, recusou uma terceira invocação durante a drenagem, persistiu A+B e contou um único backend. `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 122 arquivos C++ e 46 QML; como `qmlformat` 6.11.2 não oferece `--check`, os QML foram comparados à saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes, rejeitou o hook reservado com exit 1 quando executada com o runtime autenticado e manteve `longPathAware=true` no manifesto. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -160,8 +166,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. manter M4.1 e M4.2 formalmente abertos até as jornadas empacotadas/nativas correspondentes, sem apagar a evidência funcional local já verde;
-2. avançar pelo desenvolvimento funcional Windows de M4.3: instância única, CLI/shell e IPC limitado; depois seguir por tray/start behavior, SMTC e recuperação, mantendo cada fechamento pequeno e verificável;
+1. manter M4.1–M4.3 formalmente abertos até as jornadas empacotadas/nativas correspondentes, sem apagar a evidência funcional local já verde;
+2. avançar pelo desenvolvimento funcional Windows de M4.4: tray, comportamento de início/fechamento, menu e saída real; depois seguir por SMTC, associações e recuperação, mantendo cada fechamento pequeno e verificável;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

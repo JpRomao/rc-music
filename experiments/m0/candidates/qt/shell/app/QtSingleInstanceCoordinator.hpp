@@ -11,12 +11,17 @@
 
 namespace music_player::m0 {
 
+namespace detail {
+struct QtSingleInstanceCoordinatorTestAccess;
+}
+
 struct QtSingleInstanceOptions final {
     QString lock_file_path{};
     QString server_name_prefix{};
     qsizetype max_bootstrap_commands{16};
     qsizetype max_bootstrap_payload_bytes{4 * open_sources_max_payload_bytes};
-    std::chrono::milliseconds secondary_retry_timeout{1'500};
+    qsizetype max_active_connections{8};
+    std::chrono::milliseconds secondary_retry_timeout{5'000};
     std::chrono::milliseconds secondary_retry_interval{25};
     std::chrono::milliseconds frame_timeout{2'000};
 };
@@ -52,12 +57,22 @@ class QtSingleInstanceCoordinator final : public QObject {
     [[nodiscard]] qsizetype pendingPayloadBytes() const noexcept;
     [[nodiscard]] std::optional<OpenSourcesCommand> takeNextCommand();
 
+    void setAccepting(bool accepting) noexcept;
     void beginShutdown();
 
   signals:
     void commandAvailable();
 
   private:
+    using ForegroundPermissionTransfer = bool (*)(quint32);
+
+    QtSingleInstanceCoordinator(QtSingleInstanceOptions options, ForegroundPermissionTransfer transfer,
+                                QObject* parent);
+    [[nodiscard]] static bool tryTransferForegroundPermission(qint64 owner_pid,
+                                                              ForegroundPermissionTransfer transfer) noexcept;
+
+    friend struct detail::QtSingleInstanceCoordinatorTestAccess;
+
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -24,6 +24,12 @@ M4.2 está funcional localmente no candidato Qt/Windows. Preferências agora usa
 
 Os checks finais de M4.2 passaram 225/225 no CTest Release combinado, 183/183 num core fresco sem Qt e 1/1 no alvo Quick com 100 casos. `all_qmllint`, formato de 112 C++/46 QML e a composição `BUILD_TESTING=OFF` também ficaram verdes; esta listou zero testes e rejeitou o hook reservado com exit 1 sem criar sua raiz. O QML foi comparado à saída padrão normalizada em LF porque `qmlformat` 6.11.2 não possui `--check`. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
 
+M4.3 está funcional localmente no candidato Qt/Windows. O shell adquire o lock e o `QLocalServer::UserAccessOption` antes de construir preferências, sessão, backend e QML. Secundárias resolvem argumentos/paths contra o próprio CWD, enviam somente `openSources` v1 dentro dos limites e saem após ACK/NACK, sem disputar o dispositivo. A principal ativa a janela e serializa os lotes no importador real. O contrato rejeita o lote inteiro acima de 1.000 paths ou de 1 MiB de JSON, limita fila/bytes/conexões/buffers/timeouts e drena comandos já ACKados antes de persistir e sair. Paths relativos, rooted-only, drive/UNC/extended canônico, Unicode e CWDs diferentes têm cobertura; formas ambíguas, recursos Qt, NUL, namespaces Win32 de dispositivo e grafias pseudo-extended são recusados.
+
+Essa prova ainda é Release instrumentada/local. Explorer/associação instalada, quoting nativo, foreground efetivo, ACL entre usuários, fuzz/property do protocolo e pacote continuam pendentes; logo `CHK-WIN`, `CHK-E2E`, `CHK-SEC`, `CHK-CLOSE` e o fechamento global de M4.3 permanecem abertos. Nenhum benchmark foi executado. O desenvolvimento funcional seguinte é M4.4.
+
+Os checks finais de M4.3 passaram 229/229 no CTest Release combinado. O teste de processo Release instrumentado confirmou dois comandos ACKados — B em path Windows comum acima de 260 caracteres —, NACK para novo ingresso durante a drenagem, A+B persistidos e backend único. `m0_qt_shell_ui_qmllint`, formato de 122 C++/46 QML e validação documental ficaram verdes. O build `BUILD_TESTING=OFF` foi recompilado, listou zero testes, rejeitou o hook reservado com exit 1 usando o runtime autenticado e reteve `longPathAware=true` no manifesto. A conferência QML comparou a saída normalizada, pois `qmlformat` 6.11.2 não possui `--check`.
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -117,6 +123,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
 - “a recuperação de sessão está concluída”: `restoreLastSession` já controla a leitura e a restauração local de fila/item/posição sempre pausada no candidato Qt/Windows, inclusive nos cenários destrutivos descritos acima; `startMinimized` ainda não tem efeito integrado, e a jornada empacotada/nativa de M4.1 continua pendente. FR-042/FR-043/FR-044 não estão integralmente concluídos;
+- “a instância única está concluída no Windows”: M4.3 já possui lock na raiz de configuração do usuário, `QLocalServer::UserAccessOption`, argumentos nativos, IPC `openSources` limitado, uma única inicialização do backend e drenagem de comandos ACKados no executável Release instrumentado; associação instalada/double-click pelo Explorer, foreground real, quoting do shell, ACL entre usuários, fuzz/property e o pacote nativo ainda não foram aprovados;
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “a bandeja está validada no Windows”: menu, avisos, fallback e saída passaram em testes offscreen, mas isso não comprova ícone/Explorer reais, ativação nativa, NVDA ou Linux;
 - “o pacote está validado em máquina sem SDK ou pronto para distribuir”: inventário, imports PE e smokes offscreen original/relocado passaram sem paths Qt do SDK no ambiente filho, mas isso não remove o SDK do host nem resolve CRT externo, licenças, segurança ou ambiente limpo;
@@ -149,8 +156,8 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. manter M4.1 formalmente aberta até as jornadas empacotadas/nativas correspondentes, registrando que restart, kill, corrupção, replace/retry, defaults e lock multiprocesso já possuem prova local;
-2. avançar para M4.3 como próximo desenvolvimento funcional Windows, cobrindo instância única, CLI/shell e IPC limitado, enquanto pacote/nativo e `CHK-WIN`/`CHK-E2E`/`CHK-CLOSE` de M4.2 permanecem pendentes;
+1. manter M4.1–M4.3 formalmente abertas até as jornadas empacotadas/nativas correspondentes, registrando separadamente a evidência funcional local já verde;
+2. avançar para M4.4 como próximo desenvolvimento funcional Windows, cobrindo tray, comportamento de início/fechamento, menu e saída real, enquanto pacote/nativo e `CHK-WIN`/`CHK-E2E`/`CHK-SEC`/`CHK-CLOSE` anteriores permanecem pendentes;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.

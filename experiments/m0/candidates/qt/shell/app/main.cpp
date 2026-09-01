@@ -1,3 +1,6 @@
+#include "OpenSourcesCommand.hpp"
+#include "OpenSourcesDispatcher.hpp"
+#include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #ifdef Q_OS_WIN
@@ -28,10 +31,12 @@
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 #include "m0/domain/LocalAudioFilePolicy.hpp"
 
-#include <QFileDialog>
-#ifdef M0_QT_SHELL_TEST_HOOKS
 #include <QDir>
+#include <QFileDialog>
+#include <QMessageBox>
+#ifdef M0_QT_SHELL_TEST_HOOKS
 #include <QFile>
+#include <QFileInfo>
 #include <QSemaphore>
 #endif
 #endif
@@ -58,6 +63,7 @@
 #include <QWindow>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -65,6 +71,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -75,6 +82,7 @@ using music_player::m0::ShellUiContract;
 using music_player::m0::experiment::InitialShellScenario;
 using music_player::m0::experiment::parseShellLaunchOptions;
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
+using music_player::m0::experiment::resolveShellSourcePaths;
 using music_player::m0::experiment::validateShellLaunchOptions;
 
 namespace {
@@ -119,6 +127,32 @@ applyRestoredWindowPlacement(QWindow& window, const std::optional<music_player::
         patterns.append(QStringLiteral("*") + suffix.toUpper());
     }
     return music_player::m0::ApplicationText::localAudioDialogFilter(patterns);
+}
+
+[[nodiscard]] std::vector<std::filesystem::path> nativeSourcePaths(const QStringList& paths) {
+    std::vector<std::filesystem::path> native_paths;
+    native_paths.reserve(static_cast<std::size_t>(paths.size()));
+    for (const QString& path : paths) {
+#ifdef Q_OS_WIN
+        native_paths.emplace_back(path.toStdWString());
+#else
+        const QByteArray utf8 = path.toUtf8();
+        native_paths.emplace_back(std::string{utf8.constData(), static_cast<std::size_t>(utf8.size())});
+#endif
+    }
+    return native_paths;
+}
+
+[[nodiscard]] int reportSingleInstanceFailure(const music_player::m0::QtSingleInstanceStartResult& result,
+                                              const bool suppress_dialog) {
+    qCritical().noquote() << "Unable to forward shell sources:" << result.detail;
+    if (!suppress_dialog) {
+        QMessageBox::critical(
+            nullptr, music_player::m0::ApplicationText::openSourcesFailureTitle(),
+            music_player::m0::ApplicationText::openSourcesFailureMessage(
+                result.detail, result.outcome == music_player::m0::QtSingleInstanceOutcome::TimedOut));
+    }
+    return result.outcome == music_player::m0::QtSingleInstanceOutcome::Rejected ? 2 : 1;
 }
 #endif
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -214,12 +248,42 @@ int main(int argc, char* argv[]) {
                                    false
 #endif
         );
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(M0_QT_COMBINED_AUDIO)
         QString config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
 #ifdef M0_QT_SHELL_TEST_HOOKS
         if (options.test_config_root.has_value())
             config_root = *options.test_config_root;
 #endif
+#endif
+#ifdef M0_QT_COMBINED_AUDIO
+        const music_player::m0::OpenSourcesCommand initial_sources{
+            .paths = resolveShellSourcePaths(options.source_paths, QDir::currentPath()),
+        };
+        music_player::m0::QtSingleInstanceCoordinator single_instance{music_player::m0::QtSingleInstanceOptions{
+            .lock_file_path = QDir{config_root}.filePath(QStringLiteral("single-instance.lock")),
+            .server_name_prefix = QStringLiteral("music-player.open-sources.v1"),
+        }};
+        const auto single_instance_result = single_instance.start(initial_sources);
+        if (single_instance_result.outcome == music_player::m0::QtSingleInstanceOutcome::Forwarded) {
+#ifdef M0_QT_SHELL_TEST_HOOKS
+            if (options.smoke_single_instance_executable) {
+                std::fputs("M0_SINGLE_INSTANCE_FORWARDED\n", stdout);
+                std::fflush(stdout);
+            }
+#endif
+            return 0;
+        }
+        if (single_instance_result.outcome != music_player::m0::QtSingleInstanceOutcome::Primary) {
+            return reportSingleInstanceFailure(single_instance_result,
+#ifdef M0_QT_SHELL_TEST_HOOKS
+                                               options.smoke_single_instance_executable
+#else
+                                               false
+#endif
+            );
+        }
+#endif
+#ifdef Q_OS_WIN
         music_player::m0::QtJsonWindowsPreferencesStore preferences_store(config_root);
         const music_player::m0::PreferencesLoadResult loaded_preferences = preferences_store.load();
         music_player::m0::SingleWorkerPreferencesWriter preferences_writer(preferences_store);
@@ -229,6 +293,10 @@ int main(int argc, char* argv[]) {
             .load_status = loaded_preferences.status,
             .autosave = &preferences_autosave,
         };
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        if (options.smoke_single_instance_executable)
+            presenter_preferences.exit_flush_timeout = std::chrono::seconds{10};
+#endif
 #ifdef M0_QT_COMBINED_AUDIO
 #ifdef M0_QT_SHELL_TEST_HOOKS
         QSemaphore session_crash_barrier;
@@ -272,7 +340,7 @@ int main(int argc, char* argv[]) {
         if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
             options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
             options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
-            options.smoke_session_defaults_read)
+            options.smoke_session_defaults_read || options.smoke_single_instance_executable)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(
@@ -285,6 +353,12 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        if (options.smoke_single_instance_executable) {
+            std::fputs("M0_SINGLE_INSTANCE_BACKEND_READY\n", stdout);
+            std::fflush(stdout);
+        }
+#endif
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
         PlayerPresenter::AudioFilePicker audio_file_picker = [&contract] {
@@ -309,6 +383,80 @@ int main(int argc, char* argv[]) {
                                   nullptr
 #endif
         );
+        bool shell_platform_ready = false;
+        bool source_activation_pending = false;
+        bool source_import_was_active = presenter.sourceImportActive();
+        bool single_instance_stopped = false;
+        music_player::m0::OpenSourcesDispatcher source_dispatcher{
+            [&] {
+                if (!shell_platform_ready) {
+                    source_activation_pending = true;
+                    return true;
+                }
+                return presenter.requestRestore();
+            },
+            [&] { return presenter.sourceImportActive(); },
+            [&](const QStringList& paths) {
+                QAbstractItemModel* const queue_model = presenter.queueModelObject();
+                if (queue_model == nullptr || queue_model->rowCount() < 0)
+                    return false;
+                return presenter.openSourcePaths(nativeSourcePaths(paths),
+                                                 static_cast<std::size_t>(queue_model->rowCount()));
+            }};
+        std::optional<music_player::m0::OpenSourcesCommand> retained_source_command;
+        std::function<void()> pump_source_commands;
+        QObject source_ipc_context;
+        pump_source_commands = [&] {
+            if (single_instance_stopped)
+                return;
+            if (retained_source_command.has_value()) {
+                if (!source_dispatcher.enqueue(*retained_source_command))
+                    return;
+                retained_source_command.reset();
+            }
+            while (auto command = single_instance.takeNextCommand()) {
+                if (!source_dispatcher.enqueue(*command)) {
+                    retained_source_command = std::move(*command);
+                    return;
+                }
+            }
+        };
+        presenter.setSourceExitDrainedProbe([&] {
+            return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
+                   source_dispatcher.hasDrainedAcceptedWork();
+        });
+        QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
+                         &source_ipc_context, pump_source_commands, Qt::DirectConnection);
+        QObject::connect(&presenter, &PlayerPresenter::sourceImportChanged, &source_ipc_context, [&] {
+            const bool source_import_active = presenter.sourceImportActive();
+            const bool source_import_completed = source_import_was_active && !source_import_active;
+            source_import_was_active = source_import_active;
+            if (!source_import_completed)
+                return;
+            source_dispatcher.importerStateChanged();
+            pump_source_commands();
+        });
+        const std::function<void()> stop_single_instance = [&] {
+            if (single_instance_stopped)
+                return;
+            single_instance_stopped = true;
+            single_instance.beginShutdown();
+            source_dispatcher.stopAccepting();
+        };
+        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &source_ipc_context, [&] {
+            if (presenter.exitCommitted()) {
+                stop_single_instance();
+            } else if (presenter.exiting()) {
+                single_instance.setAccepting(false);
+                pump_source_commands();
+            } else {
+                single_instance.setAccepting(true);
+                source_dispatcher.retryPending();
+                pump_source_commands();
+            }
+        });
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, &source_ipc_context, stop_single_instance);
+        pump_source_commands();
 #else
 #ifdef Q_OS_WIN
         PlayerPresenter presenter(bundle, platform, std::move(presenter_preferences));
@@ -373,6 +521,11 @@ int main(int argc, char* argv[]) {
         music_player::m0::bindShellPlatform(presenter, platform, *window);
         if (!window->setProperty("startupReady", true))
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
+#ifdef M0_QT_COMBINED_AUDIO
+        shell_platform_ready = true;
+        if (std::exchange(source_activation_pending, false) && !presenter.requestRestore())
+            throw std::runtime_error{"the shell could not activate for its initial source command"};
+#endif
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_completed = false;
         bool combined_startup_smoke_completed = false;
@@ -381,13 +534,114 @@ int main(int argc, char* argv[]) {
         bool session_restart_completed = false;
         bool session_recovery_completed = false;
         bool session_defaults_completed = false;
+        bool single_instance_completed = false;
+        int single_instance_command_count = 0;
         bool session_crash_clear_requested = false;
         int session_recovery_phase = 0;
         QTimer session_restart_timer;
         QTimer session_recovery_timer;
         QTimer session_crash_timer;
+        QTimer single_instance_resume_timer;
 #endif
         QTimer preferences_restart_timer;
+#ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_single_instance_executable) {
+            QTimer* const presenter_timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+            if (presenter_timer == nullptr)
+                throw std::runtime_error{"the single-instance smoke could not find the presenter timer"};
+            const QString resume_barrier = QDir{config_root}.filePath(QStringLiteral("single-instance-resume-drain"));
+            single_instance_resume_timer.setInterval(10);
+            QObject::connect(&single_instance_resume_timer, &QTimer::timeout, &application,
+                             [&application, &presenter, presenter_timer, resume_barrier, &single_instance_command_count,
+                              &single_instance_resume_timer] {
+                                 if (single_instance_command_count != 2 || !QFileInfo::exists(resume_barrier))
+                                     return;
+                                 single_instance_resume_timer.stop();
+                                 if (!presenter.exiting() || presenter.exitCommitted()) {
+                                     qCritical()
+                                         << "The single-instance smoke lost its reversible exit before drain resume";
+                                     application.exit(2);
+                                     return;
+                                 }
+                                 presenter_timer->start();
+                             });
+            single_instance_resume_timer.start();
+            QObject::connect(
+                &single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable, &application,
+                [&application, &presenter, &source_dispatcher, presenter_timer, &single_instance_command_count] {
+                    ++single_instance_command_count;
+                    if (single_instance_command_count == 1) {
+                        if (!presenter.sourceImportActive() || source_dispatcher.pendingCommandCount() != 0) {
+                            qCritical() << "The single-instance smoke could not hold its first active import";
+                            application.exit(2);
+                            return;
+                        }
+                        presenter_timer->stop();
+                        std::fputs("M0_SINGLE_INSTANCE_IMPORT_HELD 1\n", stdout);
+                        std::fflush(stdout);
+                        return;
+                    }
+                    if (single_instance_command_count == 2) {
+                        const bool second_queued =
+                            presenter.sourceImportActive() && source_dispatcher.pendingCommandCount() == 1;
+                        const bool exit_requested = second_queued && presenter.requestExit();
+                        if (!exit_requested || !presenter.exiting() || presenter.exitCommitted()) {
+                            qCritical() << "The single-instance smoke did not enter reversible source draining"
+                                        << "secondQueued" << second_queued << "exitRequested" << exit_requested;
+                            application.exit(2);
+                            return;
+                        }
+                        presenter_timer->stop();
+                        std::fputs("M0_SINGLE_INSTANCE_EXIT_DRAINING 2\n", stdout);
+                        std::fflush(stdout);
+                        return;
+                    }
+                    qCritical() << "The single-instance smoke accepted a command after the exit intent";
+                    application.exit(2);
+                },
+                Qt::DirectConnection);
+            QObject::connect(
+                &presenter, &PlayerPresenter::sourceImportChanged, &application,
+                [&application, window, &presenter, &single_instance_completed, &single_instance_command_count] {
+                    if (presenter.sourceImportActive() || single_instance_completed)
+                        return;
+                    QAbstractItemModel* const queue_model = presenter.queueModelObject();
+                    const QFileInfo source_info{presenter.detailsFilePath()};
+                    const bool restored = window->isVisible() && !(window->windowStates() & Qt::WindowMinimized);
+                    const bool imported =
+                        single_instance_command_count == 2 && presenter.exiting() && !presenter.exitCommitted() &&
+                        queue_model != nullptr && queue_model->rowCount() == 2 &&
+                        presenter.sourceImportAcceptedCount() == 1 && presenter.sourceImportIssueCount() == 0 &&
+                        presenter.hasDetailsFilePath() && source_info.isAbsolute() && source_info.exists() &&
+                        source_info.fileName() == QStringLiteral("A ativa & abertura; 日本 (01) 'tema'.wav");
+                    if (!restored || !imported) {
+                        qCritical() << "The primary shell did not drain both forwarded sources"
+                                    << "restored" << restored << "imported" << imported;
+                        application.exit(2);
+                        return;
+                    }
+                    single_instance_completed = true;
+                    std::fputs("M0_SINGLE_INSTANCE_COMPLETED\n", stdout);
+                    std::fflush(stdout);
+                });
+            if (!presenter.requestHide())
+                throw std::runtime_error{"the single-instance smoke could not hide its primary window"};
+            QCoreApplication::processEvents();
+            if (window->isVisible() && !(window->windowStates() & Qt::WindowMinimized))
+                throw std::runtime_error{"the single-instance smoke primary remained active before forwarding"};
+            const QByteArray endpoint = single_instance.serverName().toUtf8();
+            if (endpoint.isEmpty())
+                throw std::runtime_error{"the single-instance smoke primary has no IPC endpoint"};
+            std::fprintf(stdout, "M0_SINGLE_INSTANCE_READY %s\n", endpoint.constData());
+            std::fflush(stdout);
+            QTimer::singleShot(15'000, &application, [&application, &single_instance_completed] {
+                if (!single_instance_completed) {
+                    qCritical() << "The single-instance executable smoke did not complete before its watchdog";
+                    application.exit(2);
+                }
+            });
+        }
+#endif
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -613,6 +867,9 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
         const int result = application.exec();
+#ifdef M0_QT_COMBINED_AUDIO
+        stop_single_instance();
+#endif
 #ifdef M0_QT_SHELL_TEST_HOOKS
         if (options.smoke_tray_lifecycle &&
             (result != 0 || !tray_smoke_completed || !presenter.exiting() || window->isVisible())) {
@@ -634,6 +891,11 @@ int main(int argc, char* argv[]) {
             return 2;
         }
 #ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_single_instance_executable &&
+            (result != 0 || !single_instance_completed || !presenter.exitCommitted())) {
+            qCritical() << "The single-instance executable smoke did not complete its graceful exit";
+            return 2;
+        }
         if (options.smoke_session_restart_read && (result != 0 || !session_restart_completed || !presenter.exiting())) {
             qCritical() << "The session restart smoke did not complete";
             return 2;

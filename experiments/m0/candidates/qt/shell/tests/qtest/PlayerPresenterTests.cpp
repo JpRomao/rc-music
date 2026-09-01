@@ -407,6 +407,9 @@ class PlayerPresenterTests final : public QObject {
     void sourceImportDoesNotArmAutoplayAfterItsInitialTrackIsRemoved();
     void sourceImportIssuesBetweenBatchesDoNotCancelValidFiles();
     void cancellingSourceImportKeepsConsumedBatchesAndDiscardsLateOnes();
+    void exitDrainsActiveAndAcceptedSourceImportsBeforeCommit();
+    void exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDrained();
+    void sourceDrainTimeoutCancelsExitWithoutDiscardingAcceptedWork();
     void rejectedQueuePlaybackTransitionsLeaveTheQueueAtomic();
     void transientNavigationRejectionKeepsTheTargetAvailable();
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
@@ -1093,6 +1096,118 @@ void PlayerPresenterTests::typedSourceImportRejectsBusyWithoutMutatingTheActiveB
     PlayerPresenterTestAccess::pollSourceImport(presenter);
     QCOMPARE(queueFileNames(*model), QStringList({displayPath(first.filename())}));
     QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{first});
+}
+
+void PlayerPresenterTests::exitDrainsActiveAndAcceptedSourceImportsBeforeCommit() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto first = localTestPath(u8"Primeira ACK.wav");
+    const auto second = localTestPath(u8"Segunda ACK 日本 & 'tema'.flac");
+    bool accepted_work_drained = false;
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    presenter.setSourceExitDrainedProbe([&] { return accepted_work_drained; });
+
+    QVERIFY(presenter.openSourcePaths({first}, 0));
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(discovery.cancelled_generations.empty());
+
+    // Activation requests from commands ACKed before the exit intent are harmless
+    // while the window remains unavailable to new user interaction.
+    QVERIFY(presenter.requestRestore());
+    QCOMPARE(platform.restore_calls, 0);
+
+    const DiscoveryGeneration first_generation = discovery.requests.front().generation;
+    discovery.publishBatch(first_generation, 1, {first}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*presenter.queueModelObject()), QStringList({displayPath(first.filename())}));
+    QCOMPARE(platform.exit_calls, 0);
+
+    QVERIFY(presenter.openSourcePaths({second}, 1));
+    QCOMPARE(discovery.requests.size(), std::size_t{2});
+    const DiscoveryGeneration second_generation = discovery.requests.back().generation;
+    discovery.publishBatch(second_generation, 1, {second}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(queueFileNames(*presenter.queueModelObject()),
+             QStringList({displayPath(first.filename()), displayPath(second.filename())}));
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(discovery.cancelled_generations.empty());
+
+    accepted_work_drained = true;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 1);
+    QVERIFY(discovery.cancelled_generations.empty());
+}
+
+void PlayerPresenterTests::sourceDrainTimeoutCancelsExitWithoutDiscardingAcceptedWork() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    bool accepted_work_drained = false;
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Loaded,
+                                                         .autosave = &autosave,
+                                                         .exit_flush_timeout = std::chrono::milliseconds{100},
+                                                         .now = [&clock] { return clock.now(); }});
+    presenter.setSourceExitDrainedProbe([&] { return accepted_work_drained; });
+    QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(lifecycle.size(), 1);
+
+    clock.advance(std::chrono::milliseconds{100});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QVERIFY(!accepted_work_drained);
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(platform.restore_calls, 1);
+    QCOMPARE(lifecycle.size(), 2);
+
+    accepted_work_drained = true;
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDrained() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto source = localTestPath(u8"Importação local em andamento.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    presenter.setSourceExitDrainedProbe([] { return true; });
+
+    QVERIFY(presenter.importDroppedUrls({QUrl::fromLocalFile(displayPath(source))}, 0));
+    QVERIFY(presenter.sourceImportActive());
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(discovery.cancelled_generations, std::vector<DiscoveryGeneration>{generation});
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Cancelled);
 }
 
 void PlayerPresenterTests::droppedSourceImportValidatesBoundaryAndKeepsStableAnchor() {
