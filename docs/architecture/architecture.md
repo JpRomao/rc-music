@@ -2,7 +2,7 @@
 
 **Estado:** proposta de referência; candidatos condicionados ao M0 e a ADR explícito
 **Stacks de experimento:** C++20 + Qt 6 Quick/QML (hipótese principal) e Rust + Tauri 2 + Svelte (desafiante A/B)
-**Última revisão:** 2026-08-23
+**Última revisão:** 2026-09-01
 
 As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities são independentes da stack. Os mapeamentos Qt e Tauri deste documento são projeções experimentais dessas mesmas fronteiras para o M0, conforme NFR-STACK-001–006; nenhum deles representa uma stack aceita antes das medições e de ADR explícito.
 
@@ -367,7 +367,7 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 }
 ```
 
-O schema acima está materializado no adapter experimental Windows. O codec, a porta e o store Windows de sessão separados são descritos abaixo; writer/autosave, restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
+O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows e a coordenação assíncrona de sessão dos recortes de M4.1 são descritos abaixo; restauração de fila/item/posição no presenter/bootstrap e o efeito de iniciar minimizado continuam pendentes em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
 
 O schema v1 separado da sessão é:
 
@@ -389,7 +389,7 @@ O schema v1 separado da sessão é:
 
 `queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths Unicode são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras são toleradas, mas todas as chaves v1 são obrigatórias.
 
-`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. A porta, o codec v1 e o store Windows estão materializados no candidato Qt; writer/autosave e composição no bootstrap continuam pendentes em M4.1.
+`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. Os três primeiros recortes de M4.1 materializaram snapshot/hidratação, porta/codec v1 e store Windows; o quarto acrescenta writer/autosave no core C++ puro. O presenter e o bootstrap ainda não carregam, observam, salvam nem restauram essa sessão.
 
 Gravação:
 
@@ -402,6 +402,16 @@ Gravação:
 O adapter Windows usa `session.json` e um único `session.json.bak` na raiz absoluta de configuração. `QSaveFile` grava no mesmo diretório com fallback direto desabilitado, e um `QLockFile` cooperativo envolve inspeção, rotação e commits; contenção falha imediatamente. A leitura nunca repara nem regrava. Sua precedência é: primário futuro, primário válido, backup futuro, backup válido, ambos ausentes e, por fim, defaults para arquivos inválidos ou ilegíveis. No save, arquivo ilegível falha fechado antes de qualquer tentativa de escrita, e qualquer versão futura bloqueia a operação sem confirmação explícita.
 
 Na rotação comum, os bytes exatos do primário válido anterior são commitados no backup antes do novo primário. Quando o backup é futuro e a substituição foi confirmada, ele permanece intacto até o novo primário ser commitado; só então recebe os bytes exatos do primário anterior ou, quando este não era válido, o novo documento. `Failed` pode representar falha antes ou depois de um commit e não garante disco inalterado; o writer deve reconciliar por `load()` e manter a autorização explícita nos retries correspondentes. O lock cobre writers cooperativos, mas o teste atual não substitui uma prova multiprocesso completa. Fault injection e handles Windows cobrem checkpoints e falhas de sharing/replace, não kill, crash ou perda de energia.
+
+O `SingleWorkerSessionWriter` possui uma única thread e mantém `save()` e a eventual reconciliação fora do caller. Cada `SessionRevision` identifica de forma indivisível o par snapshot + autorização `replace_future_version`; a mesma revisão não pode representar outro conteúdo ou outra autorização. Há no máximo uma gravação ativa, e `flush()` pode deixar somente a revisão solicitada mais recente atrás dela. A completion devolvida por `flush()` é consumida nesse caminho e não pode reaparecer em `poll()`.
+
+Se `save()` retornar `Failed` ou lançar, o mesmo worker executa `load()` sem promover a operação a sucesso. O readback tri-state registra `true` apenas para `Loaded`/`RecoveredFromBackup` exatamente igual ao snapshot solicitado, `false` para resultado observado divergente ou status não recuperável e ausência de valor quando o próprio `load()` lança. `Saved` e `BlockedByFutureVersion` não reconciliam. Mesmo com readback `true`, o status permanece `Failed`, a sessão continua suja e a autorização de substituição permanece nos retries até um `Saved`, pois um primário legível ainda pode ocultar backup ou limpeza incompletos.
+
+Chamadas concorrentes de `shutdown()` são serializadas, drenam uma gravação já aceita e fazem join uma única vez de forma idempotente. Esse join continua sem deadline: se o store síncrono não retornar, o encerramento pode permanecer bloqueado e a futura composição visual não pode tratá-lo como operação limitada por tempo.
+
+O `SessionAutosave` mantém deadlines independentes e escolhe sempre o mais próximo. Mudanças estruturais usam debounce trailing de 500 ms, limitado a 5 s desde a primeira mudança estrutural ainda não aceita. Posição confirmada altera somente o escalar `position_ms` em O(1); o primeiro tick arma um checkpoint fixo de 10 s e ticks posteriores não o adiam. Preview de seek, interpolação visual e ticks não confirmados pelo backend nunca alimentam o snapshot persistido.
+
+`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na futura integração com presenter/bootstrap, seek confirmado, pausa, parada/fim, erro terminal e fronteiras de lifecycle como suspensão ou saída devem usar esses gatilhos somente depois de obter a posição confirmada. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
 
 Salvar por debounce após mudanças importantes e no shutdown. A fila preserva paths ausentes como itens indisponíveis para que o usuário possa localizar ou remover. SQLite só entra com biblioteca indexada e busca que comprovem necessidade.
 

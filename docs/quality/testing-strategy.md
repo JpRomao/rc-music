@@ -1,7 +1,7 @@
 # Estratégia de testes e TDD
 
 **Estado:** contrato de qualidade inicial  
-**Última revisão:** 2026-08-23  
+**Última revisão:** 2026-09-01
 **Escopo:** domínio, aplicação, adapters, UI, plataforma e distribuição
 
 ## 1. Objetivo
@@ -197,6 +197,23 @@ Em C++/Qt, `FakePlaybackBackend` e o adapter Qt Multimedia/FFmpeg precisam satis
 - falha antes/depois do replace;
 - backup e retenção limitada;
 - paths Unicode.
+
+### `SessionWriter` e `SessionAutosave`
+
+O quarto recorte de M4.1 é testado no core C++ puro com store controlado e `ManualClock`, sem Qt, filesystem real, sleeps ou relógio de parede:
+
+- provar que um único worker executa `save()` e a reconciliação fora do caller, serializa requests e devolve `Busy` enquanto há trabalho ativo;
+- tratar a revisão como identidade do par snapshot + autorização de substituição, incluindo forwarding e retenção da autorização até `Saved`;
+- após `Failed` retornado ou exceção de `save()`, cobrir readback exato de primário/backup (`true`), divergência ou status não recuperável (`false`) e exceção do próprio `load()` (sem valor), sempre preservando `Failed`; `Saved` e bloqueio futuro não chamam `load()`;
+- cobrir flush atrás de revisão ativa, retry da mesma revisão falha, reutilização apenas de sucesso e consumo causal da completion devolvida, que não pode reaparecer em `poll()`;
+- coordenar dois callers concorrentes de `shutdown()` contra uma gravação aceita e provar uma única drenagem/completion, join idempotente e rejeição tipada de trabalho posterior. O teste usa barreiras/CVs controladas; não alega deadline, pois o join real permanece ilimitado se o store não retornar;
+- verificar o estado imediatamente anterior e o disparo exato do debounce de 500 ms e do teto de 5 s, sem deixar uma revisão aceita herdar o deadline do burst anterior;
+- verificar que a posição confirmada altera somente o escalar preservando a fila, que o primeiro tick fixa o checkpoint de 10 s e que ticks contínuos não o postergam;
+- exercitar deadlines estrutural, posicional e imediato de forma independente, sempre disparando pelo mais próximo, além de `checkpointConfirmedPosition()`, repair, save-now e flush;
+- rejeitar posição negativa ou positiva sem ocorrência atual e nunca usar preview/interpolação como posição confirmada. Seek confirmado, pausa, parada/fim, erro terminal, suspensão e saída pertencem a testes futuros da composição;
+- após falha ou versão futura, provar suspensão do rearm automático mesmo com novas mudanças, dirty preservado, completion antiga incapaz de limpar a revisão atual e retomada somente por retry/substituição/save-now/flush explícitos.
+
+Esses testes não comprovam restauração sempre pausada, wiring do timer, eventos reais de playback/lifecycle, saída visual nem reinício/crash do executável: presenter e bootstrap ainda não integram `SessionWriter`/`SessionAutosave`, e essas provas permanecem em M4.1.
 
 ### `MetadataReader`
 

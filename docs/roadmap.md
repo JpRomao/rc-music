@@ -1,7 +1,7 @@
 # Roadmap
 
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  
-**Última revisão:** 2026-08-31
+**Última revisão:** 2026-09-01
 
 ## 1. Como ler
 
@@ -256,10 +256,12 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ## 8. M4 — Desktop, sessão e recuperação
 
-**Estado:** Em andamento no candidato C++/Qt/Windows; snapshot, porta, codec v1 e store Windows atômico de M4.1 estão verdes, sem ainda concluir autosave, integração ou restauração.
+**Estado:** Em andamento no candidato C++/Qt/Windows; snapshot, porta, codec v1, store Windows atômico e writer/autosave do core de M4.1 estão verdes, sem ainda concluir bootstrap, integração, restauração ou E2E.
 **Objetivo:** tornar o player um cidadão confiável do Windows e suportável no Linux.
 
-O primeiro recorte de M4.1 adiciona snapshot validado de fila, ocorrência atual e posição, com restauração transacional que preserva IDs/duplicatas e revalida disponibilidade em runtime. O recorte seguinte materializa `SessionStore` separado e o codec JSON v1 com inteiros exatos, paths Unicode, versão futura e limite de 16 MiB. O terceiro implementa `session.json`/`.bak` no Windows com replace atômico, lock cooperativo, recuperação sem reescrita, backup byte a byte, falha fechada para arquivos ilegíveis e substituição futura somente explícita. Writer/autosave, bootstrap sempre pausado e E2E de corrupção/restart/kill permanecem pendentes; o lock ainda carece de prova multiprocesso. Linux, A/B e benchmarks seguem adiados até a paridade funcional Windows.
+O primeiro recorte de M4.1 adiciona snapshot validado de fila, ocorrência atual e posição, com restauração transacional que preserva IDs/duplicatas e revalida disponibilidade em runtime. O recorte seguinte materializa `SessionStore` separado e o codec JSON v1 com inteiros exatos, paths Unicode, versão futura e limite de 16 MiB. O terceiro implementa `session.json`/`.bak` no Windows com replace atômico, lock cooperativo, recuperação sem reescrita, backup byte a byte, falha fechada para arquivos ilegíveis e substituição futura somente explícita.
+
+O quarto recorte permanece no core C++ puro: um único worker usa o store fora do caller, limita trabalho a ativo/pendente e oferece `flush()` e shutdown concorrente seguro, embora sem deadline caso o store não retorne. Um `Failed` é reconciliado por readback tri-state sem virar `Saved`. O autosave combina debounce estrutural trailing de 500 ms limitado a 5 s com checkpoint de posição O(1) fixo em 10 s; os deadlines independentes evitam starvation, e ticks seguintes não empurram o checkpoint. Falha e versão futura bloqueada suspendem automação até ação explícita; autorização futura recebe nova revisão e é preservada em falhas. O Red de 22 símbolos e as regressões de completion/revisão antecederam o Green. O fechamento passou 169/169 no core, 210/210 no combinado, formato de 107 C++, composição sem testes com zero/argumento reservado rejeitado, nenhum QML alterado e nenhum benchmark. Bootstrap, restauração sempre pausada, integração dos checkpoints urgentes de pausa/seek/evento terminal e E2E de corrupção/restart/kill permanecem pendentes; o executável ainda não salva nem restaura sessão, e o lock carece de prova multiprocesso. FR-043/FR-044, NFR-REL-003 e M4.1 continuam abertos. Linux, A/B e benchmarks seguem adiados até a paridade funcional Windows.
 
 ### Escopo Windows
 

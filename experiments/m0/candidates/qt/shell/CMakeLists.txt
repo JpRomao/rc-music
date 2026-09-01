@@ -997,9 +997,11 @@ add_library(m0_qt_core STATIC
     src/adapters/SingleWorkerLocalSourceDiscovery.cpp
     src/adapters/SingleWorkerMetadataReader.cpp
     src/adapters/SingleWorkerPreferencesWriter.cpp
+    src/adapters/SingleWorkerSessionWriter.cpp
     src/application/LocalTrackSession.cpp
     src/application/PlayerController.cpp
     src/application/PreferencesAutosave.cpp
+    src/application/SessionAutosave.cpp
     src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
@@ -1026,10 +1028,12 @@ if(BUILD_TESTING)
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/PreferencesAutosaveTests.cpp
         tests/catch2/QueueNavigationTests.cpp
+        tests/catch2/SessionAutosaveTests.cpp
         tests/catch2/SessionStorePortTests.cpp
         tests/catch2/SessionSnapshotTests.cpp
         tests/catch2/SingleWorkerMetadataReaderTests.cpp
         tests/catch2/SingleWorkerPreferencesWriterTests.cpp
+        tests/catch2/SingleWorkerSessionWriterTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
     target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)
