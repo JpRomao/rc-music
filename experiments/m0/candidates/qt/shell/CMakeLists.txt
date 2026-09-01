@@ -99,6 +99,7 @@ if(M0_QT_SHELL_SUPPORT)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS
         Core
         Gui
+        Network
         Qml
         Quick
         QuickControls2
@@ -318,12 +319,17 @@ if(M0_QT_SHELL_SUPPORT)
     add_library(m0_qt_shell_bootstrap STATIC
         app/OpenSourcesCommand.hpp
         app/OpenSourcesCommand.cpp
+        app/OpenSourcesDispatcher.hpp
+        app/OpenSourcesDispatcher.cpp
+        app/QtSingleInstanceCoordinator.hpp
+        app/QtSingleInstanceCoordinator.cpp
         app/ShellLaunchOptions.hpp
         app/ShellLaunchOptions.cpp
     )
     target_include_directories(m0_qt_shell_bootstrap PUBLIC app)
-    target_link_libraries(m0_qt_shell_bootstrap PUBLIC Qt6::Core)
+    target_link_libraries(m0_qt_shell_bootstrap PUBLIC Qt6::Core PRIVATE Qt6::Network)
     target_compile_features(m0_qt_shell_bootstrap PUBLIC cxx_std_20)
+    set_target_properties(m0_qt_shell_bootstrap PROPERTIES AUTOMOC ON)
     if(MSVC)
         target_compile_options(m0_qt_shell_bootstrap PRIVATE /W4 /WX /permissive-)
     else()
@@ -476,6 +482,40 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_open_sources_command_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.open-sources.command COMMAND m0_qt_open_sources_command_tests)
+        add_executable(m0_qt_open_sources_dispatcher_tests tests/qtest/OpenSourcesDispatcherTests.cpp)
+        target_link_libraries(m0_qt_open_sources_dispatcher_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
+        target_compile_features(m0_qt_open_sources_dispatcher_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_open_sources_dispatcher_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_open_sources_dispatcher_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_open_sources_dispatcher_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.open-sources.dispatcher COMMAND m0_qt_open_sources_dispatcher_tests)
+        add_executable(m0_qt_single_instance_coordinator_tests
+            tests/qtest/QtSingleInstanceCoordinatorTests.cpp
+        )
+        target_link_libraries(m0_qt_single_instance_coordinator_tests PRIVATE
+            m0_qt_shell_bootstrap
+            Qt6::Network
+            Qt6::Test
+        )
+        target_compile_features(m0_qt_single_instance_coordinator_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_single_instance_coordinator_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_single_instance_coordinator_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_single_instance_coordinator_tests PRIVATE
+                -Wall -Wextra -Wpedantic -Werror
+            )
+        endif()
+        add_test(NAME m0.qt.single-instance.coordinator COMMAND m0_qt_single_instance_coordinator_tests
+            -o -,txt
+        )
+        set_tests_properties(m0.qt.single-instance.coordinator PROPERTIES
+            LABELS "m0;qt;ipc;single-instance;FR-004;FR-033;NFR-LIMIT-004;NFR-REL-004"
+            TIMEOUT 30
+        )
         if(WIN32)
             add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
             target_link_libraries(m0_qt_preferences_restart_tests PRIVATE
@@ -606,6 +646,13 @@ if(M0_QT_SHELL_SUPPORT)
         )
         set_tests_properties(m0.qt.open-sources.command PROPERTIES
             LABELS "m0;qt;ipc;open-sources;FR-004;FR-033;NFR-LIMIT-004;NFR-REL-004"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.open-sources.dispatcher PROPERTIES
+            LABELS "m0;qt;ipc;open-sources;dispatcher;FR-004;FR-033;NFR-LIMIT-004;NFR-REL-004"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.single-instance.coordinator PROPERTIES
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
         set_tests_properties(m0.qt.preferences.json-codec PROPERTIES
