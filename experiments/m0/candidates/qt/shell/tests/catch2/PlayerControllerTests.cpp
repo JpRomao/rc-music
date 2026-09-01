@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace music_player::m0::test {
@@ -15,6 +16,9 @@ namespace {
 
 class RecordingPlaybackBackend final : public PlaybackBackend {
   public:
+    explicit RecordingPlaybackBackend(std::vector<std::string>* lifecycle_events = nullptr)
+        : lifecycle_events_(lifecycle_events) {}
+
     [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
 
     void setEventCallback(PlaybackEventCallback) override {}
@@ -53,15 +57,23 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
     }
 
     PlaybackCommandResult unload() override { return PlaybackCommandResult::Accepted; }
-    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult shutdown() override {
+        ++shutdown_requests;
+        if (lifecycle_events_ != nullptr) {
+            lifecycle_events_->emplace_back("playback.shutdown");
+        }
+        return shutdown_result;
+    }
 
     int play_requests{0};
     int pause_requests{0};
+    int shutdown_requests{0};
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult seek_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult volume_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult mute_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult shutdown_result{PlaybackCommandResult::Accepted};
     double backend_volume{0.8};
     bool backend_muted{false};
     std::vector<std::int64_t> seek_requests{};
@@ -69,12 +81,15 @@ class RecordingPlaybackBackend final : public PlaybackBackend {
     std::vector<bool> mute_requests{};
 
   private:
+    std::vector<std::string>* lifecycle_events_{nullptr};
     PlaybackSnapshot snapshot_{};
 };
 
 class RecordingPlatformIntegration final : public PlatformIntegration {
   public:
-    explicit RecordingPlatformIntegration(const bool tray_available) : tray_available_(tray_available) {}
+    explicit RecordingPlatformIntegration(const bool tray_available,
+                                          std::vector<std::string>* lifecycle_events = nullptr)
+        : tray_available_(tray_available), lifecycle_events_(lifecycle_events) {}
 
     [[nodiscard]] bool trayAvailable() const noexcept override { return tray_available_; }
 
@@ -82,7 +97,12 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
 
     void minimizeWindow() override { ++minimize_calls; }
 
-    void requestExit() override { ++exit_calls; }
+    void requestExit() override {
+        ++exit_calls;
+        if (lifecycle_events_ != nullptr) {
+            lifecycle_events_->emplace_back("platform.requestExit");
+        }
+    }
 
     void showAndActivateWindow() override { ++restore_calls; }
 
@@ -91,6 +111,9 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
     int minimize_calls{0};
     int exit_calls{0};
     int restore_calls{0};
+
+  private:
+    std::vector<std::string>* lifecycle_events_{nullptr};
 };
 
 [[nodiscard]] PlaybackSnapshot playingSnapshot() {
@@ -833,15 +856,19 @@ TEST_CASE("explicit hide minimizes without a tray regardless of the close prefer
 TEST_CASE("explicit exit ignores the close preference and tray availability", "[m0][qt][core][lifecycle][tray]") {
     const bool tray_available = GENERATE(false, true);
     const auto behavior = GENERATE(CloseBehavior::MinimizeToTray, CloseBehavior::Exit);
-    RecordingPlaybackBackend backend;
-    RecordingPlatformIntegration platform{tray_available};
+    std::vector<std::string> lifecycle_events;
+    RecordingPlaybackBackend backend{&lifecycle_events};
+    RecordingPlatformIntegration platform{tray_available, &lifecycle_events};
     PlayerController controller{backend, platform};
     controller.setCloseBehavior(behavior);
     const auto preferences = controller.preferences();
 
     controller.requestExit();
+    controller.requestExit();
 
     CHECK(platform.exit_calls == 1);
+    CHECK(backend.shutdown_requests == 1);
+    CHECK(lifecycle_events == std::vector<std::string>{"playback.shutdown", "platform.requestExit"});
     CHECK(platform.hide_calls == 0);
     CHECK(platform.minimize_calls == 0);
     CHECK(platform.restore_calls == 0);
@@ -886,6 +913,7 @@ TEST_CASE("exit close preference requests a real application exit", "[m0][qt][co
     CHECK(platform.hide_calls == 0);
     CHECK(platform.minimize_calls == 0);
     CHECK(platform.exit_calls == 1);
+    CHECK(backend.shutdown_requests == 1);
 }
 
 TEST_CASE("restore activates the window through the platform port", "[m0][qt][core][tray]") {
@@ -954,7 +982,8 @@ TEST_CASE("window lifecycle preserves playback preferences and a pending seek", 
     const int hides = behavior == CloseBehavior::Exit ? 1 : 2;
     CHECK(platform.hide_calls == (tray_available ? hides : 0));
     CHECK(platform.minimize_calls == (tray_available ? 0 : hides));
-    CHECK(platform.exit_calls == (behavior == CloseBehavior::Exit ? 2 : 1));
+    CHECK(platform.exit_calls == 1);
+    CHECK(backend.shutdown_requests == 1);
 
     // The original seek target must still acknowledge normally after all window actions.
     controller.applyBackendSnapshot({status, 124'000, 248'000, true});

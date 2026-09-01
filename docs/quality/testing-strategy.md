@@ -252,6 +252,20 @@ Essa evidência não substitui o pacote instalado nem o Explorer real. Associaç
 
 O Red final falhou pelas APIs de drenagem ainda ausentes no dispatcher/presenter. O Green focado de dispatcher, presenter e processo passou 3/3; a suíte Release combinada passou 229/229. No teste de processo Release instrumentado, A permanece ativo enquanto B, em path Windows comum acima de 260 caracteres, recebe ACK; a terceira secundária recebe NACK durante a saída, a barreira libera a drenagem e A+B aparecem no `session.json`, com um único backend. As fronteiras exatas de 0/1/1.000/1.001 paths e abaixo/no/acima de 1 MiB continuam em testes de camada, não são extrapoladas do executável. `m0_qt_shell_ui_qmllint` e o formato de 122 C++/46 QML passaram; o QML foi comparado à saída normalizada porque `qmlformat` 6.11.2 não oferece `--check`. `BUILD_TESTING=OFF` foi recompilado, listou zero testes, rejeitou o hook reservado com exit 1 sob o runtime autenticado e preservou `longPathAware=true`. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas.
 
+### M4.4 — start behavior, tray e saída ordenada
+
+As provas do recorte funcional local de M4.4 observam contratos em camadas:
+
+- a policy pura de disposição inicial cobre preferência desligada, opção ligada com/sem tray e precedência de fonte explícita;
+- o adapter Qt prova que invisibilidade do bootstrap não arma recuperação, enquanto `hideWindow()` arma `hidden_to_tray`; show/rebind limpam a intenção e a perda de tray durante ocultação explícita restaura a janela visível/minimizada;
+- o Quick verifica que o toggle pode desligar `startMinimized` depois da perda da capacidade, que ativá-lo exige tray funcional e que a nota de sessão é condicional à opção de restauração;
+- controller/presenter registram ordem e cardinalidade: nenhum shutdown ocorre durante drenagem ou persistência; após os dois saves, `PlaybackBackend::shutdown()` ocorre uma vez antes de `PlatformIntegration::requestExit()`; repetição é inerte; falha ou timeout não desliga o backend;
+- o teste de processo Release instrumentado aplica a preferência depois do placement, cobre janela visível com a opção desligada, startup oculto com tray, ações reais mostrar/ocultar/mostrar, fallback visível com aviso sem tray, precedência de fonte inicial e restauração de uma principal oculta por IPC.
+
+Os Reds falharam pelas expectativas novas de disposição, ownership da ocultação, toggle, precedência de fonte e shutdown ordenado; os Greens focados passaram antes dos gates amplos. A consolidação Release passou 229/229 e o core Qt OFF 183/183. `m0_qt_shell_ui_qmllint` ficou verde; o formato cobriu 122 C++/46 QML, comparando para QML a saída padrão normalizada porque `qmlformat` 6.11.2 não oferece `--check`. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
+
+Essas provas não substituem pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer ou NVDA/acessibilidade nativa. `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y`, `CHK-CLOSE` e M4.4 permanecem abertos globalmente.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

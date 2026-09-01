@@ -294,7 +294,15 @@ CloseDisposition PlayerController::requestHide() {
     return CloseDisposition::Minimized;
 }
 
-void PlayerController::requestExit() { platform_.requestExit(); }
+void PlayerController::requestExit() {
+    if (exit_requested_) {
+        return;
+    }
+
+    exit_requested_ = true;
+    static_cast<void>(playback_backend_.shutdown());
+    platform_.requestExit();
+}
 
 void PlayerController::requestRestore() { platform_.showAndActivateWindow(); }
 

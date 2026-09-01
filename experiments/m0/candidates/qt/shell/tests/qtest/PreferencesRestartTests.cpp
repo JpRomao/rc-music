@@ -42,7 +42,7 @@ class PreferencesRestartTests final : public QObject {
         environment.insert(QStringLiteral("QSG_RHI_BACKEND"), QStringLiteral("software"));
         environment.insert(QStringLiteral("QT_QUICK_CONTROLS_STYLE"), QStringLiteral("Basic"));
 
-        const auto run = [&](const QString& phase) {
+        const auto run = [&](const QString& phase, const QByteArray& expected_marker) {
             QProcess process;
             process.setProcessEnvironment(environment);
             process.setProgram(shell_executable_);
@@ -52,10 +52,13 @@ class PreferencesRestartTests final : public QObject {
             QVERIFY2(process.waitForStarted(5'000), qPrintable(process.errorString()));
             QVERIFY2(process.waitForFinished(10000), qPrintable(process.errorString()));
             QCOMPARE(process.exitStatus(), QProcess::NormalExit);
-            QVERIFY2(process.exitCode() == 0, process.readAllStandardError().constData());
+            const QByteArray standard_error = process.readAllStandardError();
+            QVERIFY2(process.exitCode() == 0, standard_error.constData());
+            const QByteArray standard_output = process.readAllStandardOutput();
+            QVERIFY2(standard_output.contains(expected_marker), standard_output.constData());
         };
 
-        run(QStringLiteral("preferences-restart-write"));
+        run(QStringLiteral("preferences-restart-write"), QByteArrayLiteral("M0_STARTUP_PREFERENCE_OFF_VISIBLE"));
         const QString preferences_path = config_root.filePath(QStringLiteral("preferences.json"));
         QVERIFY(QFileInfo::exists(preferences_path));
 
@@ -87,7 +90,8 @@ class PreferencesRestartTests final : public QObject {
             .position_ms = 321,
         };
         QCOMPARE(session_store.save(SessionSaveRequest{.snapshot = ignored_session}), SessionSaveStatus::Saved);
-        run(QStringLiteral("preferences-restart-read"));
+        run(QStringLiteral("preferences-restart-read"), QByteArrayLiteral("M0_STARTUP_MINIMIZED_TRAY_ROUNDTRIP"));
+        run(QStringLiteral("start-minimized-no-tray"), QByteArrayLiteral("M0_STARTUP_NO_TRAY_VISIBLE_WARNING"));
     }
 
   private:

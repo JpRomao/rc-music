@@ -367,7 +367,7 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 }
 ```
 
-O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows, a coordenação assíncrona e a restauração pausada no presenter/bootstrap dos recortes de M4.1 são descritos abaixo; o efeito de iniciar minimizado continua pendente em M4.4. `PreferencesStore` não substitui `SessionStore`.
+O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows, a coordenação assíncrona e a restauração pausada no presenter/bootstrap dos recortes de M4.1 são descritos abaixo; M4.4 integra o efeito local de `startMinimized` depois da restauração do placement. `PreferencesStore` não substitui `SessionStore`.
 
 Em M4.2, a evolução funcional preserva o schema v1 acima como formato conhecido de leitura e passa a emitir sempre o schema v2:
 
@@ -465,7 +465,8 @@ Sequência de startup:
 4. principal carrega preferências e, somente quando `restore_last_session=true`, a sessão pausada;
 5. inicializa engine e integrações;
 6. processa argumentos novos conforme política de fila;
-7. mostra/restaura a janela.
+7. resolve a disposição inicial depois do placement: fonte explícita mostra/restaura; sem fonte, a preferência só oculta quando a tray está disponível;
+8. mostra, oculta ou restaura a janela conforme essa policy.
 
 Cobrir paths Unicode, aspas, múltiplos arquivos, chamadas simultâneas e diretório de trabalho diferente. O canal local entre instâncias deve aceitar somente mensagens esperadas e impor limites; IPC adicional do shell, quando existir, segue as mesmas regras.
 
@@ -498,6 +499,16 @@ O fechamento automatizado local passou 229/229 no CTest Release combinado. O tes
 - fallback visível quando tray estiver ausente.
 
 Cada adapter publica capabilities. A aplicação não finge que uma integração indisponível funcionou.
+
+No recorte funcional local de M4.4, a policy de startup é explícita. Depois de aplicar tela/geometria, `startMinimized=false` mostra a janela. Com a opção ligada e tray disponível, o root continua oculto antes da entrada no event loop; sem tray, ele é revelado e um aviso explica o fallback. Uma fonte inicial explícita prevalece sobre a preferência, e um comando `openSources` por IPC restaura/ativa a principal que iniciou oculta. O menu da tray usa ações reais para mostrar/ocultar/mostrar. O toggle de início minimizado permanece utilizável para desligar a opção depois que a capacidade de tray desaparece.
+
+`QtShellPlatform` não deduz intenção a partir de `QWindow::isVisible()`: um estado interno `hidden_to_tray` é armado apenas por ocultação explícita, limpo por restauração/rebind e é o único que ativa a vigilância da capacidade. Assim, a janela invisível durante o bootstrap não é minimizada por uma falsa perda de tray. Se a capacidade desaparecer enquanto `hidden_to_tray` está ativo, o adapter interrompe a vigilância e recupera a janela como visível/minimizada.
+
+A saída do presenter permanece transacional também em relação ao áudio. Novos ingressos são pausados; trabalho de fonte já ACKado é drenado; preferências e sessão são persistidas; só então o controller executa `PlaybackBackend::shutdown()` uma vez e, depois, solicita a saída da plataforma. Repetir a intenção depois do commit é inerte. Falha ou timeout antes do commit cancela a saída, mantém o backend ativo e restaura a aplicação alcançável.
+
+Os Reds do recorte exigiram a nova policy de disposição, ownership explícito da ocultação, toggle recuperável, precedência de fonte e a ordem shutdown → saída; os Greens focados antecederam a consolidação. O CTest Release combinado passou 229/229 e o core Qt OFF 183/183; `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 122 C++/46 QML, com `qmlformat` validado por comparação da saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas; nenhum benchmark foi executado.
+
+Essa evidência não encerra M4.4. Pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE` permanecem abertos.
 
 ## 15. Segurança e privacidade
 

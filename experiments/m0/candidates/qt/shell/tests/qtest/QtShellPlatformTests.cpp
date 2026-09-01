@@ -318,6 +318,89 @@ class QtShellPlatformTests final : public QObject {
         QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
     }
 
+    void invisibleBootstrapWindowIsNotTreatedAsHiddenToTray() {
+        bool available{true};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QWindow window;
+        platform.bindWindow(window);
+        auto* const poll = platform.findChild<QTimer*>();
+
+        QVERIFY(poll);
+        QVERIFY(!window.isVisible());
+        QVERIFY(!poll->isActive());
+        available = false;
+        platform.refreshAvailability();
+
+        QVERIFY(!window.isVisible());
+        QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!poll->isActive());
+    }
+
+    void explicitHideTracksAnAlreadyInvisibleWindowAndRecoversItWhenTheTrayDisappears() {
+        bool available{true};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QWindow window;
+        platform.bindWindow(window);
+        auto* const poll = platform.findChild<QTimer*>();
+
+        QVERIFY(poll);
+        QVERIFY(!poll->isActive());
+        platform.hideWindow();
+        QVERIFY(!window.isVisible());
+        QVERIFY(poll->isActive());
+
+        available = false;
+        platform.refreshAvailability();
+
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!poll->isActive());
+    }
+
+    void restoringClearsTheTrayHiddenRecoveryIntent() {
+        bool available{true};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QWindow window;
+        window.show();
+        platform.bindWindow(window);
+        auto* const poll = platform.findChild<QTimer*>();
+
+        platform.hideWindow();
+        QVERIFY(poll && poll->isActive());
+        platform.showAndActivateWindow();
+        QVERIFY(!poll->isActive());
+
+        window.hide();
+        QVERIFY(!poll->isActive());
+        available = false;
+        platform.refreshAvailability();
+
+        QVERIFY(!window.isVisible());
+        QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!poll->isActive());
+    }
+
+    void rebindingClearsTheTrayHiddenRecoveryIntent() {
+        bool available{true};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QWindow first;
+        first.show();
+        platform.bindWindow(first);
+        platform.hideWindow();
+        auto* const poll = platform.findChild<QTimer*>();
+        QVERIFY(poll && poll->isActive());
+
+        QWindow replacement;
+        platform.bindWindow(replacement);
+        QVERIFY(!poll->isActive());
+        available = false;
+        platform.refreshAvailability();
+
+        QVERIFY(!replacement.isVisible());
+        QVERIFY(!replacement.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!poll->isActive());
+    }
+
     void availabilityChangesNotifyOnceAfterRecoveringAHiddenWindow() {
         bool available{true};
         QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});

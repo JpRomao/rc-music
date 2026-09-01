@@ -145,6 +145,18 @@ TestCase {
         verify(restoreSession.checked);
         verify(!startMinimized.checked);
         verify(!startMinimized.enabled);
+        testScenarioDriver.setTrayAvailable(true); // qmllint disable unqualified
+        verify(startMinimized.enabled);
+        startMinimized.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        verify(startMinimized.checked);
+        verify(testPlayerPresenter.startMinimized); // qmllint disable unqualified
+        testScenarioDriver.setTrayAvailable(false); // qmllint disable unqualified
+        verify(startMinimized.enabled);
+        keyClick(Qt.Key_Space);
+        verify(!startMinimized.checked);
+        verify(!testPlayerPresenter.startMinimized); // qmllint disable unqualified
+        verify(!startMinimized.enabled);
         verifyFocusCycle([general, playback, appearance, closeBehavior, restoreSession, close]);
         closeBehavior.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
@@ -159,7 +171,7 @@ TestCase {
         verify(closeBehavior.activeFocus);
         const memoryNote = findChild(shell, "preferences-memory-note");
         verify(memoryNote.visible);
-        compare(memoryNote.text, "As preferências são salvas localmente. A última sessão é restaurada pausada quando a opção está ativa; iniciar minimizado será aplicado em etapa futura.");
+        compare(memoryNote.text, "As preferências são salvas localmente. Quando a restauração da última sessão está ativa, ela é retomada pausada; iniciar minimizado mantém o aplicativo na bandeja quando ela está disponível.");
         restoreSession.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         verify(!testPlayerPresenter.restoreLastSession); // qmllint disable unqualified

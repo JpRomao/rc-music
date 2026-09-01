@@ -6,7 +6,9 @@
 #include <stdexcept>
 
 using music_player::m0::experiment::InitialShellScenario;
+using music_player::m0::experiment::InitialWindowDisposition;
 using music_player::m0::experiment::parseShellLaunchOptions;
+using music_player::m0::experiment::resolveInitialWindowDisposition;
 using music_player::m0::experiment::resolveShellSourcePaths;
 using music_player::m0::experiment::validateShellLaunchOptions;
 
@@ -40,8 +42,34 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(!options.smoke_session_recovery_repair);
         QVERIFY(!options.smoke_session_defaults_read);
         QVERIFY(!options.smoke_single_instance_executable);
+        QVERIFY(!options.smoke_start_minimized_no_tray);
+        QVERIFY(!options.smoke_startup_source_precedence);
         QVERIFY(!options.test_config_root.has_value());
         QVERIFY(options.source_paths.isEmpty());
+    }
+
+    void resolvesTheInitialWindowDisposition_data() {
+        QTest::addColumn<bool>("start_minimized");
+        QTest::addColumn<bool>("tray_available");
+        QTest::addColumn<bool>("has_explicit_sources");
+        QTest::addColumn<InitialWindowDisposition>("expected");
+
+        QTest::newRow("preference off") << false << true << false << InitialWindowDisposition::Show;
+        QTest::newRow("start hidden with tray") << true << true << false << InitialWindowDisposition::HideToTray;
+        QTest::newRow("tray unavailable")
+            << true << false << false << InitialWindowDisposition::ShowWithTrayUnavailableNotice;
+        QTest::newRow("explicit source wins") << true << true << true << InitialWindowDisposition::Show;
+        QTest::newRow("explicit source also wins without tray")
+            << true << false << true << InitialWindowDisposition::Show;
+    }
+
+    void resolvesTheInitialWindowDisposition() {
+        QFETCH(bool, start_minimized);
+        QFETCH(bool, tray_available);
+        QFETCH(bool, has_explicit_sources);
+        QFETCH(InitialWindowDisposition, expected);
+
+        QCOMPARE(resolveInitialWindowDisposition(start_minimized, tray_available, has_explicit_sources), expected);
     }
 
     void capturesSourcePathsAsOrderedData() {
@@ -300,6 +328,26 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
     }
 
+    void acceptsClosedStartupBehaviorHooks() {
+        const QString root = testConfigRoot(QStringLiteral("startup behavior"));
+        const auto no_tray = parseShellLaunchOptions({QStringLiteral("m0_qt_shell"),
+                                                      QStringLiteral("--m0-smoke=start-minimized-no-tray"),
+                                                      QStringLiteral("--m0-test-config-root=") + root});
+        QVERIFY(no_tray.smoke_start_minimized_no_tray);
+        QVERIFY(!no_tray.smoke_startup_source_precedence);
+        validateShellLaunchOptions(no_tray, true, true);
+
+        const auto explicit_source = parseShellLaunchOptions(
+            {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=startup-source-precedence"),
+             QStringLiteral("--m0-test-config-root=") + root, QStringLiteral("--"),
+             QStringLiteral("C:/Música/abertura.wav")});
+        QVERIFY(!explicit_source.smoke_start_minimized_no_tray);
+        QVERIFY(explicit_source.smoke_startup_source_precedence);
+        QCOMPARE(explicit_source.source_paths, QStringList{QStringLiteral("C:/Música/abertura.wav")});
+        validateShellLaunchOptions(explicit_source, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(explicit_source, true, false));
+    }
+
     void acceptsIsolatedConfigForEveryExecutableSmoke_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("error recovery") << QStringList{
@@ -352,6 +400,13 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("single instance") << QStringList{
             QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=single-instance-executable"),
             testConfigArgument(QStringLiteral("temporary single instance"))};
+        QTest::newRow("start minimized without tray")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=start-minimized-no-tray"),
+                           testConfigArgument(QStringLiteral("temporary no tray"))};
+        QTest::newRow("startup source precedence")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=startup-source-precedence"),
+                           testConfigArgument(QStringLiteral("temporary source precedence")), QStringLiteral("--"),
+                           QStringLiteral("C:/Música/abertura.wav")};
     }
 
     void rejectsEveryClosedControlInProduction() {
@@ -413,6 +468,18 @@ class ShellLaunchOptionsTests final : public QObject {
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-defaults-read")};
         QTest::newRow("single instance without root")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=single-instance-executable")};
+        QTest::newRow("start minimized without tray and without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=start-minimized-no-tray")};
+        QTest::newRow("source precedence without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=startup-source-precedence"),
+                           QStringLiteral("--"), QStringLiteral("C:/Música/abertura.wav")};
+        QTest::newRow("source precedence without source")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=startup-source-precedence"),
+                           testConfigArgument(QStringLiteral("source precedence without source"))};
+        QTest::newRow("no tray hook with a source")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=start-minimized-no-tray"),
+                           testConfigArgument(QStringLiteral("no tray with source")), QStringLiteral("--"),
+                           QStringLiteral("C:/Música/abertura.wav")};
         QTest::newRow("root without restart")
             << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
         QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),

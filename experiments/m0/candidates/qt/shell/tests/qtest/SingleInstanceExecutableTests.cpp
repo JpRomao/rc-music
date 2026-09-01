@@ -31,6 +31,9 @@ constexpr int protocol_timeout_ms = 3'000;
 constexpr qsizetype maximum_reply_bytes = 4'096;
 
 const QByteArray backend_ready_marker{"M0_SINGLE_INSTANCE_BACKEND_READY"};
+const QByteArray startup_hidden_marker{"M0_SINGLE_INSTANCE_STARTUP_HIDDEN"};
+const QByteArray ipc_restored_marker{"M0_SINGLE_INSTANCE_IPC_RESTORED"};
+const QByteArray explicit_source_visible_marker{"M0_STARTUP_EXPLICIT_SOURCE_VISIBLE"};
 const QByteArray primary_ready_prefix{"M0_SINGLE_INSTANCE_READY "};
 const QByteArray forwarded_marker{"M0_SINGLE_INSTANCE_FORWARDED"};
 const QByteArray import_held_prefix{"M0_SINGLE_INSTANCE_IMPORT_HELD "};
@@ -78,6 +81,15 @@ void configureShellProcess(QProcess& process, const QString& executable, const Q
     process.setArguments(std::move(arguments));
     process.setWorkingDirectory(working_directory);
     process.setProcessChannelMode(QProcess::SeparateChannels);
+}
+
+[[nodiscard]] bool writeStartMinimizedPreferences(const QString& config_root) {
+    QFile preferences{QDir{config_root}.filePath(QStringLiteral("preferences.json"))};
+    if (!preferences.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    const QByteArray document{
+        R"({"schemaVersion":1,"theme":"system","motion":"system","volume":1,"muted":false,"skipBackwardSeconds":5,"skipForwardSeconds":5,"closeBehavior":"minimize_to_tray","restoreLastSession":false,"startMinimized":true,"queueEndBehavior":"stop_keep_selection"})"};
+    return preferences.write(document) == document.size() && preferences.flush();
 }
 
 [[nodiscard]] QList<QByteArray> protocolLines(const QByteArray& output) {
@@ -242,6 +254,38 @@ class SingleInstanceExecutableTests final : public QObject {
         : shell_executable_(std::move(shell_executable)), audio_fixture_(std::move(audio_fixture)) {}
 
   private slots:
+    void explicitInitialSourceOverridesStartMinimized() {
+        QVERIFY2(QFileInfo::exists(shell_executable_), qPrintable(shell_executable_));
+        QVERIFY2(QFileInfo::exists(audio_fixture_), qPrintable(audio_fixture_));
+
+        QTemporaryDir root{QDir::tempPath() + QStringLiteral("/music player startup source 日本-XXXXXX")};
+        QVERIFY(root.isValid());
+        const QString config_root = root.filePath(QStringLiteral("configuração isolada"));
+        const QString working_directory = root.filePath(QStringLiteral("cwd fonte explícita"));
+        QVERIFY(QDir{}.mkpath(config_root));
+        QVERIFY(QDir{}.mkpath(working_directory));
+        QVERIFY(writeStartMinimizedPreferences(config_root));
+        const QString audio_path = QDir{working_directory}.filePath(QStringLiteral("abertura inicial 日本.wav"));
+        QVERIFY2(QFile::copy(audio_fixture_, audio_path), qPrintable(audio_path));
+
+        QProcess process;
+        RunningProcessGuard process_guard{process};
+        process.setProcessEnvironment(shellEnvironment());
+        process.setProgram(shell_executable_);
+        process.setArguments({QStringLiteral("--m0-smoke=startup-source-precedence"), configArgument(config_root),
+                              QStringLiteral("--"), audio_path});
+        process.setWorkingDirectory(working_directory);
+        process.setProcessChannelMode(QProcess::SeparateChannels);
+        process.start();
+        QVERIFY2(process.waitForStarted(process_start_timeout_ms), qPrintable(process.errorString()));
+        const bool finished = process.waitForFinished(primary_finish_timeout_ms);
+        const QByteArray output = diagnostics(process);
+        QVERIFY2(finished, output.constData());
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QVERIFY2(process.exitCode() == 0, output.constData());
+        QVERIFY2(containsProtocolLine(output, explicit_source_visible_marker), output.constData());
+    }
+
     void drainsTwoAcknowledgedSourcesBeforeExitAndRejectsNewCommands() {
         QVERIFY2(QFileInfo::exists(shell_executable_), qPrintable(shell_executable_));
         QVERIFY2(QFileInfo::exists(audio_fixture_), qPrintable(audio_fixture_));
@@ -254,6 +298,7 @@ class SingleInstanceExecutableTests final : public QObject {
         QVERIFY(QDir{}.mkpath(config_root));
         QVERIFY(QDir{}.mkpath(primary_working_directory));
         QVERIFY(QDir{}.mkpath(secondary_working_directory));
+        QVERIFY(writeStartMinimizedPreferences(config_root));
         QVERIFY(QDir::cleanPath(primary_working_directory) != QDir::cleanPath(secondary_working_directory));
 
         const QString first_relative_audio = QStringLiteral("A ativa & abertura; 日本 (01) 'tema'.wav");
@@ -294,6 +339,7 @@ class SingleInstanceExecutableTests final : public QObject {
                                  .arg(QString::fromUtf8(output))));
         }
         QVERIFY(containsProtocolLine(primary_stdout, backend_ready_marker));
+        QVERIFY(containsProtocolLine(primary_stdout, startup_hidden_marker));
         QCOMPARE(countProtocolLine(primary_stdout, backend_ready_marker), 1);
         QCOMPARE(primary.state(), QProcess::Running);
         QCOMPARE(primary.processId(), primary_pid);
@@ -355,6 +401,7 @@ class SingleInstanceExecutableTests final : public QObject {
             QFAIL(qPrintable(
                 QStringLiteral("the primary did not hold source A active: %1").arg(QString::fromUtf8(output))));
         }
+        QVERIFY(containsProtocolLine(primary_stdout, ipc_restored_marker));
         QCOMPARE(primary.state(), QProcess::Running);
 
         QByteArray second_forward_output;
@@ -418,6 +465,8 @@ class SingleInstanceExecutableTests final : public QObject {
         QVERIFY2(primary.exitCode() == 0, primary_output.constData());
         QVERIFY2(containsProtocolLine(primary_stdout, completed_marker), primary_output.constData());
         QCOMPARE(countProtocolLine(primary_stdout, backend_ready_marker), 1);
+        QCOMPARE(countProtocolLine(primary_stdout, startup_hidden_marker), 1);
+        QCOMPARE(countProtocolLine(primary_stdout, ipc_restored_marker), 1);
         QCOMPARE(countProtocolLinesWithPrefix(primary_stdout, primary_ready_prefix), 1);
         QCOMPARE(countProtocolLinesWithPrefix(primary_stdout, import_held_prefix), 1);
         QCOMPARE(countProtocolLinesWithPrefix(primary_stdout, exit_draining_prefix), 1);

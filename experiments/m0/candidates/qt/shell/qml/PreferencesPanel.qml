@@ -149,7 +149,7 @@ Popup {
                         controlId: "start-minimized"
                         text: labels.startMinimized
                         value: root.presenter.startMinimized
-                        enabled: root.presenter.trayAvailable
+                        enabled: root.presenter.trayAvailable || value
                         onValueEdited: value => root.presenter.setStartMinimized(value)
                     }
                 }

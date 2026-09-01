@@ -43,6 +43,9 @@
 
 #ifdef M0_QT_SHELL_TEST_HOOKS
 #include "ShellLifecycleSmoke.hpp"
+
+#include <QAction>
+#include <QMenu>
 #endif
 
 #include <QApplication>
@@ -80,8 +83,10 @@ using music_player::m0::FixtureRepository;
 using music_player::m0::PlayerPresenter;
 using music_player::m0::ShellUiContract;
 using music_player::m0::experiment::InitialShellScenario;
+using music_player::m0::experiment::InitialWindowDisposition;
 using music_player::m0::experiment::parseShellLaunchOptions;
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
+using music_player::m0::experiment::resolveInitialWindowDisposition;
 using music_player::m0::experiment::resolveShellSourcePaths;
 using music_player::m0::experiment::validateShellLaunchOptions;
 
@@ -336,11 +341,12 @@ int main(int argc, char* argv[]) {
         music_player::m0::LifecycleText lifecycle_text;
         std::function<bool()> availability_reader;
 #ifdef M0_QT_SHELL_TEST_HOOKS
-        bool tray_smoke_available = true;
+        bool tray_smoke_available = !options.smoke_start_minimized_no_tray;
         if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
             options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
             options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
-            options.smoke_session_defaults_read || options.smoke_single_instance_executable)
+            options.smoke_session_defaults_read || options.smoke_single_instance_executable ||
+            options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(
@@ -519,8 +525,19 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
         (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);
         music_player::m0::bindShellPlatform(presenter, platform, *window);
-        if (!window->setProperty("startupReady", true))
+        bool has_explicit_startup_sources = false;
+#ifdef M0_QT_COMBINED_AUDIO
+        has_explicit_startup_sources = !initial_sources.paths.isEmpty();
+#endif
+        const InitialWindowDisposition initial_window_disposition = resolveInitialWindowDisposition(
+            presenter.startMinimized(), platform.trayAvailable(), has_explicit_startup_sources);
+        if (!window->setProperty("startupReady", true)) {
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
+        }
+        if (initial_window_disposition == InitialWindowDisposition::HideToTray && !presenter.requestHide())
+            throw std::runtime_error{"the shell could not honor its start-minimized preference"};
+        if (initial_window_disposition == InitialWindowDisposition::ShowWithTrayUnavailableNotice)
+            presenter.reportTrayUnavailable();
 #ifdef M0_QT_COMBINED_AUDIO
         shell_platform_ready = true;
         if (std::exchange(source_activation_pending, false) && !presenter.requestRestore())
@@ -530,6 +547,7 @@ int main(int argc, char* argv[]) {
         bool tray_smoke_completed = false;
         bool combined_startup_smoke_completed = false;
         bool preferences_restart_completed = false;
+        bool startup_behavior_completed = false;
 #ifdef M0_QT_COMBINED_AUDIO
         bool session_restart_completed = false;
         bool session_recovery_completed = false;
@@ -568,15 +586,20 @@ int main(int argc, char* argv[]) {
             single_instance_resume_timer.start();
             QObject::connect(
                 &single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable, &application,
-                [&application, &presenter, &source_dispatcher, presenter_timer, &single_instance_command_count] {
+                [&application, window, &presenter, &source_dispatcher, presenter_timer,
+                 &single_instance_command_count] {
                     ++single_instance_command_count;
                     if (single_instance_command_count == 1) {
-                        if (!presenter.sourceImportActive() || source_dispatcher.pendingCommandCount() != 0) {
+                        const bool restored =
+                            window->isVisible() && !window->windowStates().testFlag(Qt::WindowMinimized);
+                        if (!restored || !presenter.sourceImportActive() ||
+                            source_dispatcher.pendingCommandCount() != 0) {
                             qCritical() << "The single-instance smoke could not hold its first active import";
                             application.exit(2);
                             return;
                         }
                         presenter_timer->stop();
+                        std::fputs("M0_SINGLE_INSTANCE_IPC_RESTORED\n", stdout);
                         std::fputs("M0_SINGLE_INSTANCE_IMPORT_HELD 1\n", stdout);
                         std::fflush(stdout);
                         return;
@@ -624,6 +647,10 @@ int main(int argc, char* argv[]) {
                     std::fputs("M0_SINGLE_INSTANCE_COMPLETED\n", stdout);
                     std::fflush(stdout);
                 });
+            if (!presenter.startMinimized() || window->isVisible())
+                throw std::runtime_error{"the start-minimized primary became visible before forwarding"};
+            std::fputs("M0_SINGLE_INSTANCE_STARTUP_HIDDEN\n", stdout);
+            std::fflush(stdout);
             if (!presenter.requestHide())
                 throw std::runtime_error{"the single-instance smoke could not hide its primary window"};
             QCoreApplication::processEvents();
@@ -689,11 +716,38 @@ int main(int argc, char* argv[]) {
                 application.exit(2);
             });
         }
+        if (options.smoke_startup_source_precedence) {
+            QTimer::singleShot(0, &application, [&application, window, &presenter, &startup_behavior_completed] {
+                const bool visible = window->isVisible() && !window->windowStates().testFlag(Qt::WindowMinimized);
+                if (!visible || !presenter.startMinimized()) {
+                    qCritical() << "An explicit startup source did not reveal the shell";
+                    application.exit(2);
+                    return;
+                }
+                std::fputs("M0_STARTUP_EXPLICIT_SOURCE_VISIBLE\n", stdout);
+                std::fflush(stdout);
+                startup_behavior_completed = presenter.requestExit();
+                if (!startup_behavior_completed)
+                    application.exit(2);
+            });
+            QTimer::singleShot(10'000, &application, [&application] {
+                qCritical() << "The explicit-source startup smoke did not exit before its watchdog";
+                application.exit(2);
+            });
+        }
 #endif
         if (options.smoke_preferences_restart_write) {
             QTimer::singleShot(
                 0, &application,
                 [&application, window, &presenter, &preferences_restart_completed, &preferences_restart_timer] {
+                    if (presenter.startMinimized() || !window->isVisible() ||
+                        window->windowStates().testFlag(Qt::WindowMinimized)) {
+                        qCritical() << "The default startup preference did not reveal the shell";
+                        application.exit(2);
+                        return;
+                    }
+                    std::fputs("M0_STARTUP_PREFERENCE_OFF_VISIBLE\n", stdout);
+                    std::fflush(stdout);
                     const bool written = writeRestartPreferences(presenter);
                     if (!written) {
                         application.exit(2);
@@ -719,19 +773,60 @@ int main(int argc, char* argv[]) {
                 });
         }
         if (options.smoke_preferences_restart_read) {
-            QTimer::singleShot(0, &application,
-                               [&application, window, &contract, &presenter, &preferences_restart_completed] {
-                                   preferences_restart_completed =
-                                       presenter.preferences() == restartPreferences() && contract.darkTheme() &&
-                                       window->isVisible() && window->geometry() == QRect{20, 30, 720, 520} &&
-                                       window->property("color").value<QColor>() == QColor{contract.canvasColor()} &&
-                                       presenter.requestExit();
-                                   if (!preferences_restart_completed)
-                                       application.exit(2);
-                               });
+            QTimer::singleShot(
+                0, &application,
+                [&application, window, &platform, &contract, &presenter, &preferences_restart_completed] {
+                    QAction* const show_hide = platform.menu()->findChild<QAction*>(QStringLiteral("tray-show-hide"));
+                    const bool initially_hidden = !window->isVisible();
+                    if (show_hide != nullptr)
+                        show_hide->trigger();
+                    QCoreApplication::processEvents();
+                    const bool restored = window->isVisible() && !window->windowStates().testFlag(Qt::WindowMinimized);
+                    if (show_hide != nullptr)
+                        show_hide->trigger();
+                    QCoreApplication::processEvents();
+                    const bool hidden_again = !window->isVisible();
+                    if (show_hide != nullptr)
+                        show_hide->trigger();
+                    QCoreApplication::processEvents();
+                    const bool restored_again =
+                        window->isVisible() && !window->windowStates().testFlag(Qt::WindowMinimized);
+                    const bool state_matches =
+                        presenter.preferences() == restartPreferences() && contract.darkTheme() && initially_hidden &&
+                        restored && hidden_again && restored_again && window->geometry() == QRect{20, 30, 720, 520} &&
+                        window->property("color").value<QColor>() == QColor{contract.canvasColor()};
+                    if (state_matches) {
+                        std::fputs("M0_STARTUP_MINIMIZED_TRAY_ROUNDTRIP\n", stdout);
+                        std::fflush(stdout);
+                    }
+                    preferences_restart_completed = state_matches && presenter.requestExit();
+                    if (!preferences_restart_completed)
+                        application.exit(2);
+                });
         }
         if (options.smoke_preferences_restart_write || options.smoke_preferences_restart_read) {
             QTimer::singleShot(3000, &application, [&application] { application.exit(2); });
+        }
+        if (options.smoke_start_minimized_no_tray) {
+            QTimer::singleShot(
+                0, &application, [&application, window, &platform, &presenter, &startup_behavior_completed] {
+                    const bool visible = window->isVisible() && !window->windowStates().testFlag(Qt::WindowMinimized);
+                    const bool warned =
+                        presenter.windowNotice() == PlayerPresenter::WindowNotice::TrayUnavailableNotice;
+                    const bool state_matches =
+                        presenter.startMinimized() && !platform.trayAvailable() && visible && warned;
+                    if (state_matches) {
+                        std::fputs("M0_STARTUP_NO_TRAY_VISIBLE_WARNING\n", stdout);
+                        std::fflush(stdout);
+                    }
+                    startup_behavior_completed = state_matches && presenter.requestExit();
+                    if (!startup_behavior_completed)
+                        application.exit(2);
+                });
+            QTimer::singleShot(3'000, &application, [&application] {
+                qCritical() << "The no-tray startup smoke did not exit before its watchdog";
+                application.exit(2);
+            });
         }
 #ifdef M0_QT_COMBINED_AUDIO
         if (options.smoke_session_restart_read) {
@@ -888,6 +983,11 @@ int main(int argc, char* argv[]) {
         if ((options.smoke_preferences_restart_write || options.smoke_preferences_restart_read) &&
             (result != 0 || !preferences_restart_completed || !presenter.exiting())) {
             qCritical() << "The preferences restart smoke did not complete";
+            return 2;
+        }
+        if ((options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence) &&
+            (result != 0 || !startup_behavior_completed || !presenter.exitCommitted())) {
+            qCritical() << "The startup behavior smoke did not complete";
             return 2;
         }
 #ifdef M0_QT_COMBINED_AUDIO

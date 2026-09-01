@@ -104,6 +104,7 @@ QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels la
 }
 
 QtShellPlatform::~QtShellPlatform() {
+    hidden_to_tray_ = false;
     availability_timer_->stop();
     tray_icon_->hide();
     // QSystemTrayIcon does not own QMenu; detach before the unique_ptr releases its widget.
@@ -112,6 +113,7 @@ QtShellPlatform::~QtShellPlatform() {
 
 void QtShellPlatform::bindWindow(QWindow& window) {
     ++window_binding_generation_;
+    hidden_to_tray_ = false;
     window_placement_timer_->stop();
     pending_window_placement_.reset();
     if (window_)
@@ -137,6 +139,8 @@ void QtShellPlatform::bindWindow(QWindow& window) {
         updatePolling();
     });
     connect(&window, &QWindow::visibleChanged, this, [this] {
+        if (window_ && window_->isVisible())
+            hidden_to_tray_ = false;
         scheduleWindowPlacementCapture();
         updateMenu();
         updatePolling();
@@ -150,6 +154,7 @@ void QtShellPlatform::bindWindow(QWindow& window) {
         ++window_binding_generation_;
         window_placement_timer_->stop();
         pending_window_placement_.reset();
+        hidden_to_tray_ = false;
         window_.clear();
         updateMenu();
         updatePolling();
@@ -183,7 +188,7 @@ void QtShellPlatform::refreshAvailability() {
         return;
     const bool previous = available_;
     available_ = trayAvailable();
-    if (!available_ && window_ && !window_->isVisible())
+    if (!available_ && hidden_to_tray_ && window_ && !window_->isVisible())
         minimizeWindow();
     updateMenu();
     updatePolling();
@@ -224,12 +229,16 @@ void QtShellPlatform::hideWindow() {
         return;
     }
     rememberWindowState();
+    hidden_to_tray_ = true;
     window_->hide();
+    updatePolling();
 }
 
 void QtShellPlatform::minimizeWindow() {
     if (!window_ || exit_requested_)
         return;
+    hidden_to_tray_ = false;
+    updatePolling();
     const std::uint64_t binding_generation = window_binding_generation_;
     flushPendingWindowPlacement();
     if (!window_ || exit_requested_ || binding_generation != window_binding_generation_)
@@ -242,6 +251,8 @@ void QtShellPlatform::minimizeWindow() {
 void QtShellPlatform::showAndActivateWindow() {
     if (!window_ || exit_requested_)
         return;
+    hidden_to_tray_ = false;
+    updatePolling();
     rememberWindowState();
     window_->setWindowStates(restore_states_);
     window_->setVisible(true);
@@ -251,6 +262,8 @@ void QtShellPlatform::showAndActivateWindow() {
 void QtShellPlatform::requestExit() {
     if (exit_requested_)
         return;
+    hidden_to_tray_ = false;
+    updatePolling();
     flushPendingWindowPlacement();
     if (exit_requested_)
         return;
@@ -288,7 +301,7 @@ void QtShellPlatform::updateMenu() {
 }
 
 void QtShellPlatform::updatePolling() {
-    const bool should_poll = window_ && !window_->isVisible() && !exit_requested_;
+    const bool should_poll = hidden_to_tray_ && window_ && !window_->isVisible() && !exit_requested_;
     if (should_poll && !availability_timer_->isActive())
         availability_timer_->start();
     else if (!should_poll)

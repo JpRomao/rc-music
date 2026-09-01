@@ -57,6 +57,7 @@ class PlayerController final {
     double last_nonzero_volume_{Preferences{}.volume};
     bool seek_preview_active_{false};
     bool seek_pending_{false};
+    bool exit_requested_{false};
 };
 
 } // namespace music_player::m0

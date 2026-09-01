@@ -104,6 +104,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     std::optional<WindowPlacement> pending_window_placement_;
     Qt::WindowStates restore_states_{Qt::WindowNoState};
     bool available_{false};
+    bool hidden_to_tray_{false};
     bool exit_requested_{false};
     bool window_placement_flush_in_progress_{false};
 };

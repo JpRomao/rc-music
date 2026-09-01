@@ -105,7 +105,12 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
         }
         return unload_result;
     }
-    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult shutdown() override {
+        ++shutdown_calls;
+        if (on_shutdown)
+            on_shutdown();
+        return shutdown_result;
+    }
 
     void publish(PlaybackSnapshot snapshot) {
         snapshot_ = snapshot;
@@ -132,6 +137,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     PlaybackCommandResult volume_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult muted_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult unload_result{PlaybackCommandResult::Accepted};
+    PlaybackCommandResult shutdown_result{PlaybackCommandResult::Accepted};
     std::vector<std::filesystem::path> loaded_paths;
     std::vector<std::int64_t> seek_positions;
     std::vector<double> volumes;
@@ -140,6 +146,8 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     int play_calls{0};
     int pause_calls{0};
     int unload_calls{0};
+    int shutdown_calls{0};
+    std::function<void()> on_shutdown;
 
   private:
     std::uint64_t last_generation_{0};
@@ -4076,6 +4084,9 @@ void PlayerPresenterTests::exitWaitsForBothPreferenceAndSessionPersistence() {
         preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
     const auto source = localTestPath(u8"Saída 日本語.flac");
+    QStringList shutdown_order;
+    backend.on_shutdown = [&] { shutdown_order.append(QStringLiteral("backend-shutdown")); };
+    platform.on_exit = [&] { shutdown_order.append(QStringLiteral("platform-exit")); };
 
     PlayerPresenter presenter(
         frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
@@ -4097,6 +4108,8 @@ void PlayerPresenterTests::exitWaitsForBothPreferenceAndSessionPersistence() {
     QVERIFY(presenter.exiting());
     QVERIFY(!presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(backend.shutdown_calls, 0);
+    QVERIFY(shutdown_order.empty());
     QCOMPARE(preferences_writer.starts.size(), std::size_t{1});
     QCOMPARE(session_writer.starts.size(), std::size_t{1});
     QCOMPARE(session_writer.starts.back().snapshot.queue.items.size(), std::size_t{1});
@@ -4106,14 +4119,21 @@ void PlayerPresenterTests::exitWaitsForBothPreferenceAndSessionPersistence() {
     preferences_writer.complete(PreferencesSaveStatus::Saved);
     PlayerPresenterTestAccess::pollPersistence(presenter);
     QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(backend.shutdown_calls, 0);
+    QVERIFY(shutdown_order.empty());
     QVERIFY(!presenter.exitCommitted());
 
     session_writer.complete(SessionSaveStatus::Saved);
     PlayerPresenterTestAccess::pollPersistence(presenter);
     QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(backend.shutdown_calls, 1);
+    QCOMPARE(shutdown_order, QStringList({QStringLiteral("backend-shutdown"), QStringLiteral("platform-exit")}));
     QVERIFY(presenter.exitCommitted());
     QVERIFY(!preferences_autosave.dirty());
     QVERIFY(!session_autosave.dirty());
+    QVERIFY(!presenter.requestExit());
+    QCOMPARE(backend.shutdown_calls, 1);
+    QCOMPARE(platform.exit_calls, 1);
 }
 
 void PlayerPresenterTests::pendingSessionExitFreezesLocalPlaybackAndMetadataUntilCancellation() {
@@ -4176,6 +4196,7 @@ void PlayerPresenterTests::pendingSessionExitFreezesLocalPlaybackAndMetadataUnti
     PlayerPresenterTestAccess::pollPersistence(presenter);
     QVERIFY(!presenter.exiting());
     QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(backend.shutdown_calls, 0);
     QTRY_COMPARE(presenter.currentQueueIndex(), 1);
     QCOMPARE(backend.loaded_paths.size(), std::size_t{2});
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
@@ -4660,6 +4681,7 @@ void PlayerPresenterTests::sessionOnlyExitTimeoutUsesTheExistingFailureWarning()
     QVERIFY(!presenter.exiting());
     QVERIFY(!presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(backend.shutdown_calls, 0);
     QCOMPARE(platform.restore_calls, 1);
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
     QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::SessionPersistence);
