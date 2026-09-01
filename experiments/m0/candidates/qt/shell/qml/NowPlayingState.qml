@@ -9,6 +9,11 @@ ColumnLayout {
     required property PlayerPresenter presenter
     signal openAudioRequested
     signal detailsRequested(Item opener)
+
+    function focusPrimary() {
+        openAudioButton.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     Item {
         implicitWidth: 192
         implicitHeight: 192
@@ -65,6 +70,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     AccessibleActionButton {
+        id: openAudioButton
         controlId: "open-another-audio"
         contract: root.contract
         text: root.contract.openAudioText

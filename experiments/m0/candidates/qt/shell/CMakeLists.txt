@@ -207,6 +207,8 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/TrackDetailsPanel.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsPanel.qml")
     set_source_files_properties(qml/TrackDetailsText.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsText.qml")
     set_source_files_properties(qml/ErrorText.qml PROPERTIES QT_RESOURCE_ALIAS "ErrorText.qml")
+    set_source_files_properties(qml/PlaybackAccessibilityStatus.qml PROPERTIES QT_RESOURCE_ALIAS "PlaybackAccessibilityStatus.qml")
+    set_source_files_properties(qml/PlaybackAccessibilityText.qml PROPERTIES QT_RESOURCE_ALIAS "PlaybackAccessibilityText.qml")
     set_source_files_properties(qml/TransportText.qml PROPERTIES QT_RESOURCE_ALIAS "TransportText.qml")
     qt_add_library(m0_qt_shell_ui STATIC)
     qt_add_qml_module(m0_qt_shell_ui
@@ -231,6 +233,8 @@ if(M0_QT_SHELL_SUPPORT)
             qml/NowPlayingState.qml
             qml/ErrorState.qml
             qml/ErrorText.qml
+            qml/PlaybackAccessibilityStatus.qml
+            qml/PlaybackAccessibilityText.qml
             qml/TransportBar.qml
             qml/TransportText.qml
             qml/TransportSlider.qml

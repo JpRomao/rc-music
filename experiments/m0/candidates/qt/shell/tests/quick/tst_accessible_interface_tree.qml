@@ -61,8 +61,26 @@ TestCase {
         testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
         tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
 
-        verifyControl(findChild(shell, "progress"), Accessible.Slider, "Posição da faixa", true);
+        const progress = findChild(shell, "progress");
+        progress.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(function () {
+            return progress.activeFocus;
+        });
+        const focusedProgress = verifyControl(progress, Accessible.Slider, "Posição da faixa", true);
+        compare(focusedProgress.description, "Setas: 1 segundo; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
+        verify(focusedProgress.focused);
+        verify(!focusedProgress.disabled);
         verifyControl(findChild(shell, "volume"), Accessible.Slider, "Volume", true);
+
+        findChild(shell, "play-pause").forceActiveFocus(Qt.TabFocusReason);
+        testScenarioDriver.publishLocalUnseekablePlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "seekable", false); // qmllint disable unqualified
+        const disabledProgress = verifyControl(progress, Accessible.Slider, "Posição da faixa", false);
+        compare(disabledProgress.description, "Esta fonte não permite avançar ou voltar.");
+        verify(!disabledProgress.focused);
+        verify(disabledProgress.disabled);
+        testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "seekable", true); // qmllint disable unqualified
 
         keyClick(Qt.Key_L, Qt.ControlModifier);
         const list = findChild(shell, "queue-list");

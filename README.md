@@ -14,6 +14,8 @@ M3.5 está funcional no candidato Qt/Windows apenas no recorte de armazenamento,
 
 M3.6 está funcional somente no candidato Qt/Windows, sem encerrar M3 nem aceitar Qt como stack do produto. As strings essenciais da UI ficam em catálogos `*Text.qml`; o filtro do seletor nativo usa um catálogo C++ separado. O pt-BR é compilado por `qt_add_translations` e instalado em runtime por `QTranslator`, inclusive com plural correto em “1 segundo”. Erros locais expõem causas tipadas em microcopy segura e uma recuperação concreta; rejeição síncrona de seleção não vazia também se torna recuperável sem substituir a fila ou o contexto anteriores. A fila acessível não verbaliza IDs de ocorrência nem códigos internos, e importações parciais/rejeitadas oferecem a ação de escolher outros arquivos. Testes automatizados cobrem texto longo em 720 × 520. Ainda faltam validação nativa com NVDA, DPI, alto contraste e movimento reduzido, além de pacote/E2E; quando o SDK Qt de destino é enxuto, o configure também exige um `QT_HOST_PATH` com as ferramentas host de tradução.
 
+M3.7 está funcional no recorte automatizável do candidato Qt/Windows. A jornada completa por teclado cobre abertura, fila, reprodução e confirmação de limpeza; o transporte expõe atalhos e motivos localizados, e o progresso oferece ToolTip alcançável quando uma fonte ativa não aceita seek. Mudanças de estado preservam ou reparam foco, inclusive quando o transporte perde disponibilidade, sem roubá-lo de fila, preferências, detalhes ou avisos. A árvore `QAccessibleInterface` é inspecionada diretamente em nome, role, descrição, foco e estado desabilitado. Loading, troca de faixa, erro terminal e rejeição de seek produzem anúncios deduplicados sem spam do timer; durante a descoberta, a importação mantém autoridade de fala, um erro persistente é anunciado após seu resumo e um seek rejeitado obsoleto é suprimido. O foco primário possui contraste semântico de pelo menos 3:1, e movimento reduzido interrompe o indicador contínuo sem esconder o status. O fechamento passou 174/174 no CTest combinado, Quick 90/90 em 100%, 150% e 200%, `qmllint`, formato de 90 C++/46 QML e a composição `BUILD_TESTING=OFF`. Isso não substitui NVDA, DPI/alto contraste/movimento nativos nem pacote/E2E; esses gates permanecem abertos, e o próximo incremento funcional é M4.1.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -140,8 +142,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. implementar M3.7, fechando teclado, foco e acessibilidade automatizável no Windows;
-2. continuar os incrementos funcionais Windows na ordem do plano, mantendo cada fechamento pequeno e verificável;
+1. implementar M4.1, começando pelo snapshot puro e pelo armazenamento atômico da sessão no Windows;
+2. seguir por geometria/start minimized, argumentos/instância única, tray completo, SMTC e recuperação, mantendo cada fechamento pequeno e verificável;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

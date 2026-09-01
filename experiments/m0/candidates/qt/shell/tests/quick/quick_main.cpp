@@ -108,10 +108,10 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     music_player::m0::PlaybackCommandResult shutdown() override {
         return music_player::m0::PlaybackCommandResult::Accepted;
     }
-    void publish(const music_player::m0::PlaybackStatus status) {
+    void publish(const music_player::m0::PlaybackStatus status, const bool seekable = true) {
         snapshot_.status = status;
         snapshot_.duration_ms = 180'000;
-        snapshot_.seekable = true;
+        snapshot_.seekable = seekable;
         if (event_callback_)
             event_callback_({music_player::m0::PlaybackEventType::SnapshotChanged, snapshot_});
     }
@@ -305,6 +305,9 @@ class ScenarioDriver final : public QObject {
         return static_cast<qulonglong>(
             music_player::m0::test::PlayerPresenterTestAccess::seekCommitAttemptCount(presenter_));
     }
+    Q_INVOKABLE void rejectNextFixtureSeek() noexcept {
+        music_player::m0::test::PlayerPresenterTestAccess::rejectNextSeek(presenter_);
+    }
     Q_INVOKABLE void enqueueLocalSelection(const QStringList& sources) {
         std::vector<std::filesystem::path> selection;
         selection.reserve(static_cast<std::size_t>(sources.size()));
@@ -322,6 +325,9 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
+    Q_INVOKABLE void publishLocalUnseekablePlaying() {
+        local_backend_.publish(music_player::m0::PlaybackStatus::Playing, false);
+    }
     Q_INVOKABLE void publishLocalError() {
         local_backend_.snapshot_.error = music_player::m0::PlaybackErrorCode::InvalidMedia;
         local_backend_.publish(music_player::m0::PlaybackStatus::Error);
@@ -514,7 +520,7 @@ class ScenarioDriver final : public QObject {
                              {QStringLiteral("role"), -1},         {QStringLiteral("parentRole"), -1},
                              {QStringLiteral("name"), QString{}},  {QStringLiteral("description"), QString{}},
                              {QStringLiteral("focusable"), false}, {QStringLiteral("focused"), false},
-                             {QStringLiteral("childCount"), 0}};
+                             {QStringLiteral("disabled"), false},  {QStringLiteral("childCount"), 0}};
         QAccessibleInterface* const interface = QAccessible::queryAccessibleInterface(object);
         if (interface == nullptr || !interface->isValid())
             return snapshot;
@@ -526,6 +532,7 @@ class ScenarioDriver final : public QObject {
         snapshot.insert(QStringLiteral("description"), interface->text(QAccessible::Description));
         snapshot.insert(QStringLiteral("focusable"), state.focusable != 0);
         snapshot.insert(QStringLiteral("focused"), state.focused != 0);
+        snapshot.insert(QStringLiteral("disabled"), state.disabled != 0);
         snapshot.insert(QStringLiteral("childCount"), interface->childCount());
 
         QAccessibleInterface* const parent = interface->parent();

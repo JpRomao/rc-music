@@ -36,11 +36,98 @@ ApplicationWindow {
     ErrorText {
         id: errorText
     }
+    PlaybackAccessibilityStatus {
+        contract: window.uiContract
+        presenter: window.presenter
+        errorLabels: errorText
+    }
     readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
     readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
+    property int previousPlaybackState: -1
+    property int playbackFocusRepairGeneration: 0
+    property Item lastActiveFocusItem: null
+
+    Component.onCompleted: previousPlaybackState = presenter.playbackState
+    onActiveFocusItemChanged: {
+        if (activeFocusItem && !isPassiveFocusFallback(activeFocusItem))
+            lastActiveFocusItem = activeFocusItem;
+    }
+
+    function isInside(item, ancestor) {
+        while (item) {
+            if (item === ancestor)
+                return true;
+            item = item.parent;
+        }
+        return false;
+    }
+
+    function playbackFocusScope(state) {
+        if (state === PlayerPresenter.Unloaded)
+            return emptyState;
+        if (state === PlayerPresenter.Error)
+            return errorState;
+        return nowPlayingState;
+    }
+
+    function isPassiveFocusFallback(item) {
+        return !item || item === contentItem || item === stateLayer || !item.activeFocusOnTab;
+    }
+
+    function transportEnabledForState(state) {
+        return state === PlayerPresenter.Ready || state === PlayerPresenter.Paused || state === PlayerPresenter.Playing;
+    }
+
+    function focusPlaybackPrimary(state) {
+        if (state === PlayerPresenter.Unloaded)
+            emptyState.focusPrimary();
+        else if (state === PlayerPresenter.Error)
+            errorState.focusPrimary();
+        else
+            nowPlayingState.focusPrimary();
+    }
+
+    function repairPlaybackStateFocus() {
+        const nextState = presenter.playbackState;
+        const oldState = previousPlaybackState;
+        const oldScope = playbackFocusScope(previousPlaybackState);
+        const nextScope = playbackFocusScope(nextState);
+        previousPlaybackState = nextState;
+        const focusBeforeTransition = isPassiveFocusFallback(activeFocusItem) ? lastActiveFocusItem : activeFocusItem;
+        const focusCameFromDisappearingState = oldScope !== nextScope && isInside(focusBeforeTransition, oldScope);
+        const wholeTransportBecameUnavailable = transportEnabledForState(oldState) && !transportEnabledForState(nextState);
+        const focusedSeekControlBecameUnavailable = transport.isSeekControl(focusBeforeTransition) && !presenter.seekable;
+        const focusCameFromDisabledTransport = isInside(focusBeforeTransition, transport) && (wholeTransportBecameUnavailable || focusedSeekControlBecameUnavailable);
+        if (!focusCameFromDisappearingState && !focusCameFromDisabledTransport)
+            return;
+        const repairSource = focusCameFromDisabledTransport ? transport : oldScope;
+
+        const repairGeneration = ++playbackFocusRepairGeneration;
+        Qt.callLater(function () {
+            if (repairGeneration !== window.playbackFocusRepairGeneration || window.playbackFocusScope(window.presenter.playbackState) !== nextScope)
+                return;
+            const currentFocus = window.activeFocusItem;
+            if (!window.isPassiveFocusFallback(currentFocus) && !window.isInside(currentFocus, repairSource))
+                return;
+            if (!window.active || windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || queuePanel.clearConfirmationOpen || window.presenter.exiting)
+                return;
+            if (focusCameFromDisabledTransport && window.transportEnabledForState(window.presenter.playbackState))
+                transport.focusPrimary();
+            else
+                window.focusPlaybackPrimary(window.presenter.playbackState);
+        });
+    }
+
+    Connections {
+        target: window.presenter
+
+        function onPlaybackChanged() {
+            window.repairPlaybackStateFocus();
+        }
+    }
 
     function focusOwnsTextInput() {
         let item = activeFocusItem;

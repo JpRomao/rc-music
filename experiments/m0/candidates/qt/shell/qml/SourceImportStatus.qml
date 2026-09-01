@@ -149,7 +149,8 @@ FocusScope {
         spacing: root.contract.spacingUnit * 2
 
         BusyIndicator {
-            running: root.active
+            objectName: "source-import-busy-indicator"
+            running: root.active && !root.contract.reducedMotion
             visible: root.active
             implicitWidth: root.contract.controlTargetMinimum
             implicitHeight: root.contract.controlTargetMinimum

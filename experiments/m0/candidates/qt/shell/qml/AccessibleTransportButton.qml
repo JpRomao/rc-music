@@ -7,10 +7,15 @@ Button {
     required property ShellUiContract contract
     property string controlId: objectName
     property string accessibleName: text
+    property string shortcutHint: ""
+    property string disabledReason: ""
+    readonly property string accessibleDescription: !enabled && disabledReason.length > 0 ? disabledReason : shortcutHint
+    readonly property string toolTipText: !enabled && disabledReason.length > 0 ? accessibleName + " — " + disabledReason : accessibleName + (shortcutHint.length > 0 ? " (" + shortcutHint + ")" : "")
     readonly property bool contrastHighlighted: contract.highContrast && enabled && (hovered || down || checked)
     Accessible.role: Accessible.Button
     Accessible.id: controlId
     Accessible.name: accessibleName
+    Accessible.description: accessibleDescription
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
     Accessible.onPressAction: control.clicked()
@@ -19,6 +24,8 @@ Button {
     opacity: enabled || contract.highContrast ? 1.0 : 0.45
     implicitHeight: contract.controlTargetPreferred
     implicitWidth: Math.max(contract.controlTargetPreferred, contentItem.implicitWidth + 16)
+    ToolTip.text: toolTipText
+    ToolTip.visible: hovered || activeFocus
     Keys.onReturnPressed: event => {
         control.clicked();
         event.accepted = true;

@@ -15,6 +15,11 @@ ColumnLayout {
     signal detailsRequested(Item opener)
     Accessible.role: Accessible.AlertMessage
     Accessible.name: titleText + (bodyText.length > 0 ? ". " + bodyText : "")
+
+    function focusPrimary() {
+        recoveryButton.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     Text {
         objectName: "error-title"
         text: root.titleText
@@ -50,6 +55,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     AccessibleActionButton {
+        id: recoveryButton
         controlId: root.presenter.usesFrozenFixture ? "error-skip" : "error-open-audio"
         contract: root.contract
         text: root.actionText

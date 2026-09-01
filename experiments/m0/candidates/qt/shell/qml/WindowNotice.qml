@@ -11,6 +11,8 @@ Popup {
     required property Item fallbackFocusItem
     property Item restoreFocusItem: null
     property int displayedNotice: PlayerPresenter.NoNotice
+    property int focusRestoreRevision: 0
+    property int restoredFocusRevision: -1
     readonly property bool closeNotice: displayedNotice === PlayerPresenter.TrayCloseNotice
     modal: true
     dim: false
@@ -29,6 +31,20 @@ Popup {
         if (!visible && parent && parent.Window.window)
             restoreFocusItem = parent.Window.window.activeFocusItem;
     }
+    function restoreFocus() {
+        if (presenter.exiting)
+            return;
+        const windowContentItem = parent && parent.Window.window ? parent.Window.window.contentItem : null;
+        const restoreTargetAvailable = restoreFocusItem && restoreFocusItem.parent && restoreFocusItem !== windowContentItem && restoreFocusItem.enabled && restoreFocusItem.visible;
+        const target = restoreTargetAvailable ? restoreFocusItem : fallbackFocusItem;
+        target.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function restoreFocusOnce(revision) {
+        if (restoredFocusRevision === revision)
+            return;
+        restoredFocusRevision = revision;
+        restoreFocus();
+    }
     function synchronizeNotice() {
         if (presenter.windowNotice === PlayerPresenter.NoNotice)
             close();
@@ -46,14 +62,21 @@ Popup {
             root.synchronizeNotice();
         }
     }
+    onAboutToShow: ++focusRestoreRevision
     onOpened: focusFirst()
+    onAboutToHide: {
+        const revision = ++focusRestoreRevision;
+        Qt.callLater(function () {
+            if (revision !== root.focusRestoreRevision || root.opened || root.presenter.windowNotice !== PlayerPresenter.NoNotice)
+                return;
+            root.restoreFocusOnce(revision);
+        });
+    }
     onClosed: {
         if (presenter.windowNotice !== PlayerPresenter.NoNotice)
             presenter.cancelWindowNotice();
-        if (!presenter.exiting) {
-            const target = restoreFocusItem && restoreFocusItem.enabled && restoreFocusItem.visible ? restoreFocusItem : fallbackFocusItem;
-            target.forceActiveFocus(Qt.TabFocusReason);
-        }
+        if (!visible && !opened)
+            restoreFocusOnce(focusRestoreRevision);
     }
     background: Rectangle {
         color: root.contract.surfaceRaisedColor

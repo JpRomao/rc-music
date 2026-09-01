@@ -157,7 +157,7 @@ TestCase {
         keyClick(Qt.Key_Space);
         compare(presenter.playbackState, PlayerPresenter.Paused);
         verify(playPause.activeFocus);
-        for (const button of [playPause, findChild(shell, "mute"), findChild(shell, "previous")]) {
+        for (const button of [playPause, findChild(shell, "mute"), findChild(shell, "previous"), findChild(shell, "skip-forward")]) {
             focusItem(button);
             const buttonPosition = presenter.confirmedPositionMs;
             keyClick(Qt.Key_Right);
@@ -168,7 +168,7 @@ TestCase {
             compare(presenter.volume, 0.81);
             keyClick(Qt.Key_Down);
             compare(presenter.volume, 0.8);
-            verify(button.activeFocus);
+            verify(button.activeFocus, "Focus left " + button.objectName + ": " + String(shell.activeFocusItem) + "/" + (shell.activeFocusItem ? shell.activeFocusItem.objectName : "none"));
         }
         focusItem(findChild(shell, "mute"));
         verify(!presenter.muted);

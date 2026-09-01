@@ -13,6 +13,8 @@ TestCase {
     property string preferencesClosingFocus: ""
     property int preferencesOverlapSamples: 0
     property bool preferencesClosedDuringNoticeEntry: false
+    property bool noticeReopening: false
+    property bool reopenedNoticeLostFocus: false
 
     Component {
         id: shellComponent
@@ -41,7 +43,14 @@ TestCase {
             }
         }
     }
+    Connections {
+        target: testCase.observedShell
 
+        function onActiveFocusItemChanged() {
+            if (testCase.noticeReopening && testCase.observedNotice && testCase.observedNotice.visible && !testCase.isInside(testCase.observedShell.activeFocusItem, testCase.observedNotice.contentItem))
+                testCase.reopenedNoticeLostFocus = true;
+        }
+    }
     function test_newCloseReversesFadeAndPendingPreferencesCannotStealFocus() {
         testScenarioDriver.setSystemAppearance(false, false); // qmllint disable unqualified
         testScenarioDriver.setTrayAvailable(true); // qmllint disable unqualified
@@ -62,21 +71,28 @@ TestCase {
         tryVerify(function () {
             return notice.opened;
         });
-        mouseClick(cancel);
+        // Keep cancellation and reopening in the same event-loop turn so the
+        // stale deferred focus restoration is exercised deterministically.
+        verify(testPlayerPresenter.cancelWindowNotice()); // qmllint disable unqualified
         compare(testPlayerPresenter.windowNotice, PlayerPresenter.NoNotice); // qmllint disable unqualified
         verify(notice.visible);
+        noticeReopening = true;
         shell.close();
         compare(testPlayerPresenter.windowNotice, PlayerPresenter.TrayCloseNotice); // qmllint disable unqualified
         tryVerify(function () {
             return notice.opened;
         });
+        wait(0);
+        noticeReopening = false;
+        verify(!reopenedNoticeLostFocus, "A stale close callback moved focus outside the reopened lifecycle notice");
+        verify(isInside(shell.activeFocusItem, notice.contentItem), "A stale close callback moved focus outside the reopened lifecycle notice");
         compare(testPlayerPresenter.windowNotice, PlayerPresenter.TrayCloseNotice); // qmllint disable unqualified
         compare(testScenarioDriver.platformHideCalls(), 0); // qmllint disable unqualified
         mouseClick(cancel);
         tryVerify(function () {
             return !notice.visible;
         });
-        verify(preferencesButton.activeFocus);
+        verify(preferencesButton.activeFocus, "Focus after closing the lifecycle notice: " + String(shell.activeFocusItem) + ":" + (shell.activeFocusItem ? shell.activeFocusItem.objectName : "none"));
 
         mouseClick(preferencesButton);
         const preferences = findChild(shell, "preferences-panel");
@@ -105,7 +121,7 @@ TestCase {
         tryVerify(function () {
             return !notice.visible;
         });
-        verify(preferencesButton.activeFocus);
+        verify(preferencesButton.activeFocus, "Focus after closing the lifecycle notice: " + String(shell.activeFocusItem) + ":" + (shell.activeFocusItem ? shell.activeFocusItem.objectName : "none"));
         compare(testScenarioDriver.platformHideCalls(), 0); // qmllint disable unqualified
         compare(testScenarioDriver.platformExitCalls(), 0); // qmllint disable unqualified
 

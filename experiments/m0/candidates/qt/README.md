@@ -68,9 +68,17 @@ Strings essenciais da apresentação ficam em catálogos QML `*Text.qml`; o filt
 
 O presenter projeta causas tipadas de origem indisponível, mídia inválida, acesso negado e falha de backend em microcopy segura e ação `open-audio`. Cancelamento do seletor não vira erro; uma seleção não vazia rejeitada sincronamente publica recuperação e preserva fila, faixa e contexto anteriores. Importações parciais/rejeitadas mostram contagens neutras, orientação e “Escolher outros arquivos”. A fila anuncia posição, duração e causa localizada sem expor ID de ocorrência ou código interno. Título, mensagem e ação longos permanecem visíveis e contidos no mínimo 720 × 520 em Quick Test.
 
-O fechamento passou **174/174** no CTest Release combinado, **135/135** no core Qt OFF e **64/64** no Quick nos fatores padrão, 1,5× e 2×. `m0_qt_shell_ui_qmllint` terminou silencioso e o formato cobriu **90 C++/39 QML**. O build `BUILD_TESTING=OFF` registrou zero testes e rejeitou argumento reservado com exit 1. Nenhum benchmark foi executado. NVDA, DPI, alto contraste e movimento reduzido nativos, pacote/E2E e demais gates indicados permanecem abertos; M3.7 é o próximo recorte. Linux, A/B e benchmarks continuam suspensos, e nenhuma stack foi aceita.
+O fechamento passou **174/174** no CTest Release combinado, **135/135** no core Qt OFF e **64/64** no Quick nos fatores padrão, 1,5× e 2×. `m0_qt_shell_ui_qmllint` terminou silencioso e o formato cobriu **90 C++/39 QML**. O build `BUILD_TESTING=OFF` registrou zero testes e rejeitou argumento reservado com exit 1. Nenhum benchmark foi executado. NVDA, DPI, alto contraste e movimento reduzido nativos, pacote/E2E e demais gates indicados permanecem abertos; o recorte M3.7 abaixo é posterior. Linux, A/B e benchmarks continuam suspensos, e nenhuma stack foi aceita.
 
 Quando o SDK Qt usado como target é enxuto e não traz os executáveis host do LinguistTools, o configure exige `QT_HOST_PATH` apontando para uma instalação Qt host compatível; a ausência dessa âncora é uma limitação de build, não falha do catálogo em runtime.
+
+### Teclado e acessibilidade M3.7 — funcional no recorte automatizável
+
+A jornada Quick agora percorre somente por teclado abertura, fila, navegação, reprodução, “Limpar fila” e confirmação, incluindo Tab/Shift+Tab contidos no modal. Transporte expõe atalhos em descrição/ToolTip e explica por que seek/saltos estão indisponíveis. Transições Empty/Loading/Playing/Error movem foco apenas quando o estado que o possuía desaparece; fila, preferências, detalhes, importação e avisos mantêm autoridade. `QAccessibleInterface` é consultada diretamente para roles, nomes, descrições, foco e parentesco dos controles públicos.
+
+Loading, faixa atual, erro terminal e seek rejeitado emitem anúncios deduplicados sem tick spam nem paths/códigos; durante descoberta, a região de importação fala sozinha. O aro da ação primária usa contraste semântico ≥ 3:1 em claro/escuro, e movimento reduzido interrompe a animação contínua sem esconder o status. A restauração de foco do aviso também rejeita a raiz passiva após transições sobrepostas.
+
+O fechamento passou **174/174** no CTest Release combinado e **90/90** no Quick nos fatores padrão, 1,5× e 2×. `m0_qt_shell_ui_qmllint`, formato de **90 C++/46 QML** e a composição `BUILD_TESTING=OFF` ficaram verdes; esta listou zero testes e rejeitou argumento reservado em exit 1. Nenhum benchmark foi executado. NVDA, DPI, alto contraste e movimento reduzido nativos e pacote/E2E seguem pendentes; M3.8 fica adiado e M4.1 é o próximo incremento funcional, sem aceitar a stack.
 
 ### Alto contraste — implementação e evidência automatizada
 
