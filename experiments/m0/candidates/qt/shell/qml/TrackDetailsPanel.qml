@@ -14,6 +14,7 @@ Popup {
     property Item lastPanelFocusItem: null
     property bool diagnosticsExpanded: false
     property int focusTransferRevision: 0
+    property int focusVisibilityRevision: 0
     readonly property string diagnosticsText: formatDiagnostics(presenter.detailsDiagnostics)
     modal: true
     dim: false
@@ -151,24 +152,33 @@ Popup {
         content.Accessible.announce(announcement, Accessible.Polite);
     }
 
+    function applyFocusedItemVisibility(item, revision, remainingPasses) {
+        if (revision !== focusVisibilityRevision || !opened || !item || !item.activeFocus)
+            return;
+        const flickable = detailsScroll.contentItem;
+        const mapped = item.mapToItem(flickable.contentItem, 0, 0);
+        const margin = root.contract.spacingUnit;
+        const visibleTop = flickable.contentY;
+        const visibleBottom = visibleTop + flickable.height;
+        let targetY = visibleTop;
+        if (mapped.y - margin < visibleTop)
+            targetY = mapped.y - margin;
+        else if (mapped.y + item.height + margin > visibleBottom)
+            targetY = mapped.y + item.height + margin - flickable.height;
+        const maximumY = Math.max(0, flickable.contentHeight - flickable.height);
+        flickable.contentY = Math.max(0, Math.min(maximumY, targetY));
+        if (remainingPasses > 0)
+            Qt.callLater(function () {
+                root.applyFocusedItemVisibility(item, revision, remainingPasses - 1);
+            });
+    }
+
     function keepFocusedItemVisible(item) {
         if (!opened || !item || !item.activeFocus)
             return;
+        const revision = ++focusVisibilityRevision;
         Qt.callLater(function () {
-            if (!root.opened || !item.activeFocus)
-                return;
-            const flickable = detailsScroll.contentItem;
-            const mapped = item.mapToItem(flickable.contentItem, 0, 0);
-            const margin = root.contract.spacingUnit;
-            const visibleTop = flickable.contentY;
-            const visibleBottom = visibleTop + flickable.height;
-            let targetY = visibleTop;
-            if (mapped.y - margin < visibleTop)
-                targetY = mapped.y - margin;
-            else if (mapped.y + item.height + margin > visibleBottom)
-                targetY = mapped.y + item.height + margin - flickable.height;
-            const maximumY = Math.max(0, flickable.contentHeight - flickable.height);
-            flickable.contentY = Math.max(0, Math.min(maximumY, targetY));
+            root.applyFocusedItemVisibility(item, revision, 2);
         });
     }
 
@@ -244,6 +254,7 @@ Popup {
     }
     onClosed: {
         diagnosticsExpanded = false;
+        ++focusVisibilityRevision;
         const target = restoreFocusItem;
         restoreFocusItem = null;
         lastPanelFocusItem = null;

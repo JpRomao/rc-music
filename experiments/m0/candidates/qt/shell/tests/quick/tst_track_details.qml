@@ -151,6 +151,7 @@ TestCase {
 
     function test_localPartialDetailsUpdateCopyAndRemainActionableOnError() {
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
+        testScenarioDriver.setSystemAppearance(false, true); // qmllint disable unqualified
         const shell = createTemporaryObject(localShellComponent, null);
         verify(shell);
         shell.width = 720;
@@ -265,6 +266,7 @@ TestCase {
             return !errorPanel.visible && errorOpener.activeFocus;
         });
         errorShell.destroy();
+        testScenarioDriver.setSystemAppearance(false, false); // qmllint disable unqualified
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
     }
 
