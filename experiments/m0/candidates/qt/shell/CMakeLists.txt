@@ -947,6 +947,7 @@ add_library(m0_qt_core STATIC
     src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
+    src/domain/SessionSnapshot.cpp
 )
 target_include_directories(m0_qt_core PUBLIC include)
 target_link_libraries(m0_qt_core PUBLIC Threads::Threads)
@@ -969,6 +970,7 @@ if(BUILD_TESTING)
         tests/catch2/PlayerControllerTests.cpp
         tests/catch2/PreferencesAutosaveTests.cpp
         tests/catch2/QueueNavigationTests.cpp
+        tests/catch2/SessionSnapshotTests.cpp
         tests/catch2/SingleWorkerMetadataReaderTests.cpp
         tests/catch2/SingleWorkerPreferencesWriterTests.cpp
     )

@@ -15,6 +15,22 @@ struct LocalQueueOccurrenceId final {
     [[nodiscard]] bool operator==(const LocalQueueOccurrenceId&) const noexcept = default;
 };
 
+struct LocalFileQueueSnapshotItem final {
+    LocalQueueOccurrenceId occurrence_id{};
+    std::filesystem::path source_path{};
+
+    [[nodiscard]] bool operator==(const LocalFileQueueSnapshotItem&) const = default;
+};
+
+struct LocalFileQueueSnapshot final {
+    std::vector<LocalFileQueueSnapshotItem> items{};
+    std::optional<LocalQueueOccurrenceId> current_occurrence_id{};
+
+    [[nodiscard]] bool operator==(const LocalFileQueueSnapshot&) const = default;
+};
+
+[[nodiscard]] bool isValidLocalFileQueueSnapshot(const LocalFileQueueSnapshot& snapshot);
+
 struct LocalFileQueueItem final {
     LocalQueueOccurrenceId occurrence_id{};
     std::filesystem::path source_path{};
@@ -32,6 +48,9 @@ class LocalFileQueue final {
     [[nodiscard]] bool select(std::size_t index) noexcept;
     [[nodiscard]] bool markUnavailable(std::size_t index) noexcept;
     [[nodiscard]] bool clearSelection() noexcept;
+    [[nodiscard]] LocalFileQueueSnapshot snapshot() const;
+    // Replaces the identity universe and is intended for bootstrap before occurrence ids are exposed.
+    [[nodiscard]] bool restore(LocalFileQueueSnapshot snapshot);
 
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
@@ -40,8 +59,6 @@ class LocalFileQueue final {
     [[nodiscard]] std::span<const LocalFileQueueItem> items() const noexcept;
 
   private:
-    [[nodiscard]] LocalQueueOccurrenceId nextOccurrenceId() noexcept;
-
     std::vector<LocalFileQueueItem> items_{};
     std::optional<LocalQueueOccurrenceId> current_occurrence_id_{};
     std::uint64_t next_occurrence_id_{1};
