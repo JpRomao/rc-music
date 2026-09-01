@@ -66,6 +66,7 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
         }
         if (argument.startsWith(QStringLiteral("--m0-")))
             throw std::invalid_argument{"unsupported M0 shell option"};
+        options.source_paths.push_back(argument);
     }
     if (options.smoke_error_recovery && options.initial_scenario != InitialShellScenario::Unavailable)
         throw std::invalid_argument{"the error recovery smoke requires the unavailable scenario"};
@@ -86,6 +87,22 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     if ((preferences_restart || session_restart) && options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the restart smoke requires the empty scenario"};
     return options;
+}
+
+QStringList resolveShellSourcePaths(const QStringList& source_paths, const QString& working_directory) {
+    if (working_directory.isEmpty() || !QDir::isAbsolutePath(working_directory))
+        throw std::invalid_argument{"the shell working directory must be absolute"};
+
+    const QDir base{QDir::cleanPath(working_directory)};
+    QStringList resolved;
+    resolved.reserve(source_paths.size());
+    for (const QString& source_path : source_paths) {
+        if (source_path.isEmpty())
+            throw std::invalid_argument{"a shell source path cannot be empty"};
+        resolved.push_back(
+            QDir::cleanPath(QDir::isAbsolutePath(source_path) ? source_path : base.absoluteFilePath(source_path)));
+    }
+    return resolved;
 }
 
 void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool test_hooks_enabled,

@@ -21,9 +21,11 @@ struct ShellLaunchOptions final {
     bool smoke_session_recovery_repair{false};
     bool smoke_session_defaults_read{false};
     std::optional<QString> test_config_root{};
+    QStringList source_paths{};
 };
 
 [[nodiscard]] ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments);
+[[nodiscard]] QStringList resolveShellSourcePaths(const QStringList& source_paths, const QString& working_directory);
 void validateShellLaunchOptions(const ShellLaunchOptions& options, bool test_hooks_enabled,
                                 bool combined_audio_enabled);
 

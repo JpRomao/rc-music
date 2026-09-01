@@ -7,6 +7,7 @@
 
 using music_player::m0::experiment::InitialShellScenario;
 using music_player::m0::experiment::parseShellLaunchOptions;
+using music_player::m0::experiment::resolveShellSourcePaths;
 using music_player::m0::experiment::validateShellLaunchOptions;
 
 namespace {
@@ -39,6 +40,35 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(!options.smoke_session_recovery_repair);
         QVERIFY(!options.smoke_session_defaults_read);
         QVERIFY(!options.test_config_root.has_value());
+        QVERIFY(options.source_paths.isEmpty());
+    }
+
+    void capturesSourcePathsAsOrderedData() {
+        const QString unicode = QStringLiteral("C:/Música 日本/abertura 01.mp3");
+        const QString metacharacters = QStringLiteral("C:/data/faixa 'aspas' & calc.exe;.flac");
+        const QString long_path = QStringLiteral("C:/") + QString(320, QLatin1Char('a')) + QStringLiteral(".wav");
+
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), unicode, metacharacters, long_path});
+
+        QCOMPARE(options.source_paths, QStringList({unicode, metacharacters, long_path}));
+        validateShellLaunchOptions(options, false, true);
+    }
+
+    void resolvesRelativeSourcesAgainstTheInvokingWorkingDirectory() {
+        const QString working_directory = QDir::cleanPath(testConfigRoot(QStringLiteral("invocation cwd")));
+        const QString absolute = QDir{working_directory}.absoluteFilePath(QStringLiteral("já absoluto.mp3"));
+        const QStringList sources{QStringLiteral("subdir/../faixa 01.mp3"), absolute};
+
+        QCOMPARE(resolveShellSourcePaths(sources, working_directory),
+                 QStringList({QDir{working_directory}.absoluteFilePath(QStringLiteral("faixa 01.mp3")),
+                              QDir::cleanPath(absolute)}));
+    }
+
+    void rejectsAnEmptySourceArgument() {
+        const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QString{}});
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 (void)resolveShellSourcePaths(options.source_paths, QDir::currentPath()));
     }
 
     void acceptsTheClosedUnavailableScenario() {
