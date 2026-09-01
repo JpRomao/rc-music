@@ -166,6 +166,12 @@ if(M0_QT_SHELL_SUPPORT)
         src/adapters/SessionJsonCodec.hpp
         src/adapters/SessionJsonCodec.cpp
     )
+    if(WIN32)
+        target_sources(m0_qt_session_persistence PRIVATE
+            src/adapters/QtJsonWindowsSessionStore.hpp
+            src/adapters/QtJsonWindowsSessionStore.cpp
+        )
+    endif()
     target_include_directories(m0_qt_session_persistence PUBLIC include src)
     target_link_libraries(m0_qt_session_persistence PUBLIC m0_qt_core Qt6::Core)
     target_compile_features(m0_qt_session_persistence PUBLIC cxx_std_20)
@@ -428,6 +434,24 @@ if(M0_QT_SHELL_SUPPORT)
                 )
             endif()
             add_test(NAME m0.qt.preferences.windows-store COMMAND m0_qt_preferences_windows_store_tests)
+            add_executable(m0_qt_session_windows_store_tests
+                tests/qtest/QtJsonWindowsSessionStoreTests.cpp
+            )
+            target_link_libraries(m0_qt_session_windows_store_tests PRIVATE
+                m0_qt_session_persistence
+                Qt6::Test
+            )
+            target_include_directories(m0_qt_session_windows_store_tests PRIVATE src)
+            target_compile_features(m0_qt_session_windows_store_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_session_windows_store_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_session_windows_store_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_session_windows_store_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_test(NAME m0.qt.session.windows-store COMMAND m0_qt_session_windows_store_tests)
         endif()
         add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
         target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
@@ -572,6 +596,10 @@ if(M0_QT_SHELL_SUPPORT)
         if(WIN32)
             set_tests_properties(m0.qt.preferences.windows-store PROPERTIES
                 LABELS "m0;qt;preferences;windows;atomic-store"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            )
+            set_tests_properties(m0.qt.session.windows-store PROPERTIES
+                LABELS "m0;qt;session;windows;atomic-store"
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             )
         endif()

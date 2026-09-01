@@ -12,7 +12,7 @@ M3.6 está funcional somente no candidato Qt/Windows. Strings essenciais são ce
 
 M3.7 está funcional no recorte automatizável do candidato Qt/Windows. Teclado, foco entre estados/transporte/modais, ToolTip do progresso ativo sem seek e motivos acessíveis de indisponibilidade, inspeção `QAccessibleInterface`, anúncios sem spam ou competição com importação, contraste do foco e movimento reduzido estão cobertos. O fechamento passou 174/174 no CTest combinado e Quick 90/90 em 100%, 150% e 200%, além de lint/formato e composição sem testes. A validação nativa com NVDA, DPI, alto contraste e movimento reduzido continua pendente e impede encerrar os gates globais de M3. M3.8/benchmarks fica adiado; o próximo desenvolvimento é M4.1, começando pela sessão real.
 
-M4.1 está em andamento no candidato C++/Qt/Windows. O primeiro incremento, ainda sem Qt ou I/O, introduz snapshot validado de fila/ocorrência/posição e hidratação transacional que preserva IDs, ordem, paths Unicode e duplicatas. `available` permanece transitório, e o allocator reconstruído não emite zero nem colide quando os IDs restaurados atravessam o wrap de `uint64_t`. O core Qt OFF passou 142/142. Ainda faltam codec/porta, store Windows atômico, writer/autosave, integração sempre pausada e os cenários de corrupção, restart e kill; portanto FR-043 e M4.1 continuam abertos.
+M4.1 está em andamento no candidato C++/Qt/Windows. Snapshot/hidratação puros preservam IDs, ordem, paths Unicode e duplicatas; disponibilidade permanece transitória. A porta separada, o codec JSON v1 exato e o store Windows em `session.json`/`.bak` estão verdes. O store usa replace atômico sem fallback direto, lock cooperativo, backup byte a byte, recuperação sem reescrita, proteção de versão futura e falha fechada para arquivo ilegível. O fechamento atual passou 184/184 no combinado, 143/143 no core sem Qt e a composição sem testes. Ainda faltam writer/autosave, integração sempre pausada e E2E de corrupção, restart e kill; o lock também carece de prova multiprocesso. Portanto FR-043/FR-044, NFR-REL-003 e M4.1 continuam abertos.
 
 **Código do produto:** ainda não iniciado
 
@@ -139,7 +139,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. implementar M4.1 com snapshot puro, codec e armazenamento atômico da sessão, restaurando sempre pausado;
+1. continuar M4.1 com writer/autosave e integrar a sessão persistida, restaurando sempre pausado;
 2. seguir por geometria/start minimized, argumentos/instância única, tray completo, SMTC e recuperação, com TDD e checks proporcionais;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 

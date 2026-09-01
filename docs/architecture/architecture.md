@@ -367,7 +367,7 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 }
 ```
 
-O schema acima está materializado no adapter experimental Windows. O codec/porta de sessão separados são descritos abaixo; seu arquivo, a restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
+O schema acima está materializado no adapter experimental Windows. O codec, a porta e o store Windows de sessão separados são descritos abaixo; writer/autosave, restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
 
 O schema v1 separado da sessão é:
 
@@ -389,7 +389,7 @@ O schema v1 separado da sessão é:
 
 `queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths Unicode são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras são toleradas, mas todas as chaves v1 são obrigatórias.
 
-`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. A porta e o codec v1 estão materializados no candidato Qt; arquivo, backup, writer e composição no bootstrap continuam pendentes em M4.1.
+`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. A porta, o codec v1 e o store Windows estão materializados no candidato Qt; writer/autosave e composição no bootstrap continuam pendentes em M4.1.
 
 Gravação:
 
@@ -398,6 +398,10 @@ Gravação:
 3. substituir atomicamente o destino;
 4. manter no máximo um backup válido;
 5. nunca apagar o arquivo bom antes de validar o novo.
+
+O adapter Windows usa `session.json` e um único `session.json.bak` na raiz absoluta de configuração. `QSaveFile` grava no mesmo diretório com fallback direto desabilitado, e um `QLockFile` cooperativo envolve inspeção, rotação e commits; contenção falha imediatamente. A leitura nunca repara nem regrava. Sua precedência é: primário futuro, primário válido, backup futuro, backup válido, ambos ausentes e, por fim, defaults para arquivos inválidos ou ilegíveis. No save, arquivo ilegível falha fechado antes de qualquer tentativa de escrita, e qualquer versão futura bloqueia a operação sem confirmação explícita.
+
+Na rotação comum, os bytes exatos do primário válido anterior são commitados no backup antes do novo primário. Quando o backup é futuro e a substituição foi confirmada, ele permanece intacto até o novo primário ser commitado; só então recebe os bytes exatos do primário anterior ou, quando este não era válido, o novo documento. `Failed` pode representar falha antes ou depois de um commit e não garante disco inalterado; o writer deve reconciliar por `load()` e manter a autorização explícita nos retries correspondentes. O lock cobre writers cooperativos, mas o teste atual não substitui uma prova multiprocesso completa. Fault injection e handles Windows cobrem checkpoints e falhas de sharing/replace, não kill, crash ou perda de energia.
 
 Salvar por debounce após mudanças importantes e no shutdown. A fila preserva paths ausentes como itens indisponíveis para que o usuário possa localizar ou remover. SQLite só entra com biblioteca indexada e busca que comprovem necessidade.
 
