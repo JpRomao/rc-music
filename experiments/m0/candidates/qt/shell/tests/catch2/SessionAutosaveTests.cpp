@@ -406,6 +406,7 @@ TEST_CASE("future-version blocking stays dirty until explicit replacement and pr
     CHECK(writer.starts.size() == 1);
 
     REQUIRE(autosave.confirmFutureVersionReplacement());
+    CHECK(autosave.notice() == SessionAutosaveNotice::None);
     autosave.poll();
     REQUIRE(writer.starts.size() == 2);
     CHECK(writer.starts.back().snapshot == snapshot(2, 30));

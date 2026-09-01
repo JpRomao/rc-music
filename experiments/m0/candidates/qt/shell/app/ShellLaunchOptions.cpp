@@ -42,6 +42,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_preferences_restart_write = true;
             else if (value == QStringLiteral("preferences-restart-read"))
                 options.smoke_preferences_restart_read = true;
+            else if (value == QStringLiteral("session-restart-read"))
+                options.smoke_session_restart_read = true;
             else
                 throw std::invalid_argument{"unsupported M0 shell smoke"};
             continue;
@@ -66,27 +68,30 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     if (options.smoke_combined_startup && options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the combined startup smoke requires the empty scenario"};
     const bool preferences_restart = options.smoke_preferences_restart_write || options.smoke_preferences_restart_read;
+    const bool session_restart = options.smoke_session_restart_read;
     const bool executable_smoke = options.smoke_error_recovery || options.smoke_tray_lifecycle ||
-                                  options.smoke_combined_startup || preferences_restart;
-    if (preferences_restart && !options.test_config_root.has_value())
-        throw std::invalid_argument{"the preferences restart smoke requires its test config root"};
+                                  options.smoke_combined_startup || preferences_restart || session_restart;
+    if ((preferences_restart || session_restart) && !options.test_config_root.has_value())
+        throw std::invalid_argument{"the restart smoke requires its test config root"};
     if (options.test_config_root.has_value() && !executable_smoke)
         throw std::invalid_argument{"the M0 test config root requires an executable smoke"};
-    if (preferences_restart && options.initial_scenario != InitialShellScenario::Empty)
-        throw std::invalid_argument{"the preferences restart smoke requires the empty scenario"};
+    if ((preferences_restart || session_restart) && options.initial_scenario != InitialShellScenario::Empty)
+        throw std::invalid_argument{"the restart smoke requires the empty scenario"};
     return options;
 }
 
 void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool test_hooks_enabled,
                                 const bool combined_audio_enabled) {
-    if (!test_hooks_enabled &&
-        (options.scenario_control_requested || options.smoke_error_recovery || options.smoke_tray_lifecycle ||
-         options.smoke_combined_startup || options.smoke_preferences_restart_write ||
-         options.smoke_preferences_restart_read || options.test_config_root.has_value())) {
+    if (!test_hooks_enabled && (options.scenario_control_requested || options.smoke_error_recovery ||
+                                options.smoke_tray_lifecycle || options.smoke_combined_startup ||
+                                options.smoke_preferences_restart_write || options.smoke_preferences_restart_read ||
+                                options.smoke_session_restart_read || options.test_config_root.has_value())) {
         throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
         throw std::invalid_argument{"the combined startup smoke requires audio support"};
+    if (!combined_audio_enabled && options.smoke_session_restart_read)
+        throw std::invalid_argument{"the session restart smoke requires audio support"};
 }
 
 } // namespace music_player::m0::experiment

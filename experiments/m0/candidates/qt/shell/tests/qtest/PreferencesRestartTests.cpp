@@ -1,3 +1,5 @@
+#include "adapters/QtJsonWindowsSessionStore.hpp"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -6,7 +8,14 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <filesystem>
 #include <utility>
+
+using music_player::m0::LocalQueueOccurrenceId;
+using music_player::m0::QtJsonWindowsSessionStore;
+using music_player::m0::SessionSaveRequest;
+using music_player::m0::SessionSaveStatus;
+using music_player::m0::SessionSnapshot;
 
 class PreferencesRestartTests final : public QObject {
     Q_OBJECT
@@ -39,6 +48,18 @@ class PreferencesRestartTests final : public QObject {
 
         run(QStringLiteral("preferences-restart-write"));
         QVERIFY(QFileInfo::exists(config_root.filePath(QStringLiteral("preferences.json"))));
+        QtJsonWindowsSessionStore session_store{config_root.path()};
+        const SessionSnapshot ignored_session{
+            .queue =
+                {
+                    .items = {{{91},
+                               std::filesystem::path{
+                                   config_root.filePath(QStringLiteral("ignorado 日本.wav")).toStdWString()}}},
+                    .current_occurrence_id = LocalQueueOccurrenceId{91},
+                },
+            .position_ms = 321,
+        };
+        QCOMPARE(session_store.save(SessionSaveRequest{.snapshot = ignored_session}), SessionSaveStatus::Saved);
         run(QStringLiteral("preferences-restart-read"));
     }
 

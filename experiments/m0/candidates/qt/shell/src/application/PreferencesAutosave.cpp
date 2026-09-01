@@ -91,6 +91,7 @@ bool PreferencesAutosave::confirmFutureVersionReplacement() {
         return false;
     replace_future_version_ = true;
     due_ = options_.now();
+    notice_ = PreferencesAutosaveNotice::None;
     return true;
 }
 

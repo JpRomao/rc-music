@@ -160,6 +160,25 @@ TEST_CASE("a local track can stay ready without autoplaying", "[m0][qt][core][lo
     CHECK(playback.pause_calls == 0);
 }
 
+TEST_CASE("a restored local track becomes paused without autoplay and preserves its confirmed position",
+          "[m0][qt][core][local-track][playback][FR-043][regression]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    REQUIRE(session.open(L"C:\\Music\\restored.wav", LocalTrackStartIntent::RestorePaused));
+
+    const PlaybackEvent ready{PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 750, 2'000, true, 1}};
+    playback.snapshot_ = ready.snapshot;
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+    CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+
+    CHECK(session.startIntent() == LocalTrackStartIntent::RestorePaused);
+    CHECK(playback.play_calls == 0);
+    CHECK(playback.pause_calls == 1);
+    CHECK(playback.snapshot_.status == PlaybackStatus::Paused);
+    CHECK(playback.snapshot_.position_ms == 750);
+}
+
 TEST_CASE("play now promotes only the pending start of the current local track",
           "[m0][qt][core][local-track][playback][FR-016]") {
     RecordingPlaybackBackend playback;

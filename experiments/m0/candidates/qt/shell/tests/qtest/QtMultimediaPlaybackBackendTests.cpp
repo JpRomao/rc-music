@@ -126,6 +126,25 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
     }
 
+    void pausingAReadySourceNeverStartsPlaybackAndPreservesItsConfirmedPosition() {
+        QtMultimediaPlaybackBackend backend;
+        std::vector<PlaybackEvent> events;
+        backend.setEventCallback([&](const PlaybackEvent& event) { events.push_back(event); });
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(backend.setMuted(true), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.seekTo(500), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().position_ms, std::int64_t{500}, 2'000);
+
+        const auto event_count_before_pause = events.size();
+        QCOMPARE(backend.pause(), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Paused, 2'000);
+        QCOMPARE(backend.snapshot().position_ms, std::int64_t{500});
+        for (auto index = event_count_before_pause; index < events.size(); ++index) {
+            QVERIFY(events[index].snapshot.status != PlaybackStatus::Playing);
+        }
+    }
+
     void playPauseAndSeekAreIdempotentForAuthenticatedWav() {
         QtMultimediaPlaybackBackend backend;
         std::vector<PlaybackEvent> events;

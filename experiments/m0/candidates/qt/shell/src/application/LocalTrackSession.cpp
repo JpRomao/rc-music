@@ -208,7 +208,9 @@ void LocalTrackSession::attemptStart(const PlaybackSnapshot& snapshot) {
         start_pending_ = false;
         return;
     }
-    if (playback_backend_.play() == PlaybackCommandResult::Accepted) {
+    const PlaybackCommandResult result =
+        start_intent_ == LocalTrackStartIntent::RestorePaused ? playback_backend_.pause() : playback_backend_.play();
+    if (result == PlaybackCommandResult::Accepted) {
         start_pending_ = false;
     }
 }

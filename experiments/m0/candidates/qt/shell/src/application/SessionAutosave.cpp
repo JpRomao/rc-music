@@ -146,6 +146,7 @@ bool SessionAutosave::confirmFutureVersionReplacement() {
     automatic_rearming_suspended_ = false;
     immediate_due_ = options_.now();
     retry_after_active_ = active_revision_.has_value();
+    notice_ = SessionAutosaveNotice::None;
     return true;
 }
 

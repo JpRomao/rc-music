@@ -201,6 +201,7 @@ TEST_CASE("failed and future-version saves stay dirty until an explicit retry po
     CHECK(autosave.notice() == PreferencesAutosaveNotice::FutureVersionBlocked);
 
     REQUIRE(autosave.confirmFutureVersionReplacement());
+    CHECK(autosave.notice() == PreferencesAutosaveNotice::None);
     CHECK(autosave.needsPolling());
     autosave.poll();
     REQUIRE(writer.starts.size() == 3);

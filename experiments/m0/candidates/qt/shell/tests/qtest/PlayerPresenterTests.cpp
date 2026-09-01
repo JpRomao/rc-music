@@ -1,5 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
+#include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
@@ -269,6 +270,46 @@ class PresenterPreferencesWriter final : public PreferencesWriter {
     std::function<void(const PreferencesWriteRequest&)> on_flush;
 };
 
+class PresenterSessionWriter final : public SessionWriter {
+  public:
+    SessionWriterCommand start(SessionWriteRequest request) override {
+        if (active.has_value())
+            return SessionWriterCommand::Busy;
+        active = request;
+        starts.push_back(std::move(request));
+        return SessionWriterCommand::Accepted;
+    }
+
+    std::optional<SessionWriteCompletion> poll() override {
+        if (completions.empty())
+            return std::nullopt;
+        auto completion = completions.front();
+        completions.pop_front();
+        if (active.has_value() && active->revision == completion.revision)
+            active.reset();
+        return completion;
+    }
+
+    std::optional<SessionWriteCompletion> flush(SessionWriteRequest request) override {
+        flushes.push_back(request);
+        active.reset();
+        return SessionWriteCompletion{.revision = request.revision, .status = flush_status};
+    }
+
+    bool shutdown() override { return true; }
+
+    void complete(const SessionSaveStatus status) {
+        QVERIFY(active.has_value());
+        completions.push_back({.revision = active->revision, .status = status});
+    }
+
+    std::optional<SessionWriteRequest> active;
+    std::deque<SessionWriteCompletion> completions;
+    std::vector<SessionWriteRequest> starts;
+    std::vector<SessionWriteRequest> flushes;
+    SessionSaveStatus flush_status{SessionSaveStatus::Saved};
+};
+
 struct PresenterPreferencesClock final {
     PreferencesAutosave::TimePoint current{};
     [[nodiscard]] PreferencesAutosave::TimePoint now() const noexcept { return current; }
@@ -294,6 +335,18 @@ Preferences nonDefaultPreferences() {
 
 [[nodiscard]] std::filesystem::path localTestPath(const std::u8string& file_name) {
     return std::filesystem::path{u8"local-test"} / std::filesystem::path{file_name};
+}
+
+[[nodiscard]] SessionSnapshot persistedSessionSnapshot() {
+    const auto duplicate = localTestPath(u8"Abertura 日本語.mp3");
+    return {
+        .queue =
+            {
+                .items = {{{41}, duplicate}, {{42}, duplicate}},
+                .current_occurrence_id = LocalQueueOccurrenceId{42},
+            },
+        .position_ms = 42'000,
+    };
 }
 
 [[nodiscard]] QUrl localTestUrl(const std::filesystem::path& path) {
@@ -398,6 +451,24 @@ class PlayerPresenterTests final : public QObject {
     void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
     void refreshesTrayAvailabilityAndGuardsStartMinimized();
     void loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument();
+    void restoresPersistedSessionPausedBeforePresentationWithoutAutoplay();
+    void acceptsAnApproximateConfirmedPositionWhenRestoring();
+    void waitsForRestorableDurationBeforeApplyingThePersistedPosition();
+    void userSelectionCancelsPendingRestoreWithoutApplyingItsPosition();
+    void explicitPlayOfTheRestoredLoadingOccurrenceCancelsItsPendingPosition();
+    void explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation_data();
+    void explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation();
+    void restoredEndOfFileRemainsPausedWhenEndedArrives();
+    void restoreDisabledIgnoresAProvidedPersistedSession();
+    void reenablingRestoreForcesTheCurrentSessionToReplaceStaleDiskState();
+    void exitWaitsForBothPreferenceAndSessionPersistence();
+    void pendingSessionExitFreezesLocalPlaybackAndMetadataUntilCancellation();
+    void coalescesStructuralSessionMutationsIntoTheLatestSnapshot();
+    void persistsOnlyConfirmedPositionsOnPeriodicAndUrgentCheckpoints();
+    void sessionSaveFailureUsesTheExistingWarningAndRetryAction();
+    void sessionFutureBlockUsesTheExistingWarningAndReplacementAction();
+    void initialSessionFutureVersionUsesTheExistingReplacementAction();
+    void sessionOnlyExitTimeoutUsesTheExistingFailureWarning();
     void coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit();
     void pendingPreferenceExitKeepsBackgroundTicksReversible();
     void preferenceSaveTimeoutKeepsTheApplicationResponsiveAndOpen();
@@ -3350,6 +3421,898 @@ void PlayerPresenterTests::loadsPersistedPreferencesBeforePresentationWithoutAut
     QCOMPARE(autosave.latestRevision(), PreferencesRevision{0});
 }
 
+void PlayerPresenterTests::restoresPersistedSessionPausedBeforePresentationWithoutAutoplay() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-42"));
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{persisted.queue.items[1].source_path});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+    QVERIFY(!session_autosave.dirty());
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.pause_calls, 1);
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    QCOMPARE(backend.play_calls, 0);
+
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 42'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{42'000});
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+    QVERIFY(!session_autosave.dirty());
+    QVERIFY(session_writer.starts.empty());
+
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Playing,
+                          .position_ms = 7,
+                          .duration_ms = 60'000,
+                          .seekable = true,
+                          .generation = 999},
+                         false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{42'000});
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+}
+
+void PlayerPresenterTests::acceptsAnApproximateConfirmedPositionWhenRestoring() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 41'975,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{41'975});
+
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{1});
+    QVERIFY(session_autosave.dirty());
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{41'975});
+}
+
+void PlayerPresenterTests::waitsForRestorableDurationBeforeApplyingThePersistedPosition() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 0, .seekable = false, .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+    QVERIFY(backend.seek_positions.empty());
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::userSelectionCancelsPendingRestoreWithoutApplyingItsPosition() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.playQueueOccurrence(QStringLiteral("local-41")));
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-41"));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{2});
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+
+    QVERIFY(backend.seek_positions.empty());
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{1});
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(session_writer.starts.back().snapshot.queue.current_occurrence_id ==
+            std::optional{LocalQueueOccurrenceId{41}});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{0});
+}
+
+void PlayerPresenterTests::explicitPlayOfTheRestoredLoadingOccurrenceCancelsItsPendingPosition() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionSnapshot persisted = persistedSessionSnapshot();
+    persisted.queue.current_occurrence_id = LocalQueueOccurrenceId{41};
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-41"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QVERIFY(presenter.playQueueOccurrence(QStringLiteral("local-41")));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QVERIFY(backend.seek_positions.empty());
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 100,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QVERIFY(session_autosave.dirty());
+
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 60'000,
+                                          .duration_ms = 60'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-42"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{2});
+}
+
+void PlayerPresenterTests::explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation_data() {
+    QTest::addColumn<QString>("action");
+    QTest::newRow("play") << QStringLiteral("play");
+    QTest::newRow("skip") << QStringLiteral("skip");
+    QTest::newRow("seek") << QStringLiteral("seek");
+}
+
+void PlayerPresenterTests::explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation() {
+    QFETCH(QString, action);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionSnapshot persisted = persistedSessionSnapshot();
+    persisted.queue.current_occurrence_id = LocalQueueOccurrenceId{41};
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    if (action == QStringLiteral("play")) {
+        QVERIFY(presenter.togglePlayback());
+    } else if (action == QStringLiteral("skip")) {
+        QVERIFY(presenter.skipForward());
+    } else {
+        QVERIFY(presenter.beginSeekPreview(1'000));
+        QVERIFY(presenter.commitSeekPreview());
+    }
+    QVERIFY(session_autosave.dirty());
+
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 60'000,
+                                          .duration_ms = 60'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-42"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+}
+
+void PlayerPresenterTests::restoredEndOfFileRemainsPausedWhenEndedArrives() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionSnapshot persisted = persistedSessionSnapshot();
+    persisted.queue.current_occurrence_id = LocalQueueOccurrenceId{41};
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 42'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    const PlaybackSnapshot end_of_file{.status = PlaybackStatus::Paused,
+                                       .position_ms = 42'000,
+                                       .duration_ms = 42'000,
+                                       .seekable = true,
+                                       .generation = 1};
+    backend.publish(end_of_file);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{42'000});
+    backend.publishEvent(PlaybackEventType::Ended, end_of_file);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-41"));
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
+    QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::restoreDisabledIgnoresAProvidedPersistedSession() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = false;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QVERIFY(!presenter.hasCurrentOccurrence());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QVERIFY(backend.loaded_paths.empty());
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+    QVERIFY(!session_autosave.dirty());
+    QVERIFY(session_writer.starts.empty());
+}
+
+void PlayerPresenterTests::reenablingRestoreForcesTheCurrentSessionToReplaceStaleDiskState() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = false;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.setRestoreLastSession(true));
+    QVERIFY(session_autosave.dirty());
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{1});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(session_writer.starts.back().snapshot.queue.items.empty());
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{0});
+}
+
+void PlayerPresenterTests::exitWaitsForBothPreferenceAndSessionPersistence() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Saída 日本語.flac");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(session_autosave.dirty());
+    QVERIFY(preferences_autosave.dirty());
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(preferences_writer.starts.size(), std::size_t{1});
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QCOMPARE(session_writer.starts.back().snapshot.queue.items.size(), std::size_t{1});
+    QCOMPARE(session_writer.starts.back().snapshot.queue.current_occurrence_id,
+             std::optional{session_writer.starts.back().snapshot.queue.items.front().occurrence_id});
+
+    preferences_writer.complete(PreferencesSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(!presenter.exitCommitted());
+
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(platform.exit_calls, 1);
+    QVERIFY(presenter.exitCommitted());
+    QVERIFY(!preferences_autosave.dirty());
+    QVERIFY(!session_autosave.dirty());
+}
+
+void PlayerPresenterTests::pendingSessionExitFreezesLocalPlaybackAndMetadataUntilCancellation() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const std::vector<std::filesystem::path> sources{localTestPath(u8"Antes da saída.wav"),
+                                                     localTestPath(u8"Depois da saída.wav")};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [sources] { return sources; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    const QString current_occurrence = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 1'900,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    const std::size_t metadata_polls_before = metadata.polled_generations.size();
+    PlayerPresenterTestAccess::pollMetadata(presenter);
+    QCOMPARE(metadata.polled_generations.size(), metadata_polls_before);
+
+    const PlaybackSnapshot final_snapshot{.status = PlaybackStatus::Paused,
+                                          .position_ms = 2'000,
+                                          .duration_ms = 2'000,
+                                          .seekable = true,
+                                          .generation = 1};
+    backend.publish(final_snapshot);
+    backend.publishEvent(PlaybackEventType::Ended, final_snapshot);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.currentOccurrenceId(), current_occurrence);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
+
+    session_writer.complete(SessionSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QCOMPARE(platform.exit_calls, 0);
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{2});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    PlayerPresenterTestAccess::pollMetadata(presenter);
+    QCOMPARE(metadata.polled_generations.size(), metadata_polls_before + 1);
+}
+
+void PlayerPresenterTests::coalescesStructuralSessionMutationsIntoTheLatestSnapshot() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto first = localTestPath(u8"Primeira 日本語.mp3");
+    const auto second = localTestPath(u8"Segunda.flac");
+    const auto third = localTestPath(u8"Terceira.ogg");
+    const std::vector<std::vector<std::filesystem::path>> selections{{first, second}, {third}};
+    std::size_t selection_index = 0;
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [&] { return selections.at(selection_index++); },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    clock.advance(std::chrono::milliseconds{100});
+    QVERIFY(presenter.addAudio());
+    clock.advance(std::chrono::milliseconds{100});
+    QVERIFY(presenter.moveQueueOccurrence(QStringLiteral("local-3"), 0));
+    clock.advance(std::chrono::milliseconds{100});
+    QVERIFY(presenter.removeQueueOccurrence(QStringLiteral("local-2")));
+
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{4});
+    QVERIFY(session_autosave.dirty());
+    QVERIFY(session_writer.starts.empty());
+    clock.advance(std::chrono::milliseconds{499});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(session_writer.starts.empty());
+    clock.advance(std::chrono::milliseconds{1});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    const SessionSnapshot& coalesced = session_writer.starts.back().snapshot;
+    QCOMPARE(coalesced.queue.items.size(), std::size_t{2});
+    QVERIFY(coalesced.queue.items[0].occurrence_id == LocalQueueOccurrenceId{3});
+    QVERIFY(coalesced.queue.items[0].source_path == third);
+    QVERIFY(coalesced.queue.items[1].occurrence_id == LocalQueueOccurrenceId{1});
+    QVERIFY(coalesced.queue.items[1].source_path == first);
+    QVERIFY(coalesced.queue.current_occurrence_id == std::optional{LocalQueueOccurrenceId{1}});
+    QCOMPARE(coalesced.position_ms, std::int64_t{0});
+
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!session_autosave.dirty());
+
+    QVERIFY(presenter.clearQueue());
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{5});
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QVERIFY(session_writer.starts.back().snapshot.queue.items.empty());
+    QVERIFY(!session_writer.starts.back().snapshot.queue.current_occurrence_id.has_value());
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{0});
+}
+
+void PlayerPresenterTests::persistsOnlyConfirmedPositionsOnPeriodicAndUrgentCheckpoints() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Checkpoint 日本語.wav");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 5'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 100,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{100});
+
+    clock.advance(std::chrono::milliseconds{9'000});
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 200,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{200});
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{3});
+    QVERIFY(presenter.beginSeekPreview(800));
+    QVERIFY(presenter.updateSeekPreview(900));
+    QCOMPARE(presenter.positionMs(), qint64{900});
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{200});
+
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Playing,
+                          .position_ms = 4'000,
+                          .duration_ms = 5'000,
+                          .seekable = true,
+                          .generation = 999},
+                         false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{200});
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{3});
+
+    clock.advance(std::chrono::milliseconds{999});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    clock.advance(std::chrono::milliseconds{1});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{200});
+
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(presenter.commitSeekPreview());
+    QCOMPARE(backend.seek_positions, std::vector<std::int64_t>{900});
+    QVERIFY(presenter.seekPending());
+
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Playing,
+                          .position_ms = 900,
+                          .duration_ms = 5'000,
+                          .seekable = true,
+                          .generation = 999},
+                         false);
+    QCoreApplication::processEvents();
+    QVERIFY(presenter.seekPending());
+    QVERIFY(!session_autosave.dirty());
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 900,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_VERIFY(!presenter.seekPending());
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{900});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{3});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{900});
+
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 1'000,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{1'000});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{4});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{1'000});
+}
+
+void PlayerPresenterTests::sessionSaveFailureUsesTheExistingWarningAndRetryAction() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Falha de sessão.mp3");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    session_writer.complete(SessionSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+    QVERIFY(presenter.retryPreferenceSave());
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+}
+
+void PlayerPresenterTests::sessionFutureBlockUsesTheExistingWarningAndReplacementAction() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Sessão futura.flac");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    session_writer.complete(SessionSaveStatus::BlockedByFutureVersion);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QVERIFY(presenter.confirmPreferenceReplacement());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QVERIFY(session_writer.starts.back().replace_future_version);
+}
+
+void PlayerPresenterTests::initialSessionFutureVersionUsesTheExistingReplacementAction() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::FutureVersion,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QVERIFY(presenter.confirmPreferenceReplacement());
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(session_writer.starts.back().replace_future_version);
+    QVERIFY(preferences_writer.starts.empty());
+}
+
+void PlayerPresenterTests::sessionOnlyExitTimeoutUsesTheExistingFailureWarning() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Timeout de sessão.wav");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .exit_flush_timeout = std::chrono::milliseconds{100},
+            .now = [&clock] { return clock.now(); },
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(preferences_writer.starts.empty());
+
+    clock.advance(std::chrono::milliseconds{100});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(platform.restore_calls, 1);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+    QVERIFY(presenter.retryPreferenceSave());
+}
+
 void PlayerPresenterTests::coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit() {
     AvailableTrayPlatform platform;
     PresenterPreferencesWriter writer;
@@ -3559,7 +4522,9 @@ void PlayerPresenterTests::projectsTypedPreferenceRecoveryWarningsAndActions() {
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
     QVERIFY(presenter.confirmPreferenceReplacement());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
     QCOMPARE(writer.starts.size(), std::size_t{3});
     QVERIFY(writer.starts.back().replace_future_version);
 }

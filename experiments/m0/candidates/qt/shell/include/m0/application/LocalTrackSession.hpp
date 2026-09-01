@@ -22,6 +22,7 @@ enum class LocalTrackMetadataStatus {
 enum class LocalTrackStartIntent {
     Autoplay,
     StayReady,
+    RestorePaused,
 };
 
 enum class LocalTrackPlaybackEventResult {

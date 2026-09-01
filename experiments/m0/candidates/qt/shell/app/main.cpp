@@ -4,6 +4,12 @@
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
 #include "m0/adapters/SingleWorkerPreferencesWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
+#ifdef M0_QT_COMBINED_AUDIO
+#include "adapters/QtJsonWindowsSessionStore.hpp"
+#include "m0/adapters/SingleWorkerSessionWriter.hpp"
+#include "m0/application/SessionAutosave.hpp"
+#include "m0/application/SessionStartup.hpp"
+#endif
 #endif
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "presentation/ApplicationText.hpp"
@@ -169,11 +175,23 @@ int main(int argc, char* argv[]) {
         const music_player::m0::PreferencesLoadResult loaded_preferences = preferences_store.load();
         music_player::m0::SingleWorkerPreferencesWriter preferences_writer(preferences_store);
         music_player::m0::PreferencesAutosave preferences_autosave(preferences_writer, loaded_preferences.preferences);
-        const music_player::m0::PlayerPresenterPreferences presenter_preferences{
+        music_player::m0::PlayerPresenterPreferences presenter_preferences{
             .initial = loaded_preferences.preferences,
             .load_status = loaded_preferences.status,
             .autosave = &preferences_autosave,
         };
+#ifdef M0_QT_COMBINED_AUDIO
+        music_player::m0::QtJsonWindowsSessionStore session_store(config_root);
+        music_player::m0::SessionLoadResult loaded_session =
+            music_player::m0::loadSessionForStartup(session_store, loaded_preferences.preferences.restore_last_session);
+        music_player::m0::SingleWorkerSessionWriter session_writer(session_store);
+        music_player::m0::SessionAutosave session_autosave(session_writer, loaded_session.snapshot);
+        presenter_preferences.session = {
+            .initial = std::move(loaded_session.snapshot),
+            .load_status = loaded_session.status,
+            .autosave = &session_autosave,
+        };
+#endif
 #endif
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
@@ -183,7 +201,7 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_available = true;
         if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
-            options.smoke_preferences_restart_read)
+            options.smoke_preferences_restart_read || options.smoke_session_restart_read)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(
@@ -215,14 +233,14 @@ int main(int argc, char* argv[]) {
         PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
                                   artwork_cache,
 #ifdef Q_OS_WIN
-                                  presenter_preferences
+                                  std::move(presenter_preferences)
 #else
                                   nullptr
 #endif
         );
 #else
 #ifdef Q_OS_WIN
-        PlayerPresenter presenter(bundle, platform, presenter_preferences);
+        PlayerPresenter presenter(bundle, platform, std::move(presenter_preferences));
 #else
         PlayerPresenter presenter(bundle, platform);
 #endif
@@ -239,6 +257,18 @@ int main(int argc, char* argv[]) {
             (presenter.preferences() != restartPreferences() || !contract.darkTheme())) {
             throw std::runtime_error{"persisted preferences were not applied before QML creation"};
         }
+#ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_preferences_restart_read &&
+            (presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 0)) {
+            throw std::runtime_error{"disabled session restore performed hydration"};
+        }
+        if (options.smoke_session_restart_read &&
+            (!presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 1 ||
+             presenter.currentOccurrenceId() != QStringLiteral("local-77") ||
+             presenter.playbackState() == PlayerPresenter::PlaybackState::Playing)) {
+            throw std::runtime_error{"persisted session was not restored safely before QML creation"};
+        }
+#endif
 #endif
         if (options.initial_scenario == InitialShellScenario::Unavailable &&
             (!presenter.loadFrozenQueue() || !PlayerPresenterScenarioControl::enterUnavailable(presenter))) {
@@ -257,6 +287,8 @@ int main(int argc, char* argv[]) {
         bool tray_smoke_completed = false;
         bool combined_startup_smoke_completed = false;
         bool preferences_restart_completed = false;
+        bool session_restart_completed = false;
+        QTimer session_restart_timer;
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -330,6 +362,34 @@ int main(int argc, char* argv[]) {
         if (options.smoke_preferences_restart_write || options.smoke_preferences_restart_read) {
             QTimer::singleShot(3000, &application, [&application] { application.exit(2); });
         }
+#ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_session_restart_read) {
+            session_restart_timer.setInterval(10);
+            QObject::connect(&session_restart_timer, &QTimer::timeout, &application,
+                             [&application, &presenter, &session_restart_completed, &session_restart_timer] {
+                                 if (presenter.playbackState() == PlayerPresenter::PlaybackState::Error) {
+                                     qCritical() << "The persisted session became unavailable during restoration";
+                                     application.exit(2);
+                                     return;
+                                 }
+                                 if (presenter.playbackState() != PlayerPresenter::PlaybackState::Paused ||
+                                     presenter.confirmedPositionMs() != 750 || presenter.seekPending()) {
+                                     return;
+                                 }
+                                 session_restart_timer.stop();
+                                 session_restart_completed = presenter.requestExit();
+                                 if (!session_restart_completed)
+                                     application.exit(2);
+                             });
+            session_restart_timer.start();
+            QTimer::singleShot(5000, &application, [&application, &session_restart_completed] {
+                if (!session_restart_completed) {
+                    qCritical() << "The persisted session did not settle paused at its confirmed position";
+                    application.exit(2);
+                }
+            });
+        }
+#endif
 #endif
         const int result = application.exec();
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -352,6 +412,12 @@ int main(int argc, char* argv[]) {
             qCritical() << "The preferences restart smoke did not complete";
             return 2;
         }
+#ifdef M0_QT_COMBINED_AUDIO
+        if (options.smoke_session_restart_read && (result != 0 || !session_restart_completed || !presenter.exiting())) {
+            qCritical() << "The session restart smoke did not complete";
+            return 2;
+        }
+#endif
 #endif
         return result;
     } catch (const std::exception& error) {

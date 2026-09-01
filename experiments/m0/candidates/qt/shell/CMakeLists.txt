@@ -331,6 +331,7 @@ if(M0_QT_SHELL_SUPPORT)
     qt_add_executable(m0_qt_shell app/main.cpp)
     target_link_libraries(m0_qt_shell PRIVATE
         m0_qt_preferences_persistence
+        m0_qt_session_persistence
         m0_qt_shell_platform
         m0_qt_system_appearance
         m0_qt_shell_bootstrap
@@ -465,7 +466,12 @@ if(M0_QT_SHELL_SUPPORT)
         add_test(NAME m0.qt.shell-launch-options COMMAND m0_qt_shell_launch_tests)
         if(WIN32)
             add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
-            target_link_libraries(m0_qt_preferences_restart_tests PRIVATE Qt6::Core Qt6::Test)
+            target_link_libraries(m0_qt_preferences_restart_tests PRIVATE
+                m0_qt_session_persistence
+                Qt6::Core
+                Qt6::Test
+            )
+            target_include_directories(m0_qt_preferences_restart_tests PRIVATE src)
             target_compile_features(m0_qt_preferences_restart_tests PRIVATE cxx_std_20)
             set_target_properties(m0_qt_preferences_restart_tests PROPERTIES AUTOMOC ON)
             if(MSVC)
@@ -908,6 +914,33 @@ if(M0_QT_AUDIO_SUPPORT)
         if(M0_QT_SHELL_SUPPORT)
             if(WIN32)
                 set_tests_properties(m0.qt.preferences.restart PROPERTIES
+                    ENVIRONMENT_MODIFICATION
+                        "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+                    ENVIRONMENT
+                        "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
+                )
+                add_executable(m0_qt_session_restart_tests tests/qtest/SessionRestartTests.cpp)
+                target_link_libraries(m0_qt_session_restart_tests PRIVATE
+                    m0_qt_session_persistence
+                    Qt6::Core
+                    Qt6::Test
+                )
+                target_include_directories(m0_qt_session_restart_tests PRIVATE src)
+                target_compile_features(m0_qt_session_restart_tests PRIVATE cxx_std_20)
+                set_target_properties(m0_qt_session_restart_tests PROPERTIES AUTOMOC ON)
+                if(MSVC)
+                    target_compile_options(m0_qt_session_restart_tests PRIVATE /W4 /WX /permissive-)
+                else()
+                    target_compile_options(m0_qt_session_restart_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+                endif()
+                add_dependencies(m0_qt_session_restart_tests m0_qt_shell)
+                add_test(NAME m0.qt.session.restart COMMAND m0_qt_session_restart_tests
+                    $<TARGET_FILE:m0_qt_shell>
+                    "${M0_AUDIO_CORPUS_WAV_FILE}"
+                )
+                set_tests_properties(m0.qt.session.restart PROPERTIES
+                    LABELS "m0;qt;audio;session;restart;FR-043"
+                    TIMEOUT 25
                     ENVIRONMENT_MODIFICATION
                         "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
                     ENVIRONMENT

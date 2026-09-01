@@ -5,6 +5,7 @@
 #include "m0/application/LocalTrackSession.hpp"
 #include "m0/application/PlayerController.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
+#include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
@@ -23,6 +24,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -38,6 +40,13 @@ namespace test {
 struct PlayerPresenterTestAccess;
 }
 
+struct PlayerPresenterSession final {
+    SessionSnapshot initial{};
+    SessionLoadStatus load_status{SessionLoadStatus::Missing};
+    SessionAutosave* autosave{nullptr};
+    std::function<SessionAutosave::TimePoint()> now{[] { return std::chrono::steady_clock::now(); }};
+};
+
 struct PlayerPresenterPreferences final {
     using TimePoint = std::chrono::steady_clock::time_point;
 
@@ -46,6 +55,7 @@ struct PlayerPresenterPreferences final {
     PreferencesAutosave* autosave{nullptr};
     std::chrono::milliseconds exit_flush_timeout{2'000};
     std::function<TimePoint()> now{[] { return std::chrono::steady_clock::now(); }};
+    PlayerPresenterSession session{};
 };
 
 class PlayerPresenter final : public QObject {
@@ -356,8 +366,16 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool enterFrozenUnavailableScenario();
     void initializeDefaults();
     void initializePersistedPreferences(const PlayerPresenterPreferences& preferences);
+    void initializePersistedSession(const PlayerPresenterPreferences& preferences);
+    [[nodiscard]] SessionSnapshot currentSessionSnapshot() const;
+    void discardStaleRestoredSessionState();
+    void cancelRestoredPositionForExplicitTransport();
+    void sessionStructureDidChange();
+    void observeSessionPosition(bool checkpoint);
+    void reconcileRestoredPosition();
     void preferenceDidChange();
     void pollPreferencePersistence();
+    void pollPersistence();
     void synchronizePreferenceWarning();
     void completeExit();
     void cancelPendingExit();
@@ -421,14 +439,26 @@ class PlayerPresenter final : public QObject {
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
     bool exit_committed_{false};
+    std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};
     bool tray_notice_seen_{false};
     PreferencesAutosave* preferences_autosave_{nullptr};
+    SessionAutosave* session_autosave_{nullptr};
     PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};
     std::chrono::milliseconds preference_exit_flush_timeout_{2'000};
     std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{};
     std::optional<PlayerPresenterPreferences::TimePoint> preference_exit_deadline_{};
+    std::function<SessionAutosave::TimePoint()> session_now_{};
+    struct RestoredPosition final {
+        std::uint64_t generation{0};
+        std::int64_t target_ms{0};
+        bool seek_requested{false};
+    };
+    std::optional<RestoredPosition> restored_position_{};
+    std::optional<std::uint64_t> restored_eof_generation_{};
+    bool preferences_future_version_pending_{false};
+    bool session_future_version_pending_{false};
 };
 
 } // namespace music_player::m0

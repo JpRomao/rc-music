@@ -210,10 +210,12 @@ O quarto recorte de M4.1 é testado no core C++ puro com store controlado e `Man
 - verificar o estado imediatamente anterior e o disparo exato do debounce de 500 ms e do teto de 5 s, sem deixar uma revisão aceita herdar o deadline do burst anterior;
 - verificar que a posição confirmada altera somente o escalar preservando a fila, que o primeiro tick fixa o checkpoint de 10 s e que ticks contínuos não o postergam;
 - exercitar deadlines estrutural, posicional e imediato de forma independente, sempre disparando pelo mais próximo, além de `checkpointConfirmedPosition()`, repair, save-now e flush;
-- rejeitar posição negativa ou positiva sem ocorrência atual e nunca usar preview/interpolação como posição confirmada. Seek confirmado, pausa, parada/fim, erro terminal, suspensão e saída pertencem a testes futuros da composição;
+- rejeitar posição negativa ou positiva sem ocorrência atual e nunca usar preview/interpolação como posição confirmada; esse recorte puro não tenta comprovar os gatilhos da composição;
 - após falha ou versão futura, provar suspensão do rearm automático mesmo com novas mudanças, dirty preservado, completion antiga incapaz de limpar a revisão atual e retomada somente por retry/substituição/save-now/flush explícitos.
 
-Esses testes não comprovam restauração sempre pausada, wiring do timer, eventos reais de playback/lifecycle, saída visual nem reinício/crash do executável: presenter e bootstrap ainda não integram `SessionWriter`/`SessionAutosave`, e essas provas permanecem em M4.1.
+O quinto recorte acrescenta testes de bootstrap, presenter, adapter e processo para a integração de sessão. Eles cobrem leitura de `session.json` apenas com `restore_last_session=true`, hidratação antes do QML e restauração da ocorrência selecionada sempre pausada; posição vinculada à geração, tolerância de confirmação de 50 ms, espera por duração e proteção de EOF contra autoplay; autosave estrutural e posição confirmada em seek, pausa, evento terminal e saída; retry, substituição de versão futura, timeout de saída e reparo ao alternar `false` → `true`. O restart do executável Release instrumentado usa raiz e path Unicode e verifica pausa em 750 ms; outro processo prova que restauração desligada ignora a sessão sem chamar o store.
+
+O fechamento passou 214/214 no CTest Release combinado e 172/172 no core Qt OFF. `all_qmllint` e os checks de formato de 109 C++/46 QML ficaram verdes. A composição `BUILD_TESTING=OFF` compilou, listou zero testes e rejeitou o hook reservado com exit 1. Essas provas ainda não cobrem encerramento forçado/crash, corrupção/reparo/replace falho no fluxo completo, lock multiprocesso, desktop nativo ou pacote; a jornada 8 e M4.1 permanecem abertas.
 
 ### `MetadataReader`
 

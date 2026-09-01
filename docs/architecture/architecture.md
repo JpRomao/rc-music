@@ -367,7 +367,7 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 }
 ```
 
-O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows e a coordenação assíncrona de sessão dos recortes de M4.1 são descritos abaixo; restauração de fila/item/posição no presenter/bootstrap e o efeito de iniciar minimizado continuam pendentes em M4.1/M4.4. `PreferencesStore` não substitui `SessionStore`.
+O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows, a coordenação assíncrona e a restauração pausada no presenter/bootstrap dos recortes de M4.1 são descritos abaixo; o efeito de iniciar minimizado continua pendente em M4.4. `PreferencesStore` não substitui `SessionStore`.
 
 O schema v1 separado da sessão é:
 
@@ -389,7 +389,9 @@ O schema v1 separado da sessão é:
 
 `queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths Unicode são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras são toleradas, mas todas as chaves v1 são obrigatórias.
 
-`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. Os três primeiros recortes de M4.1 materializaram snapshot/hidratação, porta/codec v1 e store Windows; o quarto acrescenta writer/autosave no core C++ puro. O presenter e o bootstrap ainda não carregam, observam, salvam nem restauram essa sessão.
+`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. Os três primeiros recortes de M4.1 materializaram snapshot/hidratação, porta/codec v1 e store Windows; o quarto acrescentou writer/autosave no core C++ puro; o quinto integrou startup e presenter. Depois das preferências, o bootstrap chama o store de sessão somente se `restore_last_session=true`; quando a opção está desligada, fornece snapshot vazio sem ler `session.json`.
+
+Antes de expor o estado ao QML, o presenter hidrata a fila e abre a ocorrência selecionada com a intenção `RestorePaused`, que nunca chama play. O seek restaurado é vinculado à geração aberta, espera duração conhecida quando o destino é positivo e aceita confirmação do backend dentro de 50 ms; trocar de geração descarta a restauração pendente. Uma marca de EOF da mesma geração sobrevive ao snapshot pausado e impede que o `Ended` relacionado avance ou inicie outra faixa. Alterações estruturais alimentam o autosave coalescido, mas a posição persistida vem somente de snapshots confirmados pelo backend. Retry, substituição explícita de versão futura e recuperação de timeout ficam no boundary existente; alternar restauração de `false` para `true` força uma gravação estrutural mesmo quando o snapshot corrente é vazio, reparando ou substituindo estado antigo autorizado.
 
 Gravação:
 
@@ -411,7 +413,7 @@ Chamadas concorrentes de `shutdown()` são serializadas, drenam uma gravação j
 
 O `SessionAutosave` mantém deadlines independentes e escolhe sempre o mais próximo. Mudanças estruturais usam debounce trailing de 500 ms, limitado a 5 s desde a primeira mudança estrutural ainda não aceita. Posição confirmada altera somente o escalar `position_ms` em O(1); o primeiro tick arma um checkpoint fixo de 10 s e ticks posteriores não o adiam. Preview de seek, interpolação visual e ticks não confirmados pelo backend nunca alimentam o snapshot persistido.
 
-`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na futura integração com presenter/bootstrap, seek confirmado, pausa, parada/fim, erro terminal e fronteiras de lifecycle como suspensão ou saída devem usar esses gatilhos somente depois de obter a posição confirmada. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
+`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na integração atual, seek confirmado, pausa, parada/fim, erro terminal e saída usam esses gatilhos somente depois de obter a posição confirmada; suspensão permanece para M4.7. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
 
 Salvar por debounce após mudanças importantes e no shutdown. A fila preserva paths ausentes como itens indisponíveis para que o usuário possa localizar ou remover. SQLite só entra com biblioteca indexada e busca que comprovem necessidade.
 
@@ -422,7 +424,7 @@ Sequência de startup:
 1. capturar argumentos como valores nativos, sem reparse de string;
 2. adquirir instância única cedo;
 3. se secundária, encaminhar lista tipada e ativar a principal, então sair;
-4. principal carrega preferências e sessão pausada;
+4. principal carrega preferências e, somente quando `restore_last_session=true`, a sessão pausada;
 5. inicializa engine e integrações;
 6. processa argumentos novos conforme política de fila;
 7. mostra/restaura a janela.

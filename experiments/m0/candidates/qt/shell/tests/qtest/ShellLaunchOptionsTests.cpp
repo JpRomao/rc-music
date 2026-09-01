@@ -34,6 +34,7 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(!options.smoke_combined_startup);
         QVERIFY(!options.smoke_preferences_restart_write);
         QVERIFY(!options.smoke_preferences_restart_read);
+        QVERIFY(!options.smoke_session_restart_read);
         QVERIFY(!options.test_config_root.has_value());
     }
 
@@ -127,6 +128,17 @@ class ShellLaunchOptionsTests final : public QObject {
         validateShellLaunchOptions(options, true, true);
     }
 
+    void acceptsClosedSessionRestartHookOnlyForTheCombinedShell() {
+        const QString root = testConfigRoot(QStringLiteral("temporary session"));
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-restart-read"),
+                                     QStringLiteral("--m0-test-config-root=") + root});
+        QVERIFY(options.smoke_session_restart_read);
+        QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+        validateShellLaunchOptions(options, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+    }
+
     void acceptsIsolatedConfigForEveryExecutableSmoke_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("error recovery") << QStringList{
@@ -161,6 +173,9 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("restart read") << QStringList{QStringLiteral("m0_qt_shell"),
                                                      QStringLiteral("--m0-smoke=preferences-restart-read"),
                                                      testConfigArgument(QStringLiteral("temporary read"))};
+        QTest::newRow("session restart read")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-restart-read"),
+                           testConfigArgument(QStringLiteral("temporary session"))};
     }
 
     void rejectsEveryClosedControlInProduction() {
@@ -212,6 +227,8 @@ class ShellLaunchOptionsTests final : public QObject {
                            QStringLiteral("--m0-smoke=error-recovery")};
         QTest::newRow("restart without root")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=preferences-restart-write")};
+        QTest::newRow("session restart without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-restart-read")};
         QTest::newRow("root without restart")
             << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
         QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),

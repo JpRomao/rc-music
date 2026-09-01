@@ -139,14 +139,20 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::pause() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (snapshot_.status == PlaybackStatus::Paused || snapshot_.status == PlaybackStatus::Ready) {
+    if (snapshot_.status == PlaybackStatus::Paused) {
         return PlaybackCommandResult::Accepted;
     }
-    if (snapshot_.status != PlaybackStatus::Playing) {
+    if (snapshot_.status != PlaybackStatus::Ready && snapshot_.status != PlaybackStatus::Playing) {
         return PlaybackCommandResult::NotReady;
     }
     if (player_ == nullptr) {
         return PlaybackCommandResult::NotReady;
+    }
+    if (snapshot_.status == PlaybackStatus::Ready) {
+        PlaybackSnapshot paused = snapshot_;
+        paused.status = PlaybackStatus::Paused;
+        publishSnapshot(paused);
+        return PlaybackCommandResult::Accepted;
     }
     player_->pause();
     return PlaybackCommandResult::Accepted;
