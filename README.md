@@ -12,6 +12,8 @@ M3.4 está funcional no candidato Qt/Windows: uma ação disponível na faixa at
 
 M3.5 está funcional no candidato Qt/Windows apenas no recorte de armazenamento, sem encerrar os gates globais de M3 nem aceitar a stack. As dez preferências aprovadas — tema, movimento, volume, mudo, saltos para trás/para frente, comportamento ao fechar, restaurar sessão, iniciar minimizado e fim da fila — são carregadas antes da apresentação e persistidas em JSON `schemaVersion: 1`, limitado a 64 KiB. Alterações usam debounce trailing de 500 ms e um único writer fora da thread visual; o adapter grava por `QSaveFile` sem fallback direto e mantém um backup. Documento inválido recupera do backup ou usa defaults com aviso; versão futura no arquivo principal ou no backup é preservada até confirmação explícita. O teste de reinício executa duas vezes o executável Release instrumentado com `BUILD_TESTING=ON`, hooks de teste, plataforma offscreen e a mesma raiz temporária contendo espaços e Unicode; isso não prova o pacote, o desktop nativo, o primeiro frame sem flash ou uma migração histórica. A saída com escrita pendente continua processando eventos, bloqueia novas ações e só é confirmada após sucesso; falha, versão futura ou deadline visual de 2 s mantêm a janela alcançável e oferecem retry/substituição. Esse deadline cancela a intenção visual de saída, não a chamada síncrona de armazenamento já ativa, e o shutdown do writer ainda pode aguardar um `join()` sem limite se o armazenamento não retornar. A injeção de falhas antes/depois do commit não equivale a ensaio de perda real de energia. `restoreLastSession` e `startMinimized` têm somente persistência/round-trip nesta fatia; restauração de fila/item/posição e início minimizado efetivo pertencem a M4.1 e M4.4. Pacote, validação nativa/NVDA e benchmarks não foram cobertos por este recorte.
 
+M3.6 está funcional somente no candidato Qt/Windows, sem encerrar M3 nem aceitar Qt como stack do produto. As strings essenciais da UI ficam em catálogos `*Text.qml`; o filtro do seletor nativo usa um catálogo C++ separado. O pt-BR é compilado por `qt_add_translations` e instalado em runtime por `QTranslator`, inclusive com plural correto em “1 segundo”. Erros locais expõem causas tipadas em microcopy segura e uma recuperação concreta; rejeição síncrona de seleção não vazia também se torna recuperável sem substituir a fila ou o contexto anteriores. A fila acessível não verbaliza IDs de ocorrência nem códigos internos, e importações parciais/rejeitadas oferecem a ação de escolher outros arquivos. Testes automatizados cobrem texto longo em 720 × 520. Ainda faltam validação nativa com NVDA, DPI, alto contraste e movimento reduzido, além de pacote/E2E; quando o SDK Qt de destino é enxuto, o configure também exige um `QT_HOST_PATH` com as ferramentas host de tradução.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -138,8 +140,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. implementar M3.6, centralizando as strings pt-BR e a microcopy acionável restante;
-2. seguir por M3.7, fechando teclado, foco e acessibilidade automatizável no Windows;
+1. implementar M3.7, fechando teclado, foco e acessibilidade automatizável no Windows;
+2. continuar os incrementos funcionais Windows na ordem do plano, mantendo cada fechamento pequeno e verificável;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

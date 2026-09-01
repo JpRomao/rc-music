@@ -274,12 +274,30 @@ QString localPlaybackErrorCode(const PlaybackErrorCode error) {
         return QStringLiteral("invalid_media");
     case PlaybackErrorCode::AccessDenied:
         return QStringLiteral("access_denied");
-    case PlaybackErrorCode::None:
     case PlaybackErrorCode::NetworkFailure:
+        return QStringLiteral("network_failure");
     case PlaybackErrorCode::BackendFailure:
+        return QStringLiteral("backend_failure");
+    case PlaybackErrorCode::None:
         return {};
     }
     return {};
+}
+
+QString localPlaybackErrorMessageKey(const PlaybackErrorCode error) {
+    switch (error) {
+    case PlaybackErrorCode::SourceUnavailable:
+        return QStringLiteral("source_unavailable_error");
+    case PlaybackErrorCode::InvalidMedia:
+        return QStringLiteral("invalid_media_error");
+    case PlaybackErrorCode::AccessDenied:
+        return QStringLiteral("access_denied_error");
+    case PlaybackErrorCode::None:
+    case PlaybackErrorCode::NetworkFailure:
+    case PlaybackErrorCode::BackendFailure:
+        return QStringLiteral("backend_failure_error");
+    }
+    return QStringLiteral("backend_failure_error");
 }
 
 [[nodiscard]] std::optional<std::filesystem::path> localSourcePath(const QUrl& url) {
@@ -623,7 +641,19 @@ bool PlayerPresenter::hasError() const noexcept {
 QString PlayerPresenter::errorCode() const {
     if (uses_frozen_fixture_)
         return state_.error_code.value_or(QString{});
-    return hasError() ? QStringLiteral("playback_error") : QString{};
+    return hasError() ? localPlaybackErrorCode(controller_.confirmedSnapshot().error) : QString{};
+}
+QString PlayerPresenter::errorMessageKey() const {
+    if (!hasError())
+        return {};
+    if (uses_frozen_fixture_)
+        return messageKey();
+    return localPlaybackErrorMessageKey(controller_.confirmedSnapshot().error);
+}
+QString PlayerPresenter::errorActionId() const {
+    if (!hasError())
+        return {};
+    return uses_frozen_fixture_ ? primaryActionId() : QStringLiteral("open-audio");
 }
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
@@ -1027,11 +1057,17 @@ bool PlayerPresenter::openAudio() {
     }
 
     const auto selected_paths = audio_file_picker_();
+    if (selected_paths.empty())
+        return false;
     auto candidate = local_queue_;
     const std::size_t first_inserted = candidate.size();
     const bool queue_was_empty = candidate.empty();
-    if (!candidate.append(selected_paths) ||
-        !local_track_session_->open(candidate.items()[first_inserted].source_path, LocalTrackStartIntent::Autoplay)) {
+    if (!candidate.append(selected_paths)) {
+        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
+        return false;
+    }
+    if (!local_track_session_->open(candidate.items()[first_inserted].source_path, LocalTrackStartIntent::Autoplay)) {
+        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
         return false;
     }
     if (!candidate.select(first_inserted))
@@ -1057,15 +1093,20 @@ bool PlayerPresenter::addAudio() {
         return false;
 
     const auto selected_paths = audio_file_picker_();
+    if (selected_paths.empty())
+        return false;
     auto candidate = local_queue_;
     const std::size_t first_inserted = candidate.size();
-    if (!candidate.append(selected_paths))
+    if (!candidate.append(selected_paths)) {
+        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
         return false;
+    }
 
     const bool needs_current_track = !local_track_session_->hasTrack();
     if (needs_current_track) {
         if (!local_track_session_->open(candidate.items()[first_inserted].source_path,
                                         LocalTrackStartIntent::Autoplay)) {
+            rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
             return false;
         }
         if (!candidate.select(first_inserted))
@@ -2103,6 +2144,13 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
     emit stateChanged();
     emit playbackChanged();
     return true;
+}
+bool PlayerPresenter::executeErrorAction() {
+    if (!hasError() || exiting_)
+        return false;
+    if (uses_frozen_fixture_)
+        return errorActionId() == QStringLiteral("skip") && skipUnavailable();
+    return errorActionId() == QStringLiteral("open-audio") && openAudio();
 }
 bool PlayerPresenter::skipUnavailable() {
     if (exiting_)

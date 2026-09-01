@@ -8,6 +8,8 @@ No modo real, a fila local também coordena eventos terminais por geração e ID
 
 A entrada por drag-and-drop de arquivos e diretórios locais está funcional no candidato Qt/Windows. A descoberta recursiva usa worker único, batches limitados, mailbox com backpressure, cancelamento por geração e profundidade máxima; resultados são inseridos incrementalmente por âncoras de ocorrência. A UI cobre posição antes/depois/fim sobre a fila, append fora dela, lote misto, erro parcial, progresso, cancelamento, foco e anúncios acessíveis. Handles Windows são abertos sem seguir reparse points, a identidade do diretório é revalidada e a interrupção de I/O é repetida até o reconhecimento do cancelamento ou a saída confirmada no teardown. M3.2 permanece parcial porque não houve `CHK-PERF` de 1.000 itens/stall de 100 ms, volume lento com deadline, validação nativa de symlink/NVDA nem E2E empacotado.
 
+M3.6 está funcional somente no candidato Qt/Windows. Strings essenciais são centralizadas em catálogos QML `*Text.qml` e no catálogo C++ do filtro nativo; o pt-BR é gerado por `qt_add_translations` e instalado em runtime por `QTranslator`, com plural correto para “1 segundo”. Erros locais possuem causas tipadas, texto seguro e ação de recuperação. Uma seleção não vazia rejeitada sincronamente preserva fila/contexto e oferece nova escolha; importações parciais/rejeitadas também são acionáveis. A fila acessível omite IDs de ocorrência e códigos técnicos, e texto longo permanece contido em 720 × 520 nos testes automatizados. Isso não aceita a stack nem fecha M3: NVDA, DPI, alto contraste e movimento reduzido nativos, pacote/E2E e os demais gates indicados continuam abertos. M3.7 é o próximo recorte; Linux, A/B e benchmarks seguem suspensos até a paridade funcional Windows.
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -100,7 +102,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
 - “pode ser app padrão”: o fluxo está especificado, instalador não existe;
-- “as preferências já persistem e restauram a sessão”: a fatia experimental de preferências/temas usa somente memória e não conclui FR-042/FR-043/FR-044;
+- “as preferências já restauram a sessão”: o armazenamento M3.5 persiste as dez preferências no candidato Qt/Windows, mas restauração de fila/item/posição e início minimizado efetivo continuam em M4.1/M4.4; FR-042/FR-043/FR-044 não estão integralmente concluídos;
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “a bandeja está validada no Windows”: menu, avisos, fallback e saída passaram em testes offscreen, mas isso não comprova ícone/Explorer reais, ativação nativa, NVDA ou Linux;
 - “o pacote está validado em máquina sem SDK ou pronto para distribuir”: inventário, imports PE e smokes offscreen original/relocado passaram sem paths Qt do SDK no ambiente filho, mas isso não remove o SDK do host nem resolve CRT externo, licenças, segurança ou ambiente limpo;
@@ -133,9 +135,9 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. implementar M3.6, centralizando strings essenciais em pt-BR e tornando a microcopy e os erros acionáveis;
-2. seguir para M3.7 com teclado/foco, leitor de tela, escala, contraste e movimento reduzido, incluindo os gates nativos de Windows quando a automação estiver disponível;
-3. manter `package-v2`, M0.3/M0.4 e benchmarks suspensos até retomada explícita, preservando seus gates e ADRs como pendentes.
+1. implementar M3.7 com teclado/foco, leitor de tela, escala, contraste e movimento reduzido, incluindo os gates nativos de Windows quando a automação estiver disponível;
+2. continuar os recortes funcionais Windows na ordem do plano, com TDD e checks proporcionais;
+3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
@@ -144,6 +146,8 @@ No modo real, `Ended` e erro de origem já coordenam a fila conforme o parágraf
 A seção 5 também registra atalhos locais com TDD para abertura, transporte, Preferências e saída, incluindo guardas de foco/modal, autorrepetição e volume fracionário. Não são atalhos globais nem aprovação de FR-037; o stage histórico continua anterior a essa correção.
 
 A fatia de preferências/temas foi fechada em `ab87803`; naquele marco, as preferências ainda eram somente em memória. A [política comum e evidência](m0/README.md) preserva esse histórico na seção 6 e registra separadamente HC na seção 7. Alto contraste está implementado com precedência temporária sobre os três temas, pares opacos e movimento independente; os checks automatizados passaram após as correções da auditoria independente. Fixture/protocolo permanecem inalterados. O recorte M3.5 posterior tornou funcional no candidato Qt/Windows o armazenamento atômico e recuperável das dez preferências, sem concluir M3 nem aceitar a stack. `restoreLastSession` e `startMinimized` apenas persistem; seus efeitos pertencem a M4.1/M4.4. O restart automatizado é Release instrumentado/offscreen, e não há prova de pacote, primeiro frame nativo sem flash, NVDA, migração histórica, perda real de energia ou benchmark. O deadline visual de saída não cancela fisicamente uma gravação síncrona em curso, e o shutdown do writer ainda pode aguardar `join()` sem limite. Paletas injetadas e escalas offscreen tampouco comprovam alto contraste nativo, DPI real ou aprovação de UX-006.
+
+O recorte M3.6 posterior separa texto essencial de estado/ações em catálogos traduzíveis, inclui o filtro do diálogo nativo e instala o catálogo pt-BR compilado em runtime. O contrato cobre plural, causas de erro seguras, recuperação sem perda de fila/contexto, fila sem identificadores técnicos verbalizados, importação terminal acionável e cópia longa no mínimo 720 × 520. O fechamento automatizado passou 174/174 no Release combinado, 135/135 no core Qt OFF, Quick 64/64 nas escalas padrão, 1,5× e 2×, `qmllint` silencioso, formato de 90 C++/39 QML e a composição `BUILD_TESTING=OFF` com zero testes e argumentos reservados rejeitados em exit 1. Nenhum benchmark foi executado; os gates nativos e de pacote/E2E permanecem abertos, e o target SDK Qt enxuto requer `QT_HOST_PATH` para localizar as ferramentas host de tradução.
 
 A seção 8 registra a política comum de bandeja e sua implementação Qt: menu compartilhando o transporte, intenções separadas de fechar/ocultar/sair, confirmação inicial por execução e fallback explicado. O smoke do executável fecha a janela QML e encerra normalmente, sem kill como evidência de sucesso. Os checks automatizados passaram após regressões de animação/foco e perda de disponibilidade durante a ocultação. Isso não conclui FR-030/FR-031/FR-032, o pacote ou os gates nativos de M0.2.
 

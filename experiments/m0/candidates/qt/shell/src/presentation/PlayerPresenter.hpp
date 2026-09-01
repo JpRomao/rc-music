@@ -76,6 +76,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString primaryActionId READ primaryActionId NOTIFY stateChanged)
     Q_PROPERTY(bool hasError READ hasError NOTIFY stateChanged)
     Q_PROPERTY(QString errorCode READ errorCode NOTIFY stateChanged)
+    Q_PROPERTY(QString errorMessageKey READ errorMessageKey NOTIFY stateChanged)
+    Q_PROPERTY(QString errorActionId READ errorActionId NOTIFY stateChanged)
     Q_PROPERTY(bool hasCurrentTrack READ hasCurrentTrack NOTIFY stateChanged)
     Q_PROPERTY(QString currentTitle READ currentTitle NOTIFY stateChanged)
     Q_PROPERTY(QString currentArtist READ currentArtist NOTIFY stateChanged)
@@ -219,6 +221,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString primaryActionId() const;
     [[nodiscard]] bool hasError() const noexcept;
     [[nodiscard]] QString errorCode() const;
+    [[nodiscard]] QString errorMessageKey() const;
+    [[nodiscard]] QString errorActionId() const;
     [[nodiscard]] bool hasCurrentTrack() const noexcept;
     [[nodiscard]] QString currentTitle() const;
     [[nodiscard]] QString currentArtist() const;
@@ -329,6 +333,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool dismissPreferenceWarning();
     Q_INVOKABLE bool retryPreferenceSave();
     Q_INVOKABLE bool confirmPreferenceReplacement();
+    Q_INVOKABLE bool executeErrorAction();
     Q_INVOKABLE bool skipUnavailable();
     [[nodiscard]] bool advanceOneTick();
 

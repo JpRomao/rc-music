@@ -16,10 +16,11 @@ FocusScope {
     property bool focusTakeoverAllowed: true
     readonly property bool active: presenter.sourceImportState === PlayerPresenter.Discovering || presenter.sourceImportState === PlayerPresenter.Cancelling
     readonly property bool terminal: presenter.sourceImportState === PlayerPresenter.Completed || presenter.sourceImportState === PlayerPresenter.CompletedWithIssues || presenter.sourceImportState === PlayerPresenter.Cancelled || presenter.sourceImportState === PlayerPresenter.Rejected
+    readonly property bool recoveryAvailable: presenter.sourceImportState === PlayerPresenter.CompletedWithIssues || presenter.sourceImportState === PlayerPresenter.Rejected
     visible: presenter.sourceImportState !== PlayerPresenter.Idle
     implicitHeight: visible ? content.implicitHeight + contract.spacingUnit * 4 : 0
     Accessible.role: Accessible.StaticText
-    Accessible.name: title.text + ". " + progress.text
+    Accessible.name: title.text + ". " + progress.text + (advice.visible ? ". " + advice.text : "")
     signal focusRestoreRequested
 
     SourceImportText {
@@ -73,6 +74,21 @@ FocusScope {
         }
     }
 
+    function adviceForState() {
+        switch (presenter.sourceImportState) {
+        case PlayerPresenter.CompletedWithIssues:
+            return sourceText.completedWithIssuesAdvice;
+        case PlayerPresenter.Rejected:
+            return sourceText.rejectedAdvice;
+        default:
+            return "";
+        }
+    }
+
+    function terminalAction() {
+        return recoveryButton.visible ? recoveryButton : dismissButton;
+    }
+
     function updateAnnouncement() {
         const state = presenter.sourceImportState;
         ++focusTransferRevision;
@@ -98,8 +114,9 @@ FocusScope {
                     root.actionOwnedFocus = false;
                     return;
                 }
-                if (root.visible && dismissButton.visible && dismissButton.enabled)
-                    dismissButton.forceActiveFocus(Qt.TabFocusReason);
+                const action = root.terminalAction();
+                if (root.visible && action.visible && action.enabled)
+                    action.forceActiveFocus(Qt.TabFocusReason);
             });
         }
         if (state === PlayerPresenter.Idle || state === PlayerPresenter.Discovering || state === PlayerPresenter.Cancelling) {
@@ -164,6 +181,18 @@ FocusScope {
                 Layout.fillWidth: true
                 Accessible.ignored: true
             }
+
+            Text {
+                id: advice
+                objectName: "source-import-advice"
+                text: root.adviceForState()
+                textFormat: Text.PlainText
+                color: root.contract.textSecondaryColor
+                wrapMode: Text.WordWrap
+                visible: text.length > 0
+                Layout.fillWidth: true
+                Accessible.ignored: true
+            }
         }
 
         QueueActionButton {
@@ -179,6 +208,29 @@ FocusScope {
                 if (activeFocus)
                     root.actionOwnedFocus = true;
                 else if (root.presenter.sourceImportState === PlayerPresenter.Discovering)
+                    root.actionOwnedFocus = false;
+            }
+        }
+
+        AccessibleActionButton {
+            id: recoveryButton
+            controlId: "source-import-recover"
+            text: sourceText.recover
+            contract: root.contract
+            visible: root.recoveryAvailable
+            enabled: visible
+            onClicked: {
+                root.restoreFocusPending = activeFocus;
+                if (!root.presenter.dismissSourceImportStatus()) {
+                    root.restoreFocusPending = false;
+                    return;
+                }
+                root.presenter.openAudio();
+            }
+            onActiveFocusChanged: {
+                if (activeFocus)
+                    root.actionOwnedFocus = true;
+                else if (root.terminal)
                     root.actionOwnedFocus = false;
             }
         }

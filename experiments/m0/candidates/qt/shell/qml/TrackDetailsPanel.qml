@@ -40,10 +40,17 @@ Popup {
         let grouped = "";
         for (let index = 0; index < digits.length; ++index) {
             if (index > 0 && (digits.length - index) % 3 === 0)
-                grouped += ".";
+                grouped += labels.groupSeparator;
             grouped += digits.charAt(index);
         }
         return grouped;
+    }
+
+    function formatText(template, replacements) {
+        let result = template;
+        for (const key in replacements)
+            result = result.replace("{" + key + "}", replacements[key]);
+        return result;
     }
 
     function formatDuration(milliseconds) {
@@ -64,56 +71,69 @@ Popup {
         case "album":
             return labels.album;
         default:
-            return "Campo";
+            return labels.unknownField;
         }
     }
 
     function metadataReadFailure(errorCode) {
         switch (errorCode) {
         case "source_unavailable":
-            return "O arquivo não estava disponível para leitura de metadados.";
+            return labels.metadataSourceUnavailable;
         case "unsupported_format":
-            return "O formato não é suportado pelo leitor de metadados.";
+            return labels.metadataUnsupportedFormat;
         case "invalid_data":
-            return "Não foi possível ler os metadados deste arquivo.";
+            return labels.metadataInvalidData;
         default:
-            return "Falha ao ler os metadados deste arquivo.";
+            return labels.metadataReadFailed;
         }
     }
 
     function formatDiagnostic(diagnostic) {
         switch (diagnostic.code) {
         case "metadata_field_too_large":
-            return metadataFieldName(diagnostic.field) + " foi ignorado: " + formatInteger(diagnostic.observedBytesText) + " bytes excedem o limite de " + formatInteger(diagnostic.limitBytesText) + " bytes.";
+            return formatText(labels.metadataFieldTooLarge, {
+                field: metadataFieldName(diagnostic.field),
+                observed: formatInteger(diagnostic.observedBytesText),
+                limit: formatInteger(diagnostic.limitBytesText)
+            });
         case "metadata_total_too_large":
-            return metadataFieldName(diagnostic.field) + " foi ignorado: o total de " + formatInteger(diagnostic.observedBytesText) + " bytes excede o limite de " + formatInteger(diagnostic.limitBytesText) + " bytes.";
+            return formatText(labels.metadataTotalTooLarge, {
+                field: metadataFieldName(diagnostic.field),
+                observed: formatInteger(diagnostic.observedBytesText),
+                limit: formatInteger(diagnostic.limitBytesText)
+            });
         case "artwork_encoded_bytes_exceeded":
-            return "A capa foi descartada porque possui " + formatInteger(diagnostic.encodedBytesText) + " bytes codificados, acima do limite.";
+            return formatText(labels.artworkEncodedBytesExceeded, {
+                bytes: formatInteger(diagnostic.encodedBytesText)
+            });
         case "artwork_axis_pixels_exceeded":
-            return "A capa foi descartada porque suas dimensões são " + formatInteger(diagnostic.widthPixels) + " × " + formatInteger(diagnostic.heightPixels) + " px.";
+            return formatText(labels.artworkAxisPixelsExceeded, {
+                width: formatInteger(diagnostic.widthPixels),
+                height: formatInteger(diagnostic.heightPixels)
+            });
         case "artwork_pixel_count_exceeded":
-            return "A capa foi descartada porque sua quantidade total de pixels excede o limite.";
+            return labels.artworkPixelCountExceeded;
         case "artwork_invalid_data":
-            return "A capa foi descartada porque os dados são inválidos.";
+            return labels.artworkInvalidData;
         case "metadata_read_failed":
             return metadataReadFailure(diagnostic.errorCode);
         case "metadata_read_cancelled":
-            return "A leitura de metadados foi cancelada.";
+            return labels.metadataReadCancelled;
         case "metadata_read_expired":
-            return "A leitura de metadados excedeu o tempo disponível.";
+            return labels.metadataReadExpired;
         case "playback_error":
             switch (diagnostic.errorCode) {
             case "source_unavailable":
-                return "A reprodução falhou porque o arquivo não está disponível.";
+                return labels.playbackSourceUnavailable;
             case "invalid_media":
-                return "A reprodução falhou porque a mídia é inválida.";
+                return labels.playbackInvalidMedia;
             case "access_denied":
-                return "A reprodução falhou porque o acesso ao arquivo foi negado.";
+                return labels.playbackAccessDenied;
             default:
-                return "A reprodução falhou.";
+                return labels.playbackFailed;
             }
         default:
-            return "Foi encontrado um diagnóstico não reconhecido.";
+            return labels.unknownDiagnostic;
         }
     }
 
@@ -387,7 +407,9 @@ Popup {
                     controlId: "details-file-size"
                     label: labels.fileSize
                     valueKnown: root.presenter.hasDetailsFileSize
-                    valueText: root.presenter.hasDetailsFileSize ? root.formatInteger(root.presenter.detailsFileSizeBytesText) + " bytes" : ""
+                    valueText: root.presenter.hasDetailsFileSize ? root.formatText(labels.bytesValue, {
+                        value: root.formatInteger(root.presenter.detailsFileSizeBytesText)
+                    }) : ""
                 }
                 TrackDetailsField {
                     Layout.fillWidth: true
@@ -478,7 +500,9 @@ Popup {
                     controlId: "details-bitrate"
                     label: labels.bitrate
                     valueKnown: root.presenter.hasDetailsBitrate
-                    valueText: root.presenter.hasDetailsBitrate ? root.formatInteger(Math.round(Number(root.presenter.detailsBitrateBps) / 1000)) + " kbps" : ""
+                    valueText: root.presenter.hasDetailsBitrate ? root.formatText(labels.kilobitsPerSecondValue, {
+                        value: root.formatInteger(Math.round(Number(root.presenter.detailsBitrateBps) / 1000))
+                    }) : ""
                 }
                 TrackDetailsField {
                     Layout.fillWidth: true
@@ -486,7 +510,9 @@ Popup {
                     controlId: "details-sample-rate"
                     label: labels.sampleRate
                     valueKnown: root.presenter.hasDetailsSampleRate
-                    valueText: root.presenter.hasDetailsSampleRate ? root.formatInteger(root.presenter.detailsSampleRateHz) + " Hz" : ""
+                    valueText: root.presenter.hasDetailsSampleRate ? root.formatText(labels.hertzValue, {
+                        value: root.formatInteger(root.presenter.detailsSampleRateHz)
+                    }) : ""
                 }
                 TrackDetailsField {
                     Layout.fillWidth: true
@@ -502,7 +528,9 @@ Popup {
                     controlId: "details-bit-depth"
                     label: labels.bitDepth
                     valueKnown: root.presenter.hasDetailsBitDepth
-                    valueText: root.presenter.hasDetailsBitDepth ? root.formatInteger(root.presenter.detailsBitDepth) + " bits" : ""
+                    valueText: root.presenter.hasDetailsBitDepth ? root.formatText(labels.bitsValue, {
+                        value: root.formatInteger(root.presenter.detailsBitDepth)
+                    }) : ""
                 }
 
                 Rectangle {

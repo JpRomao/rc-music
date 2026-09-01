@@ -1,33 +1,56 @@
 import QtQml
 
 QtObject {
-    readonly property string opened: "Detalhes da faixa abertos."
-    readonly property string close: "Fechar detalhes"
-    readonly property string trackSection: "Faixa"
-    readonly property string fileSection: "Arquivo"
-    readonly property string audioSection: "Áudio"
-    readonly property string diagnosticsSection: "Diagnóstico"
-    readonly property string title: "Título"
-    readonly property string artist: "Artista"
-    readonly property string album: "Álbum"
-    readonly property string trackNumber: "Número da faixa"
-    readonly property string year: "Ano"
-    readonly property string duration: "Duração"
-    readonly property string fileName: "Nome"
-    readonly property string filePath: "Caminho completo"
-    readonly property string fileSize: "Tamanho"
-    readonly property string modifiedUtc: "Modificação (UTC)"
-    readonly property string container: "Contêiner"
-    readonly property string codec: "Codec"
-    readonly property string bitrate: "Bitrate"
-    readonly property string sampleRate: "Sample rate"
-    readonly property string channels: "Canais"
-    readonly property string bitDepth: "Bit depth"
-    readonly property string copyPath: "Copiar caminho"
-    readonly property string copyDiagnostics: "Copiar diagnóstico"
-    readonly property string showDiagnostics: "Mostrar diagnóstico"
-    readonly property string hideDiagnostics: "Ocultar diagnóstico"
-    readonly property string noDiagnostics: "Nenhum diagnóstico."
-    readonly property string pathCopied: "Caminho copiado."
-    readonly property string diagnosticsCopied: "Diagnóstico copiado."
+    readonly property string opened: qsTr("Detalhes da faixa abertos.")
+    readonly property string close: qsTr("Fechar detalhes")
+    readonly property string trackSection: qsTr("Faixa")
+    readonly property string fileSection: qsTr("Arquivo")
+    readonly property string audioSection: qsTr("Áudio")
+    readonly property string diagnosticsSection: qsTr("Diagnóstico")
+    readonly property string title: qsTr("Título")
+    readonly property string artist: qsTr("Artista")
+    readonly property string album: qsTr("Álbum")
+    readonly property string unknownField: qsTr("Campo")
+    readonly property string trackNumber: qsTr("Número da faixa")
+    readonly property string year: qsTr("Ano")
+    readonly property string duration: qsTr("Duração")
+    readonly property string fileName: qsTr("Nome")
+    readonly property string filePath: qsTr("Caminho completo")
+    readonly property string fileSize: qsTr("Tamanho")
+    readonly property string modifiedUtc: qsTr("Modificação (UTC)")
+    readonly property string container: qsTr("Contêiner")
+    readonly property string codec: qsTr("Codec")
+    readonly property string bitrate: qsTr("Taxa de bits")
+    readonly property string sampleRate: qsTr("Taxa de amostragem")
+    readonly property string channels: qsTr("Canais")
+    readonly property string bitDepth: qsTr("Profundidade de bits")
+    readonly property string copyPath: qsTr("Copiar caminho")
+    readonly property string copyDiagnostics: qsTr("Copiar diagnóstico")
+    readonly property string showDiagnostics: qsTr("Mostrar diagnóstico")
+    readonly property string hideDiagnostics: qsTr("Ocultar diagnóstico")
+    readonly property string noDiagnostics: qsTr("Nenhum diagnóstico.")
+    readonly property string pathCopied: qsTr("Caminho copiado.")
+    readonly property string diagnosticsCopied: qsTr("Diagnóstico copiado.")
+    readonly property string groupSeparator: qsTr(".")
+    readonly property string bytesValue: qsTr("{value} bytes")
+    readonly property string kilobitsPerSecondValue: qsTr("{value} kbps")
+    readonly property string hertzValue: qsTr("{value} Hz")
+    readonly property string bitsValue: qsTr("{value} bits")
+    readonly property string metadataSourceUnavailable: qsTr("O arquivo não estava disponível para leitura de metadados.")
+    readonly property string metadataUnsupportedFormat: qsTr("O formato não é suportado pelo leitor de metadados.")
+    readonly property string metadataInvalidData: qsTr("Não foi possível ler os metadados deste arquivo.")
+    readonly property string metadataReadFailed: qsTr("Falha ao ler os metadados deste arquivo.")
+    readonly property string metadataFieldTooLarge: qsTr("{field} foi ignorado: {observed} bytes excedem o limite de {limit} bytes.")
+    readonly property string metadataTotalTooLarge: qsTr("{field} foi ignorado: o total de {observed} bytes excede o limite de {limit} bytes.")
+    readonly property string artworkEncodedBytesExceeded: qsTr("A capa foi descartada porque possui {bytes} bytes codificados, acima do limite.")
+    readonly property string artworkAxisPixelsExceeded: qsTr("A capa foi descartada porque suas dimensões são {width} × {height} px.")
+    readonly property string artworkPixelCountExceeded: qsTr("A capa foi descartada porque sua quantidade total de pixels excede o limite.")
+    readonly property string artworkInvalidData: qsTr("A capa foi descartada porque os dados são inválidos.")
+    readonly property string metadataReadCancelled: qsTr("A leitura de metadados foi cancelada.")
+    readonly property string metadataReadExpired: qsTr("A leitura de metadados excedeu o tempo disponível.")
+    readonly property string playbackSourceUnavailable: qsTr("A reprodução falhou porque o arquivo não está disponível.")
+    readonly property string playbackInvalidMedia: qsTr("A reprodução falhou porque a mídia é inválida.")
+    readonly property string playbackAccessDenied: qsTr("A reprodução falhou porque o acesso ao arquivo foi negado.")
+    readonly property string playbackFailed: qsTr("A reprodução falhou.")
+    readonly property string unknownDiagnostic: qsTr("Foi encontrado um diagnóstico não reconhecido.")
 }

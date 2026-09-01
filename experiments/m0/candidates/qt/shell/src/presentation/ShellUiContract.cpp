@@ -48,6 +48,7 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         strings_.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
         strings_.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
         strings_.action_skip != QStringLiteral("Pular") ||
+        strings_.action_retry != QStringLiteral("Tentar novamente") ||
         strings_.preferences_title != QStringLiteral("Preferências") ||
         strings_.section_general != QStringLiteral("Geral") ||
         strings_.section_playback != QStringLiteral("Reprodução") ||
@@ -120,37 +121,38 @@ int ShellUiContract::controlTargetPreferred() const noexcept { return layout_.co
 int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_medium_px; }
 int ShellUiContract::radiusSmall() const noexcept { return layout_.radius_small_px; }
 int ShellUiContract::spacingUnit() const noexcept { return layout_.spacing_unit_px; }
-QString ShellUiContract::appName() const { return strings_.app_name; }
-QString ShellUiContract::openAudioText() const { return strings_.action_open_audio; }
-QString ShellUiContract::emptyTitle() const { return strings_.empty_title; }
-QString ShellUiContract::emptyHint() const { return strings_.empty_hint; }
-QString ShellUiContract::actionPlay() const { return strings_.action_play; }
-QString ShellUiContract::actionPause() const { return strings_.action_pause; }
-QString ShellUiContract::actionPrevious() const { return strings_.action_previous; }
-QString ShellUiContract::actionNext() const { return strings_.action_next; }
-QString ShellUiContract::skipBackwardShort() const { return strings_.skip_backward_short; }
-QString ShellUiContract::skipForwardShort() const { return strings_.skip_forward_short; }
-QString ShellUiContract::skipBackwardName() const { return strings_.skip_backward_name; }
-QString ShellUiContract::skipForwardName() const { return strings_.skip_forward_name; }
-QString ShellUiContract::progressName() const { return strings_.progress_name; }
-QString ShellUiContract::volumeName() const { return strings_.volume_name; }
-QString ShellUiContract::actionMute() const { return strings_.action_mute; }
-QString ShellUiContract::actionUnmute() const { return strings_.action_unmute; }
-QString ShellUiContract::queueTitle() const { return strings_.queue_title; }
-QString ShellUiContract::detailsTitle() const { return strings_.details_title; }
-QString ShellUiContract::notInformed() const { return strings_.not_informed; }
-QString ShellUiContract::errorTitle() const { return strings_.error_title; }
-QString ShellUiContract::errorBody() const { return strings_.error_body; }
-QString ShellUiContract::actionSkip() const { return strings_.action_skip; }
-QString ShellUiContract::preferencesTitle() const { return strings_.preferences_title; }
-QString ShellUiContract::sectionGeneral() const { return strings_.section_general; }
-QString ShellUiContract::sectionPlayback() const { return strings_.section_playback; }
-QString ShellUiContract::sectionAppearance() const { return strings_.section_appearance; }
-QString ShellUiContract::themeSystem() const { return strings_.theme_system; }
-QString ShellUiContract::themeLight() const { return strings_.theme_light; }
-QString ShellUiContract::themeDark() const { return strings_.theme_dark; }
-QString ShellUiContract::motionSystem() const { return strings_.motion_system; }
-QString ShellUiContract::motionReduced() const { return strings_.motion_reduced; }
+QString ShellUiContract::appName() const { return tr("Player de música"); }
+QString ShellUiContract::openAudioText() const { return tr("Abrir áudio"); }
+QString ShellUiContract::emptyTitle() const { return tr("Abra um áudio para começar"); }
+QString ShellUiContract::emptyHint() const { return tr("ou arraste arquivos para esta janela"); }
+QString ShellUiContract::actionPlay() const { return tr("Reproduzir"); }
+QString ShellUiContract::actionPause() const { return tr("Pausar"); }
+QString ShellUiContract::actionPrevious() const { return tr("Faixa anterior"); }
+QString ShellUiContract::actionNext() const { return tr("Próxima faixa"); }
+QString ShellUiContract::skipBackwardShort() const { return tr("−{seconds}"); }
+QString ShellUiContract::skipForwardShort() const { return tr("+{seconds}"); }
+QString ShellUiContract::skipBackwardName() const { return tr("Voltar {seconds} segundos"); }
+QString ShellUiContract::skipForwardName() const { return tr("Avançar {seconds} segundos"); }
+QString ShellUiContract::progressName() const { return tr("Posição da faixa"); }
+QString ShellUiContract::volumeName() const { return tr("Volume"); }
+QString ShellUiContract::actionMute() const { return tr("Silenciar"); }
+QString ShellUiContract::actionUnmute() const { return tr("Ativar som"); }
+QString ShellUiContract::queueTitle() const { return tr("Fila"); }
+QString ShellUiContract::detailsTitle() const { return tr("Detalhes da faixa"); }
+QString ShellUiContract::notInformed() const { return tr("Não informado"); }
+QString ShellUiContract::errorTitle() const { return tr("Não foi possível abrir esta faixa"); }
+QString ShellUiContract::errorBody() const { return tr("A faixa de teste está indisponível."); }
+QString ShellUiContract::actionSkip() const { return tr("Pular"); }
+QString ShellUiContract::actionRetry() const { return tr("Tentar novamente"); }
+QString ShellUiContract::preferencesTitle() const { return tr("Preferências"); }
+QString ShellUiContract::sectionGeneral() const { return tr("Geral"); }
+QString ShellUiContract::sectionPlayback() const { return tr("Reprodução"); }
+QString ShellUiContract::sectionAppearance() const { return tr("Aparência"); }
+QString ShellUiContract::themeSystem() const { return tr("Sistema"); }
+QString ShellUiContract::themeLight() const { return tr("Claro"); }
+QString ShellUiContract::themeDark() const { return tr("Escuro"); }
+QString ShellUiContract::motionSystem() const { return tr("Sistema"); }
+QString ShellUiContract::motionReduced() const { return tr("Reduzido"); }
 const FixturePalette& ShellUiContract::palette() const noexcept { return dark_theme_ ? themes_.dark : themes_.light; }
 QString ShellUiContract::canvasColor() const {
     return high_contrast_ ? high_contrast_->window.name() : palette().canvas;

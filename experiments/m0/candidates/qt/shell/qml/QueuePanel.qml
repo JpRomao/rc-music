@@ -34,15 +34,16 @@ FocusScope {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
-    function rowAccessibleName(occurrenceId, title, fileName, artist, durationMs, available) {
+    function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total) {
         const displayTitle = title.length > 0 ? title : fileName;
-        const parts = [occurrenceId, displayTitle];
+        const parts = [displayTitle];
         if (artist.length > 0)
             parts.push(artist);
         parts.push(root.formatDuration(durationMs));
+        parts.push(queueText.positionOfTotal.replace("{position}", position).replace("{total}", total));
         if (!available)
-            parts.push(root.contract.errorTitle);
-        return parts.join(". ");
+            parts.push(queueText.unavailableReason(errorCode));
+        return parts.join(". ") + (parts[parts.length - 1].endsWith(".") ? "" : ".");
     }
     function syncCurrent() {
         if (queueList.count === 0) {
@@ -313,8 +314,8 @@ FocusScope {
                 hoverEnabled: true
                 Accessible.role: Accessible.ListItem
                 Accessible.id: occurrenceId
-                Accessible.name: root.rowAccessibleName(occurrenceId, title, fileName, artist, durationMs, available)
-                Accessible.description: available || errorCode === undefined ? "" : String(errorCode)
+                Accessible.name: root.rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, orderIndex + 1, queueList.count)
+                Accessible.description: ""
                 Accessible.focusable: true
                 Accessible.focused: activeFocus
                 Accessible.selectable: true
@@ -384,7 +385,7 @@ FocusScope {
                         }
                         Text {
                             objectName: "queue-row-status"
-                            text: root.contract.errorTitle
+                            text: queueText.unavailableReason(row.errorCode)
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
                             color: row.secondaryColor

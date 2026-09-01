@@ -200,6 +200,12 @@ TestCase {
         compare(testPlayerPresenter.skipForwardSeconds, 20); // qmllint disable unqualified
         compare(findChild(shell, "skip-forward").text, "+20");
         compare(findChild(shell, "skip-forward").Accessible.name, "Avançar 20 segundos");
+        enterText(backward, "1");
+        enterText(forward, "1");
+        compare(findChild(shell, "skip-backward").Accessible.name, "Voltar 1 segundo");
+        compare(findChild(shell, "skip-forward").Accessible.name, "Avançar 1 segundo");
+        enterText(backward, "7");
+        enterText(forward, "20");
         const invalid = findChild(shell, "skip-backward-seconds-error");
         for (const draft of ["", "0", "301", "1.5"]) {
             enterText(backward, draft);

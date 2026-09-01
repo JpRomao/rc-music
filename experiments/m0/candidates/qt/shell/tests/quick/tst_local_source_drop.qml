@@ -260,13 +260,14 @@ TestCase {
         compare(dropAt(center), Qt.CopyAction);
         const cancel = findChild(shell, "source-import-cancel");
         const dismiss = findChild(shell, "source-import-dismiss");
+        const recover = findChild(shell, "source-import-recover");
         cancel.forceActiveFocus(Qt.TabFocusReason);
         tryVerify(function () {
             return cancel.activeFocus;
         });
         completeSource(1, 0, 1);
         tryVerify(function () {
-            return dismiss.visible && dismiss.activeFocus;
+            return recover.visible && recover.activeFocus;
         });
 
         compare(beginUrlDragAt(center, ["C:/Música/Segunda"]), Qt.CopyAction);
@@ -283,6 +284,7 @@ TestCase {
         wait(50);
         verify(preferencesButton.activeFocus, "A new import must not inherit the prior terminal focus latch");
         verify(!dismiss.activeFocus);
+        verify(!recover.activeFocus);
     }
 
     function test_programmaticDismissDoesNotRestoreFocusAfterUserLeavesAction() {
@@ -290,14 +292,14 @@ TestCase {
         compare(beginUrlDragAt(center, ["C:/Música/Discografia"]), Qt.CopyAction);
         compare(dropAt(center), Qt.CopyAction);
         const cancel = findChild(shell, "source-import-cancel");
-        const dismiss = findChild(shell, "source-import-dismiss");
+        const recover = findChild(shell, "source-import-recover");
         cancel.forceActiveFocus(Qt.TabFocusReason);
         tryVerify(function () {
             return cancel.activeFocus;
         });
         completeSource(1, 0, 1);
         tryVerify(function () {
-            return dismiss.visible && dismiss.activeFocus;
+            return recover.visible && recover.activeFocus;
         });
 
         const preferencesButton = findChild(shell, "preferences");
@@ -319,9 +321,23 @@ TestCase {
         tryCompare(testLocalPlayerPresenter, "sourceImportState", PlayerPresenter.Rejected); // qmllint disable unqualified
         compare(testLocalPlayerPresenter.sourceImportIssueCount, 1); // qmllint disable unqualified
         compare(testScenarioDriver.sourceRequestCount(), 0); // qmllint disable unqualified
-        verify(findChild(shell, "source-import-status").visible);
+        const status = findChild(shell, "source-import-status");
+        const progress = findChild(shell, "source-import-progress");
+        const advice = findChild(shell, "source-import-advice");
+        const recover = findChild(shell, "source-import-recover");
+        verify(status.visible);
+        compare(progress.text, "Adicionados: 0 · Examinados: 0 · Ignorados: 1");
+        verify(advice.visible);
+        verify(advice.text.includes("arquivos ou pastas locais"));
+        verify(recover.visible && recover.enabled);
+        compare(recover.Accessible.name, "Escolher outros arquivos");
         compare(testScenarioDriver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive); // qmllint disable unqualified
-        verify(testLocalPlayerPresenter.dismissSourceImportStatus()); // qmllint disable unqualified
+
+        testScenarioDriver.enqueueLocalSelection(["C:/Música/Recuperada.mp3"]); // qmllint disable unqualified
+        recover.Accessible.pressAction();
+        tryCompare(testLocalPlayerPresenter, "sourceImportState", PlayerPresenter.Idle); // qmllint disable unqualified
+        tryCompare(findChild(shell, "queue-list"), "count", 1);
+        compare(testLocalPlayerPresenter.currentTitle, "Recuperada"); // qmllint disable unqualified
 
         compare(testScenarioDriver.beginTextDrag(shell, center.x, center.y, "sem URLs"), Qt.IgnoreAction); // qmllint disable unqualified
         verify(!findChild(shell, "source-drop-overlay").visible);
@@ -355,9 +371,15 @@ TestCase {
         tryCompare(testLocalPlayerPresenter, "sourceImportState", PlayerPresenter.CompletedWithIssues); // qmllint disable unqualified
 
         const status = findChild(shell, "source-import-status");
+        const progress = findChild(shell, "source-import-progress");
+        const advice = findChild(shell, "source-import-advice");
+        const recover = findChild(shell, "source-import-recover");
         tryVerify(function () {
             return status.visible && status.accessibilityAnnouncement.length > 0;
         });
+        compare(progress.text, "Adicionados: 2 · Examinados: 4 · Ignorados: 3");
+        verify(advice.visible && advice.text.includes("não puderam ser lidos"));
+        verify(recover.visible && recover.enabled);
         compare(testScenarioDriver.accessibleAnnouncementCount(), 1); // qmllint disable unqualified
         compare(testScenarioDriver.lastAccessibleAnnouncement(), status.accessibilityAnnouncement); // qmllint disable unqualified
         compare(testScenarioDriver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive); // qmllint disable unqualified

@@ -60,7 +60,17 @@ Uma saída com estado sujo solicita gravação imediata, bloqueia novas ações 
 
 O teste de restart abre duas vezes o executável Release instrumentado com `BUILD_TESTING=ON`, hooks de teste, plataforma offscreen, software/Basic e a mesma raiz temporária com espaços/Unicode. Ele comprova o round-trip do snapshot e o tema carregado antes da criação do QML nesse harness. Não comprova o build `BUILD_TESTING=OFF`, pacote, desktop nativo, primeiro frame perceptível sem flash ou NVDA; os hooks não pertencem à composição sem testes. Falhas injetadas antes/depois do commit não equivalem a perda real de energia, e nenhuma migração histórica foi exercitada porque este é o primeiro schema. `restoreLastSession` e `startMinimized` somente persistem; seus efeitos pertencem a M4.1/M4.4.
 
-Na rerun final, o build Release combinado e seus 174/174 testes passaram; o core com Qt desabilitado passou 135/135. O Quick passou no fator padrão e em `QT_SCALE_FACTOR=1.5`/`2`, os dois smokes shell-only passaram, `all_qmllint` ficou verde e o check de formato cobriu 89 arquivos C++ e 35 QML. O rebuild `BUILD_TESTING=OFF` ficou sem testes/hooks/fontes de teste e rejeitou com exit 1 cenário explícito, smoke e raiz de configuração reservada, sem criar essa raiz. A validação documental cobriu 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Portanto o armazenamento M3.5 está funcional neste candidato, não concluído globalmente; M3.6 é o próximo recorte.
+Na rerun final, o build Release combinado e seus 174/174 testes passaram; o core com Qt desabilitado passou 135/135. O Quick passou no fator padrão e em `QT_SCALE_FACTOR=1.5`/`2`, os dois smokes shell-only passaram, `all_qmllint` ficou verde e o check de formato cobriu 89 arquivos C++ e 35 QML. O rebuild `BUILD_TESTING=OFF` ficou sem testes/hooks/fontes de teste e rejeitou com exit 1 cenário explícito, smoke e raiz de configuração reservada, sem criar essa raiz. A validação documental cobriu 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Portanto o armazenamento M3.5 está funcional neste candidato, não concluído globalmente; M3.6 abaixo é posterior.
+
+### Strings e microcopy M3.6 — funcional no candidato
+
+Strings essenciais da apresentação ficam em catálogos QML `*Text.qml`; o filtro do diálogo nativo passa por `ApplicationText`. O catálogo `music-player_pt_BR.ts` é compilado com `qt_add_translations` e instalado antes da UI por `QTranslator`, incluindo `numerus` para “1 segundo”/plural. A fixture autenticada não muda, e os contratos rejeitam texto essencial espalhado pelo QML ou pelo bootstrap C++.
+
+O presenter projeta causas tipadas de origem indisponível, mídia inválida, acesso negado e falha de backend em microcopy segura e ação `open-audio`. Cancelamento do seletor não vira erro; uma seleção não vazia rejeitada sincronamente publica recuperação e preserva fila, faixa e contexto anteriores. Importações parciais/rejeitadas mostram contagens neutras, orientação e “Escolher outros arquivos”. A fila anuncia posição, duração e causa localizada sem expor ID de ocorrência ou código interno. Título, mensagem e ação longos permanecem visíveis e contidos no mínimo 720 × 520 em Quick Test.
+
+O fechamento passou **174/174** no CTest Release combinado, **135/135** no core Qt OFF e **64/64** no Quick nos fatores padrão, 1,5× e 2×. `m0_qt_shell_ui_qmllint` terminou silencioso e o formato cobriu **90 C++/39 QML**. O build `BUILD_TESTING=OFF` registrou zero testes e rejeitou argumento reservado com exit 1. Nenhum benchmark foi executado. NVDA, DPI, alto contraste e movimento reduzido nativos, pacote/E2E e demais gates indicados permanecem abertos; M3.7 é o próximo recorte. Linux, A/B e benchmarks continuam suspensos, e nenhuma stack foi aceita.
+
+Quando o SDK Qt usado como target é enxuto e não traz os executáveis host do LinguistTools, o configure exige `QT_HOST_PATH` apontando para uma instalação Qt host compatível; a ausência dessa âncora é uma limitação de build, não falha do catálogo em runtime.
 
 ### Alto contraste — implementação e evidência automatizada
 
@@ -225,6 +235,7 @@ $source = Join-Path $repo 'experiments\m0\candidates\qt\shell'
 $build = Join-Path $repo 'out\m0\builds\qt-audio\audio-dev-01' # use um nome novo por execução
 $catch2 = (Resolve-Path (Join-Path $repo 'out\m0\toolchains\Catch2-3.15.3')).Path
 $qtBase = (Resolve-Path (Join-Path $repo 'q\f75eb9bea8280844c6d1a2b3f4\sdk')).Path.Replace('\', '/')
+$qtHost = (Resolve-Path (Join-Path $repo 'out\m0\toolchains\qt-6.11.2-msvc2022_64')).Path.Replace('\', '/')
 $qtMultimedia = (Resolve-Path (Join-Path $repo 'out\m0\qt-multimedia-archive-probe-20260829-01\stage')).Path.Replace('\', '/')
 $taglib = (Resolve-Path (Join-Path $repo 'out\m0\taglib-2.3.1-msvc144-probe-20260829-01\install')).Path.Replace('\', '/')
 $compiler = 'C:/Program Files/Microsoft Visual Studio/18/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe'
@@ -236,7 +247,7 @@ $ctest = 'C:\Program Files\CMake\bin\ctest.exe'
 & $cmake -S $source -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON `
   -DM0_QT_SHELL_SUPPORT=ON -DM0_QT_AUDIO_SUPPORT=ON `
   "-DM0_CATCH2_SOURCE_DIR=$catch2" "-DCMAKE_PREFIX_PATH=$qtBase;$taglib" `
-  "-DQT_ADDITIONAL_PACKAGES_PREFIX_PATH=$qtMultimedia" `
+  "-DQT_HOST_PATH=$qtHost" "-DQT_ADDITIONAL_PACKAGES_PREFIX_PATH=$qtMultimedia" `
   "-DCMAKE_CXX_COMPILER=$compiler" "-DCMAKE_LINKER=$linker" "-DCMAKE_MAKE_PROGRAM=$ninja"
 & $cmake --build $build --config Release --parallel 4
 & $ctest --test-dir $build -C Release --output-on-failure

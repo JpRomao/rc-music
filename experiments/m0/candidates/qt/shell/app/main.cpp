@@ -6,6 +6,7 @@
 #include "m0/application/PreferencesAutosave.hpp"
 #endif
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -37,6 +38,7 @@
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QTranslator>
 #include <QVariant>
 #include <QWindow>
 
@@ -66,7 +68,7 @@ namespace {
         patterns.append(QStringLiteral("*") + suffix);
         patterns.append(QStringLiteral("*") + suffix.toUpper());
     }
-    return QStringLiteral("Áudio local (%1);;Todos os arquivos (*)").arg(patterns.join(QLatin1Char{' '}));
+    return music_player::m0::ApplicationText::localAudioDialogFilter(patterns);
 }
 #endif
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -132,12 +134,18 @@ namespace {
 
 int main(int argc, char* argv[]) {
     Q_INIT_RESOURCE(m0_qt_shell_assets);
+    Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
     QCoreApplication::setApplicationName(QStringLiteral("MusicPlayer"));
     application.setQuitOnLastWindowClosed(false);
     try {
+        QTranslator pt_br_translation;
+        if (!pt_br_translation.load(QStringLiteral(":/i18n/music-player_pt_BR.qm")) ||
+            !QCoreApplication::installTranslator(&pt_br_translation)) {
+            throw std::runtime_error{"the pt-BR translation catalog could not be installed"};
+        }
         const auto options = parseShellLaunchOptions(application.arguments());
         validateShellLaunchOptions(options,
 #ifdef M0_QT_SHELL_TEST_HOOKS

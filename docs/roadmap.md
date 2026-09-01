@@ -1,7 +1,7 @@
 # Roadmap
 
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  
-**Última revisão:** 2026-08-29
+**Última revisão:** 2026-08-31
 
 ## 1. Como ler
 
@@ -75,7 +75,9 @@ M0.1 fechou a fixture e o harness comum em [`24d12ea`](m0/evidence/m0-1.md), inc
 
 A fatia de preferências/temas foi fechada em `ab87803`, naquele marco ainda sem persistência, sessão ou fim da fila reais. A [política comum e evidência](m0/README.md) separa esse histórico da fatia HC, implementada com precedência temporária da paleta do sistema, pares opacos e movimento independente. Os checks automatizados HC passaram após as correções da auditoria independente. Paletas injetadas e escalas offscreen não substituem alto contraste nativo, DPI real, NVDA ou validação manual, nem encerram UX-006.
 
-O recorte M3.5 posterior tornou funcional no candidato Qt/Windows o armazenamento das dez preferências aprovadas: JSON `schemaVersion: 1` limitado a 64 KiB, gravação atômica com backup, recuperação de documento inválido, preservação de versão futura, debounce de 500 ms e writer único fora da thread visual. A saída pendente possui deadline visual de 2 s, mas não cancela fisicamente a chamada síncrona já iniciada; o shutdown ainda pode aguardar `join()` sem limite. O restart automatizado é Release instrumentado com `BUILD_TESTING=ON` e offscreen, não pacote ou desktop nativo. `restoreLastSession` e `startMinimized` apenas fazem round-trip; seus efeitos ficam em M4.1/M4.4. Não houve migração histórica, ensaio de perda real de energia, validação de primeiro frame nativo/NVDA, pacote nem benchmark. Assim, M3.5 não está concluído globalmente e M3.6 é o próximo incremento funcional.
+O recorte M3.5 posterior tornou funcional no candidato Qt/Windows o armazenamento das dez preferências aprovadas: JSON `schemaVersion: 1` limitado a 64 KiB, gravação atômica com backup, recuperação de documento inválido, preservação de versão futura, debounce de 500 ms e writer único fora da thread visual. A saída pendente possui deadline visual de 2 s, mas não cancela fisicamente a chamada síncrona já iniciada; o shutdown ainda pode aguardar `join()` sem limite. O restart automatizado é Release instrumentado com `BUILD_TESTING=ON` e offscreen, não pacote ou desktop nativo. `restoreLastSession` e `startMinimized` apenas fazem round-trip; seus efeitos ficam em M4.1/M4.4. Não houve migração histórica, ensaio de perda real de energia, validação de primeiro frame nativo/NVDA, pacote nem benchmark. Assim, M3.5 não está concluído globalmente.
+
+M3.6 também está funcional somente no candidato Qt/Windows. Strings essenciais passam por catálogos QML `*Text.qml` ou pelo catálogo C++ do filtro nativo; pt-BR é compilado com `qt_add_translations`, instalado por `QTranslator` e cobre o singular “1 segundo”. Erros locais apresentam causa segura e ação concreta, rejeição síncrona preserva fila/contexto, importação parcial ou rejeitada oferece nova escolha e a acessibilidade da fila não expõe IDs/códigos internos. A automação cobre cópia longa em 720 × 520, mas não substitui NVDA, DPI, alto contraste ou movimento reduzido nativos nem pacote/E2E. M3.7 é o próximo incremento funcional; Linux, A/B e benchmarks continuam suspensos até a paridade funcional Windows, sem aceitar a stack.
 
 A bandeja está implementada sob a política comum da seção 8: menu, intenções separadas de fechar/ocultar/sair, aviso inicial por execução, fallback explicado e restauração do modo da janela. A suíte Release estrita passou 65/65 e o smoke do executável encerra normalmente com a janela QML fechada. Regressões cobrem animações/foco e perda de capacidade durante a ocultação. Isso não comprova bandeja/Explorer nativos nem encerra FR-030/FR-031/FR-032 ou M0.2; gates nativos/manuais continuam pendentes.
 
@@ -226,7 +228,7 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 
 ## 7. M3 — Experiência completa do player
 
-**Estado:** Em andamento no candidato Qt/Windows; fila/CRUD, importação incremental, painel de detalhes/diagnóstico e o armazenamento M3.5 das preferências estão funcionais. Permanecem abertos os efeitos de restauração/início minimizado, desempenho, `CHK-SEC`, E2E empacotado e validação nativa/NVDA; M3.6 é o próximo incremento.
+**Estado:** Em andamento no candidato Qt/Windows; fila/CRUD, importação incremental, painel de detalhes/diagnóstico, armazenamento M3.5 e strings/microcopy M3.6 estão funcionais. Permanecem abertos os efeitos de restauração/início minimizado, desempenho, `CHK-SEC`, E2E empacotado e validação nativa/NVDA; M3.7 é o próximo incremento.
 **Objetivo:** transformar o vertical slice em produto agradável.
 
 ### Escopo

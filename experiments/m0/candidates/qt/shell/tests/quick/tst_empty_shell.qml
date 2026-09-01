@@ -297,15 +297,15 @@ TestCase {
         const unavailableQueueRow = revealQueueRow(queueList, 998);
         compare(unavailableQueueRow.occurrenceId, "queue-0999");
         verify(!unavailableQueueRow.available);
-        verify(unavailableQueueRow.Accessible.name.indexOf(testShellUiContract.errorTitle) >= 0); // qmllint disable unqualified
-        compare(findChild(unavailableQueueRow, "queue-row-status").text, testShellUiContract.errorTitle); // qmllint disable unqualified
+        verify(unavailableQueueRow.Accessible.name.indexOf("Arquivo não disponível.") >= 0);
+        compare(findChild(unavailableQueueRow, "queue-row-status").text, "Arquivo não disponível.");
         verify(findChild(unavailableQueueRow, "queue-row-status").visible);
         const finalQueueRow = revealQueueRow(queueList, 999);
         compare(finalQueueRow.occurrenceId, "queue-1000");
         compare(finalQueueRow.Accessible.id, "queue-1000");
         verify(finalQueueRow.available);
         verify(!findChild(finalQueueRow, "queue-row-status").visible);
-        verify(finalQueueRow.Accessible.name.indexOf(testShellUiContract.errorTitle) < 0); // qmllint disable unqualified
+        verify(finalQueueRow.Accessible.name.indexOf("Arquivo não disponível.") < 0);
         verify(instantiatedQueueRows(queueList) < 64);
         shell.width = 960;
         tryCompare(shell, "width", 960);

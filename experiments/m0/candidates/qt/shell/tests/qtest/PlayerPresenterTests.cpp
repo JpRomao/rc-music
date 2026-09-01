@@ -356,7 +356,10 @@ class PlayerPresenterTests final : public QObject {
     void transientNavigationRejectionKeepsTheTargetAvailable();
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
     void rejectedAdditionalOpenPreservesTheCurrentLocalQueue();
+    void rejectedAddPreservesTheCurrentLocalQueue();
     void localPlaybackErrorKeepsContextAndOffersReopen();
+    void typedLocalPlaybackErrorsExposeAnExecutableRecovery_data();
+    void typedLocalPlaybackErrorsExposeAnExecutableRecovery();
     void localEndedAdvancesToNextOccurrenceWithAutoplay();
     void localEndedAtQueueTailKeepsSelection();
     void localEndedAtQueueTailClearsSelectionWhenConfigured();
@@ -445,17 +448,22 @@ void PlayerPresenterTests::localOpenCancellationIsInert() {
     });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy source_imports(&presenter, &PlayerPresenter::sourceImportChanged);
 
     QVERIFY(!presenter.usesFrozenFixture());
     QVERIFY(!presenter.openAudio());
+    QVERIFY(!presenter.addAudio());
 
-    QCOMPARE(picker_calls, 1);
+    QCOMPARE(picker_calls, 2);
     QVERIFY(backend.loaded_paths.empty());
     QVERIFY(metadata.requests.empty());
     QVERIFY(!presenter.hasCurrentTrack());
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Idle);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
     QCOMPARE(states.size(), 0);
     QCOMPARE(playback.size(), 0);
+    QCOMPARE(source_imports.size(), 0);
 }
 
 void PlayerPresenterTests::localOpenPublishesUnicodeFallbackAndStartsMetadata() {
@@ -1407,6 +1415,7 @@ void PlayerPresenterTests::rejectedLocalOpenDoesNotStartMetadataOrPublishTrackSt
     PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy source_imports(&presenter, &PlayerPresenter::sourceImportChanged);
 
     QVERIFY(!presenter.openAudio());
 
@@ -1415,8 +1424,11 @@ void PlayerPresenterTests::rejectedLocalOpenDoesNotStartMetadataOrPublishTrackSt
     QVERIFY(!presenter.hasCurrentTrack());
     QCOMPARE(presenter.currentTitle(), QString{});
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Rejected);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
     QCOMPARE(states.size(), 0);
     QCOMPARE(playback.size(), 0);
+    QCOMPARE(source_imports.size(), 1);
 }
 
 void PlayerPresenterTests::rejectedAdditionalOpenPreservesTheCurrentLocalQueue() {
@@ -1437,6 +1449,7 @@ void PlayerPresenterTests::rejectedAdditionalOpenPreservesTheCurrentLocalQueue()
     QSignalSpy resets(model, &QAbstractItemModel::modelReset);
     QSignalSpy inserted(model, &QAbstractItemModel::rowsInserted);
     QSignalSpy removed(model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy source_imports(&presenter, &PlayerPresenter::sourceImportChanged);
     backend.load_result = PlaybackCommandResult::Busy;
 
     QVERIFY(!presenter.openAudio());
@@ -1453,6 +1466,51 @@ void PlayerPresenterTests::rejectedAdditionalOpenPreservesTheCurrentLocalQueue()
     QCOMPARE(presenter.currentTitle(), QStringLiteral("current"));
     QCOMPARE(metadata.requests.size(), std::size_t{1});
     QVERIFY(metadata.cancelled_generations.empty());
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Rejected);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(source_imports.size(), 1);
+}
+
+void PlayerPresenterTests::rejectedAddPreservesTheCurrentLocalQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::vector<std::filesystem::path>> selections{
+        {localTestPath(u8"current.wav"), localTestPath(u8"queued.wav")},
+        {std::filesystem::path{}},
+    };
+    std::size_t selection_index = 0;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [&] { return selections.at(selection_index++); });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    const QString current_id = presenter.currentOccurrenceId();
+    const QString queued_id = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removed(model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy source_imports(&presenter, &PlayerPresenter::sourceImportChanged);
+
+    QVERIFY(!presenter.addAudio());
+
+    QCOMPARE(model, presenter.queueModelObject());
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserted.size(), 0);
+    QCOMPARE(removed.size(), 0);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.currentOccurrenceId(), current_id);
+    QCOMPARE(model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString(), queued_id);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("current"));
+    QCOMPARE(metadata.requests.size(), std::size_t{1});
+    QVERIFY(metadata.cancelled_generations.empty());
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Rejected);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(states.size(), 0);
+    QCOMPARE(playback.size(), 0);
+    QCOMPARE(source_imports.size(), 1);
 }
 
 void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
@@ -1476,7 +1534,9 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
 
     QCOMPARE(presenter.stateId(), QStringLiteral("error"));
     QVERIFY(presenter.hasError());
-    QCOMPARE(presenter.errorCode(), QStringLiteral("playback_error"));
+    QCOMPARE(presenter.errorCode(), QStringLiteral("invalid_media"));
+    QCOMPARE(presenter.errorMessageKey(), QStringLiteral("invalid_media_error"));
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("open-audio"));
     QVERIFY(presenter.detailsAvailable());
     QVERIFY(presenter.hasDetailsFileName());
     QCOMPARE(presenter.detailsFileName(), displayPath(selections.front().filename()));
@@ -1484,7 +1544,7 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
     QCOMPARE(presenter.detailsFilePath(), displayPath(selections.front()));
     const QVariantList local_error_diagnostics{
         QVariantMap{{QStringLiteral("code"), QStringLiteral("playback_error")},
-                    {QStringLiteral("errorCode"), QStringLiteral("playback_error")}},
+                    {QStringLiteral("errorCode"), QStringLiteral("invalid_media")}},
     };
     QCOMPARE(presenter.detailsDiagnostics(), local_error_diagnostics);
     QVERIFY(presenter.hasCurrentTrack());
@@ -1514,6 +1574,69 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
     QCoreApplication::processEvents();
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
     QCOMPARE(presenter.currentTitle(), QStringLiteral("Recuperada 日本語"));
+}
+
+void PlayerPresenterTests::typedLocalPlaybackErrorsExposeAnExecutableRecovery_data() {
+    QTest::addColumn<int>("playback_error");
+    QTest::addColumn<QString>("error_code");
+    QTest::addColumn<QString>("message_key");
+
+    QTest::newRow("source unavailable") << static_cast<int>(PlaybackErrorCode::SourceUnavailable)
+                                        << QStringLiteral("source_unavailable")
+                                        << QStringLiteral("source_unavailable_error");
+    QTest::newRow("invalid media") << static_cast<int>(PlaybackErrorCode::InvalidMedia)
+                                   << QStringLiteral("invalid_media") << QStringLiteral("invalid_media_error");
+    QTest::newRow("access denied") << static_cast<int>(PlaybackErrorCode::AccessDenied)
+                                   << QStringLiteral("access_denied") << QStringLiteral("access_denied_error");
+    QTest::newRow("backend failure") << static_cast<int>(PlaybackErrorCode::BackendFailure)
+                                     << QStringLiteral("backend_failure") << QStringLiteral("backend_failure_error");
+}
+
+void PlayerPresenterTests::typedLocalPlaybackErrorsExposeAnExecutableRecovery() {
+    QFETCH(int, playback_error);
+    QFETCH(QString, error_code);
+    QFETCH(QString, message_key);
+
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{
+        localTestPath(u8"Falha contextual 日本語.mp3"),
+        localTestPath(u8"Recuperada pela ação ☕.flac"),
+    };
+    std::size_t selection_index = 0;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
+        if (selection_index >= selections.size())
+            return {};
+        return {selections[selection_index++]};
+    });
+
+    QVERIFY(presenter.openAudio());
+    backend.publish(
+        {.status = PlaybackStatus::Error, .generation = 1, .error = static_cast<PlaybackErrorCode>(playback_error)});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+
+    QCOMPARE(presenter.errorCode(), error_code);
+    QCOMPARE(presenter.errorMessageKey(), message_key);
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("open-audio"));
+    QVERIFY(presenter.hasContextTrack());
+    QCOMPARE(presenter.contextTitle(), QStringLiteral("Falha contextual 日本語"));
+    QVERIFY(presenter.detailsAvailable());
+    QCOMPARE(presenter.detailsFilePath(), displayPath(selections.front()));
+    const QVariantList expected_diagnostics{
+        QVariantMap{{QStringLiteral("code"), QStringLiteral("playback_error")},
+                    {QStringLiteral("errorCode"), error_code}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), expected_diagnostics);
+
+    QVERIFY(presenter.executeErrorAction());
+    QCOMPARE(backend.loaded_paths, selections);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Recuperada pela ação ☕"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QVERIFY(!presenter.hasError());
+    QVERIFY(presenter.errorCode().isEmpty());
+    QVERIFY(presenter.errorMessageKey().isEmpty());
+    QVERIFY(presenter.errorActionId().isEmpty());
 }
 
 void PlayerPresenterTests::localEndedAdvancesToNextOccurrenceWithAutoplay() {
@@ -2603,7 +2726,8 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     const int queue_model_property = meta->indexOfProperty("queueModel");
     QVERIFY(queue_model_property >= 0);
     QCOMPARE(meta->property(queue_model_property).metaType().id(), qMetaTypeId<QAbstractItemModel*>());
-    for (const char* property_name : {"volume", "muted", "canGoPrevious", "canGoNext"}) {
+    for (const char* property_name :
+         {"volume", "muted", "canGoPrevious", "canGoNext", "errorMessageKey", "errorActionId"}) {
         const int property_index = meta->indexOfProperty(property_name);
         QVERIFY(property_index >= 0);
         QVERIFY(meta->property(property_index).hasNotifySignal());
@@ -3541,6 +3665,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "dismissPreferenceWarning",
                                     "retryPreferenceSave",
                                     "confirmPreferenceReplacement",
+                                    "executeErrorAction",
                                     "skipUnavailable",
                                     "requestClose",
                                     "requestHide",

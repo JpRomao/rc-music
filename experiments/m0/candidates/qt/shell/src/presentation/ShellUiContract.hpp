@@ -50,6 +50,7 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString errorTitle READ errorTitle CONSTANT)
     Q_PROPERTY(QString errorBody READ errorBody CONSTANT)
     Q_PROPERTY(QString actionSkip READ actionSkip CONSTANT)
+    Q_PROPERTY(QString actionRetry READ actionRetry CONSTANT)
     Q_PROPERTY(QString preferencesTitle READ preferencesTitle CONSTANT)
     Q_PROPERTY(QString sectionGeneral READ sectionGeneral CONSTANT)
     Q_PROPERTY(QString sectionPlayback READ sectionPlayback CONSTANT)
@@ -117,6 +118,7 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString errorTitle() const;
     [[nodiscard]] QString errorBody() const;
     [[nodiscard]] QString actionSkip() const;
+    [[nodiscard]] QString actionRetry() const;
     [[nodiscard]] QString preferencesTitle() const;
     [[nodiscard]] QString sectionGeneral() const;
     [[nodiscard]] QString sectionPlayback() const;

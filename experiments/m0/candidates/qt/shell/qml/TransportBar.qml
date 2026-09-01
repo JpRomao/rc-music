@@ -7,6 +7,9 @@ ColumnLayout {
     objectName: "transport-bar"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    TransportText {
+        id: labels
+    }
     enabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
     function formattedTime(milliseconds) {
         const totalSeconds = Math.floor(milliseconds / 1000);
@@ -99,7 +102,7 @@ ColumnLayout {
             enabled: root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipBackwardShort.replace("{seconds}", root.presenter.skipBackwardSeconds)
-            accessibleName: root.contract.skipBackwardName.replace("{seconds}", root.presenter.skipBackwardSeconds)
+            accessibleName: labels.backwardName(root.presenter.skipBackwardSeconds)
             onClicked: root.presenter.skipBackward()
         }
         AccessibleTransportButton {
@@ -114,7 +117,7 @@ ColumnLayout {
             enabled: root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipForwardShort.replace("{seconds}", root.presenter.skipForwardSeconds)
-            accessibleName: root.contract.skipForwardName.replace("{seconds}", root.presenter.skipForwardSeconds)
+            accessibleName: labels.forwardName(root.presenter.skipForwardSeconds)
             onClicked: root.presenter.skipForward()
         }
         AccessibleTransportButton {

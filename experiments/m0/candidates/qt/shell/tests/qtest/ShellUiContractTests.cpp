@@ -1,17 +1,22 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/PlaybackTypes.hpp"
+#include "presentation/ApplicationText.hpp"
 #include "presentation/HighContrastPalette.hpp"
+#include "presentation/LifecycleText.hpp"
 #include "presentation/ShellUiContract.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
 #include <QMetaMethod>
 #include <QMetaProperty>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStringList>
 #include <QTest>
+#include <QTranslator>
 #include <QtQml/qqml.h>
 
 #include <optional>
@@ -48,6 +53,37 @@ HighContrastPalette lightHighContrastPalette() {
             QColor{107, 82, 110}};
 }
 
+class PrefixTranslator final : public QTranslator {
+  public:
+    [[nodiscard]] bool isEmpty() const override { return false; }
+
+    [[nodiscard]] QString translate(const char*, const char* source_text, const char*, int) const override {
+        if (source_text == nullptr)
+            return {};
+        return QStringLiteral("⟦") + QString::fromUtf8(source_text) + QStringLiteral("⟧");
+    }
+};
+
+[[nodiscard]] bool isUserFacingLiteral(const QString& literal) {
+    if (literal.isEmpty() || QRegularExpression{QStringLiteral(R"(^[+\-−×✕✓▶⏮⏭🔊🔇]+$)")}.match(literal).hasMatch() ||
+        QRegularExpression{QStringLiteral(R"(^\{[a-zA-Z]+\}$)")}.match(literal).hasMatch()) {
+        return false;
+    }
+    if (QStringList{QStringLiteral("0"), QStringLiteral(":"), QStringLiteral("\\n"), QStringLiteral(".")}.contains(
+            literal)) {
+        return false;
+    }
+    return literal.contains(QRegularExpression{QStringLiteral(R"([A-Za-zÀ-ɏ])")});
+}
+
+[[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
+    static const QRegularExpression technical_property{
+        QStringLiteral(R"(\b(?:objectName|controlId|Accessible\.id|sequence|property|color|source)\s*:)")};
+    const QString trimmed = line.trimmed();
+    return technical_property.match(line).hasMatch() || trimmed.startsWith(QStringLiteral("case ")) ||
+           line.contains(QStringLiteral("typeof "));
+}
+
 } // namespace
 
 class ShellUiContractTests final : public QObject {
@@ -58,6 +94,8 @@ class ShellUiContractTests final : public QObject {
     void rejectsUnknownAssetMappings();
     void rejectsUnsupportedTransportStrings();
     void rejectsUnsupportedPreferenceStrings();
+    void essentialQmlTextIsCentralizedAndExtractable();
+    void shellTextCanBeTranslatedWithoutChangingTheFixture();
     void themeModesUseFixturePalettesWithExplicitPrecedence();
     void motionModesUseFixtureTimingsWithExplicitPrecedence();
     void appearanceNotificationsReflectOnlyEffectiveChanges();
@@ -114,6 +152,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.errorTitle(), QStringLiteral("Não foi possível abrir esta faixa"));
     QCOMPARE(contract.errorBody(), QStringLiteral("A faixa de teste está indisponível."));
     QCOMPARE(contract.actionSkip(), QStringLiteral("Pular"));
+    QCOMPARE(contract.actionRetry(), QStringLiteral("Tentar novamente"));
     QCOMPARE(contract.preferencesTitle(), QStringLiteral("Preferências"));
     QCOMPARE(contract.sectionGeneral(), QStringLiteral("Geral"));
     QCOMPARE(contract.sectionPlayback(), QStringLiteral("Reprodução"));
@@ -178,6 +217,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("errorTitle"),
         QStringLiteral("errorBody"),
         QStringLiteral("actionSkip"),
+        QStringLiteral("actionRetry"),
         QStringLiteral("preferencesTitle"),
         QStringLiteral("sectionGeneral"),
         QStringLiteral("sectionPlayback"),
@@ -297,7 +337,7 @@ void ShellUiContractTests::rejectsUnsupportedTransportStrings() {
           &FixtureStrings::skip_backward_name, &FixtureStrings::skip_forward_name, &FixtureStrings::progress_name,
           &FixtureStrings::volume_name, &FixtureStrings::action_mute, &FixtureStrings::action_unmute,
           &FixtureStrings::queue_title, &FixtureStrings::not_informed, &FixtureStrings::error_title,
-          &FixtureStrings::error_body, &FixtureStrings::action_skip}) {
+          &FixtureStrings::error_body, &FixtureStrings::action_skip, &FixtureStrings::action_retry}) {
         FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
         bundle.strings.*member = QStringLiteral("drifted");
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
@@ -313,6 +353,107 @@ void ShellUiContractTests::rejectsUnsupportedPreferenceStrings() {
         bundle.strings.*member = QStringLiteral("drifted");
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
     }
+}
+
+void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {
+    const QDir source_dir{QStringLiteral(M0_QML_SOURCE_DIR)};
+    QVERIFY2(source_dir.exists(), qPrintable(source_dir.absolutePath()));
+
+    QStringList violations;
+    const QRegularExpression string_literal{QStringLiteral("\"((?:\\\\.|[^\"\\\\])*)\"")};
+    QDirIterator iterator(source_dir.absolutePath(), {QStringLiteral("*.qml")}, QDir::Files);
+    while (iterator.hasNext()) {
+        const QString path = iterator.next();
+        QFile file(path);
+        QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(path));
+        const bool catalog = QFileInfo{path}.baseName().endsWith(QStringLiteral("Text"));
+        const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char{'\n'});
+        for (qsizetype index = 0; index < lines.size(); ++index) {
+            const QString& line = lines.at(index);
+            if (!catalog && line.contains(QStringLiteral("qsTr("))) {
+                violations.append(QStringLiteral("%1:%2: qsTr fora de um catálogo *Text.qml")
+                                      .arg(QFileInfo{path}.fileName())
+                                      .arg(index + 1));
+            }
+            auto match_iterator = string_literal.globalMatch(line);
+            while (match_iterator.hasNext()) {
+                const auto match = match_iterator.next();
+                const QString literal = match.captured(1);
+                if (!isUserFacingLiteral(literal) || isTechnicalQmlContext(line))
+                    continue;
+                if (catalog && line.contains(QStringLiteral("qsTr("), Qt::CaseSensitive))
+                    continue;
+                violations.append(QStringLiteral("%1:%2: texto visível fora de qsTr: %3")
+                                      .arg(QFileInfo{path}.fileName())
+                                      .arg(index + 1)
+                                      .arg(literal));
+            }
+        }
+    }
+    QVERIFY2(violations.isEmpty(), qPrintable(violations.join(QLatin1Char{'\n'})));
+}
+
+void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract contract(bundle);
+    LifecycleText lifecycle_text;
+    PrefixTranslator translator;
+    QVERIFY(QCoreApplication::installTranslator(&translator));
+
+    const QStringList translated{
+        contract.appName(),
+        contract.openAudioText(),
+        contract.emptyTitle(),
+        contract.emptyHint(),
+        contract.actionPlay(),
+        contract.actionPause(),
+        contract.actionPrevious(),
+        contract.actionNext(),
+        contract.skipBackwardShort(),
+        contract.skipForwardShort(),
+        contract.skipBackwardName(),
+        contract.skipForwardName(),
+        contract.progressName(),
+        contract.volumeName(),
+        contract.actionMute(),
+        contract.actionUnmute(),
+        contract.queueTitle(),
+        contract.detailsTitle(),
+        contract.notInformed(),
+        contract.errorTitle(),
+        contract.errorBody(),
+        contract.actionSkip(),
+        contract.actionRetry(),
+        contract.preferencesTitle(),
+        contract.sectionGeneral(),
+        contract.sectionPlayback(),
+        contract.sectionAppearance(),
+        contract.themeSystem(),
+        contract.themeLight(),
+        contract.themeDark(),
+        contract.motionSystem(),
+        contract.motionReduced(),
+        ApplicationText::localAudioDialogFilter({QStringLiteral("*.wav")}),
+        lifecycle_text.showAction(),
+        lifecycle_text.hideAction(),
+        lifecycle_text.exitAction(),
+        lifecycle_text.noTrack(),
+        lifecycle_text.trayTitle(),
+        lifecycle_text.trayMessage(),
+        lifecycle_text.continueAction(),
+        lifecycle_text.cancelAction(),
+        lifecycle_text.trayNoticeEnabled(),
+        lifecycle_text.unavailableTitle(),
+        lifecycle_text.unavailableMessage(),
+        lifecycle_text.dismissAction(),
+    };
+    QVERIFY(QCoreApplication::removeTranslator(&translator));
+
+    for (const QString& value : translated) {
+        QVERIFY2(value.startsWith(QStringLiteral("⟦")) && value.endsWith(QStringLiteral("⟧")), qPrintable(value));
+    }
+    QCOMPARE(bundle.strings.app_name, QStringLiteral("Player de música"));
+    QCOMPARE(bundle.strings.action_open_audio, QStringLiteral("Abrir áudio"));
 }
 
 void ShellUiContractTests::themeModesUseFixturePalettesWithExplicitPrecedence() {

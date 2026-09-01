@@ -104,6 +104,7 @@ if(M0_QT_SHELL_SUPPORT)
         QuickControls2
         QuickLayouts
         QuickTest
+        LinguistTools
         Svg
         Test
         Widgets
@@ -205,6 +206,8 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/TrackDetailsField.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsField.qml")
     set_source_files_properties(qml/TrackDetailsPanel.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsPanel.qml")
     set_source_files_properties(qml/TrackDetailsText.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsText.qml")
+    set_source_files_properties(qml/ErrorText.qml PROPERTIES QT_RESOURCE_ALIAS "ErrorText.qml")
+    set_source_files_properties(qml/TransportText.qml PROPERTIES QT_RESOURCE_ALIAS "TransportText.qml")
     qt_add_library(m0_qt_shell_ui STATIC)
     qt_add_qml_module(m0_qt_shell_ui
         URI MusicPlayer.M0
@@ -215,6 +218,7 @@ if(M0_QT_SHELL_SUPPORT)
             src/presentation/ShellUiContract.cpp
             src/presentation/ArtworkImageProvider.hpp
             src/presentation/ArtworkImageProvider.cpp
+            src/presentation/ApplicationText.hpp
             src/presentation/PlayerPresenter.hpp
             src/presentation/PlayerPresenter.cpp
             src/presentation/PlayerPresenterScenarioControl.hpp
@@ -226,7 +230,9 @@ if(M0_QT_SHELL_SUPPORT)
             qml/AccessibleTransportButton.qml
             qml/NowPlayingState.qml
             qml/ErrorState.qml
+            qml/ErrorText.qml
             qml/TransportBar.qml
+            qml/TransportText.qml
             qml/TransportSlider.qml
             qml/QueuePanel.qml
             qml/QueueText.qml
@@ -244,6 +250,13 @@ if(M0_QT_SHELL_SUPPORT)
             qml/TrackDetailsField.qml
             qml/TrackDetailsPanel.qml
             qml/TrackDetailsText.qml
+    )
+    qt_add_translations(m0_qt_shell_ui
+        SOURCE_TARGETS m0_qt_shell_ui
+        TS_FILES translations/music-player_pt_BR.ts
+        RESOURCE_PREFIX "/i18n"
+        LUPDATE_TARGET m0_qt_shell_ui_lupdate
+        LRELEASE_TARGET m0_qt_shell_ui_lrelease
     )
     target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
     target_link_libraries(m0_qt_shell_ui PRIVATE
@@ -477,6 +490,7 @@ if(M0_QT_SHELL_SUPPORT)
             M0_PLACEHOLDER_SIZE=${m0_expected_placeholder_size}
             M0_TRACK_SHA256="${m0_expected_track_sha256}"
             M0_TRACK_SIZE=${m0_expected_track_size}
+            M0_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
         )
         set_target_properties(m0_qt_shell_contract_tests PROPERTIES AUTOMOC ON)
         if(MSVC)

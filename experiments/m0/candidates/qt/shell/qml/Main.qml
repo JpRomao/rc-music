@@ -33,6 +33,9 @@ ApplicationWindow {
     visible: true
     signal openAudioRequested
     property bool queueOpen: false
+    ErrorText {
+        id: errorText
+    }
     readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
@@ -174,6 +177,7 @@ ApplicationWindow {
                 EmptyState {
                     id: emptyState
                     anchors.centerIn: parent
+                    width: Math.min(parent.width > 0 ? parent.width : 560, 560)
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract
                     onOpenAudioRequested: window.openAudio()
@@ -194,6 +198,7 @@ ApplicationWindow {
                     visible: window.presenter.playbackState === PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
+                    labels: errorText
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
             }

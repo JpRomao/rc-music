@@ -23,6 +23,7 @@
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QStringList>
+#include <QTranslator>
 #include <QWindow>
 #include <QtQuickTest/quicktest.h>
 #include <QtTest/qtestkeyboard.h>
@@ -572,13 +573,20 @@ class EmptyShellQuickTestSetup final : public QObject {
     ~EmptyShellQuickTestSetup() override {
         QAccessible::installUpdateHandler(previous_accessibility_update_handler);
         previous_accessibility_update_handler = nullptr;
+        if (translation_installed_ && QCoreApplication::instance() != nullptr)
+            QCoreApplication::removeTranslator(&pt_br_translation_);
     }
 
   public slots:
     void applicationAvailable() {
         previous_accessibility_update_handler = QAccessible::installUpdateHandler(recordAccessibilityUpdate);
         Q_INIT_RESOURCE(m0_qt_shell_assets);
+        Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
         QQuickStyle::setStyle(QStringLiteral("Basic"));
+        translation_installed_ = pt_br_translation_.load(QStringLiteral(":/i18n/music-player_pt_BR.qm")) &&
+                                 QCoreApplication::installTranslator(&pt_br_translation_);
+        if (!translation_installed_)
+            qFatal("The pt-BR translation catalog could not be installed for Qt Quick tests");
         bundle_ = std::make_unique<music_player::m0::FixtureBundle>(music_player::m0::FixtureRepository{}.load(
             QStringLiteral(":/m0/data/fixture.v1.json"), QStringLiteral(":/m0/data/queue.v1.json")));
     }
@@ -639,6 +647,8 @@ class EmptyShellQuickTestSetup final : public QObject {
     QuickTestMetadataReader local_metadata_reader_{};
     FakeLocalSourceDiscovery local_source_discovery_{};
     std::deque<std::vector<std::filesystem::path>> local_selections_{};
+    QTranslator pt_br_translation_{};
+    bool translation_installed_{false};
 };
 
 } // namespace

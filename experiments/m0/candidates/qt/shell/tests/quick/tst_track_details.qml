@@ -257,7 +257,7 @@ TestCase {
         findChild(errorShell, "details-diagnostics-toggle").Accessible.pressAction();
         const errorDiagnostics = findChild(errorShell, "details-diagnostics-value");
         verify(errorDiagnostics.text.includes("Não foi possível ler os metadados deste arquivo."));
-        verify(errorDiagnostics.text.includes("A reprodução falhou."));
+        verify(errorDiagnostics.text.includes("A reprodução falhou porque a mídia é inválida."));
         verify(!errorDiagnostics.text.includes("DO NOT EXPOSE"));
         compare(findChild(errorShell, "details-file-size-value").text, "Não informado");
         keyClick(Qt.Key_Escape);

@@ -23,7 +23,7 @@ Button {
         event.accepted = true;
     }
     implicitWidth: Math.max(contract.controlTargetPreferred, contentItem.implicitWidth + 32)
-    implicitHeight: contract.controlTargetPreferred
+    implicitHeight: Math.max(contract.controlTargetPreferred, label.contentHeight + 16)
     required property ShellUiContract contract
 
     background: Rectangle {
@@ -33,10 +33,12 @@ Button {
         border.color: control.contract.highContrast ? control.contract.accentTextColor : control.contract.focusColor
     }
     contentItem: Text {
+        id: label
         text: control.text
         color: control.contract.accentTextColor
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+        wrapMode: Text.WordWrap
         topPadding: control.down ? 2 : 0
     }
 }
