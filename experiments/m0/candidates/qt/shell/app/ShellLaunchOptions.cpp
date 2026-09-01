@@ -11,8 +11,17 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     bool scenario_seen = false;
     bool smoke_seen = false;
     bool config_root_seen = false;
+    bool source_only = false;
     for (qsizetype index = 1; index < arguments.size(); ++index) {
         const QString& argument = arguments.at(index);
+        if (source_only) {
+            options.source_paths.push_back(argument);
+            continue;
+        }
+        if (argument == QStringLiteral("--")) {
+            source_only = true;
+            continue;
+        }
         if (argument.startsWith(QStringLiteral("--m0-scenario="))) {
             if (scenario_seen)
                 throw std::invalid_argument{"the M0 shell scenario may be specified only once"};
@@ -99,8 +108,15 @@ QStringList resolveShellSourcePaths(const QStringList& source_paths, const QStri
     for (const QString& source_path : source_paths) {
         if (source_path.isEmpty())
             throw std::invalid_argument{"a shell source path cannot be empty"};
-        resolved.push_back(
-            QDir::cleanPath(QDir::isAbsolutePath(source_path) ? source_path : base.absoluteFilePath(source_path)));
+#ifdef Q_OS_WIN
+        const bool drive_relative = source_path.size() >= 2 && source_path.at(1) == QLatin1Char(':') &&
+                                    (source_path.size() == 2 ||
+                                     (source_path.at(2) != QLatin1Char('/') && source_path.at(2) != QLatin1Char('\\')));
+        if (drive_relative)
+            throw std::invalid_argument{"drive-relative shell source paths are ambiguous"};
+#endif
+        resolved.push_back(QDir::isAbsolutePath(source_path) ? source_path
+                                                             : QDir::cleanPath(base.absoluteFilePath(source_path)));
     }
     return resolved;
 }

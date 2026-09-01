@@ -71,6 +71,31 @@ class ShellLaunchOptionsTests final : public QObject {
                                  (void)resolveShellSourcePaths(options.source_paths, QDir::currentPath()));
     }
 
+    void treatsReservedLookingArgumentsAfterTheDelimiterAsPaths() {
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--"),
+                                     QStringLiteral("--m0-smoke=not-a-control.mp3"), QStringLiteral("next.wav")});
+        QCOMPARE(options.source_paths,
+                 QStringList({QStringLiteral("--m0-smoke=not-a-control.mp3"), QStringLiteral("next.wav")}));
+        QVERIFY(!options.smoke_error_recovery);
+    }
+
+    void preservesAbsolutePathSpelling() {
+#ifdef Q_OS_WIN
+        const QString extended = QStringLiteral(R"(\\?\C:\Música\very long\..\track.mp3)");
+#else
+        const QString extended = QStringLiteral("/Música/very long/../track.mp3");
+#endif
+        QCOMPARE(resolveShellSourcePaths({extended}, QDir::rootPath()), QStringList({extended}));
+    }
+
+#ifdef Q_OS_WIN
+    void rejectsAmbiguousDriveRelativePaths() {
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, (void)resolveShellSourcePaths(
+                                                            {QStringLiteral("C:relative.mp3")}, QDir::currentPath()));
+    }
+#endif
+
     void acceptsTheClosedUnavailableScenario() {
         const auto options =
             parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable")});
