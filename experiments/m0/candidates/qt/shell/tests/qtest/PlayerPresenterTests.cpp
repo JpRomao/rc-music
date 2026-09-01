@@ -42,6 +42,23 @@ class AvailableTrayPlatform final : public PlatformIntegration {
   public:
     bool available{true};
     [[nodiscard]] bool trayAvailable() const noexcept override { return available; }
+    [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept override { return default_apps_supported; }
+    [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept override { return default_apps_available; }
+    void openDefaultAppsSettings(DefaultAppsSettingsCompletion completion) override {
+        ++default_apps_settings_calls;
+        if (throw_on_default_apps_settings_launch)
+            throw std::runtime_error{"default apps settings launch failed"};
+        if (default_apps_settings_immediate_result.has_value()) {
+            completion(*default_apps_settings_immediate_result);
+            return;
+        }
+        pending_default_apps_settings_completion = std::move(completion);
+    }
+    void completeDefaultAppsSettings(DefaultAppsSettingsLaunchResult result) {
+        auto completion = std::exchange(pending_default_apps_settings_completion, {});
+        if (completion)
+            completion(result);
+    }
     void hideWindow() override { ++hide_calls; }
     void minimizeWindow() override { ++minimize_calls; }
     void showAndActivateWindow() override { ++restore_calls; }
@@ -54,6 +71,12 @@ class AvailableTrayPlatform final : public PlatformIntegration {
     int minimize_calls{0};
     int restore_calls{0};
     int exit_calls{0};
+    bool default_apps_supported{true};
+    bool default_apps_available{true};
+    bool throw_on_default_apps_settings_launch{false};
+    std::optional<DefaultAppsSettingsLaunchResult> default_apps_settings_immediate_result{};
+    DefaultAppsSettingsCompletion pending_default_apps_settings_completion{};
+    int default_apps_settings_calls{0};
     std::function<void()> on_exit;
 };
 
@@ -466,6 +489,9 @@ class PlayerPresenterTests final : public QObject {
     void editsPreferencesWithoutChangingPlaybackOrTheQueue();
     void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
     void refreshesTrayAvailabilityAndGuardsStartMinimized();
+    void opensDefaultAppsSettingsOnceUntilTheTypedCompletionArrives();
+    void defaultAppsSettingsUnavailableAndFailureStatesAreRecoverable();
+    void defaultAppsSettingsCompletionIsInertAfterExitOrDestruction();
     void rejectsPersistedWindowPlacementWithNonPositiveSize();
     void loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument();
     void restoresPersistedSessionPausedBeforePresentationWithoutAutoplay();
@@ -4981,12 +5007,18 @@ void PlayerPresenterTests::pendingPreferenceExitKeepsBackgroundTicksReversible()
                                                          .autosave = &autosave});
 
     QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.openDefaultAppsSettings());
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Opening);
     const qint64 position_before = presenter.positionMs();
     QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
     QVERIFY(presenter.requestExit());
     QVERIFY(presenter.exiting());
     QVERIFY(!presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Opening);
+
+    platform.completeDefaultAppsSettings(DefaultAppsSettingsLaunchResult::Dispatched);
+    QTRY_COMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Dispatched);
 
     const Preferences preferences_before = presenter.preferences();
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
@@ -5010,6 +5042,8 @@ void PlayerPresenterTests::pendingPreferenceExitKeepsBackgroundTicksReversible()
     QVERIFY(!presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 0);
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+    QVERIFY(presenter.openDefaultAppsSettings());
+    QCOMPARE(platform.default_apps_settings_calls, 2);
 }
 
 void PlayerPresenterTests::preferenceSaveTimeoutKeepsTheApplicationResponsiveAndOpen() {
@@ -5197,6 +5231,9 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QVERIFY(!presenter.exiting());
     QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
     QVERIFY(presenter.trayNoticeEnabled());
+    QVERIFY(presenter.defaultAppsSettingsSupported());
+    QVERIFY(presenter.defaultAppsSettingsAvailable());
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Idle);
     const QMetaObject* const meta = presenter.metaObject();
     for (const char* name : {"exiting", "exitCommitted", "windowNotice", "trayNoticeEnabled"}) {
         const int index = meta->indexOfProperty(name);
@@ -5212,6 +5249,23 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QCOMPARE(notice.enumerator().keyToValue("NoNotice"), 0);
     QCOMPARE(notice.enumerator().keyToValue("TrayCloseNotice"), 1);
     QCOMPARE(notice.enumerator().keyToValue("TrayUnavailableNotice"), 2);
+    for (const char* name :
+         {"defaultAppsSettingsSupported", "defaultAppsSettingsAvailable", "defaultAppsSettingsState"}) {
+        const int index = meta->indexOfProperty(name);
+        QVERIFY(index >= 0);
+        const QMetaProperty property = meta->property(index);
+        QVERIFY(property.isReadable());
+        QVERIFY(!property.isWritable());
+        QCOMPARE(property.notifySignal().methodSignature(), QByteArray("defaultAppsSettingsChanged()"));
+    }
+    const QMetaProperty default_apps_state = meta->property(meta->indexOfProperty("defaultAppsSettingsState"));
+    QVERIFY(default_apps_state.isEnumType());
+    QCOMPARE(default_apps_state.enumerator().keyCount(), 5);
+    QCOMPARE(default_apps_state.enumerator().keyToValue("Idle"), 0);
+    QCOMPARE(default_apps_state.enumerator().keyToValue("Opening"), 1);
+    QCOMPARE(default_apps_state.enumerator().keyToValue("Dispatched"), 2);
+    QCOMPARE(default_apps_state.enumerator().keyToValue("Unavailable"), 3);
+    QCOMPARE(default_apps_state.enumerator().keyToValue("Failed"), 4);
     const int fixture_mode_index = meta->indexOfProperty("usesFrozenFixture");
     QVERIFY(fixture_mode_index >= 0);
     const QMetaProperty fixture_mode = meta->property(fixture_mode_index);
@@ -5258,6 +5312,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "requestHide",
                                     "requestRestore",
                                     "requestExit",
+                                    "openDefaultAppsSettings",
                                     "confirmWindowNotice",
                                     "cancelWindowNotice",
                                     "setTrayNoticeEnabled"};
@@ -5278,6 +5333,92 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QCOMPARE(meta->indexOfProperty("noticeSeen"), -1);
     QCOMPARE(meta->indexOfProperty("backend"), -1);
     QCOMPARE(meta->indexOfProperty("timer"), -1);
+}
+
+void PlayerPresenterTests::opensDefaultAppsSettingsOnceUntilTheTypedCompletionArrives() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QSignalSpy changed(&presenter, &PlayerPresenter::defaultAppsSettingsChanged);
+
+    QVERIFY(presenter.defaultAppsSettingsAvailable());
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Idle);
+    QVERIFY(presenter.openDefaultAppsSettings());
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Opening);
+    QCOMPARE(platform.default_apps_settings_calls, 1);
+    QCOMPARE(changed.size(), 1);
+
+    QVERIFY(!presenter.openDefaultAppsSettings());
+    QCOMPARE(platform.default_apps_settings_calls, 1);
+    QCOMPARE(changed.size(), 1);
+
+    platform.completeDefaultAppsSettings(DefaultAppsSettingsLaunchResult::Dispatched);
+    QTRY_COMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Dispatched);
+    QCOMPARE(changed.size(), 2);
+
+    QVERIFY(presenter.openDefaultAppsSettings());
+    QCOMPARE(presenter.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Opening);
+    QCOMPARE(platform.default_apps_settings_calls, 2);
+}
+
+void PlayerPresenterTests::defaultAppsSettingsUnavailableAndFailureStatesAreRecoverable() {
+    AvailableTrayPlatform unavailable_platform;
+    unavailable_platform.default_apps_available = false;
+    PlayerPresenter unavailable(frozenBundle(), unavailable_platform);
+    QSignalSpy unavailable_changed(&unavailable, &PlayerPresenter::defaultAppsSettingsChanged);
+
+    QVERIFY(!unavailable.defaultAppsSettingsAvailable());
+    QVERIFY(!unavailable.openDefaultAppsSettings());
+    QCOMPARE(unavailable.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Unavailable);
+    QCOMPARE(unavailable_platform.default_apps_settings_calls, 0);
+    QCOMPARE(unavailable_changed.size(), 1);
+
+    AvailableTrayPlatform failed_platform;
+    failed_platform.default_apps_settings_immediate_result = DefaultAppsSettingsLaunchResult::Failed;
+    PlayerPresenter failed(frozenBundle(), failed_platform);
+    QVERIFY(failed.openDefaultAppsSettings());
+    QTRY_COMPARE(failed.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Failed);
+    QCOMPARE(failed_platform.default_apps_settings_calls, 1);
+
+    failed_platform.default_apps_settings_immediate_result = DefaultAppsSettingsLaunchResult::Dispatched;
+    QVERIFY(failed.openDefaultAppsSettings());
+    QTRY_COMPARE(failed.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Dispatched);
+    QCOMPARE(failed_platform.default_apps_settings_calls, 2);
+
+    AvailableTrayPlatform throwing_platform;
+    throwing_platform.throw_on_default_apps_settings_launch = true;
+    PlayerPresenter throwing(frozenBundle(), throwing_platform);
+    QVERIFY(throwing.openDefaultAppsSettings());
+    QCOMPARE(throwing.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Failed);
+    QCOMPARE(throwing_platform.default_apps_settings_calls, 1);
+}
+
+void PlayerPresenterTests::defaultAppsSettingsCompletionIsInertAfterExitOrDestruction() {
+    AvailableTrayPlatform exiting_platform;
+    PlayerPresenter exiting(frozenBundle(), exiting_platform);
+    QVERIFY(exiting.openDefaultAppsSettings());
+    QCOMPARE(exiting.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Opening);
+    std::optional<bool> reentrant_launch_result;
+    connect(&exiting, &PlayerPresenter::defaultAppsSettingsChanged, &exiting,
+            [&] { reentrant_launch_result = exiting.openDefaultAppsSettings(); });
+    QVERIFY(exiting.requestExit());
+    QVERIFY(exiting.exiting());
+    QVERIFY(exiting.exitCommitted());
+    QVERIFY(reentrant_launch_result.has_value());
+    QVERIFY(!*reentrant_launch_result);
+    QCOMPARE(exiting.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Idle);
+    exiting_platform.completeDefaultAppsSettings(DefaultAppsSettingsLaunchResult::Dispatched);
+    QCoreApplication::processEvents();
+    QCOMPARE(exiting.defaultAppsSettingsState(), PlayerPresenter::DefaultAppsSettingsState::Idle);
+    QVERIFY(!exiting.openDefaultAppsSettings());
+    QCOMPARE(exiting_platform.default_apps_settings_calls, 1);
+
+    AvailableTrayPlatform destroyed_platform;
+    auto destroyed = std::make_unique<PlayerPresenter>(frozenBundle(), destroyed_platform);
+    QVERIFY(destroyed->openDefaultAppsSettings());
+    destroyed.reset();
+    destroyed_platform.completeDefaultAppsSettings(DefaultAppsSettingsLaunchResult::Dispatched);
+    QCoreApplication::processEvents();
+    QCOMPARE(destroyed_platform.default_apps_settings_calls, 1);
 }
 
 void PlayerPresenterTests::firstCloseWaitsForAcknowledgementAndDoesNotRepeatTheNotice() {

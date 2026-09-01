@@ -43,11 +43,26 @@ namespace {
 class QuickTestPlatform final : public music_player::m0::PlatformIntegration {
   public:
     [[nodiscard]] bool trayAvailable() const noexcept override { return tray_available; }
+    [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept override {
+        return default_apps_settings_supported;
+    }
+    [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept override {
+        return default_apps_settings_available;
+    }
+    void openDefaultAppsSettings(music_player::m0::DefaultAppsSettingsCompletion completion) override {
+        ++default_apps_settings_calls;
+        completion(default_apps_settings_result);
+    }
     void hideWindow() override { ++hide_calls; }
     void minimizeWindow() override { ++minimize_calls; }
     void showAndActivateWindow() override { ++restore_calls; }
     void requestExit() override { ++exit_calls; }
     bool tray_available{false};
+    bool default_apps_settings_supported{true};
+    bool default_apps_settings_available{true};
+    music_player::m0::DefaultAppsSettingsLaunchResult default_apps_settings_result{
+        music_player::m0::DefaultAppsSettingsLaunchResult::Dispatched};
+    int default_apps_settings_calls{0};
     int hide_calls{0};
     int minimize_calls{0};
     int restore_calls{0};
@@ -294,6 +309,29 @@ class ScenarioDriver final : public QObject {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
     }
+    Q_INVOKABLE void setDefaultAppsSettingsAvailable(const bool available) {
+        platform_.default_apps_settings_available = available;
+        presenter_.refreshPlatformAvailability();
+    }
+    Q_INVOKABLE void setDefaultAppsSettingsSupported(const bool supported) {
+        platform_.default_apps_settings_supported = supported;
+        presenter_.refreshPlatformAvailability();
+    }
+    Q_INVOKABLE void setDefaultAppsSettingsResult(const int result) {
+        if (result < static_cast<int>(music_player::m0::DefaultAppsSettingsLaunchResult::Dispatched) ||
+            result > static_cast<int>(music_player::m0::DefaultAppsSettingsLaunchResult::Failed)) {
+            return;
+        }
+        platform_.default_apps_settings_result = static_cast<music_player::m0::DefaultAppsSettingsLaunchResult>(result);
+    }
+    Q_INVOKABLE void resetDefaultAppsSettings() {
+        platform_.default_apps_settings_supported = true;
+        platform_.default_apps_settings_available = true;
+        platform_.default_apps_settings_result = music_player::m0::DefaultAppsSettingsLaunchResult::Dispatched;
+        platform_.default_apps_settings_calls = 0;
+        presenter_.refreshPlatformAvailability();
+    }
+    Q_INVOKABLE int defaultAppsSettingsCalls() const noexcept { return platform_.default_apps_settings_calls; }
     Q_INVOKABLE int platformHideCalls() const noexcept { return platform_.hide_calls; }
     Q_INVOKABLE int platformMinimizeCalls() const noexcept { return platform_.minimize_calls; }
     Q_INVOKABLE int platformRestoreCalls() const noexcept { return platform_.restore_calls; }

@@ -251,8 +251,9 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 ### `PlatformIntegration`
 
 - tray e visibilidade da janela;
-- abrir página de apps padrão;
-- capacidades disponíveis;
+- distinguir suporte da plataforma e disponibilidade momentânea da página de apps padrão, e abri-la por operação tipada sem aceitar URI, path ou ProgID da UI;
+- concluir cada solicitação uma única vez na thread que iniciou a operação, distinguindo `Dispatched`, `Unavailable` e `Failed`; `Dispatched` comprova somente o handoff ao handler registrado, nunca que a página ficou visível ou que um padrão mudou;
+- publicar capacidades disponíveis;
 - eventos de suspensão, retomada e shutdown.
 
 ### `SystemMediaControls`
@@ -525,6 +526,16 @@ No Windows, `WindowsSmtcAdapter` obtém os controles da janela pelo HWND real co
 Os três alvos focados `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes. O smoke nativo, sob QPA Windows, consultou externamente os controles do HWND e comprovou estado inicialmente desabilitado, status Playing, flags de transporte, título/artista/álbum e limpeza em `Closed`. A consolidação Release passou 239/239 no CTest combinado e 190/190 no core Qt OFF. `m0_qt_shell_ui_qmllint` ficou verde; nenhum QML mudou. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1. Nenhum benchmark foi executado.
 
 Essa evidência não sintetiza uma tecla de mídia física, não percorre a jornada empacotada e não implementa MPRIS no Linux. Portanto M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos globalmente.
+
+No primeiro recorte funcional local de M4.6, `PlatformIntegration` expõe separadamente `defaultAppsSettingsSupported`, que informa se a operação pertence à plataforma, e `defaultAppsSettingsAvailable`, que representa a disponibilidade momentânea do handler, além da operação fechada `openDefaultAppsSettings`. Seu resultado tipado é `Dispatched`, `Unavailable` ou `Failed`. O presenter projeta essa fronteira nos estados somente leitura `Idle`, `Opening`, `Dispatched`, `Unavailable` e `Failed`, notificados pelo sinal dedicado `defaultAppsSettingsChanged`: recusa uma segunda abertura enquanto a primeira está em voo, usa geração para invalidar conclusão tardia e torna callbacks inertes depois da destruição ou do commit efetivo da saída. Uma saída ainda reversível por drenagem/persistência não descarta prematuramente a conclusão; se a saída falhar e for cancelada, a ação volta a ficar utilizável. A conclusão é reenfileirada para a thread da UI e exceções da fronteira degradam para falha recuperável.
+
+No Windows, `QtShellPlatform` mantém internamente a única URI permitida, `ms-settings:defaultapps`, e a entrega a `QDesktopServices::openUrl`; QML não fornece nem altera esse valor. O retorno verdadeiro vira `Dispatched` apenas para indicar que o handoff ao handler registrado foi aceito. Retorno falso, exceção, operação ausente ou saída já iniciada produzem estado fechado e explícito, sem inferir que as Configurações abriram ou que qualquer associação foi modificada.
+
+O painel Geral oferece no Windows um botão com nome e descrição acessíveis, foco de teclado e motivo de indisponibilidade. Quando a plataforma não suporta a operação, botão e feedback não são renderizados. Falha e indisponibilidade aparecem como texto localizado; o alerta só é anunciado assertivamente enquanto o painel está aberto e visível, sem fala tardia quando fechado, e a falha inclui um caminho manual pelas Configurações do Windows.
+
+Os Reds focados exigiram a porta/estado ainda ausentes e os contratos do adapter e da UI. Os três Greens focados passaram individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado, 190/190 no core Qt OFF e 1/1 no Quick com 100 casos internos; `m0_qt_shell_ui_qmllint`, formato de 131 C++/46 QML, composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado, e validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas ficaram verdes. Nenhum benchmark foi executado neste recorte.
+
+Esse recorte não escreve `UserChoice`, não cria ProgID, `Capabilities` ou `RegisteredApplications`, não publica uma matriz de formatos, não instala associações, não comprova double-click/Explorer ou pacote e não implementa equivalente Linux. M4.6 e os checks nativos, de pacote, E2E, acessibilidade e Linux continuam abertos globalmente.
 
 ## 15. Segurança e privacidade
 

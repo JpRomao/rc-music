@@ -11,9 +11,12 @@
 #include <QSystemTrayIcon>
 #include <QTest>
 #include <QTimer>
+#include <QUrl>
 #include <QWindow>
 
 #include <memory>
+#include <optional>
+#include <stdexcept>
 
 namespace music_player::m0::test {
 namespace {
@@ -70,6 +73,84 @@ class QtShellPlatformTests final : public QObject {
         QVERIFY(!action(platform, "tray-play-pause")->isEnabled());
         QVERIFY(!action(platform, "tray-previous")->isEnabled());
         QVERIFY(!action(platform, "tray-next")->isEnabled());
+    }
+
+    void opensOnlyTheOfficialDefaultAppsSettingsUriWithTypedResults() {
+        bool available{false};
+        bool dispatch_succeeds{true};
+        bool throw_on_dispatch{false};
+        int dispatch_calls{0};
+        QList<QUrl> observed_uris;
+        QtShellPlatform platform(
+            testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {},
+            DefaultAppsSettingsOperations{.availability_reader = [&] { return available; },
+                                          .uri_opener =
+                                              [&](const QUrl& uri) {
+                                                  ++dispatch_calls;
+                                                  observed_uris.append(uri);
+                                                  if (throw_on_dispatch)
+                                                      throw std::runtime_error{"URI dispatch failed"};
+                                                  return dispatch_succeeds;
+                                              }});
+
+        std::optional<DefaultAppsSettingsLaunchResult> result;
+        int completions{0};
+        const auto open = [&] {
+            result.reset();
+            platform.openDefaultAppsSettings([&](const DefaultAppsSettingsLaunchResult value) {
+                ++completions;
+                result = value;
+            });
+        };
+
+#ifndef Q_OS_WIN
+        QVERIFY(!platform.defaultAppsSettingsSupported());
+        QVERIFY(!platform.defaultAppsSettingsAvailable());
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Unavailable);
+        QCOMPARE(dispatch_calls, 0);
+        QCOMPARE(completions, 1);
+        return;
+#else
+        QVERIFY(platform.defaultAppsSettingsSupported());
+        QVERIFY(!platform.defaultAppsSettingsAvailable());
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Unavailable);
+        QCOMPARE(dispatch_calls, 0);
+
+        available = true;
+        QVERIFY(platform.defaultAppsSettingsAvailable());
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Dispatched);
+        QCOMPARE(dispatch_calls, 1);
+        QCOMPARE(observed_uris, QList<QUrl>{QUrl{QStringLiteral("ms-settings:defaultapps")}});
+
+        dispatch_succeeds = false;
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Failed);
+        QCOMPARE(dispatch_calls, 2);
+
+        throw_on_dispatch = true;
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Failed);
+        QCOMPARE(dispatch_calls, 3);
+        QCOMPARE(completions, 4);
+
+        platform.requestExit();
+        QVERIFY(!platform.defaultAppsSettingsAvailable());
+        open();
+        QTRY_VERIFY(result.has_value());
+        QCOMPARE(*result, DefaultAppsSettingsLaunchResult::Unavailable);
+        QCOMPARE(dispatch_calls, 3);
+        QCOMPARE(completions, 5);
+        for (const QUrl& uri : observed_uris)
+            QCOMPARE(uri, QUrl{QStringLiteral("ms-settings:defaultapps")});
+#endif
     }
 
     void destructionReleasesTrayMenuAndActions() {

@@ -136,9 +136,21 @@ TestCase {
         const closeBehavior = findChild(shell, "close-behavior");
         const restoreSession = findChild(shell, "restore-session");
         const startMinimized = findChild(shell, "start-minimized");
+        testScenarioDriver.resetDefaultAppsSettings(); // qmllint disable unqualified
+        const defaultApps = findChild(shell, "open-default-apps-settings");
+        const defaultAppsFeedback = findChild(shell, "default-apps-settings-feedback");
         verifyControl(closeBehavior, "Ao fechar");
         verifyControl(restoreSession, "Restaurar última sessão");
         verifyControl(startMinimized, "Iniciar minimizado");
+        verifyControl(defaultApps, "Abrir Aplicativos Padrão");
+        verify(defaultAppsFeedback);
+        compare(defaultApps.Accessible.role, Accessible.Button);
+        compare(defaultApps.Accessible.description, "Abre as configurações oficiais do Windows em outra janela.");
+        const defaultAppsAccessible = testScenarioDriver.accessibleSnapshot(defaultApps); // qmllint disable unqualified
+        verify(defaultAppsAccessible.valid);
+        compare(defaultAppsAccessible.role, Accessible.Button);
+        compare(defaultAppsAccessible.name, "Abrir Aplicativos Padrão");
+        compare(defaultAppsAccessible.description, "Abre as configurações oficiais do Windows em outra janela.");
         compare(closeBehavior.Accessible.role, Accessible.ComboBox);
         compare(restoreSession.Accessible.role, Accessible.CheckBox);
         compare(closeBehavior.currentIndex, 0);
@@ -157,7 +169,61 @@ TestCase {
         verify(!startMinimized.checked);
         verify(!testPlayerPresenter.startMinimized); // qmllint disable unqualified
         verify(!startMinimized.enabled);
+        verifyFocusCycle([general, playback, appearance, closeBehavior, restoreSession, defaultApps, close]);
+        testScenarioDriver.setDefaultAppsSettingsResult(2); // qmllint disable unqualified
+        testScenarioDriver.clearAccessibleAnnouncements(); // qmllint disable unqualified
+        defaultApps.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryVerify(function () {
+            return testScenarioDriver.defaultAppsSettingsCalls() === 1; // qmllint disable unqualified
+        });
+        tryVerify(function () {
+            return defaultAppsFeedback.visible;
+        });
+        compare(defaultAppsFeedback.text, "Não foi possível abrir Aplicativos Padrão. Abra Configurações > Aplicativos > Aplicativos Padrão.");
+        compare(defaultAppsFeedback.Accessible.role, Accessible.AlertMessage);
+        compare(defaultAppsFeedback.Accessible.name, defaultAppsFeedback.text);
+        const defaultAppsFeedbackPoint = defaultAppsFeedback.mapToItem(shell.contentItem, 0, 0);
+        verify(defaultAppsFeedbackPoint.x >= 0 && defaultAppsFeedbackPoint.y >= 0);
+        verify(defaultAppsFeedbackPoint.x + defaultAppsFeedback.width <= shell.width + 0.5);
+        verify(defaultAppsFeedbackPoint.y + defaultAppsFeedback.height <= shell.height + 0.5);
+        tryVerify(function () {
+            return testScenarioDriver.accessibleAnnouncementCount() === 1; // qmllint disable unqualified
+        });
+        compare(testScenarioDriver.lastAccessibleAnnouncement(), defaultAppsFeedback.text); // qmllint disable unqualified
+        compare(testScenarioDriver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive); // qmllint disable unqualified
+        testScenarioDriver.setDefaultAppsSettingsResult(0); // qmllint disable unqualified
+        keyClick(Qt.Key_Return);
+        tryVerify(function () {
+            return testScenarioDriver.defaultAppsSettingsCalls() === 2; // qmllint disable unqualified
+        });
+        tryVerify(function () {
+            return !defaultAppsFeedback.visible;
+        });
+        testScenarioDriver.setDefaultAppsSettingsAvailable(false); // qmllint disable unqualified
+        verify(!defaultApps.enabled);
+        compare(defaultApps.Accessible.description, "As configurações de Aplicativos Padrão do Windows não estão disponíveis.");
+        verify(defaultAppsFeedback.visible);
+        compare(defaultAppsFeedback.text, "As configurações de Aplicativos Padrão do Windows não estão disponíveis.");
+        tryVerify(function () {
+            return testScenarioDriver.accessibleAnnouncementCount() === 2; // qmllint disable unqualified
+        });
+        compare(testScenarioDriver.lastAccessibleAnnouncement(), defaultAppsFeedback.text); // qmllint disable unqualified
+        testScenarioDriver.setTrayAvailable(true); // qmllint disable unqualified
+        testScenarioDriver.setTrayAvailable(false); // qmllint disable unqualified
+        wait(1);
+        compare(testScenarioDriver.accessibleAnnouncementCount(), 2); // qmllint disable unqualified
         verifyFocusCycle([general, playback, appearance, closeBehavior, restoreSession, close]);
+        testScenarioDriver.setDefaultAppsSettingsAvailable(true); // qmllint disable unqualified
+        verify(defaultApps.enabled);
+        verify(!defaultAppsFeedback.visible);
+        testScenarioDriver.setDefaultAppsSettingsSupported(false); // qmllint disable unqualified
+        verify(!defaultApps.visible);
+        verify(!defaultAppsFeedback.visible);
+        verifyFocusCycle([general, playback, appearance, closeBehavior, restoreSession, close]);
+        testScenarioDriver.setDefaultAppsSettingsSupported(true); // qmllint disable unqualified
+        verify(defaultApps.visible);
+        verify(defaultApps.enabled);
         closeBehavior.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         tryVerify(function () {
@@ -181,6 +247,10 @@ TestCase {
         tryVerify(function () {
             return !panel.visible && preferences.activeFocus;
         });
+        testScenarioDriver.setDefaultAppsSettingsAvailable(false); // qmllint disable unqualified
+        wait(1);
+        compare(testScenarioDriver.accessibleAnnouncementCount(), 2); // qmllint disable unqualified
+        testScenarioDriver.setDefaultAppsSettingsAvailable(true); // qmllint disable unqualified
         mouseClick(findChild(shell, "open-audio"));
         mouseClick(findChild(shell, "play-pause"));
         compare(testPlayerPresenter.playbackState, PlayerPresenter.Paused); // qmllint disable unqualified

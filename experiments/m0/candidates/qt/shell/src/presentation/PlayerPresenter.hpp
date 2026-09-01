@@ -153,6 +153,10 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(PersistenceWarningScope persistenceWarningScope READ persistenceWarningScope NOTIFY
                    preferencePersistenceChanged)
     Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
+    Q_PROPERTY(bool defaultAppsSettingsSupported READ defaultAppsSettingsSupported NOTIFY defaultAppsSettingsChanged)
+    Q_PROPERTY(bool defaultAppsSettingsAvailable READ defaultAppsSettingsAvailable NOTIFY defaultAppsSettingsChanged)
+    Q_PROPERTY(DefaultAppsSettingsState defaultAppsSettingsState READ defaultAppsSettingsState NOTIFY
+                   defaultAppsSettingsChanged)
     Q_PROPERTY(bool exiting READ exiting NOTIFY lifecycleChanged)
     Q_PROPERTY(bool exitCommitted READ exitCommitted NOTIFY lifecycleChanged)
     Q_PROPERTY(WindowNotice windowNotice READ windowNotice NOTIFY lifecycleChanged)
@@ -174,6 +178,8 @@ class PlayerPresenter final : public QObject {
     Q_ENUM(QueueEndPreference)
     enum class WindowNotice { NoNotice, TrayCloseNotice, TrayUnavailableNotice };
     Q_ENUM(WindowNotice)
+    enum class DefaultAppsSettingsState { Idle, Opening, Dispatched, Unavailable, Failed };
+    Q_ENUM(DefaultAppsSettingsState)
     enum class SourceImportState { Idle, Discovering, Cancelling, Completed, CompletedWithIssues, Cancelled, Rejected };
     Q_ENUM(SourceImportState)
     enum class PreferenceWarning {
@@ -309,6 +315,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] PreferenceWarning preferenceWarning() const noexcept;
     [[nodiscard]] PersistenceWarningScope persistenceWarningScope() const noexcept;
     [[nodiscard]] bool trayAvailable() const noexcept;
+    [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept;
+    [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept;
+    [[nodiscard]] DefaultAppsSettingsState defaultAppsSettingsState() const noexcept;
     [[nodiscard]] bool exiting() const noexcept;
     [[nodiscard]] bool exitCommitted() const noexcept;
     [[nodiscard]] WindowNotice windowNotice() const noexcept;
@@ -321,6 +330,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool requestHide();
     Q_INVOKABLE bool requestRestore();
     Q_INVOKABLE bool requestExit();
+    Q_INVOKABLE bool openDefaultAppsSettings();
     Q_INVOKABLE bool confirmWindowNotice();
     Q_INVOKABLE bool cancelWindowNotice();
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
@@ -369,6 +379,7 @@ class PlayerPresenter final : public QObject {
     void playbackChanged();
     void seekRejected();
     void platformChanged();
+    void defaultAppsSettingsChanged();
     void lifecycleChanged();
     void queueFocusRequested(int index);
     void sourceImportChanged();
@@ -399,6 +410,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool beginPersistenceExit();
     void completeExit();
     void cancelPendingExit();
+    void completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult result, std::uint64_t generation);
     void handlePlaybackEvent(PlaybackEvent event);
     void pollMetadata();
     void pollSourceImport();
@@ -431,6 +443,10 @@ class PlayerPresenter final : public QObject {
     std::vector<QueueNavigationItem> navigation_items_;
     PlatformIntegration& platform_;
     bool tray_available_;
+    bool default_apps_settings_supported_;
+    bool default_apps_settings_available_;
+    DefaultAppsSettingsState default_apps_settings_state_{DefaultAppsSettingsState::Idle};
+    std::uint64_t default_apps_settings_generation_{0};
     std::unique_ptr<DeterministicPlaybackBackend> owned_backend_;
     PlaybackBackend& backend_;
     PlayerController controller_;

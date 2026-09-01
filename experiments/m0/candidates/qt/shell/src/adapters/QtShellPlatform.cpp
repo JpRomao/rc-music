@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QFontMetricsF>
 #include <QMenu>
 #include <QSystemTrayIcon>
@@ -25,15 +26,35 @@ namespace {
            states.testFlag(Qt::WindowFullScreen);
 }
 
+[[nodiscard]] DefaultAppsSettingsOperations defaultDefaultAppsSettingsOperations() {
+#ifdef Q_OS_WIN
+    return {
+        .availability_reader = [] { return true; },
+        .uri_opener = [](const QUrl& uri) { return QDesktopServices::openUrl(uri); },
+    };
+#else
+    return {
+        .availability_reader = [] { return false; },
+        .uri_opener = {},
+    };
+#endif
+}
+
 } // namespace
 
 QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels labels,
                                  std::function<bool()> availability_reader, std::function<void()> quit_request,
                                  QObject* parent)
+    : QtShellPlatform(std::move(icon), std::move(app_name), std::move(labels), std::move(availability_reader),
+                      std::move(quit_request), defaultDefaultAppsSettingsOperations(), parent) {}
+
+QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels labels,
+                                 std::function<bool()> availability_reader, std::function<void()> quit_request,
+                                 DefaultAppsSettingsOperations default_apps_settings, QObject* parent)
     : QObject(parent), labels_(std::move(labels)), availability_reader_(std::move(availability_reader)),
-      quit_request_(std::move(quit_request)), menu_(std::make_unique<QMenu>()),
-      tray_icon_(new QSystemTrayIcon(std::move(icon), this)), availability_timer_(new QTimer(this)),
-      window_placement_timer_(std::make_unique<QTimer>()) {
+      quit_request_(std::move(quit_request)), default_apps_settings_(std::move(default_apps_settings)),
+      menu_(std::make_unique<QMenu>()), tray_icon_(new QSystemTrayIcon(std::move(icon), this)),
+      availability_timer_(new QTimer(this)), window_placement_timer_(std::make_unique<QTimer>()) {
     if (!availability_reader_)
         availability_reader_ = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
 
@@ -207,6 +228,48 @@ bool QtShellPlatform::trayAvailable() const noexcept {
     } catch (...) {
         // A failed capability read cannot justify making the only window unreachable.
         return false;
+    }
+}
+
+bool QtShellPlatform::defaultAppsSettingsSupported() const noexcept {
+#ifdef Q_OS_WIN
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool QtShellPlatform::defaultAppsSettingsAvailable() const noexcept {
+    if (!defaultAppsSettingsSupported() || exit_requested_ || !default_apps_settings_.availability_reader)
+        return false;
+    try {
+        return default_apps_settings_.availability_reader();
+    } catch (...) {
+        return false;
+    }
+}
+
+void QtShellPlatform::openDefaultAppsSettings(DefaultAppsSettingsCompletion completion) {
+    if (!completion)
+        return;
+    DefaultAppsSettingsLaunchResult result = DefaultAppsSettingsLaunchResult::Unavailable;
+    if (defaultAppsSettingsAvailable() && !exit_requested_) {
+        if (!default_apps_settings_.uri_opener) {
+            result = DefaultAppsSettingsLaunchResult::Failed;
+        } else {
+            try {
+                const QUrl uri{QStringLiteral("ms-settings:defaultapps")};
+                result = default_apps_settings_.uri_opener(uri) ? DefaultAppsSettingsLaunchResult::Dispatched
+                                                                : DefaultAppsSettingsLaunchResult::Failed;
+            } catch (...) {
+                result = DefaultAppsSettingsLaunchResult::Failed;
+            }
+        }
+    }
+    try {
+        completion(result);
+    } catch (...) {
+        // Completion is an application callback and must not unwind through the platform boundary.
     }
 }
 

@@ -5,6 +5,7 @@
 
 #include <QDateTime>
 #include <QMetaObject>
+#include <QPointer>
 #include <QTimeZone>
 #include <QVariantMap>
 
@@ -355,6 +356,8 @@ void addSaturated(std::uint64_t& target, const std::uint64_t increment) noexcept
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()),
+      default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
+      default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
       controller_(backend_, platform), queue_model_(this), local_queue_model_(this), timer_(this),
       state_(stateById(bundle_, bundle_.default_state_id)), artwork_cache_(std::make_shared<ArtworkImageCache>()) {
@@ -372,6 +375,8 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
                                  PlayerPresenterPreferences preferences, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()),
+      default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
+      default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
       controller_(backend_, platform, PlaybackSnapshot{}, preferences.initial), queue_model_(this),
       local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
@@ -402,9 +407,12 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
-      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), local_queue_model_(this), timer_(this),
-      state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
+      tray_available_(platform.trayAvailable()),
+      default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
+      default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
+      owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
+      queue_model_(this), local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
+      audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)),
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
@@ -417,7 +425,10 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
                                  std::shared_ptr<ArtworkImageCache> artwork_cache,
                                  PlayerPresenterPreferences preferences, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
+      tray_available_(platform.trayAvailable()),
+      default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
+      default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
+      owned_backend_(), backend_(playback_backend),
       controller_(backend_, platform, backend_.snapshot(), preferences.initial), queue_model_(this),
       local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
       audio_file_picker_(std::move(audio_file_picker)),
@@ -439,9 +450,12 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
                                  LocalSourceDiscovery& source_discovery,
                                  std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
     : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
-      controller_(backend_, platform, backend_.snapshot()), queue_model_(this), local_queue_model_(this), timer_(this),
-      state_(stateById(bundle_, bundle_.default_state_id)), audio_file_picker_(std::move(audio_file_picker)),
+      tray_available_(platform.trayAvailable()),
+      default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
+      default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
+      owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
+      queue_model_(this), local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
+      audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)), source_discovery_(&source_discovery), uses_frozen_fixture_(false) {
     initializeLocalMode();
@@ -1224,6 +1238,11 @@ PlayerPresenter::QueueEndPreference PlayerPresenter::queueEndPreference() const 
 bool PlayerPresenter::restoreLastSession() const noexcept { return preferences().restore_last_session; }
 bool PlayerPresenter::startMinimized() const noexcept { return preferences().start_minimized; }
 bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
+bool PlayerPresenter::defaultAppsSettingsSupported() const noexcept { return default_apps_settings_supported_; }
+bool PlayerPresenter::defaultAppsSettingsAvailable() const noexcept { return default_apps_settings_available_; }
+PlayerPresenter::DefaultAppsSettingsState PlayerPresenter::defaultAppsSettingsState() const noexcept {
+    return default_apps_settings_state_;
+}
 bool PlayerPresenter::exiting() const noexcept { return exiting_; }
 bool PlayerPresenter::exitCommitted() const noexcept { return exit_committed_; }
 PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { return window_notice_; }
@@ -2007,15 +2026,20 @@ void PlayerPresenter::completeExit() {
     preference_exit_deadline_.reset();
     deferred_playback_event_.reset();
     source_exit_drain_active_ = false;
-    if (sourceImportActive() && source_discovery_ != nullptr) {
-        static_cast<void>(source_discovery_->cancel(source_import_generation_));
-        finishSourceImport(SourceImportState::Cancelled);
-    }
     const bool changed = !exiting_ || !exit_committed_ || window_notice_ != WindowNotice::NoNotice;
     exiting_ = true;
     exit_committed_ = true;
     window_notice_ = WindowNotice::NoNotice;
     timer_.stop();
+    if (default_apps_settings_state_ == DefaultAppsSettingsState::Opening) {
+        ++default_apps_settings_generation_;
+        default_apps_settings_state_ = DefaultAppsSettingsState::Idle;
+        emit defaultAppsSettingsChanged();
+    }
+    if (sourceImportActive() && source_discovery_ != nullptr) {
+        static_cast<void>(source_discovery_->cancel(source_import_generation_));
+        finishSourceImport(SourceImportState::Cancelled);
+    }
     if (changed)
         emit lifecycleChanged();
     controller_.requestExit();
@@ -2064,11 +2088,76 @@ bool PlayerPresenter::setTrayNoticeEnabled(const bool enabled) {
     return true;
 }
 void PlayerPresenter::refreshPlatformAvailability() {
-    const bool available = platform_.trayAvailable();
-    if (available == tray_available_)
+    const bool tray_available = platform_.trayAvailable();
+    const bool default_apps_settings_supported = platform_.defaultAppsSettingsSupported();
+    const bool default_apps_settings_available =
+        default_apps_settings_supported && platform_.defaultAppsSettingsAvailable();
+    if (tray_available != tray_available_) {
+        tray_available_ = tray_available;
+        emit platformChanged();
+    }
+    if (default_apps_settings_supported != default_apps_settings_supported_ ||
+        default_apps_settings_available != default_apps_settings_available_) {
+        default_apps_settings_supported_ = default_apps_settings_supported;
+        default_apps_settings_available_ = default_apps_settings_available;
+        emit defaultAppsSettingsChanged();
+    }
+}
+
+bool PlayerPresenter::openDefaultAppsSettings() {
+    if (exiting_ || !default_apps_settings_supported_ ||
+        default_apps_settings_state_ == DefaultAppsSettingsState::Opening) {
+        return false;
+    }
+    if (!default_apps_settings_available_) {
+        if (default_apps_settings_state_ != DefaultAppsSettingsState::Unavailable) {
+            default_apps_settings_state_ = DefaultAppsSettingsState::Unavailable;
+            emit defaultAppsSettingsChanged();
+        }
+        return false;
+    }
+
+    const std::uint64_t generation = ++default_apps_settings_generation_;
+    default_apps_settings_state_ = DefaultAppsSettingsState::Opening;
+    emit defaultAppsSettingsChanged();
+    const QPointer<PlayerPresenter> guarded_this{this};
+    try {
+        platform_.openDefaultAppsSettings([guarded_this, generation](const DefaultAppsSettingsLaunchResult result) {
+            if (guarded_this == nullptr)
+                return;
+            QMetaObject::invokeMethod(
+                guarded_this,
+                [guarded_this, generation, result] {
+                    if (guarded_this != nullptr)
+                        guarded_this->completeDefaultAppsSettingsLaunch(result, generation);
+                },
+                Qt::QueuedConnection);
+        });
+    } catch (...) {
+        completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult::Failed, generation);
+    }
+    return true;
+}
+
+void PlayerPresenter::completeDefaultAppsSettingsLaunch(const DefaultAppsSettingsLaunchResult result,
+                                                        const std::uint64_t generation) {
+    if (exit_committed_ || generation != default_apps_settings_generation_ ||
+        default_apps_settings_state_ != DefaultAppsSettingsState::Opening) {
         return;
-    tray_available_ = available;
-    emit platformChanged();
+    }
+    switch (result) {
+    case DefaultAppsSettingsLaunchResult::Dispatched:
+        default_apps_settings_state_ = DefaultAppsSettingsState::Dispatched;
+        break;
+    case DefaultAppsSettingsLaunchResult::Unavailable:
+        default_apps_settings_available_ = false;
+        default_apps_settings_state_ = DefaultAppsSettingsState::Unavailable;
+        break;
+    case DefaultAppsSettingsLaunchResult::Failed:
+        default_apps_settings_state_ = DefaultAppsSettingsState::Failed;
+        break;
+    }
+    emit defaultAppsSettingsChanged();
 }
 bool PlayerPresenter::play() {
     if (exiting_)

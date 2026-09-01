@@ -142,7 +142,7 @@ Esta política nasceu no recorte de apresentação comum a M0.2/M0.3 sem alterar
 - Abrir pelo botão congelado `preferences` ou por `Ctrl+,` fecha o painel da fila, seleciona “Geral” e foca a categoria. As três categorias são “Geral”, “Reprodução” e “Aparência”.
 - `Ctrl+,` abre ou refoca o painel; não alterna para fechado. `Esc` ou “Fechar preferências” fecha e devolve o foco ao botão `preferences`; se a lista de um seletor estiver aberta, o primeiro `Esc` fecha somente essa lista e mantém o painel modal.
 - Enquanto o painel está aberto, atalhos de transporte e de fila não atuam. `Space` continua pertencendo à edição ou ao controle focado.
-- Volume e mudo permanecem no transporte, sem controles duplicados no painel. Aplicativos Padrão não aparece como ação sem efeito; sua integração fica em M0.9.
+- Volume e mudo permanecem no transporte, sem controles duplicados no painel. Na fatia original, Aplicativos Padrão não aparecia como ação sem efeito; o primeiro recorte M4.6 posterior acrescenta o launcher real, enquanto registro e associação continuam pendentes em M0.9/M4.6.
 
 ### IDs, textos e edição
 
@@ -157,6 +157,8 @@ Os textos já presentes na fixture continuam vindo dela. Os IDs e textos adicion
 | `close-behavior` | Ao fechar | Geral; “Minimizar para bandeja” / “Encerrar” |
 | `restore-session` | Restaurar última sessão | Geral; booleano |
 | `start-minimized` | Iniciar minimizado | Geral; booleano, desabilitado sem tray funcional |
+| `open-default-apps-settings` | Abrir Aplicativos Padrão | Geral; ação Windows não persistida, oculta em plataforma sem suporte e desabilitada quando o handler está indisponível |
+| `default-apps-settings-feedback` | Feedback de Aplicativos Padrão | Geral; indisponibilidade/falha localizada, com alerta anunciado somente enquanto o painel está aberto e visível |
 | `skip-backward-seconds` | Segundos para retroceder | Reprodução; inteiro de 1 a 300 s |
 | `skip-forward-seconds` | Segundos para avançar | Reprodução; inteiro de 1 a 300 s |
 | `queue-end-behavior` | Ao terminar a fila | Reprodução; “Parar e manter seleção” / “Parar e limpar seleção” |
@@ -578,4 +580,12 @@ O recorte M4.5 materializa controles de mídia do sistema no candidato Qt/Window
 
 Os Reds/Greens incluíram símbolos ausentes, Play/Pause explícitos, intenção invertida antes do ACK, `Ready` obsoleto, navegação preservando a intenção, capacidade de seek, destruição/recriação da surface e rebind enfileirado obsoleto. O filtro `[async]` passou cinco casos e 42 asserções. O CTest Release combinado passou 239/239 e o core Qt OFF 190/190; `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes. O smoke nativo QPA Windows comprovou `HWND`/SMTC reais, status, botões, título/artista/álbum e limpeza em `Closed`; timeline fica coberta pelo boundary, não por inspeção externa desse smoke.
 
-`m0_qt_shell_ui_qmllint` passou e `clang-format` validou 131 arquivos C++; nenhum QML mudou, portanto `qmlformat` não foi executado. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Teclas físicas, pacote/E2E e MPRIS/Linux não foram provados, então M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos. O próximo incremento funcional é M4.6, começando pela página oficial de Aplicativos Padrão sem escrever em `UserChoice`.
+`m0_qt_shell_ui_qmllint` passou e `clang-format` validou 131 arquivos C++; nenhum QML mudou, portanto `qmlformat` não foi executado. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. Teclas físicas, pacote/E2E e MPRIS/Linux não foram provados, então M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos.
+
+O primeiro recorte funcional local de M4.6 adiciona a operação tipada de abrir Aplicativos Padrão. `PlatformIntegration` distingue suporte da plataforma e disponibilidade momentânea; `PlayerPresenter` expõe `Idle`, `Opening`, `Dispatched`, `Unavailable` e `Failed` por sinal próprio, bloqueia duplicação em voo e protege callbacks por geração/lifetime. Uma saída ainda reversível conserva a conclusão; o commit efetivo a invalida.
+
+No Windows, `QtShellPlatform` usa apenas a URI interna fixa `ms-settings:defaultapps` via `QDesktopServices`. A QML não recebe URI, path ou ProgID, e `Dispatched` prova somente o handoff ao handler. Botão e feedback acessíveis são ocultados fora da plataforma suportada; falha/indisponibilidade só geram anúncio assertivo enquanto o painel está aberto e visível.
+
+Os Reds focados exigiram as novas fronteiras e contratos. `m0.qt.shell-platform`, `m0.qt.presenter.initial-load` e `m0.qt.quick.shell-states` passaram 1/1 cada. A consolidação passou 239/239 no CTest Release combinado, 190/190 no core Qt OFF e 1/1 no Quick com 100 casos internos; `m0_qt_shell_ui_qmllint`, formato de 131 C++/46 QML, composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado, e validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas ficaram verdes. Nenhum benchmark foi executado.
+
+Esse recorte não escreve `UserChoice`, não cria ProgID, `Capabilities` ou `RegisteredApplications`, não publica formatos, não instala associação/pacote e não implementa Linux. M4.6 e seus gates amplos permanecem abertos; identidade, matriz publicada e pacote ainda são pré-condições para o registro.

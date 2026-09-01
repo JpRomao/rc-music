@@ -9,6 +9,7 @@ Popup {
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     property int section: 0
+    property string announcedDefaultAppsSettingsFeedback: ""
     modal: true
     dim: false
     focus: true
@@ -23,6 +24,17 @@ Popup {
     function focusFirst() {
         generalButton.forceActiveFocus(Qt.TabFocusReason);
     }
+    function announceDefaultAppsSettingsFeedback() {
+        const feedback = defaultAppsSettingsFeedback.visible ? defaultAppsSettingsFeedback.text : "";
+        if (feedback.length === 0) {
+            announcedDefaultAppsSettingsFeedback = "";
+            return;
+        }
+        if (!root.opened || !root.visible || feedback === announcedDefaultAppsSettingsFeedback)
+            return;
+        announcedDefaultAppsSettingsFeedback = feedback;
+        defaultAppsSettingsFeedback.Accessible.announce(feedback, Accessible.Assertive);
+    }
     onAboutToShow: {
         section = 0;
         backwardField.resetDraft();
@@ -32,6 +44,7 @@ Popup {
     onClosed: {
         backwardField.resetDraft();
         forwardField.resetDraft();
+        announcedDefaultAppsSettingsFeedback = "";
     }
     background: Rectangle {
         color: root.contract.surfaceRaisedColor
@@ -123,7 +136,7 @@ Popup {
             Layout.minimumHeight: 0
             currentIndex: root.section
             ColumnLayout {
-                spacing: root.contract.spacingUnit * 2
+                spacing: root.contract.spacingUnit
                 PreferenceChoice {
                     Layout.fillWidth: true
                     contract: root.contract
@@ -160,6 +173,39 @@ Popup {
                     wrapMode: Text.WordWrap
                     color: root.contract.textSecondaryColor
                     visible: !root.presenter.trayAvailable
+                }
+                AccessibleTransportButton {
+                    id: defaultAppsSettingsButton
+                    objectName: "open-default-apps-settings"
+                    Layout.fillWidth: true
+                    visible: root.presenter.defaultAppsSettingsSupported
+                    contract: root.contract
+                    text: labels.openDefaultAppsSettings
+                    accessibleName: labels.openDefaultAppsSettings
+                    shortcutHint: labels.openDefaultAppsSettingsDescription
+                    disabledReason: !root.presenter.defaultAppsSettingsAvailable ? labels.defaultAppsSettingsUnavailable : (root.presenter.defaultAppsSettingsState === PlayerPresenter.Opening ? labels.defaultAppsSettingsOpening : "")
+                    enabled: root.presenter.defaultAppsSettingsAvailable && root.presenter.defaultAppsSettingsState !== PlayerPresenter.Opening && !root.presenter.exiting
+                    onClicked: root.presenter.openDefaultAppsSettings()
+                }
+                Text {
+                    id: defaultAppsSettingsFeedback
+                    objectName: "default-apps-settings-feedback"
+                    Layout.fillWidth: true
+                    text: !root.presenter.defaultAppsSettingsAvailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Unavailable ? labels.defaultAppsSettingsUnavailable : labels.defaultAppsSettingsFailed
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 12
+                    color: root.presenter.defaultAppsSettingsState === PlayerPresenter.Failed ? root.contract.errorColor : root.contract.textSecondaryColor
+                    visible: root.presenter.defaultAppsSettingsSupported && (!root.presenter.defaultAppsSettingsAvailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Unavailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Failed)
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.id: objectName
+                    Accessible.name: text
+                }
+                Connections {
+                    target: root.presenter
+                    function onDefaultAppsSettingsChanged() {
+                        Qt.callLater(root.announceDefaultAppsSettingsFeedback);
+                    }
                 }
                 Item {
                     Layout.fillHeight: true

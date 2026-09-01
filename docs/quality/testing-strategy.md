@@ -98,7 +98,7 @@ O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos
 | `FakePlaybackBackend` | ready, duração, posição, ended, device lost, erro e confirmação de seek |
 | `FakeMetadataReader` | resultado imediato, atraso, cancelamento, tag hostil e arte acima dos limites NFR-LIMIT |
 | `InMemorySessionStore` | load/save, versão, corrupção e falhas programáveis |
-| `FakePlatformIntegration` | tray presente/ausente, close, visibilidade e suspend/resume |
+| `FakePlatformIntegration` | tray presente/ausente, close, visibilidade, suspend/resume e abertura tipada da página de apps padrão com suporte, disponibilidade, resultado e conclusão controláveis |
 | `FakeSystemMediaControls` | disponibilidade, snapshots publicados e comandos Play/Pause/Previous/Next/Seek |
 | `FakeMediaSourceResolver` | local válido, não suportado e resultado remoto futuro |
 | `ManualClock` | ticks, debounce, timeout, interpolação e autosave |
@@ -279,6 +279,18 @@ As provas do recorte funcional local de M4.5 também permanecem separadas por fr
 Os Reds focados expuseram símbolos ainda ausentes, intenção oposta perdida antes do ACK, `Ready` obsoleto descartando intenção, capacidade de seek publicada durante confirmação e rebind tardio após perda da surface. Os Greens correspondentes passaram; o filtro `[async]` fechou 42 asserções em cinco casos, e `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes. A consolidação Release passou 239/239 no CTest combinado e 190/190 no core Qt OFF. `m0_qt_shell_ui_qmllint` ficou verde; nenhum QML mudou. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1. Nenhum benchmark foi executado.
 
 O smoke nativo comprova publicação e limpeza sobre o SMTC real, mas não sintetiza teclas físicas, não substitui pacote/E2E e não cobre MPRIS. M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos globalmente.
+
+### M4.6 — primeiro recorte da página oficial de Aplicativos Padrão
+
+As provas focadas deste recorte permanecem isoladas por fronteira e não abrem as Configurações reais durante a suíte:
+
+- o presenter cobre suporte separado de disponibilidade, transições `Idle` → `Opening` → resultado tipado, sinal dedicado, supressão de solicitações duplicadas em voo, recuperação depois de `Failed`, indisponibilidade sem chamar a plataforma, exceção convertida em falha e conclusão tardia inerte após destruição ou commit efetivo da saída; uma saída ainda reversível permite concluir o handoff e voltar a abrir depois que a persistência falha e cancela a saída;
+- `QtShellPlatform` recebe operações injetadas e prova que o suporte é Windows-only, que somente a URI interna fixa `ms-settings:defaultapps` chega ao opener, que disponibilidade falsa e saída impedem o dispatch, que retorno falso/exceção viram `Failed` e que cada solicitação aceita conclui uma única vez;
+- o teste Quick verifica nome, descrição e papel acessíveis do botão, ativação por teclado, posição no ciclo de foco, motivo de desabilitação, feedback localizado de indisponibilidade/falha, ocultação completa quando a plataforma não suporta a operação e anúncio assertivo apenas com o painel aberto e visível.
+
+Os Reds focados falharam pelas fronteiras, propriedades/estados e contratos de adapter/UI ainda ausentes. Os três Greens focados passaram individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado, 190/190 no core Qt OFF e 1/1 no Quick com 100 casos internos; `m0_qt_shell_ui_qmllint`, formato de 131 C++/46 QML, composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado, e validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas ficaram verdes. Não se extrapola dessas provas a abertura efetiva das Configurações no desktop. Nenhum benchmark foi executado.
+
+`Dispatched` comprova somente que o opener aceitou o handoff para o handler registrado; não prova visibilidade da página nem alteração de padrão. Escrita de `UserChoice`, ProgID, `Capabilities`, `RegisteredApplications`, matriz publicada de formatos, associação/double-click, pacote/instalador e implementação Linux não pertencem a este recorte. M4.6, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e os smokes de associação/pacote continuam abertos.
 
 ### `MetadataReader`
 

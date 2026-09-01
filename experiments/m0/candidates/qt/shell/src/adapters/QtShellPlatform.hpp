@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QUrl>
 
 #include <cstdint>
 #include <functional>
@@ -41,6 +42,11 @@ struct TrayMenuState final {
     bool interaction_enabled{true};
 };
 
+struct DefaultAppsSettingsOperations final {
+    std::function<bool()> availability_reader;
+    std::function<bool(const QUrl&)> uri_opener;
+};
+
 class QtShellPlatform final : public QObject, public PlatformIntegration {
     Q_OBJECT
 
@@ -48,6 +54,9 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     // Construct after QApplication. Supplied callbacks keep adapter tests offscreen and deterministic.
     QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels labels, std::function<bool()> availability_reader = {},
                     std::function<void()> quit_request = {}, QObject* parent = nullptr);
+    QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels labels, std::function<bool()> availability_reader,
+                    std::function<void()> quit_request, DefaultAppsSettingsOperations default_apps_settings,
+                    QObject* parent = nullptr);
     ~QtShellPlatform() override;
 
     void bindWindow(QWindow& window);
@@ -60,6 +69,9 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     // Availability combines the reader with this adapter's icon intent. Qt's Windows reader
     // always returns true; neither it nor isVisible() proves native registration or Explorer recovery.
     [[nodiscard]] bool trayAvailable() const noexcept override;
+    [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept override;
+    [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept override;
+    void openDefaultAppsSettings(DefaultAppsSettingsCompletion completion) override;
     void hideWindow() override;
     void minimizeWindow() override;
     void showAndActivateWindow() override;
@@ -88,6 +100,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     TrayMenuState state_;
     std::function<bool()> availability_reader_;
     std::function<void()> quit_request_;
+    DefaultAppsSettingsOperations default_apps_settings_;
     std::unique_ptr<QMenu> menu_;
     QSystemTrayIcon* tray_icon_;
     QTimer* availability_timer_;

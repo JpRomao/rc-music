@@ -42,7 +42,11 @@ M4.5 está funcional localmente no candidato Qt/Windows. A porta pura `SystemMed
 
 O adapter C++/WinRT vincula SMTC ao `HWND` real por `ISystemMediaTransportControlsInterop::GetForWindow`, publica status/botões/metadata/timeline, faz marshalling dos callbacks para a thread da UI, falha fechado e refaz o vínculo quando a surface nativa é recriada. O smoke QPA Windows comprovou SMTC real, publicação e limpeza em `Closed`; não sintetizou tecla física. O fechamento passou 239/239 no Release combinado, 190/190 no core Qt OFF, os três alvos SMTC, `qmllint`, `clang-format` em 131 C++ e a composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado. Nenhum QML mudou e nenhum benchmark foi executado.
 
-M4.5 continua aberta por teclas de mídia físicas, pacote, MPRIS/Linux e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE`. O próximo desenvolvimento funcional é M4.6, iniciando pela página oficial de Aplicativos Padrão sem escrita em `UserChoice`; ProgID/capabilities ainda dependem de identidade, matriz publicada e instalador.
+M4.5 continua aberta por teclas de mídia físicas, pacote, MPRIS/Linux e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE`.
+
+M4.6 possui agora um primeiro recorte funcional local no candidato Qt/Windows. `PlatformIntegration` separa suporte da plataforma, disponibilidade momentânea e conclusão tipada; o presenter publica `Idle`, `Opening`, `Dispatched`, `Unavailable` e `Failed` por sinal dedicado. `QtShellPlatform` abre somente a URI interna fixa `ms-settings:defaultapps` via `QDesktopServices`; `Dispatched` comprova apenas o handoff ao handler. O botão e o feedback acessíveis aparecem somente em plataforma suportada, e anúncios de indisponibilidade/falha ocorrem apenas com o painel aberto e visível. Uma saída ainda reversível não invalida a conclusão antes do commit efetivo.
+
+Os três alvos focados ficaram verdes individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado e 190/190 no core Qt OFF; o Quick passou 1/1 com 100 casos internos, `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 131 C++/46 QML. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada; o validador documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. M4.6 continua parcial: não há escrita em `UserChoice`, ProgID, `Capabilities`, `RegisteredApplications`, matriz publicada de formatos, associação, pacote/instalador ou implementação Linux.
 
 **Código do produto:** ainda não iniciado
 
@@ -135,7 +139,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 - “o app já oferece suporte publicado a WAV/MP3/M4A/FLAC/Ogg/Opus”: o candidato experimental percorre a matriz básica WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis com Qt Multimedia e integra metadata/título Unicode à apresentação, mas os testes mantêm volume zero/mudo; não há prova audível/dispositivo físico nem formato aprovado ou matriz publicada. Opus/ALAC continuam candidatos: o extrator isolado retorna `UnsupportedFormat`, porém playback pode iniciar e o Qt pode decodificá-los, de modo que o comportamento integrado não foi classificado;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
-- “pode ser app padrão”: o fluxo está especificado, instalador não existe;
+- “pode ser app padrão”: o launcher oficial está funcional localmente, mas não há ProgID, `Capabilities`, `RegisteredApplications`, formatos publicados, associação, instalador ou escolha confirmada pelo Windows;
 - “a recuperação de sessão está concluída”: `restoreLastSession` já controla a leitura e a restauração local de fila/item/posição sempre pausada no candidato Qt/Windows, inclusive nos cenários destrutivos descritos acima; `startMinimized` também possui efeito local condicionado à tray em M4.4. As jornadas empacotadas/nativas de M4.1/M4.4 continuam pendentes, portanto FR-042/FR-043/FR-044 não estão integralmente concluídos;
 - “a instância única está concluída no Windows”: M4.3 já possui lock na raiz de configuração do usuário, `QLocalServer::UserAccessOption`, argumentos nativos, IPC `openSources` limitado, uma única inicialização do backend e drenagem de comandos ACKados no executável Release instrumentado; associação instalada/double-click pelo Explorer, foreground real, quoting do shell, ACL entre usuários, fuzz/property e o pacote nativo ainda não foram aprovados;
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
@@ -170,8 +174,8 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. manter M4.1–M4.5 formalmente abertas até as jornadas empacotadas/nativas correspondentes, registrando separadamente a evidência funcional local já verde;
-2. avançar para M4.6 como próximo desenvolvimento funcional Windows, começando pela página oficial de Aplicativos Padrão sem `UserChoice`, enquanto identidade, matriz publicada, pacote/nativo e os checks pendentes permanecem abertos;
+1. manter M4.1–M4.6 formalmente abertas até os gates residuais correspondentes, registrando separadamente a evidência funcional local já verde;
+2. tratar o launcher oficial como primeiro recorte parcial de M4.6; identidade, matriz publicada e pacote ainda bloqueiam o registro, enquanto o desenvolvimento Windows implementável segue para M4.7 sem fechar M4.6;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
