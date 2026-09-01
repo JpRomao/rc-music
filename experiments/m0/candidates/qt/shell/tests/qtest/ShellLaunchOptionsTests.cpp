@@ -55,6 +55,12 @@ class ShellLaunchOptionsTests final : public QObject {
         validateShellLaunchOptions(options, false, true);
     }
 
+    void rejectsProductPathsWhenAudioSupportIsUnavailable() {
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("C:/music/song.mp3")});
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, false));
+    }
+
     void resolvesRelativeSourcesAgainstTheInvokingWorkingDirectory() {
         const QString working_directory = QDir::cleanPath(testConfigRoot(QStringLiteral("invocation cwd")));
         const QString absolute = QDir{working_directory}.absoluteFilePath(QStringLiteral("já absoluto.mp3"));

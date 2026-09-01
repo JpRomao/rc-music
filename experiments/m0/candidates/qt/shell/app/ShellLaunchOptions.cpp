@@ -133,6 +133,8 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
         throw std::invalid_argument{"the combined startup smoke requires audio support"};
+    if (!combined_audio_enabled && !options.source_paths.isEmpty())
+        throw std::invalid_argument{"shell source paths require audio support"};
     if (!combined_audio_enabled &&
         (options.smoke_session_restart_read || options.smoke_session_crash_before_primary_commit ||
          options.smoke_session_recovery_repair || options.smoke_session_defaults_read))
