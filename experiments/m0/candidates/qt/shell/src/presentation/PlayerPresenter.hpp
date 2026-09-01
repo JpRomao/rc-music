@@ -150,6 +150,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
     Q_PROPERTY(bool startMinimized READ startMinimized NOTIFY preferencesChanged)
     Q_PROPERTY(PreferenceWarning preferenceWarning READ preferenceWarning NOTIFY preferencePersistenceChanged)
+    Q_PROPERTY(PersistenceWarningScope persistenceWarningScope READ persistenceWarningScope NOTIFY
+                   preferencePersistenceChanged)
     Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
     Q_PROPERTY(bool exiting READ exiting NOTIFY lifecycleChanged)
     Q_PROPERTY(bool exitCommitted READ exitCommitted NOTIFY lifecycleChanged)
@@ -182,6 +184,13 @@ class PlayerPresenter final : public QObject {
         SaveFailed,
     };
     Q_ENUM(PreferenceWarning)
+    enum class PersistenceWarningScope {
+        NoPersistenceWarningScope,
+        PreferencePersistence,
+        SessionPersistence,
+        CombinedPersistence,
+    };
+    Q_ENUM(PersistenceWarningScope)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlayerPresenterPreferences preferences,
@@ -297,6 +306,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool restoreLastSession() const noexcept;
     [[nodiscard]] bool startMinimized() const noexcept;
     [[nodiscard]] PreferenceWarning preferenceWarning() const noexcept;
+    [[nodiscard]] PersistenceWarningScope persistenceWarningScope() const noexcept;
     [[nodiscard]] bool trayAvailable() const noexcept;
     [[nodiscard]] bool exiting() const noexcept;
     [[nodiscard]] bool exitCommitted() const noexcept;
@@ -377,6 +387,7 @@ class PlayerPresenter final : public QObject {
     void pollPreferencePersistence();
     void pollPersistence();
     void synchronizePreferenceWarning();
+    void projectPersistenceWarning();
     void completeExit();
     void cancelPendingExit();
     void handlePlaybackEvent(PlaybackEvent event);
@@ -445,7 +456,10 @@ class PlayerPresenter final : public QObject {
     bool tray_notice_seen_{false};
     PreferencesAutosave* preferences_autosave_{nullptr};
     SessionAutosave* session_autosave_{nullptr};
+    PreferenceWarning preference_persistence_warning_{PreferenceWarning::NoPreferenceWarning};
+    PreferenceWarning session_persistence_warning_{PreferenceWarning::NoPreferenceWarning};
     PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};
+    PersistenceWarningScope persistence_warning_scope_{PersistenceWarningScope::NoPersistenceWarningScope};
     std::chrono::milliseconds preference_exit_flush_timeout_{2'000};
     std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{};
     std::optional<PlayerPresenterPreferences::TimePoint> preference_exit_deadline_{};

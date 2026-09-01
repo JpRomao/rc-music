@@ -8,10 +8,12 @@ FocusScope {
     objectName: "preference-persistence-notice"
     required property M0.ShellUiContract contract
     required property int warning
+    required property int warningScope
     required property Item fallbackFocusItem
     required property bool interactionAllowed
     property Item replacementRestoreFocusItem: null
     property int lastAnnouncedWarning: -1
+    property int lastAnnouncedWarningScope: -1
     property bool actionOwnedFocus: false
     property bool focusRestorePending: false
     property int focusTransferRevision: 0
@@ -19,8 +21,12 @@ FocusScope {
     readonly property bool dismissAvailable: warning === M0.PlayerPresenter.RecoveredFromBackup || warning === M0.PlayerPresenter.UsingDefaults
     readonly property bool retryAvailable: warning === M0.PlayerPresenter.SaveFailed
     readonly property bool replacementAvailable: warning === M0.PlayerPresenter.FutureVersion
+    readonly property bool reviewAvailable: warningScope !== M0.PlayerPresenter.SessionPersistence
     readonly property string warningTitle: titleForWarning()
     readonly property string warningMessage: messageForWarning()
+    readonly property string replacementActionText: replacementActionForScope()
+    readonly property string replacementConfirmationTitle: replacementTitleForScope()
+    readonly property string replacementConfirmationMessage: replacementMessageForScope()
     signal reviewRequested
     signal dismissRequested
     signal retryRequested
@@ -36,6 +42,22 @@ FocusScope {
     }
 
     function titleForWarning() {
+        if (warningScope === M0.PlayerPresenter.SessionPersistence) {
+            switch (warning) {
+            case M0.PlayerPresenter.RecoveredFromBackup:
+                return labels.sessionRecoveredTitle;
+            case M0.PlayerPresenter.UsingDefaults:
+                return labels.sessionDefaultsTitle;
+            case M0.PlayerPresenter.FutureVersion:
+                return labels.sessionFutureVersionTitle;
+            case M0.PlayerPresenter.SaveFailed:
+                return labels.sessionSaveFailedTitle;
+            default:
+                return "";
+            }
+        }
+        if (warningScope === M0.PlayerPresenter.CombinedPersistence)
+            return labels.combinedWarningTitle;
         switch (warning) {
         case M0.PlayerPresenter.RecoveredFromBackup:
             return labels.recoveredTitle;
@@ -51,6 +73,34 @@ FocusScope {
     }
 
     function messageForWarning() {
+        if (warningScope === M0.PlayerPresenter.SessionPersistence) {
+            switch (warning) {
+            case M0.PlayerPresenter.RecoveredFromBackup:
+                return labels.sessionRecoveredMessage;
+            case M0.PlayerPresenter.UsingDefaults:
+                return labels.sessionDefaultsMessage;
+            case M0.PlayerPresenter.FutureVersion:
+                return labels.sessionFutureVersionMessage;
+            case M0.PlayerPresenter.SaveFailed:
+                return labels.sessionSaveFailedMessage;
+            default:
+                return "";
+            }
+        }
+        if (warningScope === M0.PlayerPresenter.CombinedPersistence) {
+            switch (warning) {
+            case M0.PlayerPresenter.RecoveredFromBackup:
+                return labels.combinedRecoveredMessage;
+            case M0.PlayerPresenter.UsingDefaults:
+                return labels.combinedDefaultsMessage;
+            case M0.PlayerPresenter.FutureVersion:
+                return labels.combinedFutureVersionMessage;
+            case M0.PlayerPresenter.SaveFailed:
+                return labels.combinedSaveFailedMessage;
+            default:
+                return "";
+            }
+        }
         switch (warning) {
         case M0.PlayerPresenter.RecoveredFromBackup:
             return labels.recoveredMessage;
@@ -63,6 +113,30 @@ FocusScope {
         default:
             return "";
         }
+    }
+
+    function replacementActionForScope() {
+        if (warningScope === M0.PlayerPresenter.SessionPersistence)
+            return labels.replaceSession;
+        if (warningScope === M0.PlayerPresenter.CombinedPersistence)
+            return labels.replaceLocalData;
+        return labels.replacePreferences;
+    }
+
+    function replacementTitleForScope() {
+        if (warningScope === M0.PlayerPresenter.SessionPersistence)
+            return labels.replaceSessionConfirmationTitle;
+        if (warningScope === M0.PlayerPresenter.CombinedPersistence)
+            return labels.replaceLocalDataConfirmationTitle;
+        return labels.replaceConfirmationTitle;
+    }
+
+    function replacementMessageForScope() {
+        if (warningScope === M0.PlayerPresenter.SessionPersistence)
+            return labels.replaceSessionConfirmationMessage;
+        if (warningScope === M0.PlayerPresenter.CombinedPersistence)
+            return labels.replaceLocalDataConfirmationMessage;
+        return labels.replaceConfirmationMessage;
     }
 
     function isUsableFocusTarget(item) {
@@ -116,19 +190,22 @@ FocusScope {
     function announceWarning() {
         if (warning === M0.PlayerPresenter.NoPreferenceWarning) {
             lastAnnouncedWarning = -1;
+            lastAnnouncedWarningScope = -1;
             return;
         }
-        if (lastAnnouncedWarning === warning)
+        if (lastAnnouncedWarning === warning && lastAnnouncedWarningScope === warningScope)
             return;
         lastAnnouncedWarning = warning;
+        lastAnnouncedWarningScope = warningScope;
         const politeness = warning === M0.PlayerPresenter.FutureVersion || warning === M0.PlayerPresenter.SaveFailed ? Accessible.Assertive : Accessible.Polite;
         root.Accessible.announce(root.Accessible.name, politeness);
     }
 
     function scheduleAnnouncement() {
         const observedWarning = warning;
+        const observedWarningScope = warningScope;
         Qt.callLater(function () {
-            if (root.warning === observedWarning)
+            if (root.warning === observedWarning && root.warningScope === observedWarningScope)
                 root.announceWarning();
         });
     }
@@ -144,10 +221,19 @@ FocusScope {
         restoreFallbackAfterWarningChange();
         if (warning !== M0.PlayerPresenter.FutureVersion && replacementConfirmation.opened)
             replacementConfirmation.close();
-        if (warning === M0.PlayerPresenter.NoPreferenceWarning)
+        if (warning === M0.PlayerPresenter.NoPreferenceWarning) {
             lastAnnouncedWarning = -1;
-        else
+            lastAnnouncedWarningScope = -1;
+        } else {
             scheduleAnnouncement();
+        }
+    }
+    onWarningScopeChanged: {
+        if (warning === M0.PlayerPresenter.NoPreferenceWarning) {
+            lastAnnouncedWarningScope = -1;
+        } else {
+            scheduleAnnouncement();
+        }
     }
     onInteractionAllowedChanged: {
         if (!interactionAllowed && replacementConfirmation.opened)
@@ -212,9 +298,9 @@ FocusScope {
                 contract: root.contract
                 text: labels.reviewPreferences
                 accessibleName: text
-                visible: root.visible
+                visible: root.visible && root.reviewAvailable
                 enabled: visible && root.enabled
-                activeFocusOnTab: root.visible && root.enabled
+                activeFocusOnTab: visible && root.enabled
                 KeyNavigation.tab: root.visible && root.enabled ? root.contextualAction() : null
                 KeyNavigation.backtab: root.visible && root.enabled ? root.fallbackFocusItem : null
                 onClicked: root.reviewRequested()
@@ -236,7 +322,7 @@ FocusScope {
                 enabled: visible && root.enabled
                 activeFocusOnTab: root.visible && root.enabled && visible
                 KeyNavigation.tab: root.visible && root.enabled && visible ? root.fallbackFocusItem : null
-                KeyNavigation.backtab: root.visible && root.enabled && visible ? reviewButton : null
+                KeyNavigation.backtab: root.visible && root.enabled && visible ? (root.reviewAvailable ? reviewButton : root.fallbackFocusItem) : null
                 onClicked: root.dismissRequested()
                 onActiveFocusChanged: {
                     if (activeFocus)
@@ -253,7 +339,7 @@ FocusScope {
                 enabled: visible && root.enabled
                 activeFocusOnTab: root.visible && root.enabled && visible
                 KeyNavigation.tab: root.visible && root.enabled && visible ? root.fallbackFocusItem : null
-                KeyNavigation.backtab: root.visible && root.enabled && visible ? reviewButton : null
+                KeyNavigation.backtab: root.visible && root.enabled && visible ? (root.reviewAvailable ? reviewButton : root.fallbackFocusItem) : null
                 onClicked: root.retryRequested()
                 onActiveFocusChanged: {
                     if (activeFocus)
@@ -264,13 +350,13 @@ FocusScope {
                 id: replaceButton
                 objectName: "preference-persistence-replace"
                 contract: root.contract
-                text: labels.replacePreferences
+                text: root.replacementActionText
                 accessibleName: text
                 visible: root.visible && root.replacementAvailable
                 enabled: visible && root.enabled
                 activeFocusOnTab: root.visible && root.enabled && visible
                 KeyNavigation.tab: root.visible && root.enabled && visible ? root.fallbackFocusItem : null
-                KeyNavigation.backtab: root.visible && root.enabled && visible ? reviewButton : null
+                KeyNavigation.backtab: root.visible && root.enabled && visible ? (root.reviewAvailable ? reviewButton : root.fallbackFocusItem) : null
                 onClicked: root.openReplacementConfirmation(replaceButton)
                 onActiveFocusChanged: {
                     if (activeFocus)
@@ -321,11 +407,11 @@ FocusScope {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 3
             Accessible.role: Accessible.Dialog
-            Accessible.name: labels.replaceConfirmationTitle
+            Accessible.name: root.replacementConfirmationTitle
 
             Text {
                 Layout.fillWidth: true
-                text: labels.replaceConfirmationTitle
+                text: root.replacementConfirmationTitle
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor
@@ -336,7 +422,7 @@ FocusScope {
             Text {
                 objectName: "preference-replacement-message"
                 Layout.fillWidth: true
-                text: labels.replaceConfirmationMessage
+                text: root.replacementConfirmationMessage
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor

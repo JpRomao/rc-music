@@ -334,6 +334,7 @@ ApplicationWindow {
         z: 40
         contract: window.uiContract
         warning: window.presenter.preferenceWarning
+        warningScope: window.presenter.persistenceWarningScope
         fallbackFocusItem: preferencesButton
         interactionAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onReviewRequested: window.openPreferences()

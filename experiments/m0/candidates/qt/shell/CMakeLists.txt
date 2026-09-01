@@ -605,7 +605,8 @@ if(M0_QT_SHELL_SUPPORT)
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             )
             set_tests_properties(m0.qt.session.windows-store PROPERTIES
-                LABELS "m0;qt;session;windows;atomic-store"
+                LABELS "m0;qt;session;windows;atomic-store;multiprocess;FR-044;NFR-REL-003"
+                TIMEOUT 30
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             )
         endif()
@@ -939,8 +940,8 @@ if(M0_QT_AUDIO_SUPPORT)
                     "${M0_AUDIO_CORPUS_WAV_FILE}"
                 )
                 set_tests_properties(m0.qt.session.restart PROPERTIES
-                    LABELS "m0;qt;audio;session;restart;FR-043"
-                    TIMEOUT 25
+                    LABELS "m0;qt;audio;session;restart;forced-termination;corruption;replace-failure;FR-043;FR-044;NFR-REL-003"
+                    TIMEOUT 120
                     ENVIRONMENT_MODIFICATION
                         "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
                     ENVIRONMENT

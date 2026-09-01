@@ -2,8 +2,12 @@
 
 #include "adapters/SessionJsonCodec.hpp"
 
+#include <QCoreApplication>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
+#include <QLockFile>
+#include <QProcess>
 #include <QTemporaryDir>
 #include <QVector>
 #include <QtTest>
@@ -11,6 +15,7 @@
 #define NOMINMAX
 #include <Windows.h>
 
+#include <cstdio>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -37,6 +42,23 @@ class UniqueWindowsHandle final {
 
   private:
     HANDLE handle_{INVALID_HANDLE_VALUE};
+};
+
+class RunningProcessGuard final {
+  public:
+    explicit RunningProcessGuard(QProcess& process) noexcept : process_(process) {}
+    ~RunningProcessGuard() {
+        if (process_.state() == QProcess::ProcessState::NotRunning)
+            return;
+        process_.kill();
+        process_.waitForFinished(5'000);
+    }
+
+    RunningProcessGuard(const RunningProcessGuard&) = delete;
+    RunningProcessGuard& operator=(const RunningProcessGuard&) = delete;
+
+  private:
+    QProcess& process_;
 };
 
 [[nodiscard]] UniqueWindowsHandle denyReadSharing(const QString& path) {
@@ -109,8 +131,66 @@ class UniqueWindowsHandle final {
 
 [[nodiscard]] QString backupPath(const QString& root) { return QDir{root}.filePath(u"session.json.bak"_s); }
 
+[[nodiscard]] QString lockPath(const QString& root) { return QDir{root}.filePath(u"session.json.lock"_s); }
+
 [[nodiscard]] std::optional<SessionSnapshot> decodedSnapshot(const QString& path) {
     return SessionJsonCodec::decode(readAll(path)).snapshot;
+}
+
+[[nodiscard]] std::optional<SessionStoreFaultPoint> lockHolderFaultPoint(const QString& name) {
+    if (name == u"before-backup"_s)
+        return SessionStoreFaultPoint::BeforeBackupCommit;
+    if (name == u"after-primary"_s)
+        return SessionStoreFaultPoint::AfterPrimaryCommit;
+    return std::nullopt;
+}
+
+[[nodiscard]] bool isProtocolLine(const QByteArray& line, const QByteArray& token) {
+    return line == token + '\n' || line == token + "\r\n";
+}
+
+[[nodiscard]] int runSessionLockHolder(const QStringList& arguments) {
+    if (arguments.size() != 4 || arguments.at(1) != u"--session-store-lock-holder"_s)
+        return 2;
+    const QString root = QDir::cleanPath(arguments.at(2));
+    const std::optional<SessionStoreFaultPoint> target = lockHolderFaultPoint(arguments.at(3));
+    if (!QDir::isAbsolutePath(root) || !target.has_value())
+        return 2;
+
+    QFile standard_input;
+    QFile standard_output;
+    if (!standard_input.open(stdin, QIODevice::ReadOnly) || !standard_output.open(stdout, QIODevice::WriteOnly))
+        return 3;
+
+    bool reached_barrier = false;
+    bool barrier_succeeded = false;
+    QtJsonWindowsSessionStore store{
+        root,
+        {.inject_fault =
+             [&](const SessionStoreFaultPoint point) {
+                 if (point != *target || reached_barrier)
+                     return false;
+                 reached_barrier = true;
+                 static constexpr char ready[] = "LOCKED\n";
+                 static constexpr qint64 ready_size = static_cast<qint64>(sizeof(ready) - 1);
+                 const bool signaled =
+                     standard_output.write(ready, ready_size) == ready_size && standard_output.flush();
+                 barrier_succeeded = signaled && isProtocolLine(standard_input.readLine(), QByteArray{"RELEASE"});
+                 return !barrier_succeeded;
+             }},
+    };
+    const SessionSaveStatus status = store.save({.snapshot = replacementSession()});
+    return reached_barrier && barrier_succeeded && status == SessionSaveStatus::Saved ? 0 : 4;
+}
+
+[[nodiscard]] QByteArray waitForProcessLine(QProcess& process, const qint64 timeout_ms) {
+    QDeadlineTimer deadline{timeout_ms};
+    while (!process.canReadLine() && process.state() != QProcess::ProcessState::NotRunning && !deadline.hasExpired()) {
+        const qint64 remaining = deadline.remainingTime();
+        if (remaining <= 0 || !process.waitForReadyRead(static_cast<int>(remaining)))
+            break;
+    }
+    return process.canReadLine() ? process.readLine() : QByteArray{};
 }
 
 } // namespace
@@ -142,6 +222,8 @@ class QtJsonWindowsSessionStoreTests final : public QObject {
     void faultCallbackExceptionsFailClosed();
     void copiesThePreviousPrimaryToBackupByteForByte();
     void serializesSaveTransactionsAcrossStoreInstances();
+    void serializesSaveTransactionsAcrossProcesses_data();
+    void serializesSaveTransactionsAcrossProcesses();
     void refusesToOverwriteAnUnreadablePrimary();
     void refusesToOverwriteAnUnreadableBackup();
     void realBackupCommitFailurePreservesBothFiles();
@@ -591,6 +673,82 @@ void QtJsonWindowsSessionStoreTests::serializesSaveTransactionsAcrossStoreInstan
     QVERIFY(!QFile::exists(QDir{root}.filePath(u"session.json.lock"_s)));
 }
 
+void QtJsonWindowsSessionStoreTests::serializesSaveTransactionsAcrossProcesses_data() {
+    QTest::addColumn<QString>("fault_point");
+    QTest::addColumn<bool>("primary_committed");
+
+    QTest::newRow("before-backup-commit") << u"before-backup"_s << false;
+    QTest::newRow("after-primary-commit") << u"after-primary"_s << true;
+}
+
+void QtJsonWindowsSessionStoreTests::serializesSaveTransactionsAcrossProcesses() {
+    QFETCH(QString, fault_point);
+    QFETCH(bool, primary_committed);
+
+    QTemporaryDir temporary{QDir::tempPath() + u"/music player lock 日本-XXXXXX"_s};
+    QVERIFY(temporary.isValid());
+    const QString root = temporary.path();
+    const SessionSnapshot initial_snapshot = originalSession();
+    const SessionSnapshot holder_snapshot = replacementSession();
+    QtJsonWindowsSessionStore initial{root};
+    QCOMPARE(initial.save({.snapshot = initial_snapshot}), SessionSaveStatus::Saved);
+
+    QProcess holder;
+    RunningProcessGuard holder_cleanup{holder};
+    holder.setProcessChannelMode(QProcess::SeparateChannels);
+    holder.setProgram(QCoreApplication::applicationFilePath());
+    holder.setArguments({u"--session-store-lock-holder"_s, root, fault_point});
+    holder.start();
+    QVERIFY2(holder.waitForStarted(5'000), qPrintable(holder.errorString()));
+    const QByteArray ready_line = waitForProcessLine(holder, 5'000);
+    const QByteArray ready_diagnostics = holder.readAllStandardError();
+    QVERIFY2(isProtocolLine(ready_line, QByteArray{"LOCKED"}), ready_diagnostics.constData());
+
+    QLockFile observed_lock{lockPath(root)};
+    qint64 owner_pid = 0;
+    QString owner_host;
+    QString owner_application;
+    QVERIFY(observed_lock.getLockInfo(&owner_pid, &owner_host, &owner_application));
+    QCOMPARE(owner_pid, holder.processId());
+
+    if (primary_committed) {
+        QCOMPARE(decodedSnapshot(sessionPath(root)), std::optional<SessionSnapshot>{holder_snapshot});
+        QCOMPARE(decodedSnapshot(backupPath(root)), std::optional<SessionSnapshot>{initial_snapshot});
+    } else {
+        QCOMPARE(decodedSnapshot(sessionPath(root)), std::optional<SessionSnapshot>{initial_snapshot});
+        QVERIFY(!QFile::exists(backupPath(root)));
+    }
+    const QByteArray primary_before_contention = readAll(sessionPath(root));
+    const bool backup_existed_before_contention = QFile::exists(backupPath(root));
+    const QByteArray backup_before_contention = readAll(backupPath(root));
+
+    QtJsonWindowsSessionStore competing{root};
+    QCOMPARE(competing.save({.snapshot = SessionSnapshot{}}), SessionSaveStatus::Failed);
+    QCOMPARE(readAll(sessionPath(root)), primary_before_contention);
+    QCOMPARE(QFile::exists(backupPath(root)), backup_existed_before_contention);
+    QCOMPARE(readAll(backupPath(root)), backup_before_contention);
+
+    const QByteArray release{"RELEASE\n"};
+    QCOMPARE(holder.write(release), static_cast<qint64>(release.size()));
+    if (holder.bytesToWrite() > 0)
+        QVERIFY(holder.waitForBytesWritten(5'000));
+    holder.closeWriteChannel();
+    if (!holder.waitForFinished(5'000)) {
+        holder.kill();
+        holder.waitForFinished(5'000);
+        QFAIL("the session lock holder did not finish after release");
+    }
+    const QByteArray holder_diagnostics = holder.readAllStandardError();
+    QCOMPARE(holder.exitStatus(), QProcess::ExitStatus::NormalExit);
+    QVERIFY2(holder.exitCode() == 0, holder_diagnostics.constData());
+
+    QtJsonWindowsSessionStore after_release{root};
+    QCOMPARE(after_release.load().snapshot, holder_snapshot);
+    QCOMPARE(after_release.save({.snapshot = SessionSnapshot{}}), SessionSaveStatus::Saved);
+    QCOMPARE(after_release.load().snapshot, SessionSnapshot{});
+    QVERIFY(!QFile::exists(lockPath(root)));
+}
+
 void QtJsonWindowsSessionStoreTests::refusesToOverwriteAnUnreadablePrimary() {
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
@@ -735,6 +893,14 @@ void QtJsonWindowsSessionStoreTests::retainsExactlyOneBackupAcrossRepeatedSaves(
     QCOMPARE(store.load().snapshot, third);
 }
 
-QTEST_GUILESS_MAIN(QtJsonWindowsSessionStoreTests)
+int main(int argc, char* argv[]) {
+    QCoreApplication application(argc, argv);
+    QCoreApplication::setAttribute(Qt::AA_Use96Dpi, true);
+    if (application.arguments().size() > 1 && application.arguments().at(1) == u"--session-store-lock-holder"_s) {
+        return runSessionLockHolder(application.arguments());
+    }
+    QtJsonWindowsSessionStoreTests tests;
+    return QTest::qExec(&tests, argc, argv);
+}
 
 #include "QtJsonWindowsSessionStoreTests.moc"

@@ -35,6 +35,9 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(!options.smoke_preferences_restart_write);
         QVERIFY(!options.smoke_preferences_restart_read);
         QVERIFY(!options.smoke_session_restart_read);
+        QVERIFY(!options.smoke_session_crash_before_primary_commit);
+        QVERIFY(!options.smoke_session_recovery_repair);
+        QVERIFY(!options.smoke_session_defaults_read);
         QVERIFY(!options.test_config_root.has_value());
     }
 
@@ -139,6 +142,29 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
     }
 
+    void acceptsClosedSessionRecoveryHooksOnlyForTheCombinedShell_data() {
+        QTest::addColumn<QString>("smoke");
+        QTest::newRow("forced termination before primary commit")
+            << QStringLiteral("session-crash-before-primary-commit");
+        QTest::newRow("corrupt primary repair") << QStringLiteral("session-recovery-repair");
+        QTest::newRow("invalid slots use defaults") << QStringLiteral("session-defaults-read");
+    }
+
+    void acceptsClosedSessionRecoveryHooksOnlyForTheCombinedShell() {
+        QFETCH(QString, smoke);
+        const QString root = testConfigRoot(QStringLiteral("session recovery"));
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=") + smoke,
+                                     QStringLiteral("--m0-test-config-root=") + root});
+        QCOMPARE(options.smoke_session_crash_before_primary_commit,
+                 smoke == QStringLiteral("session-crash-before-primary-commit"));
+        QCOMPARE(options.smoke_session_recovery_repair, smoke == QStringLiteral("session-recovery-repair"));
+        QCOMPARE(options.smoke_session_defaults_read, smoke == QStringLiteral("session-defaults-read"));
+        QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+        validateShellLaunchOptions(options, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+    }
+
     void acceptsIsolatedConfigForEveryExecutableSmoke_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("error recovery") << QStringList{
@@ -176,6 +202,15 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("session restart read")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-restart-read"),
                            testConfigArgument(QStringLiteral("temporary session"))};
+        QTest::newRow("session crash") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                      QStringLiteral("--m0-smoke=session-crash-before-primary-commit"),
+                                                      testConfigArgument(QStringLiteral("temporary crash"))};
+        QTest::newRow("session recovery repair")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-recovery-repair"),
+                           testConfigArgument(QStringLiteral("temporary repair"))};
+        QTest::newRow("session defaults")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-defaults-read"),
+                           testConfigArgument(QStringLiteral("temporary defaults"))};
     }
 
     void rejectsEveryClosedControlInProduction() {
@@ -229,6 +264,12 @@ class ShellLaunchOptionsTests final : public QObject {
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=preferences-restart-write")};
         QTest::newRow("session restart without root")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-restart-read")};
+        QTest::newRow("session crash without root") << QStringList{
+            QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-crash-before-primary-commit")};
+        QTest::newRow("session recovery without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-recovery-repair")};
+        QTest::newRow("session defaults without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-defaults-read")};
         QTest::newRow("root without restart")
             << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
         QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),

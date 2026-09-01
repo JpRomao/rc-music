@@ -157,7 +157,9 @@ TestCase {
         });
         verify(panel.opened);
         verify(closeBehavior.activeFocus);
-        verify(findChild(shell, "preferences-memory-note").visible);
+        const memoryNote = findChild(shell, "preferences-memory-note");
+        verify(memoryNote.visible);
+        compare(memoryNote.text, "As preferências são salvas localmente. A última sessão é restaurada pausada quando a opção está ativa; iniciar minimizado será aplicado em etapa futura.");
         restoreSession.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         verify(!testPlayerPresenter.restoreLastSession); // qmllint disable unqualified

@@ -28,6 +28,11 @@
 #include "m0/domain/LocalAudioFilePolicy.hpp"
 
 #include <QFileDialog>
+#ifdef M0_QT_SHELL_TEST_HOOKS
+#include <QDir>
+#include <QFile>
+#include <QSemaphore>
+#endif
 #endif
 
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -48,6 +53,8 @@
 #include <QVariant>
 #include <QWindow>
 
+#include <atomic>
+#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -181,7 +188,27 @@ int main(int argc, char* argv[]) {
             .autosave = &preferences_autosave,
         };
 #ifdef M0_QT_COMBINED_AUDIO
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        QSemaphore session_crash_barrier;
+        std::atomic_bool session_crash_gate_armed{false};
+        music_player::m0::QtJsonWindowsSessionStoreOptions session_store_options;
+        if (options.smoke_session_crash_before_primary_commit) {
+            session_store_options.inject_fault = [&session_crash_barrier, &session_crash_gate_armed](
+                                                     const music_player::m0::SessionStoreFaultPoint point) {
+                if (point != music_player::m0::SessionStoreFaultPoint::BeforePrimaryCommit ||
+                    !session_crash_gate_armed.load(std::memory_order_acquire)) {
+                    return false;
+                }
+                std::fputs("M0_SESSION_BEFORE_PRIMARY_COMMIT\n", stdout);
+                std::fflush(stdout);
+                session_crash_barrier.acquire();
+                return false;
+            };
+        }
+        music_player::m0::QtJsonWindowsSessionStore session_store(config_root, std::move(session_store_options));
+#else
         music_player::m0::QtJsonWindowsSessionStore session_store(config_root);
+#endif
         music_player::m0::SessionLoadResult loaded_session =
             music_player::m0::loadSessionForStartup(session_store, loaded_preferences.preferences.restore_last_session);
         music_player::m0::SingleWorkerSessionWriter session_writer(session_store);
@@ -201,7 +228,9 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_available = true;
         if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
-            options.smoke_preferences_restart_read || options.smoke_session_restart_read)
+            options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
+            options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
+            options.smoke_session_defaults_read)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(
@@ -262,11 +291,24 @@ int main(int argc, char* argv[]) {
             (presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 0)) {
             throw std::runtime_error{"disabled session restore performed hydration"};
         }
-        if (options.smoke_session_restart_read &&
-            (!presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 1 ||
-             presenter.currentOccurrenceId() != QStringLiteral("local-77") ||
-             presenter.playbackState() == PlayerPresenter::PlaybackState::Playing)) {
+        const bool restored_session_smoke = options.smoke_session_restart_read ||
+                                            options.smoke_session_crash_before_primary_commit ||
+                                            options.smoke_session_recovery_repair;
+        if (restored_session_smoke && (!presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 1 ||
+                                       presenter.currentOccurrenceId() != QStringLiteral("local-77") ||
+                                       presenter.playbackState() == PlayerPresenter::PlaybackState::Playing)) {
             throw std::runtime_error{"persisted session was not restored safely before QML creation"};
+        }
+        if (options.smoke_session_recovery_repair &&
+            presenter.preferenceWarning() != PlayerPresenter::PreferenceWarning::RecoveredFromBackup) {
+            throw std::runtime_error{"the corrupt primary did not expose its recovered-backup warning"};
+        }
+        if (options.smoke_session_defaults_read &&
+            (presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 0 ||
+             presenter.playbackState() == PlayerPresenter::PlaybackState::Playing ||
+             presenter.preferenceWarning() != PlayerPresenter::PreferenceWarning::UsingDefaults)) {
+            throw std::runtime_error{
+                "invalid session slots did not start with safe defaults and an actionable warning"};
         }
 #endif
 #endif
@@ -288,7 +330,13 @@ int main(int argc, char* argv[]) {
         bool combined_startup_smoke_completed = false;
         bool preferences_restart_completed = false;
         bool session_restart_completed = false;
+        bool session_recovery_completed = false;
+        bool session_defaults_completed = false;
+        bool session_crash_clear_requested = false;
+        int session_recovery_phase = 0;
         QTimer session_restart_timer;
+        QTimer session_recovery_timer;
+        QTimer session_crash_timer;
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -389,6 +437,110 @@ int main(int argc, char* argv[]) {
                 }
             });
         }
+        if (options.smoke_session_crash_before_primary_commit) {
+            session_crash_timer.setInterval(10);
+            QObject::connect(&session_crash_timer, &QTimer::timeout, &application,
+                             [&application, &presenter, &session_crash_clear_requested, &session_crash_gate_armed,
+                              &session_crash_timer] {
+                                 if (presenter.playbackState() == PlayerPresenter::PlaybackState::Error) {
+                                     qCritical() << "The persisted session became unavailable before the crash gate";
+                                     application.exit(2);
+                                     return;
+                                 }
+                                 if (session_crash_clear_requested ||
+                                     presenter.playbackState() != PlayerPresenter::PlaybackState::Paused ||
+                                     presenter.confirmedPositionMs() < 700 || presenter.confirmedPositionMs() > 800 ||
+                                     presenter.seekPending()) {
+                                     return;
+                                 }
+                                 session_crash_clear_requested = presenter.clearQueue();
+                                 session_crash_gate_armed.store(session_crash_clear_requested,
+                                                                std::memory_order_release);
+                                 if (!session_crash_clear_requested) {
+                                     qCritical() << "The crash smoke could not schedule its structural checkpoint";
+                                     application.exit(2);
+                                     return;
+                                 }
+                                 session_crash_timer.stop();
+                             });
+            session_crash_timer.start();
+        }
+        if (options.smoke_session_recovery_repair) {
+            QPointer<QObject> root = engine.rootObjects().constFirst();
+            session_recovery_timer.setInterval(10);
+            QObject::connect(&session_recovery_timer, &QTimer::timeout, &application,
+                             [&application, root, &presenter, &session_recovery_completed, &session_recovery_timer,
+                              &session_recovery_phase, config_root] {
+                                 if (presenter.playbackState() == PlayerPresenter::PlaybackState::Error) {
+                                     qCritical() << "The recovered session became unavailable during repair";
+                                     application.exit(2);
+                                     return;
+                                 }
+                                 const bool restored_paused =
+                                     presenter.playbackState() == PlayerPresenter::PlaybackState::Paused &&
+                                     presenter.confirmedPositionMs() == 750 && !presenter.seekPending();
+                                 if (session_recovery_phase == 0) {
+                                     if (!restored_paused || presenter.preferenceWarning() !=
+                                                                 PlayerPresenter::PreferenceWarning::SaveFailed) {
+                                         return;
+                                     }
+                                     std::fputs("M0_SESSION_REPLACE_FAILED\n", stdout);
+                                     std::fflush(stdout);
+                                     session_recovery_phase = 1;
+                                     return;
+                                 }
+                                 if (session_recovery_phase == 1) {
+                                     if (!QFile::exists(QDir{config_root}.filePath(QStringLiteral("m0-session-retry"))))
+                                         return;
+                                     QObject* const retry =
+                                         root != nullptr
+                                             ? root->findChild<QObject*>(QStringLiteral("preference-persistence-retry"))
+                                             : nullptr;
+                                     if (retry == nullptr || !retry->property("visible").toBool() ||
+                                         !QMetaObject::invokeMethod(retry, "clicked", Qt::DirectConnection)) {
+                                         qCritical() << "The real persistence retry action was not available";
+                                         application.exit(2);
+                                         return;
+                                     }
+                                     session_recovery_phase = 2;
+                                     return;
+                                 }
+                                 if (!restored_paused || presenter.preferenceWarning() !=
+                                                             PlayerPresenter::PreferenceWarning::NoPreferenceWarning) {
+                                     return;
+                                 }
+                                 session_recovery_timer.stop();
+                                 session_recovery_completed = presenter.requestExit();
+                                 if (!session_recovery_completed)
+                                     application.exit(2);
+                             });
+            session_recovery_timer.start();
+            QTimer::singleShot(10'000, &application, [&application, &session_recovery_completed] {
+                if (!session_recovery_completed) {
+                    qCritical() << "The recovered session did not complete its real replace retry";
+                    application.exit(2);
+                }
+            });
+        }
+        if (options.smoke_session_defaults_read) {
+            QPointer<QObject> root = engine.rootObjects().constFirst();
+            QTimer::singleShot(0, &application, [&application, root, &presenter, &session_defaults_completed] {
+                QObject* const dismiss =
+                    root != nullptr ? root->findChild<QObject*>(QStringLiteral("preference-persistence-dismiss"))
+                                    : nullptr;
+                const bool dismissed =
+                    dismiss != nullptr && dismiss->property("visible").toBool() &&
+                    QMetaObject::invokeMethod(dismiss, "clicked", Qt::DirectConnection) &&
+                    presenter.preferenceWarning() == PlayerPresenter::PreferenceWarning::NoPreferenceWarning;
+                session_defaults_completed = dismissed && presenter.requestExit();
+                if (!session_defaults_completed)
+                    application.exit(2);
+            });
+            QTimer::singleShot(3'000, &application, [&application, &session_defaults_completed] {
+                if (!session_defaults_completed)
+                    application.exit(2);
+            });
+        }
 #endif
 #endif
         const int result = application.exec();
@@ -415,6 +567,20 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_COMBINED_AUDIO
         if (options.smoke_session_restart_read && (result != 0 || !session_restart_completed || !presenter.exiting())) {
             qCritical() << "The session restart smoke did not complete";
+            return 2;
+        }
+        if (options.smoke_session_recovery_repair &&
+            (result != 0 || !session_recovery_completed || !presenter.exiting())) {
+            qCritical() << "The session recovery smoke did not complete";
+            return 2;
+        }
+        if (options.smoke_session_defaults_read &&
+            (result != 0 || !session_defaults_completed || !presenter.exiting())) {
+            qCritical() << "The invalid-session defaults smoke did not complete";
+            return 2;
+        }
+        if (options.smoke_session_crash_before_primary_commit) {
+            qCritical() << "The forced-termination smoke exited without being killed at its transaction gate";
             return 2;
         }
 #endif

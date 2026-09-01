@@ -17,6 +17,7 @@ TestCase {
             height: 520
             visible: true
             property int requestedWarning: M0.PlayerPresenter.NoPreferenceWarning
+            property int requestedWarningScope: M0.PlayerPresenter.PreferencePersistence
             property bool allowInteraction: true
             property bool preferencesOpened: false
             property int dismissCount: 0
@@ -44,6 +45,7 @@ TestCase {
                 width: parent.width - 48
                 contract: testShellUiContract // qmllint disable unqualified
                 warning: host.requestedWarning
+                warningScope: host.requestedWarningScope
                 fallbackFocusItem: fallback
                 interactionAllowed: host.allowInteraction
                 onReviewRequested: host.preferencesOpened = true
@@ -57,9 +59,10 @@ TestCase {
         }
     }
 
-    function createHost(warning) {
+    function createHost(warning, warningScope) {
         const host = createTemporaryObject(hostComponent, null, {
-            requestedWarning: warning
+            requestedWarning: warning,
+            requestedWarningScope: warningScope === undefined ? M0.PlayerPresenter.PreferencePersistence : warningScope
         });
         verify(host);
         host.requestActivate();
@@ -124,6 +127,128 @@ TestCase {
         tryVerify(function () {
             return !notice.visible && host.fallbackItem.activeFocus;
         });
+    }
+
+    function test_sessionRecoveryWarningsAreSpecificAndDismissible_data() {
+        return [
+            {
+                tag: "backup",
+                warning: M0.PlayerPresenter.RecoveredFromBackup,
+                title: "Sessão recuperada",
+                message: "Uma cópia de segurança válida da fila e da posição foi recuperada. Confira a fila antes de retomar a reprodução."
+            },
+            {
+                tag: "defaults",
+                warning: M0.PlayerPresenter.UsingDefaults,
+                title: "Sessão anterior não restaurada",
+                message: "Os dados salvos da fila e da posição eram inválidos. O player iniciou com uma sessão vazia e sem reproduzir áudio."
+            }
+        ];
+    }
+
+    function test_sessionRecoveryWarningsAreSpecificAndDismissible(data) {
+        const host = createHost(data.warning, M0.PlayerPresenter.SessionPersistence);
+        const notice = findChild(host, "preference-persistence-notice");
+        const title = findChild(host, "preference-persistence-title");
+        const message = findChild(host, "preference-persistence-message");
+        const review = findChild(host, "preference-persistence-review");
+        const dismiss = findChild(host, "preference-persistence-dismiss");
+
+        verify(notice.visible);
+        compare(title.text, data.title);
+        compare(message.text, data.message);
+        verify(!title.text.includes("Preferências"));
+        verify(!message.text.includes("preferências"));
+        verifySafePlainText(title);
+        verifySafePlainText(message);
+        verify(!review.visible);
+        verify(dismiss.visible && dismiss.enabled);
+
+        dismiss.Accessible.pressAction();
+        compare(host.dismissCount, 1);
+    }
+
+    function test_sessionSaveFailureOffersOnlyTheRelevantRetryAction() {
+        const host = createHost(M0.PlayerPresenter.SaveFailed, M0.PlayerPresenter.SessionPersistence);
+        compare(findChild(host, "preference-persistence-title").text, "Não foi possível salvar a sessão");
+        verify(!findChild(host, "preference-persistence-review").visible);
+        const retry = findChild(host, "preference-persistence-retry");
+        verify(retry.visible && retry.enabled);
+        retry.Accessible.pressAction();
+        compare(host.retryCount, 1);
+    }
+
+    function test_sessionFutureVersionNamesSessionInReplacementFlow() {
+        const host = createHost(M0.PlayerPresenter.FutureVersion, M0.PlayerPresenter.SessionPersistence);
+        compare(findChild(host, "preference-persistence-title").text, "Sessão de uma versão mais recente");
+        verify(!findChild(host, "preference-persistence-review").visible);
+        const replace = findChild(host, "preference-persistence-replace");
+        compare(replace.text, "Substituir sessão");
+        replace.Accessible.pressAction();
+        const confirmation = findChild(host, "preference-replacement-confirmation");
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        compare(confirmation.contentItem.Accessible.name, "Substituir sessão mais recente?");
+        compare(findChild(host, "preference-replacement-message").text, "Esta ação substitui a fila e a posição salvas por uma versão mais recente do aplicativo e não pode ser desfeita.");
+    }
+
+    function test_combinedFutureVersionConfirmationNamesPreferencesAndSession() {
+        const host = createHost(M0.PlayerPresenter.FutureVersion, M0.PlayerPresenter.CombinedPersistence);
+        const replace = findChild(host, "preference-persistence-replace");
+        compare(replace.text, "Substituir dados locais");
+        replace.Accessible.pressAction();
+        const confirmation = findChild(host, "preference-replacement-confirmation");
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        const message = findChild(host, "preference-replacement-message");
+        compare(message.text, "Esta ação substitui as preferências e a sessão (fila e posição) salvas por uma versão mais recente do aplicativo e não pode ser desfeita.");
+        verify(!message.text.includes(" ou "));
+    }
+
+    function test_combinedRecoveryWarningNamesBothDataSets() {
+        const host = createHost(M0.PlayerPresenter.RecoveredFromBackup, M0.PlayerPresenter.CombinedPersistence);
+        compare(findChild(host, "preference-persistence-title").text, "Preferências e sessão exigem atenção");
+        compare(findChild(host, "preference-persistence-message").text, "Preferências e sessão foram recuperadas de cópias de segurança válidas. Revise as preferências e confira a fila antes de continuar.");
+        const review = findChild(host, "preference-persistence-review");
+        verify(review.visible && review.enabled);
+        compare(review.text, "Revisar preferências");
+        verify(findChild(host, "preference-persistence-dismiss").visible);
+    }
+
+    function test_mixedFutureVersionRevealsTheOtherSourcesDefaults_data() {
+        return [
+            {
+                tag: "future-preferences-invalid-session",
+                futureScope: M0.PlayerPresenter.PreferencePersistence,
+                replaceText: "Substituir preferências",
+                defaultsScope: M0.PlayerPresenter.SessionPersistence,
+                defaultsTitle: "Sessão anterior não restaurada",
+                reviewVisible: false
+            },
+            {
+                tag: "invalid-preferences-future-session",
+                futureScope: M0.PlayerPresenter.SessionPersistence,
+                replaceText: "Substituir sessão",
+                defaultsScope: M0.PlayerPresenter.PreferencePersistence,
+                defaultsTitle: "Preferências padrão restauradas",
+                reviewVisible: true
+            }
+        ];
+    }
+
+    function test_mixedFutureVersionRevealsTheOtherSourcesDefaults(data) {
+        const host = createHost(M0.PlayerPresenter.FutureVersion, data.futureScope);
+        const replace = findChild(host, "preference-persistence-replace");
+        compare(replace.text, data.replaceText);
+
+        host.requestedWarning = M0.PlayerPresenter.UsingDefaults;
+        host.requestedWarningScope = data.defaultsScope;
+        compare(findChild(host, "preference-persistence-title").text, data.defaultsTitle);
+        compare(findChild(host, "preference-persistence-review").visible, data.reviewVisible);
+        verify(findChild(host, "preference-persistence-dismiss").visible);
+        verify(!replace.visible);
     }
 
     function test_asyncWarningResolutionRestoresFocusWithoutStealingIt() {
@@ -299,6 +424,23 @@ TestCase {
         tryVerify(function () {
             return testScenarioDriver.accessibleAnnouncementCount() === 2; // qmllint disable unqualified
         });
+    }
+
+    function test_warningIsAnnouncedAgainWhenItsPersistenceScopeChanges() {
+        testScenarioDriver.clearAccessibleAnnouncements(); // qmllint disable unqualified
+        const host = createHost(M0.PlayerPresenter.SaveFailed, M0.PlayerPresenter.PreferencePersistence);
+        tryVerify(function () {
+            return testScenarioDriver.accessibleAnnouncementCount() > 0; // qmllint disable unqualified
+        });
+        testScenarioDriver.clearAccessibleAnnouncements(); // qmllint disable unqualified
+
+        host.requestedWarningScope = M0.PlayerPresenter.SessionPersistence;
+        tryVerify(function () {
+            return testScenarioDriver.accessibleAnnouncementCount() === 1; // qmllint disable unqualified
+        });
+        const announcement = testScenarioDriver.lastAccessibleAnnouncement(); // qmllint disable unqualified
+        verify(announcement.includes("sessão"));
+        verify(!announcement.includes("preferências"));
     }
 
     function test_highContrastSurfacesRemainOpaque() {

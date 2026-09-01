@@ -17,6 +17,9 @@ struct ShellLaunchOptions final {
     bool smoke_preferences_restart_write{false};
     bool smoke_preferences_restart_read{false};
     bool smoke_session_restart_read{false};
+    bool smoke_session_crash_before_primary_commit{false};
+    bool smoke_session_recovery_repair{false};
+    bool smoke_session_defaults_read{false};
     std::optional<QString> test_config_root{};
 };
 

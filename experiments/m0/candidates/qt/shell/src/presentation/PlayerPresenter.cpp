@@ -21,6 +21,33 @@ namespace {
 
 constexpr std::int64_t restored_position_tolerance_ms = 50;
 
+[[nodiscard]] PlayerPresenter::PersistenceWarningScope warningScopeForSources(const bool preferences,
+                                                                              const bool session) noexcept {
+    if (preferences && session)
+        return PlayerPresenter::PersistenceWarningScope::CombinedPersistence;
+    if (preferences)
+        return PlayerPresenter::PersistenceWarningScope::PreferencePersistence;
+    if (session)
+        return PlayerPresenter::PersistenceWarningScope::SessionPersistence;
+    return PlayerPresenter::PersistenceWarningScope::NoPersistenceWarningScope;
+}
+
+[[nodiscard]] int persistenceWarningPriority(const PlayerPresenter::PreferenceWarning warning) noexcept {
+    switch (warning) {
+    case PlayerPresenter::PreferenceWarning::NoPreferenceWarning:
+        return 0;
+    case PlayerPresenter::PreferenceWarning::RecoveredFromBackup:
+        return 1;
+    case PlayerPresenter::PreferenceWarning::UsingDefaults:
+        return 2;
+    case PlayerPresenter::PreferenceWarning::SaveFailed:
+        return 3;
+    case PlayerPresenter::PreferenceWarning::FutureVersion:
+        return 4;
+    }
+    return 0;
+}
+
 [[noreturn]] void invalidMapping(const char* field) {
     throw std::invalid_argument{std::string{"unknown fixture mapping: "} + field};
 }
@@ -515,22 +542,23 @@ void PlayerPresenter::initializePersistedPreferences(const PlayerPresenterPrefer
     switch (preferences.load_status) {
     case PreferencesLoadStatus::Missing:
     case PreferencesLoadStatus::Loaded:
-        preference_warning_ = PreferenceWarning::NoPreferenceWarning;
+        preference_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
         break;
     case PreferencesLoadStatus::RecoveredFromBackup:
-        preference_warning_ = PreferenceWarning::RecoveredFromBackup;
+        preference_persistence_warning_ = PreferenceWarning::RecoveredFromBackup;
         preferences_autosave_->scheduleRepair();
         break;
     case PreferencesLoadStatus::InvalidUsingDefaults:
-        preference_warning_ = PreferenceWarning::UsingDefaults;
+        preference_persistence_warning_ = PreferenceWarning::UsingDefaults;
         break;
     case PreferencesLoadStatus::FutureVersion:
         preferences_future_version_pending_ = true;
-        preference_warning_ = PreferenceWarning::FutureVersion;
+        preference_persistence_warning_ = PreferenceWarning::FutureVersion;
         break;
     default:
         invalidMapping("preferences load status");
     }
+    projectPersistenceWarning();
 }
 
 void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreferences& preferences) {
@@ -548,23 +576,24 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
     case SessionLoadStatus::Missing:
         return;
     case SessionLoadStatus::InvalidUsingDefaults:
-        if (preference_warning_ == PreferenceWarning::NoPreferenceWarning)
-            preference_warning_ = PreferenceWarning::UsingDefaults;
+        session_persistence_warning_ = PreferenceWarning::UsingDefaults;
+        projectPersistenceWarning();
         return;
     case SessionLoadStatus::FutureVersion:
         session_future_version_pending_ = true;
-        preference_warning_ = PreferenceWarning::FutureVersion;
+        session_persistence_warning_ = PreferenceWarning::FutureVersion;
+        projectPersistenceWarning();
         return;
     case SessionLoadStatus::Loaded:
         break;
     case SessionLoadStatus::RecoveredFromBackup:
         session_autosave_->scheduleRepair();
-        if (preference_warning_ == PreferenceWarning::NoPreferenceWarning)
-            preference_warning_ = PreferenceWarning::RecoveredFromBackup;
+        session_persistence_warning_ = PreferenceWarning::RecoveredFromBackup;
         break;
     default:
         throw std::invalid_argument{"unknown persisted session load status"};
     }
+    projectPersistenceWarning();
 
     if (!preferences.initial.restore_last_session || session.initial.queue.items.empty())
         return;
@@ -2264,6 +2293,10 @@ bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
 
 PlayerPresenter::PreferenceWarning PlayerPresenter::preferenceWarning() const noexcept { return preference_warning_; }
 
+PlayerPresenter::PersistenceWarningScope PlayerPresenter::persistenceWarningScope() const noexcept {
+    return persistence_warning_scope_;
+}
+
 void PlayerPresenter::preferenceDidChange() {
     if (preferences_autosave_ != nullptr)
         static_cast<void>(preferences_autosave_->schedule(preferences()));
@@ -2300,10 +2333,11 @@ void PlayerPresenter::pollPersistence() {
             return;
         }
         if (preference_now_() >= *preference_exit_deadline_) {
-            if ((!preferences_clean || !session_clean) && preference_warning_ != PreferenceWarning::SaveFailed) {
-                preference_warning_ = PreferenceWarning::SaveFailed;
-                emit preferencePersistenceChanged();
-            }
+            if (!preferences_clean && preference_persistence_warning_ != PreferenceWarning::FutureVersion)
+                preference_persistence_warning_ = PreferenceWarning::SaveFailed;
+            if (!session_clean && session_persistence_warning_ != PreferenceWarning::FutureVersion)
+                session_persistence_warning_ = PreferenceWarning::SaveFailed;
+            projectPersistenceWarning();
             cancelPendingExit();
             return;
         }
@@ -2312,31 +2346,52 @@ void PlayerPresenter::pollPersistence() {
 }
 
 void PlayerPresenter::synchronizePreferenceWarning() {
-    PreferenceWarning next = preference_warning_;
     const PreferencesAutosaveNotice preferences_notice =
         preferences_autosave_ == nullptr ? PreferencesAutosaveNotice::None : preferences_autosave_->notice();
     const SessionAutosaveNotice session_notice =
         session_autosave_ == nullptr ? SessionAutosaveNotice::None : session_autosave_->notice();
-    const bool future_version = preferences_future_version_pending_ || session_future_version_pending_ ||
-                                preferences_notice == PreferencesAutosaveNotice::FutureVersionBlocked ||
-                                session_notice == SessionAutosaveNotice::FutureVersionBlocked;
-    const bool save_failed = preferences_notice == PreferencesAutosaveNotice::SaveFailed ||
-                             session_notice == SessionAutosaveNotice::SaveFailed ||
-                             session_notice == SessionAutosaveNotice::SaveIncomplete;
-    const bool all_clean =
-        (preferences_autosave_ == nullptr ||
-         (!preferences_autosave_->dirty() && !preferences_autosave_->writeActive())) &&
-        (session_autosave_ == nullptr || (!session_autosave_->dirty() && !session_autosave_->writeActive()));
+    const bool preferences_future_version =
+        preferences_future_version_pending_ || preferences_notice == PreferencesAutosaveNotice::FutureVersionBlocked;
+    const bool session_future_version =
+        session_future_version_pending_ || session_notice == SessionAutosaveNotice::FutureVersionBlocked;
+    const bool preferences_save_failed = preferences_notice == PreferencesAutosaveNotice::SaveFailed;
+    const bool session_save_failed =
+        session_notice == SessionAutosaveNotice::SaveFailed || session_notice == SessionAutosaveNotice::SaveIncomplete;
+    const bool preferences_clean =
+        preferences_autosave_ == nullptr || (!preferences_autosave_->dirty() && !preferences_autosave_->writeActive());
+    const bool session_clean =
+        session_autosave_ == nullptr || (!session_autosave_->dirty() && !session_autosave_->writeActive());
+    const auto synchronize_source = [](const PreferenceWarning current, const bool future_version,
+                                       const bool save_failed, const bool clean) {
+        if (future_version)
+            return PreferenceWarning::FutureVersion;
+        if (save_failed)
+            return PreferenceWarning::SaveFailed;
+        if (clean && (current == PreferenceWarning::SaveFailed || current == PreferenceWarning::FutureVersion))
+            return PreferenceWarning::NoPreferenceWarning;
+        return current;
+    };
 
-    if (future_version)
-        next = PreferenceWarning::FutureVersion;
-    else if (save_failed)
-        next = PreferenceWarning::SaveFailed;
-    else if (all_clean && (next == PreferenceWarning::SaveFailed || next == PreferenceWarning::FutureVersion))
-        next = PreferenceWarning::NoPreferenceWarning;
-    if (next == preference_warning_)
+    preference_persistence_warning_ = synchronize_source(preference_persistence_warning_, preferences_future_version,
+                                                         preferences_save_failed, preferences_clean);
+    session_persistence_warning_ =
+        synchronize_source(session_persistence_warning_, session_future_version, session_save_failed, session_clean);
+    projectPersistenceWarning();
+}
+
+void PlayerPresenter::projectPersistenceWarning() {
+    const int preference_priority = persistenceWarningPriority(preference_persistence_warning_);
+    const int session_priority = persistenceWarningPriority(session_persistence_warning_);
+    const int projected_priority = std::max(preference_priority, session_priority);
+    const bool projects_preferences = projected_priority > 0 && preference_priority == projected_priority;
+    const bool projects_session = projected_priority > 0 && session_priority == projected_priority;
+    const PreferenceWarning next_warning =
+        projects_preferences ? preference_persistence_warning_ : session_persistence_warning_;
+    const PersistenceWarningScope next_scope = warningScopeForSources(projects_preferences, projects_session);
+    if (next_warning == preference_warning_ && next_scope == persistence_warning_scope_)
         return;
-    preference_warning_ = next;
+    preference_warning_ = next_warning;
+    persistence_warning_scope_ = next_scope;
     emit preferencePersistenceChanged();
 }
 
@@ -2345,8 +2400,22 @@ bool PlayerPresenter::dismissPreferenceWarning() {
                      preference_warning_ != PreferenceWarning::UsingDefaults)) {
         return false;
     }
-    preference_warning_ = PreferenceWarning::NoPreferenceWarning;
-    emit preferencePersistenceChanged();
+    bool dismissed = false;
+    if ((persistence_warning_scope_ == PersistenceWarningScope::PreferencePersistence ||
+         persistence_warning_scope_ == PersistenceWarningScope::CombinedPersistence) &&
+        preference_persistence_warning_ == preference_warning_) {
+        preference_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
+        dismissed = true;
+    }
+    if ((persistence_warning_scope_ == PersistenceWarningScope::SessionPersistence ||
+         persistence_warning_scope_ == PersistenceWarningScope::CombinedPersistence) &&
+        session_persistence_warning_ == preference_warning_) {
+        session_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
+        dismissed = true;
+    }
+    if (!dismissed)
+        return false;
+    projectPersistenceWarning();
     return true;
 }
 
@@ -2381,25 +2450,28 @@ bool PlayerPresenter::confirmPreferenceReplacement() {
         attempted = true;
         if (!preferences_autosave_->dirty())
             preferences_autosave_->scheduleRepair();
-        if (preferences_autosave_->confirmFutureVersionReplacement())
+        if (preferences_autosave_->confirmFutureVersionReplacement()) {
             preferences_future_version_pending_ = false;
-        else
+            preference_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
+        } else {
             succeeded = false;
+        }
     }
     if (session_autosave_ != nullptr && (session_future_version_pending_ ||
                                          session_autosave_->notice() == SessionAutosaveNotice::FutureVersionBlocked)) {
         attempted = true;
         if (!session_autosave_->dirty())
             session_autosave_->scheduleRepair();
-        if (session_autosave_->confirmFutureVersionReplacement())
+        if (session_autosave_->confirmFutureVersionReplacement()) {
             session_future_version_pending_ = false;
-        else
+            session_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
+        } else {
             succeeded = false;
+        }
     }
+    projectPersistenceWarning();
     if (!attempted || !succeeded)
         return false;
-    preference_warning_ = PreferenceWarning::NoPreferenceWarning;
-    emit preferencePersistenceChanged();
     reconcileTimer();
     return true;
 }
