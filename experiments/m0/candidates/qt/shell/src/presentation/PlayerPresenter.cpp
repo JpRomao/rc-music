@@ -639,7 +639,7 @@ void PlayerPresenter::discardStaleRestoredSessionState() {
 
 void PlayerPresenter::cancelRestoredPositionForExplicitTransport() {
     discardStaleRestoredSessionState();
-    if (!restored_position_.has_value())
+    if (!restored_position_.has_value() && !restored_eof_generation_.has_value())
         return;
     restored_position_.reset();
     restored_eof_generation_.reset();
@@ -1424,7 +1424,7 @@ bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
 
     const auto current = local_queue_.currentIndex();
     if (current == target) {
-        switch (controller_.confirmedSnapshot().status) {
+        switch (controller_.effectivePlaybackStatus()) {
         case PlaybackStatus::Loading: {
             if (!local_track_session_->promotePendingStartToAutoplay())
                 return false;
@@ -1497,7 +1497,7 @@ bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
 
         if (next_index.has_value()) {
             auto start_intent = local_track_session_->startIntent();
-            switch (controller_.confirmedSnapshot().status) {
+            switch (controller_.effectivePlaybackStatus()) {
             case PlaybackStatus::Playing:
                 start_intent = LocalTrackStartIntent::Autoplay;
                 break;
@@ -2070,6 +2070,40 @@ void PlayerPresenter::refreshPlatformAvailability() {
     tray_available_ = available;
     emit platformChanged();
 }
+bool PlayerPresenter::play() {
+    if (exiting_)
+        return false;
+    const PlaybackSnapshot before = controller_.confirmedSnapshot();
+    if (uses_frozen_fixture_ && before.duration_ms > 0 && before.position_ms >= before.duration_ms)
+        return false;
+    if (!controller_.play())
+        return false;
+    if (uses_frozen_fixture_)
+        controller_.applyBackendSnapshot(backend_.snapshot());
+    cancelRestoredPositionForExplicitTransport();
+    const bool changed = before != controller_.confirmedSnapshot();
+    if (changed) {
+        reconcileTimer();
+        emit playbackChanged();
+    }
+    return uses_frozen_fixture_ ? changed : true;
+}
+bool PlayerPresenter::pause() {
+    if (exiting_)
+        return false;
+    const PlaybackSnapshot before = controller_.confirmedSnapshot();
+    if (!controller_.pause())
+        return false;
+    if (uses_frozen_fixture_)
+        controller_.applyBackendSnapshot(backend_.snapshot());
+    cancelRestoredPositionForExplicitTransport();
+    const bool changed = before != controller_.confirmedSnapshot();
+    if (changed) {
+        reconcileTimer();
+        emit playbackChanged();
+    }
+    return uses_frozen_fixture_ ? changed : true;
+}
 bool PlayerPresenter::togglePlayback() {
     if (exiting_)
         return false;
@@ -2079,7 +2113,8 @@ bool PlayerPresenter::togglePlayback() {
         return false;
     if (!controller_.togglePlayback())
         return false;
-    controller_.applyBackendSnapshot(backend_.snapshot());
+    if (uses_frozen_fixture_)
+        controller_.applyBackendSnapshot(backend_.snapshot());
     cancelRestoredPositionForExplicitTransport();
     const bool changed = before != controller_.confirmedSnapshot();
     if (changed) {
@@ -2152,11 +2187,11 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
         const bool recovering_terminal_source =
             controller_.confirmedSnapshot().status == PlaybackStatus::Error &&
             !navigation_items_[static_cast<std::size_t>(currentQueueIndex())].available;
-        const auto start_intent = recovering_terminal_source
-                                      ? local_recovery_intent_.value_or(local_track_session_->startIntent())
-                                      : (controller_.confirmedSnapshot().status == PlaybackStatus::Playing
-                                             ? LocalTrackStartIntent::Autoplay
-                                             : LocalTrackStartIntent::StayReady);
+        const auto start_intent =
+            recovering_terminal_source
+                ? local_recovery_intent_.value_or(local_track_session_->startIntent())
+                : (controller_.effectivePlaybackStatus() == PlaybackStatus::Playing ? LocalTrackStartIntent::Autoplay
+                                                                                    : LocalTrackStartIntent::StayReady);
         if (!loadLocalOccurrence(*target, start_intent)) {
             return false;
         }
@@ -2171,7 +2206,7 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
     const QueueItem& track = bundle_.queue.at(static_cast<qsizetype>(*target));
     auto* const fixture_backend = fixtureBackend();
     if (fixture_backend == nullptr || !track.duration_ms.has_value() ||
-        !fixture_backend->selectTrack(*track.duration_ms, controller_.confirmedSnapshot().status))
+        !fixture_backend->selectTrack(*track.duration_ms, controller_.effectivePlaybackStatus()))
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("playing"));

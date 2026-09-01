@@ -225,20 +225,160 @@ TEST_CASE("window placement setter accepts only a positive normal geometry",
 }
 
 TEST_CASE("toggle playback maps active states to exactly one backend command", "[m0][qt][core][transport]") {
+    const auto initial_status = GENERATE(PlaybackStatus::Ready, PlaybackStatus::Paused, PlaybackStatus::Playing);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, {initial_status, 84'000, 248'000, true}};
+
+    CHECK(controller.togglePlayback());
+    CHECK(backend.play_requests == (initial_status == PlaybackStatus::Playing ? 0 : 1));
+    CHECK(backend.pause_requests == (initial_status == PlaybackStatus::Playing ? 1 : 0));
+}
+
+TEST_CASE("explicit play is inert while playing and issues one backend command from a playable stopped state",
+          "[m0][qt][core][transport][media-control]") {
+    const auto initial_status = GENERATE(PlaybackStatus::Ready, PlaybackStatus::Paused);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, {initial_status, 84'000, 248'000, true}};
+
+    REQUIRE(controller.play());
+    CHECK(backend.play_requests == 1);
+    CHECK(backend.pause_requests == 0);
+
+    controller.applyBackendSnapshot({PlaybackStatus::Playing, 84'000, 248'000, true});
+    CHECK_FALSE(controller.play());
+    CHECK(backend.play_requests == 1);
+    CHECK(backend.pause_requests == 0);
+}
+
+TEST_CASE("explicit pause is inert while ready or paused and issues one backend command only while playing",
+          "[m0][qt][core][transport][media-control]") {
+    const auto stopped_status = GENERATE(PlaybackStatus::Ready, PlaybackStatus::Paused);
     RecordingPlaybackBackend backend;
     RecordingPlatformIntegration platform{true};
     PlayerController controller{backend, platform, playingSnapshot()};
 
-    CHECK(controller.togglePlayback());
+    REQUIRE(controller.pause());
     CHECK(backend.pause_requests == 1);
     CHECK(backend.play_requests == 0);
 
-    controller.applyBackendSnapshot({PlaybackStatus::Paused, 84'000, 248'000, true});
-    CHECK(controller.togglePlayback());
-    CHECK(backend.play_requests == 1);
+    controller.applyBackendSnapshot({stopped_status, 84'000, 248'000, true});
+    CHECK_FALSE(controller.pause());
+    CHECK(backend.pause_requests == 1);
+    CHECK(backend.play_requests == 0);
+}
 
-    controller.applyBackendSnapshot({PlaybackStatus::Ready, 84'000, 248'000, true});
-    CHECK(controller.togglePlayback());
+TEST_CASE("accepted explicit transport is idempotent while its matching acknowledgement is pending",
+          "[m0][qt][core][transport][media-control][async]") {
+    SECTION("play") {
+        RecordingPlaybackBackend backend;
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform, {PlaybackStatus::Paused, 84'000, 248'000, true, 7}};
+
+        REQUIRE(controller.play());
+        CHECK_FALSE(controller.play());
+        CHECK(backend.play_requests == 1);
+
+        controller.applyBackendSnapshot({PlaybackStatus::Playing, 84'000, 248'000, true, 7});
+        CHECK_FALSE(controller.play());
+        CHECK(backend.play_requests == 1);
+    }
+
+    SECTION("pause") {
+        RecordingPlaybackBackend backend;
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform, {PlaybackStatus::Playing, 84'000, 248'000, true, 7}};
+
+        REQUIRE(controller.pause());
+        CHECK_FALSE(controller.pause());
+        CHECK(backend.pause_requests == 1);
+
+        controller.applyBackendSnapshot({PlaybackStatus::Paused, 84'000, 248'000, true, 7});
+        CHECK_FALSE(controller.pause());
+        CHECK(backend.pause_requests == 1);
+    }
+}
+
+TEST_CASE("the latest explicit transport intent supports reversal and survives an obsolete acknowledgement",
+          "[m0][qt][core][transport][media-control][async]") {
+    SECTION("play then pause before the play acknowledgement") {
+        RecordingPlaybackBackend backend;
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform, {PlaybackStatus::Paused, 84'000, 248'000, true, 11}};
+
+        REQUIRE(controller.play());
+        REQUIRE(controller.pause());
+        CHECK(backend.play_requests == 1);
+        CHECK(backend.pause_requests == 0);
+
+        controller.applyBackendSnapshot({PlaybackStatus::Playing, 84'000, 248'000, true, 11});
+        CHECK(backend.pause_requests == 1);
+        CHECK_FALSE(controller.pause());
+        CHECK(backend.pause_requests == 1);
+        controller.applyBackendSnapshot({PlaybackStatus::Paused, 84'000, 248'000, true, 11});
+        CHECK_FALSE(controller.pause());
+    }
+
+    SECTION("pause then play before the pause acknowledgement") {
+        RecordingPlaybackBackend backend;
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform, {PlaybackStatus::Playing, 84'000, 248'000, true, 13}};
+
+        REQUIRE(controller.pause());
+        REQUIRE(controller.play());
+        CHECK(backend.pause_requests == 1);
+        CHECK(backend.play_requests == 0);
+
+        controller.applyBackendSnapshot({PlaybackStatus::Paused, 84'000, 248'000, true, 13});
+        CHECK(backend.play_requests == 1);
+        CHECK_FALSE(controller.play());
+        CHECK(backend.play_requests == 1);
+        controller.applyBackendSnapshot({PlaybackStatus::Playing, 84'000, 248'000, true, 13});
+        CHECK_FALSE(controller.play());
+    }
+}
+
+TEST_CASE("a terminal backend snapshot clears an unacknowledged transport intent",
+          "[m0][qt][core][transport][media-control][async]") {
+    const auto terminal_status = GENERATE(PlaybackStatus::Empty, PlaybackStatus::Loading, PlaybackStatus::Error);
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, {PlaybackStatus::Paused, 84'000, 248'000, true, 17}};
+
+    REQUIRE(controller.play());
+    controller.applyBackendSnapshot({terminal_status, 0, 248'000, false, 17});
+    controller.applyBackendSnapshot({PlaybackStatus::Paused, 0, 248'000, true, 17});
+
+    REQUIRE(controller.play());
+    CHECK(backend.play_requests == 2);
+}
+
+TEST_CASE("an obsolete ready snapshot does not discard a newer reversed transport intent",
+          "[m0][qt][core][transport][media-control][async]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, {PlaybackStatus::Paused, 84'000, 248'000, true, 23}};
+
+    REQUIRE(controller.play());
+    REQUIRE(controller.pause());
+    controller.applyBackendSnapshot({PlaybackStatus::Ready, 84'000, 248'000, true, 23});
+    CHECK(backend.pause_requests == 0);
+
+    controller.applyBackendSnapshot({PlaybackStatus::Playing, 84'000, 248'000, true, 23});
+    CHECK(backend.pause_requests == 1);
+}
+
+TEST_CASE("a paused end-of-file snapshot clears an unacknowledged transport intent",
+          "[m0][qt][core][transport][media-control][async]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, {PlaybackStatus::Paused, 50'000, 60'000, true, 19}};
+
+    REQUIRE(controller.play());
+    controller.applyBackendSnapshot({PlaybackStatus::Paused, 60'000, 60'000, true, 19});
+
+    REQUIRE(controller.play());
     CHECK(backend.play_requests == 2);
 }
 

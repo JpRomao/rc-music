@@ -44,7 +44,13 @@ M4.4 está funcional no recorte local automatizável do candidato Qt/Windows. De
 
 Na saída real, ingressos já ACKados são drenados e preferências/sessão precisam concluir antes de `PlaybackBackend::shutdown()`; somente depois a integração de plataforma encerra o aplicativo. O caminho é idempotente e chama cada etapa uma vez. Falha ou timeout de persistência cancela a intenção, restaura a janela e não desliga o backend. Os Reds novos cobriram policy de startup, ownership da ocultação, alternância da preferência, precedência de fontes e ordem de shutdown; os Greens focados antecederam a consolidação. O CTest Release combinado permaneceu em 229/229 e o core Qt OFF passou 183/183; `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 122 C++/46 QML, com `qmlformat` conferido pela saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, expôs zero testes e recusou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas; nenhum benchmark foi executado.
 
-M4.4 permanece aberta globalmente: pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE` continuam pendentes. O próximo desenvolvimento funcional é M4.5, com SMTC/teclas de mídia no Windows e MPRIS no Linux depois da paridade Windows correspondente.
+M4.4 permanece aberta globalmente: pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE` continuam pendentes.
+
+M4.5 está funcional localmente no candidato Qt/Windows. A porta C++ pura `SystemMediaControls` publica título, artista, álbum, estado, capacidades, posição e duração e recebe Play, Pause, Previous, Next e Seek. O binding projeta o estado do presenter, deduplica snapshots, desabilita seek durante preview ou confirmação pendente e encaminha comandos aos mesmos casos de uso usados pela UI, pelos atalhos locais e pela tray. O controller preserva a intenção explícita mais recente separada do comando em voo, de modo que confirmações obsoletas geram a compensação correta sem duplicar comandos.
+
+O adapter Windows usa C++/WinRT e `ISystemMediaTransportControlsInterop::GetForWindow` sobre o `HWND` real. Ele publica status, metadata, botões e timeline, desabilita operações não suportadas, entrega callbacks na thread da UI, falha fechado e trata destruição/recriação da surface com rebind e republicação. `Closed` limpa metadata e desabilita os controles; shutdown revoga handlers e torna callbacks tardios inertes. O smoke nativo com QPA Windows comprovou `HWND` e SMTC reais, estado inicialmente desabilitado, status `Playing`, botões, título/artista/álbum e limpeza em `Closed`.
+
+O fechamento automatizado passou 239/239 no CTest Release combinado e 190/190 no core Qt OFF. Os alvos `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes; `m0_qt_shell_ui_qmllint` passou, e `clang-format` validou 131 arquivos C++. Nenhum QML mudou. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada. Nenhum benchmark foi executado. Essa evidência não sintetiza teclas físicas nem substitui pacote/E2E; M4.5 permanece aberta por teclas de mídia físicas, pacote, MPRIS/Linux e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE`. O próximo desenvolvimento funcional é M4.6, começando pela página oficial de Aplicativos Padrão sem escrever em `UserChoice`.
 
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
@@ -172,8 +178,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. manter M4.1–M4.4 formalmente abertos até as jornadas empacotadas/nativas correspondentes, sem apagar a evidência funcional local já verde;
-2. avançar pelo desenvolvimento funcional Windows de M4.5: SMTC e teclas de mídia; depois seguir por associações e recuperação, mantendo cada fechamento pequeno e verificável;
+1. manter M4.1–M4.5 formalmente abertos até as jornadas empacotadas/nativas correspondentes, sem apagar a evidência funcional local já verde;
+2. avançar pelo desenvolvimento funcional Windows de M4.6: página oficial de Aplicativos Padrão e infraestrutura de associações sem `UserChoice`; depois seguir por recuperação em M4.7, mantendo cada fechamento pequeno e verificável;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

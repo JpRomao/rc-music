@@ -451,6 +451,9 @@ class PlayerPresenterTests final : public QObject {
     void loadsFrozenQueueOnceWithoutReplacingTheModel();
     void derivesBackendSnapshotFromTheTypedPlayingState();
     void rejectsUnknownMappingsAndExposesNoInfrastructureApi();
+    void explicitPlayPauseShareIdempotentTransportSemantics();
+    void asynchronousExplicitTransportUsesTheLatestUnacknowledgedIntent();
+    void navigationUsesTheLatestTransportIntentBeforeAcknowledgement();
     void drivesTransportPreferencesAndManualTicksDeterministically();
     void keepsUnavailableAndTerminalTransportInert();
     void schedulesTicksOnlyWhilePlaybackOrSeekNeedsThem();
@@ -473,6 +476,7 @@ class PlayerPresenterTests final : public QObject {
     void explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation_data();
     void explicitTransportCancelsRestoreAfterReadyBeforeSeekConfirmation();
     void restoredEndOfFileRemainsPausedWhenEndedArrives();
+    void explicitPlayAfterRestoredEndOfFileAllowsANewEndedEventToAdvance();
     void restoreDisabledIgnoresAProvidedPersistedSession();
     void reenablingRestoreForcesTheCurrentSessionToReplaceStaleDiskState();
     void exitWaitsForBothPreferenceAndSessionPersistence();
@@ -2996,9 +3000,10 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
     const QMetaObject* meta = presenter.metaObject();
     QVERIFY(meta->indexOfMethod("openAudio()") >= 0);
     QVERIFY(meta->indexOfMethod("loadFrozenQueue()") >= 0);
-    for (const char* method : {"togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
-                               "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)",
-                               "toggleMute()", "skipUnavailable()", "previousTrack()", "nextTrack()"})
+    for (const char* method :
+         {"play()", "pause()", "togglePlayback()", "skipBackward()", "skipForward()", "beginSeekPreview(qlonglong)",
+          "updateSeekPreview(qlonglong)", "commitSeekPreview()", "setVolume(double)", "toggleMute()",
+          "skipUnavailable()", "previousTrack()", "nextTrack()"})
         QVERIFY(meta->indexOfMethod(method) >= 0);
     const int queue_model_property = meta->indexOfProperty("queueModel");
     QVERIFY(queue_model_property >= 0);
@@ -3037,6 +3042,126 @@ void PlayerPresenterTests::rejectsUnknownMappingsAndExposesNoInfrastructureApi()
                                "loadFrozenUnavailableScenario()", "applyBackendSnapshot()"})
         QCOMPARE(meta->indexOfMethod(method), -1);
     QCOMPARE(presenter.findChildren<QTimer*>().size(), 1);
+}
+
+void PlayerPresenterTests::explicitPlayPauseShareIdempotentTransportSemantics() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QVERIFY(presenter.loadFrozenQueue());
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    QVERIFY(!presenter.play());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(playback.size(), 0);
+
+    QVERIFY(presenter.pause());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(playback.size(), 1);
+    QVERIFY(!presenter.pause());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(playback.size(), 1);
+
+    QVERIFY(presenter.play());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(playback.size(), 2);
+    QVERIFY(!presenter.play());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(playback.size(), 2);
+}
+
+void PlayerPresenterTests::asynchronousExplicitTransportUsesTheLatestUnacknowledgedIntent() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source{LR"(C:\audio\transport-intent.wav)"};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector<std::filesystem::path>{source}; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 1'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    backend.play_calls = 0;
+    backend.pause_calls = 0;
+
+    QVERIFY(presenter.play());
+    QVERIFY(!presenter.play());
+    QCOMPARE(backend.play_calls, 1);
+    QVERIFY(presenter.pause());
+    QCOMPARE(backend.pause_calls, 0);
+
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 1'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(backend.pause_calls, 1);
+    QVERIFY(!presenter.pause());
+    QCOMPARE(backend.pause_calls, 1);
+
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 1'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter.play());
+    QCOMPARE(backend.play_calls, 2);
+    QVERIFY(!presenter.play());
+}
+
+void PlayerPresenterTests::navigationUsesTheLatestTransportIntentBeforeAcknowledgement() {
+    const std::vector<std::filesystem::path> selections{localTestPath(u8"Primeira.mp3"),
+                                                        localTestPath(u8"Segunda.m4a")};
+
+    {
+        AvailableTrayPlatform platform;
+        PresenterPlaybackBackend backend;
+        PresenterMetadataReader metadata;
+        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+        QVERIFY(presenter.openAudio());
+        backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+        QTRY_COMPARE(backend.play_calls, 1);
+        backend.publish({.status = PlaybackStatus::Playing,
+                         .position_ms = 1'000,
+                         .duration_ms = 60'000,
+                         .seekable = true,
+                         .generation = 1});
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+        QVERIFY(presenter.pause());
+        QCOMPARE(backend.pause_calls, 1);
+        QVERIFY(presenter.nextTrack());
+        backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 2});
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
+        QCOMPARE(backend.play_calls, 1);
+    }
+
+    {
+        AvailableTrayPlatform platform;
+        PresenterPlaybackBackend backend;
+        PresenterMetadataReader metadata;
+        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+        QVERIFY(presenter.openAudio());
+        backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
+        QTRY_COMPARE(backend.play_calls, 1);
+        backend.publish({.status = PlaybackStatus::Paused,
+                         .position_ms = 1'000,
+                         .duration_ms = 60'000,
+                         .seekable = true,
+                         .generation = 1});
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+
+        QVERIFY(presenter.play());
+        QCOMPARE(backend.play_calls, 2);
+        QVERIFY(presenter.nextTrack());
+        backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 2});
+        QTRY_COMPARE(backend.play_calls, 3);
+    }
 }
 
 void PlayerPresenterTests::drivesTransportPreferencesAndManualTicksDeterministically() {
@@ -4000,6 +4125,60 @@ void PlayerPresenterTests::restoredEndOfFileRemainsPausedWhenEndedArrives() {
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
     QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
     QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::explicitPlayAfterRestoredEndOfFileAllowsANewEndedEventToAdvance() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    Preferences preferences{};
+    preferences.restore_last_session = true;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionSnapshot persisted = persistedSessionSnapshot();
+    persisted.queue.current_occurrence_id = LocalQueueOccurrenceId{41};
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = persisted,
+                        .load_status = SessionLoadStatus::Loaded,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 42'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{42'000});
+    const PlaybackSnapshot end_of_file{.status = PlaybackStatus::Paused,
+                                       .position_ms = 42'000,
+                                       .duration_ms = 42'000,
+                                       .seekable = true,
+                                       .generation = 1};
+    backend.publish(end_of_file);
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+
+    QVERIFY(presenter.play());
+    QCOMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 42'000,
+                     .duration_ms = 42'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    backend.publishEvent(PlaybackEventType::Ended, end_of_file);
+
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-42"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{2});
 }
 
 void PlayerPresenterTests::restoreDisabledIgnoresAProvidedPersistedSession() {
@@ -5050,6 +5229,8 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "removeQueueOccurrence",
                                     "clearQueue",
                                     "loadFrozenQueue",
+                                    "play",
+                                    "pause",
                                     "togglePlayback",
                                     "skipBackward",
                                     "skipForward",

@@ -5,6 +5,7 @@
 #include "m0/ports/PlaybackBackend.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace music_player::m0 {
 
@@ -17,10 +18,13 @@ class PlayerController final {
 
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] const PlaybackSnapshot& confirmedSnapshot() const noexcept;
+    [[nodiscard]] PlaybackStatus effectivePlaybackStatus() const noexcept;
     [[nodiscard]] std::int64_t displayedPositionMs() const noexcept;
     [[nodiscard]] bool seekPreviewActive() const noexcept;
     [[nodiscard]] bool seekPending() const noexcept;
 
+    [[nodiscard]] bool play();
+    [[nodiscard]] bool pause();
     [[nodiscard]] bool togglePlayback();
     [[nodiscard]] bool skipBackward();
     [[nodiscard]] bool skipForward();
@@ -48,6 +52,9 @@ class PlayerController final {
     void requestRestore();
 
   private:
+    [[nodiscard]] bool requestTransport(PlaybackStatus target);
+    [[nodiscard]] bool issueTransportCommand(PlaybackStatus target);
+
     PlaybackBackend& playback_backend_;
     PlatformIntegration& platform_;
     Preferences preferences_{};
@@ -57,6 +64,8 @@ class PlayerController final {
     double last_nonzero_volume_{Preferences{}.volume};
     bool seek_preview_active_{false};
     bool seek_pending_{false};
+    std::optional<PlaybackStatus> desired_transport_status_{};
+    std::optional<PlaybackStatus> in_flight_transport_status_{};
     bool exit_requested_{false};
 };
 

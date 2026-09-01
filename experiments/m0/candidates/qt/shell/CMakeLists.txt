@@ -127,6 +127,24 @@ if(M0_QT_SHELL_SUPPORT)
         target_compile_options(m0_qt_shell_platform PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    if(WIN32)
+        add_library(m0_qt_windows_smtc STATIC
+            include/m0/ports/SystemMediaControls.hpp
+            src/adapters/WindowsSmtcAdapter.hpp
+            src/adapters/WindowsSmtcAdapter.cpp
+            src/adapters/WinRtSmtcNativeBoundary.cpp
+        )
+        target_include_directories(m0_qt_windows_smtc PUBLIC include src)
+        target_link_libraries(m0_qt_windows_smtc PUBLIC Qt6::Core Qt6::Gui PRIVATE windowsapp)
+        target_compile_features(m0_qt_windows_smtc PUBLIC cxx_std_20)
+        set_target_properties(m0_qt_windows_smtc PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_windows_smtc PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_windows_smtc PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+    endif()
+
     add_library(m0_qt_system_appearance STATIC
         src/adapters/QtSystemAppearance.hpp
         src/adapters/QtSystemAppearance.cpp
@@ -244,6 +262,8 @@ if(M0_QT_SHELL_SUPPORT)
             src/presentation/PlayerPresenter.hpp
             src/presentation/PlayerPresenter.cpp
             src/presentation/PlayerPresenterScenarioControl.hpp
+            src/presentation/SystemMediaControlsBinding.hpp
+            src/presentation/SystemMediaControlsBinding.cpp
             src/presentation/LifecycleText.hpp
         QML_FILES
             qml/Main.qml
@@ -353,6 +373,9 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::Svg
         Qt6::Widgets
     )
+    if(WIN32)
+        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_smtc)
+    endif()
     target_include_directories(m0_qt_shell PRIVATE src)
     target_compile_features(m0_qt_shell PRIVATE cxx_std_20)
     if(MSVC)
@@ -373,6 +396,35 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_platform_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-platform COMMAND m0_qt_shell_platform_tests)
+        if(WIN32)
+            add_executable(m0_qt_windows_smtc_tests tests/qtest/WindowsSmtcAdapterTests.cpp)
+            target_link_libraries(m0_qt_windows_smtc_tests PRIVATE m0_qt_windows_smtc Qt6::Test)
+            target_compile_features(m0_qt_windows_smtc_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_windows_smtc_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_smtc_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_windows_smtc_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+            endif()
+            add_test(NAME m0.qt.windows.smtc COMMAND m0_qt_windows_smtc_tests)
+
+            add_executable(m0_qt_windows_smtc_native_tests
+                tests/qtest/WindowsSmtcNativeSmokeTests.cpp
+            )
+            target_link_libraries(m0_qt_windows_smtc_native_tests PRIVATE
+                m0_qt_windows_smtc Qt6::Test windowsapp
+            )
+            target_compile_features(m0_qt_windows_smtc_native_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_windows_smtc_native_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_smtc_native_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_windows_smtc_native_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_test(NAME m0.qt.windows.smtc-native COMMAND m0_qt_windows_smtc_native_tests)
+        endif()
         add_executable(m0_qt_shell_platform_binding_tests tests/qtest/ShellPlatformBindingTests.cpp)
         target_link_libraries(m0_qt_shell_platform_binding_tests PRIVATE
             m0_qt_shell_platform m0_qt_shell_support m0_qt_shell_ui Qt6::Test Qt6::Widgets)
@@ -389,6 +441,27 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_platform_binding_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-platform-binding COMMAND m0_qt_shell_platform_binding_tests)
+        add_executable(m0_qt_system_media_controls_binding_tests
+            tests/qtest/SystemMediaControlsBindingTests.cpp
+        )
+        target_link_libraries(m0_qt_system_media_controls_binding_tests PRIVATE
+            m0_qt_shell_support m0_qt_shell_ui Qt6::Test
+        )
+        target_include_directories(m0_qt_system_media_controls_binding_tests PRIVATE src)
+        target_compile_features(m0_qt_system_media_controls_binding_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_qt_system_media_controls_binding_tests PRIVATE
+            M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
+            M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
+        )
+        set_target_properties(m0_qt_system_media_controls_binding_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_system_media_controls_binding_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_system_media_controls_binding_tests PRIVATE
+                -Wall -Wextra -Wpedantic -Werror
+            )
+        endif()
+        add_test(NAME m0.qt.system-media-controls.binding COMMAND m0_qt_system_media_controls_binding_tests)
         add_executable(m0_qt_system_appearance_tests tests/qtest/QtSystemAppearanceTests.cpp)
         target_link_libraries(m0_qt_system_appearance_tests PRIVATE m0_qt_system_appearance Qt6::Test)
         target_compile_features(m0_qt_system_appearance_tests PRIVATE cxx_std_20)
@@ -691,6 +764,20 @@ if(M0_QT_SHELL_SUPPORT)
             list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
         endif()
         if(WIN32)
+            set_tests_properties(m0.qt.windows.smtc PROPERTIES
+                LABELS "m0;qt;windows;smtc;media-keys;FR-037"
+                TIMEOUT 15
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT "${m0_qt_quick_test_environment}"
+            )
+            set_tests_properties(m0.qt.windows.smtc-native PROPERTIES
+                LABELS "m0;qt;windows;smtc;native;FR-037"
+                TIMEOUT 15
+                RUN_SERIAL TRUE
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT
+                    "QT_QPA_PLATFORM=windows;QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+            )
             set_tests_properties(m0.qt.preferences.restart PROPERTIES
                 LABELS "m0;qt;preferences;restart;shell-executable"
                 TIMEOUT 40
@@ -713,6 +800,12 @@ if(M0_QT_SHELL_SUPPORT)
         set_tests_properties(m0.qt.shell-platform-binding PROPERTIES
             LABELS "m0;qt;shell-platform;tray;lifecycle"
             TIMEOUT 10
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        set_tests_properties(m0.qt.system-media-controls.binding PROPERTIES
+            LABELS "m0;qt;system-media-controls;binding;FR-037"
+            TIMEOUT 15
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )

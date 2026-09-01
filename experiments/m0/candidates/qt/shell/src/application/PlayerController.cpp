@@ -62,13 +62,54 @@ bool PlayerController::seekPreviewActive() const noexcept { return seek_preview_
 
 bool PlayerController::seekPending() const noexcept { return seek_pending_; }
 
+PlaybackStatus PlayerController::effectivePlaybackStatus() const noexcept {
+    return desired_transport_status_.value_or(confirmed_snapshot_.status);
+}
+
+bool PlayerController::requestTransport(const PlaybackStatus target) {
+    const PlaybackStatus status = effectivePlaybackStatus();
+    const bool valid_transition =
+        (target == PlaybackStatus::Playing && (status == PlaybackStatus::Ready || status == PlaybackStatus::Paused)) ||
+        (target == PlaybackStatus::Paused && status == PlaybackStatus::Playing);
+    if (!valid_transition) {
+        return false;
+    }
+
+    desired_transport_status_ = target;
+    if (in_flight_transport_status_.has_value())
+        return true;
+    return issueTransportCommand(target);
+}
+
+bool PlayerController::issueTransportCommand(const PlaybackStatus target) {
+    in_flight_transport_status_ = target;
+    PlaybackCommandResult result{PlaybackCommandResult::InvalidArgument};
+    if (target == PlaybackStatus::Playing) {
+        result = playback_backend_.play();
+    } else if (target == PlaybackStatus::Paused) {
+        result = playback_backend_.pause();
+    }
+    if (result == PlaybackCommandResult::Accepted)
+        return true;
+
+    if (in_flight_transport_status_ == std::optional{target})
+        in_flight_transport_status_.reset();
+    if (desired_transport_status_ == std::optional{target})
+        desired_transport_status_.reset();
+    return false;
+}
+
+bool PlayerController::play() { return requestTransport(PlaybackStatus::Playing); }
+
+bool PlayerController::pause() { return requestTransport(PlaybackStatus::Paused); }
+
 bool PlayerController::togglePlayback() {
-    switch (confirmed_snapshot_.status) {
+    switch (effectivePlaybackStatus()) {
     case PlaybackStatus::Playing:
-        return playback_backend_.pause() == PlaybackCommandResult::Accepted;
+        return pause();
     case PlaybackStatus::Ready:
     case PlaybackStatus::Paused:
-        return playback_backend_.play() == PlaybackCommandResult::Accepted;
+        return play();
     case PlaybackStatus::Empty:
     case PlaybackStatus::Loading:
     case PlaybackStatus::Error:
@@ -163,6 +204,24 @@ void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
     const bool generation_changed = snapshot.generation != confirmed_snapshot_.generation;
     snapshot = normalizedSnapshot(snapshot);
     confirmed_snapshot_ = snapshot;
+    const bool reached_end = snapshot.status == PlaybackStatus::Paused && snapshot.duration_ms > 0 &&
+                             snapshot.position_ms == snapshot.duration_ms;
+    std::optional<PlaybackStatus> compensating_transport_command;
+
+    if (generation_changed || !supportsTransport(snapshot.status) || reached_end) {
+        desired_transport_status_.reset();
+        in_flight_transport_status_.reset();
+    } else {
+        if (in_flight_transport_status_ == std::optional{snapshot.status})
+            in_flight_transport_status_.reset();
+        if (!in_flight_transport_status_.has_value() && desired_transport_status_.has_value()) {
+            if (desired_transport_status_ == std::optional{snapshot.status}) {
+                desired_transport_status_.reset();
+            } else {
+                compensating_transport_command = desired_transport_status_;
+            }
+        }
+    }
 
     if (generation_changed) {
         seek_pending_ = false;
@@ -174,20 +233,17 @@ void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
         seek_pending_ = false;
         seek_preview_active_ = false;
         displayed_position_ms_ = snapshot.position_ms;
-        return;
+    } else {
+        if (seek_pending_ && snapshot.position_ms == preview_position_ms_) {
+            seek_pending_ = false;
+            seek_preview_active_ = false;
+        }
+
+        displayed_position_ms_ = seek_preview_active_ ? preview_position_ms_ : snapshot.position_ms;
     }
 
-    if (seek_pending_ && snapshot.position_ms == preview_position_ms_) {
-        seek_pending_ = false;
-        seek_preview_active_ = false;
-    }
-
-    if (seek_preview_active_) {
-        displayed_position_ms_ = preview_position_ms_;
-        return;
-    }
-
-    displayed_position_ms_ = snapshot.position_ms;
+    if (compensating_transport_command.has_value())
+        static_cast<void>(issueTransportCommand(*compensating_transport_command));
 }
 
 void PlayerController::setTheme(const ThemeMode theme) { preferences_.theme = theme; }

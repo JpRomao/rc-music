@@ -335,6 +335,8 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool clearQueue();
     Q_INVOKABLE bool loadFrozenQueue();
+    Q_INVOKABLE bool play();
+    Q_INVOKABLE bool pause();
     Q_INVOKABLE bool togglePlayback();
     Q_INVOKABLE bool skipBackward();
     Q_INVOKABLE bool skipForward();

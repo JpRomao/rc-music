@@ -251,10 +251,16 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 ### `PlatformIntegration`
 
 - tray e visibilidade da janela;
-- controles/metadata SMTC ou MPRIS;
 - abrir página de apps padrão;
 - capacidades disponíveis;
 - eventos de suspensão, retomada e shutdown.
+
+### `SystemMediaControls`
+
+- publicar título, artista, álbum, estado, capacidades, posição e duração;
+- receber comandos distintos de play, pause, anterior, próxima e seek;
+- entregar callbacks na thread de aplicação/UI que instalou o handler;
+- expor disponibilidade e shutdown idempotente, falhando fechado quando a integração nativa desaparece.
 
 ### `MediaSourceResolver`
 
@@ -275,7 +281,7 @@ QueueAdd, QueueMove, QueueRemove, QueueClear,
 UpdatePreferences, ShowWindow, Exit
 ```
 
-Os mesmos comandos são usados por UI, tray, atalhos, SMTC/MPRIS e segunda instância. Isso impede regras divergentes.
+Os mesmos comandos são usados por UI, tray, atalhos, SMTC/MPRIS e segunda instância. Isso impede regras divergentes. Play e Pause permanecem comandos distintos nas fronteiras externas: eventos declarativos do sistema operacional não são convertidos em toggle.
 
 Eventos para a UI são snapshots ou notificações semânticas:
 
@@ -509,6 +515,16 @@ A saída do presenter permanece transacional também em relação ao áudio. Nov
 Os Reds do recorte exigiram a nova policy de disposição, ownership explícito da ocultação, toggle recuperável, precedência de fonte e a ordem shutdown → saída; os Greens focados antecederam a consolidação. O CTest Release combinado passou 229/229 e o core Qt OFF 183/183; `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 122 C++/46 QML, com `qmlformat` validado por comparação da saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas; nenhum benchmark foi executado.
 
 Essa evidência não encerra M4.4. Pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE` permanecem abertos.
+
+No recorte funcional local de M4.5, `SystemMediaControlsBinding` projeta o estado do presenter na porta separada `SystemMediaControls`: título, artista, álbum, status, capacidades, posição confirmada e duração. Snapshots iguais não são republicados; seek permanece desabilitado durante preview ou enquanto aguarda confirmação. Play, Pause, Previous, Next e Seek retornam aos mesmos casos de uso do presenter usados por UI, atalhos locais e tray. Descarregar, entrar em erro ou sair publica `Closed`; no teardown, o binding remove o handler e encerra a porta.
+
+O transporte distingue a intenção explícita desejada do comando ainda em voo. Repetir a mesma intenção é inerte; uma intenção oposta antes do ACK é preservada e emitida somente após a confirmação obsoleta, sem duplicação. Navegação usa esse estado efetivo, e troca de geração, estado terminal ou EOF confirmado encerram a intenção pendente. Assim, eventos Play/Pause declarativos do sistema não herdam a ambiguidade de um toggle nem perdem a solicitação mais recente por atraso do backend.
+
+No Windows, `WindowsSmtcAdapter` obtém os controles da janela pelo HWND real com C++/WinRT e `ISystemMediaTransportControlsInterop::GetForWindow`. A boundary publica status, metadata, botões e timeline, desabilita explicitamente operações não suportadas, entrega callbacks na thread da UI e degrada para indisponível sem deixar exceções atravessarem a fronteira. Destruição da `QPlatformSurface` libera o binding nativo; recriação válida faz rebind e republica o snapshot mais recente, enquanto geração e presença da surface impedem um rebind enfileirado obsoleto. `Closed` limpa o `DisplayUpdater` e desabilita os controles; shutdown revoga handlers e torna callbacks tardios inertes.
+
+Os três alvos focados `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes. O smoke nativo, sob QPA Windows, consultou externamente os controles do HWND e comprovou estado inicialmente desabilitado, status Playing, flags de transporte, título/artista/álbum e limpeza em `Closed`. A consolidação Release passou 239/239 no CTest combinado e 190/190 no core Qt OFF. `m0_qt_shell_ui_qmllint` ficou verde; nenhum QML mudou. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1. Nenhum benchmark foi executado.
+
+Essa evidência não sintetiza uma tecla de mídia física, não percorre a jornada empacotada e não implementa MPRIS no Linux. Portanto M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos globalmente.
 
 ## 15. Segurança e privacidade
 

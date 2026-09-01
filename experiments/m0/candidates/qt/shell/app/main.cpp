@@ -5,6 +5,7 @@
 #include "adapters/QtShellPlatform.hpp"
 #ifdef Q_OS_WIN
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
+#include "adapters/WindowsSmtcAdapter.hpp"
 #include "m0/adapters/SingleWorkerPreferencesWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #ifdef M0_QT_COMBINED_AUDIO
@@ -24,6 +25,9 @@
 #include "presentation/ShellAppearanceBinding.hpp"
 #include "presentation/ShellPlatformBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
+#ifdef Q_OS_WIN
+#include "presentation/SystemMediaControlsBinding.hpp"
+#endif
 
 #ifdef M0_QT_COMBINED_AUDIO
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
@@ -525,6 +529,11 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
         (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);
         music_player::m0::bindShellPlatform(presenter, platform, *window);
+#ifdef Q_OS_WIN
+        music_player::m0::WindowsSmtcAdapter system_media_controls;
+        music_player::m0::SystemMediaControlsBinding system_media_controls_binding(presenter, system_media_controls);
+        static_cast<void>(system_media_controls.bindWindow(*window));
+#endif
         bool has_explicit_startup_sources = false;
 #ifdef M0_QT_COMBINED_AUDIO
         has_explicit_startup_sources = !initial_sources.paths.isEmpty();

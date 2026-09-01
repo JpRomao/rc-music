@@ -128,7 +128,19 @@ A disposição inicial é resolvida depois de aplicar o placement. `startMinimiz
 
 Os Reds focados falharam pelas expectativas novas de disposição, ownership da ocultação, toggle, precedência de fonte e ordem de shutdown; os Greens correspondentes passaram antes da consolidação. O CTest Release combinado passou 229/229, e o core Qt OFF passou 183/183. `m0_qt_shell_ui_qmllint` ficou verde. O formato cobriu 122 C++/46 QML; como `qmlformat` 6.11.2 não oferece `--check`, o check QML comparou sua saída padrão normalizada em LF. `BUILD_TESTING=OFF` foi recompilado, listou zero testes e rejeitou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
 
-O teste de processo não substitui pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer ou NVDA/acessibilidade nativa. `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y`, `CHK-CLOSE` e M4.4 permanecem abertos globalmente. O próximo desenvolvimento funcional é M4.5.
+O teste de processo não substitui pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer ou NVDA/acessibilidade nativa. `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y`, `CHK-CLOSE` e M4.4 permanecem abertos globalmente.
+
+### SMTC Windows M4.5 — funcional localmente
+
+A porta C++ pura `SystemMediaControls` publica título, artista, álbum, estado, capacidades, posição e duração e recebe Play, Pause, Previous, Next e Seek. `SystemMediaControlsBinding` projeta o estado do presenter, deduplica snapshots, desabilita seek durante preview ou confirmação pendente e encaminha comandos aos mesmos casos de uso usados pela UI, pelos atalhos locais e pela tray. O controller mantém separadas a intenção explícita mais recente e o comando em voo, serializando reversões e emitindo uma compensação depois de ACK obsoleto sem duplicar comandos.
+
+O adapter Windows usa C++/WinRT e `ISystemMediaTransportControlsInterop::GetForWindow` sobre o `HWND` real. Ele publica status, metadata, botões e timeline, desabilita operações não suportadas, entrega callbacks na thread da UI, falha fechado e trata destruição/recriação da surface com release, rebind e republicação. `Closed` limpa metadata e desabilita os controles; shutdown revoga handlers e torna callbacks tardios inertes.
+
+Os Reds/Greens cobriram APIs ausentes, Play/Pause explícitos, intenção invertida antes do ACK, `Ready` obsoleto, navegação com intenção pendente, capacidade de seek, surface destruída/recriada e rebind obsoleto. O filtro `[async]` passou cinco casos e 42 asserções. O CTest Release combinado passou 239/239, e o core Qt OFF passou 190/190. `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes; o último usa QPA Windows e WinRT reais e comprovou `HWND`, estado inicialmente desabilitado, status `Playing`, botões, título/artista/álbum e limpeza em `Closed`.
+
+`m0_qt_shell_ui_qmllint` passou e `clang-format` validou 131 arquivos C++. Nenhum QML mudou, portanto `qmlformat` não foi executado. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
+
+O smoke nativo não sintetiza teclas físicas e não substitui pacote/E2E. M4.5 permanece aberta por teclas de mídia físicas, pacote, MPRIS/Linux, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE`. O próximo desenvolvimento funcional é M4.6, começando pela página oficial de Aplicativos Padrão sem escrita em `UserChoice`.
 
 ### Alto contraste — implementação e evidência automatizada
 

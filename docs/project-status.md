@@ -36,7 +36,13 @@ O adapter agora distingue a invisibilidade do bootstrap da intenção `hidden_to
 
 Os Reds focados cobriram disposição, ownership da ocultação, toggle, precedência de fonte e ordem de shutdown; os Greens correspondentes antecederam a consolidação. O Release combinado passou 229/229 e o core Qt OFF 183/183. `m0_qt_shell_ui_qmllint` ficou verde, e o formato cobriu 122 C++/46 QML com comparação da saída padrão normalizada do `qmlformat`. O build `BUILD_TESTING=OFF` foi recompilado, listou zero testes e recusou os dois hooks M4.4 com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado.
 
-M4.4 continua aberta globalmente por pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE`. O próximo desenvolvimento funcional é M4.5.
+M4.4 continua aberta globalmente por pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer, NVDA/acessibilidade nativa e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e `CHK-CLOSE`.
+
+M4.5 está funcional localmente no candidato Qt/Windows. A porta pura `SystemMediaControls` mantém metadata, estado, capacidades e timeline fora da plataforma; o binding deduplica a projeção do presenter e encaminha Play, Pause, Previous, Next e Seek aos mesmos casos de uso de UI, atalhos e tray. O controller separa intenção desejada de comando em voo para compensar confirmações assíncronas obsoletas sem duplicação.
+
+O adapter C++/WinRT vincula SMTC ao `HWND` real por `ISystemMediaTransportControlsInterop::GetForWindow`, publica status/botões/metadata/timeline, faz marshalling dos callbacks para a thread da UI, falha fechado e refaz o vínculo quando a surface nativa é recriada. O smoke QPA Windows comprovou SMTC real, publicação e limpeza em `Closed`; não sintetizou tecla física. O fechamento passou 239/239 no Release combinado, 190/190 no core Qt OFF, os três alvos SMTC, `qmllint`, `clang-format` em 131 C++ e a composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado. Nenhum QML mudou e nenhum benchmark foi executado.
+
+M4.5 continua aberta por teclas de mídia físicas, pacote, MPRIS/Linux e `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE`. O próximo desenvolvimento funcional é M4.6, iniciando pela página oficial de Aplicativos Padrão sem escrita em `UserChoice`; ProgID/capabilities ainda dependem de identidade, matriz publicada e instalador.
 
 **Código do produto:** ainda não iniciado
 
@@ -83,7 +89,7 @@ Esses contratos confirmam a direção do experimento, não a aceitação de uma 
 | Metadata | TagLib no baseline Qt; Lofty + filesystem no baseline Tauri | Candidatos do M0; não aceitos |
 | Estrutura | uma unidade de build e distribuição com módulos internos; extrações só por necessidade demonstrada | Proposto |
 | Persistência | JSON versionado e atômico; sem banco no MVP | Proposto |
-| Integração | portas comuns com adapters do toolkit escolhido, SMTC Windows, MPRIS Linux e associações nativas | Proposto |
+| Integração | porta comum e adapter SMTC Windows materializados no candidato Qt; MPRIS Linux e associações nativas ainda propostos | Parcial no candidato; stack não aceita |
 | Windows package | NSIS como baseline experimental por usuário para provar Default Apps; tecnologia final definida no M0 | Proposto |
 | Linux package | `.deb` primeiro, AppImage depois | Proposto |
 | Remoto | porta isolada, desativada no MVP | Proposto em ADR-0003 |
@@ -164,8 +170,8 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
-1. manter M4.1–M4.4 formalmente abertas até as jornadas empacotadas/nativas correspondentes, registrando separadamente a evidência funcional local já verde;
-2. avançar para M4.5 como próximo desenvolvimento funcional Windows, cobrindo SMTC e teclas de mídia, enquanto pacote/nativo e os checks pendentes dos recortes anteriores permanecem abertos;
+1. manter M4.1–M4.5 formalmente abertas até as jornadas empacotadas/nativas correspondentes, registrando separadamente a evidência funcional local já verde;
+2. avançar para M4.6 como próximo desenvolvimento funcional Windows, começando pela página oficial de Aplicativos Padrão sem `UserChoice`, enquanto identidade, matriz publicada, pacote/nativo e os checks pendentes permanecem abertos;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.

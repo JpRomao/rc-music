@@ -98,7 +98,8 @@ O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos
 | `FakePlaybackBackend` | ready, duração, posição, ended, device lost, erro e confirmação de seek |
 | `FakeMetadataReader` | resultado imediato, atraso, cancelamento, tag hostil e arte acima dos limites NFR-LIMIT |
 | `InMemorySessionStore` | load/save, versão, corrupção e falhas programáveis |
-| `FakePlatformIntegration` | tray presente/ausente, close, media keys, suspend/resume |
+| `FakePlatformIntegration` | tray presente/ausente, close, visibilidade e suspend/resume |
+| `FakeSystemMediaControls` | disponibilidade, snapshots publicados e comandos Play/Pause/Previous/Next/Seek |
 | `FakeMediaSourceResolver` | local válido, não suportado e resultado remoto futuro |
 | `ManualClock` | ticks, debounce, timeout, interpolação e autosave |
 | `DeterministicIdGenerator` | IDs estáveis sem acoplar testes a UUID aleatório |
@@ -266,6 +267,19 @@ Os Reds falharam pelas expectativas novas de disposição, ownership da ocultaç
 
 Essas provas não substituem pacote/desktop e tray nativos, primeiro frame perceptível sem flash, fallback Linux real, restart do Explorer ou NVDA/acessibilidade nativa. `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y`, `CHK-CLOSE` e M4.4 permanecem abertos globalmente.
 
+### M4.5 — SMTC Windows e transporte assíncrono
+
+As provas do recorte funcional local de M4.5 também permanecem separadas por fronteira:
+
+- controller e presenter cobrem Play/Pause idempotentes, inversão da intenção antes do ACK, compensação após confirmação obsoleta, `Ready` antigo incapaz de apagar a intenção nova, limpeza em geração/terminal/EOF e navegação segundo o estado efetivo mais recente;
+- `SystemMediaControlsBinding` cobre projeção de status, metadata, capacidades, posição/duração, deduplicação, seek desabilitado durante preview/ACK, despacho distinto pelos casos de uso comuns e publicação `Closed` com comandos tardios inertes durante saída/teardown;
+- `WindowsSmtcAdapter` com boundary falsa cobre cache antes do bind, rebind e republicação, falha fechada, marshalling de cada comando para a thread da UI, destruição/shutdown idempotentes, descarte de callbacks de geração antiga e destruição/recriação da `QPlatformSurface`, inclusive cancelando rebind enfileirado quando a surface já desapareceu;
+- o smoke nativo usa QPA Windows e um HWND real, consulta o mesmo SMTC externamente por `GetForWindow` e verifica estado inicialmente desabilitado, status Playing, flags de transporte, título/artista/álbum e limpeza em `Closed`.
+
+Os Reds focados expuseram símbolos ainda ausentes, intenção oposta perdida antes do ACK, `Ready` obsoleto descartando intenção, capacidade de seek publicada durante confirmação e rebind tardio após perda da surface. Os Greens correspondentes passaram; o filtro `[async]` fechou 42 asserções em cinco casos, e `m0.qt.system-media-controls.binding`, `m0.qt.windows.smtc` e `m0.qt.windows.smtc-native` ficaram verdes. A consolidação Release passou 239/239 no CTest combinado e 190/190 no core Qt OFF. `m0_qt_shell_ui_qmllint` ficou verde; nenhum QML mudou. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1. Nenhum benchmark foi executado.
+
+O smoke nativo comprova publicação e limpeza sobre o SMTC real, mas não sintetiza teclas físicas, não substitui pacote/E2E e não cobre MPRIS. M4.5, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E` e `CHK-CLOSE` permanecem abertos globalmente.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;
@@ -345,7 +359,7 @@ Jornadas automatizadas prioritárias:
 7. segunda invocação encaminha path à primeira;
 8. recuperação após término forçado restaura pausado.
 
-Tray, associações, SMTC/MPRIS e install/uninstall devem ter smoke tests específicos, pois uma suíte de DOM não os prova.
+Tray, associações, SMTC/MPRIS e install/uninstall devem ter smoke tests específicos, pois uma suíte de DOM não os prova. O smoke nativo atual de SMTC valida publicação e limpeza da sessão da janela; evento de tecla física e jornada empacotada continuam checks separados.
 
 ## 12. Performance e estabilidade
 
