@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -54,6 +55,41 @@ QueueEndBehavior queueEndBehavior(const QString& value) {
     if (value == QStringLiteral("stop_clear_selection"))
         return QueueEndBehavior::StopClearSelection;
     invalidMapping("queue_end_behavior");
+}
+
+[[nodiscard]] bool validPreferences(const Preferences& preferences) noexcept {
+    switch (preferences.theme) {
+    case ThemeMode::System:
+    case ThemeMode::Light:
+    case ThemeMode::Dark:
+        break;
+    default:
+        return false;
+    }
+    switch (preferences.motion) {
+    case MotionMode::System:
+    case MotionMode::Reduced:
+        break;
+    default:
+        return false;
+    }
+    switch (preferences.close_behavior) {
+    case CloseBehavior::MinimizeToTray:
+    case CloseBehavior::Exit:
+        break;
+    default:
+        return false;
+    }
+    switch (preferences.queue_end_behavior) {
+    case QueueEndBehavior::StopKeepSelection:
+    case QueueEndBehavior::StopClearSelection:
+        break;
+    default:
+        return false;
+    }
+    return std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0 &&
+           preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
+           preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300;
 }
 
 PlayerPresenter::PlaybackState mapPlaybackState(const QString& value) {
@@ -276,13 +312,42 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     initializeDefaults();
     timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
-    connect(&timer_, &QTimer::timeout, this, [this] { static_cast<void>(advanceOneTick()); });
+    connect(&timer_, &QTimer::timeout, this, [this] {
+        pollPreferencePersistence();
+        if (!exit_committed_)
+            static_cast<void>(advanceOneTick());
+    });
+}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform,
+                                 PlayerPresenterPreferences preferences, QObject* parent)
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+      tray_available_(platform.trayAvailable()),
+      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
+      controller_(backend_, platform, PlaybackSnapshot{}, preferences.initial), queue_model_(this),
+      local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
+      artwork_cache_(std::make_shared<ArtworkImageCache>()) {
+    initializePersistedPreferences(preferences);
+    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
+    timer_.setTimerType(Qt::PreciseTimer);
+    connect(&timer_, &QTimer::timeout, this, [this] {
+        pollPreferencePersistence();
+        if (!exit_committed_)
+            static_cast<void>(advanceOneTick());
+    });
+    reconcileTimer();
 }
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent)
     : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
                       std::make_shared<ArtworkImageCache>(), parent) {}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                                 PlayerPresenterPreferences preferences, QObject* parent)
+    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
+                      std::make_shared<ArtworkImageCache>(), std::move(preferences), parent) {}
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
@@ -296,6 +361,22 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
       source_discovery_(owned_source_discovery_.get()), uses_frozen_fixture_(false) {
     initializeLocalMode();
+}
+
+PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                                 MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                                 std::shared_ptr<ArtworkImageCache> artwork_cache,
+                                 PlayerPresenterPreferences preferences, QObject* parent)
+    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+      tray_available_(platform.trayAvailable()), owned_backend_(), backend_(playback_backend),
+      controller_(backend_, platform, backend_.snapshot(), preferences.initial), queue_model_(this),
+      local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
+      audio_file_picker_(std::move(audio_file_picker)),
+      local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
+      artwork_cache_(std::move(artwork_cache)),
+      owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
+      source_discovery_(owned_source_discovery_.get()), uses_frozen_fixture_(false) {
+    initializeLocalMode(&preferences);
 }
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
@@ -317,24 +398,31 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     initializeLocalMode();
 }
 
-void PlayerPresenter::initializeLocalMode() {
+void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* preferences) {
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
     if (artwork_cache_ == nullptr)
         throw std::invalid_argument{"artwork image cache is required"};
     if (source_discovery_ == nullptr)
         throw std::invalid_argument{"local source discovery is required"};
-    initializeDefaults();
+    if (preferences == nullptr)
+        initializeDefaults();
+    else
+        initializePersistedPreferences(*preferences);
     timer_.setInterval(25);
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
-        pollMetadata();
-        pollSourceImport();
+        pollPreferencePersistence();
+        if (!exit_committed_) {
+            pollMetadata();
+            pollSourceImport();
+        }
     });
     backend_.setEventCallback([this](const PlaybackEvent& event) {
         const PlaybackEvent copy = event;
         QMetaObject::invokeMethod(this, [this, copy] { handlePlaybackEvent(copy); }, Qt::QueuedConnection);
     });
+    reconcileTimer();
 }
 
 PlayerPresenter::~PlayerPresenter() {
@@ -379,6 +467,47 @@ void PlayerPresenter::initializeDefaults() {
     if (!controller_.setStartMinimized(defaults.start_minimized))
         invalidMapping("start_minimized");
     controller_.setQueueEndBehavior(queue_end);
+}
+
+void PlayerPresenter::initializePersistedPreferences(const PlayerPresenterPreferences& preferences) {
+    if (preferences.autosave == nullptr)
+        throw std::invalid_argument{"preferences autosave is required"};
+    if (!preferences.now)
+        throw std::invalid_argument{"preferences exit clock is required"};
+    if (preferences.exit_flush_timeout < std::chrono::milliseconds::zero())
+        throw std::invalid_argument{"preferences exit flush timeout cannot be negative"};
+    if (!validPreferences(preferences.initial))
+        invalidMapping("persisted preferences");
+    for (const FixtureState& fixture_state : bundle_.states)
+        static_cast<void>(mapPlaybackState(fixture_state.playback_state));
+    static_cast<void>(stateById(bundle_, QStringLiteral("playing")));
+
+    if (backend_.setVolume(preferences.initial.volume) != PlaybackCommandResult::Accepted ||
+        backend_.setMuted(preferences.initial.muted) != PlaybackCommandResult::Accepted) {
+        invalidMapping("persisted audio preferences");
+    }
+
+    preferences_autosave_ = preferences.autosave;
+    preference_exit_flush_timeout_ = preferences.exit_flush_timeout;
+    preference_now_ = preferences.now;
+    switch (preferences.load_status) {
+    case PreferencesLoadStatus::Missing:
+    case PreferencesLoadStatus::Loaded:
+        preference_warning_ = PreferenceWarning::NoPreferenceWarning;
+        break;
+    case PreferencesLoadStatus::RecoveredFromBackup:
+        preference_warning_ = PreferenceWarning::RecoveredFromBackup;
+        preferences_autosave_->scheduleRepair();
+        break;
+    case PreferencesLoadStatus::InvalidUsingDefaults:
+        preference_warning_ = PreferenceWarning::UsingDefaults;
+        break;
+    case PreferencesLoadStatus::FutureVersion:
+        preference_warning_ = PreferenceWarning::FutureVersion;
+        break;
+    default:
+        invalidMapping("preferences load status");
+    }
 }
 
 QString PlayerPresenter::stateId() const {
@@ -886,6 +1015,7 @@ bool PlayerPresenter::restoreLastSession() const noexcept { return preferences()
 bool PlayerPresenter::startMinimized() const noexcept { return preferences().start_minimized; }
 bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
 bool PlayerPresenter::exiting() const noexcept { return exiting_; }
+bool PlayerPresenter::exitCommitted() const noexcept { return exit_committed_; }
 PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { return window_notice_; }
 bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
 bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fixture_; }
@@ -1012,6 +1142,8 @@ bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int inser
 }
 
 bool PlayerPresenter::cancelSourceImport() {
+    if (exiting_)
+        return false;
     if (source_import_state_ == SourceImportState::Cancelling)
         return true;
     if (source_import_state_ != SourceImportState::Discovering || source_discovery_ == nullptr ||
@@ -1025,7 +1157,7 @@ bool PlayerPresenter::cancelSourceImport() {
 }
 
 bool PlayerPresenter::dismissSourceImportStatus() {
-    if (source_import_state_ == SourceImportState::Idle || sourceImportActive())
+    if (exiting_ || source_import_state_ == SourceImportState::Idle || sourceImportActive())
         return false;
     source_import_state_ = SourceImportState::Idle;
     source_import_sequence_ = 0;
@@ -1183,7 +1315,7 @@ bool PlayerPresenter::clearQueue() {
     return true;
 }
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
-    if (uses_frozen_fixture_ || exiting_)
+    if (uses_frozen_fixture_ || exit_committed_)
         return;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     const auto result = local_track_session_->applyPlaybackEvent(event);
@@ -1259,7 +1391,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         emit sourceImportChanged();
 }
 void PlayerPresenter::pollMetadata() {
-    if (uses_frozen_fixture_ || exiting_)
+    if (uses_frozen_fixture_ || exit_committed_)
         return;
     const auto duration_before = localDurationMs();
     if (!local_track_session_->pollMetadata())
@@ -1279,7 +1411,7 @@ void PlayerPresenter::pollMetadata() {
         emit playbackChanged();
 }
 void PlayerPresenter::pollSourceImport() {
-    if (!sourceImportActive() || source_discovery_ == nullptr || exiting_)
+    if (!sourceImportActive() || source_discovery_ == nullptr || exit_committed_)
         return;
 
     auto result = source_discovery_->poll(source_import_generation_);
@@ -1515,16 +1647,55 @@ bool PlayerPresenter::requestRestore() {
 bool PlayerPresenter::requestExit() {
     if (exiting_)
         return false;
+
+    if (preferences_autosave_ != nullptr && (preferences_autosave_->dirty() || preferences_autosave_->writeActive())) {
+        preferences_autosave_->requestSaveNow();
+        synchronizePreferenceWarning();
+        if (preferences_autosave_->dirty() || preferences_autosave_->writeActive()) {
+            if (!preferences_autosave_->writeActive() &&
+                preferences_autosave_->notice() != PreferencesAutosaveNotice::None) {
+                reconcileTimer();
+                return false;
+            }
+            exiting_ = true;
+            window_notice_ = WindowNotice::NoNotice;
+            preference_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
+            emit lifecycleChanged();
+            reconcileTimer();
+            pollPreferencePersistence();
+            return true;
+        }
+    }
+
+    completeExit();
+    return true;
+}
+
+void PlayerPresenter::completeExit() {
+    preference_exit_deadline_.reset();
     if (sourceImportActive() && source_discovery_ != nullptr) {
         static_cast<void>(source_discovery_->cancel(source_import_generation_));
         finishSourceImport(SourceImportState::Cancelled);
     }
+    const bool changed = !exiting_ || !exit_committed_ || window_notice_ != WindowNotice::NoNotice;
     exiting_ = true;
+    exit_committed_ = true;
     window_notice_ = WindowNotice::NoNotice;
     timer_.stop();
-    emit lifecycleChanged();
+    if (changed)
+        emit lifecycleChanged();
     controller_.requestExit();
-    return true;
+}
+
+void PlayerPresenter::cancelPendingExit() {
+    if (!preference_exit_deadline_.has_value())
+        return;
+    preference_exit_deadline_.reset();
+    exiting_ = false;
+    exit_committed_ = false;
+    emit lifecycleChanged();
+    controller_.requestRestore();
+    reconcileTimer();
 }
 bool PlayerPresenter::confirmWindowNotice() {
     if (exiting_ || window_notice_ == WindowNotice::NoNotice)
@@ -1554,13 +1725,11 @@ void PlayerPresenter::refreshPlatformAvailability() {
     if (available == tray_available_)
         return;
     tray_available_ = available;
-    if (!available && startMinimized()) {
-        static_cast<void>(controller_.setStartMinimized(false));
-        emit preferencesChanged();
-    }
     emit platformChanged();
 }
 bool PlayerPresenter::togglePlayback() {
+    if (exiting_)
+        return false;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (uses_frozen_fixture_ && before.status != PlaybackStatus::Playing && before.duration_ms > 0 &&
         before.position_ms >= before.duration_ms)
@@ -1576,21 +1745,21 @@ bool PlayerPresenter::togglePlayback() {
     return uses_frozen_fixture_ ? changed : true;
 }
 bool PlayerPresenter::skipBackward() {
-    if (!controller_.skipBackward())
+    if (exiting_ || !controller_.skipBackward())
         return false;
     reconcileTimer();
     emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::skipForward() {
-    if (!controller_.skipForward())
+    if (exiting_ || !controller_.skipForward())
         return false;
     reconcileTimer();
     emit playbackChanged();
     return true;
 }
-bool PlayerPresenter::previousTrack() { return navigate(QueueDirection::Previous); }
-bool PlayerPresenter::nextTrack() { return navigate(QueueDirection::Next); }
+bool PlayerPresenter::previousTrack() { return !exiting_ && navigate(QueueDirection::Previous); }
+bool PlayerPresenter::nextTrack() { return !exiting_ && navigate(QueueDirection::Next); }
 std::optional<std::size_t> PlayerPresenter::localOccurrenceIndex(const QString& occurrence_id) const noexcept {
     const auto items = local_queue_.items();
     for (std::size_t index = 0; index < items.size(); ++index) {
@@ -1669,6 +1838,8 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
     return true;
 }
 bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
+    if (exiting_)
+        return false;
     const PlaybackStatus status = controller_.confirmedSnapshot().status;
     const bool transport_active =
         status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing;
@@ -1686,7 +1857,7 @@ bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
     return true;
 }
 bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
-    if (!controller_.seekPreviewActive() || controller_.seekPending())
+    if (exiting_ || !controller_.seekPreviewActive() || controller_.seekPending())
         return false;
     const auto before = controller_.displayedPositionMs();
     controller_.updateSeekPreview(position_ms);
@@ -1695,6 +1866,8 @@ bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
     return true;
 }
 bool PlayerPresenter::commitSeekPreview() {
+    if (exiting_)
+        return false;
     ++seek_commit_attempt_count_;
     if (!controller_.seekPreviewActive() || controller_.seekPending())
         return false;
@@ -1705,18 +1878,20 @@ bool PlayerPresenter::commitSeekPreview() {
     return true;
 }
 bool PlayerPresenter::setVolume(const double volume) {
-    if (volume == controller_.preferences().volume || !controller_.setVolume(volume))
+    if (exiting_ || volume == controller_.preferences().volume || !controller_.setVolume(volume))
         return false;
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::toggleMute() {
-    if (!controller_.toggleMute())
+    if (exiting_ || !controller_.toggleMute())
         return false;
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setThemePreference(const ThemePreference theme) {
+    if (exiting_)
+        return false;
     ThemeMode value;
     switch (theme) {
     case ThemePreference::SystemTheme:
@@ -1734,10 +1909,12 @@ bool PlayerPresenter::setThemePreference(const ThemePreference theme) {
     if (value == preferences().theme)
         return false;
     controller_.setTheme(value);
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setMotionPreference(const MotionPreference motion) {
+    if (exiting_)
+        return false;
     MotionMode value;
     switch (motion) {
     case MotionPreference::SystemMotion:
@@ -1752,22 +1929,24 @@ bool PlayerPresenter::setMotionPreference(const MotionPreference motion) {
     if (value == preferences().motion)
         return false;
     controller_.setMotionMode(value);
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setSkipBackwardSeconds(const int seconds) {
-    if (seconds == skipBackwardSeconds() || !controller_.setSkipBackwardSeconds(seconds))
+    if (exiting_ || seconds == skipBackwardSeconds() || !controller_.setSkipBackwardSeconds(seconds))
         return false;
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setSkipForwardSeconds(const int seconds) {
-    if (seconds == skipForwardSeconds() || !controller_.setSkipForwardSeconds(seconds))
+    if (exiting_ || seconds == skipForwardSeconds() || !controller_.setSkipForwardSeconds(seconds))
         return false;
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setClosePreference(const ClosePreference behavior) {
+    if (exiting_)
+        return false;
     CloseBehavior value;
     switch (behavior) {
     case ClosePreference::MinimizeToTray:
@@ -1782,23 +1961,25 @@ bool PlayerPresenter::setClosePreference(const ClosePreference behavior) {
     if (value == preferences().close_behavior)
         return false;
     controller_.setCloseBehavior(value);
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setRestoreLastSession(const bool restore) {
-    if (restore == restoreLastSession())
+    if (exiting_ || restore == restoreLastSession())
         return false;
     controller_.setRestoreLastSession(restore);
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setStartMinimized(const bool minimized) {
-    if (minimized == startMinimized() || !controller_.setStartMinimized(minimized))
+    if (exiting_ || minimized == startMinimized() || !controller_.setStartMinimized(minimized))
         return false;
-    emit preferencesChanged();
+    preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
+    if (exiting_)
+        return false;
     QueueEndBehavior value;
     switch (behavior) {
     case QueueEndPreference::StopKeepSelection:
@@ -1813,10 +1994,105 @@ bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
     if (value == preferences().queue_end_behavior)
         return false;
     controller_.setQueueEndBehavior(value);
+    preferenceDidChange();
+    return true;
+}
+
+PlayerPresenter::PreferenceWarning PlayerPresenter::preferenceWarning() const noexcept { return preference_warning_; }
+
+void PlayerPresenter::preferenceDidChange() {
+    if (preferences_autosave_ != nullptr)
+        static_cast<void>(preferences_autosave_->schedule(preferences()));
+    reconcileTimer();
     emit preferencesChanged();
+}
+
+void PlayerPresenter::pollPreferencePersistence() {
+    if (preferences_autosave_ == nullptr)
+        return;
+    preferences_autosave_->poll();
+    synchronizePreferenceWarning();
+
+    if (preference_exit_deadline_.has_value()) {
+        if (!preferences_autosave_->dirty() && !preferences_autosave_->writeActive()) {
+            completeExit();
+            return;
+        }
+        if (!preferences_autosave_->writeActive() &&
+            preferences_autosave_->notice() != PreferencesAutosaveNotice::None) {
+            cancelPendingExit();
+            return;
+        }
+        if (preference_now_() >= *preference_exit_deadline_) {
+            if (preference_warning_ != PreferenceWarning::SaveFailed) {
+                preference_warning_ = PreferenceWarning::SaveFailed;
+                emit preferencePersistenceChanged();
+            }
+            cancelPendingExit();
+            return;
+        }
+    }
+    reconcileTimer();
+}
+
+void PlayerPresenter::synchronizePreferenceWarning() {
+    if (preferences_autosave_ == nullptr)
+        return;
+
+    PreferenceWarning next = preference_warning_;
+    switch (preferences_autosave_->notice()) {
+    case PreferencesAutosaveNotice::None:
+        if (next == PreferenceWarning::SaveFailed && !preferences_autosave_->dirty() &&
+            !preferences_autosave_->writeActive())
+            next = PreferenceWarning::NoPreferenceWarning;
+        break;
+    case PreferencesAutosaveNotice::SaveFailed:
+        next = PreferenceWarning::SaveFailed;
+        break;
+    case PreferencesAutosaveNotice::FutureVersionBlocked:
+        next = PreferenceWarning::FutureVersion;
+        break;
+    }
+    if (next == preference_warning_)
+        return;
+    preference_warning_ = next;
+    emit preferencePersistenceChanged();
+}
+
+bool PlayerPresenter::dismissPreferenceWarning() {
+    if (exiting_ || (preference_warning_ != PreferenceWarning::RecoveredFromBackup &&
+                     preference_warning_ != PreferenceWarning::UsingDefaults)) {
+        return false;
+    }
+    preference_warning_ = PreferenceWarning::NoPreferenceWarning;
+    emit preferencePersistenceChanged();
+    return true;
+}
+
+bool PlayerPresenter::retryPreferenceSave() {
+    if (exiting_ || preferences_autosave_ == nullptr || preference_warning_ != PreferenceWarning::SaveFailed ||
+        !preferences_autosave_->retry()) {
+        return false;
+    }
+    reconcileTimer();
+    return true;
+}
+
+bool PlayerPresenter::confirmPreferenceReplacement() {
+    if (exiting_ || preferences_autosave_ == nullptr || preference_warning_ != PreferenceWarning::FutureVersion)
+        return false;
+    if (!preferences_autosave_->dirty())
+        preferences_autosave_->scheduleRepair();
+    if (!preferences_autosave_->confirmFutureVersionReplacement())
+        return false;
+    preference_warning_ = PreferenceWarning::NoPreferenceWarning;
+    emit preferencePersistenceChanged();
+    reconcileTimer();
     return true;
 }
 bool PlayerPresenter::enterFrozenUnavailableScenario() {
+    if (exiting_)
+        return false;
     auto* const fixture_backend = fixtureBackend();
     if (fixture_backend == nullptr || !queueLoaded() || state_.state_id != QStringLiteral("playing") ||
         !fixture_backend->enterUnavailableScenario())
@@ -1829,6 +2105,8 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
     return true;
 }
 bool PlayerPresenter::skipUnavailable() {
+    if (exiting_)
+        return false;
     auto* const fixture_backend = fixtureBackend();
     if (fixture_backend == nullptr || state_.state_id != QStringLiteral("error") ||
         !fixture_backend->restoreInitialScenario())
@@ -1874,19 +2152,21 @@ void PlayerPresenter::rejectNextSeekForTest() noexcept {
 }
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 void PlayerPresenter::reconcileTimer() {
-    const bool needed =
+    const bool application_needed =
         uses_frozen_fixture_
-            ? !exiting_ && queueLoaded() &&
+            ? !exit_committed_ && queueLoaded() &&
                   (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending())
-            : !exiting_ &&
+            : !exit_committed_ &&
                   (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending || sourceImportActive());
+    const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
+    const bool needed = application_needed || preferences_needed;
     if (needed && !timer_.isActive())
         timer_.start();
     else if (!needed && timer_.isActive())
         timer_.stop();
 }
 bool PlayerPresenter::loadFrozenQueue() {
-    if (!uses_frozen_fixture_ || queue_model_.loaded() || bundle_.queue.isEmpty())
+    if (exiting_ || !uses_frozen_fixture_ || queue_model_.loaded() || bundle_.queue.isEmpty())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
     state_ = stateById(bundle_, QStringLiteral("playing"));

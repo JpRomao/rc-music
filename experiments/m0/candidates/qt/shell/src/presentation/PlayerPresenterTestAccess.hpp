@@ -10,6 +10,7 @@ struct PlayerPresenterTestAccess final {
         return presenter.seekCommitAttemptCountForTest();
     }
     static void pollSourceImport(PlayerPresenter& presenter) { presenter.pollSourceImport(); }
+    static void pollPreferencePersistence(PlayerPresenter& presenter) { presenter.pollPreferencePersistence(); }
 };
 
 } // namespace music_player::m0::test

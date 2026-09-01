@@ -7,6 +7,7 @@ TestCase {
     name: "ShellKeyboardExit"
     when: windowShown
     readonly property PlayerPresenter presenter: testPlayerPresenter // qmllint disable unqualified
+    readonly property PlayerPresenter pendingExitPresenter: testPendingExitPresenter // qmllint disable unqualified
     readonly property var driver: testScenarioDriver // qmllint disable unqualified
 
     Component {
@@ -116,5 +117,24 @@ TestCase {
         compare(driver.platformExitCalls(), 1);
         shell.close();
         verify(!shell.visible);
+    }
+
+    function test_pendingPreferenceExitRejectsRepeatedWindowCloseAndDisablesContent() {
+        const shell = createTemporaryObject(shellComponent, null, {
+            "presenter": pendingExitPresenter
+        });
+        verify(shell);
+        verify(pendingExitPresenter.setThemePreference(PlayerPresenter.DarkTheme));
+        verify(pendingExitPresenter.requestExit());
+        verify(pendingExitPresenter.exiting);
+        verify(!pendingExitPresenter.exitCommitted);
+        verify(!shell.contentItem.enabled);
+
+        shell.close();
+        wait(0);
+
+        verify(shell.visible);
+        verify(pendingExitPresenter.exiting);
+        verify(!pendingExitPresenter.exitCommitted);
     }
 }

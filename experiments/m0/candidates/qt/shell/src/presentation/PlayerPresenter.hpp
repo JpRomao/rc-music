@@ -4,6 +4,7 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/LocalTrackSession.hpp"
 #include "m0/application/PlayerController.hpp"
+#include "m0/application/PreferencesAutosave.hpp"
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
@@ -20,6 +21,7 @@
 #include <QVariantList>
 #include <QtQmlIntegration/qqmlintegration.h>
 
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <functional>
@@ -35,6 +37,16 @@ class PlayerPresenterScenarioControl;
 namespace test {
 struct PlayerPresenterTestAccess;
 }
+
+struct PlayerPresenterPreferences final {
+    using TimePoint = std::chrono::steady_clock::time_point;
+
+    Preferences initial{};
+    PreferencesLoadStatus load_status{PreferencesLoadStatus::Missing};
+    PreferencesAutosave* autosave{nullptr};
+    std::chrono::milliseconds exit_flush_timeout{2'000};
+    std::function<TimePoint()> now{[] { return std::chrono::steady_clock::now(); }};
+};
 
 class PlayerPresenter final : public QObject {
     Q_OBJECT
@@ -125,8 +137,10 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QueueEndPreference queueEndPreference READ queueEndPreference NOTIFY preferencesChanged)
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
     Q_PROPERTY(bool startMinimized READ startMinimized NOTIFY preferencesChanged)
+    Q_PROPERTY(PreferenceWarning preferenceWarning READ preferenceWarning NOTIFY preferencePersistenceChanged)
     Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
     Q_PROPERTY(bool exiting READ exiting NOTIFY lifecycleChanged)
+    Q_PROPERTY(bool exitCommitted READ exitCommitted NOTIFY lifecycleChanged)
     Q_PROPERTY(WindowNotice windowNotice READ windowNotice NOTIFY lifecycleChanged)
     Q_PROPERTY(bool trayNoticeEnabled READ trayNoticeEnabled NOTIFY lifecycleChanged)
     Q_PROPERTY(bool usesFrozenFixture READ usesFrozenFixture CONSTANT)
@@ -148,13 +162,30 @@ class PlayerPresenter final : public QObject {
     Q_ENUM(WindowNotice)
     enum class SourceImportState { Idle, Discovering, Cancelling, Completed, CompletedWithIssues, Cancelled, Rejected };
     Q_ENUM(SourceImportState)
+    enum class PreferenceWarning {
+        NoPreferenceWarning,
+        RecoveredFromBackup,
+        UsingDefaults,
+        FutureVersion,
+        SaveFailed,
+    };
+    Q_ENUM(PreferenceWarning)
 
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlayerPresenterPreferences preferences,
+                    QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                     MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                     MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                    PlayerPresenterPreferences preferences, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                     std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent = nullptr);
+    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+                    std::shared_ptr<ArtworkImageCache> artwork_cache, PlayerPresenterPreferences preferences,
+                    QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
                     MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                     LocalSourceDiscovery& source_discovery, QObject* parent = nullptr);
@@ -251,8 +282,10 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QueueEndPreference queueEndPreference() const;
     [[nodiscard]] bool restoreLastSession() const noexcept;
     [[nodiscard]] bool startMinimized() const noexcept;
+    [[nodiscard]] PreferenceWarning preferenceWarning() const noexcept;
     [[nodiscard]] bool trayAvailable() const noexcept;
     [[nodiscard]] bool exiting() const noexcept;
+    [[nodiscard]] bool exitCommitted() const noexcept;
     [[nodiscard]] WindowNotice windowNotice() const noexcept;
     [[nodiscard]] bool trayNoticeEnabled() const noexcept;
     [[nodiscard]] bool usesFrozenFixture() const noexcept;
@@ -293,12 +326,16 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setRestoreLastSession(bool restore);
     Q_INVOKABLE bool setStartMinimized(bool minimized);
     Q_INVOKABLE bool setQueueEndPreference(QueueEndPreference behavior);
+    Q_INVOKABLE bool dismissPreferenceWarning();
+    Q_INVOKABLE bool retryPreferenceSave();
+    Q_INVOKABLE bool confirmPreferenceReplacement();
     Q_INVOKABLE bool skipUnavailable();
     [[nodiscard]] bool advanceOneTick();
 
   signals:
     void stateChanged();
     void preferencesChanged();
+    void preferencePersistenceChanged();
     void playbackChanged();
     void seekRejected();
     void platformChanged();
@@ -313,10 +350,16 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] std::size_t seekCommitAttemptCountForTest() const noexcept;
     [[nodiscard]] bool enterFrozenUnavailableScenario();
     void initializeDefaults();
+    void initializePersistedPreferences(const PlayerPresenterPreferences& preferences);
+    void preferenceDidChange();
+    void pollPreferencePersistence();
+    void synchronizePreferenceWarning();
+    void completeExit();
+    void cancelPendingExit();
     void handlePlaybackEvent(PlaybackEvent event);
     void pollMetadata();
     void pollSourceImport();
-    void initializeLocalMode();
+    void initializeLocalMode(const PlayerPresenterPreferences* preferences = nullptr);
     void rejectSourceImport(std::uint64_t issue_count);
     void finishSourceImport(SourceImportState terminal_state);
     [[nodiscard]] bool applySourceImportBatch(LocalSourceDiscoveryBatch batch);
@@ -372,9 +415,15 @@ class PlayerPresenter final : public QObject {
     bool uses_frozen_fixture_{true};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
+    bool exit_committed_{false};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};
     bool tray_notice_seen_{false};
+    PreferencesAutosave* preferences_autosave_{nullptr};
+    PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};
+    std::chrono::milliseconds preference_exit_flush_timeout_{2'000};
+    std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{};
+    std::optional<PlayerPresenterPreferences::TimePoint> preference_exit_deadline_{};
 };
 
 } // namespace music_player::m0

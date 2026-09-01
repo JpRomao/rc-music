@@ -29,10 +29,11 @@ ApplicationWindow {
     palette.dark: uiContract.textPrimaryColor
     palette.light: uiContract.surfaceRaisedColor
     palette.placeholderText: uiContract.textSecondaryColor
+    contentItem.enabled: !presenter.exiting
     visible: true
     signal openAudioRequested
     property bool queueOpen: false
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !presenter.exiting
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
@@ -73,7 +74,7 @@ ApplicationWindow {
     }
 
     onClosing: close => {
-        close.accepted = presenter.exiting;
+        close.accepted = presenter.exitCommitted;
         if (!close.accepted)
             presenter.requestClose();
     }
@@ -83,7 +84,7 @@ ApplicationWindow {
             return;
         queueOpen = open;
         Qt.callLater(function () {
-            if (windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || window.presenter.exiting)
+            if (windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || window.presenter.exiting)
                 return;
             if (window.queueOpen)
                 queuePanel.focusCurrent();
@@ -116,7 +117,7 @@ ApplicationWindow {
         trackDetailsPanel.openFrom(opener);
     }
     function restoreFocusAfterSourceImport() {
-        if (window.presenter.exiting || preferencesPanel.visible || trackDetailsPanel.visible || windowNotice.visible || queuePanel.clearConfirmationOpen)
+        if (window.presenter.exiting || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || windowNotice.visible || queuePanel.clearConfirmationOpen)
             return;
         if (window.queueOpen && queuePanel.visible)
             queuePanel.focusCurrent();
@@ -229,8 +230,24 @@ ApplicationWindow {
         z: 30
         contract: window.uiContract
         presenter: window.presenter
-        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onFocusRestoreRequested: window.restoreFocusAfterSourceImport()
+    }
+    PreferencePersistenceNotice {
+        id: preferencePersistenceNotice
+        parent: window.contentItem
+        x: mainLayout.x
+        y: Math.max(mainLayout.y, sourceImportStatus.y - height - window.uiContract.spacingUnit * 2)
+        width: mainLayout.width
+        z: 40
+        contract: window.uiContract
+        warning: window.presenter.preferenceWarning
+        fallbackFocusItem: preferencesButton
+        interactionAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        onReviewRequested: window.openPreferences()
+        onDismissRequested: window.presenter.dismissPreferenceWarning()
+        onRetryRequested: window.presenter.retryPreferenceSave()
+        onReplacementConfirmed: window.presenter.confirmPreferenceReplacement()
     }
     PreferencesPanel {
         id: preferencesPanel
@@ -260,7 +277,7 @@ ApplicationWindow {
         contract: window.uiContract
         presenter: window.presenter
         fallbackFocusItem: preferencesButton
-        focusRestoreAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        focusRestoreAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
     }
     WindowNotice {
         id: windowNotice
@@ -279,7 +296,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction

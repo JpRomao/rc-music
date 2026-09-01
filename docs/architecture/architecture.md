@@ -354,11 +354,19 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 {
   "schemaVersion": 1,
   "theme": "system",
+  "motion": "system",
+  "volume": 0.8,
+  "muted": false,
   "skipBackwardSeconds": 5,
   "skipForwardSeconds": 5,
-  "closeBehavior": "tray"
+  "closeBehavior": "minimize_to_tray",
+  "restoreLastSession": true,
+  "startMinimized": false,
+  "queueEndBehavior": "stop_keep_selection"
 }
 ```
+
+O schema acima está materializado no adapter experimental Windows. O arquivo de sessão separado, a restauração de fila/item/posição e o efeito de iniciar minimizado continuam em M4.1/M4.4; `PreferencesStore` não substitui o futuro `SessionStore`.
 
 Gravação:
 

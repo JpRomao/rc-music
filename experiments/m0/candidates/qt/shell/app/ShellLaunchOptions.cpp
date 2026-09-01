@@ -1,5 +1,7 @@
 #include "ShellLaunchOptions.hpp"
 
+#include <QDir>
+
 #include <stdexcept>
 
 namespace music_player::m0::experiment {
@@ -8,12 +10,14 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     ShellLaunchOptions options;
     bool scenario_seen = false;
     bool smoke_seen = false;
+    bool config_root_seen = false;
     for (qsizetype index = 1; index < arguments.size(); ++index) {
         const QString& argument = arguments.at(index);
         if (argument.startsWith(QStringLiteral("--m0-scenario="))) {
             if (scenario_seen)
                 throw std::invalid_argument{"the M0 shell scenario may be specified only once"};
             scenario_seen = true;
+            options.scenario_control_requested = true;
             const QString value = argument.sliced(QStringLiteral("--m0-scenario=").size());
             if (value == QStringLiteral("empty"))
                 options.initial_scenario = InitialShellScenario::Empty;
@@ -34,8 +38,22 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_tray_lifecycle = true;
             else if (value == QStringLiteral("combined-startup"))
                 options.smoke_combined_startup = true;
+            else if (value == QStringLiteral("preferences-restart-write"))
+                options.smoke_preferences_restart_write = true;
+            else if (value == QStringLiteral("preferences-restart-read"))
+                options.smoke_preferences_restart_read = true;
             else
                 throw std::invalid_argument{"unsupported M0 shell smoke"};
+            continue;
+        }
+        if (argument.startsWith(QStringLiteral("--m0-test-config-root="))) {
+            if (config_root_seen)
+                throw std::invalid_argument{"the M0 test config root may be specified only once"};
+            config_root_seen = true;
+            const QString value = argument.sliced(QStringLiteral("--m0-test-config-root=").size());
+            if (value.isEmpty() || !QDir::isAbsolutePath(value))
+                throw std::invalid_argument{"the M0 test config root must be an absolute path"};
+            options.test_config_root = QDir::cleanPath(value);
             continue;
         }
         if (argument.startsWith(QStringLiteral("--m0-")))
@@ -47,7 +65,28 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
         throw std::invalid_argument{"the tray lifecycle smoke requires the empty scenario"};
     if (options.smoke_combined_startup && options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the combined startup smoke requires the empty scenario"};
+    const bool preferences_restart = options.smoke_preferences_restart_write || options.smoke_preferences_restart_read;
+    const bool executable_smoke = options.smoke_error_recovery || options.smoke_tray_lifecycle ||
+                                  options.smoke_combined_startup || preferences_restart;
+    if (preferences_restart && !options.test_config_root.has_value())
+        throw std::invalid_argument{"the preferences restart smoke requires its test config root"};
+    if (options.test_config_root.has_value() && !executable_smoke)
+        throw std::invalid_argument{"the M0 test config root requires an executable smoke"};
+    if (preferences_restart && options.initial_scenario != InitialShellScenario::Empty)
+        throw std::invalid_argument{"the preferences restart smoke requires the empty scenario"};
     return options;
+}
+
+void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool test_hooks_enabled,
+                                const bool combined_audio_enabled) {
+    if (!test_hooks_enabled &&
+        (options.scenario_control_requested || options.smoke_error_recovery || options.smoke_tray_lifecycle ||
+         options.smoke_combined_startup || options.smoke_preferences_restart_write ||
+         options.smoke_preferences_restart_read || options.test_config_root.has_value())) {
+        throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
+    }
+    if (!combined_audio_enabled && options.smoke_combined_startup)
+        throw std::invalid_argument{"the combined startup smoke requires audio support"};
 }
 
 } // namespace music_player::m0::experiment

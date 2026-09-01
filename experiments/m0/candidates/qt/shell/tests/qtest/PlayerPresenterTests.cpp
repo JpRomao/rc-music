@@ -1,4 +1,5 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/PreferencesAutosave.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
@@ -225,6 +226,68 @@ class FakeLocalSourceDiscovery final : public LocalSourceDiscovery {
     int shutdown_calls{0};
 };
 
+class PresenterPreferencesWriter final : public PreferencesWriter {
+  public:
+    PreferencesWriterCommand start(PreferencesWriteRequest request) override {
+        if (active.has_value())
+            return PreferencesWriterCommand::Busy;
+        active = request;
+        starts.push_back(std::move(request));
+        return PreferencesWriterCommand::Accepted;
+    }
+
+    std::optional<PreferencesWriteCompletion> poll() override {
+        if (completions.empty())
+            return std::nullopt;
+        auto completion = completions.front();
+        completions.pop_front();
+        if (active.has_value() && active->revision == completion.revision)
+            active.reset();
+        return completion;
+    }
+
+    std::optional<PreferencesWriteCompletion> flush(PreferencesWriteRequest request) override {
+        flushes.push_back(request);
+        if (on_flush)
+            on_flush(request);
+        active.reset();
+        return PreferencesWriteCompletion{.revision = request.revision, .status = flush_status};
+    }
+
+    bool shutdown() override { return true; }
+
+    void complete(const PreferencesSaveStatus status) {
+        QVERIFY(active.has_value());
+        completions.push_back({.revision = active->revision, .status = status});
+    }
+
+    std::optional<PreferencesWriteRequest> active;
+    std::deque<PreferencesWriteCompletion> completions;
+    std::vector<PreferencesWriteRequest> starts;
+    std::vector<PreferencesWriteRequest> flushes;
+    PreferencesSaveStatus flush_status{PreferencesSaveStatus::Saved};
+    std::function<void(const PreferencesWriteRequest&)> on_flush;
+};
+
+struct PresenterPreferencesClock final {
+    PreferencesAutosave::TimePoint current{};
+    [[nodiscard]] PreferencesAutosave::TimePoint now() const noexcept { return current; }
+    void advance(const std::chrono::milliseconds duration) noexcept { current += duration; }
+};
+
+Preferences nonDefaultPreferences() {
+    return {.theme = ThemeMode::Dark,
+            .motion = MotionMode::Reduced,
+            .volume = 0.35,
+            .muted = true,
+            .skip_backward_seconds = 7,
+            .skip_forward_seconds = 20,
+            .close_behavior = CloseBehavior::Exit,
+            .restore_last_session = false,
+            .start_minimized = true,
+            .queue_end_behavior = QueueEndBehavior::StopClearSelection};
+}
+
 [[nodiscard]] FixtureBundle frozenBundle() {
     return FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
 }
@@ -331,6 +394,15 @@ class PlayerPresenterTests final : public QObject {
     void editsPreferencesWithoutChangingPlaybackOrTheQueue();
     void rejectsInvalidAndUnchangedPreferencesWithoutNotifications();
     void refreshesTrayAvailabilityAndGuardsStartMinimized();
+    void loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument();
+    void coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit();
+    void pendingPreferenceExitKeepsBackgroundTicksReversible();
+    void preferenceSaveTimeoutKeepsTheApplicationResponsiveAndOpen();
+    void preferencePollingSleepsAfterTerminalNoticeUntilUserAction_data();
+    void preferencePollingSleepsAfterTerminalNoticeUntilUserAction();
+    void projectsTypedPreferenceRecoveryWarningsAndActions();
+    void initialPreferenceLoadWarningsRequireExplicitActions_data();
+    void initialPreferenceLoadWarningsRequireExplicitActions();
     void exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods();
     void firstCloseWaitsForAcknowledgementAndDoesNotRepeatTheNotice();
     void unavailableTrayMinimizesAndKeepsTheExplanationUntilRestored();
@@ -3108,11 +3180,306 @@ void PlayerPresenterTests::refreshesTrayAvailabilityAndGuardsStartMinimized() {
     presenter.refreshPlatformAvailability();
     QCOMPARE(availability.size(), 2);
     QVERIFY(!presenter.trayAvailable());
-    QVERIFY(!presenter.startMinimized());
-    QCOMPARE(preferences.size(), 2);
+    QVERIFY(presenter.startMinimized());
+    QCOMPARE(preferences.size(), 1);
     presenter.refreshPlatformAvailability();
     QCOMPARE(availability.size(), 2);
-    QCOMPARE(preferences.size(), 2);
+    QCOMPARE(preferences.size(), 1);
+}
+
+void PlayerPresenterTests::loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument() {
+    AvailableTrayPlatform platform;
+    platform.available = false;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences loaded = nonDefaultPreferences();
+    PreferencesAutosave autosave{writer, loaded, {.now = [&clock] { return clock.now(); }}};
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = loaded, .load_status = PreferencesLoadStatus::Loaded, .autosave = &autosave});
+
+    QCOMPARE(presenter.preferences(), loaded);
+    QCOMPARE(presenter.themePreference(), PlayerPresenter::ThemePreference::DarkTheme);
+    QCOMPARE(presenter.motionPreference(), PlayerPresenter::MotionPreference::ReducedMotion);
+    QCOMPARE(presenter.closePreference(), PlayerPresenter::ClosePreference::Exit);
+    QCOMPARE(presenter.queueEndPreference(), PlayerPresenter::QueueEndPreference::StopClearSelection);
+    QCOMPARE(presenter.skipBackwardSeconds(), 7);
+    QCOMPARE(presenter.skipForwardSeconds(), 20);
+    QCOMPARE(presenter.volume(), 0.35);
+    QVERIFY(presenter.muted());
+    QVERIFY(!presenter.restoreLastSession());
+    QVERIFY(presenter.startMinimized());
+    QVERIFY(!presenter.trayAvailable());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+    QCOMPARE(backend.volumes.back(), 0.35);
+    QCOMPARE(backend.muted_values.back(), true);
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{0});
+    QVERIFY(!autosave.dirty());
+    QVERIFY(writer.starts.empty());
+
+    presenter.refreshPlatformAvailability();
+    QVERIFY(presenter.startMinimized());
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{0});
+}
+
+void PlayerPresenterTests::coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+
+    QVERIFY(!presenter.setSkipBackwardSeconds(5));
+    QVERIFY(!presenter.setSkipBackwardSeconds(0));
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{0});
+    QVERIFY(presenter.setSkipBackwardSeconds(7));
+    QVERIFY(presenter.setSkipForwardSeconds(20));
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QCOMPARE(autosave.latestRevision(), PreferencesRevision{3});
+    QVERIFY(autosave.dirty());
+    QVERIFY(writer.starts.empty());
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QCOMPARE(writer.starts.back().preferences, presenter.preferences());
+    QCOMPARE(writer.starts.back().preferences.skip_backward_seconds, 7);
+    QCOMPARE(writer.starts.back().preferences.skip_forward_seconds, 20);
+    QCOMPARE(writer.starts.back().preferences.theme, ThemeMode::Dark);
+    QVERIFY(writer.flushes.empty());
+    writer.complete(PreferencesSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(platform.exit_calls, 1);
+    QVERIFY(presenter.exitCommitted());
+    QVERIFY(!autosave.dirty());
+}
+
+void PlayerPresenterTests::pendingPreferenceExitKeepsBackgroundTicksReversible() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+
+    QVERIFY(presenter.loadFrozenQueue());
+    const qint64 position_before = presenter.positionMs();
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+
+    const Preferences preferences_before = presenter.preferences();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QVERIFY(!presenter.togglePlayback());
+    QVERIFY(!presenter.setVolume(0.4));
+    QVERIFY(!presenter.toggleMute());
+    QVERIFY(!presenter.setMotionPreference(PlayerPresenter::MotionPreference::ReducedMotion));
+    QVERIFY(!presenter.setSkipForwardSeconds(19));
+    QCOMPARE(presenter.preferences(), preferences_before);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(timer->isActive());
+    QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+    QVERIFY(presenter.positionMs() > position_before);
+
+    writer.complete(PreferencesSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+}
+
+void PlayerPresenterTests::preferenceSaveTimeoutKeepsTheApplicationResponsiveAndOpen() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave,
+                                                         .exit_flush_timeout = std::chrono::milliseconds{100},
+                                                         .now = [&clock] { return clock.now(); }});
+
+    QVERIFY(presenter.requestHide());
+    QCOMPARE(platform.hide_calls, 1);
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+
+    clock.advance(std::chrono::milliseconds{100});
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(platform.restore_calls, 1);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+
+    QVERIFY(presenter.retryPreferenceSave());
+    writer.complete(PreferencesSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{2});
+    QVERIFY(autosave.writeActive());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+
+    writer.complete(PreferencesSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QVERIFY(!autosave.dirty());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+}
+
+void PlayerPresenterTests::preferencePollingSleepsAfterTerminalNoticeUntilUserAction_data() {
+    QTest::addColumn<int>("saveStatus");
+    QTest::addColumn<int>("warning");
+
+    QTest::newRow("failed") << static_cast<int>(PreferencesSaveStatus::Failed)
+                            << static_cast<int>(PlayerPresenter::PreferenceWarning::SaveFailed);
+    QTest::newRow("future-version") << static_cast<int>(PreferencesSaveStatus::BlockedByFutureVersion)
+                                    << static_cast<int>(PlayerPresenter::PreferenceWarning::FutureVersion);
+}
+
+void PlayerPresenterTests::preferencePollingSleepsAfterTerminalNoticeUntilUserAction() {
+    QFETCH(int, saveStatus);
+    QFETCH(int, warning);
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(!timer->isActive());
+
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(timer->isActive());
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(autosave.writeActive());
+
+    writer.complete(static_cast<PreferencesSaveStatus>(saveStatus));
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(static_cast<int>(presenter.preferenceWarning()), warning);
+    QVERIFY(autosave.dirty());
+    QVERIFY(!autosave.writeActive());
+    QVERIFY(!timer->isActive());
+
+    if (static_cast<PreferencesSaveStatus>(saveStatus) == PreferencesSaveStatus::Failed)
+        QVERIFY(presenter.retryPreferenceSave());
+    else
+        QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(timer->isActive());
+
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{2});
+    QVERIFY(autosave.writeActive());
+    writer.complete(PreferencesSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QVERIFY(!autosave.dirty());
+    QVERIFY(!timer->isActive());
+}
+
+void PlayerPresenterTests::projectsTypedPreferenceRecoveryWarningsAndActions() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    Preferences recovered = nonDefaultPreferences();
+    PreferencesAutosave autosave{writer, recovered, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = recovered,
+                                                         .load_status = PreferencesLoadStatus::RecoveredFromBackup,
+                                                         .autosave = &autosave});
+
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::RecoveredFromBackup);
+    QVERIFY(autosave.dirty());
+    QVERIFY(presenter.dismissPreferenceWarning());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    writer.complete(PreferencesSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+    QVERIFY(presenter.retryPreferenceSave());
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{2});
+    writer.complete(PreferencesSaveStatus::BlockedByFutureVersion);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QVERIFY(presenter.confirmPreferenceReplacement());
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{3});
+    QVERIFY(writer.starts.back().replace_future_version);
+}
+
+void PlayerPresenterTests::initialPreferenceLoadWarningsRequireExplicitActions_data() {
+    QTest::addColumn<int>("loadStatus");
+    QTest::addColumn<int>("warning");
+
+    QTest::newRow("invalid-uses-defaults") << static_cast<int>(PreferencesLoadStatus::InvalidUsingDefaults)
+                                           << static_cast<int>(PlayerPresenter::PreferenceWarning::UsingDefaults);
+    QTest::newRow("future-version") << static_cast<int>(PreferencesLoadStatus::FutureVersion)
+                                    << static_cast<int>(PlayerPresenter::PreferenceWarning::FutureVersion);
+}
+
+void PlayerPresenterTests::initialPreferenceLoadWarningsRequireExplicitActions() {
+    QFETCH(int, loadStatus);
+    QFETCH(int, warning);
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = static_cast<PreferencesLoadStatus>(loadStatus),
+                                                         .autosave = &autosave});
+
+    QCOMPARE(static_cast<int>(presenter.preferenceWarning()), warning);
+    QVERIFY(!autosave.dirty());
+    QVERIFY(writer.starts.empty());
+    if (static_cast<PreferencesLoadStatus>(loadStatus) == PreferencesLoadStatus::InvalidUsingDefaults) {
+        QVERIFY(presenter.dismissPreferenceWarning());
+        QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+        QVERIFY(!autosave.dirty());
+        return;
+    }
+
+    QVERIFY(!presenter.dismissPreferenceWarning());
+    QVERIFY(presenter.confirmPreferenceReplacement());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
+    QVERIFY(autosave.dirty());
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(writer.starts.front().replace_future_version);
 }
 
 void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods() {
@@ -3122,7 +3489,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QCOMPARE(presenter.windowNotice(), PlayerPresenter::WindowNotice::NoNotice);
     QVERIFY(presenter.trayNoticeEnabled());
     const QMetaObject* const meta = presenter.metaObject();
-    for (const char* name : {"exiting", "windowNotice", "trayNoticeEnabled"}) {
+    for (const char* name : {"exiting", "exitCommitted", "windowNotice", "trayNoticeEnabled"}) {
         const int index = meta->indexOfProperty(name);
         QVERIFY(index >= 0);
         const QMetaProperty property = meta->property(index);
@@ -3171,6 +3538,9 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "setRestoreLastSession",
                                     "setStartMinimized",
                                     "setQueueEndPreference",
+                                    "dismissPreferenceWarning",
+                                    "retryPreferenceSave",
+                                    "confirmPreferenceReplacement",
                                     "skipUnavailable",
                                     "requestClose",
                                     "requestHide",
@@ -3648,9 +4018,9 @@ void PlayerPresenterTests::exitPublishesItsGuardAndStopsTicksBeforeRequestingThe
     QCOMPARE(presenter.confirmedPositionMs(), 84'000);
     QVERIFY(presenter.seekPending());
     QVERIFY(presenter.seekPreviewActive());
-    // Even another existing transport operation must not restart the lifetime-owned timer.
-    QVERIFY(presenter.togglePlayback());
-    QVERIFY(presenter.togglePlayback());
+    // Direct transport intents are inert after the irreversible exit boundary.
+    QVERIFY(!presenter.togglePlayback());
+    QVERIFY(!presenter.togglePlayback());
     QVERIFY(!timer->isActive());
 }
 

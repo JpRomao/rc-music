@@ -90,6 +90,8 @@ struct Preferences final {
     bool restore_last_session{true};
     bool start_minimized{false};
     QueueEndBehavior queue_end_behavior{QueueEndBehavior::StopKeepSelection};
+
+    [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };
 
 } // namespace music_player::m0

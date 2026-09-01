@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace music_player::m0::test {
@@ -101,7 +102,23 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
     };
 }
 
+[[nodiscard]] Preferences persistedPreferences() {
+    return Preferences{
+        .theme = ThemeMode::Dark,
+        .motion = MotionMode::Reduced,
+        .volume = 0.35,
+        .muted = true,
+        .skip_backward_seconds = 7,
+        .skip_forward_seconds = 20,
+        .close_behavior = CloseBehavior::Exit,
+        .restore_last_session = false,
+        .start_minimized = true,
+        .queue_end_behavior = QueueEndBehavior::StopClearSelection,
+    };
+}
+
 void checkUnchangedPreferences(const Preferences& actual, const Preferences& expected) {
+    CHECK(actual == expected);
     CHECK(actual.theme == expected.theme);
     CHECK(actual.motion == expected.motion);
     CHECK(actual.volume == expected.volume);
@@ -112,6 +129,45 @@ void checkUnchangedPreferences(const Preferences& actual, const Preferences& exp
     CHECK(actual.restore_last_session == expected.restore_last_session);
     CHECK(actual.start_minimized == expected.start_minimized);
     CHECK(actual.queue_end_behavior == expected.queue_end_behavior);
+}
+
+TEST_CASE("controller rejects an invalid initial preferences snapshot", "[m0][qt][core][preferences]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    Preferences invalid = persistedPreferences();
+
+    const auto invalid_case = GENERATE_COPY(
+        std::pair{0, std::numeric_limits<double>::quiet_NaN()}, std::pair{0, std::numeric_limits<double>::infinity()},
+        std::pair{0, -0.01}, std::pair{0, 1.01}, std::pair{1, 0.0}, std::pair{1, 301.0}, std::pair{2, 0.0},
+        std::pair{2, 301.0}, std::pair{3, 0.0}, std::pair{4, 0.0}, std::pair{5, 0.0}, std::pair{6, 0.0});
+
+    switch (invalid_case.first) {
+    case 0:
+        invalid.volume = invalid_case.second;
+        break;
+    case 1:
+        invalid.skip_backward_seconds = static_cast<int>(invalid_case.second);
+        break;
+    case 2:
+        invalid.skip_forward_seconds = static_cast<int>(invalid_case.second);
+        break;
+    case 3:
+        invalid.theme = static_cast<ThemeMode>(99);
+        break;
+    case 4:
+        invalid.motion = static_cast<MotionMode>(99);
+        break;
+    case 5:
+        invalid.close_behavior = static_cast<CloseBehavior>(99);
+        break;
+    case 6:
+        invalid.queue_end_behavior = static_cast<QueueEndBehavior>(99);
+        break;
+    }
+
+    CHECK_THROWS_AS(PlayerController(backend, platform, playingSnapshot(), invalid), std::invalid_argument);
+    CHECK(backend.volume_requests.empty());
+    CHECK(backend.mute_requests.empty());
 }
 
 TEST_CASE("toggle playback maps active states to exactly one backend command", "[m0][qt][core][transport]") {
@@ -268,6 +324,19 @@ TEST_CASE("controller starts from the frozen M0 defaults", "[m0][qt][core][defau
     CHECK(controller.preferences().restore_last_session);
     CHECK_FALSE(controller.preferences().start_minimized);
     CHECK(controller.preferences().queue_end_behavior == QueueEndBehavior::StopKeepSelection);
+}
+
+TEST_CASE("controller starts with the complete persisted preference snapshot", "[m0][qt][core][preferences][restore]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{false};
+    const PlaybackSnapshot playback = playingSnapshot();
+    const Preferences persisted = persistedPreferences();
+
+    const PlayerController controller{backend, platform, playback, persisted};
+
+    CHECK(controller.confirmedSnapshot() == playback);
+    checkUnchangedPreferences(controller.preferences(), persisted);
+    CHECK(controller.preferences().start_minimized);
 }
 
 TEST_CASE("controller normalizes invalid snapshot bounds at its public boundary", "[m0][qt][core][snapshot]") {
@@ -651,18 +720,48 @@ TEST_CASE("unmute restores the last nonzero logical volume", "[m0][qt][core][pre
     CHECK(backend.volume_requests.back() == Catch::Approx(0.35));
 }
 
-TEST_CASE("start minimized is rejected without an available tray", "[m0][qt][core][preferences][tray]") {
+TEST_CASE("unmute restores the loaded nonzero volume or the safe default after loaded zero",
+          "[m0][qt][core][preferences][mute][restore]") {
+    const double loaded_volume = GENERATE(0.0, 0.35);
+    const double expected_unmuted_volume = loaded_volume > 0.0 ? loaded_volume : Preferences{}.volume;
     RecordingPlaybackBackend backend;
-    RecordingPlatformIntegration unavailable_platform{false};
-    PlayerController unavailable_controller{backend, unavailable_platform};
+    RecordingPlatformIntegration platform{true};
+    Preferences persisted = persistedPreferences();
+    persisted.volume = loaded_volume;
+    persisted.muted = true;
+    PlayerController controller{backend, platform, {}, persisted};
 
-    CHECK_FALSE(unavailable_controller.setStartMinimized(true));
-    CHECK_FALSE(unavailable_controller.preferences().start_minimized);
+    if (loaded_volume > 0.0)
+        REQUIRE(controller.setVolume(0.0));
+    REQUIRE(controller.toggleMute());
 
-    RecordingPlatformIntegration available_platform{true};
-    PlayerController available_controller{backend, available_platform};
-    REQUIRE(available_controller.setStartMinimized(true));
-    CHECK(available_controller.preferences().start_minimized);
+    CHECK_FALSE(controller.preferences().muted);
+    CHECK(controller.preferences().volume == Catch::Approx(expected_unmuted_volume));
+    REQUIRE(backend.volume_requests.size() == (loaded_volume > 0.0 ? 2 : 1));
+    CHECK(backend.volume_requests.back() == Catch::Approx(expected_unmuted_volume));
+    CHECK(backend.mute_requests == std::vector<bool>{false});
+}
+
+TEST_CASE("start minimized setter requires tray only while enabling", "[m0][qt][core][preferences][tray]") {
+    RecordingPlaybackBackend backend;
+
+    SECTION("enabling is rejected when tray is unavailable") {
+        RecordingPlatformIntegration platform{false};
+        PlayerController controller{backend, platform};
+
+        CHECK_FALSE(controller.setStartMinimized(true));
+        CHECK_FALSE(controller.preferences().start_minimized);
+    }
+
+    SECTION("disabling remains available after tray capability is lost") {
+        RecordingPlatformIntegration platform{true};
+        PlayerController controller{backend, platform};
+        REQUIRE(controller.setStartMinimized(true));
+        platform.tray_available_ = false;
+
+        REQUIRE(controller.setStartMinimized(false));
+        CHECK_FALSE(controller.preferences().start_minimized);
+    }
 }
 
 TEST_CASE("explicit hide uses the tray regardless of the close preference", "[m0][qt][core][lifecycle][tray]") {

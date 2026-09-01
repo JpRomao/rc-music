@@ -1,5 +1,10 @@
 #include "ShellLaunchOptions.hpp"
 #include "adapters/QtShellPlatform.hpp"
+#ifdef Q_OS_WIN
+#include "adapters/QtJsonWindowsPreferencesStore.hpp"
+#include "m0/adapters/SingleWorkerPreferencesWriter.hpp"
+#include "m0/application/PreferencesAutosave.hpp"
+#endif
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
@@ -23,12 +28,14 @@
 #endif
 
 #include <QApplication>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QMetaObject>
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QVariant>
 #include <QWindow>
@@ -48,6 +55,7 @@ using music_player::m0::ShellUiContract;
 using music_player::m0::experiment::InitialShellScenario;
 using music_player::m0::experiment::parseShellLaunchOptions;
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
+using music_player::m0::experiment::validateShellLaunchOptions;
 
 namespace {
 #ifdef M0_QT_COMBINED_AUDIO
@@ -85,6 +93,40 @@ namespace {
            transport_after == transport_before && transport_after->property("enabled").toBool() &&
            !isVisible(error_state) && isVisible(playing_state);
 }
+
+[[nodiscard]] music_player::m0::Preferences restartPreferences() {
+    return {.theme = music_player::m0::ThemeMode::Dark,
+            .motion = music_player::m0::MotionMode::Reduced,
+            .volume = 0.37,
+            .muted = true,
+            .skip_backward_seconds = 7,
+            .skip_forward_seconds = 20,
+            .close_behavior = music_player::m0::CloseBehavior::Exit,
+            .restore_last_session = false,
+            .start_minimized = true,
+            .queue_end_behavior = music_player::m0::QueueEndBehavior::StopClearSelection};
+}
+
+[[nodiscard]] bool writeRestartPreferences(PlayerPresenter& presenter) {
+    const bool theme = presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme);
+    const bool motion = presenter.setMotionPreference(PlayerPresenter::MotionPreference::ReducedMotion);
+    const bool volume = presenter.setVolume(0.37);
+    const bool muted = presenter.toggleMute();
+    const bool backward = presenter.setSkipBackwardSeconds(7);
+    const bool forward = presenter.setSkipForwardSeconds(20);
+    const bool close = presenter.setClosePreference(PlayerPresenter::ClosePreference::Exit);
+    const bool restore = presenter.setRestoreLastSession(false);
+    const bool minimized = presenter.setStartMinimized(true);
+    const bool queue_end = presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection);
+    const bool snapshot = presenter.preferences() == restartPreferences();
+    if (!(theme && motion && volume && muted && backward && forward && close && restore && minimized && queue_end &&
+          snapshot)) {
+        qCritical() << "Unable to apply the complete restart preference snapshot" << theme << motion << volume << muted
+                    << backward << forward << close << restore << minimized << queue_end << snapshot;
+    }
+    return theme && motion && volume && muted && backward && forward && close && restore && minimized && queue_end &&
+           snapshot;
+}
 #endif
 } // namespace
 
@@ -92,17 +134,38 @@ int main(int argc, char* argv[]) {
     Q_INIT_RESOURCE(m0_qt_shell_assets);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication application(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
+    QCoreApplication::setApplicationName(QStringLiteral("MusicPlayer"));
     application.setQuitOnLastWindowClosed(false);
     try {
         const auto options = parseShellLaunchOptions(application.arguments());
-#ifndef M0_QT_SHELL_TEST_HOOKS
-        if (options.initial_scenario != InitialShellScenario::Empty || options.smoke_error_recovery ||
-            options.smoke_tray_lifecycle || options.smoke_combined_startup)
-            throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
+        validateShellLaunchOptions(options,
+#ifdef M0_QT_SHELL_TEST_HOOKS
+                                   true,
+#else
+                                   false,
 #endif
-#ifndef M0_QT_COMBINED_AUDIO
-        if (options.smoke_combined_startup)
-            throw std::invalid_argument{"the combined startup smoke requires audio support"};
+#ifdef M0_QT_COMBINED_AUDIO
+                                   true
+#else
+                                   false
+#endif
+        );
+#ifdef Q_OS_WIN
+        QString config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        if (options.test_config_root.has_value())
+            config_root = *options.test_config_root;
+#endif
+        music_player::m0::QtJsonWindowsPreferencesStore preferences_store(config_root);
+        const music_player::m0::PreferencesLoadResult loaded_preferences = preferences_store.load();
+        music_player::m0::SingleWorkerPreferencesWriter preferences_writer(preferences_store);
+        music_player::m0::PreferencesAutosave preferences_autosave(preferences_writer, loaded_preferences.preferences);
+        const music_player::m0::PlayerPresenterPreferences presenter_preferences{
+            .initial = loaded_preferences.preferences,
+            .load_status = loaded_preferences.status,
+            .autosave = &preferences_autosave,
+        };
 #endif
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
@@ -111,7 +174,8 @@ int main(int argc, char* argv[]) {
         std::function<bool()> availability_reader;
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_available = true;
-        if (options.smoke_tray_lifecycle)
+        if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
+            options.smoke_preferences_restart_read)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(
@@ -141,9 +205,19 @@ int main(int argc, char* argv[]) {
             return paths;
         };
         PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
-                                  artwork_cache);
+                                  artwork_cache,
+#ifdef Q_OS_WIN
+                                  presenter_preferences
+#else
+                                  nullptr
+#endif
+        );
+#else
+#ifdef Q_OS_WIN
+        PlayerPresenter presenter(bundle, platform, presenter_preferences);
 #else
         PlayerPresenter presenter(bundle, platform);
+#endif
 #endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
@@ -152,6 +226,12 @@ int main(int argc, char* argv[]) {
                                 new music_player::m0::ArtworkImageProvider(artwork_cache));
 #endif
         music_player::m0::bindShellAppearance(presenter, contract, system_appearance);
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        if (options.smoke_preferences_restart_read &&
+            (presenter.preferences() != restartPreferences() || !contract.darkTheme())) {
+            throw std::runtime_error{"persisted preferences were not applied before QML creation"};
+        }
+#endif
         if (options.initial_scenario == InitialShellScenario::Unavailable &&
             (!presenter.loadFrozenQueue() || !PlayerPresenterScenarioControl::enterUnavailable(presenter))) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
@@ -168,6 +248,7 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_SHELL_TEST_HOOKS
         bool tray_smoke_completed = false;
         bool combined_startup_smoke_completed = false;
+        bool preferences_restart_completed = false;
         if (options.smoke_tray_lifecycle) {
             QTimer::singleShot(
                 0, &application,
@@ -216,6 +297,31 @@ int main(int argc, char* argv[]) {
             });
         }
 #endif
+        if (options.smoke_preferences_restart_write) {
+            QTimer::singleShot(0, &application, [&application, &presenter, &preferences_restart_completed] {
+                const bool written = writeRestartPreferences(presenter);
+                const bool exited = presenter.requestExit();
+                preferences_restart_completed =
+                    written && exited &&
+                    presenter.preferenceWarning() != PlayerPresenter::PreferenceWarning::SaveFailed;
+                if (!preferences_restart_completed)
+                    application.exit(2);
+            });
+        }
+        if (options.smoke_preferences_restart_read) {
+            QTimer::singleShot(0, &application,
+                               [&application, window, &contract, &presenter, &preferences_restart_completed] {
+                                   preferences_restart_completed =
+                                       presenter.preferences() == restartPreferences() && contract.darkTheme() &&
+                                       window->property("color").value<QColor>() == QColor{contract.canvasColor()} &&
+                                       presenter.requestExit();
+                                   if (!preferences_restart_completed)
+                                       application.exit(2);
+                               });
+        }
+        if (options.smoke_preferences_restart_write || options.smoke_preferences_restart_read) {
+            QTimer::singleShot(3000, &application, [&application] { application.exit(2); });
+        }
 #endif
         const int result = application.exec();
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -231,6 +337,11 @@ int main(int argc, char* argv[]) {
             qCritical() << "The combined audio shell exited without completing its startup smoke:"
                         << "result" << result << "completed" << combined_startup_smoke_completed << "exiting"
                         << presenter.exiting() << "visible" << window->isVisible();
+            return 2;
+        }
+        if ((options.smoke_preferences_restart_write || options.smoke_preferences_restart_read) &&
+            (result != 0 || !preferences_restart_completed || !presenter.exiting())) {
+            qCritical() << "The preferences restart smoke did not complete";
             return 2;
         }
 #endif

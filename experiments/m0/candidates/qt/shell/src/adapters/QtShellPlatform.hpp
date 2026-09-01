@@ -35,6 +35,7 @@ struct TrayMenuState final {
     bool playing{false};
     bool can_go_previous{false};
     bool can_go_next{false};
+    bool interaction_enabled{true};
 };
 
 class QtShellPlatform final : public QObject, public PlatformIntegration {

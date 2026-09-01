@@ -76,6 +76,8 @@ TestCase {
 
         mouseClick(findChild(shell, "open-audio"));
         tryCompare(testDetailsFixturePresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        verify(testDetailsFixturePresenter.togglePlayback()); // qmllint disable unqualified
+        tryCompare(testDetailsFixturePresenter, "playbackState", PlayerPresenter.Paused); // qmllint disable unqualified
 
         const opener = findChild(shell, "track-details-playing");
         verify(opener);

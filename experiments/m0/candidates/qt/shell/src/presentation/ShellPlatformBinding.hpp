@@ -30,10 +30,11 @@ inline void bindShellPlatform(PlayerPresenter& presenter, QtShellPlatform& platf
                               : presenter.hasContextTrack() ? presenter.contextTitle()
                                                             : QString{};
         platform.updateTrayState({title, transport_enabled, state == PlayerPresenter::PlaybackState::Playing,
-                                  presenter.canGoPrevious(), presenter.canGoNext()});
+                                  presenter.canGoPrevious(), presenter.canGoNext(), !presenter.exiting()});
     };
     QObject::connect(&presenter, &PlayerPresenter::stateChanged, &platform, refresh_tray);
     QObject::connect(&presenter, &PlayerPresenter::playbackChanged, &platform, refresh_tray);
+    QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &platform, refresh_tray);
     QObject::connect(&platform, &QtShellPlatform::availabilityChanged, &presenter,
                      [&presenter, guarded_window = QPointer<QWindow>(&window)] {
                          presenter.refreshPlatformAvailability();

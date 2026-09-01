@@ -12,6 +12,8 @@ class PlayerController final {
   public:
     PlayerController(PlaybackBackend& playback_backend, PlatformIntegration& platform,
                      PlaybackSnapshot initial_snapshot = {});
+    PlayerController(PlaybackBackend& playback_backend, PlatformIntegration& platform,
+                     PlaybackSnapshot initial_snapshot, Preferences initial_preferences);
 
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] const PlaybackSnapshot& confirmedSnapshot() const noexcept;
@@ -51,7 +53,7 @@ class PlayerController final {
     PlaybackSnapshot confirmed_snapshot_{};
     std::int64_t displayed_position_ms_{0};
     std::int64_t preview_position_ms_{0};
-    double last_nonzero_volume_{0.8};
+    double last_nonzero_volume_{Preferences{}.volume};
     bool seek_preview_active_{false};
     bool seek_pending_{false};
 };

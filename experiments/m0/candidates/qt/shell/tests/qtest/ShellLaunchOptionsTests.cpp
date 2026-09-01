@@ -1,11 +1,25 @@
 #include "ShellLaunchOptions.hpp"
 
+#include <QDir>
 #include <QTest>
 
 #include <stdexcept>
 
 using music_player::m0::experiment::InitialShellScenario;
 using music_player::m0::experiment::parseShellLaunchOptions;
+using music_player::m0::experiment::validateShellLaunchOptions;
+
+namespace {
+
+[[nodiscard]] QString testConfigRoot(const QString& suffix) {
+    return QDir{QDir::tempPath()}.filePath(QStringLiteral("music player ") + suffix);
+}
+
+[[nodiscard]] QString testConfigArgument(const QString& suffix) {
+    return QStringLiteral("--m0-test-config-root=") + testConfigRoot(suffix);
+}
+
+} // namespace
 
 class ShellLaunchOptionsTests final : public QObject {
     Q_OBJECT
@@ -14,9 +28,13 @@ class ShellLaunchOptionsTests final : public QObject {
     void defaultsToTheEmptyScenario() {
         const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+        QVERIFY(!options.scenario_control_requested);
         QVERIFY(!options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
         QVERIFY(!options.smoke_combined_startup);
+        QVERIFY(!options.smoke_preferences_restart_write);
+        QVERIFY(!options.smoke_preferences_restart_read);
+        QVERIFY(!options.test_config_root.has_value());
     }
 
     void acceptsTheClosedUnavailableScenario() {
@@ -32,6 +50,7 @@ class ShellLaunchOptionsTests final : public QObject {
         const auto options =
             parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=empty")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+        QVERIFY(options.scenario_control_requested);
         QVERIFY(!options.smoke_error_recovery);
         QVERIFY(!options.smoke_tray_lifecycle);
         QVERIFY(!options.smoke_combined_startup);
@@ -90,6 +109,66 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY(options.smoke_combined_startup);
     }
 
+    void acceptsClosedPreferencesRestartHooks_data() {
+        QTest::addColumn<QString>("phase");
+        QTest::newRow("write") << QStringLiteral("preferences-restart-write");
+        QTest::newRow("read") << QStringLiteral("preferences-restart-read");
+    }
+
+    void acceptsClosedPreferencesRestartHooks() {
+        QFETCH(QString, phase);
+        const QString root = testConfigRoot(QStringLiteral("temporary preferences"));
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=") + phase,
+                                     QStringLiteral("--m0-test-config-root=") + root});
+        QCOMPARE(options.smoke_preferences_restart_write, phase.endsWith(QStringLiteral("write")));
+        QCOMPARE(options.smoke_preferences_restart_read, phase.endsWith(QStringLiteral("read")));
+        QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+        validateShellLaunchOptions(options, true, true);
+    }
+
+    void acceptsIsolatedConfigForEveryExecutableSmoke_data() {
+        QTest::addColumn<QStringList>("arguments");
+        QTest::newRow("error recovery") << QStringList{
+            QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=unavailable"),
+            QStringLiteral("--m0-smoke=error-recovery"), testConfigArgument(QStringLiteral("isolated error"))};
+        QTest::newRow("tray lifecycle") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                       QStringLiteral("--m0-smoke=tray-lifecycle"),
+                                                       testConfigArgument(QStringLiteral("isolated tray"))};
+        QTest::newRow("combined startup")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=combined-startup"),
+                           testConfigArgument(QStringLiteral("isolated combined"))};
+    }
+
+    void acceptsIsolatedConfigForEveryExecutableSmoke() {
+        QFETCH(QStringList, arguments);
+        const auto options = parseShellLaunchOptions(arguments);
+        QVERIFY(options.test_config_root.has_value());
+        validateShellLaunchOptions(options, true, true);
+    }
+
+    void rejectsEveryClosedControlInProduction_data() {
+        QTest::addColumn<QStringList>("arguments");
+        QTest::newRow("explicit default scenario")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-scenario=empty")};
+        QTest::newRow("scenario") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                 QStringLiteral("--m0-scenario=unavailable")};
+        QTest::newRow("existing smoke") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                       QStringLiteral("--m0-smoke=tray-lifecycle")};
+        QTest::newRow("restart write") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                      QStringLiteral("--m0-smoke=preferences-restart-write"),
+                                                      testConfigArgument(QStringLiteral("temporary write"))};
+        QTest::newRow("restart read") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                     QStringLiteral("--m0-smoke=preferences-restart-read"),
+                                                     testConfigArgument(QStringLiteral("temporary read"))};
+    }
+
+    void rejectsEveryClosedControlInProduction() {
+        QFETCH(QStringList, arguments);
+        const auto options = parseShellLaunchOptions(arguments);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, true));
+    }
+
     void rejectsMalformedM0Options_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("missing scenario")
@@ -131,6 +210,19 @@ class ShellLaunchOptionsTests final : public QObject {
         QTest::newRow("tray lifecycle and error recovery smokes")
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=tray-lifecycle"),
                            QStringLiteral("--m0-smoke=error-recovery")};
+        QTest::newRow("restart without root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=preferences-restart-write")};
+        QTest::newRow("root without restart")
+            << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
+        QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                      QStringLiteral("--m0-smoke=preferences-restart-read"),
+                                                      QStringLiteral("--m0-test-config-root=relative")};
+        QTest::newRow("empty root") << QStringList{QStringLiteral("m0_qt_shell"),
+                                                   QStringLiteral("--m0-smoke=preferences-restart-read"),
+                                                   QStringLiteral("--m0-test-config-root=")};
+        QTest::newRow("duplicate root") << QStringList{
+            QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=preferences-restart-read"),
+            testConfigArgument(QStringLiteral("one")), testConfigArgument(QStringLiteral("two"))};
     }
 
     void rejectsMalformedM0Options() {

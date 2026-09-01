@@ -140,6 +140,28 @@ class QtShellPlatformTests final : public QObject {
         QVERIFY(exit->isEnabled());
     }
 
+    void pendingExitDisablesAndCancelledExitRestoresEveryMenuAction() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.show();
+        platform.bindWindow(window);
+        auto* const title = action(platform, "tray-current-track");
+        auto* const play = action(platform, "tray-play-pause");
+        auto* const previous = action(platform, "tray-previous");
+        auto* const next = action(platform, "tray-next");
+        auto* const show_hide = action(platform, "tray-show-hide");
+        auto* const exit = action(platform, "tray-exit");
+        QVERIFY(title && play && previous && next && show_hide && exit);
+
+        platform.updateTrayState({QStringLiteral("Faixa"), true, false, true, true, false});
+        for (const auto* menu_action : {title, play, previous, next, show_hide, exit})
+            QVERIFY(!menu_action->isEnabled());
+
+        platform.updateTrayState({QStringLiteral("Faixa"), true, false, true, true, true});
+        for (const auto* menu_action : {title, play, previous, next, show_hide, exit})
+            QVERIFY(menu_action->isEnabled());
+    }
+
     void showHideAndTitleRestoreFollowActualWindowVisibility() {
         QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
         QWindow window;

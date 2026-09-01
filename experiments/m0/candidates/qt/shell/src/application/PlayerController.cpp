@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace music_player::m0 {
 namespace {
@@ -17,13 +18,35 @@ namespace {
     return status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing;
 }
 
+[[nodiscard]] Preferences validatedPreferences(Preferences preferences) {
+    const bool valid_theme = preferences.theme == ThemeMode::System || preferences.theme == ThemeMode::Light ||
+                             preferences.theme == ThemeMode::Dark;
+    const bool valid_motion = preferences.motion == MotionMode::System || preferences.motion == MotionMode::Reduced;
+    const bool valid_close = preferences.close_behavior == CloseBehavior::MinimizeToTray ||
+                             preferences.close_behavior == CloseBehavior::Exit;
+    const bool valid_queue_end = preferences.queue_end_behavior == QueueEndBehavior::StopKeepSelection ||
+                                 preferences.queue_end_behavior == QueueEndBehavior::StopClearSelection;
+    const bool valid_volume =
+        std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0;
+    const bool valid_skips = preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
+                             preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300;
+    if (!valid_theme || !valid_motion || !valid_close || !valid_queue_end || !valid_volume || !valid_skips)
+        throw std::invalid_argument{"invalid initial preferences"};
+    return preferences;
+}
+
 } // namespace
 
 PlayerController::PlayerController(PlaybackBackend& playback_backend, PlatformIntegration& platform,
                                    PlaybackSnapshot initial_snapshot)
-    : playback_backend_(playback_backend), platform_(platform),
+    : PlayerController(playback_backend, platform, initial_snapshot, Preferences{}) {}
+
+PlayerController::PlayerController(PlaybackBackend& playback_backend, PlatformIntegration& platform,
+                                   PlaybackSnapshot initial_snapshot, Preferences initial_preferences)
+    : playback_backend_(playback_backend), platform_(platform), preferences_(validatedPreferences(initial_preferences)),
       confirmed_snapshot_(normalizedSnapshot(initial_snapshot)),
-      displayed_position_ms_(confirmed_snapshot_.position_ms) {}
+      displayed_position_ms_(confirmed_snapshot_.position_ms),
+      last_nonzero_volume_(preferences_.volume > 0.0 ? preferences_.volume : Preferences{}.volume) {}
 
 const Preferences& PlayerController::preferences() const noexcept { return preferences_; }
 

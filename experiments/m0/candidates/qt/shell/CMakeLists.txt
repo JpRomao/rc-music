@@ -142,6 +142,25 @@ if(M0_QT_SHELL_SUPPORT)
         target_compile_options(m0_qt_system_appearance PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    add_library(m0_qt_preferences_persistence STATIC
+        src/adapters/PreferencesJsonCodec.hpp
+        src/adapters/PreferencesJsonCodec.cpp
+    )
+    if(WIN32)
+        target_sources(m0_qt_preferences_persistence PRIVATE
+            src/adapters/QtJsonWindowsPreferencesStore.hpp
+            src/adapters/QtJsonWindowsPreferencesStore.cpp
+        )
+    endif()
+    target_include_directories(m0_qt_preferences_persistence PUBLIC include src)
+    target_link_libraries(m0_qt_preferences_persistence PUBLIC m0_qt_core Qt6::Core)
+    target_compile_features(m0_qt_preferences_persistence PUBLIC cxx_std_20)
+    if(MSVC)
+        target_compile_options(m0_qt_preferences_persistence PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_preferences_persistence PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     add_library(m0_qt_shell_support STATIC
         include/m0/adapters/fixture/FixtureRepository.hpp
         include/m0/presentation/QueueListModel.hpp
@@ -170,6 +189,9 @@ if(M0_QT_SHELL_SUPPORT)
     set_source_files_properties(qml/AccessibleActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "AccessibleActionButton.qml")
     set_source_files_properties(qml/TransportSlider.qml PROPERTIES QT_RESOURCE_ALIAS "TransportSlider.qml")
     set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
+    set_source_files_properties(qml/PreferencePersistenceNotice.qml PROPERTIES
+        QT_RESOURCE_ALIAS "PreferencePersistenceNotice.qml"
+    )
     set_source_files_properties(qml/WindowNotice.qml PROPERTIES QT_RESOURCE_ALIAS "WindowNotice.qml")
     set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
     set_source_files_properties(qml/QueueText.qml PROPERTIES QT_RESOURCE_ALIAS "QueueText.qml")
@@ -213,6 +235,7 @@ if(M0_QT_SHELL_SUPPORT)
             qml/SourceImportStatus.qml
             qml/SourceImportText.qml
             qml/PreferencesPanel.qml
+            qml/PreferencePersistenceNotice.qml
             qml/WindowNotice.qml
             qml/PreferencesText.qml
             qml/PreferenceChoice.qml
@@ -271,6 +294,7 @@ if(M0_QT_SHELL_SUPPORT)
 
     qt_add_executable(m0_qt_shell app/main.cpp)
     target_link_libraries(m0_qt_shell PRIVATE
+        m0_qt_preferences_persistence
         m0_qt_shell_platform
         m0_qt_system_appearance
         m0_qt_shell_bootstrap
@@ -333,6 +357,37 @@ if(M0_QT_SHELL_SUPPORT)
             -o "${CMAKE_CURRENT_BINARY_DIR}/system-appearance-test.txt,txt"
             -o -,txt
         )
+        add_executable(m0_qt_preferences_json_codec_tests tests/qtest/PreferencesJsonCodecTests.cpp)
+        target_link_libraries(m0_qt_preferences_json_codec_tests PRIVATE m0_qt_preferences_persistence Qt6::Test)
+        target_include_directories(m0_qt_preferences_json_codec_tests PRIVATE src)
+        target_compile_features(m0_qt_preferences_json_codec_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_preferences_json_codec_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_preferences_json_codec_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_preferences_json_codec_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.preferences.json-codec COMMAND m0_qt_preferences_json_codec_tests)
+        if(WIN32)
+            add_executable(m0_qt_preferences_windows_store_tests
+                tests/qtest/QtJsonWindowsPreferencesStoreTests.cpp
+            )
+            target_link_libraries(m0_qt_preferences_windows_store_tests PRIVATE
+                m0_qt_preferences_persistence
+                Qt6::Test
+            )
+            target_include_directories(m0_qt_preferences_windows_store_tests PRIVATE src)
+            target_compile_features(m0_qt_preferences_windows_store_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_preferences_windows_store_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_preferences_windows_store_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_preferences_windows_store_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_test(NAME m0.qt.preferences.windows-store COMMAND m0_qt_preferences_windows_store_tests)
+        endif()
         add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
         target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
         target_compile_features(m0_qt_shell_launch_tests PRIVATE cxx_std_20)
@@ -343,6 +398,35 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_launch_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-launch-options COMMAND m0_qt_shell_launch_tests)
+        if(WIN32)
+            add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
+            target_link_libraries(m0_qt_preferences_restart_tests PRIVATE Qt6::Core Qt6::Test)
+            target_compile_features(m0_qt_preferences_restart_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_preferences_restart_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_preferences_restart_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_preferences_restart_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_dependencies(m0_qt_preferences_restart_tests m0_qt_shell)
+            add_test(NAME m0.qt.preferences.restart COMMAND m0_qt_preferences_restart_tests
+                $<TARGET_FILE:m0_qt_shell>
+            )
+        endif()
+        add_executable(m0_qt_shell_executable_smoke_tests tests/qtest/ShellExecutableSmokeTests.cpp)
+        target_link_libraries(m0_qt_shell_executable_smoke_tests PRIVATE Qt6::Core Qt6::Test)
+        target_compile_features(m0_qt_shell_executable_smoke_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_shell_executable_smoke_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_shell_executable_smoke_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_shell_executable_smoke_tests PRIVATE
+                -Wall -Wextra -Wpedantic -Werror
+            )
+        endif()
+        add_dependencies(m0_qt_shell_executable_smoke_tests m0_qt_shell)
         add_executable(m0_qt_fixture_tests
             tests/qtest/FixtureRepositoryTests.cpp
         )
@@ -435,6 +519,16 @@ if(M0_QT_SHELL_SUPPORT)
             LABELS "m0;qt;shell-launch"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
+        set_tests_properties(m0.qt.preferences.json-codec PROPERTIES
+            LABELS "m0;qt;preferences;json"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        if(WIN32)
+            set_tests_properties(m0.qt.preferences.windows-store PROPERTIES
+                LABELS "m0;qt;preferences;windows;atomic-store"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            )
+        endif()
         set_tests_properties(m0.qt.presenter.initial-load PROPERTIES
             LABELS "m0;qt;presenter"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
@@ -450,6 +544,14 @@ if(M0_QT_SHELL_SUPPORT)
         if(WIN32 AND IS_DIRECTORY "$ENV{WINDIR}/Fonts")
             cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST m0_windows_font_dir NORMALIZE)
             list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
+        endif()
+        if(WIN32)
+            set_tests_properties(m0.qt.preferences.restart PROPERTIES
+                LABELS "m0;qt;preferences;restart;shell-executable"
+                TIMEOUT 40
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT "${m0_qt_quick_test_environment}"
+            )
         endif()
         set_tests_properties(m0.qt.system-appearance PROPERTIES
             LABELS "m0;qt;system-appearance"
@@ -473,20 +575,25 @@ if(M0_QT_SHELL_SUPPORT)
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
         if(NOT M0_QT_AUDIO_SUPPORT)
-            add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell
-                --m0-scenario=unavailable
-                --m0-smoke=error-recovery
+            add_test(NAME m0.qt.shell-executable.error-recovery COMMAND m0_qt_shell_executable_smoke_tests
+                $<TARGET_FILE:m0_qt_shell>
+                error-recovery
+                unavailable
             )
             set_tests_properties(m0.qt.shell-executable.error-recovery PROPERTIES
                 LABELS "m0;qt;shell-executable;error-recovery"
-                TIMEOUT 5
+                TIMEOUT 25
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
                 ENVIRONMENT "${m0_qt_quick_test_environment}"
             )
-            add_test(NAME m0.qt.shell-executable.tray-lifecycle COMMAND m0_qt_shell --m0-smoke=tray-lifecycle)
+            add_test(NAME m0.qt.shell-executable.tray-lifecycle COMMAND m0_qt_shell_executable_smoke_tests
+                $<TARGET_FILE:m0_qt_shell>
+                tray-lifecycle
+                empty
+            )
             set_tests_properties(m0.qt.shell-executable.tray-lifecycle PROPERTIES
                 LABELS "m0;qt;shell-executable;tray;lifecycle"
-                TIMEOUT 5
+                TIMEOUT 25
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
                 ENVIRONMENT "${m0_qt_quick_test_environment}"
             )
@@ -725,12 +832,22 @@ if(M0_QT_AUDIO_SUPPORT)
         )
 
         if(M0_QT_SHELL_SUPPORT)
-            add_test(NAME m0.qt.shell-executable.combined-startup COMMAND m0_qt_shell
-                --m0-smoke=combined-startup
+            if(WIN32)
+                set_tests_properties(m0.qt.preferences.restart PROPERTIES
+                    ENVIRONMENT_MODIFICATION
+                        "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
+                    ENVIRONMENT
+                        "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
+                )
+            endif()
+            add_test(NAME m0.qt.shell-executable.combined-startup COMMAND m0_qt_shell_executable_smoke_tests
+                $<TARGET_FILE:m0_qt_shell>
+                combined-startup
+                empty
             )
             set_tests_properties(m0.qt.shell-executable.combined-startup PROPERTIES
                 LABELS "m0;qt;shell-executable;audio;startup;lifecycle"
-                TIMEOUT 5
+                TIMEOUT 25
                 ENVIRONMENT_MODIFICATION
                     "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
                 ENVIRONMENT
@@ -805,8 +922,10 @@ add_library(m0_qt_core STATIC
     src/adapters/DeterministicPlaybackBackend.cpp
     src/adapters/SingleWorkerLocalSourceDiscovery.cpp
     src/adapters/SingleWorkerMetadataReader.cpp
+    src/adapters/SingleWorkerPreferencesWriter.cpp
     src/application/LocalTrackSession.cpp
     src/application/PlayerController.cpp
+    src/application/PreferencesAutosave.cpp
     src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
     src/domain/QueueNavigation.cpp
@@ -830,8 +949,10 @@ if(BUILD_TESTING)
         tests/catch2/SingleWorkerLocalSourceDiscoveryTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp
+        tests/catch2/PreferencesAutosaveTests.cpp
         tests/catch2/QueueNavigationTests.cpp
         tests/catch2/SingleWorkerMetadataReaderTests.cpp
+        tests/catch2/SingleWorkerPreferencesWriterTests.cpp
     )
     target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
     target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)
@@ -845,7 +966,7 @@ if(BUILD_TESTING)
     catch_discover_tests(
         m0_qt_core_tests
         TEST_PREFIX "m0.qt.core."
-        PROPERTIES LABELS "m0;qt;core"
+        PROPERTIES LABELS "m0;qt;core" TIMEOUT 15
     )
 
     if(M0_QT_AUDIO_SUPPORT)

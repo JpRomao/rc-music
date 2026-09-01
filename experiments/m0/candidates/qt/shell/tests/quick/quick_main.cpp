@@ -1,4 +1,5 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/PreferencesAutosave.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -49,6 +50,25 @@ class QuickTestPlatform final : public music_player::m0::PlatformIntegration {
     int minimize_calls{0};
     int restore_calls{0};
     int exit_calls{0};
+};
+
+class PendingPreferencesWriter final : public music_player::m0::PreferencesWriter {
+  public:
+    music_player::m0::PreferencesWriterCommand start(music_player::m0::PreferencesWriteRequest request) override {
+        if (active_.has_value())
+            return music_player::m0::PreferencesWriterCommand::Busy;
+        active_ = std::move(request);
+        return music_player::m0::PreferencesWriterCommand::Accepted;
+    }
+    [[nodiscard]] std::optional<music_player::m0::PreferencesWriteCompletion> poll() override { return std::nullopt; }
+    [[nodiscard]] std::optional<music_player::m0::PreferencesWriteCompletion>
+    flush(music_player::m0::PreferencesWriteRequest) override {
+        return std::nullopt;
+    }
+    [[nodiscard]] bool shutdown() override { return true; }
+
+  private:
+    std::optional<music_player::m0::PreferencesWriteRequest> active_{};
 };
 
 class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend {
@@ -569,6 +589,18 @@ class EmptyShellQuickTestSetup final : public QObject {
         auto* contract = new music_player::m0::ShellUiContract(*bundle_, engine);
         auto* presenter = new music_player::m0::PlayerPresenter(*bundle_, platform_, engine);
         auto* details_presenter = new music_player::m0::PlayerPresenter(*bundle_, details_platform_, engine);
+        pending_exit_autosave_ = std::make_unique<music_player::m0::PreferencesAutosave>(
+            pending_exit_writer_, music_player::m0::Preferences{},
+            music_player::m0::PreferencesAutosaveOptions{.now = [this] { return pending_exit_now_; }});
+        auto* pending_exit_presenter =
+            new music_player::m0::PlayerPresenter(*bundle_, pending_exit_platform_,
+                                                  music_player::m0::PlayerPresenterPreferences{
+                                                      .initial = {},
+                                                      .load_status = music_player::m0::PreferencesLoadStatus::Missing,
+                                                      .autosave = pending_exit_autosave_.get(),
+                                                      .now = [this] { return pending_exit_now_; },
+                                                  },
+                                                  engine);
         auto* local_presenter = new music_player::m0::PlayerPresenter(
             *bundle_, platform_, local_backend_, local_metadata_reader_,
             [this] {
@@ -586,6 +618,7 @@ class EmptyShellQuickTestSetup final : public QObject {
         engine->rootContext()->setContextProperty(QStringLiteral("testShellUiContract"), contract);
         engine->rootContext()->setContextProperty(QStringLiteral("testPlayerPresenter"), presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testDetailsFixturePresenter"), details_presenter);
+        engine->rootContext()->setContextProperty(QStringLiteral("testPendingExitPresenter"), pending_exit_presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testLocalPlayerPresenter"), local_presenter);
         engine->rootContext()->setContextProperty(
             QStringLiteral("testScenarioDriver"),
@@ -598,6 +631,10 @@ class EmptyShellQuickTestSetup final : public QObject {
     std::unique_ptr<music_player::m0::FixtureBundle> bundle_;
     QuickTestPlatform platform_;
     QuickTestPlatform details_platform_;
+    QuickTestPlatform pending_exit_platform_;
+    PendingPreferencesWriter pending_exit_writer_{};
+    std::unique_ptr<music_player::m0::PreferencesAutosave> pending_exit_autosave_{};
+    music_player::m0::PreferencesAutosave::TimePoint pending_exit_now_{};
     QuickTestPlaybackBackend local_backend_{};
     QuickTestMetadataReader local_metadata_reader_{};
     FakeLocalSourceDiscovery local_source_discovery_{};
