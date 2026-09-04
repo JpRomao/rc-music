@@ -191,6 +191,17 @@ bool LocalFileQueue::clearSelection() noexcept {
     return true;
 }
 
+bool LocalFileQueue::replaceUnavailableSource(const LocalQueueOccurrenceId occurrence_id,
+                                              std::filesystem::path source_path) {
+    if (source_path.empty())
+        return false;
+    const auto item = std::ranges::find(items_, occurrence_id, &LocalFileQueueItem::occurrence_id);
+    if (item == items_.end() || item->available || item->source_path == source_path)
+        return false;
+    item->source_path = std::move(source_path);
+    return true;
+}
+
 LocalFileQueueSnapshot LocalFileQueue::snapshot() const {
     LocalFileQueueSnapshot result{
         .items = {},

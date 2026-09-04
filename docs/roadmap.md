@@ -321,6 +321,10 @@ O quarto recorte local de M4.7 acrescenta um receptor Windows privado para `Task
 
 O [registro central de taskbar](../experiments/m0/candidates/qt/README.md#taskbar-m47) reúne contratos e uma caracterização nativa que remove/recria exclusivamente o ícone do teste, preservando suas ações. Ela não encerra Explorer nem prova seu reinício real. M4.7 e `FR-038` continuam parciais, com pacote, cenários físicos e gates nativos/Linux ainda abertos. Benchmarks seguem adiados.
 
+O quinto recorte local de M4.7 acrescenta localização assíncrona de arquivo em outro path usando somente o ID da ocorrência na UI. A fila conserva identidade, ordem e duplicatas; metadata antiga é limpa. Uma ocorrência não atual continua indisponível até retry confirmar a nova origem, sem interromper outra faixa. Para a ocorrência atual em erro, um load aceito recupera em `RestorePaused` e restaura a posição quando há seek. Conclusões antigas são descartadas por geração/ID/path, e a persistência usa o snapshot/schema v1 existente.
+
+O [registro central de localização](../experiments/m0/candidates/qt/README.md#file-location-m47) reúne Reds e checks automatizados verdes de core, modelo, presenter, picker, UI, decoder real e composição de produção, preservando os riscos residuais da consolidação. M4.7/`UX-008`/`NFR-REL-005` continuam parciais; diálogo nativo, drive físico, NVDA, pacote/E2E Windows, demais cenários físicos e Linux mantêm seus gates. O próximo passo permanece no desenvolvimento funcional Windows; benchmarks seguem adiados.
+
 ### Escopo Windows
 
 - single-instance e argumentos do shell;

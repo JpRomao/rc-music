@@ -32,6 +32,7 @@
 #endif
 
 #ifdef M0_QT_COMBINED_AUDIO
+#include "adapters/QtAudioFileLocator.hpp"
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
@@ -387,6 +388,8 @@ int main(int argc, char* argv[]) {
             }
             return paths;
         };
+        music_player::m0::QtAudioFileLocator file_locator(music_player::m0::ApplicationText::locateAudioDialogTitle(),
+                                                          localAudioDialogFilter());
         PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
                                   artwork_cache,
 #ifdef Q_OS_WIN
@@ -531,6 +534,10 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
         (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);
         music_player::m0::bindShellPlatform(presenter, platform, *window);
+#ifdef M0_QT_COMBINED_AUDIO
+        file_locator.bindWindow(*window);
+        presenter.setAudioFileLocator(&file_locator);
+#endif
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;
         music_player::m0::SystemMediaControlsBinding system_media_controls_binding(presenter, system_media_controls);

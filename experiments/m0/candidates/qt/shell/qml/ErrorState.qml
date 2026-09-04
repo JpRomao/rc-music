@@ -13,12 +13,23 @@ ColumnLayout {
     property string bodyText: presenter.usesFrozenFixture ? contract.errorBody : labels.messageFor(presenter.errorMessageKey)
     property string actionText: presenter.usesFrozenFixture ? contract.actionSkip : labels.actionFor(presenter.errorActionId)
     readonly property bool outputRecovery: !presenter.usesFrozenFixture && presenter.errorActionId === "recover-audio-output"
+    property bool locationFocusRestoreAllowed: true
+    property string requestedLocationId: ""
     signal detailsRequested(Item opener)
     Accessible.role: Accessible.AlertMessage
     Accessible.name: titleText + (bodyText.length > 0 ? ". " + bodyText : "")
 
     function focusPrimary() {
         recoveryButton.forceActiveFocus(Qt.TabFocusReason);
+    }
+
+    function locateCurrent() {
+        if (!locateButton.visible || !locateButton.enabled)
+            return;
+        const occurrenceId = root.presenter.currentOccurrenceId;
+        root.requestedLocationId = occurrenceId;
+        if (!root.presenter.locateQueueOccurrence(occurrenceId))
+            root.requestedLocationId = "";
     }
 
     Text {
@@ -61,7 +72,7 @@ ColumnLayout {
         contract: root.contract
         text: root.actionText
         Accessible.description: root.outputRecovery ? root.labels.recoverOutputDescription : ""
-        enabled: root.visible && !root.presenter.exiting
+        enabled: root.visible && !root.presenter.exiting && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
@@ -75,7 +86,7 @@ ColumnLayout {
         contract: root.contract
         text: root.labels.openAudioAction
         visible: root.outputRecovery
-        enabled: visible && !root.presenter.exiting
+        enabled: visible && !root.presenter.exiting && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
@@ -91,7 +102,7 @@ ColumnLayout {
         text: root.labels.retryAction
         Accessible.description: root.labels.retryDescription
         visible: !root.presenter.usesFrozenFixture && root.presenter.canRetryCurrentOccurrence
-        enabled: visible && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0
+        enabled: visible && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
@@ -99,6 +110,34 @@ ColumnLayout {
             if (enabled && visible)
                 root.presenter.retryQueueOccurrence(root.presenter.currentOccurrenceId);
         }
+    }
+    AccessibleActionButton {
+        id: locateButton
+        controlId: "error-locate-occurrence"
+        contract: root.contract
+        text: root.labels.locateAction
+        Accessible.description: root.labels.locateDescription
+        visible: !root.presenter.usesFrozenFixture && root.presenter.canLocateCurrentOccurrence
+        enabled: visible && root.presenter.fileLocationAvailable && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
+        Layout.fillWidth: true
+        Layout.maximumWidth: 560
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: root.locateCurrent()
+    }
+    Text {
+        id: locationFeedback
+        objectName: "error-location-feedback"
+        text: root.labels.locationFailed
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+        horizontalAlignment: Text.AlignHCenter
+        color: root.contract.textSecondaryColor
+        visible: root.presenter.fileLocationErrorOccurrenceId.length > 0 && root.presenter.fileLocationErrorOccurrenceId === root.presenter.currentOccurrenceId
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
+        Layout.fillWidth: true
+        Layout.maximumWidth: 560
+        Layout.alignment: Qt.AlignHCenter
     }
     AccessibleTransportButton {
         id: detailsButton
@@ -109,5 +148,22 @@ ColumnLayout {
         enabled: root.presenter.detailsAvailable
         Layout.alignment: Qt.AlignHCenter
         onClicked: root.detailsRequested(detailsButton)
+    }
+
+    Connections {
+        target: root.presenter
+        function onFileLocationFinished(occurrenceId, changed) {
+            if (occurrenceId !== root.requestedLocationId)
+                return;
+            root.requestedLocationId = "";
+            Qt.callLater(function () {
+                if (!root.visible || !root.locationFocusRestoreAllowed || root.presenter.exiting || root.presenter.locatingOccurrenceId.length > 0 || root.presenter.currentOccurrenceId !== occurrenceId)
+                    return;
+                if (locateButton.visible && locateButton.enabled)
+                    locateButton.forceActiveFocus(Qt.TabFocusReason);
+                if (locationFeedback.visible)
+                    locationFeedback.Accessible.announce(locationFeedback.text, Accessible.Polite);
+            });
+        }
     }
 }

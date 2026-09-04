@@ -345,6 +345,19 @@ Os Reds e checks executados são registrados somente no [registro central de rec
 
 Reds, checks executados e limites ficam no [registro central de taskbar](../../experiments/m0/candidates/qt/README.md#taskbar-m47). `QSystemTrayIcon::isVisible()` e presença do shell não comprovam que `NIM_ADD` foi aceito; geometria pública vazia não demonstra ausência de suporte. A caracterização do Qt não é um novo Red do app e não encerra Explorer. M4.7/`FR-038`, restart real do Explorer, pacote, acessibilidade nativa e Linux continuam abertos; nenhum benchmark pertence ao recorte.
 
+### Localização de arquivo M4.7
+
+Os contratos de localização preservam a separação entre escolher uma origem e confirmar sua reprodução:
+
+- core: substituir somente o path de um ID indisponível, preservando seleção/ordem/duplicatas/allocator, rejeitando entrada inválida ou idêntica sem mutação, sem I/O e com snapshot round-trip sem mudança de schema;
+- modelo: limpar metadata da origem anterior mesmo quando somente a pasta muda, projetar `source_relocated` com `available=false` e preservar índices persistentes/seleção com `dataChanged` restrito, sem reset;
+- presenter: concluir uma única solicitação por geração/ID/path, tratar cancelamento/falha/rejeição e callbacks antigos, preservar outra faixa enquanto se localiza uma ocorrência não atual e usar `RestorePaused`/geração nova para a atual, com posição vinculada ao seek; persistir o alvo restaurado ainda pendente diante de erros de origem recuperáveis, sem perder os cancelamentos por seleção/transporte explícito e geração;
+- picker: uma seleção local por diálogo assíncrono, sem navegação automática para drive ausente, com rejeição, cancelamento e teardown seguros; a factory widget permite testes determinísticos sem hooks de produção;
+- UI: ações de localizar no erro e na fila, estado pendente por ID, erro acionável, retry preservado, teclado, semântica acessível e foco; seleção de path não pode ser anunciada como recuperação confirmada;
+- integração: arquivo renomeado em diretório temporário, porta de localização controlada e decoder real, sem depender de arquivos pessoais ou de desconectar dispositivos do host.
+
+Reds, Greens consolidados dos alvos e riscos residuais ficam no [registro central de localização](../../experiments/m0/candidates/qt/README.md#file-location-m47); resultados novos não devem ser inferidos dos testes antigos. Uma reexecução verde do coordinator com logs habilitados não demonstra a causa nem corrige a falha intermitente da primeira consolidação. Fakes ou diálogo widget não substituem inspeção do seletor nativo, NVDA, drive físico desconectado ou pacote/E2E Windows. M4.7/`UX-008`/`NFR-REL-005` e Linux permanecem parciais, sem benchmarks neste recorte.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

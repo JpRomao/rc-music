@@ -2,6 +2,7 @@
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -38,6 +39,33 @@
 
 namespace music_player::m0::test {
 namespace {
+
+class PresenterFileLocator final : public AudioFileLocator {
+  public:
+    bool locate(const std::filesystem::path& source, AudioFileLocationCompletion completion) override {
+        requests.push_back(source);
+        if (!accept)
+            return false;
+        pending = std::move(completion);
+        if (immediate.has_value())
+            complete(*immediate);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancels;
+        pending = {};
+    }
+    void complete(AudioFileLocationResult result) {
+        auto callback = std::exchange(pending, {});
+        if (callback)
+            callback(std::move(result));
+    }
+    bool accept{true};
+    int cancels{0};
+    std::optional<AudioFileLocationResult> immediate;
+    std::vector<std::filesystem::path> requests;
+    AudioFileLocationCompletion pending;
+};
 
 class AvailableTrayPlatform final : public PlatformIntegration {
   public:
@@ -468,6 +496,15 @@ class PlayerPresenterTests final : public QObject {
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues();
     void retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue();
+    void locatesCurrentMissingFileAndRecoversPausedAtTheConfirmedPosition();
+    void locatesOnlyTheChosenOccurrenceWithoutInterruptingAnotherTrack();
+    void fileLocationCancellationRemovalAndDuplicateCompletionAreInert();
+    void failedFileLocationPreservesThePreviousSourceAndRemainsActionable();
+    void fileLocationCompletionCannotOutliveExitOrThePresenter();
+    void synchronousFileLocationCompletionIsDeferredAndSingleShot();
+    void relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition_data();
+    void relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition();
+    void cancellingFileLocationForExitNotifiesTheBusyProperty();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay();
     void repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads();
@@ -2335,6 +2372,310 @@ void PlayerPresenterTests::supersededAudioOutputRecoveryCannotSeekTheNewSelectio
     QCOMPARE(presenter.currentOccurrenceId(), next);
     QVERIFY(backend.seek_positions.empty());
     QCOMPARE(backend.pause_calls, 0);
+}
+
+void PlayerPresenterTests::locatesCurrentMissingFileAndRecoversPausedAtTheConfirmedPosition() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Antiga 日本語.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Nova pasta/Renomeada 日本語.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    QVERIFY(!presenter.fileLocationAvailable());
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.fileLocationAvailable());
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 42'000,
+                     .duration_ms = 180'000,
+                     .generation = 1,
+                     .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.canLocateCurrentOccurrence());
+    const QString id = presenter.currentOccurrenceId();
+    auto* model = presenter.queueModelObject();
+    const QPersistentModelIndex row(model->index(0, 0));
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QSignalSpy finished(&presenter, &PlayerPresenter::fileLocationFinished);
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    QCOMPARE(presenter.locatingOccurrenceId(), id);
+    QVERIFY(!presenter.locateQueueOccurrence(id));
+    QCOMPARE(locator.requests, std::vector{source});
+    locator.complete({AudioFileLocationStatus::Selected, replacement});
+    QTRY_COMPARE(backend.loaded_paths, (std::vector{source, replacement}));
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    QVERIFY(row.isValid());
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(resets.count(), 0);
+    QVERIFY(!model->data(row, QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(row, QueueListModel::FileNameRole).toString(), QStringLiteral("Renomeada 日本語.wav"));
+    QCOMPARE(metadata.requests.back().source_path, replacement);
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(1).toBool(), true);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 180'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.pause_calls, 1);
+    QCOMPARE(backend.play_calls, 0);
+    backend.publish({.status = PlaybackStatus::Paused, .duration_ms = 180'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{42'000}));
+    QCOMPARE(backend.play_calls, 0);
+    QVERIFY(model->data(row, QueueListModel::AvailableRole).toBool());
+    QVERIFY(presenter.retryingOccurrenceId().isEmpty());
+    backend.publishEvent(
+        PlaybackEventType::SnapshotChanged,
+        {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable}, false);
+    QCoreApplication::processEvents();
+    QVERIFY(!presenter.hasError());
+}
+
+void PlayerPresenterTests::locatesOnlyTheChosenOccurrenceWithoutInterruptingAnotherTrack() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Duplicada.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Outra pasta/Duplicada.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source, source}; });
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    const QString missing = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 500,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    const QString current = presenter.currentOccurrenceId();
+    const auto before = backend.snapshot();
+    const auto loads = backend.loaded_paths;
+    const auto metadata_count = metadata.requests.size();
+    const auto plays = backend.play_calls;
+    const auto pauses = backend.pause_calls;
+    auto* model = presenter.queueModelObject();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QVERIFY(presenter.locateQueueOccurrence(missing));
+    QVERIFY(presenter.moveQueueOccurrence(missing, 2));
+    locator.complete({AudioFileLocationStatus::Selected, replacement});
+    QTRY_VERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QCOMPARE(presenter.currentOccurrenceId(), current);
+    QCOMPARE(backend.snapshot(), before);
+    QCOMPARE(backend.loaded_paths, loads);
+    QCOMPARE(metadata.requests.size(), metadata_count);
+    QCOMPARE(backend.play_calls, plays);
+    QCOMPARE(backend.pause_calls, pauses);
+    QCOMPARE(resets.count(), 0);
+    const auto changed = model->index(2, 0);
+    QCOMPARE(model->data(changed, QueueListModel::OccurrenceIdRole).toString(), missing);
+    QVERIFY(!model->data(changed, QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(changed, QueueListModel::ErrorCodeRole).toString(), QStringLiteral("source_relocated"));
+    QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(presenter.retryQueueOccurrence(missing));
+    QCOMPARE(backend.loaded_paths.back(), replacement);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 3});
+    QTRY_VERIFY(model->data(changed, QueueListModel::AvailableRole).toBool());
+}
+
+void PlayerPresenterTests::fileLocationCancellationRemovalAndDuplicateCompletionAreInert() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Ausente.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    const QString id = presenter.currentOccurrenceId();
+    QVERIFY(!presenter.locateQueueOccurrence(id));
+    QVERIFY(!presenter.locateQueueOccurrence(QStringLiteral("invalid-id")));
+    QVERIFY(locator.requests.empty());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    const auto late = locator.pending;
+    locator.complete({AudioFileLocationStatus::Cancelled, {}});
+    QTRY_VERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QVERIFY(presenter.fileLocationErrorOccurrenceId().isEmpty());
+    late({AudioFileLocationStatus::Selected, localTestPath(u8"Ignorada.wav")});
+    QCoreApplication::processEvents();
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    QVERIFY(presenter.removeQueueOccurrence(id));
+    locator.complete({AudioFileLocationStatus::Selected, localTestPath(u8"Removida.wav")});
+    QTRY_VERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+}
+
+void PlayerPresenterTests::failedFileLocationPreservesThePreviousSourceAndRemainsActionable() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Original.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Recusada.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    const QString id = presenter.currentOccurrenceId();
+    locator.accept = false;
+    QVERIFY(!presenter.locateQueueOccurrence(id));
+    QCOMPARE(presenter.fileLocationErrorOccurrenceId(), id);
+    QVERIFY(presenter.locatingOccurrenceId().isEmpty());
+    locator.accept = true;
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    backend.load_result = PlaybackCommandResult::Busy;
+    locator.complete({AudioFileLocationStatus::Selected, replacement});
+    QTRY_COMPARE(presenter.fileLocationErrorOccurrenceId(), id);
+    QVERIFY(presenter.canLocateCurrentOccurrence());
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    QCOMPARE(presenter.queueModelObject()
+                 ->data(presenter.queueModelObject()->index(0, 0), QueueListModel::FileNameRole)
+                 .toString(),
+             QStringLiteral("Original.wav"));
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    QCOMPARE(locator.requests.back(), source);
+    locator.complete({AudioFileLocationStatus::Failed, {}});
+    QTRY_COMPARE(presenter.fileLocationErrorOccurrenceId(), id);
+    backend.load_result = PlaybackCommandResult::Accepted;
+    QVERIFY(presenter.retryQueueOccurrence(id));
+    QVERIFY(presenter.fileLocationErrorOccurrenceId().isEmpty());
+}
+
+void PlayerPresenterTests::fileLocationCompletionCannotOutliveExitOrThePresenter() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Saída.wav");
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+                                                       [source] { return std::vector{source}; });
+    presenter->setAudioFileLocator(&locator);
+    QVERIFY(presenter->openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter->hasError());
+    QVERIFY(presenter->locateQueueOccurrence(presenter->currentOccurrenceId()));
+    const auto late = locator.pending;
+    const int cancellations = locator.cancels;
+    QVERIFY(presenter->requestExit());
+    QVERIFY(locator.cancels > cancellations);
+    late({AudioFileLocationStatus::Selected, localTestPath(u8"Depois.wav")});
+    QCoreApplication::processEvents();
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    presenter.reset();
+    late({AudioFileLocationStatus::Selected, localTestPath(u8"Destruída.wav")});
+    QCoreApplication::processEvents();
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+}
+
+void PlayerPresenterTests::synchronousFileLocationCompletionIsDeferredAndSingleShot() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Antes.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Depois.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    const QString id = presenter.currentOccurrenceId();
+    locator.immediate = AudioFileLocationResult{AudioFileLocationStatus::Selected, replacement};
+    QSignalSpy finished(&presenter, &PlayerPresenter::fileLocationFinished);
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
+    QCOMPARE(finished.count(), 0);
+    QTRY_COMPARE(finished.count(), 1);
+    QCOMPARE(backend.loaded_paths, (std::vector{source, replacement}));
+}
+
+void PlayerPresenterTests::relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition_data() {
+    QTest::addColumn<PlaybackErrorCode>("error");
+    QTest::newRow("source-unavailable") << PlaybackErrorCode::SourceUnavailable;
+    QTest::newRow("invalid-media") << PlaybackErrorCode::InvalidMedia;
+    QTest::newRow("access-denied") << PlaybackErrorCode::AccessDenied;
+}
+
+void PlayerPresenterTests::relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition() {
+    QFETCH(PlaybackErrorCode, error);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    PresenterSessionWriter writer;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, Preferences{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = std::filesystem::absolute(localTestPath(u8"Sessão anterior.wav"));
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Movida/Sessão.wav"));
+    const SessionSnapshot initial{
+        .queue = {.items = {{LocalQueueOccurrenceId{51}, source}, {LocalQueueOccurrenceId{52}, source}},
+                  .current_occurrence_id = LocalQueueOccurrenceId{51}},
+        .position_ms = 42'000};
+    SessionAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave,
+                                   .session = {.initial = initial,
+                                               .load_status = SessionLoadStatus::Loaded,
+                                               .autosave = &autosave,
+                                               .now = [&clock] { return clock.now(); }}});
+    presenter.setAudioFileLocator(&locator);
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = error});
+    QTRY_VERIFY(presenter.hasError());
+    QVERIFY(presenter.locateQueueOccurrence(QStringLiteral("local-51")));
+    locator.complete({AudioFileLocationStatus::Selected, replacement});
+    QTRY_COMPARE(backend.loaded_paths, (std::vector{source, replacement}));
+    for (int pass = 0; pass < 2; ++pass) {
+        if (writer.active.has_value())
+            writer.complete(SessionSaveStatus::Saved);
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+        autosave.requestSaveNow();
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+    }
+    QVERIFY(!writer.starts.empty());
+    const auto& saved = writer.starts.back().snapshot;
+    QCOMPARE(saved.queue.items[0].source_path, replacement);
+    QCOMPARE(saved.queue.items[1].source_path, source);
+    QCOMPARE(saved.queue.current_occurrence_id, std::optional{LocalQueueOccurrenceId{51}});
+    QCOMPARE(saved.position_ms, std::int64_t{42'000});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::cancellingFileLocationForExitNotifiesTheBusyProperty() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Cancelada.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{.initial = initial, .autosave = &autosave, .now = [&clock] { return clock.now(); }});
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    QVERIFY(presenter.locateQueueOccurrence(presenter.currentOccurrenceId()));
+    QVERIFY(presenter.setVolume(0.24));
+    QSignalSpy state(&presenter, &PlayerPresenter::stateChanged);
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(!state.empty(), 100);
+    clock.advance(std::chrono::seconds{3});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QVERIFY(presenter.canLocateCurrentOccurrence());
 }
 
 void PlayerPresenterTests::retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue() {
@@ -5863,6 +6204,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "dismissSourceImportStatus",
                                     "playQueueOccurrence",
                                     "retryQueueOccurrence",
+                                    "locateQueueOccurrence",
                                     "moveQueueOccurrence",
                                     "removeQueueOccurrence",
                                     "clearQueue",

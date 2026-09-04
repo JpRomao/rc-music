@@ -42,7 +42,7 @@ ApplicationWindow {
         presenter: window.presenter
         errorLabels: errorText
     }
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && presenter.locatingOccurrenceId.length === 0
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
@@ -287,6 +287,7 @@ ApplicationWindow {
                     contract: window.uiContract
                     presenter: window.presenter
                     labels: errorText
+                    locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
             }
@@ -311,6 +312,7 @@ ApplicationWindow {
         overlayMode: window.width < 900
         contract: window.uiContract
         presenter: window.presenter
+        locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
         onCloseRequested: window.setQueueOpen(false)
         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
     }

@@ -113,6 +113,21 @@ if(M0_QT_SHELL_SUPPORT)
     qt_standard_project_setup(REQUIRES 6.11)
     set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 
+    add_library(m0_qt_audio_file_locator STATIC
+        include/m0/ports/AudioFileLocator.hpp
+        src/adapters/QtAudioFileLocator.hpp
+        src/adapters/QtAudioFileLocator.cpp
+    )
+    target_include_directories(m0_qt_audio_file_locator PUBLIC include src)
+    target_link_libraries(m0_qt_audio_file_locator PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
+    target_compile_features(m0_qt_audio_file_locator PUBLIC cxx_std_20)
+    set_target_properties(m0_qt_audio_file_locator PROPERTIES AUTOMOC ON)
+    if(MSVC)
+        target_compile_options(m0_qt_audio_file_locator PRIVATE /W4 /WX /permissive-)
+    else()
+        target_compile_options(m0_qt_audio_file_locator PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     add_library(m0_qt_shell_platform STATIC
         src/adapters/QtShellPlatform.hpp
         src/adapters/QtShellPlatform.cpp
@@ -421,6 +436,16 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_platform_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-platform COMMAND m0_qt_shell_platform_tests)
+        add_executable(m0_qt_audio_file_locator_tests tests/qtest/QtAudioFileLocatorTests.cpp)
+        target_link_libraries(m0_qt_audio_file_locator_tests PRIVATE m0_qt_audio_file_locator Qt6::Test Qt6::Widgets)
+        target_compile_features(m0_qt_audio_file_locator_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_audio_file_locator_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_audio_file_locator_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_audio_file_locator_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.audio-file-locator COMMAND m0_qt_audio_file_locator_tests -o -,txt)
         if(WIN32)
             add_executable(m0_qt_windows_smtc_tests tests/qtest/WindowsSmtcAdapterTests.cpp)
             target_link_libraries(m0_qt_windows_smtc_tests PRIVATE m0_qt_windows_smtc Qt6::Test)
@@ -853,6 +878,14 @@ if(M0_QT_SHELL_SUPPORT)
             cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST m0_windows_font_dir NORMALIZE)
             list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
         endif()
+        set_tests_properties(m0.qt.audio-file-locator PROPERTIES
+            LABELS "m0;qt;files;locator;UX-008;M4.7"
+            TIMEOUT 30
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            # QFileDialog's offscreen widget has one expected capability warning. QtTest fails
+            # every other warning; fatal warnings would abort even the explicitly ignored one.
+            ENVIRONMENT "${m0_qt_quick_test_environment};QT_FATAL_WARNINGS=0"
+        )
         if(WIN32)
             set_tests_properties(m0.qt.windows.smtc PROPERTIES
                 LABELS "m0;qt;windows;smtc;media-keys;FR-037"
@@ -1137,6 +1170,7 @@ if(M0_QT_AUDIO_SUPPORT)
     if(M0_QT_SHELL_SUPPORT)
         target_link_libraries(m0_qt_shell PRIVATE
             m0_qt_audio_adapters
+            m0_qt_audio_file_locator
             m0_taglib_metadata_extractor
         )
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_COMBINED_AUDIO)

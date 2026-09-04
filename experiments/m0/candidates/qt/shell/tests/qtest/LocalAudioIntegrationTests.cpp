@@ -56,6 +56,50 @@ class TestPlatform final : public PlatformIntegration {
     void requestExit() override {}
 };
 
+class SelectedFileLocator final : public AudioFileLocator {
+  public:
+    std::filesystem::path selected;
+    bool locate(const std::filesystem::path&, AudioFileLocationCompletion completion) override {
+        completion({AudioFileLocationStatus::Selected, selected});
+        return true;
+    }
+    void cancel() noexcept override {}
+};
+
+class MemoryPreferencesWriter final : public PreferencesWriter {
+  public:
+    PreferencesWriterCommand start(PreferencesWriteRequest request) override {
+        if (pending.has_value())
+            return PreferencesWriterCommand::Busy;
+        pending = PreferencesWriteCompletion{.revision = request.revision, .status = PreferencesSaveStatus::Saved};
+        return PreferencesWriterCommand::Accepted;
+    }
+    std::optional<PreferencesWriteCompletion> poll() override { return std::exchange(pending, std::nullopt); }
+    std::optional<PreferencesWriteCompletion> flush(PreferencesWriteRequest request) override {
+        pending.reset();
+        return PreferencesWriteCompletion{.revision = request.revision, .status = PreferencesSaveStatus::Saved};
+    }
+    bool shutdown() override { return true; }
+    std::optional<PreferencesWriteCompletion> pending;
+};
+
+class MemorySessionWriter final : public SessionWriter {
+  public:
+    SessionWriterCommand start(SessionWriteRequest request) override {
+        if (pending.has_value())
+            return SessionWriterCommand::Busy;
+        pending = SessionWriteCompletion{.revision = request.revision, .status = SessionSaveStatus::Saved};
+        return SessionWriterCommand::Accepted;
+    }
+    std::optional<SessionWriteCompletion> poll() override { return std::exchange(pending, std::nullopt); }
+    std::optional<SessionWriteCompletion> flush(SessionWriteRequest request) override {
+        pending.reset();
+        return SessionWriteCompletion{.revision = request.revision, .status = SessionSaveStatus::Saved};
+    }
+    bool shutdown() override { return true; }
+    std::optional<SessionWriteCompletion> pending;
+};
+
 class RecordingPlaybackBackend final : public PlaybackBackend {
   public:
     explicit RecordingPlaybackBackend(QtMultimediaPlaybackBackend& backend) : backend_(backend) {}
@@ -211,6 +255,65 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void renamedSourceRestoresThePersistedOccurrencePausedThroughTheRealDecoder() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString original = directory.filePath(QStringLiteral("Original 日本語.wav"));
+        const QString renamed = directory.filePath(QStringLiteral("Renomeada 日本語.wav"));
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE), original));
+        QVERIFY(QFile::rename(original, renamed));
+        const auto old_path = nativePath(original);
+        const auto new_path = nativePath(renamed);
+        TestPlatform platform;
+        QtMultimediaPlaybackBackend engine;
+        RecordingPlaybackBackend backend(engine);
+        SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
+        SelectedFileLocator locator;
+        locator.selected = new_path;
+        Preferences preferences;
+        preferences.restore_last_session = true;
+        preferences.muted = true;
+        const SessionSnapshot restored{
+            .queue = {.items = {{LocalQueueOccurrenceId{7}, old_path}, {LocalQueueOccurrenceId{8}, old_path}},
+                      .current_occurrence_id = LocalQueueOccurrenceId{7}},
+            .position_ms = 350};
+        MemoryPreferencesWriter preferences_writer;
+        MemorySessionWriter session_writer;
+        const auto now = [] { return PreferencesAutosave::TimePoint{}; };
+        PreferencesAutosave preferences_autosave{preferences_writer, preferences, {.now = now}};
+        SessionAutosave session_autosave{session_writer, restored, {.now = now}};
+        PlayerPresenter presenter(
+            frozenBundle(), platform, backend, reader, [] { return std::vector<std::filesystem::path>{}; },
+            PlayerPresenterPreferences{.initial = preferences,
+                                       .autosave = &preferences_autosave,
+                                       .now = now,
+                                       .session = {.initial = restored,
+                                                   .load_status = SessionLoadStatus::Loaded,
+                                                   .autosave = &session_autosave,
+                                                   .now = now}});
+        presenter.setAudioFileLocator(&locator);
+        QTRY_VERIFY_WITH_TIMEOUT(presenter.hasError(), 5'000);
+        QCOMPARE(presenter.errorCode(), QStringLiteral("source_unavailable"));
+        QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-7"));
+        auto* const model = presenter.queueModelObject();
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+        QVERIFY(presenter.locateQueueOccurrence(QStringLiteral("local-7")));
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused, 5'000);
+        QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{350});
+        QCOMPARE(backend.loadedPaths(), (std::vector{old_path, new_path}));
+        QVERIFY(!backend.observed(PlaybackStatus::Playing));
+        QCOMPARE(presenter.currentOccurrenceId(), QStringLiteral("local-7"));
+        QCOMPARE(model->rowCount(), 2);
+        QVERIFY(model->data(model->index(0, 0), LocalQueueListModel::AvailableRole).toBool());
+        QCOMPARE(model->data(model->index(0, 0), LocalQueueListModel::FileNameRole).toString(),
+                 QStringLiteral("Renomeada 日本語.wav"));
+        QCOMPARE(model->data(model->index(1, 0), LocalQueueListModel::FileNameRole).toString(),
+                 QStringLiteral("Original 日本語.wav"));
+        QCOMPARE(resets.count(), 0);
+        QVERIFY(!QFile::exists(original));
+        QVERIFY(QFile::exists(renamed));
+    }
+
     void outputReconnectRestoresRealDecodedAudioPausedAtTheSamePosition() {
         auto devices = std::make_unique<ScriptedAudioOutputDevices>();
         auto* const topology = devices.get();

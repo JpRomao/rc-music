@@ -18,6 +18,9 @@ QtObject {
     readonly property string openAudioAction: qsTr("Abrir outro áudio")
     readonly property string retryAction: qsTr("Tentar reproduzir novamente")
     readonly property string retryDescription: qsTr("Tenta abrir o mesmo arquivo novamente, preservando sua posição na fila.")
+    readonly property string locateAction: qsTr("Localizar arquivo…")
+    readonly property string locateDescription: qsTr("Localiza o arquivo e recupera esta faixa pausada, preservando sua posição na fila. A posição no áudio será restaurada quando o arquivo permitir.")
+    readonly property string locationFailed: qsTr("Não foi possível localizar o arquivo. Tente novamente.")
     readonly property string recoverOutputAction: qsTr("Tentar novamente")
     readonly property string recoverOutputDescription: qsTr("Reconecta a saída de áudio e recupera esta faixa pausada, preservando a fila. A posição será restaurada quando o arquivo permitir.")
 

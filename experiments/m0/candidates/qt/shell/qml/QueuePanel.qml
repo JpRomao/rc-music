@@ -16,7 +16,10 @@ FocusScope {
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
     property bool selectedAvailable: false
-    readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
+    readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
+    readonly property bool selectedLocationAvailable: !presenter.usesFrozenFixture && presenter.fileLocationAvailable && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0
+    property bool locationFocusRestoreAllowed: true
+    property string requestedLocationId: ""
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
@@ -35,14 +38,18 @@ FocusScope {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
-    function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total, retrying) {
+    function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total, retrying, locating, locationFailed) {
         const displayTitle = title.length > 0 ? title : fileName;
         const parts = [displayTitle];
         if (artist.length > 0)
             parts.push(artist);
         parts.push(root.formatDuration(durationMs));
         parts.push(queueText.positionOfTotal.replace("{position}", position).replace("{total}", total));
-        if (retrying)
+        if (locating)
+            parts.push(queueText.locating);
+        else if (locationFailed)
+            parts.push(queueText.locationFailed);
+        else if (retrying)
             parts.push(queueText.retrying);
         else if (!available)
             parts.push(queueText.unavailableReason(errorCode));
@@ -117,6 +124,16 @@ FocusScope {
         rowMenu.close();
         queueList.forceActiveFocus(Qt.TabFocusReason);
         root.presenter.retryQueueOccurrence(occurrenceId);
+    }
+    function locateSelected() {
+        if (!root.selectedLocationAvailable)
+            return;
+        const occurrenceId = root.selectedOccurrenceId;
+        root.requestedLocationId = occurrenceId;
+        rowMenu.close();
+        queueList.forceActiveFocus(Qt.TabFocusReason);
+        if (!root.presenter.locateQueueOccurrence(occurrenceId))
+            root.requestedLocationId = "";
     }
     function openRowMenu(row) {
         if (!row)
@@ -315,6 +332,8 @@ FocusScope {
                 required property bool available
                 required property var errorCode
                 readonly property bool retrying: occurrenceId === root.presenter.retryingOccurrenceId
+                readonly property bool locating: occurrenceId === root.presenter.locatingOccurrenceId
+                readonly property bool locationFailed: !available && occurrenceId === root.presenter.fileLocationErrorOccurrenceId
                 readonly property bool contrastHighlighted: root.contract.highContrast && (ListView.isCurrentItem || hovered)
                 readonly property color primaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textPrimaryColor
                 readonly property color secondaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textSecondaryColor
@@ -326,7 +345,7 @@ FocusScope {
                 hoverEnabled: true
                 Accessible.role: Accessible.ListItem
                 Accessible.id: occurrenceId
-                Accessible.name: root.rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, orderIndex + 1, queueList.count, retrying)
+                Accessible.name: root.rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, orderIndex + 1, queueList.count, retrying, locating, locationFailed)
                 Accessible.description: ""
                 Accessible.focusable: true
                 Accessible.focused: activeFocus
@@ -397,11 +416,11 @@ FocusScope {
                         }
                         Text {
                             objectName: "queue-row-status"
-                            text: row.retrying ? queueText.retrying : queueText.unavailableReason(row.errorCode)
+                            text: row.locating ? queueText.locating : (row.locationFailed ? queueText.locationFailed : (row.retrying ? queueText.retrying : queueText.unavailableReason(row.errorCode)))
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
                             color: row.secondaryColor
-                            visible: row.retrying || !row.available
+                            visible: row.locating || row.locationFailed || row.retrying || !row.available
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }
@@ -473,6 +492,18 @@ FocusScope {
             Accessible.onPressAction: root.retrySelected()
             onTriggered: root.retrySelected()
         }
+        MenuItem {
+            objectName: "queue-menu-locate"
+            text: queueText.locate
+            visible: !root.presenter.usesFrozenFixture && root.presenter.fileLocationAvailable && root.selectedOccurrenceId.length > 0 && !root.selectedAvailable
+            enabled: root.selectedLocationAvailable
+            Accessible.id: "queue-menu-locate"
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: text
+            Accessible.description: root.presenter.locatingOccurrenceId.length > 0 ? queueText.locating : queueText.locateDescription
+            Accessible.onPressAction: root.locateSelected()
+            onTriggered: root.locateSelected()
+        }
         MenuSeparator {}
         MenuItem {
             objectName: "queue-menu-move-up"
@@ -521,6 +552,21 @@ FocusScope {
 
     Connections {
         target: root.presenter
+        function onFileLocationFinished(occurrenceId, changed) {
+            if (occurrenceId !== root.requestedLocationId)
+                return;
+            root.requestedLocationId = "";
+            Qt.callLater(function () {
+                if (!root.visible || !root.locationFocusRestoreAllowed || root.presenter.exiting || root.presenter.locatingOccurrenceId.length > 0 || root.selectedOccurrenceId !== occurrenceId)
+                    return;
+                queueList.forceActiveFocus(Qt.TabFocusReason);
+                const message = root.presenter.fileLocationErrorOccurrenceId === occurrenceId ? queueText.locationFailed : (changed ? queueText.sourceRelocated : "");
+                if (message.length > 0) {
+                    root.accessibilityAnnouncement = message;
+                    queueList.Accessible.announce(message, Accessible.Polite);
+                }
+            });
+        }
         function onQueueFocusRequested(index) {
             if (index < 0) {
                 root.closeRequested();

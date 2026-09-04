@@ -152,6 +152,8 @@ Evidência parcial no candidato Qt/Windows: o [recorte de recuperação da saíd
 
 O [recorte de taskbar M4.7](../../experiments/m0/candidates/qt/README.md#taskbar-m47) acrescenta evidência parcial de `FR-038`: a janela ocultada pelo próprio app para a bandeja torna-se alcançável minimizada ao receber a notificação de recriação, sem alterar fila ou reprodução. O receptor é independente da janela visual, e saída pendente adia a recuperação. Os testes não reiniciam Explorer; presença do shell não comprova registro do ícone, e a caracterização nativa limita-se ao ícone do próprio processo de teste. Reinício real, pacote e gates nativos continuam necessários para fechamento.
 
+O [recorte de localização M4.7](../../experiments/m0/candidates/qt/README.md#file-location-m47) implementa uma ação de `UX-008` para `NFR-REL-005`: selecionar outro path para a mesma ocorrência indisponível, sem perder ordem ou duplicatas. A ocorrência atual é recuperada pausada quando a nova origem puder ser carregada; uma ocorrência não atual permanece pendente de verificação por retry, sem interromper o áudio corrente. Seleção pelo diálogo não é confirmação de decode. Os checks automatizados verdes, incluindo recuperação de arquivo renomeado com decoder real, e os riscos residuais ficam no registro central; este recorte não encerra os requisitos nem valida diálogo nativo, drive físico, pacote, NVDA ou Linux.
+
 Limites iniciais, revisáveis somente com corpus e medição:
 
 | ID | Limite/resultado |

@@ -176,6 +176,21 @@ QString LocalQueueListModel::occurrenceId(const LocalQueueOccurrenceId occurrenc
     return QStringLiteral("local-%1").arg(occurrence_id.value);
 }
 
+bool LocalQueueListModel::replaceUnavailableSource(const LocalFileQueueItem& source) {
+    if (source.source_path.empty() || source.available)
+        return false;
+    const auto item = find(source.occurrence_id);
+    if (item == items_.end() || item->available)
+        return false;
+
+    auto replacement = makeItem(source, item->order_index);
+    replacement.error_code = QStringLiteral("source_relocated");
+    *item = std::move(replacement);
+    const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
+    emit dataChanged(changed, changed, {FileNameRole, TitleRole, ArtistRole, AlbumRole, DurationMsRole, ErrorCodeRole});
+    return true;
+}
+
 int LocalQueueListModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid() ? 0 : static_cast<int>(items_.size());
 }

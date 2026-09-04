@@ -60,6 +60,31 @@ TEST_CASE("session snapshot restores duplicate paths by occurrence id without tr
     CHECK(persisted.position_ms == 123'456);
 }
 
+TEST_CASE("session snapshot round trip preserves a relocated path and resets only transient availability",
+          "[m0][qt][core][session][relocate][FR-043][NFR-REL-005]") {
+    LocalFileQueue queue;
+    const auto original = validSnapshot();
+    REQUIRE(queue.restore(original.queue));
+    REQUIRE(queue.markUnavailable(1));
+    const std::filesystem::path relocated{LR"(D:\Movida\Final 日本語.flac)"};
+    const auto occurrence = queue.items()[1].occurrence_id;
+    REQUIRE(queue.replaceUnavailableSource(occurrence, relocated));
+    const SessionSnapshot persisted{.queue = queue.snapshot(), .position_ms = original.position_ms};
+
+    REQUIRE(isValidSessionSnapshot(persisted));
+    CHECK(persisted.queue.current_occurrence_id == original.queue.current_occurrence_id);
+    CHECK(persisted.queue.items[0] == original.queue.items[0]);
+    CHECK(persisted.queue.items[1].source_path == relocated);
+    CHECK(persisted.queue.items[1].occurrence_id == occurrence);
+    CHECK(persisted.queue.items[2] == original.queue.items[2]);
+    CHECK(persisted.position_ms == original.position_ms);
+    CHECK_FALSE(queue.items()[1].available);
+    LocalFileQueue restored;
+    REQUIRE(restored.restore(persisted.queue));
+    CHECK(restored.snapshot() == persisted.queue);
+    CHECK(std::ranges::all_of(restored.items(), &LocalFileQueueItem::available));
+}
+
 TEST_CASE("invalid queue snapshots are rejected transactionally", "[m0][qt][core][session][FR-043][NFR-REL-003]") {
     LocalFileQueue queue;
     REQUIRE(queue.replace({LR"(C:\Current\A.wav)", LR"(C:\Current\B.wav)"}));

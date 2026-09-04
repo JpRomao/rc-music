@@ -302,6 +302,11 @@ bool isAudioOutputError(const PlaybackErrorCode error) noexcept {
     return error == PlaybackErrorCode::AudioOutputUnavailable || error == PlaybackErrorCode::AudioOutputChanged;
 }
 
+bool preservesPositionForRecovery(const PlaybackErrorCode error) noexcept {
+    return isAudioOutputError(error) || error == PlaybackErrorCode::SourceUnavailable ||
+           error == PlaybackErrorCode::InvalidMedia || error == PlaybackErrorCode::AccessDenied;
+}
+
 QString localPlaybackErrorCode(const PlaybackErrorCode error) {
     switch (error) {
     case PlaybackErrorCode::SourceUnavailable:
@@ -504,6 +509,7 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
 }
 
 PlayerPresenter::~PlayerPresenter() {
+    cancelFileLocation();
     timer_.stop();
     if (!uses_frozen_fixture_) {
         if (sourceImportActive() && source_discovery_ != nullptr)
@@ -700,16 +706,17 @@ void PlayerPresenter::reconcileRestoredPosition() {
     const PlaybackSnapshot& snapshot = controller_.confirmedSnapshot();
     if (snapshot.generation != restored_position_->generation)
         return;
-    const auto output_error_pending = [this, &snapshot] {
+    const auto recovery_error_pending = [this, &snapshot] {
         const auto& current = backend_.snapshot();
         return current.generation == snapshot.generation && current.status == PlaybackStatus::Error &&
-               isAudioOutputError(current.error);
+               preservesPositionForRecovery(current.error);
     };
     // A command can fail before its queued error event reaches this presenter.
-    if (output_error_pending())
+    if (recovery_error_pending())
         return;
     if (snapshot.status == PlaybackStatus::Error || snapshot.status == PlaybackStatus::Empty) {
-        if (snapshot.status == PlaybackStatus::Error && isAudioOutputError(snapshot.error))
+        // Missing or unreadable restored media can be located again without losing its saved target.
+        if (snapshot.status == PlaybackStatus::Error && preservesPositionForRecovery(snapshot.error))
             return;
         restored_position_.reset();
         return;
@@ -737,7 +744,7 @@ void PlayerPresenter::reconcileRestoredPosition() {
     if (!restored.seek_requested) {
         if (backend_.seekTo(restored.target_ms) == PlaybackCommandResult::Accepted)
             restored.seek_requested = true;
-        else if (!output_error_pending()) {
+        else if (!recovery_error_pending()) {
             restored_position_.reset();
             if (session_autosave_ != nullptr)
                 static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
@@ -890,6 +897,40 @@ bool PlayerPresenter::canRetryCurrentOccurrence() const noexcept {
         return false;
     const auto current = local_queue_.currentIndex();
     return current.has_value() && !local_queue_.items()[*current].available;
+}
+
+void PlayerPresenter::setAudioFileLocator(AudioFileLocator* locator) {
+    if (audio_file_locator_ == locator)
+        return;
+    cancelFileLocation();
+    audio_file_locator_ = locator;
+    file_location_error_.reset();
+    emit stateChanged();
+}
+
+bool PlayerPresenter::fileLocationAvailable() const noexcept {
+    return !uses_frozen_fixture_ && audio_file_locator_ != nullptr;
+}
+
+QString PlayerPresenter::locatingOccurrenceId() const {
+    return file_location_request_.has_value() ? LocalQueueListModel::occurrenceId(file_location_request_->occurrence_id)
+                                              : QString{};
+}
+
+QString PlayerPresenter::fileLocationErrorOccurrenceId() const {
+    return file_location_error_.has_value() ? LocalQueueListModel::occurrenceId(*file_location_error_) : QString{};
+}
+
+bool PlayerPresenter::canLocateCurrentOccurrence() const noexcept {
+    return fileLocationAvailable() && canRetryCurrentOccurrence();
+}
+
+void PlayerPresenter::cancelFileLocation() noexcept {
+    if (!file_location_request_.has_value())
+        return;
+    file_location_request_.reset();
+    if (audio_file_locator_ != nullptr)
+        audio_file_locator_->cancel();
 }
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
@@ -1532,6 +1573,8 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
     if (!local_queue_.selectUnavailableForRetry(*target))
         throw std::logic_error{"an accepted unavailable occurrence retry could not be selected"};
     occurrence_retry_ = OccurrenceRetry{id, local_track_session_->playbackGeneration()};
+    if (file_location_error_ == id)
+        file_location_error_.reset();
     source_import_needs_autoplay_ = false;
     source_import_autoplay_enabled_ = false;
     local_recovery_intent_.reset();
@@ -1545,6 +1588,128 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
         handlePlaybackEvent({PlaybackEventType::SnapshotChanged, backend_.snapshot()});
     return true;
 }
+bool PlayerPresenter::locateQueueOccurrence(const QString& occurrence_id) {
+    if (!fileLocationAvailable() || exiting_ || file_location_request_.has_value() || !retryingOccurrenceId().isEmpty())
+        return false;
+    const auto target = localOccurrenceIndex(occurrence_id);
+    if (!target.has_value() || local_queue_.items()[*target].available)
+        return false;
+    const auto& item = local_queue_.items()[*target];
+    const auto generation =
+        file_location_generation_ == std::numeric_limits<std::uint64_t>::max() ? 1 : file_location_generation_ + 1;
+    file_location_generation_ = generation;
+    file_location_request_ = FileLocationRequest{generation, item.occurrence_id, item.source_path};
+    file_location_error_.reset();
+    const auto source = item.source_path;
+    auto* const locator = audio_file_locator_;
+    const QPointer<PlayerPresenter> guard{this};
+    emit stateChanged();
+    if (!guard || !file_location_request_.has_value() || file_location_request_->generation != generation)
+        return false;
+    bool accepted = false;
+    try {
+        accepted = locator->locate(source, [guard, generation](AudioFileLocationResult result) {
+            if (!guard)
+                return;
+            // Even an inline completion must not reenter the request's initiating call.
+            QMetaObject::invokeMethod(
+                guard,
+                [guard, generation, result = std::move(result)]() mutable {
+                    if (guard)
+                        guard->finishFileLocation(generation, std::move(result));
+                },
+                Qt::QueuedConnection);
+        });
+    } catch (...) {
+        accepted = false;
+    }
+    if (guard && !accepted)
+        finishFileLocation(generation, {AudioFileLocationStatus::Failed, {}});
+    return accepted;
+}
+
+void PlayerPresenter::finishFileLocation(const std::uint64_t request_generation, AudioFileLocationResult result) {
+    if (!file_location_request_.has_value() || file_location_request_->generation != request_generation)
+        return;
+    const auto request = std::move(*file_location_request_);
+    file_location_request_.reset();
+    const QString id = LocalQueueListModel::occurrenceId(request.occurrence_id);
+    const QPointer<PlayerPresenter> guard{this};
+    const auto finish = [guard, id](const bool changed) {
+        if (!guard)
+            return;
+        emit guard->stateChanged();
+        if (guard)
+            emit guard->fileLocationFinished(id, changed);
+    };
+    if (exiting_)
+        return;
+    const auto target = localOccurrenceIndex(request.occurrence_id);
+    if (!target.has_value() || local_queue_.items()[*target].available ||
+        local_queue_.items()[*target].source_path != request.original_path || !retryingOccurrenceId().isEmpty()) {
+        finish(false);
+        return;
+    }
+    if (result.status == AudioFileLocationStatus::Cancelled) {
+        finish(false);
+        return;
+    }
+    if (result.status != AudioFileLocationStatus::Selected || result.source_path.empty() ||
+        !result.source_path.is_absolute() || result.source_path.filename().empty() ||
+        result.source_path.native().find(std::filesystem::path::value_type{}) !=
+            std::filesystem::path::string_type::npos) {
+        file_location_error_ = request.occurrence_id;
+        finish(false);
+        return;
+    }
+    auto candidate = local_queue_;
+    if (!candidate.replaceUnavailableSource(request.occurrence_id, result.source_path)) {
+        finish(false);
+        return;
+    }
+    const bool current = local_queue_.currentOccurrenceId() == std::optional{request.occurrence_id};
+    if (current) {
+        if (!hasError() || local_track_session_->sourcePath() != request.original_path) {
+            finish(false);
+            return;
+        }
+        const auto position = currentSessionSnapshot().position_ms;
+        if (!local_track_session_->open(result.source_path, LocalTrackStartIntent::RestorePaused)) {
+            file_location_error_ = request.occurrence_id;
+            finish(false);
+            return;
+        }
+        const auto generation = local_track_session_->playbackGeneration();
+        restored_position_ = RestoredPosition{.generation = generation, .target_ms = position};
+        restored_eof_generation_.reset();
+        occurrence_retry_ = OccurrenceRetry{request.occurrence_id, generation};
+        source_import_needs_autoplay_ = false;
+        source_import_autoplay_enabled_ = false;
+        local_recovery_intent_.reset();
+        artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+        controller_.applyBackendSnapshot(backend_.snapshot());
+    }
+    // Selecting a replacement invalidates the old diagnostic, but does not prove decoding.
+    // A non-current occurrence remains pending verification without touching the playing track.
+    local_queue_ = std::move(candidate);
+    navigation_items_ = navigationItems(local_queue_);
+    const LocalFileQueueItem updated = local_queue_.items()[*target];
+    if (!local_queue_model_.replaceUnavailableSource(updated))
+        throw std::logic_error{"a relocated occurrence could not be projected"};
+    if (!guard)
+        return;
+    sessionStructureDidChange();
+    reconcileTimer();
+    if (current) {
+        emit playbackChanged();
+        if (!guard)
+            return;
+        if (backend_.snapshot().status != PlaybackStatus::Loading)
+            handlePlaybackEvent({PlaybackEventType::SnapshotChanged, backend_.snapshot()});
+    }
+    finish(true);
+}
+
 bool PlayerPresenter::moveQueueOccurrence(const QString& occurrence_id, const int destination_index) {
     if (uses_frozen_fixture_ || exiting_ || destination_index < 0)
         return false;
@@ -2051,6 +2216,13 @@ bool PlayerPresenter::requestRestore() {
 bool PlayerPresenter::requestExit() {
     if (exiting_)
         return false;
+
+    const bool location_was_pending = file_location_request_.has_value();
+    cancelFileLocation();
+    if (location_was_pending) {
+        // Publish after the exit decision so observers cannot reenter with another picker.
+        QMetaObject::invokeMethod(this, [this] { emit stateChanged(); }, Qt::QueuedConnection);
+    }
 
     if (!sourceExitDrained()) {
         deferred_playback_event_.reset();

@@ -10,6 +10,8 @@ class ApplicationText final {
     Q_DECLARE_TR_FUNCTIONS(ApplicationText)
 
   public:
+    [[nodiscard]] static QString locateAudioDialogTitle() { return tr("Localizar arquivo de áudio"); }
+
     [[nodiscard]] static QString localAudioDialogFilter(const QStringList& patterns) {
         return tr("Áudio local (%1);;Todos os arquivos (*)").arg(patterns.join(QLatin1Char{' '}));
     }

@@ -10,6 +10,11 @@ QtObject {
     readonly property string retry: qsTr("Tentar reproduzir novamente")
     readonly property string retryDescription: qsTr("Tenta abrir o mesmo arquivo novamente, preservando sua posição na fila.")
     readonly property string retrying: qsTr("Tentando reproduzir novamente…")
+    readonly property string locate: qsTr("Localizar arquivo…")
+    readonly property string locateDescription: qsTr("Atualiza o local desta ocorrência sem interromper a faixa em reprodução.")
+    readonly property string locating: qsTr("Localizando arquivo…")
+    readonly property string locationFailed: qsTr("Não foi possível localizar o arquivo. Tente novamente.")
+    readonly property string sourceRelocated: qsTr("Novo arquivo selecionado. Tente reproduzir para verificar.")
     readonly property string clearTitle: qsTr("Limpar fila?")
     readonly property string clearOneMessage: qsTr("O item da fila será removido. Esta ação não pode ser desfeita.")
     readonly property string clearManyMessage: qsTr("Os {count} itens da fila serão removidos. Esta ação não pode ser desfeita.")
@@ -36,6 +41,8 @@ QtObject {
             return accessDenied;
         case "open_rejected":
             return openRejected;
+        case "source_relocated":
+            return sourceRelocated;
         default:
             return unavailable;
         }

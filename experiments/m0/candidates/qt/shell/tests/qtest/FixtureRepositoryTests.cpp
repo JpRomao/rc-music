@@ -40,6 +40,9 @@ class FixtureRepositoryTests final : public QObject {
     void localQueueModelInsertsBatchAtRequestedIndex();
     void localQueueModelRestoresOneOccurrenceWithoutResetOrMetadataLoss();
     void localQueueModelUpdatesUnavailableDiagnosticWithoutReset();
+    void localQueueModelRelocatesOneUnverifiedSourceWithoutReset_data();
+    void localQueueModelRelocatesOneUnverifiedSourceWithoutReset();
+    void localQueueModelRejectsInvalidRelocationWithoutMutation();
     void rejectsSemanticFixtureDrift_data();
     void rejectsSemanticFixtureDrift();
     void rejectsQueueCountDrift();
@@ -819,6 +822,122 @@ void FixtureRepositoryTests::localQueueModelRestoresOneOccurrenceWithoutResetOrM
     QCOMPARE(changed.size(), 1);
     QCOMPARE(resets.size(), 0);
     QCOMPARE(loaded_changed.size(), 0);
+}
+
+void FixtureRepositoryTests::localQueueModelRelocatesOneUnverifiedSourceWithoutReset_data() {
+    QTest::addColumn<QString>("new_file_name");
+    QTest::newRow("new-name") << QStringLiteral("Localizada 日本語.flac");
+    QTest::newRow("same-name-new-directory") << QStringLiteral("Duplicada 日本語.mp3");
+}
+
+void FixtureRepositoryTests::localQueueModelRelocatesOneUnverifiedSourceWithoutReset() {
+    QFETCH(QString, new_file_name);
+    LocalFileQueue queue;
+    const std::filesystem::path original{LR"(C:\Música\Duplicada 日本語.mp3)"};
+    QVERIFY(queue.replace({original, original}));
+    QVERIFY(queue.markUnavailable(1));
+    const auto first_id = queue.items()[0].occurrence_id;
+    const auto second_id = queue.items()[1].occurrence_id;
+    LocalQueueListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QVERIFY(model.replace(queue));
+    QVERIFY(model.updateMetadata(first_id, QStringLiteral("Primeira"), QStringLiteral("Outro artista"),
+                                 QStringLiteral("Outro álbum"), 11'111));
+    QVERIFY(model.updateMetadata(second_id, QStringLiteral("Título antigo"), QStringLiteral("Artista antigo"),
+                                 QStringLiteral("Álbum antigo"), 123'456));
+    QVERIFY(model.markUnavailable(second_id, QStringLiteral("source_unavailable")));
+    const QPersistentModelIndex second{model.index(1, 0)};
+    QItemSelectionModel selection(&model);
+    selection.setCurrentIndex(second, QItemSelectionModel::ClearAndSelect);
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy moved(&model, &QAbstractItemModel::rowsMoved);
+    QSignalSpy loaded_changed(&model, &LocalQueueListModel::loadedChanged);
+    auto replacement = queue.items()[1];
+    replacement.source_path = std::filesystem::path{L"D:/Movida"} / new_file_name.toStdWString();
+
+    QVERIFY(model.replaceUnavailableSource(replacement));
+
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(changed.front().at(0).value<QModelIndex>(), QModelIndex{second});
+    QCOMPARE(changed.front().at(1).value<QModelIndex>(), QModelIndex{second});
+    QCOMPARE(changed.front().at(2).value<QList<int>>(),
+             (QList<int>{LocalQueueListModel::FileNameRole, LocalQueueListModel::TitleRole,
+                         LocalQueueListModel::ArtistRole, LocalQueueListModel::AlbumRole,
+                         LocalQueueListModel::DurationMsRole, LocalQueueListModel::ErrorCodeRole}));
+    QVERIFY(second.isValid());
+    QCOMPARE(second.row(), 1);
+    QCOMPARE(second.data(LocalQueueListModel::OccurrenceIdRole).toString(),
+             LocalQueueListModel::occurrenceId(second_id));
+    QCOMPARE(second.data(LocalQueueListModel::SemanticKeyRole).toString(),
+             LocalQueueListModel::occurrenceId(second_id));
+    QCOMPARE(second.data(LocalQueueListModel::OrderIndexRole).toInt(), 1);
+    QCOMPARE(second.data(LocalQueueListModel::FileNameRole).toString(), new_file_name);
+    QCOMPARE(second.data(LocalQueueListModel::TitleRole).toString(),
+             new_file_name.left(new_file_name.lastIndexOf('.')));
+    QVERIFY(second.data(LocalQueueListModel::ArtistRole).toString().isEmpty());
+    QVERIFY(second.data(LocalQueueListModel::AlbumRole).toString().isEmpty());
+    QVERIFY(!second.data(LocalQueueListModel::DurationMsRole).isValid());
+    QCOMPARE(second.data(LocalQueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(second.data(LocalQueueListModel::ErrorCodeRole).toString(), QStringLiteral("source_relocated"));
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::TitleRole).toString(), QStringLiteral("Primeira"));
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::ArtistRole).toString(), QStringLiteral("Outro artista"));
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::AlbumRole).toString(), QStringLiteral("Outro álbum"));
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::DurationMsRole).toLongLong(), 11'111);
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::AvailableRole).toBool(), true);
+    QCOMPARE(selection.currentIndex(), QModelIndex{second});
+    QCOMPARE(selection.selectedIndexes(), (QModelIndexList{second}));
+    QCOMPARE(model.rowCount(), 2);
+    QVERIFY(model.loaded());
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserted.size(), 0);
+    QCOMPARE(moved.size(), 0);
+    QCOMPARE(loaded_changed.size(), 0);
+    QVERIFY(model.markAvailable(second_id));
+    QVERIFY(!second.data(LocalQueueListModel::ErrorCodeRole).isValid());
+    QCOMPARE(second.data(LocalQueueListModel::FileNameRole).toString(), new_file_name);
+}
+
+void FixtureRepositoryTests::localQueueModelRejectsInvalidRelocationWithoutMutation() {
+    LocalFileQueue queue;
+    QVERIFY(queue.replace({LR"(C:\Music\First.wav)", LR"(C:\Music\Second.wav)"}));
+    QVERIFY(queue.markUnavailable(1));
+    LocalQueueListModel model;
+    QVERIFY(model.replace(queue));
+    const auto occurrence = queue.items()[1].occurrence_id;
+    QVERIFY(model.updateMetadata(occurrence, QStringLiteral("Antes"), QStringLiteral("Artista"),
+                                 QStringLiteral("Álbum"), 1'234));
+    QVERIFY(model.markUnavailable(occurrence, QStringLiteral("source_unavailable")));
+    const QPersistentModelIndex second{model.index(1, 0)};
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    auto replacement = queue.items()[1];
+    replacement.source_path = LR"(D:\Moved\New.wav)";
+    replacement.available = true;
+    QVERIFY(!model.replaceUnavailableSource(replacement));
+    replacement.available = false;
+    replacement.occurrence_id = {};
+    QVERIFY(!model.replaceUnavailableSource(replacement));
+    replacement.occurrence_id = LocalQueueOccurrenceId{999'999};
+    QVERIFY(!model.replaceUnavailableSource(replacement));
+    replacement.occurrence_id = queue.items()[0].occurrence_id;
+    QVERIFY(!model.replaceUnavailableSource(replacement));
+    replacement.occurrence_id = occurrence;
+    replacement.source_path.clear();
+    QVERIFY(!model.replaceUnavailableSource(replacement));
+
+    QCOMPARE(changed.size(), 0);
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(second.isValid());
+    QCOMPARE(second.data(LocalQueueListModel::FileNameRole).toString(), QStringLiteral("Second.wav"));
+    QCOMPARE(second.data(LocalQueueListModel::TitleRole).toString(), QStringLiteral("Antes"));
+    QCOMPARE(second.data(LocalQueueListModel::ArtistRole).toString(), QStringLiteral("Artista"));
+    QCOMPARE(second.data(LocalQueueListModel::AlbumRole).toString(), QStringLiteral("Álbum"));
+    QCOMPARE(second.data(LocalQueueListModel::DurationMsRole).toLongLong(), 1'234);
+    QCOMPARE(second.data(LocalQueueListModel::ErrorCodeRole).toString(), QStringLiteral("source_unavailable"));
+    QCOMPARE(second.data(LocalQueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(model.rowCount(), 2);
 }
 
 void FixtureRepositoryTests::localQueueModelUpdatesUnavailableDiagnosticWithoutReset() {

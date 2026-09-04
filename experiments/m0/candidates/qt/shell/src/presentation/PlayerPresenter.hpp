@@ -8,6 +8,7 @@
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/SystemPowerEvents.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
@@ -70,6 +71,10 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString currentOccurrenceId READ currentOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(QString retryingOccurrenceId READ retryingOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryCurrentOccurrence READ canRetryCurrentOccurrence NOTIFY stateChanged)
+    Q_PROPERTY(bool fileLocationAvailable READ fileLocationAvailable NOTIFY stateChanged)
+    Q_PROPERTY(QString locatingOccurrenceId READ locatingOccurrenceId NOTIFY stateChanged)
+    Q_PROPERTY(QString fileLocationErrorOccurrenceId READ fileLocationErrorOccurrenceId NOTIFY stateChanged)
+    Q_PROPERTY(bool canLocateCurrentOccurrence READ canLocateCurrentOccurrence NOTIFY stateChanged)
     Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
@@ -252,6 +257,12 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString errorMessageKey() const;
     [[nodiscard]] QString errorActionId() const;
     [[nodiscard]] QString retryingOccurrenceId() const;
+    // The supplied locator must outlive the presenter, or be detached before it is destroyed.
+    void setAudioFileLocator(AudioFileLocator* locator);
+    [[nodiscard]] bool fileLocationAvailable() const noexcept;
+    [[nodiscard]] QString locatingOccurrenceId() const;
+    [[nodiscard]] QString fileLocationErrorOccurrenceId() const;
+    [[nodiscard]] bool canLocateCurrentOccurrence() const noexcept;
     [[nodiscard]] bool canRetryCurrentOccurrence() const noexcept;
     [[nodiscard]] bool hasCurrentTrack() const noexcept;
     [[nodiscard]] QString currentTitle() const;
@@ -348,6 +359,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool dismissSourceImportStatus();
     Q_INVOKABLE bool playQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool retryQueueOccurrence(const QString& occurrence_id);
+    Q_INVOKABLE bool locateQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool moveQueueOccurrence(const QString& occurrence_id, int destination_index);
     Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool clearQueue();
@@ -388,6 +400,7 @@ class PlayerPresenter final : public QObject {
     void platformChanged();
     void defaultAppsSettingsChanged();
     void lifecycleChanged();
+    void fileLocationFinished(QString occurrence_id, bool changed);
     void queueFocusRequested(int index);
     void sourceImportChanged();
     void windowPlacementFlushRequested();
@@ -448,6 +461,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
     [[nodiscard]] bool recordSourceImportOccurrenceIssue(LocalQueueOccurrenceId occurrence_id);
     [[nodiscard]] bool recoverAudioOutput();
+    void finishFileLocation(std::uint64_t request_generation, AudioFileLocationResult result);
+    void cancelFileLocation() noexcept;
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
@@ -471,6 +486,15 @@ class PlayerPresenter final : public QObject {
     QTimer timer_;
     FixtureState state_;
     AudioFilePicker audio_file_picker_{};
+    AudioFileLocator* audio_file_locator_{nullptr};
+    struct FileLocationRequest final {
+        std::uint64_t generation{0};
+        LocalQueueOccurrenceId occurrence_id{};
+        std::filesystem::path original_path{};
+    };
+    std::uint64_t file_location_generation_{0};
+    std::optional<FileLocationRequest> file_location_request_{};
+    std::optional<LocalQueueOccurrenceId> file_location_error_{};
     std::unique_ptr<LocalTrackSession> local_track_session_{};
     std::shared_ptr<ArtworkImageCache> artwork_cache_{};
     std::unique_ptr<LocalSourceDiscovery> owned_source_discovery_{};

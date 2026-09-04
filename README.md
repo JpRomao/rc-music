@@ -70,6 +70,8 @@ O terceiro recorte de M4.7 trata perda ou troca da saída padrão como erro de �
 
 O quarto recorte de M4.7 acrescenta recuperação da janela após `TaskbarCreated` no Windows. Um receptor nativo privado observa a mensagem; a janela que o próprio app ocultou para a bandeja volta normalmente minimizada, sem comando de áudio ou ativação, preservando fila e posição. Janela visível, bootstrap e rebind não reaplicam `startMinimized`; uma saída pendente adia a recuperação. O [registro central de taskbar](experiments/m0/candidates/qt/README.md#taskbar-m47) distingue a presença do shell do registro efetivo do ícone e documenta a caracterização nativa que remove/recria somente o ícone do teste. Explorer não foi encerrado; reinício real, pacote e demais gates de M4.7 continuam pendentes.
 
+O quinto recorte de M4.7 acrescenta localização de arquivo em outro path por um seletor assíncrono; QML fornece somente o ID da ocorrência. A fila conserva ordem, duplicatas e identidade, e metadata antiga é limpa. Localizar outra ocorrência não interrompe a faixa atual: o novo path permanece pendente até retry confirmado pelo decoder. A ocorrência atual em erro é reaberta pausada, restaurando a posição quando há seek, sem autoplay. O [registro central de localização](experiments/m0/candidates/qt/README.md#file-location-m47) reúne os checks automatizados verdes, incluindo arquivo renomeado com decoder real, e distingue os riscos ainda abertos. M4.7 não está concluída; diálogo nativo, drive físico, pacote, acessibilidade manual e Linux continuam exigindo validação.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -197,7 +199,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 ## Próximo passo
 
 1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. registrar o launcher de M4.6 e os recortes de suspend/resume, retry da mesma ocorrência, recuperação da saída padrão e recuperação de taskbar de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; prosseguir por localização de arquivo em outro path e validação de drive físico/restart real do Explorer, mantendo a validação física de áudio e os gates nativos abertos;
+2. registrar o launcher de M4.6 e os recortes de suspend/resume, retry da mesma ocorrência, recuperação da saída padrão, recuperação de taskbar e localização de arquivo em outro path de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; continuar as funcionalidades Windows pendentes com checks proporcionais, mantendo os ensaios físicos e os gates nativos abertos para uma rodada própria;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

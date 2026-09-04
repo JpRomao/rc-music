@@ -1,5 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -23,6 +24,7 @@
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QStringList>
+#include <QTimer>
 #include <QTranslator>
 #include <QVariantMap>
 #include <QWindow>
@@ -146,6 +148,42 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     int unload_calls{0};
 
   private:
+    std::uint64_t generation_{0};
+};
+
+class QuickTestAudioFileLocator final : public QObject, public music_player::m0::AudioFileLocator {
+  public:
+    bool locate(const std::filesystem::path& missing_source,
+                music_player::m0::AudioFileLocationCompletion completion) override {
+        if (completion_)
+            return false;
+        requests.push_back(missing_source);
+        completion_ = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++generation_;
+        completion_ = {};
+    }
+    void complete(music_player::m0::AudioFileLocationResult result) {
+        const auto generation = generation_;
+        QTimer::singleShot(0, this, [this, generation, result = std::move(result)]() mutable {
+            if (generation != generation_)
+                return;
+            auto completion = std::exchange(completion_, {});
+            if (completion)
+                completion(std::move(result));
+        });
+    }
+    void reset() {
+        cancel();
+        requests.clear();
+    }
+
+    std::vector<std::filesystem::path> requests;
+
+  private:
+    music_player::m0::AudioFileLocationCompletion completion_{};
     std::uint64_t generation_{0};
 };
 
@@ -303,11 +341,12 @@ class ScenarioDriver final : public QObject {
                    std::deque<std::vector<std::filesystem::path>>& local_selections,
                    music_player::m0::PlayerPresenter& local_presenter, QuickTestPlaybackBackend& local_backend,
                    QuickTestMetadataReader& local_metadata_reader, FakeLocalSourceDiscovery& local_source_discovery,
-                   QObject* parent = nullptr)
+                   QuickTestAudioFileLocator& local_file_locator, QObject* parent = nullptr)
         : QObject(parent), presenter_(presenter), platform_(platform), appearance_(appearance),
           appearance_state_(std::move(appearance_state)), local_selections_(local_selections),
           local_presenter_(local_presenter), local_backend_(local_backend),
-          local_metadata_reader_(local_metadata_reader), local_source_discovery_(local_source_discovery) {}
+          local_metadata_reader_(local_metadata_reader), local_source_discovery_(local_source_discovery),
+          local_file_locator_(local_file_locator) {}
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
@@ -365,6 +404,22 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int localUnloadCount() const noexcept { return local_backend_.unload_calls; }
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
     Q_INVOKABLE int localPauseCount() const noexcept { return local_backend_.pause_calls; }
+    Q_INVOKABLE int localLocateCount() const noexcept { return static_cast<int>(local_file_locator_.requests.size()); }
+    Q_INVOKABLE QString localLocateSource(const int index) const {
+        if (index < 0 || index >= static_cast<int>(local_file_locator_.requests.size()))
+            return {};
+        return displayPath(local_file_locator_.requests[static_cast<std::size_t>(index)]);
+    }
+    Q_INVOKABLE void completeLocalLocation(const QString& source) {
+        local_file_locator_.complete(
+            {.status = music_player::m0::AudioFileLocationStatus::Selected, .source_path = localPath(source)});
+    }
+    Q_INVOKABLE void cancelLocalLocation() {
+        local_file_locator_.complete({.status = music_player::m0::AudioFileLocationStatus::Cancelled});
+    }
+    Q_INVOKABLE void failLocalLocation() {
+        local_file_locator_.complete({.status = music_player::m0::AudioFileLocationStatus::Failed});
+    }
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
     Q_INVOKABLE void publishLocalPaused() { local_backend_.publish(music_player::m0::PlaybackStatus::Paused); }
@@ -373,6 +428,10 @@ class ScenarioDriver final : public QObject {
     }
     Q_INVOKABLE void publishLocalError() {
         local_backend_.snapshot_.error = music_player::m0::PlaybackErrorCode::InvalidMedia;
+        local_backend_.publish(music_player::m0::PlaybackStatus::Error);
+    }
+    Q_INVOKABLE void publishLocalSourceUnavailable() {
+        local_backend_.snapshot_.error = music_player::m0::PlaybackErrorCode::SourceUnavailable;
         local_backend_.publish(music_player::m0::PlaybackStatus::Error);
     }
     Q_INVOKABLE void publishLocalOutputError(const bool changed) {
@@ -448,6 +507,7 @@ class ScenarioDriver final : public QObject {
     }
     Q_INVOKABLE QString clipboardText() const { return QGuiApplication::clipboard()->text(); }
     Q_INVOKABLE void resetLocalScenario() {
+        local_file_locator_.reset();
         if (local_presenter_.sourceImportActive()) {
             static_cast<void>(local_presenter_.cancelSourceImport());
             local_source_discovery_.poll_results.clear();
@@ -646,6 +706,7 @@ class ScenarioDriver final : public QObject {
     QuickTestPlaybackBackend& local_backend_;
     QuickTestMetadataReader& local_metadata_reader_;
     FakeLocalSourceDiscovery& local_source_discovery_;
+    QuickTestAudioFileLocator& local_file_locator_;
     std::unique_ptr<QMimeData> drag_mime_{};
 };
 
@@ -702,6 +763,7 @@ class EmptyShellQuickTestSetup final : public QObject {
                 return selection;
             },
             local_source_discovery_, engine);
+        local_presenter->setAudioFileLocator(&local_file_locator_);
         auto appearance_state = std::make_shared<music_player::m0::SystemAppearanceSnapshot>(false, false);
         auto* appearance =
             new music_player::m0::QtSystemAppearance([appearance_state] { return *appearance_state; }, engine);
@@ -715,7 +777,7 @@ class EmptyShellQuickTestSetup final : public QObject {
             QStringLiteral("testScenarioDriver"),
             new ScenarioDriver(*presenter, platform_, *appearance, appearance_state, local_selections_,
                                *local_presenter, local_backend_, local_metadata_reader_, local_source_discovery_,
-                               engine));
+                               local_file_locator_, engine));
     }
 
   private:
@@ -729,6 +791,7 @@ class EmptyShellQuickTestSetup final : public QObject {
     QuickTestPlaybackBackend local_backend_{};
     QuickTestMetadataReader local_metadata_reader_{};
     FakeLocalSourceDiscovery local_source_discovery_{};
+    QuickTestAudioFileLocator local_file_locator_{};
     std::deque<std::vector<std::filesystem::path>> local_selections_{};
     QTranslator pt_br_translation_{};
     bool translation_installed_{false};

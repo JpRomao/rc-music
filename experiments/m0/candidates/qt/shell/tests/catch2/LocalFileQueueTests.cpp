@@ -189,6 +189,81 @@ TEST_CASE("local file queue inserts a batch at a requested position without chan
     CHECK(queue.currentOccurrenceId() == current);
 }
 
+TEST_CASE("relocating one unavailable source preserves identity selection order and unverified availability",
+          "[m0][qt][core][local-queue][relocate][NFR-REL-005]") {
+    LocalFileQueue queue;
+    const std::filesystem::path original{LR"(C:\Música\Antiga 日本語.mp3)"};
+    const std::filesystem::path relocated{LR"(D:\Movida\Nova 日本語.mp3)"};
+    REQUIRE(queue.replace({original, original, relocated}));
+    REQUIRE(queue.markUnavailable(0));
+    REQUIRE(queue.markUnavailable(1));
+    REQUIRE(queue.select(2));
+    const auto before = queue.snapshot();
+    const auto occurrence = before.items[1].occurrence_id;
+
+    REQUIRE(queue.replaceUnavailableSource(occurrence, relocated));
+
+    CHECK(queue.size() == 3);
+    CHECK(queue.currentOccurrenceId() == before.current_occurrence_id);
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{2});
+    CHECK(queue.snapshot().items[0] == before.items[0]);
+    CHECK(queue.snapshot().items[2] == before.items[2]);
+    CHECK(queue.items()[1].occurrence_id == occurrence);
+    CHECK(queue.items()[1].source_path == relocated);
+    CHECK_FALSE(queue.items()[0].available);
+    CHECK_FALSE(queue.items()[1].available);
+    CHECK(queue.items()[2].available);
+    CHECK_FALSE(queue.select(1));
+    REQUIRE(queue.append({LR"(C:\Music\Next.wav)"}));
+    CHECK(queue.items().back().occurrence_id == LocalQueueOccurrenceId{4});
+}
+
+TEST_CASE("relocating an unavailable source preserves its current or absent selection without filesystem IO",
+          "[m0][qt][core][local-queue][relocate][NFR-REL-005]") {
+    LocalFileQueue queue;
+    REQUIRE(queue.replace({LR"(C:\Missing\Original.wav)"}));
+    REQUIRE(queue.markUnavailable(0));
+    const auto occurrence = queue.items()[0].occurrence_id;
+    SECTION("selected occurrence stays selected") {}
+    SECTION("no selection stays absent") { REQUIRE(queue.clearSelection()); }
+    const auto current = queue.currentOccurrenceId();
+    const std::filesystem::path unnormalized{LR"(Z:\Missing\Unused\..\Nova 日本語.wav)"};
+
+    REQUIRE(queue.replaceUnavailableSource(occurrence, unnormalized));
+
+    CHECK(queue.currentOccurrenceId() == current);
+    CHECK(queue.items()[0].source_path == unnormalized);
+    CHECK_FALSE(queue.items()[0].available);
+    REQUIRE(queue.selectUnavailableForRetry(0));
+    CHECK_FALSE(queue.items()[0].available);
+    REQUIRE(queue.markAvailable(0));
+    CHECK(queue.items()[0].available);
+    CHECK(queue.items()[0].source_path == unnormalized);
+}
+
+TEST_CASE("invalid or unchanged source relocation is transactional",
+          "[m0][qt][core][local-queue][relocate][NFR-REL-005]") {
+    LocalFileQueue queue;
+    const std::filesystem::path original{LR"(C:\Music\Original.wav)"};
+    const std::filesystem::path relocated{LR"(D:\Moved\Located.wav)"};
+    CHECK_FALSE(queue.replaceUnavailableSource(LocalQueueOccurrenceId{1}, relocated));
+    REQUIRE(queue.replace({original, original}));
+    REQUIRE(queue.markUnavailable(1));
+    const auto before = queue.snapshot();
+
+    CHECK_FALSE(queue.replaceUnavailableSource({}, relocated));
+    CHECK_FALSE(queue.replaceUnavailableSource(LocalQueueOccurrenceId{999'999}, relocated));
+    CHECK_FALSE(queue.replaceUnavailableSource(before.items[0].occurrence_id, relocated));
+    CHECK_FALSE(queue.replaceUnavailableSource(before.items[1].occurrence_id, {}));
+    CHECK_FALSE(queue.replaceUnavailableSource(before.items[1].occurrence_id, original));
+
+    CHECK(queue.snapshot() == before);
+    CHECK(queue.items()[0].available);
+    CHECK_FALSE(queue.items()[1].available);
+    REQUIRE(queue.append({relocated}));
+    CHECK(queue.items().back().occurrence_id == LocalQueueOccurrenceId{3});
+}
+
 TEST_CASE("local file queue moves occurrences while preserving the current id", "[m0][qt][core][local-queue][FR-016]") {
     LocalFileQueue queue;
     REQUIRE(queue.replace({LR"(C:\Music\A.wav)", LR"(C:\Music\B.wav)", LR"(C:\Music\C.wav)", LR"(C:\Music\D.wav)"}));
