@@ -143,6 +143,22 @@ if(M0_QT_SHELL_SUPPORT)
         else()
             target_compile_options(m0_qt_windows_smtc PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
+
+        add_library(m0_qt_windows_power_events STATIC
+            include/m0/ports/SystemPowerEvents.hpp
+            src/adapters/WindowsPowerEvents.hpp
+            src/adapters/WindowsPowerEvents.cpp
+            src/adapters/Win32SuspendResumeNativeBoundary.cpp
+        )
+        target_include_directories(m0_qt_windows_power_events PUBLIC include src)
+        target_link_libraries(m0_qt_windows_power_events PUBLIC Qt6::Core Qt6::Gui PRIVATE user32)
+        target_compile_features(m0_qt_windows_power_events PUBLIC cxx_std_20)
+        set_target_properties(m0_qt_windows_power_events PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_windows_power_events PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_windows_power_events PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
     endif()
 
     add_library(m0_qt_system_appearance STATIC
@@ -264,6 +280,8 @@ if(M0_QT_SHELL_SUPPORT)
             src/presentation/PlayerPresenterScenarioControl.hpp
             src/presentation/SystemMediaControlsBinding.hpp
             src/presentation/SystemMediaControlsBinding.cpp
+            src/presentation/SystemPowerEventsBinding.hpp
+            src/presentation/SystemPowerEventsBinding.cpp
             src/presentation/LifecycleText.hpp
         QML_FILES
             qml/Main.qml
@@ -374,7 +392,7 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::Widgets
     )
     if(WIN32)
-        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_smtc)
+        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_power_events m0_qt_windows_smtc)
     endif()
     target_include_directories(m0_qt_shell PRIVATE src)
     target_compile_features(m0_qt_shell PRIVATE cxx_std_20)
@@ -424,6 +442,26 @@ if(M0_QT_SHELL_SUPPORT)
                 )
             endif()
             add_test(NAME m0.qt.windows.smtc-native COMMAND m0_qt_windows_smtc_native_tests)
+
+            add_executable(m0_qt_windows_power_events_tests
+                tests/qtest/WindowsPowerEventsTests.cpp
+            )
+            target_link_libraries(m0_qt_windows_power_events_tests PRIVATE
+                m0_qt_windows_power_events Qt6::Test
+            )
+            target_compile_features(m0_qt_windows_power_events_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_windows_power_events_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_power_events_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_windows_power_events_tests PRIVATE
+                    -Wall -Wextra -Wpedantic -Werror
+                )
+            endif()
+            add_test(NAME m0.qt.windows.power-events COMMAND m0_qt_windows_power_events_tests
+                -o "${CMAKE_CURRENT_BINARY_DIR}/windows-power-events-test.txt,txt"
+                -o -,txt
+            )
         endif()
         add_executable(m0_qt_shell_platform_binding_tests tests/qtest/ShellPlatformBindingTests.cpp)
         target_link_libraries(m0_qt_shell_platform_binding_tests PRIVATE
@@ -462,6 +500,27 @@ if(M0_QT_SHELL_SUPPORT)
             )
         endif()
         add_test(NAME m0.qt.system-media-controls.binding COMMAND m0_qt_system_media_controls_binding_tests)
+        add_executable(m0_qt_system_power_events_binding_tests
+            tests/qtest/SystemPowerEventsBindingTests.cpp
+        )
+        target_link_libraries(m0_qt_system_power_events_binding_tests PRIVATE
+            m0_qt_shell_support m0_qt_shell_ui Qt6::Test
+        )
+        target_include_directories(m0_qt_system_power_events_binding_tests PRIVATE src)
+        target_compile_features(m0_qt_system_power_events_binding_tests PRIVATE cxx_std_20)
+        target_compile_definitions(m0_qt_system_power_events_binding_tests PRIVATE
+            M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}"
+            M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}"
+        )
+        set_target_properties(m0_qt_system_power_events_binding_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_system_power_events_binding_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_system_power_events_binding_tests PRIVATE
+                -Wall -Wextra -Wpedantic -Werror
+            )
+        endif()
+        add_test(NAME m0.qt.system-power-events.binding COMMAND m0_qt_system_power_events_binding_tests)
         add_executable(m0_qt_system_appearance_tests tests/qtest/QtSystemAppearanceTests.cpp)
         target_link_libraries(m0_qt_system_appearance_tests PRIVATE m0_qt_system_appearance Qt6::Test)
         target_compile_features(m0_qt_system_appearance_tests PRIVATE cxx_std_20)
@@ -748,7 +807,11 @@ if(M0_QT_SHELL_SUPPORT)
             )
         endif()
         set_tests_properties(m0.qt.presenter.initial-load PROPERTIES
-            LABELS "m0;qt;presenter"
+            LABELS "m0;qt;presenter;FR-038;M4.7"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+        )
+        set_tests_properties(m0.qt.system-power-events.binding PROPERTIES
+            LABELS "m0;qt;power;suspend;resume;binding;FR-038;M4.7"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
         )
         set(m0_qt_quick_test_environment
@@ -772,6 +835,14 @@ if(M0_QT_SHELL_SUPPORT)
             )
             set_tests_properties(m0.qt.windows.smtc-native PROPERTIES
                 LABELS "m0;qt;windows;smtc;native;FR-037"
+                TIMEOUT 15
+                RUN_SERIAL TRUE
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT
+                    "QT_QPA_PLATFORM=windows;QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+            )
+            set_tests_properties(m0.qt.windows.power-events PROPERTIES
+                LABELS "m0;qt;windows;power;suspend;resume;FR-038;M4.7"
                 TIMEOUT 15
                 RUN_SERIAL TRUE
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
@@ -807,6 +878,10 @@ if(M0_QT_SHELL_SUPPORT)
             LABELS "m0;qt;system-media-controls;binding;FR-037"
             TIMEOUT 15
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
+        )
+        set_tests_properties(m0.qt.system-power-events.binding PROPERTIES
+            TIMEOUT 15
             ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
         set_tests_properties(m0.qt.fixture.repository-and-model m0.qt.presenter.initial-load PROPERTIES

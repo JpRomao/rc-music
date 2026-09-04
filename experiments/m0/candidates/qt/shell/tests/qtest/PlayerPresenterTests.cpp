@@ -5,6 +5,7 @@
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
+#include "m0/ports/SystemPowerEvents.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
@@ -509,6 +510,10 @@ class PlayerPresenterTests final : public QObject {
     void pendingSessionExitFreezesLocalPlaybackAndMetadataUntilCancellation();
     void coalescesStructuralSessionMutationsIntoTheLatestSnapshot();
     void persistsOnlyConfirmedPositionsOnPeriodicAndUrgentCheckpoints();
+    void systemSuspendStartsAnImmediateConfirmedCheckpointWithoutChangingPlayback();
+    void systemSuspendQuiescesApplicationPollingUntilResume();
+    void resumeDuringReversibleExitReactivatesPollingWhenTheExitFails();
+    void systemResumeReconcilesUnreportedBackendStateAndDeduplicatesTransitions();
     void sessionSaveFailureUsesTheExistingWarningAndRetryAction();
     void sessionFutureBlockUsesTheExistingWarningAndReplacementAction();
     void initialSessionFutureVersionUsesTheExistingReplacementAction();
@@ -4595,6 +4600,176 @@ void PlayerPresenterTests::persistsOnlyConfirmedPositionsOnPeriodicAndUrgentChec
     PlayerPresenterTestAccess::pollPersistence(presenter);
     QCOMPARE(session_writer.starts.size(), std::size_t{4});
     QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{1'000});
+}
+
+void PlayerPresenterTests::systemSuspendStartsAnImmediateConfirmedCheckpointWithoutChangingPlayback() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Suspend checkpoint.wav");
+
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = PreferencesLoadStatus::Missing,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    QVERIFY(presenter.openAudio());
+    clock.advance(std::chrono::milliseconds{500});
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    session_writer.complete(SessionSaveStatus::Saved);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 5'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 320,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{320});
+    const SessionRevision revision_before = session_autosave.latestRevision();
+    const int play_calls_before = backend.play_calls;
+    const int pause_calls_before = backend.pause_calls;
+
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QCOMPARE(session_writer.starts.back().snapshot.position_ms, std::int64_t{320});
+    QCOMPARE(session_autosave.latestRevision(), revision_before);
+    QVERIFY(session_writer.flushes.empty());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(backend.play_calls, play_calls_before);
+    QCOMPARE(backend.pause_calls, pause_calls_before);
+
+    QVERIFY(!presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QCOMPARE(session_autosave.latestRevision(), revision_before);
+    QVERIFY(session_writer.flushes.empty());
+}
+
+void PlayerPresenterTests::systemSuspendQuiescesApplicationPollingUntilResume() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(!timer->isActive());
+
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(timer->isActive());
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    QVERIFY(!timer->isActive());
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+    QVERIFY(timer->isActive());
+}
+
+void PlayerPresenterTests::resumeDuringReversibleExitReactivatesPollingWhenTheExitFails() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    const Preferences initial{};
+    PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = initial,
+                                                         .load_status = PreferencesLoadStatus::Missing,
+                                                         .autosave = &autosave});
+    QTimer* const timer = presenter.findChild<QTimer*>(QString{}, Qt::FindDirectChildrenOnly);
+    QVERIFY(timer != nullptr);
+    QVERIFY(presenter.loadFrozenQueue());
+    QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    QVERIFY(timer->isActive());
+
+    const qint64 suspended_position = presenter.positionMs();
+    QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+    QCOMPARE(presenter.positionMs(), suspended_position);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+
+    writer.complete(PreferencesSaveStatus::Failed);
+    PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QVERIFY(timer->isActive());
+    QVERIFY(QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection));
+    QVERIFY(presenter.positionMs() > suspended_position);
+}
+
+void PlayerPresenterTests::systemResumeReconcilesUnreportedBackendStateAndDeduplicatesTransitions() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    const auto source = localTestPath(u8"Resume reconciliation.mp3");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 5'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 200,
+                     .duration_ms = 5'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QSignalSpy playback_changed(&presenter, &PlayerPresenter::playbackChanged);
+    const int play_calls_before = backend.play_calls;
+    const int pause_calls_before = backend.pause_calls;
+
+    backend.snapshot_ = {
+        .status = PlaybackStatus::Paused, .position_ms = 640, .duration_ms = 5'000, .seekable = true, .generation = 1};
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{640});
+    QCOMPARE(playback_changed.size(), 1);
+    QCOMPARE(backend.play_calls, play_calls_before);
+    QCOMPARE(backend.pause_calls, pause_calls_before);
+
+    QVERIFY(!presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+    QCOMPARE(playback_changed.size(), 1);
+
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    backend.snapshot_ = {.status = PlaybackStatus::Playing,
+                         .position_ms = 2'000,
+                         .duration_ms = 5'000,
+                         .seekable = true,
+                         .generation = 999};
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{640});
+    QCOMPARE(playback_changed.size(), 1);
+
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    backend.snapshot_ = {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::BackendFailure};
+    QVERIFY(presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+    QVERIFY(presenter.hasError());
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("open-audio"));
+    QCOMPARE(backend.play_calls, play_calls_before);
+    QCOMPARE(backend.pause_calls, pause_calls_before);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exitCommitted());
+    QVERIFY(!presenter.handleSystemPowerEvent(SystemPowerEvent::Suspending));
+    QVERIFY(!presenter.handleSystemPowerEvent(SystemPowerEvent::Resumed));
 }
 
 void PlayerPresenterTests::sessionSaveFailureUsesTheExistingWarningAndRetryAction() {

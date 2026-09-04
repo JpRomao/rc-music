@@ -5,6 +5,7 @@
 #include "adapters/QtShellPlatform.hpp"
 #ifdef Q_OS_WIN
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
+#include "adapters/WindowsPowerEvents.hpp"
 #include "adapters/WindowsSmtcAdapter.hpp"
 #include "m0/adapters/SingleWorkerPreferencesWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
@@ -27,6 +28,7 @@
 #include "presentation/ShellUiContract.hpp"
 #ifdef Q_OS_WIN
 #include "presentation/SystemMediaControlsBinding.hpp"
+#include "presentation/SystemPowerEventsBinding.hpp"
 #endif
 
 #ifdef M0_QT_COMBINED_AUDIO
@@ -533,6 +535,9 @@ int main(int argc, char* argv[]) {
         music_player::m0::WindowsSmtcAdapter system_media_controls;
         music_player::m0::SystemMediaControlsBinding system_media_controls_binding(presenter, system_media_controls);
         static_cast<void>(system_media_controls.bindWindow(*window));
+        music_player::m0::WindowsPowerEvents system_power_events;
+        music_player::m0::SystemPowerEventsBinding system_power_events_binding(presenter, system_power_events);
+        static_cast<void>(system_power_events.start());
 #endif
         bool has_explicit_startup_sources = false;
 #ifdef M0_QT_COMBINED_AUDIO

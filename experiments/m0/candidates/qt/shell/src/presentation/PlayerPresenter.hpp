@@ -9,6 +9,7 @@
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
+#include "m0/ports/SystemPowerEvents.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
 #include "m0/presentation/QueueListModel.hpp"
 
@@ -326,6 +327,7 @@ class PlayerPresenter final : public QObject {
     void refreshPlatformAvailability();
     void reportTrayUnavailable();
     [[nodiscard]] bool recordWindowPlacement(WindowPlacement placement);
+    [[nodiscard]] bool handleSystemPowerEvent(SystemPowerEvent event);
     Q_INVOKABLE bool requestClose();
     Q_INVOKABLE bool requestHide();
     Q_INVOKABLE bool requestRestore();
@@ -424,6 +426,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] std::size_t sourceImportInsertionIndex() const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(LocalQueueOccurrenceId occurrence_id) const noexcept;
     [[nodiscard]] static DiscoveryGeneration nextDiscoveryGeneration(DiscoveryGeneration current) noexcept;
+    [[nodiscard]] bool applicationPollingEnabled() const noexcept;
     void reconcileTimer();
     [[nodiscard]] DeterministicPlaybackBackend* fixtureBackend() noexcept;
     [[nodiscard]] const DeterministicPlaybackBackend* fixtureBackend() const noexcept;
@@ -479,6 +482,7 @@ class PlayerPresenter final : public QObject {
     bool exiting_{false};
     bool exit_committed_{false};
     bool source_exit_drain_active_{false};
+    std::optional<SystemPowerEvent> last_system_power_event_{};
     std::function<bool()> source_exit_drained_probe_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};

@@ -253,8 +253,7 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 - tray e visibilidade da janela;
 - distinguir suporte da plataforma e disponibilidade momentânea da página de apps padrão, e abri-la por operação tipada sem aceitar URI, path ou ProgID da UI;
 - concluir cada solicitação uma única vez na thread que iniciou a operação, distinguindo `Dispatched`, `Unavailable` e `Failed`; `Dispatched` comprova somente o handoff ao handler registrado, nunca que a página ficou visível ou que um padrão mudou;
-- publicar capacidades disponíveis;
-- eventos de suspensão, retomada e shutdown.
+- publicar capacidades disponíveis.
 
 ### `SystemMediaControls`
 
@@ -262,6 +261,14 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 - receber comandos distintos de play, pause, anterior, próxima e seek;
 - entregar callbacks na thread de aplicação/UI que instalou o handler;
 - expor disponibilidade e shutdown idempotente, falhando fechado quando a integração nativa desaparece.
+
+### `SystemPowerEvents`
+
+- publicar somente as transições tipadas `Suspending` e `Resumed`, sem transportar mensagens, handles ou códigos nativos para o núcleo;
+- entregar notificações sincronamente na thread de aplicação/UI que instalou o handler;
+- expor disponibilidade, substituição explícita do handler e shutdown idempotente;
+- manter o receptor nativo privado e estável separado da janela visual, com ciclo de vida encerrado somente no shutdown;
+- limitar retries de inscrição nativa por backoff finito e permitir reativação somente por ação explícita ou mudança observada do estado da aplicação.
 
 ### `MediaSourceResolver`
 
@@ -458,7 +465,7 @@ Chamadas concorrentes de `shutdown()` são serializadas, drenam uma gravação j
 
 O `SessionAutosave` mantém deadlines independentes e escolhe sempre o mais próximo. Mudanças estruturais usam debounce trailing de 500 ms, limitado a 5 s desde a primeira mudança estrutural ainda não aceita. Posição confirmada altera somente o escalar `position_ms` em O(1); o primeiro tick arma um checkpoint fixo de 10 s e ticks posteriores não o adiam. Preview de seek, interpolação visual e ticks não confirmados pelo backend nunca alimentam o snapshot persistido.
 
-`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na integração atual, seek confirmado, pausa, parada/fim, erro terminal e saída usam esses gatilhos somente depois de obter a posição confirmada; suspensão permanece para M4.7. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
+`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na integração atual, seek confirmado, pausa, parada/fim, erro terminal, saída e a transição `Suspending` usam esses gatilhos somente depois de obter a posição confirmada. O caminho de suspensão inicia a escrita assíncrona, sem `flush()` bloqueante e sem comandar pause, play ou autoplay; por isso ele reduz a janela de perda, mas não garante que o replace já esteja durável antes de o sistema congelar o processo. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
 
 Salvar por debounce após mudanças importantes e no shutdown. A fila preserva paths ausentes como itens indisponíveis para que o usuário possa localizar ou remover. SQLite só entra com biblioteca indexada e busca que comprovem necessidade.
 
@@ -536,6 +543,14 @@ O painel Geral oferece no Windows um botão com nome e descrição acessíveis, 
 Os Reds focados exigiram a porta/estado ainda ausentes e os contratos do adapter e da UI. Os três Greens focados passaram individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado, 190/190 no core Qt OFF e 1/1 no Quick com 100 casos internos; `m0_qt_shell_ui_qmllint`, formato de 131 C++/46 QML, composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado, e validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas ficaram verdes. Nenhum benchmark foi executado neste recorte.
 
 Esse recorte não escreve `UserChoice`, não cria ProgID, `Capabilities` ou `RegisteredApplications`, não publica uma matriz de formatos, não instala associações, não comprova double-click/Explorer ou pacote e não implementa equivalente Linux. M4.6 e os checks nativos, de pacote, E2E, acessibilidade e Linux continuam abertos globalmente.
+
+No primeiro recorte funcional local de M4.7, suspensão e retomada deixam `PlatformIntegration` e passam pela porta separada `SystemPowerEvents`. No Windows, `WindowsPowerEvents` cria na thread da UI um `QWindow` privado, invisível e exclusivo para receber notificações. Seu `HWND` real é independente da janela visual e permanece estável enquanto a integração está ativa. `RegisterSuspendResumeNotification(..., DEVICE_NOTIFY_WINDOW_HANDLE)` fica registrado nesse receptor até shutdown. O filtro aceita somente `WM_POWERBROADCAST` para esse mesmo handle: `PBT_APMSUSPEND` produz `Suspending` e `PBT_APMRESUMEAUTOMATIC` produz `Resumed`. A entrega é síncrona na thread da UI; cada mensagem reconhecida é consumida com resultado `TRUE` antes de devolver controle ao QPA, inclusive quando a transição consecutiva é deduplicada, o callback lança ou encerra a integração durante a entrega. Eventos não reconhecidos, outro `HWND` e qualquer mensagem recebida após shutdown falham fechados e retornam `false`. A porta entrega exclusivamente essas transições nativas. Transições consecutivas iguais são deduplicadas sobre o registro contínuo, mas um `Resumed` inicial continua válido para reconciliar um suspend que o processo não observou.
+
+Uma falha inicial de `RegisterSuspendResumeNotification` mantém o receptor privado e aplica backoff coarse single-shot finito de 1 s, 5 s e 30 s. Se a tentativa posterior aos 30 s também falhar, o timer para; o orçamento só reinicia por `start()` explícito ou por um `applicationStateChanged` observado enquanto a integração continua indisponível. Shutdown cancela qualquer retry, remove o filtro, desfaz o registro quando presente e destrói o receptor, tornando timeout e callback tardios inertes. Criar, destruir ou recriar a surface da janela visual não afeta o `HWND` privado nem interrompe o registro. O binding remove o handler antes de encerrar a porta. A fronteira Win32 fica isolada no adapter e ligada a `User32`; o core recebe somente o enum tipado.
+
+Ao receber `Suspending`, o presenter captura a última posição confirmada da geração corrente, solicita `requestSaveNow()` e deixa inerte o polling funcional até a retomada; polling ainda necessário à persistência assíncrona pode continuar. A integração de power não chama `flush()`, `pause()`, `play()` nem cria autoplay. Em `Resumed`, o presenter atualiza capabilities da plataforma e consulta o snapshot atual do backend; quando a geração ainda corresponde à sessão ativa, reconcilia estado, posição e erro pelos mesmos contratos de playback. O evento de retomada também rearma o polling aplicável. Transições duplicadas e eventos após o commit da saída são inertes.
+
+Esse é apenas o recorte de suspend/resume de `FR-038`. Os testes registram uma janela real e exercitam a boundary sem suspender fisicamente a máquina; não cobrem Modern Standby, hibernação, ordem/delay reais do sistema nem garantem que o save assíncrono se tornou durável antes do congelamento. Perda de dispositivo, drive desconectado, arquivo removido, restart do Explorer, pacote, E2E nativo e Linux permanecem pendentes; M4.7 continua parcial. Nenhum benchmark pertence a este recorte.
 
 ## 15. Segurança e privacidade
 

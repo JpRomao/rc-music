@@ -366,7 +366,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
-        if (!exit_committed_)
+        if (!exit_committed_ && applicationPollingEnabled())
             static_cast<void>(advanceOneTick());
     });
 }
@@ -386,7 +386,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
-        if (!exit_committed_)
+        if (!exit_committed_ && applicationPollingEnabled())
             static_cast<void>(advanceOneTick());
     });
     reconcileTimer();
@@ -482,9 +482,11 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
-        if (!exiting_)
-            pollMetadata();
-        pollSourceImport();
+        if (applicationPollingEnabled()) {
+            if (!exiting_)
+                pollMetadata();
+            pollSourceImport();
+        }
     });
     reconcileTimer();
 }
@@ -2087,6 +2089,35 @@ bool PlayerPresenter::setTrayNoticeEnabled(const bool enabled) {
     emit lifecycleChanged();
     return true;
 }
+bool PlayerPresenter::handleSystemPowerEvent(const SystemPowerEvent event) {
+    if (exit_committed_ || last_system_power_event_ == std::optional{event})
+        return false;
+
+    last_system_power_event_ = event;
+    if (exiting_) {
+        reconcileTimer();
+        return true;
+    }
+    if (event == SystemPowerEvent::Suspending) {
+        if (session_autosave_ != nullptr && !uses_frozen_fixture_) {
+            observeSessionPosition(true);
+            session_autosave_->requestSaveNow();
+        }
+        reconcileTimer();
+        return true;
+    }
+
+    refreshPlatformAvailability();
+    if (!uses_frozen_fixture_ && local_track_session_ != nullptr && local_track_session_->hasTrack()) {
+        const PlaybackSnapshot snapshot = backend_.snapshot();
+        if (snapshot.generation == local_track_session_->playbackGeneration() &&
+            snapshot != controller_.confirmedSnapshot()) {
+            handlePlaybackEvent({PlaybackEventType::SnapshotChanged, snapshot});
+        }
+    }
+    reconcileTimer();
+    return true;
+}
 void PlayerPresenter::refreshPlatformAvailability() {
     const bool tray_available = platform_.trayAvailable();
     const bool default_apps_settings_supported = platform_.defaultAppsSettingsSupported();
@@ -2752,15 +2783,19 @@ void PlayerPresenter::rejectNextSeekForTest() noexcept {
         fixture_backend->rejectNextSeek();
 }
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
+bool PlayerPresenter::applicationPollingEnabled() const noexcept {
+    return last_system_power_event_ != std::optional{SystemPowerEvent::Suspending};
+}
 void PlayerPresenter::reconcileTimer() {
     const bool application_needed =
-        uses_frozen_fixture_
-            ? source_exit_drain_active_ ||
-                  (!exit_committed_ && queueLoaded() &&
-                   (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending()))
-            : source_exit_drain_active_ ||
-                  (!exiting_ && (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending ||
-                                 sourceImportActive()));
+        applicationPollingEnabled() &&
+        (uses_frozen_fixture_
+             ? source_exit_drain_active_ ||
+                   (!exit_committed_ && queueLoaded() &&
+                    (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending()))
+             : source_exit_drain_active_ ||
+                   (!exiting_ && (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending ||
+                                  sourceImportActive())));
     const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
     const bool session_needed = session_autosave_ != nullptr && session_autosave_->needsPolling();
     const bool needed = application_needed || preferences_needed || session_needed;

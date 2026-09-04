@@ -58,6 +58,12 @@ Em Geral, o botão possui nome, descrição, teclado, foco e motivo de indisponi
 
 Os três alvos focados passaram individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado e 190/190 no core Qt OFF; o Quick passou 1/1 com 100 casos internos, `m0_qt_shell_ui_qmllint` ficou verde e o formato cobriu 131 C++/46 QML. A composição `BUILD_TESTING=OFF` recompilou, listou zero testes e rejeitou o hook reservado com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas. Nenhum benchmark foi executado. M4.6 continua parcial: não houve escrita em `UserChoice`, ProgID, `Capabilities`, `RegisteredApplications`, formatos publicados, associação, pacote/instalador ou implementação Linux.
 
+O primeiro recorte funcional local de M4.7 cobre somente suspend/resume no Qt/Windows. A porta C++ pura `SystemPowerEvents` fica separada de `PlatformIntegration`; o adapter cria na thread da UI um `QWindow` privado e invisível, registra seu `HWND` estável com `RegisterSuspendResumeNotification`/`DEVICE_NOTIFY_WINDOW_HANDLE` e o mantém independente da janela/surface visual até shutdown. A porta entrega exclusivamente `PBT_APMSUSPEND` e `PBT_APMRESUMEAUTOMATIC` nativos dirigidos ao receptor como callbacks síncronos; essas mensagens reconhecidas são consumidas pelo filtro com resultado `TRUE`, enquanto mensagens/tipos/handles alheios continuam inertes. Duplicatas nativas consecutivas são suprimidas, enquanto um `Resumed` nativo inicial continua válido para reconciliação. Falha inicial preserva o receptor e usa backoff coarse single-shot finito de 1 s, 5 s e 30 s; esgotado o orçamento, só `start()` explícito ou `applicationStateChanged` reinicia as tentativas. Shutdown cancela o timer, desfaz a inscrição e torna retry/callback tardio inerte. Criar, destruir ou recriar a surface visual não interfere no receptor.
+
+Ao suspender, o presenter captura a última posição confirmada e inicia `requestSaveNow()` de forma assíncrona, sem `flush()`, pause, play ou autoplay. O polling funcional fica quiescente, sem impedir o acompanhamento da persistência já ativa. Ao retomar, capabilities e snapshot do backend são relidos; estado, posição e erro da geração corrente são reconciliados pelo fluxo normal, e o polling aplicável volta. Resultado dos alvos focados e dos checks amplos: build Release aprovado, 241/241 testes no CTest combinado sequencial, 190/190 no core Qt OFF, `qmllint` e formato de 139 C++/46 QML verdes; `BUILD_TESTING=OFF` recompilado com zero testes e hook reservado rejeitado em exit 1 sem criar a raiz solicitada; validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas aprovada. Nenhum QML mudou e nenhum benchmark foi executado.
+
+M4.7 continua parcial e este recorte fornece evidência somente para suspend/resume de `FR-038`. O teste nativo registra uma janela real, mas não suspende o host nem prova Modern Standby, hibernação, timing real ou durabilidade do save antes do freeze. Device/drive perdido, arquivo removido, restart do Explorer, pacote/E2E, Linux e `NFR-REL-005` permanecem pendentes.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -184,8 +190,8 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 
 ## Próximo passo
 
-1. manter M4.1–M4.6 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. registrar o launcher oficial de M4.6 como parcial; identidade, matriz publicada e pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`, então avançar pelo desenvolvimento Windows implementável de M4.7 sem alegar que M4.6 terminou;
+1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
+2. registrar o launcher de M4.6 e suspend/resume de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`, e a próxima recuperação Windows implementável cobre device/drive/file lost e restart do Explorer;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

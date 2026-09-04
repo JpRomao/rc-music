@@ -98,8 +98,9 @@ O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos
 | `FakePlaybackBackend` | ready, duração, posição, ended, device lost, erro e confirmação de seek |
 | `FakeMetadataReader` | resultado imediato, atraso, cancelamento, tag hostil e arte acima dos limites NFR-LIMIT |
 | `InMemorySessionStore` | load/save, versão, corrupção e falhas programáveis |
-| `FakePlatformIntegration` | tray presente/ausente, close, visibilidade, suspend/resume e abertura tipada da página de apps padrão com suporte, disponibilidade, resultado e conclusão controláveis |
+| `FakePlatformIntegration` | tray presente/ausente, close, visibilidade e abertura tipada da página de apps padrão com suporte, disponibilidade, resultado e conclusão controláveis |
 | `FakeSystemMediaControls` | disponibilidade, snapshots publicados e comandos Play/Pause/Previous/Next/Seek |
+| `FakeSystemPowerEvents` | disponibilidade, handler substituível e transições síncronas `Suspending`/`Resumed` controláveis |
 | `FakeMediaSourceResolver` | local válido, não suportado e resultado remoto futuro |
 | `ManualClock` | ticks, debounce, timeout, interpolação e autosave |
 | `DeterministicIdGenerator` | IDs estáveis sem acoplar testes a UUID aleatório |
@@ -291,6 +292,25 @@ As provas focadas deste recorte permanecem isoladas por fronteira e não abrem a
 Os Reds focados falharam pelas fronteiras, propriedades/estados e contratos de adapter/UI ainda ausentes. Os três Greens focados passaram individualmente: `m0.qt.shell-platform` 1/1, `m0.qt.presenter.initial-load` 1/1 e `m0.qt.quick.shell-states` 1/1. A consolidação passou 239/239 no CTest Release combinado, 190/190 no core Qt OFF e 1/1 no Quick com 100 casos internos; `m0_qt_shell_ui_qmllint`, formato de 131 C++/46 QML, composição `BUILD_TESTING=OFF` com zero testes e hook reservado rejeitado, e validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas ficaram verdes. Não se extrapola dessas provas a abertura efetiva das Configurações no desktop. Nenhum benchmark foi executado.
 
 `Dispatched` comprova somente que o opener aceitou o handoff para o handler registrado; não prova visibilidade da página nem alteração de padrão. Escrita de `UserChoice`, ProgID, `Capabilities`, `RegisteredApplications`, matriz publicada de formatos, associação/double-click, pacote/instalador e implementação Linux não pertencem a este recorte. M4.6, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e os smokes de associação/pacote continuam abertos.
+
+### M4.7 — primeiro recorte de suspend/resume no Windows
+
+As provas deste recorte ficam separadas por fronteira e não suspendem fisicamente a máquina:
+
+- o presenter comprova que o primeiro `Suspending` captura a posição confirmada da geração corrente e inicia `requestSaveNow()` sem `flush()`, pause, play ou autoplay; uma repetição consecutiva não cria outro checkpoint;
+- o presenter também comprova que o polling funcional fica quiescente durante a suspensão e volta em `Resumed`; tanto uma retomada inicial quanto a retomada após suspensão consultam o backend e reconciliam estado, posição e erro da geração corrente sem comandos de transporte; duplicatas e eventos após a saída são inertes;
+- `SystemPowerEventsBinding` comprova instalação/substituição do handler, entrega ao presenter, desarme no teardown e shutdown único, sem callback posterior;
+- `WindowsPowerEvents` usa uma boundary nativa injetada para comprovar que `start()` cria e registra uma única janela receptora privada, com `HWND` não nulo e distinto da janela visual, e permanece idempotente enquanto disponível;
+- filtros de event type, mensagem e `HWND`, entrega síncrona, exceção confinada, `Resumed` inicial e deduplicação de transições nativas consecutivas são exercitados no registro contínuo; eventos reconhecidos, inclusive duplicados, retornam consumidos com resultado `TRUE`, enquanto entradas alheias retornam `false` sem alterar o sentinel;
+- falha inicial comprova o backoff single-shot finito de 1 s, 5 s e 30 s e o fim do orçamento; o contrato permite reiniciá-lo por outro `start()` explícito ou `applicationStateChanged`, com a segunda rota coberta no caso de recuperação; shutdown cancela o retry e torna seu timeout tardio inerte;
+- criar, destruir e recriar uma janela visual não interrompe nem troca o receptor privado, enquanto shutdown libera exatamente uma vez o registro e torna um novo `start()` inerte;
+- um caso QPA Windows registra de fato o `HWND` por `RegisterSuspendResumeNotification` e desfaz o registro, sem emitir uma suspensão real nem alterar o estado de energia do host.
+
+Os alvos focados deste recorte são `m0.qt.presenter.initial-load`, `m0.qt.system-power-events.binding` e `m0.qt.windows.power-events`. Resultado final dos alvos, consolidação Release/core, formato, composição `BUILD_TESTING=OFF` e validação documental: build Release aprovado, 241/241 testes no CTest combinado sequencial, 190/190 no core Qt OFF, `qmllint` e formato de 139 C++/46 QML verdes; `BUILD_TESTING=OFF` recompilado com zero testes e hook reservado rejeitado em exit 1 sem criar a raiz solicitada; validação documental de 44 Markdown/83 requisitos/17 checks/76 etapas aprovada. Nenhum QML foi alterado por este recorte; nenhum benchmark foi executado.
+
+Os Reds falharam pela API de power ainda ausente, pelo polling que avançava durante suspensão com persistência pendente e pelo filtro que devolvia `false` em mensagens reconhecidas. Os Greens cobrem também `PostMessageW` real, inclusive callback que encerra ou destrói o adapter. O check dos 46 QML comparou a saída de `qmlformat` 6.11.2 normalizada em LF, pois essa versão não oferece `--check`. O manifesto de produção embutido conserva `longPathAware=true`; a validação estrita com `mt.exe` ainda rejeita o `processorArchitecture="*"` preexistente, sem alegação de aprovação integral desse manifesto.
+
+Essas provas cobrem somente suspend/resume de `FR-038`. Elas não comprovam sleep físico, Modern Standby, hibernação, timing real de congelamento nem durabilidade do save assíncrono antes do freeze. Perda de dispositivo, drive desconectado, arquivo removido, restart do Explorer, pacote/E2E nativo e Linux continuam fora deste recorte; M4.7 permanece parcial.
 
 ### `MetadataReader`
 
