@@ -98,7 +98,10 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
             return next;
         }();
         if (result == PlaybackCommandResult::Accepted) {
-            snapshot_ = {.status = PlaybackStatus::Loading, .generation = ++last_generation_};
+            snapshot_ = {.status = accepted_load_status.value_or(PlaybackStatus::Loading),
+                         .generation = ++last_generation_};
+            if (snapshot_.status == PlaybackStatus::Error)
+                snapshot_.error = PlaybackErrorCode::SourceUnavailable;
         }
         return result;
     }
@@ -154,6 +157,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     PlaybackSnapshot snapshot_{};
     PlaybackEventCallback event_callback_{};
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
+    std::optional<PlaybackStatus> accepted_load_status{};
     std::deque<PlaybackCommandResult> load_results;
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
@@ -455,6 +459,13 @@ class PlayerPresenterTests final : public QObject {
     void localEndedAtQueueTailClearsSelectionWhenConfigured();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues();
+    void retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue();
+    void rejectedRetryPreservesTheCurrentTrackAndRepeatedFailureRemainsActionable();
+    void retryCompletionCannotReviveAnOccurrenceAfterAnotherExplicitSelection();
+    void retryReconcilesASynchronousLoadCompletion_data();
+    void retryReconcilesASynchronousLoadCompletion();
+    void explicitRetryPreventsLaterImportBatchesFromTakingOver_data();
+    void explicitRetryPreventsLaterImportBatchesFromTakingOver();
     void localErrorContinuationPreservesStayReadyIntent();
     void localErrorContinuationPreservesPausedPlayback();
     void rejectedAutomaticContinuationRemainsManuallyRecoverable();
@@ -1448,6 +1459,13 @@ void PlayerPresenterTests::sourceImportCountsAnAsynchronousFailureOnceAfterCompl
 
     QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
     QCOMPARE(source_import_changed.size(), notifications_after_first_error);
+    QVERIFY(presenter.retryQueueOccurrence(presenter.currentOccurrenceId()));
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_VERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 2, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(source_import_changed.size(), notifications_after_first_error);
 }
 
 void PlayerPresenterTests::dismissingSourceImportStopsTrackingCompletedOccurrences() {
@@ -2127,6 +2145,206 @@ void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues(
 
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
     QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Reconectada 日本語.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    auto* const model = presenter.queueModelObject();
+    const QString first_id = presenter.currentOccurrenceId();
+    const QString second_id = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentOccurrenceId(), second_id);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+
+    QVERIFY(presenter.retryQueueOccurrence(first_id));
+    QCOMPARE(presenter.currentOccurrenceId(), first_id);
+    QCOMPARE(presenter.retryingOccurrenceId(), first_id);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    QCOMPARE(backend.loaded_paths, (std::vector{source, source, source}));
+    QCOMPARE(model->rowCount(), 2);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("source_unavailable"));
+    QVERIFY(!presenter.canRetryCurrentOccurrence());
+    QVERIFY(!presenter.retryQueueOccurrence(first_id));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{3});
+    QCOMPARE(backend.play_calls, 0);
+
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QTRY_VERIFY(presenter.retryingOccurrenceId().isEmpty());
+    QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).isValid());
+    QCOMPARE(model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString(), second_id);
+    QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    backend.publishEvent(
+        PlaybackEventType::SnapshotChanged,
+        {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable}, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.currentOccurrenceId(), first_id);
+    QVERIFY(!presenter.hasError());
+    QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::rejectedRetryPreservesTheCurrentTrackAndRepeatedFailureRemainsActionable() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Retry.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    auto* const model = presenter.queueModelObject();
+    const QString first_id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    const QString second_id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 400,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    const auto metadata_count = metadata.requests.size();
+    backend.load_result = PlaybackCommandResult::Busy;
+    QVERIFY(!presenter.retryQueueOccurrence(first_id));
+    QCOMPARE(presenter.currentOccurrenceId(), second_id);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{400});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(metadata.requests.size(), metadata_count);
+    QVERIFY(presenter.retryingOccurrenceId().isEmpty());
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(!presenter.retryQueueOccurrence(QStringLiteral("invalid-id")));
+    QVERIFY(!presenter.retryQueueOccurrence(second_id));
+
+    backend.load_result = PlaybackCommandResult::Accepted;
+    QVERIFY(presenter.retryQueueOccurrence(first_id));
+    backend.publish({.status = PlaybackStatus::Error, .generation = 3, .error = PlaybackErrorCode::AccessDenied});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QCOMPARE(presenter.currentOccurrenceId(), first_id);
+    QCOMPARE(presenter.errorCode(), QStringLiteral("access_denied"));
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("access_denied"));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{4});
+    QVERIFY(presenter.retryingOccurrenceId().isEmpty());
+    backend.publish(
+        {.status = PlaybackStatus::Error, .position_ms = 1, .generation = 3, .error = PlaybackErrorCode::AccessDenied});
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.currentOccurrenceId(), first_id);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{4});
+    QVERIFY(presenter.canRetryCurrentOccurrence());
+    QVERIFY(presenter.retryQueueOccurrence(first_id));
+    backend.publish({.status = PlaybackStatus::Error, .generation = 4, .error = PlaybackErrorCode::AccessDenied});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{5});
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(model->rowCount(), 2);
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!presenter.canRetryCurrentOccurrence());
+    QVERIFY(!presenter.retryQueueOccurrence(first_id));
+}
+
+void PlayerPresenterTests::retryCompletionCannotReviveAnOccurrenceAfterAnotherExplicitSelection() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Original.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    const QString first_id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    const QString second_id = presenter.currentOccurrenceId();
+    QVERIFY(presenter.retryQueueOccurrence(first_id));
+    QVERIFY(presenter.playQueueOccurrence(second_id));
+    QVERIFY(presenter.retryingOccurrenceId().isEmpty());
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 3},
+                         false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.currentOccurrenceId(), second_id);
+    auto* const model = presenter.queueModelObject();
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(model->rowCount(), 2);
+}
+
+void PlayerPresenterTests::retryReconcilesASynchronousLoadCompletion_data() {
+    QTest::addColumn<bool>("fails");
+    QTest::newRow("ready") << false;
+    QTest::newRow("error") << true;
+}
+
+void PlayerPresenterTests::retryReconcilesASynchronousLoadCompletion() {
+    QFETCH(bool, fails);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Synchronous.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    QVERIFY(presenter.openAudio());
+    const QString id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    backend.accepted_load_status = fails ? PlaybackStatus::Error : PlaybackStatus::Ready;
+
+    QVERIFY(presenter.retryQueueOccurrence(id));
+    QVERIFY(presenter.retryingOccurrenceId().isEmpty());
+    QCOMPARE(presenter.canRetryCurrentOccurrence(), fails);
+    QCOMPARE(presenter.hasError(), fails);
+    QCOMPARE(backend.play_calls, fails ? 0 : 1);
+    auto* const model = presenter.queueModelObject();
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool(), !fails);
+    QCOMPARE(model->rowCount(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+}
+
+void PlayerPresenterTests::explicitRetryPreventsLaterImportBatchesFromTakingOver_data() {
+    QTest::addColumn<bool>("retry_failed");
+    QTest::newRow("loading") << false;
+    QTest::newRow("failed") << true;
+}
+
+void PlayerPresenterTests::explicitRetryPreventsLaterImportBatchesFromTakingOver() {
+    QFETCH(bool, retry_failed);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto source = localTestPath(u8"Restaurada.wav");
+    const auto later = localTestPath(u8"Lote seguinte.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(source), localTestUrl(later)}, 0));
+    const auto generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {source}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    const QString id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+
+    QVERIFY(presenter.retryQueueOccurrence(id));
+    if (retry_failed) {
+        backend.publish(
+            {.status = PlaybackStatus::Error, .generation = 2, .error = PlaybackErrorCode::SourceUnavailable});
+        QTRY_VERIFY(presenter.hasError());
+    }
+    discovery.publishBatch(generation, 2, {later}, {}, 2);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    QCOMPARE(backend.loaded_paths, (std::vector{source, source}));
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 2ULL);
+    QCOMPARE(presenter.hasError(), retry_failed);
 }
 
 void PlayerPresenterTests::localErrorContinuationPreservesStayReadyIntent() {
@@ -5454,6 +5672,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "cancelSourceImport",
                                     "dismissSourceImportStatus",
                                     "playQueueOccurrence",
+                                    "retryQueueOccurrence",
                                     "moveQueueOccurrence",
                                     "removeQueueOccurrence",
                                     "clearQueue",

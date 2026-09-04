@@ -127,6 +127,63 @@ TestCase {
         verify(!testLocalPlayerPresenter.hasError); // qmllint disable unqualified
     }
 
+    function test_retryUnavailableOccurrence_data() {
+        return [
+            {
+                tag: "keyboard",
+                accessible: false
+            },
+            {
+                tag: "accessible",
+                accessible: true
+            }
+        ];
+    }
+
+    function test_retryUnavailableOccurrence(data) {
+        enterInvalidMediaError();
+        shell.requestActivate();
+        tryVerify(function () {
+            return shell.active;
+        });
+        const occurrenceId = testLocalPlayerPresenter.currentOccurrenceId; // qmllint disable unqualified
+        const openAnother = findChild(shell, "error-open-audio");
+        const retry = findChild(shell, "error-retry-occurrence");
+        verify(retry && retry.visible && retry.enabled);
+        compare(retry.Accessible.role, Accessible.Button);
+        compare(retry.Accessible.name, "Tentar reproduzir novamente");
+        verify(retry.Accessible.description.length > 0);
+        compare(openAnother.text, "Abrir outro áudio");
+        verify(openAnother.enabled);
+        openAnother.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return retry.activeFocus;
+        });
+
+        if (data.accessible)
+            retry.Accessible.pressAction();
+        else
+            keyClick(Qt.Key_Return);
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.currentOccurrenceId, occurrenceId); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.retryingOccurrenceId, occurrenceId); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadedPath(1), "C:/Música/Falha contextual 日本語.mp3"); // qmllint disable unqualified
+        verify(!retry.enabled);
+        retry.Accessible.pressAction();
+        compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
+        tryVerify(function () {
+            return findChild(shell, "open-another-audio").activeFocus;
+        });
+
+        testScenarioDriver.publishLocalReady(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "retryingOccurrenceId", ""); // qmllint disable unqualified
+        testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        verify(!retry.visible);
+    }
+
     function test_expandedLocalizedCopyFitsTheMinimumWindow() {
         enterInvalidMediaError();
         const harness = createTemporaryObject(expandedErrorHarnessComponent, shell.contentItem);
@@ -135,6 +192,7 @@ TestCase {
         const title = findChild(state, "error-title");
         const body = findChild(state, "error-body");
         const action = findChild(state, "error-open-audio");
+        const retry = findChild(state, "error-retry-occurrence");
         wait(0);
 
         verify(state.width <= harness.width);
@@ -142,6 +200,7 @@ TestCase {
         verifyInside(harness, title);
         verifyInside(harness, body);
         verifyInside(harness, action);
+        verifyInside(harness, retry);
         compare(title.wrapMode, Text.Wrap);
         compare(body.wrapMode, Text.Wrap);
         verify(title.paintedWidth <= title.width + 0.5);

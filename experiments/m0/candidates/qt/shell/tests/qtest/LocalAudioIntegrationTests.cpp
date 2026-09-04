@@ -196,6 +196,40 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void restoredSourceRetriesTheSameOccurrenceThroughTheRealBackend() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString restored_file = directory.filePath(QStringLiteral("Restaurada 日本語.wav"));
+        const auto source = nativePath(restored_file);
+        TestPlatform platform;
+        QtMultimediaPlaybackBackend engine;
+        RecordingPlaybackBackend backend(engine);
+        SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
+        PlayerPresenter presenter(frozenBundle(), platform, backend, reader, [source] { return std::vector{source}; });
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+        const QString occurrence = presenter.currentOccurrenceId();
+        QTRY_VERIFY_WITH_TIMEOUT(presenter.hasError(), 5'000);
+        QCOMPARE(presenter.errorCode(), QStringLiteral("source_unavailable"));
+        QVERIFY(presenter.canRetryCurrentOccurrence());
+        auto* const model = presenter.queueModelObject();
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+        QVERIFY(!model->data(model->index(0, 0), LocalQueueListModel::AvailableRole).toBool());
+
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE), restored_file));
+        QVERIFY(presenter.retryQueueOccurrence(occurrence));
+        QTRY_VERIFY_WITH_TIMEOUT(backend.observed(PlaybackStatus::Playing), 5'000);
+        QTRY_VERIFY(presenter.retryingOccurrenceId().isEmpty());
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(backend.loadedPaths(), (std::vector{source, source}));
+        QVERIFY(model->data(model->index(0, 0), LocalQueueListModel::AvailableRole).toBool());
+        QVERIFY(!model->data(model->index(0, 0), LocalQueueListModel::ErrorCodeRole).isValid());
+        QCOMPARE(resets.size(), 0);
+        QVERIFY(!presenter.hasError());
+    }
+
     void opensUnicodeLocalAudioAndDrivesTheRealJourney_data() {
         QTest::addColumn<QString>("source_file");
         QTest::addColumn<QString>("extension");

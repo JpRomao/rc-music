@@ -12,6 +12,8 @@ QtObject {
     readonly property string unknownErrorTitle: qsTr("Não foi possível reproduzir esta faixa")
     readonly property string unknownErrorMessage: qsTr("Escolha outro áudio para continuar.")
     readonly property string openAudioAction: qsTr("Abrir outro áudio")
+    readonly property string retryAction: qsTr("Tentar reproduzir novamente")
+    readonly property string retryDescription: qsTr("Tenta abrir o mesmo arquivo novamente, preservando sua posição na fila.")
 
     function titleFor(messageKey) {
         switch (messageKey) {

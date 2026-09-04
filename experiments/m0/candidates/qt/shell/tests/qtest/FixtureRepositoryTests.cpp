@@ -38,6 +38,8 @@ class FixtureRepositoryTests final : public QObject {
     void queueModelLoadsExactlyOnce();
     void localQueueModelAppliesFineGrainedMutations();
     void localQueueModelInsertsBatchAtRequestedIndex();
+    void localQueueModelRestoresOneOccurrenceWithoutResetOrMetadataLoss();
+    void localQueueModelUpdatesUnavailableDiagnosticWithoutReset();
     void rejectsSemanticFixtureDrift_data();
     void rejectsSemanticFixtureDrift();
     void rejectsQueueCountDrift();
@@ -763,6 +765,93 @@ void FixtureRepositoryTests::localQueueModelInsertsBatchAtRequestedIndex() {
     }
     QCOMPARE(model.data(model.index(1, 0), LocalQueueListModel::FileNameRole).toString(), QStringLiteral("B.mp3"));
     QCOMPARE(model.data(model.index(2, 0), LocalQueueListModel::FileNameRole).toString(), QStringLiteral("C.flac"));
+}
+
+void FixtureRepositoryTests::localQueueModelRestoresOneOccurrenceWithoutResetOrMetadataLoss() {
+    LocalFileQueue queue;
+    const std::filesystem::path duplicate{LR"(C:\Música\Duplicada 日本語.mp3)"};
+    QVERIFY(queue.replace({duplicate, duplicate}));
+    const auto first_id = queue.items()[0].occurrence_id;
+    const auto second_id = queue.items()[1].occurrence_id;
+    LocalQueueListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QVERIFY(model.replace(queue));
+    QVERIFY(model.updateMetadata(second_id, QStringLiteral("Título 日本語"), QStringLiteral("Artista"),
+                                 QStringLiteral("Álbum"), 123'456));
+    QVERIFY(model.markUnavailable(first_id, QStringLiteral("source_unavailable")));
+    QVERIFY(model.markUnavailable(second_id, QStringLiteral("access_denied")));
+    const QPersistentModelIndex second{model.index(1, 0)};
+    QItemSelectionModel selection(&model);
+    selection.setCurrentIndex(second, QItemSelectionModel::ClearAndSelect);
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy loaded_changed(&model, &LocalQueueListModel::loadedChanged);
+
+    QVERIFY(model.markAvailable(second_id));
+
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(changed.front().at(0).value<QModelIndex>(), QModelIndex{second});
+    QCOMPARE(changed.front().at(1).value<QModelIndex>(), QModelIndex{second});
+    QCOMPARE(changed.front().at(2).value<QList<int>>(),
+             (QList<int>{LocalQueueListModel::AvailableRole, LocalQueueListModel::ErrorCodeRole}));
+    QVERIFY(second.isValid());
+    QCOMPARE(second.row(), 1);
+    QCOMPARE(second.data(LocalQueueListModel::OccurrenceIdRole).toString(),
+             LocalQueueListModel::occurrenceId(second_id));
+    QCOMPARE(second.data(LocalQueueListModel::OrderIndexRole).toInt(), 1);
+    QCOMPARE(second.data(LocalQueueListModel::FileNameRole).toString(), QStringLiteral("Duplicada 日本語.mp3"));
+    QCOMPARE(second.data(LocalQueueListModel::TitleRole).toString(), QStringLiteral("Título 日本語"));
+    QCOMPARE(second.data(LocalQueueListModel::ArtistRole).toString(), QStringLiteral("Artista"));
+    QCOMPARE(second.data(LocalQueueListModel::AlbumRole).toString(), QStringLiteral("Álbum"));
+    QCOMPARE(second.data(LocalQueueListModel::DurationMsRole).toLongLong(), 123'456);
+    QCOMPARE(second.data(LocalQueueListModel::AvailableRole).toBool(), true);
+    QVERIFY(!second.data(LocalQueueListModel::ErrorCodeRole).isValid());
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("source_unavailable"));
+    QCOMPARE(selection.currentIndex(), QModelIndex{second});
+    QCOMPARE(selection.selectedIndexes(), (QModelIndexList{second}));
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.loaded(), true);
+    QVERIFY(!model.markAvailable(second_id));
+    QVERIFY(!model.markAvailable(LocalQueueOccurrenceId{}));
+    QVERIFY(!model.markAvailable(LocalQueueOccurrenceId{999'999}));
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(loaded_changed.size(), 0);
+}
+
+void FixtureRepositoryTests::localQueueModelUpdatesUnavailableDiagnosticWithoutReset() {
+    LocalFileQueue queue;
+    QVERIFY(queue.replace({LR"(C:\Music\First.wav)", LR"(C:\Music\Second.wav)"}));
+    QVERIFY(queue.markUnavailable(1));
+    const auto occurrence = queue.items()[1].occurrence_id;
+    LocalQueueListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QVERIFY(model.replace(queue));
+    const QPersistentModelIndex second{model.index(1, 0)};
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+
+    QVERIFY(model.markUnavailable(occurrence, QStringLiteral("source_unavailable")));
+    QVERIFY(model.markUnavailable(occurrence, QStringLiteral("access_denied")));
+
+    QCOMPARE(changed.size(), 2);
+    for (const auto& signal : changed) {
+        QCOMPARE(signal.at(0).value<QModelIndex>(), QModelIndex{second});
+        QCOMPARE(signal.at(1).value<QModelIndex>(), QModelIndex{second});
+        QCOMPARE(signal.at(2).value<QList<int>>(), (QList<int>{LocalQueueListModel::ErrorCodeRole}));
+    }
+    QCOMPARE(second.data(LocalQueueListModel::AvailableRole).toBool(), false);
+    QCOMPARE(second.data(LocalQueueListModel::ErrorCodeRole).toString(), QStringLiteral("access_denied"));
+    QCOMPARE(second.data(LocalQueueListModel::OccurrenceIdRole).toString(),
+             LocalQueueListModel::occurrenceId(occurrence));
+    QCOMPARE(second.data(LocalQueueListModel::FileNameRole).toString(), QStringLiteral("Second.wav"));
+    QCOMPARE(model.index(0, 0).data(LocalQueueListModel::AvailableRole).toBool(), true);
+    QVERIFY(!model.markUnavailable(occurrence, QStringLiteral("access_denied")));
+    QVERIFY(!model.markUnavailable(LocalQueueOccurrenceId{}, QStringLiteral("access_denied")));
+    QCOMPARE(changed.size(), 2);
+    QCOMPARE(resets.size(), 0);
 }
 
 void FixtureRepositoryTests::rejectsSemanticFixtureDrift_data() {

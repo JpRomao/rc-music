@@ -54,6 +54,8 @@ Na suspensão, o presenter captura a última posição confirmada e solicita sav
 
 Este recorte cobre somente suspend/resume de `FR-038` e não encerra M4.7. Não houve sleep físico, Modern Standby ou hibernação; o save assíncrono pode ainda não estar durável quando o processo for congelado. Perda de device/drive, arquivo removido, restart do Explorer, pacote/E2E nativo, Linux e `NFR-REL-005` continuam pendentes.
 
+O segundo recorte de M4.7 introduz a ação acessível “Tentar reproduzir novamente” na fila e no erro. `retryQueueOccurrence(ID)` reutiliza somente o path interno da ocorrência original, preserva ID, ordem, duplicatas e modelo, e mantém a indisponibilidade durante o loading até `Ready`, `Playing` ou `Paused` da nova geração. Falha conserva diagnóstico e permite nova tentativa explícita, sem loop ou avanço automático; load rejeitado conserva seleção e backend anteriores. A intenção explícita prevalece sobre lotes posteriores da importação, e a contagem de problemas mantém o histórico por ID mesmo depois de recuperar um item. “Abrir outro áudio” continua disponível. O [registro central do segundo recorte](../experiments/m0/candidates/qt/README.md#retry-m47) distingue contrato, evidência intermediária e checks finais. Dispositivo, drive físico, localizar arquivo em outro path, Explorer, pacote/E2E nativo, Linux e os gates globais de M4.7/`NFR-REL-005` permanecem pendentes.
+
 **Código do produto:** ainda não iniciado
 
 ## 1. O que está confirmado
@@ -181,7 +183,7 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 O M0 está autorizado sem aceitar stack. A sequência atual é:
 
 1. manter M4.1–M4.7 formalmente abertas até os gates residuais correspondentes, registrando separadamente a evidência funcional local já verde;
-2. tratar o launcher oficial como recorte parcial de M4.6 e suspend/resume como recorte parcial de M4.7; identidade/matriz/pacote ainda bloqueiam o registro, enquanto device/drive/file lost e restart do Explorer formam a próxima recuperação Windows implementável;
+2. tratar o launcher oficial como recorte parcial de M4.6 e suspend/resume e retry da mesma ocorrência como recortes parciais de M4.7; identidade/matriz/pacote ainda bloqueiam o registro; prosseguir por dispositivo, drive físico, localização de arquivo em outro path e restart do Explorer, preservando os gates nativos;
 3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.

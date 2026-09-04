@@ -16,6 +16,7 @@ FocusScope {
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
     property bool selectedAvailable: false
+    readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
@@ -34,14 +35,16 @@ FocusScope {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
-    function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total) {
+    function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total, retrying) {
         const displayTitle = title.length > 0 ? title : fileName;
         const parts = [displayTitle];
         if (artist.length > 0)
             parts.push(artist);
         parts.push(root.formatDuration(durationMs));
         parts.push(queueText.positionOfTotal.replace("{position}", position).replace("{total}", total));
-        if (!available)
+        if (retrying)
+            parts.push(queueText.retrying);
+        else if (!available)
             parts.push(queueText.unavailableReason(errorCode));
         return parts.join(". ") + (parts[parts.length - 1].endsWith(".") ? "" : ".");
     }
@@ -106,6 +109,14 @@ FocusScope {
     function removeSelected() {
         if (root.selectedOccurrenceId.length > 0)
             root.presenter.removeQueueOccurrence(root.selectedOccurrenceId);
+    }
+    function retrySelected() {
+        if (!root.selectedRetryAvailable)
+            return;
+        const occurrenceId = root.selectedOccurrenceId;
+        rowMenu.close();
+        queueList.forceActiveFocus(Qt.TabFocusReason);
+        root.presenter.retryQueueOccurrence(occurrenceId);
     }
     function openRowMenu(row) {
         if (!row)
@@ -303,6 +314,7 @@ FocusScope {
                 required property var durationMs
                 required property bool available
                 required property var errorCode
+                readonly property bool retrying: occurrenceId === root.presenter.retryingOccurrenceId
                 readonly property bool contrastHighlighted: root.contract.highContrast && (ListView.isCurrentItem || hovered)
                 readonly property color primaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textPrimaryColor
                 readonly property color secondaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textSecondaryColor
@@ -314,7 +326,7 @@ FocusScope {
                 hoverEnabled: true
                 Accessible.role: Accessible.ListItem
                 Accessible.id: occurrenceId
-                Accessible.name: root.rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, orderIndex + 1, queueList.count)
+                Accessible.name: root.rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, orderIndex + 1, queueList.count, retrying)
                 Accessible.description: ""
                 Accessible.focusable: true
                 Accessible.focused: activeFocus
@@ -385,11 +397,11 @@ FocusScope {
                         }
                         Text {
                             objectName: "queue-row-status"
-                            text: queueText.unavailableReason(row.errorCode)
+                            text: row.retrying ? queueText.retrying : queueText.unavailableReason(row.errorCode)
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
                             color: row.secondaryColor
-                            visible: !row.available
+                            visible: row.retrying || !row.available
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }
@@ -447,6 +459,19 @@ FocusScope {
             text: queueText.playNow
             enabled: root.selectedOccurrenceId.length > 0 && root.selectedAvailable
             onTriggered: root.playRow(queueList.currentItem, Qt.TabFocusReason)
+        }
+        MenuItem {
+            id: retryMenuItem
+            objectName: "queue-menu-retry"
+            text: queueText.retry
+            visible: !root.presenter.usesFrozenFixture && root.selectedOccurrenceId.length > 0 && (!root.selectedAvailable || root.selectedOccurrenceId === root.presenter.retryingOccurrenceId)
+            enabled: root.selectedRetryAvailable
+            Accessible.id: "queue-menu-retry"
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: text
+            Accessible.description: root.presenter.retryingOccurrenceId.length > 0 ? queueText.retrying : queueText.retryDescription
+            Accessible.onPressAction: root.retrySelected()
+            onTriggered: root.retrySelected()
         }
         MenuSeparator {}
         MenuItem {

@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <limits>
 #include <vector>
 
 namespace music_player::m0::test {
@@ -92,6 +93,72 @@ TEST_CASE("local file queue appends valid paths atomically without changing the 
     CHECK_FALSE(queue.append({LR"(C:\Music\Aceita.wav)", {}}));
     CHECK(queue.size() == 4);
     CHECK(queue.currentOccurrenceId() == current);
+}
+
+TEST_CASE("retry selection targets one unavailable occurrence without claiming recovery",
+          "[m0][qt][core][local-queue][retry][NFR-REL-005]") {
+    LocalFileQueue queue;
+    const std::filesystem::path duplicate{LR"(C:\Música\Duplicada 日本語.mp3)"};
+    REQUIRE(queue.replace({duplicate, duplicate, LR"(C:\Music\Final.wav)"}));
+    REQUIRE(queue.markUnavailable(1));
+    const auto before = queue.snapshot();
+
+    REQUIRE(queue.selectUnavailableForRetry(1));
+
+    CHECK(queue.currentIndex() == std::optional<std::size_t>{1});
+    CHECK(queue.currentOccurrenceId() == std::optional{before.items[1].occurrence_id});
+    CHECK(queue.snapshot().items == before.items);
+    CHECK(queue.items()[0].available);
+    CHECK_FALSE(queue.items()[1].available);
+    CHECK(queue.items()[2].available);
+    CHECK_FALSE(queue.select(1));
+    CHECK(queue.selectUnavailableForRetry(1));
+    CHECK_FALSE(queue.items()[1].available);
+}
+
+TEST_CASE("retry selection rejects available and missing occurrences without changing selection",
+          "[m0][qt][core][local-queue][retry][NFR-REL-005]") {
+    LocalFileQueue queue;
+    CHECK_FALSE(queue.selectUnavailableForRetry(0));
+    REQUIRE(queue.replace({LR"(C:\Music\First.wav)", LR"(C:\Music\Second.wav)"}));
+    REQUIRE(queue.markUnavailable(1));
+    const auto before = queue.snapshot();
+
+    CHECK_FALSE(queue.selectUnavailableForRetry(0));
+    CHECK_FALSE(queue.selectUnavailableForRetry(queue.size()));
+    CHECK_FALSE(queue.selectUnavailableForRetry(std::numeric_limits<std::size_t>::max()));
+    CHECK(queue.snapshot() == before);
+    REQUIRE(queue.clearSelection());
+    CHECK_FALSE(queue.selectUnavailableForRetry(0));
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
+    REQUIRE(queue.selectUnavailableForRetry(1));
+    CHECK(queue.currentOccurrenceId() == std::optional{before.items[1].occurrence_id});
+}
+
+TEST_CASE("recovered availability preserves occurrence identity order paths and selection",
+          "[m0][qt][core][local-queue][retry][NFR-REL-005]") {
+    LocalFileQueue queue;
+    CHECK_FALSE(queue.markAvailable(0));
+    const std::filesystem::path duplicate{LR"(C:\Música\Duplicada 日本語.mp3)"};
+    REQUIRE(queue.replace({duplicate, duplicate}));
+    REQUIRE(queue.markUnavailable(0));
+    REQUIRE(queue.markUnavailable(1));
+    const auto before = queue.snapshot();
+
+    REQUIRE(queue.markAvailable(1));
+
+    CHECK(queue.snapshot() == before);
+    CHECK_FALSE(queue.items()[0].available);
+    CHECK(queue.items()[1].available);
+    CHECK_FALSE(queue.markAvailable(1));
+    CHECK_FALSE(queue.markAvailable(queue.size()));
+    CHECK_FALSE(queue.markAvailable(std::numeric_limits<std::size_t>::max()));
+    CHECK(queue.snapshot() == before);
+    REQUIRE(queue.select(1));
+    CHECK(queue.currentOccurrenceId() == std::optional{before.items[1].occurrence_id});
+    REQUIRE(queue.clearSelection());
+    REQUIRE(queue.markAvailable(0));
+    CHECK_FALSE(queue.currentOccurrenceId().has_value());
 }
 
 TEST_CASE("local file queue inserts a batch at a requested position without changing the current occurrence",

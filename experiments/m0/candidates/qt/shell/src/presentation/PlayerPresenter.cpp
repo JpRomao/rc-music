@@ -848,6 +848,20 @@ QString PlayerPresenter::errorActionId() const {
         return {};
     return uses_frozen_fixture_ ? primaryActionId() : QStringLiteral("open-audio");
 }
+QString PlayerPresenter::retryingOccurrenceId() const {
+    if (!occurrence_retry_.has_value() || local_track_session_ == nullptr ||
+        controller_.confirmedSnapshot().status != PlaybackStatus::Loading ||
+        occurrence_retry_->generation != local_track_session_->playbackGeneration() ||
+        local_queue_.currentOccurrenceId() != std::optional{occurrence_retry_->occurrence_id})
+        return {};
+    return LocalQueueListModel::occurrenceId(occurrence_retry_->occurrence_id);
+}
+bool PlayerPresenter::canRetryCurrentOccurrence() const noexcept {
+    if (uses_frozen_fixture_ || exiting_ || !hasError())
+        return false;
+    const auto current = local_queue_.currentIndex();
+    return current.has_value() && !local_queue_.items()[*current].available;
+}
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
         return nullptr;
@@ -1366,6 +1380,7 @@ bool PlayerPresenter::beginSourceImport(std::vector<std::filesystem::path> roots
         source_discovery_ == nullptr || sourceImportActive())
         return false;
     source_import_occurrences_.clear();
+    source_import_issue_occurrences_.clear();
     source_import_autoplay_enabled_ = false;
     source_import_needs_autoplay_ = false;
     if (!insertion_index.has_value() || *insertion_index > local_queue_.size()) {
@@ -1473,6 +1488,32 @@ bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
     emit stateChanged();
     if (controller_.confirmedSnapshot() != before)
         emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
+    if (uses_frozen_fixture_ || exiting_ || !retryingOccurrenceId().isEmpty())
+        return false;
+    const auto target = localOccurrenceIndex(occurrence_id);
+    if (!target.has_value() || local_queue_.items()[*target].available)
+        return false;
+
+    const auto id = local_queue_.items()[*target].occurrence_id;
+    if (!local_track_session_->open(local_queue_.items()[*target].source_path, LocalTrackStartIntent::Autoplay))
+        return false;
+    if (!local_queue_.selectUnavailableForRetry(*target))
+        throw std::logic_error{"an accepted unavailable occurrence retry could not be selected"};
+    occurrence_retry_ = OccurrenceRetry{id, local_track_session_->playbackGeneration()};
+    source_import_needs_autoplay_ = false;
+    source_import_autoplay_enabled_ = false;
+    local_recovery_intent_.reset();
+    artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    sessionStructureDidChange();
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    if (backend_.snapshot().status != PlaybackStatus::Loading)
+        handlePlaybackEvent({PlaybackEventType::SnapshotChanged, backend_.snapshot()});
     return true;
 }
 bool PlayerPresenter::moveQueueOccurrence(const QString& occurrence_id, const int destination_index) {
@@ -1607,10 +1648,27 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (result == LocalTrackPlaybackEventResult::Ignored)
         return;
 
+    const bool retry_event = occurrence_retry_.has_value() &&
+                             occurrence_retry_->generation == event.snapshot.generation &&
+                             local_queue_.currentOccurrenceId() == std::optional{occurrence_retry_->occurrence_id};
     controller_.applyBackendSnapshot(event.snapshot);
     reconcileRestoredPosition();
     bool state_projection_changed = false;
     bool source_import_changed = false;
+    if (retry_event && event.snapshot.status != PlaybackStatus::Loading) {
+        if (event.snapshot.status == PlaybackStatus::Ready || event.snapshot.status == PlaybackStatus::Paused ||
+            event.snapshot.status == PlaybackStatus::Playing) {
+            const auto current = local_queue_.currentIndex();
+            if (!current.has_value() || !local_queue_.markAvailable(*current) ||
+                !local_queue_model_.markAvailable(occurrence_retry_->occurrence_id))
+                throw std::logic_error{"a confirmed occurrence retry could not restore availability"};
+            navigation_items_[*current].available = true;
+            occurrence_retry_.reset();
+        }
+        if (event.snapshot.status == PlaybackStatus::Empty)
+            occurrence_retry_.reset();
+        state_projection_changed = true;
+    }
     if (result == LocalTrackPlaybackEventResult::OccurrenceUnavailable) {
         const auto current = local_queue_.currentIndex();
         if (!current.has_value())
@@ -1627,12 +1685,14 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
             }
             navigation_items_[*current].available = false;
             state_projection_changed = true;
-            if (imported_occurrence) {
-                addSaturated(source_import_issue_count_, 1);
+            if (imported_occurrence && recordSourceImportOccurrenceIssue(occurrence_id)) {
                 if (source_import_state_ == SourceImportState::Completed)
                     source_import_state_ = SourceImportState::CompletedWithIssues;
                 source_import_changed = true;
             }
+        } else if (retry_event) {
+            static_cast<void>(
+                local_queue_model_.markUnavailable(occurrence_id, localPlaybackErrorCode(event.snapshot.error)));
         }
 
         auto start_intent = local_recovery_intent_.value_or(local_track_session_->startIntent());
@@ -1644,7 +1704,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         }
         local_recovery_intent_ = start_intent;
         bool recovered = false;
-        if (!restoring_session) {
+        if (!restoring_session && !retry_event) {
             if (const auto next = nextAvailableLocalIndex();
                 next.has_value() && loadLocalOccurrence(*next, start_intent)) {
                 state_projection_changed = true;
@@ -1818,7 +1878,7 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
                     throw std::logic_error{"rejected discovered occurrence could not be isolated"};
                 }
                 navigation_items_[index].available = false;
-                addSaturated(source_import_issue_count_, 1);
+                static_cast<void>(recordSourceImportOccurrenceIssue(occurrence_id));
             }
         }
     }
@@ -1826,6 +1886,15 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
     sessionStructureDidChange();
     emit stateChanged();
     emit playbackChanged();
+    return true;
+}
+
+bool PlayerPresenter::recordSourceImportOccurrenceIssue(const LocalQueueOccurrenceId occurrence_id) {
+    if (std::find(source_import_issue_occurrences_.begin(), source_import_issue_occurrences_.end(), occurrence_id) !=
+        source_import_issue_occurrences_.end())
+        return false;
+    source_import_issue_occurrences_.push_back(occurrence_id);
+    addSaturated(source_import_issue_count_, 1);
     return true;
 }
 

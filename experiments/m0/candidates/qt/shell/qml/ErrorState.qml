@@ -64,6 +64,22 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         onClicked: root.presenter.executeErrorAction()
     }
+    AccessibleActionButton {
+        id: retryButton
+        controlId: "error-retry-occurrence"
+        contract: root.contract
+        text: root.labels.retryAction
+        Accessible.description: root.labels.retryDescription
+        visible: !root.presenter.usesFrozenFixture && root.presenter.canRetryCurrentOccurrence
+        enabled: visible && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0
+        Layout.fillWidth: true
+        Layout.maximumWidth: 560
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: {
+            if (enabled && visible)
+                root.presenter.retryQueueOccurrence(root.presenter.currentOccurrenceId);
+        }
+    }
     AccessibleTransportButton {
         id: detailsButton
         objectName: "track-details-error"

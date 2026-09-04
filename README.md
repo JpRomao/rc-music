@@ -64,6 +64,8 @@ Ao suspender, o presenter captura a última posição confirmada e inicia `reque
 
 M4.7 continua parcial e este recorte fornece evidência somente para suspend/resume de `FR-038`. O teste nativo registra uma janela real, mas não suspende o host nem prova Modern Standby, hibernação, timing real ou durabilidade do save antes do freeze. Device/drive perdido, arquivo removido, restart do Explorer, pacote/E2E, Linux e `NFR-REL-005` permanecem pendentes.
 
+O segundo recorte de M4.7 acrescenta retry explícito da mesma ocorrência indisponível. “Tentar reproduzir novamente” usa seu ID estável e o path já guardado, mantém ordem, duplicatas e modelo, e só remove a indisponibilidade após confirmação da nova geração. Falha mantém uma recuperação acionável, sem loop ou avanço automático da tentativa; rejeição do load conserva a seleção e o backend anteriores. A UI identifica o loading por ocorrência e preserva “Abrir outro áudio”. O retry assume a intenção de reprodução sobre lotes incrementais posteriores, enquanto a contagem de problemas da importação conserva os IDs que falharam mesmo após recuperação. O [contrato e os resultados deste recorte](experiments/m0/candidates/qt/README.md#retry-m47) centralizam a evidência. M4.7 e `NFR-REL-005` continuam parciais: dispositivo, drive físico, localizar arquivo em outro path, Explorer, pacote, Linux e gates nativos permanecem pendentes.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -191,7 +193,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 ## Próximo passo
 
 1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. registrar o launcher de M4.6 e suspend/resume de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`, e a próxima recuperação Windows implementável cobre device/drive/file lost e restart do Explorer;
+2. registrar o launcher de M4.6 e os recortes de suspend/resume e retry da mesma ocorrência de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; prosseguir por perda de dispositivo, drive físico, localização de arquivo em outro path e restart do Explorer, mantendo os gates nativos abertos;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

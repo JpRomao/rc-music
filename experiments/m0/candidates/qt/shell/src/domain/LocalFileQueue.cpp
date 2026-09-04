@@ -159,11 +159,27 @@ bool LocalFileQueue::select(const std::size_t index) noexcept {
     return true;
 }
 
+bool LocalFileQueue::selectUnavailableForRetry(const std::size_t index) noexcept {
+    if (index >= items_.size() || items_[index].available) {
+        return false;
+    }
+    current_occurrence_id_ = items_[index].occurrence_id;
+    return true;
+}
+
 bool LocalFileQueue::markUnavailable(const std::size_t index) noexcept {
     if (index >= items_.size() || !items_[index].available) {
         return false;
     }
     items_[index].available = false;
+    return true;
+}
+
+bool LocalFileQueue::markAvailable(const std::size_t index) noexcept {
+    if (index >= items_.size() || items_[index].available) {
+        return false;
+    }
+    items_[index].available = true;
     return true;
 }
 

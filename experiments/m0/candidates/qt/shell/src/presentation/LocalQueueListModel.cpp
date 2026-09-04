@@ -147,11 +147,26 @@ bool LocalQueueListModel::updateMetadata(const LocalQueueOccurrenceId occurrence
 
 bool LocalQueueListModel::markUnavailable(const LocalQueueOccurrenceId occurrence_id, QString error_code) {
     const auto item = find(occurrence_id);
-    if (item == items_.end() || !item->available) {
+    if (item == items_.end() || (!item->available && item->error_code == error_code)) {
         return false;
     }
+    const bool availability_changed = item->available;
     item->available = false;
     item->error_code = std::move(error_code);
+    const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
+    const QList<int> roles =
+        availability_changed ? QList<int>{AvailableRole, ErrorCodeRole} : QList<int>{ErrorCodeRole};
+    emit dataChanged(changed, changed, roles);
+    return true;
+}
+
+bool LocalQueueListModel::markAvailable(const LocalQueueOccurrenceId occurrence_id) {
+    const auto item = find(occurrence_id);
+    if (item == items_.end() || item->available) {
+        return false;
+    }
+    item->available = true;
+    item->error_code.reset();
     const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
     emit dataChanged(changed, changed, {AvailableRole, ErrorCodeRole});
     return true;

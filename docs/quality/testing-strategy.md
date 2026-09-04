@@ -312,6 +312,19 @@ Os Reds falharam pela API de power ainda ausente, pelo polling que avançava dur
 
 Essas provas cobrem somente suspend/resume de `FR-038`. Elas não comprovam sleep físico, Modern Standby, hibernação, timing real de congelamento nem durabilidade do save assíncrono antes do freeze. Perda de dispositivo, drive desconectado, arquivo removido, restart do Explorer, pacote/E2E nativo e Linux continuam fora deste recorte; M4.7 permanece parcial.
 
+### M4.7 — segundo recorte de retry da mesma ocorrência
+
+O contrato de validação da recuperação explícita se distribui pelas fronteiras existentes:
+
+- domínio: retry seleciona somente índice existente indisponível, sem torná-lo disponível; seleção normal continua recusando-o; confirmação de recuperação preserva ID/path/ordem/seleção, é idempotente e não altera duplicatas;
+- modelo: limpar indisponibilidade e diagnóstico conserva metadata, índice persistente e seleção, emite `dataChanged` somente para a linha/roles afetadas e não reseta o modelo; um novo diagnóstico em item indisponível altera somente `ErrorCodeRole`, enquanto a repetição idêntica é inerte;
+- presenter: `retryQueueOccurrence(ID)` usa somente o path interno, preserva seleção/backend quando o load é rejeitado, mantém indisponibilidade até confirmação `Ready`/`Playing`/`Paused` da nova geração e ignora confirmação antiga; falha da tentativa permanece acionável sem loop ou avanço automático;
+- importação: retry explícito assume a intenção de reprodução antes de chegarem os lotes seguintes; problemas são deduplicados por ID de ocorrência e continuam contados depois que o item é recuperado;
+- Quick: fila e erro expõem “Tentar reproduzir novamente” com teclado e semântica acessível; loading é associado ao ID correto, duplicatas permanecem distintas e “Abrir outro áudio” continua alcançável;
+- integração real: a mesma ocorrência falha com um path temporário ausente e é tentada novamente após copiar uma WAV autenticada para esse path, preservando ID e modelo; não usar arquivos pessoais nem apresentar essa prova como perda/reconexão física de drive.
+
+Os Reds, resultados executados e checks finais ficam no [registro central do segundo recorte](../../experiments/m0/candidates/qt/README.md#retry-m47). Não extrapolar esses testes para perda de dispositivo de saída, drive físico, localização do arquivo em outro path, Explorer, sleep físico, pacote/E2E nativo, NVDA ou Linux. M4.7 e `NFR-REL-005` permanecem abertos globalmente; benchmarks não pertencem ao recorte.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

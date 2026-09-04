@@ -68,6 +68,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool queueLoaded READ queueLoaded NOTIFY stateChanged)
     Q_PROPERTY(bool hasCurrentOccurrence READ hasCurrentOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString currentOccurrenceId READ currentOccurrenceId NOTIFY stateChanged)
+    Q_PROPERTY(QString retryingOccurrenceId READ retryingOccurrenceId NOTIFY stateChanged)
+    Q_PROPERTY(bool canRetryCurrentOccurrence READ canRetryCurrentOccurrence NOTIFY stateChanged)
     Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
@@ -249,6 +251,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString errorCode() const;
     [[nodiscard]] QString errorMessageKey() const;
     [[nodiscard]] QString errorActionId() const;
+    [[nodiscard]] QString retryingOccurrenceId() const;
+    [[nodiscard]] bool canRetryCurrentOccurrence() const noexcept;
     [[nodiscard]] bool hasCurrentTrack() const noexcept;
     [[nodiscard]] QString currentTitle() const;
     [[nodiscard]] QString currentArtist() const;
@@ -343,6 +347,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool cancelSourceImport();
     Q_INVOKABLE bool dismissSourceImportStatus();
     Q_INVOKABLE bool playQueueOccurrence(const QString& occurrence_id);
+    Q_INVOKABLE bool retryQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool moveQueueOccurrence(const QString& occurrence_id, int destination_index);
     Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool clearQueue();
@@ -441,6 +446,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] PlaybackCommandResult loadLocalOccurrenceWithResult(std::size_t index,
                                                                       LocalTrackStartIntent start_intent);
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
+    [[nodiscard]] bool recordSourceImportOccurrenceIssue(LocalQueueOccurrenceId occurrence_id);
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
@@ -454,6 +460,11 @@ class PlayerPresenter final : public QObject {
     PlaybackBackend& backend_;
     PlayerController controller_;
     LocalFileQueue local_queue_;
+    struct OccurrenceRetry final {
+        LocalQueueOccurrenceId occurrence_id;
+        std::uint64_t generation;
+    };
+    std::optional<OccurrenceRetry> occurrence_retry_{};
     QueueListModel queue_model_;
     LocalQueueListModel local_queue_model_;
     QTimer timer_;
@@ -474,6 +485,7 @@ class PlayerPresenter final : public QObject {
     std::optional<LocalQueueOccurrenceId> source_import_predecessor_occurrence_{};
     std::optional<LocalQueueOccurrenceId> source_import_last_inserted_occurrence_{};
     std::vector<LocalQueueOccurrenceId> source_import_occurrences_{};
+    std::vector<LocalQueueOccurrenceId> source_import_issue_occurrences_{};
     bool source_import_autoplay_enabled_{false};
     bool source_import_needs_autoplay_{false};
     std::optional<LocalTrackStartIntent> local_recovery_intent_{};

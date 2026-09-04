@@ -49,6 +49,7 @@ class LocalQueueListModel final : public QAbstractListModel {
     [[nodiscard]] bool updateMetadata(LocalQueueOccurrenceId occurrence_id, QString title, QString artist,
                                       QString album, std::optional<std::int64_t> duration_ms);
     [[nodiscard]] bool markUnavailable(LocalQueueOccurrenceId occurrence_id, QString error_code);
+    [[nodiscard]] bool markAvailable(LocalQueueOccurrenceId occurrence_id);
     [[nodiscard]] static QString occurrenceId(LocalQueueOccurrenceId occurrence_id);
     [[nodiscard]] int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;

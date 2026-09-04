@@ -46,7 +46,9 @@ class LocalFileQueue final {
     [[nodiscard]] bool remove(LocalQueueOccurrenceId occurrence_id) noexcept;
     [[nodiscard]] bool clear() noexcept;
     [[nodiscard]] bool select(std::size_t index) noexcept;
+    [[nodiscard]] bool selectUnavailableForRetry(std::size_t index) noexcept;
     [[nodiscard]] bool markUnavailable(std::size_t index) noexcept;
+    [[nodiscard]] bool markAvailable(std::size_t index) noexcept;
     [[nodiscard]] bool clearSelection() noexcept;
     [[nodiscard]] LocalFileQueueSnapshot snapshot() const;
     // Replaces the identity universe and is intended for bootstrap before occurrence ids are exposed.
