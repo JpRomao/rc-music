@@ -119,6 +119,13 @@ if(M0_QT_SHELL_SUPPORT)
     )
     target_include_directories(m0_qt_shell_platform PUBLIC include src)
     target_link_libraries(m0_qt_shell_platform PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
+    if(WIN32)
+        target_sources(m0_qt_shell_platform PRIVATE
+            src/adapters/WindowsTaskbarEvents.hpp
+            src/adapters/WindowsTaskbarEvents.cpp
+        )
+        target_link_libraries(m0_qt_shell_platform PRIVATE user32)
+    endif()
     target_compile_features(m0_qt_shell_platform PUBLIC cxx_std_20)
     set_target_properties(m0_qt_shell_platform PROPERTIES AUTOMOC ON)
     if(MSVC)
@@ -462,6 +469,26 @@ if(M0_QT_SHELL_SUPPORT)
                 -o "${CMAKE_CURRENT_BINARY_DIR}/windows-power-events-test.txt,txt"
                 -o -,txt
             )
+            add_executable(m0_qt_windows_taskbar_events_tests tests/qtest/WindowsTaskbarEventsTests.cpp)
+            target_link_libraries(m0_qt_windows_taskbar_events_tests PRIVATE m0_qt_shell_platform Qt6::Test)
+            target_compile_features(m0_qt_windows_taskbar_events_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_windows_taskbar_events_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_taskbar_events_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_windows_taskbar_events_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+            endif()
+            add_test(NAME m0.qt.windows.taskbar-events COMMAND m0_qt_windows_taskbar_events_tests -o -,txt)
+            add_executable(m0_qt_windows_tray_recovery_tests tests/qtest/WindowsTrayRecoveryTests.cpp)
+            target_link_libraries(m0_qt_windows_tray_recovery_tests PRIVATE Qt6::Widgets Qt6::Test user32 shell32)
+            target_compile_features(m0_qt_windows_tray_recovery_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_windows_tray_recovery_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_tray_recovery_tests PRIVATE /W4 /WX /permissive-)
+            else()
+                target_compile_options(m0_qt_windows_tray_recovery_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+            endif()
+            add_test(NAME m0.qt.windows.tray-recovery COMMAND m0_qt_windows_tray_recovery_tests -o -,txt)
         endif()
         add_executable(m0_qt_shell_platform_binding_tests tests/qtest/ShellPlatformBindingTests.cpp)
         target_link_libraries(m0_qt_shell_platform_binding_tests PRIVATE
@@ -844,6 +871,22 @@ if(M0_QT_SHELL_SUPPORT)
             set_tests_properties(m0.qt.windows.power-events PROPERTIES
                 LABELS "m0;qt;windows;power;suspend;resume;FR-038;M4.7"
                 TIMEOUT 15
+                RUN_SERIAL TRUE
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT
+                    "QT_QPA_PLATFORM=windows;QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+            )
+            set_tests_properties(m0.qt.windows.taskbar-events PROPERTIES
+                LABELS "m0;qt;windows;tray;native;FR-038;M4.7"
+                TIMEOUT 15
+                RUN_SERIAL TRUE
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+                ENVIRONMENT
+                    "QT_QPA_PLATFORM=windows;QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+            )
+            set_tests_properties(m0.qt.windows.tray-recovery PROPERTIES
+                LABELS "m0;qt;windows;tray;native;FR-038;M4.7"
+                TIMEOUT 30
                 RUN_SERIAL TRUE
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
                 ENVIRONMENT

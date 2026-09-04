@@ -317,6 +317,10 @@ O terceiro recorte local de M4.7 acrescenta recuperação explícita da saída p
 
 O [registro central do terceiro recorte](../experiments/m0/candidates/qt/README.md#audio-output-m47) separa testes de topologia injetada e decoder real mutado dos cenários físicos ainda abertos. A troca real de USB/Bluetooth/HDMI, áudio audível, drive físico, localização em outro path, Explorer, sleep, pacote/E2E nativo, acessibilidade manual e Linux não são declarados validados. M4.7, `FR-038` e `NFR-REL-005` continuam parciais; a escolha manual de saída dentro do app continua a evolução `FR-018`/M6.1. Benchmarks seguem adiados.
 
+O quarto recorte local de M4.7 acrescenta um receptor Windows privado para `TaskbarCreated` e recupera, minimizada e sem comando de áudio, somente a janela ocultada pelo próprio app para a bandeja. O monitor pronto participa da capacidade antes de permitir ocultação; presença do shell não é confirmação de registro do ícone. Saída pendente adia recuperação, e bootstrap, rebind ou volta do shell não reaplicam `startMinimized`.
+
+O [registro central de taskbar](../experiments/m0/candidates/qt/README.md#taskbar-m47) reúne contratos e uma caracterização nativa que remove/recria exclusivamente o ícone do teste, preservando suas ações. Ela não encerra Explorer nem prova seu reinício real. M4.7 e `FR-038` continuam parciais, com pacote, cenários físicos e gates nativos/Linux ainda abertos. Benchmarks seguem adiados.
+
 ### Escopo Windows
 
 - single-instance e argumentos do shell;

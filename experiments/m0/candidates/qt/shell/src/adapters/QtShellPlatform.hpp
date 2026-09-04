@@ -22,6 +22,10 @@ class QWindow;
 
 namespace music_player::m0 {
 
+#ifdef Q_OS_WIN
+class WindowsTaskbarEvents;
+#endif
+
 struct TrayMenuLabels final {
     QString play;
     QString pause;
@@ -63,11 +67,11 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     void flushPendingWindowPlacement();
     void updateTrayState(const TrayMenuState& state);
     void refreshAvailability();
+    void handleTrayHostRestart();
     [[nodiscard]] QMenu* menu() const noexcept;
     [[nodiscard]] QSystemTrayIcon* trayIcon() const noexcept;
 
-    // Availability combines the reader with this adapter's icon intent. Qt's Windows reader
-    // always returns true; neither it nor isVisible() proves native registration or Explorer recovery.
+    // Combines shell presence with icon intent, not an acknowledgement of native icon registration.
     [[nodiscard]] bool trayAvailable() const noexcept override;
     [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept override;
     [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept override;
@@ -105,6 +109,10 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     QSystemTrayIcon* tray_icon_;
     QTimer* availability_timer_;
     std::unique_ptr<QTimer> window_placement_timer_;
+#ifdef Q_OS_WIN
+    std::unique_ptr<WindowsTaskbarEvents> taskbar_events_;
+    bool taskbar_monitor_ready_{false};
+#endif
     QAction* current_track_{nullptr};
     QAction* play_pause_{nullptr};
     QAction* previous_{nullptr};
@@ -118,6 +126,7 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     Qt::WindowStates restore_states_{Qt::WindowNoState};
     bool available_{false};
     bool hidden_to_tray_{false};
+    bool tray_recovery_pending_{false};
     bool exit_requested_{false};
     bool window_placement_flush_in_progress_{false};
 };

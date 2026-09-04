@@ -399,6 +399,162 @@ class QtShellPlatformTests final : public QObject {
         QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
     }
 
+    void taskbarRestartRecoversOnlyAnExplicitlyTrayHiddenWindow() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.showMaximized();
+        platform.bindWindow(window);
+        platform.updateTrayState({QStringLiteral("Faixa atual"), true, true, true, true});
+        QPointer<QSystemTrayIcon> original_icon = platform.trayIcon();
+        QPointer<QMenu> original_menu = platform.menu();
+        platform.hideWindow();
+        QVERIFY(!window.isVisible());
+
+        platform.handleTrayHostRestart();
+
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMaximized));
+        QCOMPARE(platform.trayIcon(), original_icon.data());
+        QCOMPARE(platform.menu(), original_menu.data());
+        QCOMPARE(action(platform, "tray-current-track")->text(), QStringLiteral("Faixa atual"));
+        QCOMPARE(action(platform, "tray-play-pause")->text(), labels().pause);
+        QVERIFY(platform.trayAvailable());
+        platform.handleTrayHostRestart();
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        platform.showAndActivateWindow();
+        QCOMPARE(window.windowStates(), Qt::WindowStates{Qt::WindowMaximized});
+        platform.handleTrayHostRestart();
+        QCOMPARE(window.windowStates(), Qt::WindowStates{Qt::WindowMaximized});
+        window.hide();
+        platform.handleTrayHostRestart();
+        QVERIFY(!window.isVisible());
+    }
+
+    void taskbarRecoveryWaitsForCancelledExitAndCannotRevealAReplacementWindow() {
+        bool available{true};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QWindow window;
+        window.show();
+        platform.bindWindow(window);
+        platform.hideWindow();
+        platform.updateTrayState({.interaction_enabled = false});
+        platform.handleTrayHostRestart();
+        available = false;
+        platform.refreshAvailability();
+        QVERIFY(!window.isVisible());
+        platform.updateTrayState({.interaction_enabled = true});
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        available = true;
+        platform.refreshAvailability();
+        QVERIFY(window.isVisible());
+        platform.hideWindow();
+        platform.updateTrayState({.interaction_enabled = false});
+        platform.handleTrayHostRestart();
+        QWindow replacement;
+        platform.bindWindow(replacement);
+        platform.updateTrayState({.interaction_enabled = true});
+        QVERIFY(!replacement.isVisible());
+        platform.hideWindow();
+        platform.requestExit();
+        platform.handleTrayHostRestart();
+        QVERIFY(!replacement.isVisible());
+        QVERIFY(!platform.trayAvailable());
+    }
+
+    void taskbarRecoveryDoesNotRevealTheWindowWhenStateChangeCommitsExit() {
+        int quits{0};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [&] { ++quits; });
+        QWindow window;
+        window.show();
+        platform.bindWindow(window);
+        platform.hideWindow();
+        QVERIFY(!window.isVisible());
+        connect(&window, &QWindow::windowStateChanged, &platform, [&] { platform.requestExit(); });
+
+        platform.handleTrayHostRestart();
+
+        QCOMPARE(quits, 1);
+        QVERIFY(!platform.trayAvailable());
+        QVERIFY(!window.isVisible());
+    }
+
+    void taskbarRecoveryDoesNotRevealAWindowBoundDuringTheStateChange() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        QWindow replacement;
+        window.show();
+        platform.bindWindow(window);
+        platform.hideWindow();
+        QVERIFY(!window.isVisible());
+        connect(&window, &QWindow::windowStateChanged, &platform, [&] { platform.bindWindow(replacement); });
+
+        platform.handleTrayHostRestart();
+
+        QVERIFY(!window.isVisible());
+        QVERIFY(!replacement.isVisible());
+        QCOMPARE(replacement.windowStates(), Qt::WindowStates{Qt::WindowNoState});
+    }
+
+    void trayLossDoesNotAnnounceAvailabilityAfterAStateChangeCommitsExit() {
+        bool available{true};
+        int quits{0};
+        QtShellPlatform platform(
+            testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [&] { ++quits; });
+        QWindow window;
+        window.show();
+        platform.bindWindow(window);
+        platform.hideWindow();
+        QVERIFY(!window.isVisible());
+        QSignalSpy availability(&platform, &QtShellPlatform::availabilityChanged);
+        connect(&window, &QWindow::windowStateChanged, &platform, [&] { platform.requestExit(); });
+        available = false;
+
+        platform.refreshAvailability();
+
+        QCOMPARE(quits, 1);
+        QVERIFY(!window.isVisible());
+        QVERIFY(!platform.trayAvailable());
+        QCOMPARE(availability.count(), 0);
+    }
+
+    void taskbarRecoveryCanReleaseTheAdapterDuringTheStateChange() {
+        auto platform = std::make_unique<QtShellPlatform>(
+            testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.show();
+        platform->bindWindow(window);
+        platform->hideWindow();
+        QVERIFY(!window.isVisible());
+        const QPointer<QtShellPlatform> guarded{platform.get()};
+        connect(&window, &QWindow::windowStateChanged, &window, [&] { platform.reset(); });
+
+        platform->handleTrayHostRestart();
+
+        QVERIFY(guarded == nullptr);
+        QVERIFY(!window.isVisible());
+    }
+
+    void minimizingCanReleaseTheAdapterDuringPlacementFlush() {
+        auto platform = std::make_unique<QtShellPlatform>(
+            testIcon(), QStringLiteral("Player"), labels(), [] { return true; }, [] {});
+        QWindow window;
+        window.setGeometry(5, 7, 720, 520);
+        window.show();
+        platform->bindWindow(window);
+        const QPointer<QtShellPlatform> guarded{platform.get()};
+        connect(platform.get(), &QtShellPlatform::windowPlacementChanged, &window, [&] { platform.reset(); });
+        window.setGeometry(31, 37, 760, 560);
+
+        platform->minimizeWindow();
+
+        QVERIFY(guarded == nullptr);
+        QVERIFY(window.isVisible());
+        QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+    }
+
     void invisibleBootstrapWindowIsNotTreatedAsHiddenToTray() {
         bool available{true};
         QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
@@ -414,6 +570,9 @@ class QtShellPlatformTests final : public QObject {
 
         QVERIFY(!window.isVisible());
         QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(!poll->isActive());
+        platform.handleTrayHostRestart();
+        QVERIFY(!window.isVisible());
         QVERIFY(!poll->isActive());
     }
 

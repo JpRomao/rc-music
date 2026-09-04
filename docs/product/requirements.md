@@ -150,6 +150,8 @@ A direção abaixo foi confirmada pelo mantenedor para orientar o experimento, m
 
 Evidência parcial no candidato Qt/Windows: o [recorte de recuperação da saída padrão M4.7](../../experiments/m0/candidates/qt/README.md#audio-output-m47) distingue falha de dispositivo de falha de arquivo e recupera a mesma ocorrência pausada mediante ação explícita. A topologia dos testes é injetada; desconexão física, áudio audível e os demais cenários de `FR-038`/`NFR-REL-005` ainda exigem validação. Isso não implementa a escolha manual de dispositivo prevista para `FR-018`/M6.1 nem altera sua prioridade futura.
 
+O [recorte de taskbar M4.7](../../experiments/m0/candidates/qt/README.md#taskbar-m47) acrescenta evidência parcial de `FR-038`: a janela ocultada pelo próprio app para a bandeja torna-se alcançável minimizada ao receber a notificação de recriação, sem alterar fila ou reprodução. O receptor é independente da janela visual, e saída pendente adia a recuperação. Os testes não reiniciam Explorer; presença do shell não comprova registro do ícone, e a caracterização nativa limita-se ao ícone do próprio processo de teste. Reinício real, pacote e gates nativos continuam necessários para fechamento.
+
 Limites iniciais, revisáveis somente com corpus e medição:
 
 | ID | Limite/resultado |

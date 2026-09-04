@@ -335,6 +335,16 @@ Os Reds, resultados executados e checks finais ficam no [registro central do seg
 
 Os Reds e checks executados são registrados somente no [registro central de recuperação de saída](../../experiments/m0/candidates/qt/README.md#audio-output-m47). Não extrapolar os fakes para desconexão/reconexão física USB/Bluetooth/HDMI, sinais reais da topologia Windows, áudio audível, sleep, Explorer, pacote, NVDA ou Linux. M4.7, `FR-038` e `NFR-REL-005` continuam parciais; a escolha manual de dispositivo em `FR-018`/M6.1 não pertence a este recorte. Benchmarks permanecem adiados.
 
+### M4.7 — quarto recorte de recuperação da taskbar Windows
+
+- o adapter da plataforma recebe diretamente `handleTrayHostRestart()` nos testes determinísticos: somente a janela ocultada pelo próprio adapter volta minimizada; janela visível, já minimizada, bootstrap e rebind preservam sua disposição;
+- o binding com presenter e backend falso cobre `Playing`/`Paused`, posição confirmada, geração, fila com duplicatas, IDs e modelo sem reset, além da ausência de comandos de áudio; retorno do shell não reaplica `startMinimized`;
+- saída pendente impede revelação, retorno da interação revalida a recuperação e saída confirmada/destruição tornam eventos antigos inertes;
+- o monitor Windows exercita registro/retry, receptor `HWND` privado real, filtragem de mensagem/tipo/handle, entrega enfileirada e teardown. A capacidade de ocultação falha fechada se o monitor não estiver pronto;
+- a caracterização nativa do Qt remove por `NIM_DELETE` somente o ícone do próprio teste e envia `TaskbarCreated` somente a seu receptor. A prova combina `Shell_NotifyIconGetRect` com ACK de `NIM_MODIFY` no-op (flags zero), que não altera nem adiciona um ícone ausente; após remoção, exige HRESULT de falha e ACK falso. Overflow legítimo pode devolver `S_FALSE` com retângulo zerado, portanto dimensões positivas não são requisito de registro. O teste preserva menu/tooltip/ícone e exercita ativação de teclado sem popup nem broadcast.
+
+Reds, checks executados e limites ficam no [registro central de taskbar](../../experiments/m0/candidates/qt/README.md#taskbar-m47). `QSystemTrayIcon::isVisible()` e presença do shell não comprovam que `NIM_ADD` foi aceito; geometria pública vazia não demonstra ausência de suporte. A caracterização do Qt não é um novo Red do app e não encerra Explorer. M4.7/`FR-038`, restart real do Explorer, pacote, acessibilidade nativa e Linux continuam abertos; nenhum benchmark pertence ao recorte.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

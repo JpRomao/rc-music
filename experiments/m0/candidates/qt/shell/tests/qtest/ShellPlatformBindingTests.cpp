@@ -1,6 +1,7 @@
 #include "adapters/QtShellPlatform.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
+#include "presentation/PlayerPresenterTestAccess.hpp"
 #include "presentation/ShellPlatformBinding.hpp"
 
 #include <QApplication>
@@ -13,6 +14,8 @@
 #include <QVariantMap>
 #include <QWindow>
 
+#include <chrono>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -58,6 +61,64 @@ class BindingPreferencesWriter final : public PreferencesWriter {
     std::optional<PreferencesWriteRequest> active;
     std::vector<PreferencesWriteRequest> starts;
     std::vector<PreferencesWriteRequest> flushes;
+};
+
+class BindingPlaybackBackend final : public PlaybackBackend {
+  public:
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    void setEventCallback(PlaybackEventCallback callback) override { callback_ = std::move(callback); }
+    PlaybackCommandResult load(const std::filesystem::path& path) override {
+        loaded_paths.push_back(path);
+        snapshot_ = {.status = PlaybackStatus::Loading, .generation = snapshot_.generation + 1};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult play() override {
+        ++play_calls;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult pause() override {
+        ++pause_calls;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult seekTo(std::int64_t) override {
+        ++seek_calls;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        ++unload_calls;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult shutdown() override {
+        ++shutdown_calls;
+        return PlaybackCommandResult::Accepted;
+    }
+    void publish(PlaybackSnapshot snapshot) {
+        snapshot_ = snapshot;
+        if (callback_)
+            callback_({PlaybackEventType::SnapshotChanged, snapshot_});
+    }
+
+    PlaybackSnapshot snapshot_{};
+    PlaybackEventCallback callback_{};
+    std::vector<std::filesystem::path> loaded_paths;
+    int play_calls{0};
+    int pause_calls{0};
+    int seek_calls{0};
+    int unload_calls{0};
+    int shutdown_calls{0};
+};
+
+class BindingMetadataReader final : public MetadataReader {
+  public:
+    MetadataCommandResult startRead(MetadataReadRequest) override { return MetadataCommandResult::Accepted; }
+    MetadataCommandResult cancelRead(MetadataGeneration) override { return MetadataCommandResult::Accepted; }
+    [[nodiscard]] MetadataPollResult poll(MetadataGeneration) override {
+        return {.status = MetadataPollStatus::Pending};
+    }
+    [[nodiscard]] std::optional<MetadataReadCompletion> tryTakeCompletion() override { return std::nullopt; }
+    MetadataCommandResult shutdown() override { return MetadataCommandResult::Accepted; }
 };
 
 [[nodiscard]] QVariantMap playbackAndPreferences(const PlayerPresenter& presenter) {
@@ -233,6 +294,179 @@ class ShellPlatformBindingTests final : public QObject {
         QVERIFY(!presenter.requestExit());
         QCOMPARE(quit_requests, 1);
         QCOMPARE(fallbacks.size(), 0);
+    }
+
+    void trayHostRestartRecoversTheHiddenWindowWithoutChangingLocalPlayback_data() {
+        QTest::addColumn<bool>("playing");
+        QTest::newRow("playing") << true;
+        QTest::newRow("paused") << false;
+    }
+
+    void trayHostRestartRecoversTheHiddenWindowWithoutChangingLocalPlayback() {
+        QFETCH(bool, playing);
+        int quit_requests = 0;
+        QtShellPlatform platform(
+            testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [&] { ++quit_requests; });
+        BindingPlaybackBackend backend;
+        BindingMetadataReader metadata;
+        const std::vector<std::filesystem::path> paths{L"C:/m0/faixa Unicode.wav", L"C:/m0/outra.wav",
+                                                       L"C:/m0/faixa Unicode.wav"};
+        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&] { return paths; });
+        QWindow window;
+        window.resize(960, 640);
+        window.showMaximized();
+        bindShellPlatform(presenter, platform, window);
+        QVERIFY(presenter.openAudio());
+        backend.publish({.status = playing ? PlaybackStatus::Playing : PlaybackStatus::Paused,
+                         .position_ms = 84'000,
+                         .duration_ms = 180'000,
+                         .seekable = true,
+                         .generation = backend.snapshot().generation});
+        QTRY_COMPARE(presenter.playbackState(),
+                     playing ? PlayerPresenter::PlaybackState::Playing : PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(presenter.confirmedPositionMs(), 84'000);
+        QVERIFY(presenter.setStartMinimized(true));
+        QVERIFY(presenter.requestHide());
+        QVERIFY(!window.isVisible());
+
+        const PlaybackSnapshot before = backend.snapshot();
+        const QVariantMap presentation_before = playbackAndPreferences(presenter);
+        auto* const model = presenter.queueModelObject();
+        QCOMPARE(model->rowCount(), 3);
+        QStringList ids;
+        for (int row = 0; row < model->rowCount(); ++row)
+            ids.append(model->data(model->index(row, 0), QueueListModel::OccurrenceIdRole).toString());
+        const QPersistentModelIndex current(model->index(0, 0));
+        const auto loads_before = backend.loaded_paths;
+        const int plays_before = backend.play_calls;
+        const int pauses_before = backend.pause_calls;
+        const int seeks_before = backend.seek_calls;
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+        QSignalSpy changes(model, &QAbstractItemModel::dataChanged);
+        QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+        QSignalSpy preferences(&presenter, &PlayerPresenter::preferencesChanged);
+
+        platform.handleTrayHostRestart();
+
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        QCOMPARE(backend.snapshot(), before);
+        QCOMPARE(playbackAndPreferences(presenter), presentation_before);
+        QCOMPARE(presenter.queueModelObject(), model);
+        QVERIFY(current.isValid());
+        QCOMPARE(model->rowCount(), 3);
+        for (int row = 0; row < model->rowCount(); ++row)
+            QCOMPARE(model->data(model->index(row, 0), QueueListModel::OccurrenceIdRole).toString(), ids.at(row));
+        QCOMPARE(backend.loaded_paths, loads_before);
+        QCOMPARE(backend.play_calls, plays_before);
+        QCOMPARE(backend.pause_calls, pauses_before);
+        QCOMPARE(backend.seek_calls, seeks_before);
+        QCOMPARE(backend.unload_calls, 0);
+        QCOMPARE(backend.shutdown_calls, 0);
+        QCOMPARE(resets.size(), 0);
+        QCOMPARE(changes.size(), 0);
+        QCOMPARE(playback.size(), 0);
+        QCOMPARE(preferences.size(), 0);
+        QCOMPARE(quit_requests, 0);
+
+        // Returning shell support does not reapply the stored startup preference.
+        platform.refreshAvailability();
+        platform.handleTrayHostRestart();
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMinimized));
+        QVERIFY(presenter.requestRestore());
+        QVERIFY(window.isVisible());
+        QVERIFY(window.windowStates().testFlag(Qt::WindowMaximized));
+        QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+        platform.handleTrayHostRestart();
+        QVERIFY(window.isVisible());
+        QVERIFY(!window.windowStates().testFlag(Qt::WindowMinimized));
+        QCOMPARE(playbackAndPreferences(presenter), presentation_before);
+        QCOMPARE(backend.snapshot(), before);
+        QCOMPARE(backend.play_calls, plays_before);
+        QCOMPARE(backend.pause_calls, pauses_before);
+    }
+
+    void trayHostRestartDoesNotReplayStartupVisibility_data() {
+        QTest::addColumn<int>("initial_visibility");
+        QTest::newRow("visible") << 0;
+        QTest::newRow("minimized") << 1;
+        QTest::newRow("hidden-bootstrap") << 2;
+    }
+
+    void trayHostRestartDoesNotReplayStartupVisibility() {
+        QFETCH(int, initial_visibility);
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
+        PlayerPresenter presenter(frozenBundle(), platform);
+        QWindow window;
+        if (initial_visibility == 0)
+            window.show();
+        else if (initial_visibility == 1)
+            window.showMinimized();
+        bindShellPlatform(presenter, platform, window);
+        QVERIFY(presenter.setStartMinimized(true));
+        const bool visible_before = window.isVisible();
+        const Qt::WindowStates states_before = window.windowStates();
+        const QVariantMap before = playbackAndPreferences(presenter);
+        QSignalSpy visibility(&window, &QWindow::visibleChanged);
+        QSignalSpy lifecycle(&presenter, &PlayerPresenter::lifecycleChanged);
+
+        platform.handleTrayHostRestart();
+        platform.refreshAvailability();
+
+        QCOMPARE(window.isVisible(), visible_before);
+        QCOMPARE(window.windowStates(), states_before);
+        QCOMPARE(playbackAndPreferences(presenter), before);
+        QCOMPARE(visibility.size(), 0);
+        QCOMPARE(lifecycle.size(), 0);
+    }
+
+    void trayHostRestartRespectsPendingExitAndRemainsReachableAfterCancellation() {
+        int quit_requests = 0;
+        QtShellPlatform platform(
+            testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [&] { ++quit_requests; });
+        BindingPreferencesWriter writer;
+        const Preferences initial{};
+        PreferencesAutosave autosave{writer, initial};
+        auto now = PlayerPresenterPreferences::TimePoint{};
+        PlayerPresenter presenter(frozenBundle(), platform,
+                                  PlayerPresenterPreferences{.initial = initial,
+                                                             .load_status = PreferencesLoadStatus::Missing,
+                                                             .autosave = &autosave,
+                                                             .now = [&] { return now; }});
+        QWindow window;
+        window.showMaximized();
+        bindShellPlatform(presenter, platform, window);
+        QVERIFY(presenter.loadFrozenQueue());
+        QVERIFY(presenter.setVolume(0.35));
+        QVERIFY(presenter.requestHide());
+        QVERIFY(!window.isVisible());
+        const QVariantMap before = playbackAndPreferences(presenter);
+        QVERIFY(presenter.requestExit());
+        QVERIFY(presenter.exiting());
+        QVERIFY(!presenter.exitCommitted());
+        QVERIFY(writer.active.has_value());
+        QSignalSpy visibility(&window, &QWindow::visibleChanged);
+
+        platform.handleTrayHostRestart();
+        platform.refreshAvailability();
+
+        QVERIFY(!window.isVisible());
+        QCOMPARE(visibility.size(), 0);
+        QCOMPARE(quit_requests, 0);
+        QCOMPARE(playbackAndPreferences(presenter), before);
+
+        now += std::chrono::seconds{2};
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+
+        QVERIFY(!presenter.exiting());
+        QVERIFY(!presenter.exitCommitted());
+        QVERIFY(window.isVisible());
+        QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::SaveFailed);
+        QCOMPARE(quit_requests, 0);
+        QCOMPARE(playbackAndPreferences(presenter), before);
+        platform.handleTrayHostRestart();
+        QVERIFY(window.isVisible());
     }
 
     void destroyingThePresenterDisconnectsFallbackNotifications() {

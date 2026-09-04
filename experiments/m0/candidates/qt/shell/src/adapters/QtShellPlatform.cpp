@@ -1,9 +1,14 @@
 #include "adapters/QtShellPlatform.hpp"
 
+#ifdef Q_OS_WIN
+#include "adapters/WindowsTaskbarEvents.hpp"
+#endif
+
 #include <QAction>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QFontMetricsF>
+#include <QGuiApplication>
 #include <QMenu>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -55,8 +60,18 @@ QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels la
       quit_request_(std::move(quit_request)), default_apps_settings_(std::move(default_apps_settings)),
       menu_(std::make_unique<QMenu>()), tray_icon_(new QSystemTrayIcon(std::move(icon), this)),
       availability_timer_(new QTimer(this)), window_placement_timer_(std::make_unique<QTimer>()) {
-    if (!availability_reader_)
-        availability_reader_ = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
+    if (!availability_reader_) {
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            taskbar_events_ = std::make_unique<WindowsTaskbarEvents>();
+            connect(taskbar_events_.get(), &WindowsTaskbarEvents::taskbarCreated, this,
+                    &QtShellPlatform::handleTrayHostRestart);
+            taskbar_monitor_ready_ = taskbar_events_->start();
+            availability_reader_ = [this] { return taskbar_monitor_ready_ && WindowsTaskbarEvents::shellAvailable(); };
+        } else
+#endif
+            availability_reader_ = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
+    }
 
     const auto add_action = [this](const char* name, const QString& text) {
         auto* const added = menu_->addAction(text);
@@ -125,6 +140,10 @@ QtShellPlatform::QtShellPlatform(QIcon icon, QString app_name, TrayMenuLabels la
 }
 
 QtShellPlatform::~QtShellPlatform() {
+#ifdef Q_OS_WIN
+    if (taskbar_events_)
+        taskbar_events_->shutdown();
+#endif
     hidden_to_tray_ = false;
     availability_timer_->stop();
     tray_icon_->hide();
@@ -135,6 +154,7 @@ QtShellPlatform::~QtShellPlatform() {
 void QtShellPlatform::bindWindow(QWindow& window) {
     ++window_binding_generation_;
     hidden_to_tray_ = false;
+    tray_recovery_pending_ = false;
     window_placement_timer_->stop();
     pending_window_placement_.reset();
     if (window_)
@@ -187,10 +207,12 @@ void QtShellPlatform::bindWindow(QWindow& window) {
 void QtShellPlatform::flushPendingWindowPlacement() {
     if (!window_ || exit_requested_ || window_placement_flush_in_progress_)
         return;
+    const QPointer<QtShellPlatform> guard{this};
     window_placement_flush_in_progress_ = true;
     scheduleWindowPlacementCapture();
     publishWindowPlacement();
-    window_placement_flush_in_progress_ = false;
+    if (guard)
+        window_placement_flush_in_progress_ = false;
 }
 
 void QtShellPlatform::updateTrayState(const TrayMenuState& state) {
@@ -202,19 +224,49 @@ void QtShellPlatform::updateTrayState(const TrayMenuState& state) {
     }
     state_ = state;
     updateMenu();
+    if (tray_recovery_pending_ && state_.interaction_enabled)
+        handleTrayHostRestart();
 }
 
 void QtShellPlatform::refreshAvailability() {
     if (exit_requested_)
         return;
+#ifdef Q_OS_WIN
+    if (taskbar_events_ && !taskbar_monitor_ready_)
+        taskbar_monitor_ready_ = taskbar_events_->start();
+#endif
     const bool previous = available_;
     available_ = trayAvailable();
-    if (!available_ && hidden_to_tray_ && window_ && !window_->isVisible())
-        minimizeWindow();
+    const QPointer<QtShellPlatform> guard{this};
+    if (!available_ && hidden_to_tray_ && window_ && !window_->isVisible()) {
+        if (state_.interaction_enabled)
+            minimizeWindow();
+        else
+            tray_recovery_pending_ = true;
+    }
+    if (!guard || exit_requested_)
+        return;
     updateMenu();
     updatePolling();
     if (available_ != previous)
         emit availabilityChanged();
+}
+
+void QtShellPlatform::handleTrayHostRestart() {
+    if (exit_requested_)
+        return;
+    if (!state_.interaction_enabled) {
+        tray_recovery_pending_ = hidden_to_tray_;
+        return;
+    }
+    tray_recovery_pending_ = false;
+    const QPointer<QtShellPlatform> guard{this};
+    // Qt re-registers the icon itself. Keep a taskbar route to our window even if that add fails.
+    // TaskbarCreated can also follow a DPI change, so do not recreate the icon or steal focus.
+    if (hidden_to_tray_ && window_ && !window_->isVisible())
+        minimizeWindow();
+    if (guard)
+        refreshAvailability();
 }
 
 QMenu* QtShellPlatform::menu() const noexcept { return menu_.get(); }
@@ -300,14 +352,17 @@ void QtShellPlatform::hideWindow() {
 void QtShellPlatform::minimizeWindow() {
     if (!window_ || exit_requested_)
         return;
+    const QPointer<QtShellPlatform> guard{this};
     hidden_to_tray_ = false;
     updatePolling();
     const std::uint64_t binding_generation = window_binding_generation_;
     flushPendingWindowPlacement();
-    if (!window_ || exit_requested_ || binding_generation != window_binding_generation_)
+    if (!guard || !window_ || exit_requested_ || binding_generation != window_binding_generation_)
         return;
     rememberWindowState();
     window_->setWindowStates(restore_states_ | Qt::WindowMinimized);
+    if (!guard || !window_ || exit_requested_ || binding_generation != window_binding_generation_)
+        return;
     window_->setVisible(true);
 }
 
@@ -331,6 +386,11 @@ void QtShellPlatform::requestExit() {
     if (exit_requested_)
         return;
     exit_requested_ = true;
+#ifdef Q_OS_WIN
+    if (taskbar_events_)
+        taskbar_events_->shutdown();
+#endif
+    tray_recovery_pending_ = false;
     availability_timer_->stop();
     tray_icon_->hide();
     available_ = false;

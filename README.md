@@ -68,6 +68,8 @@ O segundo recorte de M4.7 acrescenta retry explícito da mesma ocorrência indis
 
 O terceiro recorte de M4.7 trata perda ou troca da saída padrão como erro de áudio, sem marcar o arquivo indisponível nem avançar a fila. O player antigo é interrompido, e reconectar não gera autoplay. “Tentar novamente” recupera a mesma ocorrência pausada e restaura a posição quando seek é suportado, mantendo “Abrir outro áudio” como alternativa. O [registro central de recuperação de saída](experiments/m0/candidates/qt/README.md#audio-output-m47) separa os contratos automatizados com topologia injetada da prova física ainda pendente. M4.7 continua parcial; escolha manual de dispositivo dentro do app pertence a FR-018/M6.1.
 
+O quarto recorte de M4.7 acrescenta recuperação da janela após `TaskbarCreated` no Windows. Um receptor nativo privado observa a mensagem; a janela que o próprio app ocultou para a bandeja volta normalmente minimizada, sem comando de áudio ou ativação, preservando fila e posição. Janela visível, bootstrap e rebind não reaplicam `startMinimized`; uma saída pendente adia a recuperação. O [registro central de taskbar](experiments/m0/candidates/qt/README.md#taskbar-m47) distingue a presença do shell do registro efetivo do ícone e documenta a caracterização nativa que remove/recria somente o ícone do teste. Explorer não foi encerrado; reinício real, pacote e demais gates de M4.7 continuam pendentes.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
@@ -195,7 +197,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 ## Próximo passo
 
 1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. registrar o launcher de M4.6 e os recortes de suspend/resume, retry da mesma ocorrência e recuperação da saída padrão de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; prosseguir por drive físico, localização de arquivo em outro path e restart do Explorer, mantendo a validação física de áudio e os gates nativos abertos;
+2. registrar o launcher de M4.6 e os recortes de suspend/resume, retry da mesma ocorrência, recuperação da saída padrão e recuperação de taskbar de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; prosseguir por localização de arquivo em outro path e validação de drive físico/restart real do Explorer, mantendo a validação física de áudio e os gates nativos abertos;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.
