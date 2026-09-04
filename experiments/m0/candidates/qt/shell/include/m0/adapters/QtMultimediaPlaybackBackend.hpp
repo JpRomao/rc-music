@@ -3,20 +3,38 @@
 #include "m0/domain/PlaybackTypes.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 
+#include <QAudioDevice>
 #include <QAudioOutput>
 #include <QMediaPlayer>
 #include <QObject>
 #include <QTimer>
 
 #include <filesystem>
+#include <functional>
+#include <memory>
 
 namespace music_player::m0 {
+
+struct QtAudioOutputDevice {
+    // An empty ID represents the absence of an output device.
+    QByteArray id;
+    QAudioDevice device;
+};
+
+class QtAudioOutputDevices {
+  public:
+    virtual ~QtAudioOutputDevices() = default;
+    [[nodiscard]] virtual QtAudioOutputDevice defaultDevice() const = 0;
+    virtual void applyDevice(QAudioOutput& output, const QtAudioOutputDevice& device) = 0;
+    virtual void setChangeHandler(std::function<void()> handler) = 0;
+};
 
 class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend {
     Q_OBJECT
 
   public:
     explicit QtMultimediaPlaybackBackend(QObject* parent = nullptr);
+    explicit QtMultimediaPlaybackBackend(std::unique_ptr<QtAudioOutputDevices> devices, QObject* parent = nullptr);
     ~QtMultimediaPlaybackBackend() override;
 
     [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override;
@@ -33,6 +51,7 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
   private:
     void createPlayerForCurrentGeneration();
     void connectPlayerSignals(QMediaPlayer& player);
+    bool interruptIfDefaultOutputChanged();
     void refreshSnapshot(const QMediaPlayer* signal_player, std::uint64_t signal_generation);
     void validateLoadedAudioTrack();
     void publishSnapshot(const PlaybackSnapshot& next);
@@ -41,6 +60,8 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     void advanceGeneration() noexcept;
 
     QAudioOutput audio_output_;
+    std::unique_ptr<QtAudioOutputDevices> audio_devices_;
+    QByteArray active_output_id_;
     QTimer audio_track_validation_timer_;
     QMediaPlayer* player_{nullptr};
     PlaybackSnapshot snapshot_{};

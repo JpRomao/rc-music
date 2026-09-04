@@ -104,6 +104,8 @@ LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const Playba
         case PlaybackErrorCode::None:
         case PlaybackErrorCode::NetworkFailure:
         case PlaybackErrorCode::BackendFailure:
+        case PlaybackErrorCode::AudioOutputUnavailable:
+        case PlaybackErrorCode::AudioOutputChanged:
             return LocalTrackPlaybackEventResult::Applied;
         }
         return LocalTrackPlaybackEventResult::Applied;

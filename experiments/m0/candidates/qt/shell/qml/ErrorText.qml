@@ -9,11 +9,17 @@ QtObject {
     readonly property string accessDeniedMessage: qsTr("Verifique as permissões do arquivo ou escolha outro áudio.")
     readonly property string backendFailureTitle: qsTr("A reprodução encontrou um problema")
     readonly property string backendFailureMessage: qsTr("Escolha outro áudio para continuar.")
+    readonly property string audioOutputUnavailableTitle: qsTr("Saída de áudio indisponível")
+    readonly property string audioOutputUnavailableMessage: qsTr("Conecte uma saída de áudio ou selecione outra nas configurações de som do Windows. Depois, tente novamente. A faixa será recuperada pausada.")
+    readonly property string audioOutputChangedTitle: qsTr("A saída de áudio mudou")
+    readonly property string audioOutputChangedMessage: qsTr("A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.")
     readonly property string unknownErrorTitle: qsTr("Não foi possível reproduzir esta faixa")
     readonly property string unknownErrorMessage: qsTr("Escolha outro áudio para continuar.")
     readonly property string openAudioAction: qsTr("Abrir outro áudio")
     readonly property string retryAction: qsTr("Tentar reproduzir novamente")
     readonly property string retryDescription: qsTr("Tenta abrir o mesmo arquivo novamente, preservando sua posição na fila.")
+    readonly property string recoverOutputAction: qsTr("Tentar novamente")
+    readonly property string recoverOutputDescription: qsTr("Reconecta a saída de áudio e recupera esta faixa pausada, preservando a fila. A posição será restaurada quando o arquivo permitir.")
 
     function titleFor(messageKey) {
         switch (messageKey) {
@@ -25,6 +31,10 @@ QtObject {
             return accessDeniedTitle;
         case "backend_failure_error":
             return backendFailureTitle;
+        case "audio_output_unavailable_error":
+            return audioOutputUnavailableTitle;
+        case "audio_output_changed_error":
+            return audioOutputChangedTitle;
         default:
             return unknownErrorTitle;
         }
@@ -40,6 +50,10 @@ QtObject {
             return accessDeniedMessage;
         case "backend_failure_error":
             return backendFailureMessage;
+        case "audio_output_unavailable_error":
+            return audioOutputUnavailableMessage;
+        case "audio_output_changed_error":
+            return audioOutputChangedMessage;
         default:
             return unknownErrorMessage;
         }
@@ -49,6 +63,8 @@ QtObject {
         switch (actionId) {
         case "open-audio":
             return openAudioAction;
+        case "recover-audio-output":
+            return recoverOutputAction;
         default:
             return openAudioAction;
         }

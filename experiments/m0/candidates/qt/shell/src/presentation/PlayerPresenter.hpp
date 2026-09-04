@@ -447,6 +447,7 @@ class PlayerPresenter final : public QObject {
                                                                       LocalTrackStartIntent start_intent);
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
     [[nodiscard]] bool recordSourceImportOccurrenceIssue(LocalQueueOccurrenceId occurrence_id);
+    [[nodiscard]] bool recoverAudioOutput();
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;

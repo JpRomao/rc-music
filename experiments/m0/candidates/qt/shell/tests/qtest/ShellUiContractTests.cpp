@@ -79,9 +79,11 @@ class PrefixTranslator final : public QTranslator {
 [[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
     static const QRegularExpression technical_property{
         QStringLiteral(R"(\b(?:objectName|controlId|Accessible\.id|sequence|property|color|source)\s*:)")};
+    static const QRegularExpression boolean_selector{
+        QStringLiteral(R"(^\s*(?:readonly\s+)?property\s+bool\s+[A-Za-z_][A-Za-z0-9_]*\s*:)")};
     const QString trimmed = line.trimmed();
-    return technical_property.match(line).hasMatch() || trimmed.startsWith(QStringLiteral("case ")) ||
-           line.contains(QStringLiteral("typeof "));
+    return technical_property.match(line).hasMatch() || boolean_selector.match(line).hasMatch() ||
+           trimmed.startsWith(QStringLiteral("case ")) || line.contains(QStringLiteral("typeof "));
 }
 
 } // namespace
@@ -95,6 +97,7 @@ class ShellUiContractTests final : public QObject {
     void rejectsUnsupportedTransportStrings();
     void rejectsUnsupportedPreferenceStrings();
     void essentialQmlTextIsCentralizedAndExtractable();
+    void distinguishesTechnicalBooleanSelectorsFromVisibleText();
     void classifiesSingleInstanceFailuresThroughTheTextCatalog();
     void shellTextCanBeTranslatedWithoutChangingTheFixture();
     void themeModesUseFixturePalettesWithExplicitPrecedence();
@@ -354,6 +357,14 @@ void ShellUiContractTests::rejectsUnsupportedPreferenceStrings() {
         bundle.strings.*member = QStringLiteral("drifted");
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, static_cast<void>(ShellUiContract{bundle}));
     }
+}
+
+void ShellUiContractTests::distinguishesTechnicalBooleanSelectorsFromVisibleText() {
+    QVERIFY(isTechnicalQmlContext(
+        QStringLiteral("readonly property bool outputRecovery: presenter.errorActionId === \"recover-audio-output\"")));
+    QVERIFY(!isTechnicalQmlContext(QStringLiteral("property string titleText: \"Visible error\"")));
+    QVERIFY(!isTechnicalQmlContext(QStringLiteral("text: \"Visible action\"")));
+    QVERIFY(!isTechnicalQmlContext(QStringLiteral("Accessible.name: \"Visible description\"")));
 }
 
 void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {

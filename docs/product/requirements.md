@@ -148,6 +148,8 @@ A direção abaixo foi confirmada pelo mantenedor para orientar o experimento, m
 | NFR-REL-005 | Arquivos removidos, drives desconectados e dispositivos perdidos geram recuperação ou erro acionável. |
 | NFR-REL-006 | Dependências e fixtures possuem licença conhecida; codecs e distribuição passam por revisão específica. |
 
+Evidência parcial no candidato Qt/Windows: o [recorte de recuperação da saída padrão M4.7](../../experiments/m0/candidates/qt/README.md#audio-output-m47) distingue falha de dispositivo de falha de arquivo e recupera a mesma ocorrência pausada mediante ação explícita. A topologia dos testes é injetada; desconexão física, áudio audível e os demais cenários de `FR-038`/`NFR-REL-005` ainda exigem validação. Isso não implementa a escolha manual de dispositivo prevista para `FR-018`/M6.1 nem altera sua prioridade futura.
+
 Limites iniciais, revisáveis somente com corpus e medição:
 
 | ID | Limite/resultado |

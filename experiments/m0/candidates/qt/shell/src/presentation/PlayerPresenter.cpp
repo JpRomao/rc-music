@@ -298,6 +298,10 @@ QString modifiedUtc(const std::filesystem::file_time_type value) {
     return timestamp.isValid() ? timestamp.toString(QStringLiteral("yyyy-MM-dd'T'HH:mm:ss'Z'")) : QString{};
 }
 
+bool isAudioOutputError(const PlaybackErrorCode error) noexcept {
+    return error == PlaybackErrorCode::AudioOutputUnavailable || error == PlaybackErrorCode::AudioOutputChanged;
+}
+
 QString localPlaybackErrorCode(const PlaybackErrorCode error) {
     switch (error) {
     case PlaybackErrorCode::SourceUnavailable:
@@ -310,6 +314,10 @@ QString localPlaybackErrorCode(const PlaybackErrorCode error) {
         return QStringLiteral("network_failure");
     case PlaybackErrorCode::BackendFailure:
         return QStringLiteral("backend_failure");
+    case PlaybackErrorCode::AudioOutputUnavailable:
+        return QStringLiteral("audio_output_unavailable");
+    case PlaybackErrorCode::AudioOutputChanged:
+        return QStringLiteral("audio_output_changed");
     case PlaybackErrorCode::None:
         return {};
     }
@@ -324,6 +332,10 @@ QString localPlaybackErrorMessageKey(const PlaybackErrorCode error) {
         return QStringLiteral("invalid_media_error");
     case PlaybackErrorCode::AccessDenied:
         return QStringLiteral("access_denied_error");
+    case PlaybackErrorCode::AudioOutputUnavailable:
+        return QStringLiteral("audio_output_unavailable_error");
+    case PlaybackErrorCode::AudioOutputChanged:
+        return QStringLiteral("audio_output_changed_error");
     case PlaybackErrorCode::None:
     case PlaybackErrorCode::NetworkFailure:
     case PlaybackErrorCode::BackendFailure:
@@ -688,7 +700,17 @@ void PlayerPresenter::reconcileRestoredPosition() {
     const PlaybackSnapshot& snapshot = controller_.confirmedSnapshot();
     if (snapshot.generation != restored_position_->generation)
         return;
+    const auto output_error_pending = [this, &snapshot] {
+        const auto& current = backend_.snapshot();
+        return current.generation == snapshot.generation && current.status == PlaybackStatus::Error &&
+               isAudioOutputError(current.error);
+    };
+    // A command can fail before its queued error event reaches this presenter.
+    if (output_error_pending())
+        return;
     if (snapshot.status == PlaybackStatus::Error || snapshot.status == PlaybackStatus::Empty) {
+        if (snapshot.status == PlaybackStatus::Error && isAudioOutputError(snapshot.error))
+            return;
         restored_position_.reset();
         return;
     }
@@ -708,15 +730,17 @@ void PlayerPresenter::reconcileRestoredPosition() {
             restored_eof_generation_ = restored.generation;
         }
         restored_position_.reset();
-        static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
+        if (session_autosave_ != nullptr)
+            static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
         return;
     }
     if (!restored.seek_requested) {
         if (backend_.seekTo(restored.target_ms) == PlaybackCommandResult::Accepted)
             restored.seek_requested = true;
-        else {
+        else if (!output_error_pending()) {
             restored_position_.reset();
-            static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
+            if (session_autosave_ != nullptr)
+                static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
         }
     }
 }
@@ -823,7 +847,9 @@ QString PlayerPresenter::messageKey() const {
 QString PlayerPresenter::primaryActionId() const {
     if (uses_frozen_fixture_)
         return state_.primary_action_id;
-    if (hasError() || !local_track_session_->hasTrack())
+    if (hasError())
+        return errorActionId();
+    if (!local_track_session_->hasTrack())
         return QStringLiteral("open-audio");
     return QStringLiteral("play-pause");
 }
@@ -846,7 +872,10 @@ QString PlayerPresenter::errorMessageKey() const {
 QString PlayerPresenter::errorActionId() const {
     if (!hasError())
         return {};
-    return uses_frozen_fixture_ ? primaryActionId() : QStringLiteral("open-audio");
+    if (uses_frozen_fixture_)
+        return primaryActionId();
+    return isAudioOutputError(controller_.confirmedSnapshot().error) ? QStringLiteral("recover-audio-output")
+                                                                     : QStringLiteral("open-audio");
 }
 QString PlayerPresenter::retryingOccurrenceId() const {
     if (!occurrence_retry_.has_value() || local_track_session_ == nullptr ||
@@ -2803,7 +2832,36 @@ bool PlayerPresenter::executeErrorAction() {
         return false;
     if (uses_frozen_fixture_)
         return errorActionId() == QStringLiteral("skip") && skipUnavailable();
+    if (errorActionId() == QStringLiteral("recover-audio-output"))
+        return recoverAudioOutput();
     return errorActionId() == QStringLiteral("open-audio") && openAudio();
+}
+bool PlayerPresenter::recoverAudioOutput() {
+    const auto current = local_queue_.currentIndex();
+    if (!current.has_value())
+        return false;
+    const auto position = currentSessionSnapshot().position_ms;
+    const auto id = local_queue_.items()[*current].occurrence_id;
+    if (!local_track_session_->open(local_queue_.items()[*current].source_path, LocalTrackStartIntent::RestorePaused))
+        return false;
+    const auto generation = local_track_session_->playbackGeneration();
+    restored_position_ = RestoredPosition{.generation = generation, .target_ms = position};
+    restored_eof_generation_.reset();
+    occurrence_retry_.reset();
+    if (!local_queue_.items()[*current].available)
+        occurrence_retry_ = OccurrenceRetry{id, generation};
+    source_import_needs_autoplay_ = false;
+    source_import_autoplay_enabled_ = false;
+    local_recovery_intent_.reset();
+    artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    sessionStructureDidChange();
+    reconcileTimer();
+    emit stateChanged();
+    emit playbackChanged();
+    if (backend_.snapshot().status != PlaybackStatus::Loading)
+        handlePlaybackEvent({PlaybackEventType::SnapshotChanged, backend_.snapshot()});
+    return true;
 }
 bool PlayerPresenter::skipUnavailable() {
     if (exiting_)

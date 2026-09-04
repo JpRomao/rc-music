@@ -1,5 +1,7 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 
+#include <QMediaDevices>
+#include <QPointer>
 #include <QUrl>
 
 #include <algorithm>
@@ -10,6 +12,33 @@ namespace music_player::m0 {
 namespace {
 
 constexpr int audio_track_validation_grace_ms = 100;
+
+class SystemQtAudioOutputDevices final : public QtAudioOutputDevices {
+  public:
+    SystemQtAudioOutputDevices() {
+        QObject::connect(&devices_, &QMediaDevices::audioOutputsChanged, &devices_, [this] {
+            const auto callback = handler_;
+            if (callback) {
+                callback();
+            }
+        });
+    }
+
+    [[nodiscard]] QtAudioOutputDevice defaultDevice() const override {
+        const auto device = QMediaDevices::defaultAudioOutput();
+        return {device.isNull() ? QByteArray{} : device.id(), device};
+    }
+
+    void applyDevice(QAudioOutput& output, const QtAudioOutputDevice& device) override {
+        output.setDevice(device.device);
+    }
+
+    void setChangeHandler(std::function<void()> handler) override { handler_ = std::move(handler); }
+
+  private:
+    QMediaDevices devices_;
+    std::function<void()> handler_;
+};
 
 [[nodiscard]] PlaybackErrorCode errorCode(const QMediaPlayer::Error error) noexcept {
     switch (error) {
@@ -38,13 +67,24 @@ constexpr int audio_track_validation_grace_ms = 100;
 
 } // namespace
 
-QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent) : QObject(parent) {
+QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent)
+    : QtMultimediaPlaybackBackend(std::make_unique<SystemQtAudioOutputDevices>(), parent) {}
+
+QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(std::unique_ptr<QtAudioOutputDevices> devices, QObject* parent)
+    : QObject(parent), audio_devices_(devices ? std::move(devices) : std::make_unique<SystemQtAudioOutputDevices>()) {
     audio_track_validation_timer_.setSingleShot(true);
     audio_track_validation_timer_.setInterval(audio_track_validation_grace_ms);
     connect(&audio_track_validation_timer_, &QTimer::timeout, this, [this] { validateLoadedAudioTrack(); });
+    audio_devices_->setChangeHandler([guard = QPointer<QtMultimediaPlaybackBackend>{this}] {
+        if (guard) {
+            guard->interruptIfDefaultOutputChanged();
+        }
+    });
 }
 
 QtMultimediaPlaybackBackend::~QtMultimediaPlaybackBackend() {
+    shutdown_ = true;
+    audio_devices_->setChangeHandler({});
     const auto players = findChildren<QMediaPlayer*>(QString{}, Qt::FindDirectChildrenOnly);
     for (QMediaPlayer* const player : players) {
         player->setAudioOutput(nullptr);
@@ -97,11 +137,19 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
     ended_emitted_ = false;
     repositioning_from_end_ = false;
     missing_audio_rejected_ = false;
+    const auto output_device = audio_devices_->defaultDevice();
+    active_output_id_ = output_device.id;
+    if (active_output_id_.isEmpty()) {
+        publishSnapshot({PlaybackStatus::Error, 0, 0, false, generation_, PlaybackErrorCode::AudioOutputUnavailable});
+        return PlaybackCommandResult::Accepted;
+    }
+    audio_devices_->applyDevice(audio_output_, output_device);
     createPlayerForCurrentGeneration();
     QMediaPlayer* const load_player = player_;
     const auto load_generation = generation_;
+    const QPointer<QtMultimediaPlaybackBackend> guard{this};
     publishSnapshot({PlaybackStatus::Loading, 0, 0, false, generation_});
-    if (!shutdown_ && generation_ == load_generation && player_ == load_player) {
+    if (guard && !shutdown_ && generation_ == load_generation && player_ == load_player) {
         load_player->setSource(QUrl::fromLocalFile(localFilePath(source_path)));
     }
     return PlaybackCommandResult::Accepted;
@@ -110,6 +158,9 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
 PlaybackCommandResult QtMultimediaPlaybackBackend::play() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
+    }
+    if (interruptIfDefaultOutputChanged()) {
+        return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status == PlaybackStatus::Playing) {
         return PlaybackCommandResult::Accepted;
@@ -139,6 +190,9 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::pause() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
+    if (interruptIfDefaultOutputChanged()) {
+        return PlaybackCommandResult::NotReady;
+    }
     if (snapshot_.status == PlaybackStatus::Paused) {
         return PlaybackCommandResult::Accepted;
     }
@@ -161,6 +215,9 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::pause() {
 PlaybackCommandResult QtMultimediaPlaybackBackend::seekTo(const std::int64_t position_ms) {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
+    }
+    if (interruptIfDefaultOutputChanged()) {
+        return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status != PlaybackStatus::Ready && snapshot_.status != PlaybackStatus::Paused &&
         snapshot_.status != PlaybackStatus::Playing) {
@@ -231,13 +288,34 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::shutdown() {
         return PlaybackCommandResult::Accepted;
     }
 
+    shutdown_ = true;
+    audio_devices_->setChangeHandler({});
     invalidateCurrentSource();
     advanceGeneration();
     ended_emitted_ = false;
     repositioning_from_end_ = false;
-    shutdown_ = true;
     publishSnapshot({PlaybackStatus::Empty, 0, 0, false, generation_});
     return PlaybackCommandResult::Accepted;
+}
+
+bool QtMultimediaPlaybackBackend::interruptIfDefaultOutputChanged() {
+    if (shutdown_ || player_ == nullptr || snapshot_.status == PlaybackStatus::Empty ||
+        snapshot_.status == PlaybackStatus::Error) {
+        return false;
+    }
+    const auto current_device = audio_devices_->defaultDevice();
+    if (current_device.id == active_output_id_) {
+        return false;
+    }
+
+    PlaybackSnapshot failed = snapshot_;
+    failed.status = PlaybackStatus::Error;
+    failed.seekable = false;
+    failed.error =
+        current_device.id.isEmpty() ? PlaybackErrorCode::AudioOutputUnavailable : PlaybackErrorCode::AudioOutputChanged;
+    invalidateCurrentSource();
+    publishSnapshot(failed);
+    return true;
 }
 
 void QtMultimediaPlaybackBackend::invalidateCurrentSource() {
@@ -266,6 +344,9 @@ void QtMultimediaPlaybackBackend::advanceGeneration() noexcept {
 void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const signal_player,
                                                   const std::uint64_t signal_generation) {
     if (shutdown_ || signal_player == nullptr || signal_player != player_ || signal_generation != generation_) {
+        return;
+    }
+    if (interruptIfDefaultOutputChanged()) {
         return;
     }
 

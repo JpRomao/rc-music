@@ -101,7 +101,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
             snapshot_ = {.status = accepted_load_status.value_or(PlaybackStatus::Loading),
                          .generation = ++last_generation_};
             if (snapshot_.status == PlaybackStatus::Error)
-                snapshot_.error = PlaybackErrorCode::SourceUnavailable;
+                snapshot_.error = accepted_load_error;
         }
         return result;
     }
@@ -111,10 +111,14 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     }
     PlaybackCommandResult pause() override {
         ++pause_calls;
+        if (on_pause)
+            on_pause();
         return pause_result;
     }
     PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
         seek_positions.push_back(position_ms);
+        if (on_seek)
+            on_seek();
         return seek_result;
     }
     PlaybackCommandResult setVolume(const double volume) override {
@@ -158,6 +162,7 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     PlaybackEventCallback event_callback_{};
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
     std::optional<PlaybackStatus> accepted_load_status{};
+    PlaybackErrorCode accepted_load_error{PlaybackErrorCode::SourceUnavailable};
     std::deque<PlaybackCommandResult> load_results;
     PlaybackCommandResult play_result{PlaybackCommandResult::Accepted};
     PlaybackCommandResult pause_result{PlaybackCommandResult::Accepted};
@@ -176,6 +181,9 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
     int unload_calls{0};
     int shutdown_calls{0};
     std::function<void()> on_shutdown;
+
+    std::function<void()> on_pause;
+    std::function<void()> on_seek;
 
   private:
     std::uint64_t last_generation_{0};
@@ -460,6 +468,12 @@ class PlayerPresenterTests final : public QObject {
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues();
     void retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue();
+    void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data();
+    void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay();
+    void repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads();
+    void supersededAudioOutputRecoveryCannotSeekTheNewSelection();
+    void outputLossDuringRecoveryPreservesThePersistedTarget_data();
+    void outputLossDuringRecoveryPreservesThePersistedTarget();
     void rejectedRetryPreservesTheCurrentTrackAndRepeatedFailureRemainsActionable();
     void retryCompletionCannotReviveAnOccurrenceAfterAnotherExplicitSelection();
     void retryReconcilesASynchronousLoadCompletion_data();
@@ -2145,6 +2159,182 @@ void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues(
 
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
     QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::outputLossDuringRecoveryPreservesThePersistedTarget_data() {
+    QTest::addColumn<bool>("during_pause");
+    QTest::newRow("pause") << true;
+    QTest::newRow("seek") << false;
+}
+
+void PlayerPresenterTests::outputLossDuringRecoveryPreservesThePersistedTarget() {
+    QFETCH(bool, during_pause);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterSessionWriter writer;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, Preferences{}, {.now = [&clock] { return clock.now(); }}};
+    const SessionSnapshot persisted = persistedSessionSnapshot();
+    SessionAutosave autosave{writer, persisted, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave,
+                                   .session = {.initial = persisted,
+                                               .load_status = SessionLoadStatus::Loaded,
+                                               .autosave = &autosave,
+                                               .now = [&clock] { return clock.now(); }}});
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 42'000,
+                     .duration_ms = 60'000,
+                     .generation = 1,
+                     .error = PlaybackErrorCode::AudioOutputUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    QVERIFY(presenter.executeErrorAction());
+    const auto lose_output = [&] {
+        backend.publish({.status = PlaybackStatus::Error,
+                         .duration_ms = 60'000,
+                         .generation = 2,
+                         .error = PlaybackErrorCode::AudioOutputUnavailable});
+        backend.seek_result = PlaybackCommandResult::NotReady;
+        backend.pause_result = PlaybackCommandResult::NotReady;
+    };
+    if (during_pause)
+        backend.on_pause = lose_output;
+    else
+        backend.on_seek = lose_output;
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 2});
+    QTRY_VERIFY(presenter.hasError());
+    autosave.scheduleRepair();
+    QCOMPARE(autosave.flush(), SessionSaveStatus::Saved);
+    QVERIFY(!writer.flushes.empty());
+    QCOMPARE(writer.flushes.back().snapshot.position_ms, persisted.position_ms);
+    QCOMPARE(writer.flushes.back().snapshot.queue, persisted.queue);
+    backend.on_pause = {};
+    backend.on_seek = {};
+    backend.pause_result = PlaybackCommandResult::Accepted;
+    backend.seek_result = PlaybackCommandResult::Accepted;
+    backend.seek_positions.clear();
+    QVERIFY(presenter.executeErrorAction());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{42'000}));
+    QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data() {
+    QTest::addColumn<PlaybackErrorCode>("error");
+    QTest::newRow("disconnected") << PlaybackErrorCode::AudioOutputUnavailable;
+    QTest::newRow("default-changed") << PlaybackErrorCode::AudioOutputChanged;
+}
+
+void PlayerPresenterTests::audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay() {
+    QFETCH(PlaybackErrorCode, error);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Saída 日本語.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    const QString id = presenter.currentOccurrenceId();
+    auto* const model = presenter.queueModelObject();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+    backend.publish(
+        {.status = PlaybackStatus::Error, .position_ms = 750, .duration_ms = 2'000, .generation = 1, .error = error});
+    QTRY_VERIFY(presenter.hasError());
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("recover-audio-output"));
+    QVERIFY(!presenter.canRetryCurrentOccurrence());
+    QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).isValid());
+    QCOMPARE(backend.loaded_paths, (std::vector{source}));
+    QVERIFY(presenter.executeErrorAction());
+    QVERIFY(!presenter.executeErrorAction());
+    QCOMPARE(backend.loaded_paths, (std::vector{source, source}));
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{750}));
+    QCOMPARE(backend.pause_calls, 1);
+    QCOMPARE(backend.play_calls, 0);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+    QVERIFY(!presenter.hasError());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Saída.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .generation = 1,
+                     .error = PlaybackErrorCode::AudioOutputUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    backend.load_result = PlaybackCommandResult::Busy;
+    QVERIFY(!presenter.executeErrorAction());
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{750});
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    backend.load_result = PlaybackCommandResult::Accepted;
+    backend.accepted_load_status = PlaybackStatus::Error;
+    backend.accepted_load_error = PlaybackErrorCode::AudioOutputUnavailable;
+    QVERIFY(presenter.executeErrorAction());
+    QVERIFY(presenter.hasError());
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("recover-audio-output"));
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    QVERIFY(presenter.executeErrorAction());
+    backend.publish({.status = PlaybackStatus::Paused, .duration_ms = 2'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{750}));
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+}
+
+void PlayerPresenterTests::supersededAudioOutputRecoveryCannotSeekTheNewSelection() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Saída.wav");
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .generation = 1,
+                     .error = PlaybackErrorCode::AudioOutputChanged});
+    QTRY_VERIFY(presenter.hasError());
+    QVERIFY(presenter.executeErrorAction());
+    auto* const model = presenter.queueModelObject();
+    const QString next = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
+    QVERIFY(presenter.playQueueOccurrence(next));
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2},
+                         false);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QCOMPARE(presenter.currentOccurrenceId(), next);
+    QVERIFY(backend.seek_positions.empty());
+    QCOMPARE(backend.pause_calls, 0);
 }
 
 void PlayerPresenterTests::retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue() {

@@ -325,6 +325,16 @@ O contrato de validação da recuperação explícita se distribui pelas frontei
 
 Os Reds, resultados executados e checks finais ficam no [registro central do segundo recorte](../../experiments/m0/candidates/qt/README.md#retry-m47). Não extrapolar esses testes para perda de dispositivo de saída, drive físico, localização do arquivo em outro path, Explorer, sleep físico, pacote/E2E nativo, NVDA ou Linux. M4.7 e `NFR-REL-005` permanecem abertos globalmente; benchmarks não pertencem ao recorte.
 
+### M4.7 — terceiro recorte de recuperação da saída padrão
+
+- o adapter Qt recebe uma fronteira de topologia injetável, cobrindo ausência inicial, perda ou substituição da saída durante `Loading`, `Ready`, `Paused` e `Playing`, e mudanças irrelevantes que conservam a saída padrão;
+- a interrupção mantém geração, posição e duração confirmadas, retira o player anterior e publica erro tipado sem `Ended`, reconexão automática ou autoplay; sinais antigos e callbacks depois de shutdown/destruição são inertes;
+- `LocalTrackSession` distingue erros da saída de arquivos indisponíveis; presenter e Quick cobrem recuperação explícita pausada, preservação da ocorrência/modelo, posição por geração, tentativa rejeitada ou repetida, seleção posterior e ações/anúncios acessíveis;
+- uma regressão com writer falso perde a saída durante pause ou seek antes da entrega do erro enfileirado e exige que o snapshot persistido conserve posição e fila; a tentativa explícita seguinte busca o alvo original sem play;
+- a integração usa decoder Qt Multimedia e metadata TagLib reais, WAV autenticada, saída mutada e topologia injetada para restaurar a posição depois de uma tentativa ainda sem dispositivo. Essa prova não altera hardware nem depende de arquivos pessoais.
+
+Os Reds e checks executados são registrados somente no [registro central de recuperação de saída](../../experiments/m0/candidates/qt/README.md#audio-output-m47). Não extrapolar os fakes para desconexão/reconexão física USB/Bluetooth/HDMI, sinais reais da topologia Windows, áudio audível, sleep, Explorer, pacote, NVDA ou Linux. M4.7, `FR-038` e `NFR-REL-005` continuam parciais; a escolha manual de dispositivo em `FR-018`/M6.1 não pertence a este recorte. Benchmarks permanecem adiados.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

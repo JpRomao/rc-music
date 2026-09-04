@@ -104,6 +104,7 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         return music_player::m0::PlaybackCommandResult::Accepted;
     }
     music_player::m0::PlaybackCommandResult pause() override {
+        ++pause_calls;
         return music_player::m0::PlaybackCommandResult::Accepted;
     }
     music_player::m0::PlaybackCommandResult seekTo(std::int64_t) override {
@@ -133,6 +134,7 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     void resetObservations() {
         loaded_paths.clear();
         play_calls = 0;
+        pause_calls = 0;
         unload_calls = 0;
     }
 
@@ -140,6 +142,7 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     music_player::m0::PlaybackEventCallback event_callback_{};
     std::vector<std::filesystem::path> loaded_paths{};
     int play_calls{0};
+    int pause_calls{0};
     int unload_calls{0};
 
   private:
@@ -361,13 +364,21 @@ class ScenarioDriver final : public QObject {
     }
     Q_INVOKABLE int localUnloadCount() const noexcept { return local_backend_.unload_calls; }
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
+    Q_INVOKABLE int localPauseCount() const noexcept { return local_backend_.pause_calls; }
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
+    Q_INVOKABLE void publishLocalPaused() { local_backend_.publish(music_player::m0::PlaybackStatus::Paused); }
     Q_INVOKABLE void publishLocalUnseekablePlaying() {
         local_backend_.publish(music_player::m0::PlaybackStatus::Playing, false);
     }
     Q_INVOKABLE void publishLocalError() {
         local_backend_.snapshot_.error = music_player::m0::PlaybackErrorCode::InvalidMedia;
+        local_backend_.publish(music_player::m0::PlaybackStatus::Error);
+    }
+    Q_INVOKABLE void publishLocalOutputError(const bool changed) {
+        local_backend_.snapshot_.error = changed ? music_player::m0::PlaybackErrorCode::AudioOutputChanged
+                                                 : music_player::m0::PlaybackErrorCode::AudioOutputUnavailable;
+        local_backend_.snapshot_.position_ms = 47'000;
         local_backend_.publish(music_player::m0::PlaybackStatus::Error);
     }
     Q_INVOKABLE void publishCompleteLocalMetadata() {

@@ -32,6 +32,21 @@ namespace {
 #endif
 }
 
+class ScriptedAudioOutputDevices final : public QtAudioOutputDevices {
+  public:
+    [[nodiscard]] QtAudioOutputDevice defaultDevice() const override { return {id, {}}; }
+    void applyDevice(QAudioOutput&, const QtAudioOutputDevice&) override {}
+    void setChangeHandler(std::function<void()> callback) override { changed = std::move(callback); }
+    void changeTo(QByteArray next) {
+        id = std::move(next);
+        const auto callback = changed;
+        if (callback)
+            callback();
+    }
+    QByteArray id{"test-output-a"};
+    std::function<void()> changed;
+};
+
 class TestPlatform final : public PlatformIntegration {
   public:
     [[nodiscard]] bool trayAvailable() const noexcept override { return true; }
@@ -196,6 +211,50 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void outputReconnectRestoresRealDecodedAudioPausedAtTheSamePosition() {
+        auto devices = std::make_unique<ScriptedAudioOutputDevices>();
+        auto* const topology = devices.get();
+        QtMultimediaPlaybackBackend engine{std::move(devices)};
+        RecordingPlaybackBackend backend(engine);
+        TestPlatform platform;
+        SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
+        const auto source = nativePath(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE));
+        PlayerPresenter presenter(frozenBundle(), platform, backend, reader,
+                                  [source] { return std::vector{source, source}; });
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing, 5'000);
+        QCOMPARE(engine.pause(), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(engine.seekTo(350), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{350});
+        const QString occurrence = presenter.currentOccurrenceId();
+        auto* const model = presenter.queueModelObject();
+        QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+
+        topology->changeTo({});
+        QTRY_COMPARE(presenter.errorCode(), QStringLiteral("audio_output_unavailable"));
+        QCOMPARE(presenter.confirmedPositionMs(), qint64{350});
+        QVERIFY(presenter.executeErrorAction());
+        QTRY_COMPARE(presenter.errorCode(), QStringLiteral("audio_output_unavailable"));
+        topology->changeTo("test-output-b");
+        QCoreApplication::processEvents();
+        QVERIFY(presenter.hasError());
+        QVERIFY(presenter.executeErrorAction());
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused, 5'000);
+        QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{350});
+        QCOMPARE(engine.snapshot().generation, std::uint64_t{3});
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+        QCOMPARE(backend.loadedPaths(), (std::vector{source, source, source}));
+        QVERIFY(!backend.observed(PlaybackStatus::Playing, PlaybackErrorCode::None, 2));
+        QVERIFY(!backend.observed(PlaybackStatus::Playing, PlaybackErrorCode::None, 3));
+        QCOMPARE(backend.eventCount(PlaybackEventType::Ended), std::size_t{0});
+        QCOMPARE(model->rowCount(), 2);
+        QVERIFY(model->data(model->index(0, 0), LocalQueueListModel::AvailableRole).toBool());
+        QCOMPARE(resets.size(), 0);
+    }
+
     void restoredSourceRetriesTheSameOccurrenceThroughTheRealBackend() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

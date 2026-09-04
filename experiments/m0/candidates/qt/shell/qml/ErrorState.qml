@@ -12,6 +12,7 @@ ColumnLayout {
     property string titleText: presenter.usesFrozenFixture ? contract.errorTitle : labels.titleFor(presenter.errorMessageKey)
     property string bodyText: presenter.usesFrozenFixture ? contract.errorBody : labels.messageFor(presenter.errorMessageKey)
     property string actionText: presenter.usesFrozenFixture ? contract.actionSkip : labels.actionFor(presenter.errorActionId)
+    readonly property bool outputRecovery: !presenter.usesFrozenFixture && presenter.errorActionId === "recover-audio-output"
     signal detailsRequested(Item opener)
     Accessible.role: Accessible.AlertMessage
     Accessible.name: titleText + (bodyText.length > 0 ? ". " + bodyText : "")
@@ -56,13 +57,32 @@ ColumnLayout {
     }
     AccessibleActionButton {
         id: recoveryButton
-        controlId: root.presenter.usesFrozenFixture ? "error-skip" : "error-open-audio"
+        controlId: root.presenter.usesFrozenFixture ? "error-skip" : (root.outputRecovery ? "error-recover-audio-output" : "error-open-audio")
         contract: root.contract
         text: root.actionText
+        Accessible.description: root.outputRecovery ? root.labels.recoverOutputDescription : ""
+        enabled: root.visible && !root.presenter.exiting
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
-        onClicked: root.presenter.executeErrorAction()
+        onClicked: {
+            if (enabled && visible)
+                root.presenter.executeErrorAction();
+        }
+    }
+    AccessibleActionButton {
+        controlId: "error-open-another-audio"
+        contract: root.contract
+        text: root.labels.openAudioAction
+        visible: root.outputRecovery
+        enabled: visible && !root.presenter.exiting
+        Layout.fillWidth: true
+        Layout.maximumWidth: 560
+        Layout.alignment: Qt.AlignHCenter
+        onClicked: {
+            if (enabled && visible)
+                root.presenter.openAudio();
+        }
     }
     AccessibleActionButton {
         id: retryButton

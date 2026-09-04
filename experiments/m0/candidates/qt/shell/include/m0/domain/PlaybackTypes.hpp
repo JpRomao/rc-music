@@ -23,6 +23,8 @@ enum class PlaybackErrorCode {
     AccessDenied,
     NetworkFailure,
     BackendFailure,
+    AudioOutputUnavailable,
+    AudioOutputChanged,
 };
 
 enum class PlaybackCommandResult {

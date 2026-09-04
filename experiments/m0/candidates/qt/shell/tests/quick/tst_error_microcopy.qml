@@ -127,6 +127,160 @@ TestCase {
         verify(!testLocalPlayerPresenter.hasError); // qmllint disable unqualified
     }
 
+    function test_outputErrorsDescribePausedRecoveryInsteadOfAFileFailure() {
+        compare(expandedLabels.titleFor("audio_output_unavailable_error"), "Saída de áudio indisponível");
+        compare(expandedLabels.messageFor("audio_output_unavailable_error"), "Conecte uma saída de áudio ou selecione outra nas configurações de som do Windows. Depois, tente novamente. A faixa será recuperada pausada.");
+        compare(expandedLabels.titleFor("audio_output_changed_error"), "A saída de áudio mudou");
+        compare(expandedLabels.messageFor("audio_output_changed_error"), "A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.");
+        compare(expandedLabels.actionFor("recover-audio-output"), "Tentar novamente");
+    }
+
+    function enterOutputError(changed) {
+        testScenarioDriver.enqueueLocalSelection(["C:/Música/Saída interrompida 日本語.flac", "C:/Música/Próxima faixa.mp3"]); // qmllint disable unqualified
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        testScenarioDriver.publishLocalReady(); // qmllint disable unqualified
+        testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        testScenarioDriver.publishLocalOutputError(changed); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Error); // qmllint disable unqualified
+    }
+
+    function test_outputRecoveryKeepsTheAvailableOccurrenceAndOffersPausedRetry_data() {
+        return [
+            {
+                tag: "unavailable-keyboard",
+                changed: false,
+                accessible: false
+            },
+            {
+                tag: "unavailable-accessible",
+                changed: false,
+                accessible: true
+            },
+            {
+                tag: "changed-keyboard",
+                changed: true,
+                accessible: false
+            },
+            {
+                tag: "changed-accessible",
+                changed: true,
+                accessible: true
+            }
+        ];
+    }
+
+    function test_outputRecoveryKeepsTheAvailableOccurrenceAndOffersPausedRetry(data) {
+        enterOutputError(data.changed);
+        shell.requestActivate();
+        tryVerify(function () {
+            return shell.active;
+        });
+        const occurrenceId = testLocalPlayerPresenter.currentOccurrenceId; // qmllint disable unqualified
+        const playsBeforeRecovery = testScenarioDriver.localPlayCount(); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.errorCode, data.changed ? "audio_output_changed" : "audio_output_unavailable"); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.errorActionId, "recover-audio-output"); // qmllint disable unqualified
+        verify(!testLocalPlayerPresenter.canRetryCurrentOccurrence); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadCount(), 1); // qmllint disable unqualified
+
+        const state = findChild(shell, "error-state");
+        const recovery = findChild(state, "error-recover-audio-output");
+        const openAnother = findChild(state, "error-open-another-audio");
+        const retryFile = findChild(state, "error-retry-occurrence");
+        const details = findChild(state, "track-details-error");
+        verify(recovery && recovery.visible && recovery.enabled);
+        compare(recovery.Accessible.role, Accessible.Button);
+        compare(recovery.Accessible.name, "Tentar novamente");
+        verify(recovery.Accessible.description.includes("pausada"));
+        verify(recovery.Accessible.description.includes("quando o arquivo permitir"));
+        compare(findChild(state, "error-title").text, data.changed ? "A saída de áudio mudou" : "Saída de áudio indisponível");
+        compare(findChild(state, "error-context-title").text, "Saída interrompida 日本語");
+        verify(findChild(state, "error-body").text.includes("pausada"));
+        verify(!retryFile.visible);
+        verify(openAnother.visible && openAnother.enabled);
+        compare(openAnother.Accessible.name, "Abrir outro áudio");
+        verify(details.enabled);
+
+        shell.setQueueOpen(true);
+        const queue = findChild(shell, "queue-list");
+        tryVerify(function () {
+            return queue.visible && queue.count === 2 && queue.currentItem !== null;
+        });
+        compare(queue.currentItem.occurrenceId, occurrenceId);
+        verify(queue.currentItem.available);
+        shell.setQueueOpen(false);
+        tryVerify(function () {
+            return !queue.visible && findChild(shell, "queue").activeFocus;
+        });
+        recovery.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return openAnother.activeFocus;
+        });
+        keyClick(Qt.Key_Backtab);
+        tryVerify(function () {
+            return recovery.activeFocus;
+        });
+
+        if (data.accessible)
+            recovery.Accessible.pressAction();
+        else
+            keyClick(Qt.Key_Return);
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.currentOccurrenceId, occurrenceId); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadedPath(1), "C:/Música/Saída interrompida 日本語.flac"); // qmllint disable unqualified
+        recovery.Accessible.pressAction();
+        compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
+        testScenarioDriver.publishLocalReady(); // qmllint disable unqualified
+        tryVerify(function () {
+            return testScenarioDriver.localPauseCount() === 1;
+        }); // qmllint disable unqualified
+        compare(testScenarioDriver.localPlayCount(), playsBeforeRecovery); // qmllint disable unqualified
+        testScenarioDriver.publishLocalPaused(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Paused); // qmllint disable unqualified
+        verify(!state.visible);
+        compare(queue.count, 2);
+    }
+
+    function test_outputErrorCanOpenAnotherAudioInsteadOfRetryingTheDevice() {
+        enterOutputError(false);
+        testScenarioDriver.enqueueLocalSelection(["C:/Música/Outra escolha.mp3"]); // qmllint disable unqualified
+        const openAnother = findChild(shell, "error-open-another-audio");
+        verify(openAnother && openAnother.visible && openAnother.enabled);
+        openAnother.Accessible.pressAction();
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadedPath(1), "C:/Música/Outra escolha.mp3"); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.currentTitle, "Outra escolha"); // qmllint disable unqualified
+    }
+
+    function test_expandedOutputRecoveryKeepsBothActionsInsideTheMinimumWindow() {
+        enterOutputError(false);
+        const harness = createTemporaryObject(expandedErrorHarnessComponent, shell.contentItem);
+        verify(harness);
+        const state = harness.errorState;
+        const title = findChild(state, "error-title");
+        const body = findChild(state, "error-body");
+        const recovery = findChild(state, "error-recover-audio-output");
+        const openAnother = findChild(state, "error-open-another-audio");
+        const details = findChild(state, "track-details-error");
+        wait(0);
+        verify(state.width <= harness.width);
+        verify(state.height <= harness.height);
+        verifyInside(harness, title);
+        verifyInside(harness, body);
+        verifyInside(harness, recovery);
+        verifyInside(harness, openAnother);
+        verifyInside(harness, details);
+        verify(!findChild(state, "error-retry-occurrence").visible);
+        verify(recovery.contentItem.paintedWidth <= recovery.contentItem.width + 0.5);
+        verify(openAnother.contentItem.paintedWidth <= openAnother.contentItem.width + 0.5);
+        verify(!recovery.contentItem.truncated);
+        verify(!openAnother.contentItem.truncated);
+    }
+
     function test_retryUnavailableOccurrence_data() {
         return [
             {

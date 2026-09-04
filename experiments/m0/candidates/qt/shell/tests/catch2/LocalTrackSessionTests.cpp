@@ -215,6 +215,25 @@ TEST_CASE("a current-generation playback error cancels pending autoplay",
     CHECK(playback.play_calls == 0);
 }
 
+TEST_CASE("output interruptions preserve the source and cancel pending autoplay",
+          "[m0][qt][core][local-track][playback][FR-038]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path source{L"C:\\Music\\current.wav"};
+    REQUIRE(session.open(source));
+    const auto error = GENERATE(PlaybackErrorCode::AudioOutputUnavailable, PlaybackErrorCode::AudioOutputChanged);
+    CHECK(session.applyPlaybackEvent(
+              {PlaybackEventType::SnapshotChanged, {PlaybackStatus::Error, 750, 2'000, false, 1, error}}) ==
+          LocalTrackPlaybackEventResult::Applied);
+    CHECK(session.hasTrack());
+    CHECK(session.sourcePath() == source);
+    CHECK(session.applyPlaybackEvent(
+              {PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 750, 2'000, true, 1}}) ==
+          LocalTrackPlaybackEventResult::Applied);
+    CHECK(playback.play_calls == 0);
+}
+
 TEST_CASE("current terminal events are typed and stale terminal events are ignored",
           "[m0][qt][core][local-track][playback][FR-011][FR-016]") {
     RecordingPlaybackBackend playback;

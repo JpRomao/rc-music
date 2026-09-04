@@ -149,6 +149,44 @@ TestCase {
         compare(driver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive);
     }
 
+    function test_outputErrorAnnouncesThePausedRecoveryActionWithoutBlamingTheFile_data() {
+        return [
+            {
+                tag: "unavailable",
+                changed: false
+            },
+            {
+                tag: "changed",
+                changed: true
+            }
+        ];
+    }
+
+    function test_outputErrorAnnouncesThePausedRecoveryActionWithoutBlamingTheFile(data) {
+        createLocalShell();
+        openLocalTrack("C:/Música/Dispositivo interrompido.flac");
+        driver.publishLocalReady();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Ready);
+        driver.clearAccessibleAnnouncements();
+
+        driver.publishLocalOutputError(data.changed);
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Error);
+        tryVerify(function () {
+            return testCase.driver.accessibleAnnouncementCount() === 1;
+        });
+        const announcement = driver.lastAccessibleAnnouncement();
+        verify(announcement.includes(data.changed ? "A saída de áudio mudou" : "Saída de áudio indisponível"));
+        verify(announcement.includes("pausada"));
+        verify(announcement.includes("Tentar novamente"));
+        verify(!announcement.includes("Arquivo não encontrado"));
+        verify(!announcement.includes("audio_output"));
+        verify(!announcement.includes("C:/"));
+        compare(driver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive);
+        driver.publishLocalOutputError(data.changed);
+        wait(0);
+        compare(driver.accessibleAnnouncementCount(), 1);
+    }
+
     function test_seekRejectionIsAnnouncedOnceAndTimerTicksStaySilent() {
         createFixtureShell();
         const target = Math.min(fixturePresenter.durationMs, fixturePresenter.confirmedPositionMs + 1000);
