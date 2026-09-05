@@ -311,6 +311,8 @@ Os Reds focados falharam pelas fronteiras, propriedades/estados e contratos de a
 
 `Dispatched` comprova somente que o opener aceitou o handoff para o handler registrado; não prova visibilidade da página nem alteração de padrão. Escrita de `UserChoice`, ProgID, `Capabilities`, `RegisteredApplications`, matriz publicada de formatos, associação/double-click, pacote/instalador e implementação Linux não pertencem a este recorte. M4.6, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-A11Y` e os smokes de associação/pacote continuam abertos.
 
+O [recorte posterior do template NSIS](../../experiments/m0/candidates/qt/windows-installer/README.md) compila e executa funções reais de cadastro/remoção sob `HKCU\Software\RCMusic.AssociationTests\<GUID>`, com leitura independente via Registry64. Verifica tipo/texto dos valores, aspas/Unicode, reinstalação, troca de diretório com manifesto fixo, desinstalador obsoleto, preservação de defaults/UserChoice/entradas externas, colisões não mutantes e retry após negação temporária de permissões. O runner restaura ACLs e remove somente sua subárvore fresca no `finally`; binários permanecem em `out/m0`. O harness utiliza marcador de texto como alvo e não abre mídia, não notifica Explorer nem escreve associações reais. O comando e o recibo do compilador estão no README do template. Esse check não depende de rebuild C++/QML e não substitui instalação/upgrade/uninstall do payload, matriz de formatos ou smoke nativo.
+
 ### M4.7 — primeiro recorte de suspend/resume no Windows
 
 As provas deste recorte ficam separadas por fronteira e não suspendem fisicamente a máquina:

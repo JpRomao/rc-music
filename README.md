@@ -92,6 +92,8 @@ O [diagnóstico local Windows](experiments/m0/candidates/qt/README.md#local-diag
 
 **RC Music** é o nome definitivo confirmado pelo mantenedor. O [ADR-0004](docs/architecture/decisions/0004-rc-music-identity.md) separa o nome visível dos identificadores internos preservados para não perder dados existentes. Identidade visual e licença ainda pertencem ao mantenedor; confirmar o nome não publica formatos nem instala associações.
 
+O candidato possui agora um [template NSIS de associações por usuário](experiments/m0/candidates/qt/windows-installer/README.md), com cadastro, remoção conservadora e testes compilados em uma subárvore temporária do Registry. Ele não instala associações reais durante os checks e ainda precisa ser integrado ao payload e à matriz validada do instalador completo. A aplicação mantém os dados locais existentes.
+
 ## Proposta do produto
 
 O MVP planejado concentra-se em abrir e ouvir arquivos locais:
@@ -217,7 +219,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 ## Próximo passo
 
 1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. continuar M4.6 com o nome confirmado **RC Music**, preservando o armazenamento existente; implementar o template próprio de ProgID/`Capabilities`/`RegisteredApplications` por usuário, condicionado à matriz validada e à integração de pacote, sem escrita em `UserChoice`; manter os recortes de M4.7 e os ensaios físicos/nativos nos limites já documentados;
+2. continuar M4.6 com o nome confirmado **RC Music**, preservando o armazenamento existente; integrar o template próprio de associações ao futuro payload e à matriz validada, sem escrita em `UserChoice`; o módulo e seu contrato isolado não fecham o instalador nem autorizam registro no host. Manter os recortes de M4.7 e os ensaios físicos/nativos nos limites já documentados;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.
