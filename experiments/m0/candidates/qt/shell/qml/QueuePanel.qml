@@ -23,14 +23,19 @@ FocusScope {
     property bool addingFilesPending: false
     property bool addTerminalObserved: false
     property int addFocusRevision: 0
+    property int queueFocusRevision: 0
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
+    readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
 
     QueueText {
         id: queueText
+    }
+    component QueueOccurrenceDelegate: ItemDelegate {
+        required property string occurrenceId
     }
 
     function formatDuration(milliseconds) {
@@ -74,20 +79,14 @@ FocusScope {
         syncCurrent();
         queueList.forceActiveFocus(Qt.TabFocusReason);
     }
-    function focusIndex(index) {
-        if (queueList.count === 0 || index < 0) {
-            queueList.currentIndex = -1;
-            root.selectedOccurrenceId = "";
-            root.selectedTitle = "";
-            root.selectedAvailable = false;
-            queueList.forceActiveFocus(Qt.TabFocusReason);
-            return;
-        }
-        const targetIndex = Math.min(index, queueList.count - 1);
-        queueList.currentIndex = targetIndex;
-        queueList.positionViewAtIndex(targetIndex, ListView.Contain);
+    function selectFocusOccurrence(index) {
+        if (index < 0 || index >= queueList.count)
+            return "";
+        queueList.currentIndex = index;
+        queueList.positionViewAtIndex(index, ListView.Contain);
         queueList.forceLayout();
-        queueList.forceActiveFocus(Qt.TabFocusReason);
+        const selectedRow = queueList.currentItem as QueueOccurrenceDelegate;
+        return selectedRow ? selectedRow.occurrenceId : "";
     }
     function playRow(row, focusReason) {
         if (!row || !row.available)
@@ -193,12 +192,18 @@ FocusScope {
     }
 
     onObservedCurrentOccurrenceIdChanged: {
+        const revision = queueFocusRevision;
         if (visible && !presenter.selectingAudioFiles && !addingFilesPending)
             Qt.callLater(function () {
-                if (!root.presenter.selectingAudioFiles && !root.addingFilesPending)
+                if (revision === root.queueFocusRevision && !root.presenter.selectingAudioFiles && !root.addingFilesPending)
                     root.syncCurrent();
             });
     }
+    onQueueFocusRestoreAllowedChanged: {
+        if (!queueFocusRestoreAllowed)
+            ++queueFocusRevision;
+    }
+    onPresenterChanged: ++queueFocusRevision
 
     Rectangle {
         anchors.fill: parent
@@ -331,11 +336,10 @@ FocusScope {
                 }
             }
 
-            delegate: ItemDelegate {
+            delegate: QueueOccurrenceDelegate {
                 id: row
                 required property int index
                 required property int orderIndex
-                required property string occurrenceId
                 required property string fileName
                 required property string title
                 required property string artist
@@ -610,17 +614,30 @@ FocusScope {
             });
         }
         function onQueueFocusRequested(index) {
+            const revision = ++root.queueFocusRevision;
             if (root.presenter.selectingAudioFiles || root.addingFilesPending)
                 return;
             if (index < 0) {
                 root.closeRequested();
                 return;
             }
-            if (root.visible)
-                Qt.callLater(function () {
-                    if (!root.presenter.selectingAudioFiles && !root.addingFilesPending)
-                        root.focusIndex(index);
-                });
+            if (!root.queueFocusRestoreAllowed)
+                return;
+            // Resolve the notified index now. ListView follows that occurrence
+            // through later inserts/moves; deferred focus must not replay an index.
+            const occurrenceId = root.selectFocusOccurrence(index);
+            if (occurrenceId.length === 0)
+                return;
+            Qt.callLater(function () {
+                if (revision !== root.queueFocusRevision || !root.queueFocusRestoreAllowed || rowMenu.visible)
+                    return;
+                queueList.forceLayout();
+                const selectedRow = queueList.currentItem as QueueOccurrenceDelegate;
+                if (!selectedRow || selectedRow.occurrenceId !== occurrenceId)
+                    return;
+                queueList.positionViewAtIndex(queueList.currentIndex, ListView.Contain);
+                queueList.forceActiveFocus(Qt.TabFocusReason);
+            });
         }
     }
 }

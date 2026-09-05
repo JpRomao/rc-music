@@ -307,6 +307,7 @@ No candidato Qt, o presenter C++ traduz propriedades/sinais QML para esses coman
 - não expor command genérico para executar path/URL;
 - agrupar ticks de posição a 5–10 Hz;
 - incluir `track_id`/geração em respostas assíncronas;
+- no [foco deferido da fila](../../experiments/m0/candidates/qt/README.md#queue-deferred-focus), capturar a ocorrência no instante da notificação e adiar somente o foco; validar identidade, revisão e autoridade ao executar, sem reaplicar índice anterior após inserções;
 - manter DTOs pequenos; capa é servida por cache ou protocolo controlado pela apresentação, não copiada integralmente a cada evento;
 - aplicar backpressure/coalescing a posição, nunca perder eventos ended/error.
 
