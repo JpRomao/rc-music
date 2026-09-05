@@ -477,6 +477,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     [[nodiscard]] bool addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     [[nodiscard]] bool navigate(QueueDirection direction);
+    [[nodiscard]] bool skipByPreference(bool forward);
+    [[nodiscard]] bool finishSeekCommand(bool accepted, std::uint64_t generation);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
     PlatformIntegration& platform_;

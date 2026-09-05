@@ -139,6 +139,12 @@ Unificar avanço, retrocesso, botão e teclado na mesma função; executar casos
 - estado pausado e tocando;
 - erro do backend sem posição falsa.
 
+### Regressões do transporte local em erro e seek recusado
+
+Para preservar `FR-011`/`FR-014`/`UX-008`, a cobertura combina presenter com backend falso e Quick: anterior/próxima habilitados por capacidade mesmo em `Error`, botões/atalhos equivalentes, foco reparado sem habilitar indevidamente os outros controles; commit/backward/forward recusados por `NotSeekable`, `Busy` ou `NotReady`, com preview reconciliado à posição confirmada e feedback acessível. Cobrir também arraste visual, estado disabled efetivo dos filhos e reentrada/destruição durante sinais, sem rejeição antiga vazando para uma seleção nova. A perda de capacidade deve ser observada pelo presenter, sem assumir que `item.enabled` já atualizou; navegação ainda disponível conserva foco, e `seekPending` transitório não provoca deslocamento.
+
+Os Reds, Greens focados, a primeira consolidação que expôs a regressão de foco e o CTest final 273/273 ficam no [registro central de recuperação do transporte](../../experiments/m0/candidates/qt/README.md#transport-recovery), junto de Release, `all_qmllint` e composição de produção revalidados após o último QML. Os testes existentes foram preservados; a expectativa nova incorreta de ausência de autoplay foi alinhada ao contrato de retry explícito, sem ajuste de produção. Core Qt OFF não foi repetido neste recorte sem mudança de núcleo. São regressões de contratos existentes, não novo escopo; offscreen/software não comprova pacote, integração física nativa ou NVDA. Nenhum benchmark pertence ao recorte.
+
 ## 7. Testes do domínio
 
 ### Playback state

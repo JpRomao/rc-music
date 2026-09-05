@@ -2655,21 +2655,18 @@ bool PlayerPresenter::togglePlayback() {
     }
     return uses_frozen_fixture_ ? changed : true;
 }
-bool PlayerPresenter::skipBackward() {
-    if (exiting_ || !controller_.skipBackward())
+bool PlayerPresenter::skipBackward() { return skipByPreference(false); }
+bool PlayerPresenter::skipForward() { return skipByPreference(true); }
+bool PlayerPresenter::skipByPreference(const bool forward) {
+    const auto snapshot = controller_.confirmedSnapshot();
+    const bool transport_active = snapshot.status == PlaybackStatus::Ready ||
+                                  snapshot.status == PlaybackStatus::Paused ||
+                                  snapshot.status == PlaybackStatus::Playing;
+    if (exiting_ || !transport_active || !snapshot.seekable || controller_.seekPreviewActive() ||
+        controller_.seekPending())
         return false;
-    cancelRestoredPositionForExplicitTransport();
-    reconcileTimer();
-    emit playbackChanged();
-    return true;
-}
-bool PlayerPresenter::skipForward() {
-    if (exiting_ || !controller_.skipForward())
-        return false;
-    cancelRestoredPositionForExplicitTransport();
-    reconcileTimer();
-    emit playbackChanged();
-    return true;
+    const bool accepted = forward ? controller_.skipForward() : controller_.skipBackward();
+    return finishSeekCommand(accepted, snapshot.generation);
 }
 bool PlayerPresenter::previousTrack() { return !exiting_ && navigate(QueueDirection::Previous); }
 bool PlayerPresenter::nextTrack() { return !exiting_ && navigate(QueueDirection::Next); }
@@ -2785,12 +2782,22 @@ bool PlayerPresenter::commitSeekPreview() {
     ++seek_commit_attempt_count_;
     if (!controller_.seekPreviewActive() || controller_.seekPending())
         return false;
-    if (!controller_.commitSeekPreview())
-        return false;
-    cancelRestoredPositionForExplicitTransport();
+    const auto generation = controller_.confirmedSnapshot().generation;
+    return finishSeekCommand(controller_.commitSeekPreview(), generation);
+}
+bool PlayerPresenter::finishSeekCommand(const bool accepted, const std::uint64_t generation) {
+    if (accepted)
+        cancelRestoredPositionForExplicitTransport();
     reconcileTimer();
+    const QPointer<PlayerPresenter> guard{this};
     emit playbackChanged();
-    return true;
+    // Rejection already restored the controller's confirmed position. Publish
+    // that state first; a listener may destroy us or replace the operation.
+    if (!accepted && guard && !exiting_ && controller_.confirmedSnapshot().generation == generation &&
+        !controller_.seekPreviewActive() && !controller_.seekPending()) {
+        emit seekRejected();
+    }
+    return accepted;
 }
 bool PlayerPresenter::setVolume(const double volume) {
     if (exiting_ || volume == controller_.preferences().volume || !controller_.setVolume(volume))

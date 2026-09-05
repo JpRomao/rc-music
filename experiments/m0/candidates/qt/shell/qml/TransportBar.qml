@@ -11,7 +11,8 @@ ColumnLayout {
     TransportText {
         id: labels
     }
-    enabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
+    readonly property bool playbackEnabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
+    enabled: playbackEnabled || presenter.canGoPrevious || presenter.canGoNext
     function formattedTime(milliseconds) {
         const totalSeconds = Math.floor(milliseconds / 1000);
         const minutes = Math.floor(totalSeconds / 60);
@@ -28,12 +29,15 @@ ColumnLayout {
     function isSeekControl(item) {
         return item === progress || item === skipBackward || item === skipForward;
     }
+    function isAvailableNavigationControl(item) {
+        return (item === previousTrack && presenter.canGoPrevious) || (item === nextTrack && presenter.canGoNext);
+    }
     function seekDisabledReason() {
         if (!presenter.hasCurrentTrack)
             return labels.seekRequiresTrack;
         if (presenter.playbackState === PlayerPresenter.Loading)
             return labels.seekLoading;
-        if (!root.enabled)
+        if (!root.playbackEnabled)
             return labels.seekInactive;
         if (presenter.seekPending)
             return labels.seekPending;
@@ -69,7 +73,7 @@ ColumnLayout {
             to: root.presenter.hasDuration ? root.presenter.durationMs : 0
             value: root.presenter.positionMs
             stepSize: 1000
-            enabled: root.enabled && root.presenter.seekable && !root.presenter.seekPending
+            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPending
             Accessible.role: Accessible.Slider
             Accessible.id: "progress"
             Accessible.name: root.contract.progressName
@@ -130,6 +134,7 @@ ColumnLayout {
     RowLayout {
         Layout.alignment: Qt.AlignHCenter
         AccessibleTransportButton {
+            id: previousTrack
             objectName: "previous"
             enabled: root.presenter.canGoPrevious
             contract: root.contract
@@ -141,7 +146,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: skipBackward
             objectName: "skip-backward"
-            enabled: root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
+            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipBackwardShort.replace("{seconds}", root.presenter.skipBackwardSeconds)
             accessibleName: labels.backwardName(root.presenter.skipBackwardSeconds)
@@ -152,6 +157,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: playPause
             objectName: "play-pause"
+            enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.playbackState === PlayerPresenter.Playing ? "⏸" : "▶"
             accessibleName: root.presenter.playbackState === PlayerPresenter.Playing ? root.contract.actionPause : root.contract.actionPlay
@@ -161,7 +167,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: skipForward
             objectName: "skip-forward"
-            enabled: root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
+            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipForwardShort.replace("{seconds}", root.presenter.skipForwardSeconds)
             accessibleName: labels.forwardName(root.presenter.skipForwardSeconds)
@@ -170,6 +176,7 @@ ColumnLayout {
             onClicked: root.presenter.skipForward()
         }
         AccessibleTransportButton {
+            id: nextTrack
             objectName: "next"
             enabled: root.presenter.canGoNext
             contract: root.contract
@@ -180,6 +187,7 @@ ColumnLayout {
         }
         AccessibleTransportButton {
             objectName: "mute"
+            enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.muted ? "🔊" : "🔇"
             accessibleName: root.presenter.muted ? root.contract.actionUnmute : root.contract.actionMute
@@ -188,6 +196,7 @@ ColumnLayout {
         }
         TransportSlider {
             objectName: "volume"
+            enabled: root.playbackEnabled
             contract: root.contract
             from: 0
             to: 100

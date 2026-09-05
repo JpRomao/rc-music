@@ -111,7 +111,9 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         return music_player::m0::PlaybackCommandResult::Accepted;
     }
     music_player::m0::PlaybackCommandResult seekTo(std::int64_t) override {
-        return music_player::m0::PlaybackCommandResult::Accepted;
+        ++seek_calls;
+        return std::exchange(reject_next_seek, false) ? music_player::m0::PlaybackCommandResult::Busy
+                                                      : music_player::m0::PlaybackCommandResult::Accepted;
     }
     music_player::m0::PlaybackCommandResult setVolume(double) override {
         return music_player::m0::PlaybackCommandResult::Accepted;
@@ -139,6 +141,8 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         play_calls = 0;
         pause_calls = 0;
         unload_calls = 0;
+        seek_calls = 0;
+        reject_next_seek = false;
     }
 
     music_player::m0::PlaybackSnapshot snapshot_{};
@@ -147,6 +151,8 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     int play_calls{0};
     int pause_calls{0};
     int unload_calls{0};
+    int seek_calls{0};
+    bool reject_next_seek{false};
 
   private:
     std::uint64_t generation_{0};
@@ -489,6 +495,8 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE void publishLocalReady() { local_backend_.publish(music_player::m0::PlaybackStatus::Ready); }
     Q_INVOKABLE void publishLocalPlaying() { local_backend_.publish(music_player::m0::PlaybackStatus::Playing); }
     Q_INVOKABLE void publishLocalPaused() { local_backend_.publish(music_player::m0::PlaybackStatus::Paused); }
+    Q_INVOKABLE void rejectNextLocalSeek() { local_backend_.reject_next_seek = true; }
+    Q_INVOKABLE int localSeekCount() const noexcept { return local_backend_.seek_calls; }
     Q_INVOKABLE void publishLocalUnseekablePlaying() {
         local_backend_.publish(music_player::m0::PlaybackStatus::Playing, false);
     }

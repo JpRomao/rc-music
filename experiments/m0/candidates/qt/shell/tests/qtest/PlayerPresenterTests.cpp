@@ -583,6 +583,11 @@ class PlayerPresenterTests final : public QObject {
     void staleLocalTerminalEventsAreInertAfterAdvance();
     void currentReadyEventAutoplaysAndStaleEventsAreIgnored();
     void localTransportAcceptsAsynchronousPlayAndSeekWithALocalQueue();
+    void rejectedLocalSeekNotifiesRestoredStateBeforeFeedback_data();
+    void rejectedLocalSeekNotifiesRestoredStateBeforeFeedback();
+    void rejectedLocalSeekNotificationMayDestroyThePresenter();
+    void rejectedLocalSeekDoesNotAnnounceAfterAReentrantTrackChange();
+    void inertLocalSeekCommandsDoNotAnnounceRejection();
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
     void projectsCompleteFixtureDetailsWithExplicitUnknowns();
     void projectsStructuredLocalDetailsWithoutLeakingReaderMessages();
@@ -3700,6 +3705,155 @@ void PlayerPresenterTests::localTransportAcceptsAsynchronousPlayAndSeekWithALoca
     QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
     QVERIFY(presenter.togglePlayback());
     QCOMPARE(backend.play_calls, 3);
+}
+
+void PlayerPresenterTests::rejectedLocalSeekNotifiesRestoredStateBeforeFeedback_data() {
+    QTest::addColumn<int>("rejection");
+    QTest::addColumn<int>("command");
+    for (const auto rejection :
+         {PlaybackCommandResult::NotSeekable, PlaybackCommandResult::Busy, PlaybackCommandResult::NotReady}) {
+        for (int command = 0; command < 3; ++command) {
+            const auto name =
+                QByteArray::number(static_cast<int>(rejection)) + "-command-" + QByteArray::number(command);
+            QTest::newRow(name.constData()) << static_cast<int>(rejection) << command;
+        }
+    }
+}
+
+void PlayerPresenterTests::rejectedLocalSeekNotifiesRestoredStateBeforeFeedback() {
+    QFETCH(int, rejection);
+    QFETCH(int, command);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterSessionWriter writer;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave autosave{writer, {}, {.now = [&clock] { return clock.now(); }}};
+    const auto source = localTestPath(u8"Seek recusado.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave,
+                                   .session = {.autosave = &autosave, .now = [&clock] { return clock.now(); }}});
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 20'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    const auto occurrence = presenter.currentOccurrenceId();
+    const auto* queue = presenter.queueModel();
+    const int play_calls = backend.play_calls;
+    const int pause_calls = backend.pause_calls;
+    if (command == 0)
+        QVERIFY(presenter.beginSeekPreview(30'000));
+    backend.seek_result = static_cast<PlaybackCommandResult>(rejection);
+    QStringList notifications;
+    connect(&presenter, &PlayerPresenter::playbackChanged, &presenter, [&] {
+        notifications.append(QStringLiteral("playback"));
+        QCOMPARE(presenter.positionMs(), 20'000);
+        QVERIFY(!presenter.seekPreviewActive());
+        QVERIFY(!presenter.seekPending());
+    });
+    connect(&presenter, &PlayerPresenter::seekRejected, &presenter,
+            [&] { notifications.append(QStringLiteral("rejected")); });
+
+    const auto accepted = command == 0   ? presenter.commitSeekPreview()
+                          : command == 1 ? presenter.skipBackward()
+                                         : presenter.skipForward();
+    QVERIFY(!accepted);
+    QCOMPARE(notifications, QStringList({QStringLiteral("playback"), QStringLiteral("rejected")}));
+    QCOMPARE(presenter.confirmedPositionMs(), 20'000);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.queueModel(), queue);
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    const std::int64_t target = command == 0 ? 30'000 : (command == 1 ? 15'000 : 25'000);
+    QCOMPARE(backend.seek_positions, std::vector<std::int64_t>{target});
+    QCOMPARE(backend.play_calls, play_calls);
+    QCOMPARE(backend.pause_calls, pause_calls);
+    QVERIFY(!presenter.commitSeekPreview());
+    QCOMPARE(notifications.size(), 2);
+
+    if (writer.active.has_value())
+        writer.complete(SessionSaveStatus::Saved);
+    autosave.requestSaveNow();
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!writer.starts.empty());
+    const auto& saved = writer.starts.back().snapshot;
+    QCOMPARE(saved.position_ms, std::int64_t{20'000});
+    QCOMPARE(saved.queue.items.size(), std::size_t{1});
+    QCOMPARE(saved.queue.items.front().source_path, source);
+    QVERIFY(saved.queue.current_occurrence_id.has_value());
+    QCOMPARE(LocalQueueListModel::occurrenceId(*saved.queue.current_occurrence_id), occurrence);
+}
+
+void PlayerPresenterTests::rejectedLocalSeekNotificationMayDestroyThePresenter() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Seek e destruição.wav");
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+                                                       [source] { return std::vector{source}; });
+    QVERIFY(presenter->openAudio());
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 20'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter->playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter->beginSeekPreview(30'000));
+    backend.seek_result = PlaybackCommandResult::NotSeekable;
+    connect(presenter.get(), &PlayerPresenter::playbackChanged, this, [&] { presenter.reset(); });
+
+    QVERIFY(!presenter->commitSeekPreview());
+    QVERIFY(!presenter);
+    QVERIFY(!backend.callbackInstalled());
+}
+
+void PlayerPresenterTests::rejectedLocalSeekDoesNotAnnounceAfterAReentrantTrackChange() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector sources{localTestPath(u8"Seek anterior.wav"), localTestPath(u8"Faixa seguinte.wav")};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 20'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QVERIFY(presenter.beginSeekPreview(30'000));
+    backend.seek_result = PlaybackCommandResult::Busy;
+    QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
+    connect(
+        &presenter, &PlayerPresenter::playbackChanged, &presenter, [&] { QVERIFY(presenter.nextTrack()); },
+        Qt::SingleShotConnection);
+
+    QVERIFY(!presenter.commitSeekPreview());
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(backend.loaded_paths, sources);
+    QCOMPARE(rejected.size(), 0);
+}
+
+void PlayerPresenterTests::inertLocalSeekCommandsDoNotAnnounceRejection() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
+    QVERIFY(!presenter.commitSeekPreview());
+    QVERIFY(!presenter.skipBackward());
+    QVERIFY(!presenter.skipForward());
+    QVERIFY(backend.seek_positions.empty());
+    QCOMPARE(playback.size(), 0);
+    QCOMPARE(rejected.size(), 0);
 }
 
 void PlayerPresenterTests::currentMetadataCompletionReplacesFallbackAndStopsPolling() {

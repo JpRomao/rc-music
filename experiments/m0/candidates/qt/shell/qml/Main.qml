@@ -46,7 +46,8 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
-    readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
+    readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
+    readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
     readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
@@ -106,9 +107,9 @@ ApplicationWindow {
         previousPlaybackState = nextState;
         const focusBeforeTransition = isPassiveFocusFallback(activeFocusItem) ? lastActiveFocusItem : activeFocusItem;
         const focusCameFromDisappearingState = oldScope !== nextScope && isInside(focusBeforeTransition, oldScope);
-        const wholeTransportBecameUnavailable = transportEnabledForState(oldState) && !transportEnabledForState(nextState);
+        const playbackBecameUnavailable = transportEnabledForState(oldState) && !transportEnabledForState(nextState);
         const focusedSeekControlBecameUnavailable = transport.isSeekControl(focusBeforeTransition) && !presenter.seekable;
-        const focusCameFromDisabledTransport = isInside(focusBeforeTransition, transport) && (wholeTransportBecameUnavailable || focusedSeekControlBecameUnavailable);
+        const focusCameFromDisabledTransport = isInside(focusBeforeTransition, transport) && ((playbackBecameUnavailable && !transport.isAvailableNavigationControl(focusBeforeTransition)) || focusedSeekControlBecameUnavailable);
         if (!focusCameFromDisappearingState && !focusCameFromDisabledTransport)
             return;
         const repairSource = focusCameFromDisabledTransport ? transport : oldScope;
@@ -663,13 +664,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Left"
         context: Qt.WindowShortcut
-        enabled: window.transportShortcutsEnabled && window.presenter.canGoPrevious && !window.focusOwnsTextInput()
+        enabled: window.navigationShortcutsEnabled && window.presenter.canGoPrevious && !window.focusOwnsTextInput()
         onActivated: window.presenter.previousTrack()
     }
     Shortcut {
         sequence: "Ctrl+Right"
         context: Qt.WindowShortcut
-        enabled: window.transportShortcutsEnabled && window.presenter.canGoNext && !window.focusOwnsTextInput()
+        enabled: window.navigationShortcutsEnabled && window.presenter.canGoNext && !window.focusOwnsTextInput()
         onActivated: window.presenter.nextTrack()
     }
     Shortcut {

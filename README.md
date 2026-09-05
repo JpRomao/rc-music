@@ -76,7 +76,9 @@ O seletor principal de Abrir/Adicionar implementa o [contrato assíncrono](exper
 
 O incremento seguinte implementa a [sanitização textual/numérica de metadata](experiments/m0/candidates/qt/README.md#metadata-sanitization) de `FR-023`. A política C++ pura valida UTF-8, produz texto em uma linha sem perder scripts/emoji e interpreta faixa/ano sem conversão parcial ou overflow. Os checks automatizados do recorte estão consolidados: core sem Qt, extrator TagLib, Presenter, UI, caracterização integrada real, suíte Release combinada 273/273, formato, `all_qmllint` e composição de produção verdes. Isso não conclui `FR-023` globalmente, não limita as alocações internas do TagLib nem amplia o corpus canônico ou afirma vulnerabilidade demonstrada.
 
-“Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
+Uma auditoria posterior encontrou duas regressões de [recuperação do transporte](experiments/m0/candidates/qt/README.md#transport-recovery): anterior/próxima disponíveis no presenter ficavam bloqueados pela UI em erro, e um seek local recusado podia deixar preview/feedback sem notificação. Reds e Greens estão confirmados. A primeira suíte completa expôs uma regressão adicional de foco quando o binding ainda não atualizara `enabled`; o ajuste preserva o foco em navegação disponível e usa capacidades do presenter. Após a correção final, Release, `all_qmllint`, CTest 273/273 e produção sem testes passaram. Isso não conclui fases amplas nem comprova pacote ou interação nativa; benchmarks continuam adiados.
+
+“Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor. O nome definitivo foi solicitado para desbloquear as decisões de associação, mas ainda não foi confirmado.
 
 ## Proposta do produto
 
