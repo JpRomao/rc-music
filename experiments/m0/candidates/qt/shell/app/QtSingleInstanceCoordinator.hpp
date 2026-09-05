@@ -9,6 +9,9 @@
 #include <memory>
 #include <optional>
 
+class QDeadlineTimer;
+class QLocalSocket;
+
 namespace music_player::m0 {
 
 namespace detail {
@@ -70,6 +73,8 @@ class QtSingleInstanceCoordinator final : public QObject {
                                 QObject* parent);
     [[nodiscard]] static bool tryTransferForegroundPermission(qint64 owner_pid,
                                                               ForegroundPermissionTransfer transfer) noexcept;
+    [[nodiscard]] static QtSingleInstanceStartResult
+    exchangeConnectedPrimary(QLocalSocket& socket, const QByteArray& payload, QDeadlineTimer& deadline);
 
     friend struct detail::QtSingleInstanceCoordinatorTestAccess;
 

@@ -48,6 +48,19 @@ struct ClientReply final {
     QString detail{};
 };
 
+[[nodiscard]] QtSingleInstanceStartResult startResult(const ClientReply& reply) {
+    switch (reply.kind) {
+    case ClientReplyKind::Ack:
+        return {.outcome = QtSingleInstanceOutcome::Forwarded};
+    case ClientReplyKind::Nack:
+        return {.outcome = QtSingleInstanceOutcome::Rejected, .detail = reply.detail};
+    case ClientReplyKind::TimedOut:
+        return {.outcome = QtSingleInstanceOutcome::TimedOut, .detail = reply.detail};
+    default:
+        return {.outcome = QtSingleInstanceOutcome::Failed, .detail = reply.detail};
+    }
+}
+
 [[nodiscard]] bool allowSetForegroundWindowForOwner(const quint32 owner_pid) {
 #ifdef Q_OS_WIN
     return ::AllowSetForegroundWindow(static_cast<DWORD>(owner_pid)) != FALSE;
@@ -123,7 +136,11 @@ struct ClientReply final {
         return false;
     while (socket.bytesToWrite() > 0) {
         const qint64 remaining = deadline.remainingTime();
-        if (remaining <= 0 || !socket.waitForBytesWritten(static_cast<int>(remaining)))
+        if (remaining <= 0)
+            return false;
+        // A Windows pipe close can retire the writer while retaining the reply.
+        // No pending bytes permits reading it, but only a valid ACK confirms delivery.
+        if (!socket.waitForBytesWritten(static_cast<int>(remaining)) && socket.bytesToWrite() > 0)
             return false;
     }
     return true;
@@ -155,6 +172,21 @@ struct ClientReply final {
     return std::nullopt;
 }
 
+[[nodiscard]] ClientReply exchangeConnected(QLocalSocket& socket, const QByteArray& payload, QDeadlineTimer& deadline) {
+    if (!writeAll(socket, makeFrame(payload), deadline)) {
+        if (deadline.hasExpired())
+            return {.kind = ClientReplyKind::TimedOut, .detail = QStringLiteral("ackTimeout")};
+        return {.detail = QStringLiteral("writeFailed")};
+    }
+    const auto response = readFrame(socket, deadline, max_response_payload_bytes);
+    if (!response.has_value()) {
+        if (deadline.hasExpired())
+            return {.kind = ClientReplyKind::TimedOut, .detail = QStringLiteral("ackTimeout")};
+        return {.detail = QStringLiteral("invalidResponse")};
+    }
+    return decodeReply(*response);
+}
+
 [[nodiscard]] ClientReply exchangeWithPrimary(const QString& server_name, const QByteArray& payload,
                                               QDeadlineTimer& deadline, const std::function<void()>& before_write) {
     QLocalSocket socket;
@@ -170,18 +202,7 @@ struct ClientReply final {
     }
 
     before_write();
-    if (!writeAll(socket, makeFrame(payload), deadline)) {
-        if (deadline.hasExpired())
-            return {.kind = ClientReplyKind::TimedOut, .detail = QStringLiteral("ackTimeout")};
-        return {.detail = QStringLiteral("writeFailed")};
-    }
-    const auto response = readFrame(socket, deadline, max_response_payload_bytes);
-    if (!response.has_value()) {
-        if (deadline.hasExpired())
-            return {.kind = ClientReplyKind::TimedOut, .detail = QStringLiteral("ackTimeout")};
-        return {.detail = QStringLiteral("invalidResponse")};
-    }
-    return decodeReply(*response);
+    return exchangeConnected(socket, payload, deadline);
 }
 
 class BoundedLocalServer final : public QLocalServer {
@@ -359,14 +380,8 @@ class QtSingleInstanceCoordinator::Impl final {
                         static_cast<void>(QtSingleInstanceCoordinator::tryTransferForegroundPermission(
                             owner_pid, foreground_permission_transfer_));
                     });
-                if (reply.kind == ClientReplyKind::Ack)
-                    return {.outcome = QtSingleInstanceOutcome::Forwarded};
-                if (reply.kind == ClientReplyKind::Nack)
-                    return {.outcome = QtSingleInstanceOutcome::Rejected, .detail = reply.detail};
-                if (reply.kind == ClientReplyKind::TimedOut)
-                    return {.outcome = QtSingleInstanceOutcome::TimedOut, .detail = reply.detail};
-                if (reply.kind == ClientReplyKind::Failed)
-                    return {.outcome = QtSingleInstanceOutcome::Failed, .detail = reply.detail};
+                if (reply.kind != ClientReplyKind::Unavailable)
+                    return startResult(reply);
             }
 
             if (lock_->tryLock(std::chrono::milliseconds::zero()))
@@ -581,6 +596,12 @@ bool QtSingleInstanceCoordinator::tryTransferForegroundPermission(
 }
 
 QtSingleInstanceCoordinator::~QtSingleInstanceCoordinator() = default;
+
+QtSingleInstanceStartResult QtSingleInstanceCoordinator::exchangeConnectedPrimary(QLocalSocket& socket,
+                                                                                  const QByteArray& payload,
+                                                                                  QDeadlineTimer& deadline) {
+    return startResult(exchangeConnected(socket, payload, deadline));
+}
 
 QtSingleInstanceStartResult QtSingleInstanceCoordinator::start(const OpenSourcesCommand& initial_command) {
     return impl_->start(initial_command);

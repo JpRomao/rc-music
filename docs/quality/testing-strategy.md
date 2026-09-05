@@ -256,6 +256,8 @@ O fechamento automatizado passou 225/225 no CTest Release combinado, 183/183 num
 
 ### M4.3 — instância única, shell e IPC limitado
 
+O [caso de resposta IPC retida após falha da espera de escrita](../../experiments/m0/candidates/qt/README.md#ipc-buffered-reply) usa socket falso e a mesma transação conectada de produção. ACK/NACK completos são distinguidos de resposta ausente, parcial, malformada, excessiva ou com bytes extras; escrita parcial/rejeitada, bytes ainda pendentes e deadline não podem virar sucesso. Cada linha verifica uma única escrita e o frame exato. Preservar também o teste multiprocesso e a regressão antiga de ACK perdido, sem afrouxar assertions ou repetir até passar. O registro central separa Red determinístico e Green proporcional de qualquer alegação global/histórica.
+
 As provas do recorte funcional local de M4.3 permanecem separadas por fronteira:
 
 - parser e resolver exercitam argumentos nativos antes/depois de `--`, CWD diferente, Unicode, espaços, aspas/metacaracteres, paths relativos, rooted-only, drive/UNC/extended canônico plenamente qualificados, recurso Qt, namespaces Win32 de dispositivo, prefixos pseudo-extended e formas ambíguas;

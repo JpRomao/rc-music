@@ -19,6 +19,7 @@
 #include <QUuid>
 #include <QtEndian>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -51,6 +52,11 @@ struct QtSingleInstanceCoordinatorTestAccess final {
 
     [[nodiscard]] static bool tryTransfer(const qint64 owner_pid, Transfer transfer) noexcept {
         return QtSingleInstanceCoordinator::tryTransferForegroundPermission(owner_pid, transfer);
+    }
+
+    [[nodiscard]] static QtSingleInstanceStartResult exchange(QLocalSocket& socket, const QByteArray& payload,
+                                                              QDeadlineTimer& deadline) {
+        return QtSingleInstanceCoordinator::exchangeConnectedPrimary(socket, payload, deadline);
     }
 };
 
@@ -93,6 +99,65 @@ std::atomic<quint32> foreground_transfer_pid{0};
     framed.append(payload);
     return framed;
 }
+
+// Model a closed pipe whose reader retains bytes after the write wait returns.
+// No server, native handle, event-loop timing or real clock delay is needed.
+class BufferedReplySocket final : public QLocalSocket {
+  public:
+    BufferedReplySocket(QByteArray reply, const qint64 pending_after_wait, const bool wait_result,
+                        const int write_result, QDeadlineTimer* expire_on_wait)
+        : reply_(std::move(reply)), pending_after_wait_(pending_after_wait), wait_result_(wait_result),
+          write_result_(write_result), expire_on_wait_(expire_on_wait) {
+        setOpenMode(QIODevice::ReadWrite | QIODevice::Unbuffered);
+    }
+
+    [[nodiscard]] qint64 bytesToWrite() const override { return pending_bytes_; }
+    [[nodiscard]] qint64 bytesAvailable() const override {
+        return (reply_visible_ ? reply_.size() - read_offset_ : 0) + QIODevice::bytesAvailable();
+    }
+    bool waitForBytesWritten(int) override {
+        ++write_waits;
+        pending_bytes_ = pending_after_wait_;
+        reply_visible_ = true;
+        if (expire_on_wait_ != nullptr)
+            expire_on_wait_->setRemainingTime(0);
+        return wait_result_;
+    }
+    bool waitForReadyRead(int) override {
+        ++read_waits;
+        return false;
+    }
+
+    QByteArray written{};
+    int writes{0};
+    int write_waits{0};
+    int read_waits{0};
+
+  protected:
+    qint64 writeData(const char* data, const qint64 size) override {
+        ++writes;
+        written.append(data, size);
+        pending_bytes_ = size;
+        // 0 accepts all bytes, 1 accepts only a prefix, -1 rejects the write.
+        return write_result_ == 0 ? size : (write_result_ > 0 ? size - 1 : -1);
+    }
+    qint64 readData(char* data, const qint64 maximum_size) override {
+        const qint64 size = reply_visible_ ? std::min(maximum_size, reply_.size() - read_offset_) : 0;
+        std::copy_n(reply_.constData() + read_offset_, size, data);
+        read_offset_ += size;
+        return size;
+    }
+
+  private:
+    QByteArray reply_;
+    qint64 pending_after_wait_;
+    bool wait_result_;
+    int write_result_;
+    QDeadlineTimer* expire_on_wait_;
+    qint64 pending_bytes_{0};
+    qint64 read_offset_{0};
+    bool reply_visible_{false};
+};
 
 [[nodiscard]] std::optional<QByteArray> readFrame(QLocalSocket& socket, const int timeout_ms) {
     QDeadlineTimer deadline{timeout_ms};
@@ -249,6 +314,70 @@ class QtSingleInstanceCoordinatorTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void validatesBufferedReplyAfterWriteWaitFailure_data() {
+        QTest::addColumn<QByteArray>("reply");
+        QTest::addColumn<qint64>("pending_after_wait");
+        QTest::addColumn<bool>("wait_result");
+        QTest::addColumn<int>("write_result");
+        QTest::addColumn<bool>("expire_on_wait");
+        QTest::addColumn<QtSingleInstanceOutcome>("outcome");
+        QTest::addColumn<QString>("detail");
+        const QByteArray ack = frame(R"({"status":"ack"})");
+        const QByteArray nack = frame(R"({"status":"nack","reason":"queueFull"})");
+        QTest::newRow("ack-after-failed-wait")
+            << ack << qint64{0} << false << 0 << false << QtSingleInstanceOutcome::Forwarded << QString{};
+        QTest::newRow("nack-after-failed-wait") << nack << qint64{0} << false << 0 << false
+                                                << QtSingleInstanceOutcome::Rejected << QStringLiteral("queueFull");
+        for (const auto& [name, bytes] : std::vector<std::pair<const char*, QByteArray>>{
+                 {"no-ack", {}},
+                 {"partial-prefix", ack.first(2)},
+                 {"partial-payload", ack.first(ack.size() - 1)},
+                 {"trailing-data", ack + QByteArray{"x"}},
+                 {"malformed-json", frame("not json")},
+                 {"invalid-ack-schema", frame(R"({"status":"ack","reason":"extra"})")},
+                 {"invalid-nack-schema", frame(R"({"status":"nack","reason":""})")},
+                 {"empty-frame", frame({})},
+                 {"oversized-frame", frame(QByteArray(4'097, 'x'))}}) {
+            QTest::newRow(name) << bytes << qint64{0} << false << 0 << false << QtSingleInstanceOutcome::Failed
+                                << QStringLiteral("invalidResponse");
+        }
+        QTest::newRow("still-pending") << ack << qint64{1} << false << 0 << false << QtSingleInstanceOutcome::Failed
+                                       << QStringLiteral("writeFailed");
+        QTest::newRow("partial-write") << ack << qint64{0} << false << 1 << false << QtSingleInstanceOutcome::Failed
+                                       << QStringLiteral("writeFailed");
+        QTest::newRow("rejected-write") << ack << qint64{0} << false << -1 << false << QtSingleInstanceOutcome::Failed
+                                        << QStringLiteral("writeFailed");
+        QTest::newRow("deadline-expired") << ack << qint64{0} << false << 0 << true << QtSingleInstanceOutcome::TimedOut
+                                          << QStringLiteral("ackTimeout");
+        QTest::newRow("normal-write-completion")
+            << ack << qint64{0} << true << 0 << false << QtSingleInstanceOutcome::Forwarded << QString{};
+    }
+
+    void validatesBufferedReplyAfterWriteWaitFailure() {
+        QFETCH(QByteArray, reply);
+        QFETCH(qint64, pending_after_wait);
+        QFETCH(bool, wait_result);
+        QFETCH(int, write_result);
+        QFETCH(bool, expire_on_wait);
+        QFETCH(QtSingleInstanceOutcome, outcome);
+        QFETCH(QString, detail);
+        QDeadlineTimer deadline{10'000};
+        BufferedReplySocket socket{reply, pending_after_wait, wait_result, write_result,
+                                   expire_on_wait ? &deadline : nullptr};
+        const auto encoded = encodeOpenSourcesCommand(OpenSourcesCommand{{QStringLiteral("C:/Music/日本.wav")}});
+        QVERIFY(!encoded.payload.isEmpty());
+
+        const auto result = music_player::m0::detail::QtSingleInstanceCoordinatorTestAccess::exchange(
+            socket, encoded.payload, deadline);
+
+        QCOMPARE(socket.writes, 1);
+        QCOMPARE(socket.written, frame(encoded.payload));
+        QCOMPARE(socket.write_waits, write_result == 0 ? 1 : 0);
+        QCOMPARE(socket.read_waits, 0);
+        QCOMPARE(result.outcome, outcome);
+        QCOMPARE(result.detail, detail);
+    }
+
     void acquiresALongLivedLockBeforeServingAndBoundsTheBootstrapQueue() {
         QTemporaryDir root{QDir::tempPath() + QStringLiteral("/music player IPC 日本-XXXXXX")};
         QVERIFY(root.isValid());
