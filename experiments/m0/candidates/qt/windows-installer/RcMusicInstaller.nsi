@@ -4,6 +4,9 @@ SetCompressor zlib
 !error "RcMusicInstaller.nsi requires RCMUSIC_CONFIG"
 !endif
 !include "${RCMUSIC_CONFIG}"
+!ifndef RCMUSIC_SHORTCUT_ROOT
+!error "RcMusicInstaller.nsi requires an explicit RCMUSIC_SHORTCUT_ROOT"
+!endif
 !include LogicLib.nsh
 !include FileFunc.nsh
 !include x64.nsh
@@ -48,6 +51,12 @@ Var RcAllowMissing
 Var RcUninstallerHash
 Var RcOwnedState
 Var RcFreshThisAttempt
+Var RcShortcutHash
+Var RcShortcutPendingHash
+Var RcShortcutObserved
+Var RcShortcutCandidateHash
+Var RcShortcutTemporary
+Var RcShortcutProblem
 
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS ""
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS "un."
@@ -189,6 +198,180 @@ FunctionEnd
 !macroend
 !insertmacro RCMUSIC_VERIFY_FUNCTION "" RCMUSIC_VERIFY_INSTALL_FILE
 !insertmacro RCMUSIC_VERIFY_FUNCTION "un." RCMUSIC_VERIFY_UNINSTALL_FILE
+
+!macro RCMUSIC_SHORTCUT_PREFLIGHT_FUNCTION PREFIX
+Function ${PREFIX}RCMusic.PreflightShortcut
+    StrCpy $RcShortcutProblem 0
+    StrCpy $RcShortcutHash ""
+    StrCpy $RcShortcutPendingHash ""
+    StrCpy $RcShortcutObserved ""
+    StrCpy $RcPath "${RCMUSIC_SHORTCUT_ROOT}"
+    Call ${PREFIX}RCMusic.ValidatePath
+    ${If} $RcStatus != 0
+        Goto rcmusic_shortcut_preflight_failed
+    ${EndIf}
+    System::Call 'kernel32::GetFileAttributesW(w "$RcPath") i.r0 ?e'
+    Pop $1
+    ${If} $0 == -1
+        ${If} $1 != 2
+        ${AndIf} $1 != 3
+            Goto rcmusic_shortcut_preflight_failed
+        ${EndIf}
+    ${Else}
+        IntOp $0 $0 & 0x10
+        ${If} $0 == 0
+            Goto rcmusic_shortcut_preflight_failed
+        ${EndIf}
+    ${EndIf}
+    !insertmacro RCMUSIC_INSTALL_READ "${RCMUSIC_INSTALL_STATE}" "ShortcutHash"
+    ${If} $RcStatus == 0
+        StrCpy $RcShortcutHash $RcValue
+        Call ${PREFIX}RCMusic.ValidateId
+        ${If} $RcStatus != 0
+            Goto rcmusic_shortcut_preflight_failed
+        ${EndIf}
+    ${ElseIf} $RcStatus != 2
+    ${AndIf} $RcStatus != 3
+        Goto rcmusic_shortcut_preflight_failed
+    ${EndIf}
+    !insertmacro RCMUSIC_INSTALL_READ "${RCMUSIC_INSTALL_STATE}" "ShortcutPendingHash"
+    ${If} $RcStatus == 0
+        StrCpy $RcShortcutPendingHash $RcValue
+        Call ${PREFIX}RCMusic.ValidateId
+        ${If} $RcStatus != 0
+            Goto rcmusic_shortcut_preflight_failed
+        ${EndIf}
+    ${ElseIf} $RcStatus != 2
+    ${AndIf} $RcStatus != 3
+        Goto rcmusic_shortcut_preflight_failed
+    ${EndIf}
+    StrCpy $RcPath "${RCMUSIC_SHORTCUT_ROOT}\RC Music.lnk"
+    Call ${PREFIX}RCMusic.HashFile
+    ${If} $RcStatus == 2
+        ; An absent link can be created, including during migration or repair.
+        StrCpy $RcStatus 0
+        Return
+    ${EndIf}
+    ${If} $RcStatus != 0
+        Goto rcmusic_shortcut_preflight_failed
+    ${EndIf}
+    ${If} $RcHash S!= $RcShortcutHash
+    ${AndIf} $RcHash S!= $RcShortcutPendingHash
+        Goto rcmusic_shortcut_preflight_failed
+    ${EndIf}
+    StrCpy $RcShortcutObserved $RcHash
+    StrCpy $RcStatus 0
+    Return
+rcmusic_shortcut_preflight_failed:
+    StrCpy $RcShortcutProblem 1
+    StrCpy $RcStatus 1
+FunctionEnd
+!macroend
+!insertmacro RCMUSIC_SHORTCUT_PREFLIGHT_FUNCTION ""
+!insertmacro RCMUSIC_SHORTCUT_PREFLIGHT_FUNCTION "un."
+
+Function RCMusic.DiscardShortcutTemporary
+    ${If} $RcShortcutTemporary != ""
+        StrCpy $RcPath $RcShortcutTemporary
+        Call RCMusic.ValidatePath
+        ${If} $RcStatus == 0
+            ClearErrors
+            Delete "$RcShortcutTemporary"
+            ${IfNot} ${Errors}
+                StrCpy $RcShortcutTemporary ""
+            ${EndIf}
+        ${EndIf}
+    ${EndIf}
+FunctionEnd
+
+Function RCMusic.PublishShortcut
+    Call RCMusic.PreflightShortcut
+    ${If} $RcStatus != 0
+        Return
+    ${EndIf}
+    ${If} $RcActive S== "${RCMUSIC_PAYLOAD_ID}"
+    ${AndIf} $RcShortcutObserved != ""
+    ${AndIf} $RcShortcutObserved S== $RcShortcutHash
+    ${AndIf} $RcShortcutPendingHash == ""
+        ; Preserve the exact bytes of an already published current link.
+        Return
+    ${EndIf}
+    ClearErrors
+    CreateDirectory "${RCMUSIC_SHORTCUT_ROOT}"
+    IfErrors rcmusic_shortcut_publish_failed
+    ; An adjacent unique temporary file keeps the final rename on one volume,
+    ; including profiles whose Start Menu and TEMP reside on different drives.
+    GetTempFileName $RcShortcutTemporary "${RCMUSIC_SHORTCUT_ROOT}"
+    IfErrors rcmusic_shortcut_publish_failed
+    SetOutPath "$INSTDIR"
+    IfErrors rcmusic_shortcut_publish_failed
+    CreateShortCut "$RcShortcutTemporary" "$INSTDIR\RCMusic.exe" "" "$INSTDIR\RCMusic.exe" 0 SW_SHOWNORMAL "" "RC Music"
+    IfErrors rcmusic_shortcut_publish_failed
+    StrCpy $RcPath $RcShortcutTemporary
+    Call RCMusic.HashFile
+    ${If} $RcStatus != 0
+        Goto rcmusic_shortcut_publish_failed
+    ${EndIf}
+    StrCpy $RcShortcutCandidateHash $RcHash
+    Call RCMusic.PreflightShortcut
+    ${If} $RcStatus != 0
+        Goto rcmusic_shortcut_publish_failed
+    ${EndIf}
+    ; A retry may observe the previous pending candidate already published.
+    ; Promote it before replacing PendingHash, otherwise a failed second rename
+    ; would lose the only ownership evidence for the currently visible link.
+    ${If} $RcShortcutObserved != ""
+    ${AndIf} $RcShortcutObserved S== $RcShortcutPendingHash
+    ${AndIf} $RcShortcutObserved S!= $RcShortcutHash
+        ClearErrors
+        WriteRegStr HKCU "${RCMUSIC_INSTALL_STATE}" "ShortcutHash" "$RcShortcutObserved"
+        IfErrors rcmusic_shortcut_publish_failed
+    ${EndIf}
+    ClearErrors
+    WriteRegStr HKCU "${RCMUSIC_INSTALL_STATE}" "ShortcutPendingHash" "$RcShortcutCandidateHash"
+    IfErrors rcmusic_shortcut_publish_failed
+    StrCpy $RcPath "${RCMUSIC_SHORTCUT_ROOT}\RC Music.lnk"
+    System::Call 'kernel32::MoveFileExW(w "$RcShortcutTemporary", w "$RcPath", i 0x9) i.r0 ?e'
+    Pop $1
+    ${If} $0 == 0
+        Goto rcmusic_shortcut_publish_failed
+    ${EndIf}
+    StrCpy $RcShortcutTemporary ""
+    StrCpy $RcPath "${RCMUSIC_SHORTCUT_ROOT}\RC Music.lnk"
+    Call RCMusic.HashFile
+    ${If} $RcStatus != 0
+    ${OrIf} $RcHash S!= $RcShortcutCandidateHash
+        Goto rcmusic_shortcut_publish_failed
+    ${EndIf}
+    ClearErrors
+    WriteRegStr HKCU "${RCMUSIC_INSTALL_STATE}" "ShortcutHash" "$RcShortcutCandidateHash"
+    IfErrors rcmusic_shortcut_publish_failed
+    DeleteRegValue HKCU "${RCMUSIC_INSTALL_STATE}" "ShortcutPendingHash"
+    IfErrors rcmusic_shortcut_publish_failed
+    StrCpy $RcStatus 0
+    Return
+rcmusic_shortcut_publish_failed:
+    Call RCMusic.DiscardShortcutTemporary
+    StrCpy $RcShortcutProblem 1
+    StrCpy $RcStatus 1
+FunctionEnd
+
+Function un.RCMusic.RemoveShortcut
+    Call un.RCMusic.PreflightShortcut
+    ${If} $RcStatus != 0
+        Return
+    ${EndIf}
+    ${If} $RcShortcutObserved != ""
+        ClearErrors
+        Delete "${RCMUSIC_SHORTCUT_ROOT}\RC Music.lnk"
+        ${If} ${Errors}
+            StrCpy $RcShortcutProblem 1
+            StrCpy $RcStatus 1
+            Return
+        ${EndIf}
+    ${EndIf}
+    StrCpy $RcStatus 0
+FunctionEnd
 
 ; The copied executable still uses its compile-time root/ID. /VERIFY is
 ; read-only and does not acquire the mutex already owned by this process.
@@ -352,6 +535,7 @@ Function un.onInit
 FunctionEnd
 
 Function .onGUIEnd
+    Call RCMusic.DiscardShortcutTemporary
     Call RCMusic.ReleaseMutex
 FunctionEnd
 Function un.onGUIEnd
@@ -446,6 +630,11 @@ Section "Instalar RC Music"
     !insertmacro RCMUSIC_INSTALL_OPTIONAL "${RCMUSIC_INSTALL_ARP}" "UninstallString" '$\"${RCMUSIC_INSTALL_ROOT}\$RcActive\Uninstall.exe$\"' '$\"$INSTDIR\Uninstall.exe$\"'
     !insertmacro RCMUSIC_INSTALL_OPTIONAL "${RCMUSIC_INSTALL_ARP}" "DisplayVersion" "$RcActive" "${RCMUSIC_PAYLOAD_ID}"
 
+    Call RCMusic.PreflightShortcut
+    ${If} $RcStatus != 0
+        Goto rcmusic_install_failed
+    ${EndIf}
+
     ${If} $RcActive != ""
     ${AndIf} $RcActive S!= "${RCMUSIC_PAYLOAD_ID}"
         StrCpy $RcPrevious $RcActive
@@ -523,6 +712,10 @@ Section "Instalar RC Music"
             Goto rcmusic_install_failed
         ${EndIf}
     !endif
+    Call RCMusic.PublishShortcut
+    ${If} $RcStatus != 0
+        Goto rcmusic_install_failed
+    ${EndIf}
     !insertmacro RCMUSIC_INSTALL_WRITE "${RCMUSIC_INSTALL_ARP}" "DisplayName" "RC Music"
     !insertmacro RCMUSIC_INSTALL_WRITE "${RCMUSIC_INSTALL_ARP}" "InstallLocation" "$INSTDIR"
     !insertmacro RCMUSIC_INSTALL_WRITE "${RCMUSIC_INSTALL_ARP}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
@@ -550,6 +743,7 @@ Section "Instalar RC Music"
     SetErrorLevel 0
     Goto rcmusic_install_done
 rcmusic_install_failed:
+    Call RCMusic.DiscardShortcutTemporary
     ${If} $RcFreshThisAttempt == 1
         Call RCMusic.CleanupFresh
         ${If} $RcStatus != 0
@@ -560,6 +754,9 @@ rcmusic_install_failed:
     ${EndIf}
     Call RCMusic.ReleaseMutex
     SetErrorLevel 1
+    ${If} $RcShortcutProblem == 1
+        Abort "O atalho RC Music do menu Iniciar não pôde ser atualizado. Feche aplicações que o utilizem ou verifique se o atalho foi modificado antes de tentar novamente."
+    ${EndIf}
     Abort "A instalação não foi concluída. Feche o RC Music e tente novamente; mantenha as versões existentes para recuperação."
 rcmusic_install_done:
 SectionEnd
@@ -649,6 +846,10 @@ Section "Uninstall"
         ${AndIf} $RcStatus != 3
             Goto rcmusic_uninstall_failed
         ${EndIf}
+        Call un.RCMusic.PreflightShortcut
+        ${If} $RcStatus != 0
+            Goto rcmusic_uninstall_failed
+        ${EndIf}
     ${EndIf}
     !if ${RCMUSIC_ASSOCIATIONS_ENABLED} == 1
         Call un.RCMusic.UnregisterAssociations
@@ -657,6 +858,12 @@ Section "Uninstall"
             Goto rcmusic_uninstall_failed
         ${EndIf}
     !endif
+    ${If} $RcActive S== "${RCMUSIC_PAYLOAD_ID}"
+        Call un.RCMusic.RemoveShortcut
+        ${If} $RcStatus != 0
+            Goto rcmusic_uninstall_failed
+        ${EndIf}
+    ${EndIf}
     ; Every known file passed hash/reparse/lock checks before the first delete.
     ClearErrors
     SetOutPath "$TEMP"
@@ -664,6 +871,8 @@ Section "Uninstall"
     !insertmacro RCMUSIC_PAYLOAD_FILES RCMUSIC_DELETE_FILE
     !insertmacro RCMUSIC_PAYLOAD_DIRECTORIES RCMUSIC_DELETE_DIRECTORY
     ${If} $RcActive S== "${RCMUSIC_PAYLOAD_ID}"
+        !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_STATE}" "ShortcutHash" "$RcShortcutHash"
+        !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_STATE}" "ShortcutPendingHash" "$RcShortcutPendingHash"
         !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_ARP}" "DisplayName" "RC Music"
         !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_ARP}" "InstallLocation" "$INSTDIR"
         !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_ARP}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
@@ -702,6 +911,9 @@ rcmusic_uninstall_done:
 rcmusic_uninstall_failed:
     Call un.RCMusic.ReleaseMutex
     SetErrorLevel 1
+    ${If} $RcShortcutProblem == 1
+        Abort "O atalho RC Music do menu Iniciar está modificado ou em uso. Verifique o atalho ou feche aplicações que o utilizem antes de tentar desinstalar novamente."
+    ${EndIf}
     Abort "Não foi possível remover esta versão. Feche o RC Music e tente novamente; arquivos modificados não serão apagados."
 rcmusic_uninstall_exit:
 SectionEnd

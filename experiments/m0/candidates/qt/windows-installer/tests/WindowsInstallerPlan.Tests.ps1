@@ -54,6 +54,12 @@ try {
         Assert-True ($p.config.Contains('!define RCMUSIC_INSTALL_ROOT "$LOCALAPPDATA\Programs\RC Music"')) 'Wrong installation root'
         Assert-True ($p.config.Contains('!macro RCMUSIC_PAYLOAD_EXTRACT')) 'No actual payload extraction'
     }
+    Test-Case 'production config explicitly chooses the current user Start menu' {
+        $f = New-Fixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($p.config.Contains('!define RCMUSIC_SHORTCUT_ROOT "$SMPROGRAMS"')) 'Start menu destination is missing from the production recipe'
+        Assert-True (-not $p.config.Contains('$DESKTOP') -and -not $p.config.Contains('$SMSTARTUP')) 'Recipe adds an unsolicited desktop or startup shortcut'
+    }
     Test-Case 'payload identity is independent of manifest order and input location' {
         $a = New-Fixture
         $b = New-Fixture

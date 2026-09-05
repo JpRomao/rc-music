@@ -317,6 +317,8 @@ O [runtime real posterior](../../experiments/m0/candidates/qt/README.md#rc-music
 
 A [integração local de M4.8](../../experiments/m0/candidates/qt/README.md#rc-music-local-installer) separa testes puros do plano, contrato nativo dos helpers NSIS e jornadas compiladas de instalação/atualização/remoção. O runner de lifecycle usa versões com arquivos adicionados/removidos, Registry GUID e sentinelas de mídia/configuração; verifica os hashes por leitura independente, não apenas exit code. O caso opcional do runtime real instala/remove o inventário inteiro em isolamento, sem tocar a instalação pessoal nem iniciar o player. Build do instalador valida origem, fontes/receipt e compilação `/WX`; esses checks não são benchmark, máquina limpa, inspeção nativa ou aprovação da matriz de formatos.
 
+O [contrato do atalho Windows](../../experiments/m0/candidates/qt/windows-installer/README.md#contrato-do-atalho-windows) exige raiz de menu compilada e isolada em todos os cenários do runner. O oracle lê o `.lnk` via COM sem salvar, confirma destino/argumentos/diretório de trabalho e compara seus bytes antes/depois da leitura. Instalação, reinstalação, atualização de legado sem atalho e desinstalação devem manter a entrada coerente com a versão ativa; conflitos não autorizam mutações em links externos. Executar também o caminho com associações OFF, sem confundir essa prova com ativação pelo menu Iniciar real.
+
 ### M4.7 — primeiro recorte de suspend/resume no Windows
 
 As provas deste recorte ficam separadas por fronteira e não suspendem fisicamente a máquina:

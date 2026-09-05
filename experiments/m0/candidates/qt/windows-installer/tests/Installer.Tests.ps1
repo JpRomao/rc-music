@@ -165,7 +165,12 @@ function Write-TestText([string] $Path, [string] $Text) {
     [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
 }
 function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] $Version,
-    [string] $SourceRuntime = '', [switch] $FailExtraction, [switch] $LiteralPaths) {
+    [string] $SourceRuntime = '', [switch] $FailExtraction, [switch] $LiteralPaths,
+    [bool] $AssociationsEnabled = $true, [string] $LegacyTemplate = '') {
+    # Every compiled installer/uninstaller, including old regression cases and
+    # the optional real runtime, must use an isolated menu instead of SMPROGRAMS.
+    $shortcutRoot = Join-Path $Directory 'Start Menu 日本'
+    Assert-TestPath $shortcutRoot
     $files = @()
     if ($SourceRuntime) {
         $manifestPath = Join-Path ([IO.Path]::GetDirectoryName($SourceRuntime.TrimEnd('\', '/'))) 'runtime-manifest.json'
@@ -215,20 +220,27 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
                 Hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
     }
-    $identity = ($files | Sort-Object Relative | ForEach-Object { $_.Relative + '|' + $_.Hash }) -join "`n"
+    $template = if ($LegacyTemplate) { $LegacyTemplate } else { Join-Path $PSScriptRoot '../RcMusicInstaller.nsi' }
+    if ($LegacyTemplate) { Assert-TestPath $LegacyTemplate }
+    # Production identity includes recipe hashes. Include the selected template
+    # here too so installer-only upgrades do not reuse a legacy uninstaller ID.
+    $identity = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToLowerInvariant() + "`n" +
+        (($files | Sort-Object Relative | ForEach-Object { $_.Relative + '|' + $_.Hash }) -join "`n")
     $payloadId = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
             [Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
-    $variant = $Version + $(if ($FailExtraction) { '-fail-extraction' } else { '' })
+    $variant = $Version + $(if ($FailExtraction) { '-fail-extraction' } else { '' }) +
+        $(if ($LegacyTemplate) { '-legacy' } else { '' })
     $setup = Join-Path $Directory ('setup-' + $variant + '.exe')
     $config = Join-Path $Directory ('config-' + $variant + '.nsh')
     $lines = [Collections.Generic.List[string]]::new()
     foreach ($define in ([ordered]@{ RCMUSIC_OUTPUT = $setup; RCMUSIC_INSTALL_ROOT = $InstallRoot
+                RCMUSIC_SHORTCUT_ROOT = $shortcutRoot
                 RCMUSIC_REGISTRY_BASE = $registryBase; RCMUSIC_PAYLOAD_ID = $payloadId
                 RCMUSIC_FORMAT_SIGNATURE = $formatSignature }).GetEnumerator()) {
-        $isRuntime = $define.Key -in @('RCMUSIC_INSTALL_ROOT', 'RCMUSIC_REGISTRY_BASE')
+        $isRuntime = $define.Key -in @('RCMUSIC_INSTALL_ROOT', 'RCMUSIC_REGISTRY_BASE', 'RCMUSIC_SHORTCUT_ROOT')
         $lines.Add('!define ' + $define.Key + ' "' + (ConvertTo-NsisLiteral $define.Value -Passes 2 -Runtime:$isRuntime) + '"')
     }
-    $lines.Add('!define RCMUSIC_ASSOCIATIONS_ENABLED 1')
+    $lines.Add('!define RCMUSIC_ASSOCIATIONS_ENABLED ' + [int] $AssociationsEnabled)
     $lines.Add('!macro RCMUSIC_FOR_EACH_FORMAT CALLBACK')
     $lines.Add('  !insertmacro ${CALLBACK} "mp3" "MP3 audio"')
     $lines.Add('  !insertmacro ${CALLBACK} "wav" "WAV audio"')
@@ -284,20 +296,24 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
     # install/uninstall processes keep the same 20-second behavioral timeout.
     $compileTimeout = if ($SourceRuntime) { 60000 } else { 20000 }
     $compiled = Invoke-InstallerProcess $MakeNsis @('/V2', '/WX', '/INPUTCHARSET', 'UTF8', ('/DRCMUSIC_CONFIG=' + (ConvertTo-NsisLiteral $config)),
-        (Join-Path $PSScriptRoot '../RcMusicInstaller.nsi')) -TimeoutMilliseconds $compileTimeout
+        $template) -TimeoutMilliseconds $compileTimeout
     if ($compiled.ExitCode -ne 0) { throw ('NSIS fixture compilation failed: ' + $compiled.Output) }
     return [pscustomobject]@{ Setup = $setup; InstallRoot = $InstallRoot; Directory = (Join-Path $InstallRoot $payloadId)
-        PayloadId = $payloadId; Files = $files; FixtureDirectory = $Directory }
+        PayloadId = $payloadId; Files = $files; FixtureDirectory = $Directory; ShortcutRoot = $shortcutRoot
+        ShortcutPath = (Join-Path $shortcutRoot 'RC Music.lnk'); AssociationsEnabled = $AssociationsEnabled
+        Legacy = [bool] $LegacyTemplate }
 }
-function New-Scenario([bool] $WithUpgrade = $false, [string] $SourceRuntime = '', [switch] $LiteralPaths) {
+function New-Scenario([bool] $WithUpgrade = $false, [string] $SourceRuntime = '', [switch] $LiteralPaths,
+    [bool] $AssociationsEnabled = $true) {
     $state.Number++
     $directory = Join-Path $testRoot ('case-' + $state.Number + ' & (日本)')
     $root = if ($SourceRuntime) { Join-Path $testRoot 'r 日本' } else { Join-Path $directory 'install root' }
-    $appA = New-TestInstaller $directory $root $(if ($SourceRuntime) { 'Real' } else { 'A' }) $SourceRuntime -LiteralPaths:$LiteralPaths
-    $appB = if ($WithUpgrade) { New-TestInstaller $directory $root 'B' } else { $null }
+    $appA = New-TestInstaller $directory $root $(if ($SourceRuntime) { 'Real' } else { 'A' }) $SourceRuntime -LiteralPaths:$LiteralPaths -AssociationsEnabled $AssociationsEnabled
+    $appB = if ($WithUpgrade) { New-TestInstaller $directory $root 'B' -AssociationsEnabled $AssociationsEnabled } else { $null }
     return [pscustomobject]@{ Directory = $directory; Root = $root; A = $appA; B = $appB }
 }
 function Install-App($App, [int] $Expected = 0) {
+    Assert-TestPath $App.ShortcutRoot
     $result = Invoke-InstallerProcess $App.Setup @('/S')
     if ($result.ExitCode -ne $Expected) { throw "Installer expected $Expected, got $($result.ExitCode). $($result.Output)" }
 }
@@ -307,6 +323,7 @@ function Copy-Uninstaller($App) {
     return $copy
 }
 function Uninstall-App($App, [int] $Expected = 0, [string] $Executable = '') {
+    Assert-TestPath $App.ShortcutRoot
     if (-not $Executable) { $Executable = Copy-Uninstaller $App }
     # Copy outside the version to allow deletion of the installed Uninstall.exe.
     # _?= is the final raw tail, not shell syntax: keep one retained process.
@@ -333,8 +350,77 @@ function Assert-Payload($App) {
     Assert-Equal $marker.UninstallerHash.ToLowerInvariant() (
         Get-FileHash -LiteralPath (Join-Path $App.Directory 'Uninstall.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+function Assert-Shortcut($App) {
+    Assert-TestPath $App.ShortcutPath
+    if (-not [IO.File]::Exists($App.ShortcutPath)) { throw 'Missing isolated Start Menu shortcut: RC Music.lnk' }
+    if ((Get-Item -LiteralPath $App.ShortcutPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'Installed shortcut unexpectedly uses a reparse point'
+    }
+    $beforeHash = (Get-FileHash -LiteralPath $App.ShortcutPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $null
+    try {
+        # Load an existing .lnk for an independent oracle. Never call Save here.
+        $shortcut = $shell.CreateShortcut($App.ShortcutPath)
+        Assert-Equal ([IO.Path]::GetFullPath($shortcut.TargetPath)) (Join-Path $App.Directory 'RCMusic.exe')
+        Assert-Equal $shortcut.Arguments ''
+        Assert-Equal ([IO.Path]::GetFullPath($shortcut.WorkingDirectory)) $App.Directory
+    } finally {
+        if ($null -ne $shortcut) { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+        $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+    }
+    Assert-Equal (Get-FileHash -LiteralPath $App.ShortcutPath -Algorithm SHA256).Hash.ToLowerInvariant() $beforeHash
+    Assert-RegistryString $installerKey 'ShortcutHash' $beforeHash
+}
+function Assert-ShortcutAbsent($App) {
+    if (Test-Path -LiteralPath $App.ShortcutPath) { throw 'Owned Start Menu shortcut survived uninstall' }
+    Assert-RegistryAbsent $installerKey 'ShortcutHash'
+    Assert-RegistryAbsent $installerKey 'ShortcutPendingHash'
+}
+function Set-ShortcutFixture($App, [string] $Description) {
+    # This writer is only for deliberate foreign/edited fixtures under the GUID.
+    # The verification oracle above remains read-only and never calls Save.
+    Assert-TestPath $App.ShortcutPath
+    if (-not [IO.Directory]::Exists($App.ShortcutRoot)) { $null = New-Item -ItemType Directory -Path $App.ShortcutRoot }
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $null
+    try {
+        $shortcut = $shell.CreateShortcut($App.ShortcutPath)
+        $shortcut.TargetPath = Join-Path $App.Directory 'RCMusic.exe'
+        $shortcut.Arguments = ''
+        $shortcut.WorkingDirectory = $App.Directory
+        $shortcut.Description = $Description
+        $shortcut.Save()
+    } finally {
+        if ($null -ne $shortcut) { $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+        $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+    }
+}
+function Get-ScenarioSnapshot($Scenario) {
+    return [ordered]@{
+        Payload = Get-TreeSnapshot $Scenario.Root
+        Menu = Get-TreeSnapshot $Scenario.A.ShortcutRoot
+        Registry = @(Get-RegistrySnapshot) -join "`n"
+    } | ConvertTo-Json -Compress
+}
+function New-LegacyTemplate([string] $Directory) {
+    $legacyRoot = Join-Path $Directory 'legacy-template-6f29af0'
+    $git = (Get-Command git -CommandType Application | Select-Object -First 1).Source
+    foreach ($name in @('RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
+            'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh')) {
+        $source = '6f29af02bbe124d0ba1bf34417ce56c82766c9ce:experiments/m0/candidates/qt/windows-installer/' + $name
+        $result = Invoke-InstallerProcess $git @('-C', $repository, 'show', $source)
+        if ($result.ExitCode -ne 0) { throw ('Could not read the fixed legacy installer fixture: ' + $result.Output) }
+        Write-TestText (Join-Path $legacyRoot $name) $result.Output
+    }
+    return Join-Path $legacyRoot 'RcMusicInstaller.nsi'
+}
 function Assert-Installed($App) {
     Assert-Payload $App
+    if ($App.Legacy) {
+        if (Test-Path -LiteralPath $App.ShortcutPath) { throw 'Legacy installer unexpectedly created a shortcut' }
+        Assert-RegistryAbsent $installerKey 'ShortcutHash'
+    } else { Assert-Shortcut $App }
     Assert-RegistryString $installerKey 'Product' 'RCMusicInstaller-v1'
     Assert-RegistryString $installerKey 'ActivePayload' $App.PayloadId
     Assert-RegistryString $installerKey 'FormatSignature' $formatSignature
@@ -342,16 +428,22 @@ function Assert-Installed($App) {
     Assert-RegistryString $arpKey 'DisplayVersion' $App.PayloadId
     Assert-RegistryString $arpKey 'InstallLocation' $App.Directory
     Assert-RegistryString $arpKey 'UninstallString' ('"' + (Join-Path $App.Directory 'Uninstall.exe') + '"')
-    $exe = Join-Path $App.Directory 'RCMusic.exe'
-    Assert-RegistryString ($registryBase + '\RC Music') 'AssociationOwner' $exe
-    foreach ($extension in @('mp3', 'wav')) {
-        Assert-RegistryString ($classesKey + '\RCMusic.Audio.' + $extension + '\shell\open\command') '' ('"' + $exe + '" -- "%1"')
+    if ($App.AssociationsEnabled) {
+        $exe = Join-Path $App.Directory 'RCMusic.exe'
+        Assert-RegistryString ($registryBase + '\RC Music') 'AssociationOwner' $exe
+        foreach ($extension in @('mp3', 'wav')) {
+            Assert-RegistryString ($classesKey + '\RCMusic.Audio.' + $extension + '\shell\open\command') '' ('"' + $exe + '" -- "%1"')
+        }
+    } else {
+        Assert-RegistryAbsent ($registryBase + '\RC Music') 'AssociationOwner'
+        Assert-RegistryAbsent $registeredKey 'RC Music'
     }
 }
 function Set-ForeignSentinels($Scenario) {
     Write-TestText (Join-Path $Scenario.Root 'media\external.mp3') 'synthetic external media, never played'
     Write-TestText (Join-Path $Scenario.Root 'preferences.json') '{"foreign":"preserve"}'
     Write-TestText (Join-Path $Scenario.Root 'sentinel.txt') 'external sentinel'
+    Write-TestText (Join-Path $Scenario.A.ShortcutRoot 'Foreign Player.lnk') 'foreign menu sentinel, never launched'
     Set-TestValue $userChoiceKey 'ProgId' 'Foreign.Player'
     Set-TestValue $userChoiceKey 'Hash' 'synthetic-userchoice-never-touch'
     Set-TestValue ($classesKey + '\.mp3') '' 'Foreign.Player'
@@ -361,6 +453,7 @@ function Assert-ForeignSentinels($Scenario) {
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.Root 'media\external.mp3'))) 'synthetic external media, never played'
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.Root 'preferences.json'))) '{"foreign":"preserve"}'
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.Root 'sentinel.txt'))) 'external sentinel'
+    Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.A.ShortcutRoot 'Foreign Player.lnk'))) 'foreign menu sentinel, never launched'
     Assert-RegistryString $userChoiceKey 'ProgId' 'Foreign.Player'
     Assert-RegistryString $userChoiceKey 'Hash' 'synthetic-userchoice-never-touch'
     Assert-RegistryString ($classesKey + '\.mp3') '' 'Foreign.Player'
@@ -380,10 +473,12 @@ try {
         Install-App $case.A
         Assert-Installed $case.A
         $beforeFiles = Get-TreeSnapshot $case.Root
+        $beforeMenu = Get-TreeSnapshot $case.A.ShortcutRoot
         $beforeRegistry = @(Get-RegistrySnapshot) -join "`n"
         Install-App $case.A
         Assert-Installed $case.A
         Assert-Equal (Get-TreeSnapshot $case.Root) $beforeFiles
+        Assert-Equal (Get-TreeSnapshot $case.A.ShortcutRoot) $beforeMenu
         Assert-Equal (@(Get-RegistrySnapshot) -join "`n") $beforeRegistry
         Assert-ForeignSentinels $case
     }
@@ -398,10 +493,13 @@ try {
         if (Test-Path -LiteralPath $case.A.Directory) { throw 'Old version or obsolete dependencies survived upgrade' }
         if (Test-Path -LiteralPath (Join-Path $case.B.Directory 'plugins\obsolete\old.dll')) { throw 'Obsolete file leaked into B' }
         $beforeFiles = Get-TreeSnapshot $case.Root
+        $beforeMenu = Get-TreeSnapshot $case.A.ShortcutRoot
         $beforeRegistry = @(Get-RegistrySnapshot) -join "`n"
         Uninstall-App $case.A -Executable $stale
         Assert-Equal (Get-TreeSnapshot $case.Root) $beforeFiles
+        Assert-Equal (Get-TreeSnapshot $case.A.ShortcutRoot) $beforeMenu
         Assert-Equal (@(Get-RegistrySnapshot) -join "`n") $beforeRegistry
+        Assert-Shortcut $case.B
         Assert-ForeignSentinels $case
     }
     Test-Case 'literal dollar variables and preprocessor tokens survive compilation, installation and uninstall' {
@@ -410,20 +508,166 @@ try {
         Assert-Installed $case.A
         Assert-Equal ([IO.File]::ReadAllText((Join-Path $case.A.Directory 'qml\$R0 ${RCMUSIC_PAYLOAD_ID}\日本.qml'))) "literal NSIS path fixture`n"
         Uninstall-App $case.A
+        Assert-ShortcutAbsent $case.A
         if (Test-Path -LiteralPath $case.A.Directory) { throw 'Literal-path payload was not fully removed' }
     }
     Test-Case 'uninstall B removes only owned payload and registration, preserving media, preferences and foreign values' {
         $case = New-Scenario $true
         Set-ForeignSentinels $case
         $baselineFiles = Get-TreeSnapshot $case.Root
+        $baselineMenu = Get-TreeSnapshot $case.A.ShortcutRoot
         $baselineRegistry = @(Get-RegistrySnapshot) -join "`n"
         Install-App $case.A
         Install-App $case.B
         Assert-Installed $case.B
         Uninstall-App $case.B
+        Assert-ShortcutAbsent $case.B
         Assert-Equal (Get-TreeSnapshot $case.Root) $baselineFiles
+        Assert-Equal (Get-TreeSnapshot $case.A.ShortcutRoot) $baselineMenu
         Assert-Equal (@(Get-RegistrySnapshot) -join "`n") $baselineRegistry
         Assert-ForeignSentinels $case
+    }
+    Test-Case 'Start Menu shortcut lifecycle works with associations disabled as in the production builder' {
+        $case = New-Scenario $true -AssociationsEnabled $false
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A
+        Assert-Installed $case.A
+        Install-App $case.A
+        Assert-Shortcut $case.A
+        $stale = Copy-Uninstaller $case.A
+        Install-App $case.B
+        Assert-Installed $case.B
+        Uninstall-App $case.A -Executable $stale
+        Assert-Shortcut $case.B
+        Uninstall-App $case.B
+        Assert-ShortcutAbsent $case.B
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'installer-only upgrade from the fixed legacy template adds the shortcut for identical payload bytes' {
+        $case = New-Scenario
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        $legacyTemplate = New-LegacyTemplate $case.Directory
+        $legacy = New-TestInstaller $case.Directory $case.Root 'A' -LegacyTemplate $legacyTemplate
+        Assert-Equal (($legacy.Files | ForEach-Object { $_.Relative + '|' + $_.Hash }) -join "`n") (
+            ($case.A.Files | ForEach-Object { $_.Relative + '|' + $_.Hash }) -join "`n")
+        if ($legacy.PayloadId -ceq $case.A.PayloadId) { throw 'Installer-only correction must change immutable version identity' }
+        Install-App $legacy
+        Assert-Installed $legacy
+        $stale = Copy-Uninstaller $legacy
+        Install-App $case.A
+        Assert-Installed $case.A
+        if (Test-Path -LiteralPath $legacy.Directory) { throw 'Legacy payload was not retired after installer-only upgrade' }
+        Uninstall-App $legacy -Executable $stale
+        Assert-Shortcut $case.A
+        Uninstall-App $case.A
+        Assert-ShortcutAbsent $case.A
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'foreign shortcut with the same target is not adopted without ownership' {
+        $case = New-Scenario
+        Set-ShortcutFixture $case.A 'foreign shortcut with an otherwise matching target'
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'user-edited shortcut is preserved by reinstall, upgrade and uninstall without other mutations' {
+        $case = New-Scenario $true
+        Install-App $case.A
+        Assert-Installed $case.A
+        Set-ShortcutFixture $case.A 'user edited the shortcut comment'
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+        Install-App $case.B 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+        Uninstall-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'locked shortcut rejects reinstall, upgrade and uninstall before any mutation' {
+        $case = New-Scenario $true
+        Install-App $case.A
+        Assert-Installed $case.A
+        $before = Get-ScenarioSnapshot $case
+        $locked = [IO.File]::Open($case.A.ShortcutPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            Install-App $case.A 1
+            Assert-Equal (Get-ScenarioSnapshot $case) $before
+            Install-App $case.B 1
+            Assert-Equal (Get-ScenarioSnapshot $case) $before
+            Uninstall-App $case.A 1
+            Assert-Equal (Get-ScenarioSnapshot $case) $before
+        } finally { $locked.Dispose() }
+    }
+    Test-Case 'reparse shortcut leaf is preserved without writing through its target' {
+        $case = New-Scenario
+        $external = Join-Path $case.Directory 'external shortcut target'
+        Write-TestText (Join-Path $external 'sentinel.txt') 'external reparse destination'
+        $null = New-Item -ItemType Directory -Path $case.A.ShortcutRoot
+        $null = New-Item -ItemType Junction -Path $case.A.ShortcutPath -Target $external
+        $before = Get-ScenarioSnapshot $case
+        $externalBefore = Get-TreeSnapshot $external
+        Install-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+        Assert-Equal (Get-TreeSnapshot $external) $externalBefore
+    }
+    Test-Case 'Start Menu root occupied by an external file is rejected before payload or registry mutation' {
+        $case = New-Scenario
+        Write-TestText $case.A.ShortcutRoot 'external file where the menu directory was expected'
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'reparse Start Menu root is rejected without writing through the linked folder' {
+        $case = New-Scenario
+        $external = Join-Path $case.Directory 'external menu target'
+        Write-TestText (Join-Path $external 'sentinel.txt') 'external menu directory'
+        $null = New-Item -ItemType Junction -Path $case.A.ShortcutRoot -Target $external
+        $before = Get-ScenarioSnapshot $case
+        $externalBefore = Get-TreeSnapshot $external
+        Install-App $case.A 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+        Assert-Equal (Get-TreeSnapshot $external) $externalBefore
+    }
+    Test-Case 'removed owned shortcut is recreated by explicit reinstall and upgrade' {
+        $case = New-Scenario $true
+        Install-App $case.A
+        Assert-Installed $case.A
+        Assert-TestPath $case.A.ShortcutPath
+        Remove-Item -LiteralPath $case.A.ShortcutPath
+        Install-App $case.A
+        Assert-Shortcut $case.A
+        Remove-Item -LiteralPath $case.A.ShortcutPath
+        Install-App $case.B
+        Assert-Installed $case.B
+        Uninstall-App $case.B
+        Assert-ShortcutAbsent $case.B
+    }
+    Test-Case 'pending shortcut ownership is reconciled on retry without leaving temporary menu files' {
+        $case = New-Scenario
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        $baselineMenu = Get-TreeSnapshot $case.A.ShortcutRoot
+        Install-App $case.A
+        Assert-Installed $case.A
+        $previousHash = (Get-FileHash -LiteralPath $case.A.ShortcutPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        # Model publication completed before its hash promotion. The old hash
+        # remains valid ownership history; the exact new bytes are pending.
+        Set-ShortcutFixture $case.A 'pending shortcut publication fixture'
+        $pendingHash = (Get-FileHash -LiteralPath $case.A.ShortcutPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($pendingHash -ceq $previousHash) { throw 'Pending-publication fixture did not change shortcut bytes' }
+        Set-TestValue $installerKey 'ShortcutPendingHash' $pendingHash
+        Assert-RegistryString $installerKey 'ShortcutHash' $previousHash
+        Install-App $case.A
+        Assert-Shortcut $case.A
+        Assert-RegistryAbsent $installerKey 'ShortcutPendingHash'
+        $withoutOwnedLink = @((Get-TreeSnapshot $case.A.ShortcutRoot) -split "`n" |
+                Where-Object { -not $_.StartsWith('file|RC Music.lnk|', [StringComparison]::Ordinal) }) -join "`n"
+        Assert-Equal $withoutOwnedLink $baselineMenu
+        Uninstall-App $case.A
+        Assert-ShortcutAbsent $case.A
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
     }
     Test-Case 'unmarked version collision is rejected without changing files or registry' {
         $case = New-Scenario

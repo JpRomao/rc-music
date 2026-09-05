@@ -46,7 +46,9 @@ O Red do planner falhou nas quatro operações ainda ausentes; o Red do template
 
 Fechamento do recorte: planner **12/12**; helper NSIS **25/25**, após Red 10 passagens/13 falhas; lifecycle **15/15**, incluindo os Reds adicionais de paths literais, limpeza pendente e extração interrompida antes do marker. O runtime real passou **1/1**, com **554 arquivos** conferidos na instalação, fonte imutável e remoção que preservou sentinelas. O builder OFF compilou com UTF-8 e `/WX`, incluindo prova de destino com metacaracteres literais; o recibo não equivale a assinatura. Não houve execução do player, novo build Qt, registro real ou benchmark. Docs, sintaxe PowerShell e diff receberam checks proporcionais.
 
-Atalhos, evolução da lista de formatos, ensaios de interrupção/recuperação geral, UI nativa, CRT/máquina limpa, assinatura/licenças/segurança e associação real continuam pendentes. Esse incremento não fecha M4.6/M4.8 ou gates globais, não altera C++/QML e não executa benchmarks.
+O incremento seguinte acrescenta o [atalho do menu Iniciar](windows-installer/README.md#contrato-do-atalho-windows), com criação, atualização, remoção por propriedade e migração de instalador legado sem mudar os bytes do runtime. O menu e o Registry dos testes permanecem isolados; o artefato real continua com associações desabilitadas.
+
+Evolução da lista de formatos, ensaios de interrupção/recuperação geral, ativação pelo menu/UI nativa, CRT/máquina limpa, assinatura/licenças/segurança e associação real continuam pendentes. Esse incremento não fecha M4.6/M4.8 ou gates globais, não altera C++/QML e não executa benchmarks.
 
 ## Estado
 

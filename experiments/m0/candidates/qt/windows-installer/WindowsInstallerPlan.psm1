@@ -83,6 +83,7 @@ function New-RcMusicInstallerPlan {
     $lines.Add('; Generated from verified runtime bytes. Private local development only.')
     $lines.Add('!define RCMUSIC_OUTPUT "' + (ConvertTo-RcMusicNsisLiteral (Join-Path $output 'RCMusic-Setup.exe') -Passes 2) + '"')
     $lines.Add('!define RCMUSIC_INSTALL_ROOT "$LOCALAPPDATA\Programs\RC Music"')
+    $lines.Add('!define RCMUSIC_SHORTCUT_ROOT "$SMPROGRAMS"')
     $lines.Add('!define RCMUSIC_REGISTRY_BASE "Software"')
     $lines.Add('!define RCMUSIC_PAYLOAD_ID "' + $payloadId + '"')
     $lines.Add('!define RCMUSIC_FORMAT_SIGNATURE "' + $formatSignature + '"')

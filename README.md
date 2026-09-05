@@ -96,7 +96,7 @@ O candidato possui um [template NSIS de associações por usuário](experiments/
 
 O [runtime local do player real](experiments/m0/candidates/qt/README.md#rc-music-local-runtime) pode ser montado em uma pasta nova com `RCMusic.exe`, Qt/Quick, Multimedia/FFmpeg e TagLib, sem SDK ou músicas dentro dela. É a base funcional para integrar o instalador, não uma release pública; Microsoft Visual C++ Redistributable permanece pré-requisito externo.
 
-O [instalador local experimental](experiments/m0/candidates/qt/README.md#rc-music-local-installer) consome esse runtime e instala por usuário, com versões separadas, atualização e remoção por inventário. Não requer PowerShell no destino nem apaga dados `MusicPlayer`. Os checks usam caminhos e Registry isolados; atalhos, associações reais e distribuição continuam pendentes.
+O [instalador local experimental](experiments/m0/candidates/qt/README.md#rc-music-local-installer) consome esse runtime e instala por usuário, com versões separadas, atualização e remoção por inventário. Inclui atalho no menu Iniciar e preserva atalhos externos/modificados. Não requer PowerShell no destino nem apaga dados `MusicPlayer`. Os checks usam caminhos, menu e Registry isolados; ativação nativa, associações reais e distribuição continuam pendentes.
 
 ## Proposta do produto
 

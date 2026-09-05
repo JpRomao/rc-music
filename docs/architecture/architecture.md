@@ -635,6 +635,8 @@ Métricas de performance são produzidas por benchmarks locais/CI e comandos dia
 
 O candidato implementa o [template NSIS de associações RC Music](../../experiments/m0/candidates/qt/windows-installer/README.md) como etapa reutilizável, separada do domínio, da UI e do deployment. Usa HKCU/vista 64, ProgIDs próprios, `Capabilities`, `RegisteredApplications`, comando com executável/argumento entre aspas e `OpenWithProgids`, sem modificar padrões ou `UserChoice`. Validação prévia de conflitos, marcas de propriedade e remoção condicional preservam entradas externas e o cadastro de uma atualização concluída diante de desinstalador antigo. O contrato atual exige a mesma lista de formatos/descrições; evolução da lista, concorrência e rollback geral precisam de tratamento no instalador completo. Testes compilados usam somente uma base GUID isolada, sem `SHChangeNotify` ou payload real. Não houve alteração nos identificadores Qt de armazenamento nem aceitação de stack/engine.
 
+O atalho do menu Iniciar pertence ao instalador por usuário, não ao domínio nem ao bootstrap do player. Seu destino acompanha a versão ativa; hashes de propriedade atual/pendente e um temporário adjacente permitem publicar a troca sem adotar entradas externas pelo nome. A remoção só atua sobre o atalho próprio da versão ativa e conserva a pasta compartilhada do menu. A raiz é explícita na receita, substituída por GUID nos testes; nenhum atalho de desktop, startup ou lançamento automático é inferido dessa integração.
+
 ### Linux
 
 - `.deb` para distribuição de referência;

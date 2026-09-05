@@ -739,4 +739,6 @@ A [montagem local do runtime real](../experiments/m0/candidates/qt/README.md#rc-
 
 O [instalador local experimental](../experiments/m0/candidates/qt/README.md#rc-music-local-installer) integra o payload real ao ciclo Windows de instalação/atualização/remoção de M4.8, com versões separadas e preservação de dados. A composição de associações é testada exclusivamente em Registry isolado, enquanto o artefato local mantém essa publicação desabilitada até existir matriz aprovada. Continuar pelos contratos residuais de formatos, atalhos, recuperação, instalação nativa e segurança; não retomar o empacotamento comparativo/benchmarks nem encerrar M4.6/M4.8 por esse incremento.
 
+O recorte seguinte entrega o [atalho do menu Iniciar](../experiments/m0/candidates/qt/windows-installer/README.md#contrato-do-atalho-windows), atualizado junto à versão ativa, removido apenas quando próprio e preservado diante de desinstalador obsoleto ou conflito externo. A migração de instalação sem atalho também pertence ao contrato. Os checks compilam o mesmo NSIS com menu e Registry isolados; não alteram o menu real nem lançam o player. Prosseguir pelos contratos residuais de formatos, recuperação e jornadas Windows nativas; M4.6/M4.8 e gates amplos continuam abertos.
+
 Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.
