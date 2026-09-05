@@ -1,5 +1,7 @@
 #include "adapters/QtAudioFileDialog.hpp"
 
+#include "boundary/FilesystemPath.hpp"
+
 #include <QFileDialog>
 #include <QScopeGuard>
 #include <QUrl>
@@ -15,19 +17,10 @@ AudioFilesSelectionResult audioFilesSelectionFromUrls(const QList<QUrl>& selecte
     AudioFilesSelectionResult selection{.status = AudioFilesSelectionStatus::Selected};
     selection.source_paths.reserve(static_cast<std::size_t>(selected.size()));
     for (const QUrl& url : selected) {
-        if (!url.isLocalFile())
+        auto source = localFilesystemPathFromUrl(url);
+        if (!source.has_value())
             return {.status = AudioFilesSelectionStatus::Failed};
-        const QString path = url.toLocalFile();
-        if (path.isEmpty() || path.contains(QChar::Null))
-            return {.status = AudioFilesSelectionStatus::Failed};
-#ifdef Q_OS_WIN
-        std::filesystem::path source(path.toStdWString());
-#else
-        std::filesystem::path source(path.toUtf8().toStdString());
-#endif
-        if (!source.is_absolute())
-            return {.status = AudioFilesSelectionStatus::Failed};
-        selection.source_paths.push_back(std::move(source));
+        selection.source_paths.push_back(std::move(*source));
     }
     return selection;
 }

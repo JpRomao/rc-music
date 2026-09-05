@@ -155,6 +155,33 @@ class QtAudioFilesPickerTests final : public QObject {
         }
     }
 
+#ifdef Q_OS_WIN
+    void selectionRejectsDeviceNamespacesWithoutDiscardingTheFilesystemContract_data() {
+        QTest::addColumn<QString>("path");
+        QTest::newRow("device") << QStringLiteral(R"(\\.\PhysicalDrive0)");
+        QTest::newRow("pipe") << QStringLiteral(R"(\\.\pipe\audio.wav)");
+        QTest::newRow("object-manager") << QStringLiteral(R"(\??\C:\audio.wav)");
+    }
+
+    void selectionRejectsDeviceNamespacesWithoutDiscardingTheFilesystemContract() {
+        QFETCH(QString, path);
+        const QString valid = QDir::temp().absoluteFilePath(QStringLiteral("Válida %00 日本語.wav"));
+        const auto result = audioFilesSelectionFromUrls({QUrl::fromLocalFile(valid), QUrl::fromLocalFile(path)}, true);
+        QCOMPARE(result.status, AudioFilesSelectionStatus::Failed);
+        QVERIFY(result.source_paths.empty());
+    }
+
+    void selectionPreservesUncAndExtendedFilesystemPaths() {
+        for (const QString& path :
+             {QStringLiteral(R"(\\servidor\Música\日本語.wav)"), QStringLiteral(R"(\\?\C:\Música\日本語.wav)"),
+              QStringLiteral(R"(\\?\UNC\servidor\Música\日本語.wav)")}) {
+            const auto result = audioFilesSelectionFromUrls({QUrl::fromLocalFile(path)}, false);
+            QCOMPARE(result.status, AudioFilesSelectionStatus::Selected);
+            QCOMPARE(result.source_paths, std::vector<std::filesystem::path>{nativePath(path)});
+        }
+    }
+#endif
+
     void cancelDiscardsLateCompletionAndAllowsANewRequest() {
         QWindow window;
         QPointer<QFileDialog> dialog;

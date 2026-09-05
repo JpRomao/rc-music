@@ -1,5 +1,6 @@
 #include "presentation/PlayerPresenter.hpp"
 
+#include "boundary/FilesystemPath.hpp"
 #include "m0/adapters/SingleWorkerLocalSourceDiscovery.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 
@@ -356,20 +357,6 @@ QString localPlaybackErrorMessageKey(const PlaybackErrorCode error) {
         return QStringLiteral("backend_failure_error");
     }
     return QStringLiteral("backend_failure_error");
-}
-
-[[nodiscard]] std::optional<std::filesystem::path> localSourcePath(const QUrl& url) {
-    if (!url.isValid() || !url.isLocalFile())
-        return std::nullopt;
-    const QString local_file = url.toLocalFile();
-    if (local_file.isEmpty())
-        return std::nullopt;
-#ifdef Q_OS_WIN
-    return std::filesystem::path{local_file.toStdWString()};
-#else
-    const QByteArray utf8 = local_file.toUtf8();
-    return std::filesystem::path{std::string{utf8.constData(), static_cast<std::size_t>(utf8.size())}};
-#endif
 }
 
 void addSaturated(std::uint64_t& target, const std::uint64_t increment) noexcept {
@@ -1567,7 +1554,7 @@ bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int inser
     roots.reserve(static_cast<std::size_t>(urls.size()));
     std::uint64_t boundary_issue_count = 0;
     for (const QUrl& url : urls) {
-        auto source_path = localSourcePath(url);
+        auto source_path = localFilesystemPathFromUrl(url);
         if (!source_path.has_value()) {
             ++boundary_issue_count;
             continue;

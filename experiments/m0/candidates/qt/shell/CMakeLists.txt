@@ -409,7 +409,7 @@ if(M0_QT_SHELL_SUPPORT)
         app/ShellLaunchOptions.hpp
         app/ShellLaunchOptions.cpp
     )
-    target_include_directories(m0_qt_shell_bootstrap PUBLIC app)
+    target_include_directories(m0_qt_shell_bootstrap PUBLIC app PRIVATE src)
     target_link_libraries(m0_qt_shell_bootstrap PUBLIC Qt6::Core PRIVATE Qt6::Network)
     target_compile_features(m0_qt_shell_bootstrap PUBLIC cxx_std_20)
     set_target_properties(m0_qt_shell_bootstrap PROPERTIES AUTOMOC ON)

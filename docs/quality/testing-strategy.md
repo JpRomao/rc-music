@@ -374,6 +374,8 @@ Reds, Greens consolidados dos alvos e riscos residuais ficam no [registro centra
 
 ### Seleção principal assíncrona
 
+Para a [entrada de URLs locais](../../experiments/m0/candidates/qt/README.md#filesystem-url-boundary), fixtures válidas devem usar paths absolutos e casos relativos precisam ser construídos explicitamente. Cobrir NUL decodificado versus `%00` literal, namespaces Windows recusados, Unicode/espaços, UNC/extended, ordem e duplicatas. Asserções observam as raízes enviadas à discovery sem tocar no filesystem; drop conserva válidos e conta inválidos, enquanto a seleção mantém rejeição atômica. O contrato IPC deve permanecer verde antes/depois de compartilhar a policy.
+
 Os checks de Abrir/Adicionar devem separar aceitação, conclusão e efeito sobre a fila:
 
 - porta/presenter: callback inline reenfileirado, entrega duplicada/atrasada inerte, start rejeitado ou com exceção, lote inválido rejeitado atomicamente, cancelamento sem mutação e rejeição do load preservando contexto;

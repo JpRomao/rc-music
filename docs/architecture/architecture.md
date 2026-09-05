@@ -303,6 +303,7 @@ Eventos para a UI são snapshots ou notificações semânticas:
 No candidato Qt, o presenter C++ traduz propriedades/sinais QML para esses comandos e snapshots sem expor `QObject` ao núcleo. No desafiante Tauri, a mesma fachada atravessa IPC tipado. Regras comuns:
 
 - validar tamanho, tipo e intervalo de todo payload na borda;
+- compartilhar a [validação lexical de paths](../../experiments/m0/candidates/qt/README.md#filesystem-url-boundary) entre IPC e URLs do drop/seletor, sem resolver disco/rede no caller; somente a entrada QUrl converte separadores para nativos antes da validação;
 - não expor command genérico para executar path/URL;
 - agrupar ticks de posição a 5–10 Hz;
 - incluir `track_id`/geração em respostas assíncronas;

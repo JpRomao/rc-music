@@ -443,7 +443,7 @@ Preferences nonDefaultPreferences() {
 }
 
 [[nodiscard]] std::filesystem::path localTestPath(const std::u8string& file_name) {
-    return std::filesystem::path{u8"local-test"} / std::filesystem::path{file_name};
+    return std::filesystem::absolute(std::filesystem::path{u8"local-test"} / std::filesystem::path{file_name});
 }
 
 [[nodiscard]] SessionSnapshot persistedSessionSnapshot() {
@@ -505,6 +505,10 @@ class PlayerPresenterTests final : public QObject {
     void typedSourceImportPreservesOrderDuplicatesAndNativeMetacharacters();
     void typedSourceImportRejectsBusyWithoutMutatingTheActiveBatch();
     void droppedSourceImportValidatesBoundaryAndKeepsStableAnchor();
+    void droppedSourceImportRejectsMalformedPathsWithoutLosingValidItems_data();
+    void droppedSourceImportRejectsMalformedPathsWithoutLosingValidItems();
+    void droppedSourceImportPreservesAbsoluteWindowsPaths_data();
+    void droppedSourceImportPreservesAbsoluteWindowsPaths();
     void sourceImportTracksMovedAnchorAndFallsBackAfterItsRemoval();
     void sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext_data();
     void sourceImportOnEmptyQueuePreservesTransientFirstLoadAndAutoplaysTheNext();
@@ -1449,6 +1453,86 @@ void PlayerPresenterTests::droppedSourceImportValidatesBoundaryAndKeepsStableAnc
     discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
     PlayerPresenterTestAccess::pollSourceImport(presenter);
     QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+}
+
+void PlayerPresenterTests::droppedSourceImportRejectsMalformedPathsWithoutLosingValidItems_data() {
+    QTest::addColumn<QUrl>("invalidUrl");
+    QTest::newRow("decoded-nul") << QUrl{localTestUrl(localTestPath(u8"A.wav")).toString() +
+                                         QStringLiteral("%00outro")};
+    QTest::newRow("relative") << QUrl{QStringLiteral("file:relative.wav")};
+    QTest::newRow("empty") << QUrl{QStringLiteral("file:")};
+#ifdef Q_OS_WIN
+    QTest::newRow("drive-relative") << QUrl{QStringLiteral("file:///C:relative.wav")};
+    QTest::newRow("root-without-drive") << QUrl{QStringLiteral("file:///relative.wav")};
+    QTest::newRow("device") << QUrl::fromLocalFile(QStringLiteral(R"(\\.\PhysicalDrive0)"));
+    QTest::newRow("pipe") << QUrl::fromLocalFile(QStringLiteral(R"(\\.\pipe\audio.wav)"));
+    QTest::newRow("object-manager") << QUrl::fromLocalFile(QStringLiteral(R"(\??\C:\audio.wav)"));
+#endif
+}
+
+void PlayerPresenterTests::droppedSourceImportRejectsMalformedPathsWithoutLosingValidItems() {
+    QFETCH(QUrl, invalidUrl);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto valid = localTestPath(u8"Válida 日本語 %00.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+
+    QVERIFY(!presenter.importDroppedUrls({invalidUrl}, 0));
+    QVERIFY(discovery.requests.empty());
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Rejected);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QVERIFY(backend.loaded_paths.empty());
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QVERIFY(presenter.dismissSourceImportStatus());
+
+    QVERIFY(presenter.importDroppedUrls({invalidUrl, localTestUrl(valid), localTestUrl(valid)}, 0));
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+    QCOMPARE(discovery.requests.front().roots, std::vector<std::filesystem::path>({valid, valid}));
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {valid, valid}, {}, 2);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    discovery.publishCompleted({.inspected_count = 2, .accepted_count = 2, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::CompletedWithIssues);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 2ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
+    QCOMPARE(backend.loaded_paths, std::vector<std::filesystem::path>{valid});
+}
+
+void PlayerPresenterTests::droppedSourceImportPreservesAbsoluteWindowsPaths_data() {
+    QTest::addColumn<QString>("path");
+    QTest::newRow("unicode-percent") << displayPath(localTestPath(u8"Pasta com espaço\\日本語 %00.wav"));
+#ifdef Q_OS_WIN
+    QTest::newRow("unc") << QStringLiteral(R"(\\servidor\Música\日本語.wav)");
+    QTest::newRow("extended-drive") << QStringLiteral(R"(\\?\C:\Música\日本語.wav)");
+    QTest::newRow("extended-unc") << QStringLiteral(R"(\\?\UNC\servidor\Música\日本語.wav)");
+    QTest::newRow("long-path") << QStringLiteral("C:/Music/") + QString(280, QLatin1Char('a')) + QStringLiteral(".wav");
+#endif
+}
+
+void PlayerPresenterTests::droppedSourceImportPreservesAbsoluteWindowsPaths() {
+    QFETCH(QString, path);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    const auto url = QUrl::fromLocalFile(path);
+    QVERIFY(url.isValid());
+    QVERIFY(presenter.importDroppedUrls({url}, 0));
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+    QCOMPARE(discovery.requests.size(), std::size_t{1});
+#ifdef Q_OS_WIN
+    QCOMPARE(discovery.requests.front().roots, std::vector{std::filesystem::path{path.toStdWString()}});
+#else
+    QCOMPARE(discovery.requests.front().roots, std::vector{std::filesystem::path{path.toStdString()}});
+#endif
 }
 
 void PlayerPresenterTests::sourceImportTracksMovedAnchorAndFallsBackAfterItsRemoval() {
@@ -3140,7 +3224,9 @@ void PlayerPresenterTests::asynchronousSelectionCancellationFailureAndDuplicateC
 void PlayerPresenterTests::asynchronousSelectionRejectsInvalidPathsWithoutChangingPlayback_data() {
     QTest::addColumn<std::vector<std::filesystem::path>>("paths");
     QTest::newRow("empty") << std::vector<std::filesystem::path>{};
-    QTest::newRow("relative") << std::vector{localTestPath(u8"Relativa.wav")};
+    const std::filesystem::path relative{u8"local-test/Relativa.wav"};
+    QVERIFY(!relative.is_absolute());
+    QTest::newRow("relative") << std::vector{relative};
     QTest::newRow("root") << std::vector{std::filesystem::current_path().root_path()};
     auto nul = std::filesystem::absolute(localTestPath(u8"Nul.wav")).native();
     nul.push_back(std::filesystem::path::value_type{});
