@@ -94,6 +94,8 @@ O [diagnóstico local Windows](experiments/m0/candidates/qt/README.md#local-diag
 
 O candidato possui agora um [template NSIS de associações por usuário](experiments/m0/candidates/qt/windows-installer/README.md), com cadastro, remoção conservadora e testes compilados em uma subárvore temporária do Registry. Ele não instala associações reais durante os checks e ainda precisa ser integrado ao payload e à matriz validada do instalador completo. A aplicação mantém os dados locais existentes.
 
+O [runtime local do player real](experiments/m0/candidates/qt/README.md#rc-music-local-runtime) pode ser montado em uma pasta nova com `RCMusic.exe`, Qt/Quick, Multimedia/FFmpeg e TagLib, sem SDK ou músicas dentro dela. É a base funcional para integrar o instalador, não uma release pública; Microsoft Visual C++ Redistributable permanece pré-requisito externo.
+
 ## Proposta do produto
 
 O MVP planejado concentra-se em abrir e ouvir arquivos locais:

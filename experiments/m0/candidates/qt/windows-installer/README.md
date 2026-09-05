@@ -52,6 +52,26 @@ Cobertura: cadastro explícito de MP3/WAV sintéticos, remoção de cadastro pre
 
 Red inicial: 4 passagens/7 falhas com funções inertes. Primeiro Green: 11/11. A revisão adicionou três regressões de retry; sua primeira execução tinha uma restauração de ACL ineficaz e não é usada como prova causal. Depois de corrigir a fixture e verificar suas permissões efetivas, a versão anterior do módulo confirmou novamente o Red de 11 passagens/3 falhas por instalação inicial/upgrade bloqueados e remoção órfã. A implementação corrigida passou **14/14**, incluindo a restauração verificada das ACLs. O fechamento documental fica no checkpoint do candidato Qt.
 
+## Runtime real para a integração do instalador
+
+`New-RcMusicLocalRuntime.ps1` monta o player Release real com `BUILD_TESTING=OFF`, renomeando somente o arquivo de saída para `RCMusic.exe`. Não usa o antigo pacote de fixture, não executa `package-v2` e não reconstrói o SDK. Faz um build incremental do aplicativo, descobre os imports QML com `qmlimportscanner` e resolve a árvore de dependências PE x64 a partir do SDK Qt composto, do overlay Multimedia/FFmpeg e do TagLib registrados no cache CMake. O compilador de shaders D3D e os plugins necessários também são incluídos explicitamente, pois nem toda carga dinâmica aparece nos imports PE.
+
+Na raiz, no Developer PowerShell MSVC 14.44 x64 usado pelo build de produção:
+
+```powershell
+./experiments/m0/candidates/qt/windows-installer/tests/WindowsRuntimePlan.Tests.ps1
+./experiments/m0/candidates/qt/windows-installer/tests/LocalRuntime.Tests.ps1 -OutputDirectory ./out/m0/rc-music-local/meu-runtime-01
+./experiments/m0/candidates/qt/windows-installer/tests/LocalRuntime.Smoke.ps1 -RuntimeDirectory ./out/m0/rc-music-local/meu-runtime-01/app
+```
+
+O destino deve ser novo. O comando de montagem também aceita `-BuildDirectory`, que precisa apontar para a composição atual Release/Qt/áudio sem hooks. O helper valida fontes permitidas, paths, aliases Windows, duplicatas, reparse points e colisões antes de copiar; usa criação exclusiva e verifica hashes. Uma falha intermediária pode deixar um diretório parcial, não um runtime aprovado: não reutilizar esse destino. Não há rollback destrutivo nem proteção alegada contra um escritor hostil concorrente.
+
+O resultado contém `app/`, `runtime-manifest.json` e `qml-imports.json`. O manifesto identifica HEAD, exige limpos os inputs compilados de shell/protocolo/fixture, registra receita suja ou limpa, hashes de receita/helper, arquivos e dependências externas. O módulo QML próprio, tradução pt-BR e assets já são estáticos no executável; não se copia a fixture nem um SDK para o payload. Qt/FFmpeg/TagLib vêm das suas origens explícitas; dependências de Windows e Microsoft Visual C++ Redistributable continuam pré-requisitos, não são copiadas de System32 ou do compilador do host.
+
+O smoke usa ambiente reconstruído, sem paths Qt do SDK. Primeiro verifica que o executável OFF recusa os hooks com exit 1, streams vazios e configuração ausente. Depois executa uma cópia ON separada do payload, com configuração temporária, para observar estado vazio real e saída pelo lifecycle. Por fim, copia o teste de integração e QtTest somente para o probe, resolve QtTest pela origem de QtCore registrada no manifesto e exercita as nove linhas de load/play mutado/seek/pause/metadados com o runtime montado. Exige 11/11 incluindo setup/cleanup, sem skips; diagnósticos de corpus/FFmpeg são preservados e não equivalem a streams vazios. Isso não transforma os executáveis instrumentados em parte do aplicativo entregue nem comprova EOF, desktop nativo, áudio audível ou máquina limpa. A matriz experimental de sete extensões ainda não é uma publicação de suporte, e nenhum cadastro real de associações ocorre nesses comandos.
+
+O `windeployqt` do SDK composto falhou no dry-run por procurar Multimedia dentro do SDK base em vez do overlay; não se ignorou essa falha nem se modificou o SDK. A receita explícita usa o scanner e a resolução PE, coerente com a [orientação Qt sobre bibliotecas adicionais e teste sem ambiente de desenvolvimento](https://doc.qt.io/qt-6/windows-deployment.html). Traduções genéricas Qt, licenças/notices/SBOM, segurança, assinatura, pré-requisitos em máquina limpa, instalador/upgrade/uninstall e associação pelo Explorer continuam gates distintos. `LOCAL-DEVELOPMENT.txt` acompanha o runtime para impedir confundi-lo com uma release distribuível.
+
 ## Toolchain e referências
 
 NSIS 3.12 foi obtido da [publicação oficial](https://nsis.sourceforge.io/Download) em ZIP e extraído somente sob `out/m0/toolchains`, sem instalação global. A dependência já corresponde ao baseline experimental de distribuição Windows da arquitetura; acrescenta um compilador local, não uma dependência de runtime do C++. O [recibo](nsis-toolchain.json) registra origem, tamanho e SHA-256 observados do ZIP/compilador, sem alegar assinatura do publicador ou autenticidade independente desses hashes. Uma nova máquina precisa provisionar o ZIP oficial correspondente e verificar os valores antes da extração/execução.

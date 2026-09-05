@@ -1,0 +1,13 @@
+RC Music - runtime experimental local Windows x64
+
+Uso privado de desenvolvimento. Nao distribuir este artefato como release.
+Requer Windows x64 e Microsoft Visual C++ Redistributable x64 compativel com
+MSVC 14.44; o runtime da Microsoft nao e copiado do ambiente de desenvolvimento.
+
+Inclui o player real, Qt/Quick, Qt Multimedia/FFmpeg e TagLib. Nao inclui musicas,
+executaveis de teste, SDK, servicos, tarefas agendadas ou associacoes instaladas.
+Dados existentes continuam em MusicPlayer/MusicPlayer; a pasta do aplicativo
+nao e a pasta dos dados pessoais. Nao remova os dados para atualizar o binario.
+
+Licencas/notices/SBOM, seguranca, assinatura, matriz publicada, maquina limpa e
+instalacao/upgrade/uninstall completos ainda exigem seus gates documentados.
