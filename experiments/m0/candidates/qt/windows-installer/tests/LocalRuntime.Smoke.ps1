@@ -57,7 +57,7 @@ $windowsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Wi
 $systemDirectory = [Environment]::SystemDirectory
 
 function Invoke-IsolatedRuntimeProcess([string] $Program, [string] $ConfigRoot,
-    [string[]] $Arguments = @(), [ValidateRange(1, 40000)] [int] $TimeoutMilliseconds = 20000,
+    [string[]] $Arguments = @(), [ValidateRange(1, 60000)] [int] $TimeoutMilliseconds = 20000,
     [switch] $AllowQTestOutput) {
     $start = [Diagnostics.ProcessStartInfo]::new($Program)
     $start.UseShellExecute = $false
@@ -196,18 +196,18 @@ foreach ($copy in @(@{ Source = $audioIntegrationExe; Target = $probeAudioExe },
 if (-not [IO.File]::Exists($probeAudioExe) -or -not [IO.File]::Exists($probeQtTest)) {
     throw 'Missing isolated codec probe executable or Qt6Test.dll'
 }
-$audio = Invoke-IsolatedRuntimeProcess -Program $probeAudioExe -AllowQTestOutput -TimeoutMilliseconds 40000 `
+$audio = Invoke-IsolatedRuntimeProcess -Program $probeAudioExe -AllowQTestOutput -TimeoutMilliseconds 60000 `
     -Arguments @('opensUnicodeLocalAudioAndDrivesTheRealJourney', '-o', '-,txt')
 Write-Host $audio.TestOutput
 if ($audio.ExitCode -ne 0 -or
-        $audio.TestOutput -cnotmatch '(?m)^Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, [0-9]+ms\r?$' -or
+        $audio.TestOutput -cnotmatch '(?m)^Totals: 18 passed, 0 failed, 0 skipped, 0 blacklisted, [0-9]+ms\r?$' -or
         $audio.TestOutput -cmatch '(?m)^(FAIL!|SKIP)\s*:') {
-    throw "Packaged-runtime codec journey did not pass all nine rows without skips (exit $($audio.ExitCode))"
+    throw "Packaged-runtime codec journey did not pass all sixteen rows without skips (exit $($audio.ExitCode))"
 }
 if ((Get-FileHash -LiteralPath $productionExe -Algorithm SHA256).Hash -cne $productionHash) {
     throw 'Production executable changed during codec smoke'
 }
-Write-Host '[PASS] Nine synthetic codec rows: load/play/seek/pause/metadata, 11 passed including setup/cleanup, zero skips'
+Write-Host '[PASS] Sixteen synthetic codec rows: load/pause/50% seek/metadata/play from zero to EOF, 18 passed including setup/cleanup, zero skips'
 Write-Host '[PASS] All three owned processes exited; test executables, Qt Test and state remain outside the payload'
 $smokeResult = [pscustomobject]@{
     RuntimeDirectory = $RuntimeDirectory

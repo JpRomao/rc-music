@@ -19,6 +19,9 @@ SetCompressor zlib
 !define RCMUSIC_INSTALL_STATE "${RCMUSIC_REGISTRY_BASE}\RC Music Installer"
 !define RCMUSIC_INSTALL_ARP "${RCMUSIC_REGISTRY_BASE}\Microsoft\Windows\CurrentVersion\Uninstall\RC Music"
 !define RCMUSIC_INSTALL_PRODUCT "RCMusicInstaller-v1"
+!define RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL "2"
+; Existing production installers disabled associations and hashed UTF-8 [].
+!define RCMUSIC_LEGACY_EMPTY_FORMAT_SIGNATURE "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 !define RCMUSIC_RESERVED_UNINSTALL "Uninstall.exe"
 !define RCMUSIC_RESERVED_MARKER ".rcmusic-install.ini"
 
@@ -45,6 +48,7 @@ Var RcPending
 Var RcPrevious
 Var RcPreviousDirectory
 Var RcPreviousHash
+Var RcPreviousFormatSignature
 Var RcChildMode
 Var RcVerifyOnly
 Var RcAllowMissing
@@ -155,6 +159,10 @@ Function ${PREFIX}RCMusic.VerifyMarker
     ${EndIf}
     ReadINIStr $RcValue "$RcPath" "RC Music" "FormatSignature"
     ${If} $RcValue S!= "${RCMUSIC_FORMAT_SIGNATURE}"
+        Goto rcmusic_marker_failed
+    ${EndIf}
+    ReadINIStr $RcValue "$RcPath" "RC Music" "AssociationCleanupProtocol"
+    ${If} $RcValue S!= "${RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL}"
         Goto rcmusic_marker_failed
     ${EndIf}
     ReadINIStr $RcUninstallerHash "$RcPath" "RC Music" "UninstallerHash"
@@ -396,7 +404,20 @@ Function RCMusic.RunPrevious
         Goto rcmusic_previous_failed
     ${EndIf}
     ReadINIStr $RcValue "$RcPath" "RC Music" "FormatSignature"
-    ${If} $RcValue S!= "${RCMUSIC_FORMAT_SIGNATURE}"
+    Call RCMusic.ValidateId
+    ${If} $RcStatus != 0
+        Goto rcmusic_previous_failed
+    ${EndIf}
+    StrCpy $RcPreviousFormatSignature $RcValue
+    ReadINIStr $RcValue "$RcPath" "RC Music" "AssociationCleanupProtocol"
+    ${If} $RcValue S== ""
+        ; Legacy cleanup cannot retire a subset after a new owner is published.
+        ; Its own /VERIFY still authenticates the compiled signature below.
+        ${If} $RcPreviousFormatSignature S!= "${RCMUSIC_FORMAT_SIGNATURE}"
+        ${AndIf} $RcPreviousFormatSignature S!= "${RCMUSIC_LEGACY_EMPTY_FORMAT_SIGNATURE}"
+            Goto rcmusic_previous_failed
+        ${EndIf}
+    ${ElseIf} $RcValue S!= "${RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL}"
         Goto rcmusic_previous_failed
     ${EndIf}
     ReadINIStr $RcPreviousHash "$RcPath" "RC Music" "UninstallerHash"
@@ -559,9 +580,14 @@ Section "Instalar RC Music"
             Goto rcmusic_install_failed
         ${EndIf}
         StrCpy $RcOwnedState 1
+        ; This records the last publication attempt, which can still be pending.
+        ; Compatibility comes from the predecessor's marker and own /VERIFY.
         !insertmacro RCMUSIC_INSTALL_READ "${RCMUSIC_INSTALL_STATE}" "FormatSignature"
         ${If} $RcStatus != 0
-        ${OrIf} $RcValue S!= "${RCMUSIC_FORMAT_SIGNATURE}"
+            Goto rcmusic_install_failed
+        ${EndIf}
+        Call RCMusic.ValidateId
+        ${If} $RcStatus != 0
             Goto rcmusic_install_failed
         ${EndIf}
         !insertmacro RCMUSIC_INSTALL_READ "${RCMUSIC_INSTALL_STATE}" "ActivePayload"
@@ -687,6 +713,8 @@ Section "Instalar RC Music"
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "PayloadId" "${RCMUSIC_PAYLOAD_ID}"
         IfErrors rcmusic_install_failed
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "FormatSignature" "${RCMUSIC_FORMAT_SIGNATURE}"
+        IfErrors rcmusic_install_failed
+        WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "AssociationCleanupProtocol" "${RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL}"
         IfErrors rcmusic_install_failed
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "UninstallerHash" "$RcUninstallerHash"
         IfErrors rcmusic_install_failed

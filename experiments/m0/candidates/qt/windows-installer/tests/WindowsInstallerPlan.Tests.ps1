@@ -36,7 +36,81 @@ function New-Fixture {
     Save-Manifest $fixture
     return $fixture
 }
+function New-FormatMatrix($Fixture) {
+    $corpusPath = Join-Path $repository 'experiments/m0/shared/audio-corpus/manifest.v1.json'
+    $testPath = Join-Path $repository 'experiments/m0/candidates/qt/shell/tests/qtest/LocalAudioIntegrationTests.cpp'
+    $matrix = [ordered]@{ schema_version = 1; scope = 'windows-x64-local-development'; validation_status = 'passed-local'
+        runtime_manifest_sha256 = (Get-FileHash -LiteralPath $Fixture.ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        corpus_manifest_sha256 = (Get-FileHash -LiteralPath $corpusPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        test_source_sha256 = (Get-FileHash -LiteralPath $testPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        result_sha256 = ('a' * 64); backend = 'QtMultimedia/FFmpeg'
+        formats = @([ordered]@{ extension = 'wav'; description = 'Áudio WAV (PCM)'; fixture_ids = @('wav-pcm-mono') }) }
+    $path = Join-Path ([IO.Path]::GetDirectoryName($Fixture.ManifestPath)) 'formats.json'
+    [IO.File]::WriteAllText($path, ($matrix | ConvertTo-Json -Depth 8))
+    return [pscustomobject]@{ Path = $path; Data = $matrix }
+}
 try {
+    Test-Case 'explicit verified local matrix enables only its declared associations' {
+        $f = New-Fixture
+        $m = New-FormatMatrix $f
+        $p = New-RcMusicInstallerPlan $f.App $f.Output -FormatMatrix $m.Path
+        Assert-True $p.associations_enabled 'Explicit local matrix was ignored'
+        Assert-True ($p.formats.Count -eq 1 -and $p.formats[0].extension -ceq 'wav') 'An undeclared format was inferred'
+        Assert-True ($p.formats[0].container -ceq 'WAV' -and $p.formats[0].profiles[0] -ceq 'PCM signed 16-bit little-endian') 'Container/profile evidence lost'
+        Assert-True ($p.config.Contains('!define RCMUSIC_ASSOCIATIONS_ENABLED 1')) 'Associations not enabled in config'
+        Assert-True ($p.config.Contains('!insertmacro ${CALLBACK} "wav" "Áudio WAV (PCM)"')) 'Explicit format was not emitted'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Planning created output'
+    }
+    Test-Case 'different declared matrices change the package identity and format signature' {
+        $f = New-Fixture
+        $m = New-FormatMatrix $f
+        $off = New-RcMusicInstallerPlan $f.App $f.Output
+        $on = New-RcMusicInstallerPlan $f.App $f.Output -FormatMatrix $m.Path
+        Assert-True ($off.payload_id -cne $on.payload_id) 'Format declaration reused the old uninstaller ID'
+        Assert-True ($off.format_signature -cne $on.format_signature) 'Format declaration reused the empty signature'
+    }
+    Test-Case 'stale or unvalidated format declarations fail before creating output' {
+        foreach ($field in @('runtime_manifest_sha256', 'corpus_manifest_sha256', 'test_source_sha256', 'validation_status', 'scope', 'backend')) {
+            $f = New-Fixture
+            $m = New-FormatMatrix $f
+            $m.Data[$field] = 'invalid-or-stale'
+            [IO.File]::WriteAllText($m.Path, ($m.Data | ConvertTo-Json -Depth 8))
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -FormatMatrix $m.Path }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Rejected matrix created output'
+        }
+    }
+    Test-Case 'unsafe extension descriptions duplicates and candidate codecs are rejected' {
+        foreach ($change in @('unsafe-extension', 'unsafe-description', 'duplicate', 'candidate', 'missing-fixture', 'empty')) {
+            $f = New-Fixture
+            $m = New-FormatMatrix $f
+            switch ($change) {
+                'unsafe-extension' { $m.Data.formats[0].extension = 'exe' }
+                'unsafe-description' { $m.Data.formats[0].description = '${PAYLOAD}' }
+                'duplicate' { $m.Data.formats += $m.Data.formats[0] }
+                'candidate' { $m.Data.formats[0].fixture_ids = @('opus-candidate') }
+                'missing-fixture' { $m.Data.formats[0].fixture_ids = @('not-in-corpus') }
+                'empty' { $m.Data.formats = @() }
+            }
+            [IO.File]::WriteAllText($m.Path, ($m.Data | ConvertTo-Json -Depth 8))
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -FormatMatrix $m.Path }
+        }
+    }
+    Test-Case 'matrix scalar types and trailing newlines fail before output' {
+        foreach ($change in @('description-lf', 'extension-array', 'fixture-id-array', 'result-hash-array', 'wrong-container')) {
+            $f = New-Fixture
+            $m = New-FormatMatrix $f
+            switch ($change) {
+                'description-lf' { $m.Data.formats[0].description = "Áudio WAV`n" }
+                'extension-array' { $m.Data.formats[0].extension = @('wav', 'mp3') }
+                'fixture-id-array' { $m.Data.formats[0].fixture_ids = @(, @('wav-pcm-mono', 'mp3-cbr-stereo')) }
+                'result-hash-array' { $m.Data.result_sha256 = @(('a' * 64), ('b' * 64)) }
+                'wrong-container' { $m.Data.formats[0].fixture_ids = @('m4a-aac-lc') }
+            }
+            [IO.File]::WriteAllText($m.Path, ($m.Data | ConvertTo-Json -Depth 8))
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -FormatMatrix $m.Path }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Invalid scalar produced output'
+        }
+    }
     Test-Case 'installer-only corrections produce a new package identity' {
         $before = Get-RcMusicInstallerIdentity -InventoryJson '[]' -RecipeHashes @(@{ path = 'template.nsi'; sha256 = ('a' * 64) })
         $after = Get-RcMusicInstallerIdentity -InventoryJson '[]' -RecipeHashes @(@{ path = 'template.nsi'; sha256 = ('b' * 64) })

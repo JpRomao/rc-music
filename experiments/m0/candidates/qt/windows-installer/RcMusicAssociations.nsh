@@ -273,7 +273,7 @@ FunctionEnd
 
 Function un.RCMusic.UnregisterAssociations
     !insertmacro RCMUSIC_ASSOC_BEGIN
-    ; A stale uninstaller must not touch shared registration owned by an upgrade.
+    ; Never adopt a foreign product's registration while retiring our formats.
     !insertmacro RCMUSIC_ASSOC_READ "${RCMUSIC_ASSOC_APP}" "AssociationProduct"
     ${If} $3 == 5
         StrCpy $R9 1
@@ -287,11 +287,18 @@ Function un.RCMusic.UnregisterAssociations
         StrCpy $R9 1
     ${EndIf}
     ${If} $3 != 0
-    ${OrIf} $2 S!= "$R0"
+    ${OrIf} $2 S== ""
         Goto rcmusic_unregister_done
     ${EndIf}
+    StrCpy $R1 $2
 
+    ; Retained formats now belong to the new executable. Only old-only ProgIDs
+    ; with our own product and executable owner can be removed by this version.
     !insertmacro RCMUSIC_FOR_EACH_FORMAT RCMUSIC_ASSOC_REMOVE_FORMAT
+    ${If} $R1 S!= "$R0"
+        Goto rcmusic_unregister_done
+    ${EndIf}
+    ; Shared application registration still requires this executable's owner.
     !insertmacro RCMUSIC_ASSOC_DELETE_MATCHING "${RCMUSIC_ASSOC_REGISTERED}" "RC Music" "${RCMUSIC_ASSOC_CAPABILITIES}"
     !insertmacro RCMUSIC_ASSOC_DELETE_MATCHING "${RCMUSIC_ASSOC_CAPABILITIES}" "ApplicationName" "RC Music"
     !insertmacro RCMUSIC_ASSOC_DELETE_MATCHING "${RCMUSIC_ASSOC_CAPABILITIES}" "ApplicationDescription" "${RCMUSIC_ASSOC_DESCRIPTION}"

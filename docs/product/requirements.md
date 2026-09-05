@@ -232,7 +232,7 @@ Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração of
 | Ogg/WebM `.opus` | Opus | — | — | — | — | — | Candidato |
 | ISO MP4 `.m4a` | ALAC | — | — | — | — | — | Candidato |
 
-“Pendente” significa que a documentação deseja esse suporte, não que ele já foi comprovado.
+“Pendente” nesta tabela significa aprovação ampla do suporte ainda aberta. Há uma [declaração experimental Windows local](../../experiments/m0/candidates/qt/windows-installer/README.md#matriz-local-e-evolucao-dos-formatos) dos perfis básicos, incluindo aliases `.mp4`/`.oga`, vinculada ao runtime específico e a 18/18 testes de load/duração/seek/metadados/EOF sobre fixtures curtas e saída mutada. Ela pode ser selecionada explicitamente ao compilar o instalador privado; não publica suporte irrestrito aos contêineres, não classifica Opus/ALAC nem encerra capa, áudio audível, segurança ou release.
 
 ## 8. Rastreabilidade resumida
 

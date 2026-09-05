@@ -24,9 +24,6 @@ $installerKey = $registryBase + '\RC Music Installer'
 $arpKey = $registryBase + '\Microsoft\Windows\CurrentVersion\Uninstall\RC Music'
 $classesKey = $registryBase + '\Classes'
 $registeredKey = $registryBase + '\RegisteredApplications'
-$userChoiceKey = $registryBase + '\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.mp3\UserChoice'
-$formatSignature = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
-        [Text.Encoding]::UTF8.GetBytes("mp3|MP3 audio`nwav|WAV audio`n"))).ToLowerInvariant()
 $null = New-Item -ItemType Directory -Path $testRoot
 $registry = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
     [Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
@@ -72,6 +69,42 @@ function Assert-RegistryString([string] $Key, [string] $Name, [string] $Expected
 }
 function Assert-RegistryAbsent([string] $Key, [string] $Name) {
     if ($null -ne (Get-TestValue $Key $Name)) { throw "Unexpected registry value: $Key [$Name]" }
+}
+function Get-TestAclSnapshot($Security) {
+    return [pscustomobject]@{
+        Protected = $Security.AreAccessRulesProtected
+        Rules = @($Security.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object {
+            [pscustomobject]@{ Identity = $_.IdentityReference.Value; Rights = [int] $_.RegistryRights
+                Type = [int] $_.AccessControlType; Inherited = $_.IsInherited
+                Inheritance = [int] $_.InheritanceFlags; Propagation = [int] $_.PropagationFlags }
+        })
+    } | ConvertTo-Json -Compress -Depth 4
+}
+function With-TestWriteDenied([string] $Key, [scriptblock] $Body) {
+    # Same bounded fixture as Associations.Tests: retain the handle and restore
+    # the explicitly modified Access section before removing the GUID test hive.
+    Assert-TestKey $Key
+    $handle = $registry.CreateSubKey($Key, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree)
+    $beforeAcl = [Microsoft.Win32.RegistryAclExtensions]::GetAccessControl($handle)
+    $beforeDescriptor = $beforeAcl.GetSecurityDescriptorBinaryForm()
+    $beforeSnapshot = Get-TestAclSnapshot $beforeAcl
+    $deniedAcl = [Microsoft.Win32.RegistryAclExtensions]::GetAccessControl($handle)
+    $deniedAcl.AddAccessRule([Security.AccessControl.RegistryAccessRule]::new(
+            [Security.Principal.WindowsIdentity]::GetCurrent().User,
+            [Security.AccessControl.RegistryRights]::SetValue, [Security.AccessControl.AccessControlType]::Deny))
+    try {
+        [Microsoft.Win32.RegistryAclExtensions]::SetAccessControl($handle, $deniedAcl)
+        & $Body
+    } finally {
+        try {
+            $restoreAcl = [Security.AccessControl.RegistrySecurity]::new()
+            $restoreAcl.SetSecurityDescriptorBinaryForm($beforeDescriptor, [Security.AccessControl.AccessControlSections]::Access)
+            [Microsoft.Win32.RegistryAclExtensions]::SetAccessControl($handle, $restoreAcl)
+            if ((Get-TestAclSnapshot ([Microsoft.Win32.RegistryAclExtensions]::GetAccessControl($handle))) -cne $beforeSnapshot) {
+                throw 'Test DACL restoration failed'
+            }
+        } finally { $handle.Dispose() }
+    }
 }
 function Get-RegistrySnapshot([string] $Key = $testHive) {
     if ($Key -cne $testHive) { Assert-TestKey $Key }
@@ -166,11 +199,23 @@ function Write-TestText([string] $Path, [string] $Text) {
 }
 function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] $Version,
     [string] $SourceRuntime = '', [switch] $FailExtraction, [switch] $LiteralPaths,
-    [bool] $AssociationsEnabled = $true, [string] $LegacyTemplate = '') {
+    [bool] $AssociationsEnabled = $true, [string] $LegacyTemplate = '',
+    [string[]] $FormatExtensions = @('mp3', 'wav'), [switch] $LegacyHasShortcut) {
     # Every compiled installer/uninstaller, including old regression cases and
     # the optional real runtime, must use an isolated menu instead of SMPROGRAMS.
     $shortcutRoot = Join-Path $Directory 'Start Menu 日本'
     Assert-TestPath $shortcutRoot
+    $formats = @()
+    if ($AssociationsEnabled) {
+        foreach ($extension in @($FormatExtensions | Sort-Object -Unique -CaseSensitive)) {
+            if ($extension -cnotmatch '^[a-z0-9]{1,12}$') { throw 'Invalid synthetic format extension' }
+            $formats += [ordered]@{ extension = $extension; description = $extension.ToUpperInvariant() + ' audio' }
+        }
+        if ($formats.Count -eq 0) { throw 'Enabled fixture associations require explicit formats' }
+    }
+    $formatJson = ConvertTo-Json -InputObject $formats -Compress
+    $formatSignature = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+            [Text.Encoding]::UTF8.GetBytes($formatJson))).ToLowerInvariant()
     $files = @()
     if ($SourceRuntime) {
         $manifestPath = Join-Path ([IO.Path]::GetDirectoryName($SourceRuntime.TrimEnd('\', '/'))) 'runtime-manifest.json'
@@ -225,11 +270,12 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
     # Production identity includes recipe hashes. Include the selected template
     # here too so installer-only upgrades do not reuse a legacy uninstaller ID.
     $identity = (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToLowerInvariant() + "`n" +
+        [int] $AssociationsEnabled + '|' + $formatSignature + "`n" +
         (($files | Sort-Object Relative | ForEach-Object { $_.Relative + '|' + $_.Hash }) -join "`n")
     $payloadId = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
             [Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
     $variant = $Version + $(if ($FailExtraction) { '-fail-extraction' } else { '' }) +
-        $(if ($LegacyTemplate) { '-legacy' } else { '' })
+        $(if ($LegacyTemplate) { '-legacy' } else { '' }) + '-' + $formatSignature.Substring(0, 8)
     $setup = Join-Path $Directory ('setup-' + $variant + '.exe')
     $config = Join-Path $Directory ('config-' + $variant + '.nsh')
     $lines = [Collections.Generic.List[string]]::new()
@@ -242,8 +288,9 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
     }
     $lines.Add('!define RCMUSIC_ASSOCIATIONS_ENABLED ' + [int] $AssociationsEnabled)
     $lines.Add('!macro RCMUSIC_FOR_EACH_FORMAT CALLBACK')
-    $lines.Add('  !insertmacro ${CALLBACK} "mp3" "MP3 audio"')
-    $lines.Add('  !insertmacro ${CALLBACK} "wav" "WAV audio"')
+    foreach ($format in $formats) {
+        $lines.Add('  !insertmacro ${CALLBACK} "' + $format.extension + '" "' + $format.description + '"')
+    }
     $lines.Add('!macroend')
     $lines.Add('!macro RCMUSIC_PAYLOAD_EXTRACT')
     $extractedCount = 0
@@ -301,7 +348,8 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
     return [pscustomobject]@{ Setup = $setup; InstallRoot = $InstallRoot; Directory = (Join-Path $InstallRoot $payloadId)
         PayloadId = $payloadId; Files = $files; FixtureDirectory = $Directory; ShortcutRoot = $shortcutRoot
         ShortcutPath = (Join-Path $shortcutRoot 'RC Music.lnk'); AssociationsEnabled = $AssociationsEnabled
-        Legacy = [bool] $LegacyTemplate }
+        FormatExtensions = @($formats | ForEach-Object { $_.extension }); FormatSignature = $formatSignature
+        Legacy = [bool] $LegacyTemplate; LegacyWithoutShortcut = [bool] $LegacyTemplate -and -not $LegacyHasShortcut }
 }
 function New-Scenario([bool] $WithUpgrade = $false, [string] $SourceRuntime = '', [switch] $LiteralPaths,
     [bool] $AssociationsEnabled = $true) {
@@ -346,7 +394,7 @@ function Assert-Payload($App) {
     }
     Assert-Equal $marker.Product 'RCMusicInstaller-v1'
     Assert-Equal $marker.PayloadId $App.PayloadId
-    Assert-Equal $marker.FormatSignature $formatSignature
+    Assert-Equal $marker.FormatSignature $App.FormatSignature
     Assert-Equal $marker.UninstallerHash.ToLowerInvariant() (
         Get-FileHash -LiteralPath (Join-Path $App.Directory 'Uninstall.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -403,12 +451,14 @@ function Get-ScenarioSnapshot($Scenario) {
         Registry = @(Get-RegistrySnapshot) -join "`n"
     } | ConvertTo-Json -Compress
 }
-function New-LegacyTemplate([string] $Directory) {
-    $legacyRoot = Join-Path $Directory 'legacy-template-6f29af0'
+function New-LegacyTemplate([string] $Directory,
+    [string] $Revision = '6f29af02bbe124d0ba1bf34417ce56c82766c9ce') {
+    if ($Revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Legacy fixture requires a full fixed commit' }
+    $legacyRoot = Join-Path $Directory ('legacy-template-' + $Revision.Substring(0, 7))
     $git = (Get-Command git -CommandType Application | Select-Object -First 1).Source
     foreach ($name in @('RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
             'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh')) {
-        $source = '6f29af02bbe124d0ba1bf34417ce56c82766c9ce:experiments/m0/candidates/qt/windows-installer/' + $name
+        $source = $Revision + ':experiments/m0/candidates/qt/windows-installer/' + $name
         $result = Invoke-InstallerProcess $git @('-C', $repository, 'show', $source)
         if ($result.ExitCode -ne 0) { throw ('Could not read the fixed legacy installer fixture: ' + $result.Output) }
         Write-TestText (Join-Path $legacyRoot $name) $result.Output
@@ -417,13 +467,13 @@ function New-LegacyTemplate([string] $Directory) {
 }
 function Assert-Installed($App) {
     Assert-Payload $App
-    if ($App.Legacy) {
+    if ($App.LegacyWithoutShortcut) {
         if (Test-Path -LiteralPath $App.ShortcutPath) { throw 'Legacy installer unexpectedly created a shortcut' }
         Assert-RegistryAbsent $installerKey 'ShortcutHash'
     } else { Assert-Shortcut $App }
     Assert-RegistryString $installerKey 'Product' 'RCMusicInstaller-v1'
     Assert-RegistryString $installerKey 'ActivePayload' $App.PayloadId
-    Assert-RegistryString $installerKey 'FormatSignature' $formatSignature
+    Assert-RegistryString $installerKey 'FormatSignature' $App.FormatSignature
     Assert-RegistryString $arpKey 'DisplayName' 'RC Music'
     Assert-RegistryString $arpKey 'DisplayVersion' $App.PayloadId
     Assert-RegistryString $arpKey 'InstallLocation' $App.Directory
@@ -431,7 +481,7 @@ function Assert-Installed($App) {
     if ($App.AssociationsEnabled) {
         $exe = Join-Path $App.Directory 'RCMusic.exe'
         Assert-RegistryString ($registryBase + '\RC Music') 'AssociationOwner' $exe
-        foreach ($extension in @('mp3', 'wav')) {
+        foreach ($extension in $App.FormatExtensions) {
             Assert-RegistryString ($classesKey + '\RCMusic.Audio.' + $extension + '\shell\open\command') '' ('"' + $exe + '" -- "%1"')
         }
     } else {
@@ -439,14 +489,36 @@ function Assert-Installed($App) {
         Assert-RegistryAbsent $registeredKey 'RC Music'
     }
 }
+function Assert-FormatPresent($App, [string] $Extension) {
+    $progId = 'RCMusic.Audio.' + $Extension
+    Assert-RegistryString ($classesKey + '\' + $progId) 'AssociationOwner' (Join-Path $App.Directory 'RCMusic.exe')
+    Assert-RegistryString ($classesKey + '\' + $progId + '\shell\open\command') '' ('"' + (Join-Path $App.Directory 'RCMusic.exe') + '" -- "%1"')
+    Assert-RegistryString ($classesKey + '\.' + $Extension + '\OpenWithProgids') $progId ''
+    Assert-RegistryString ($registryBase + '\RC Music\Capabilities\FileAssociations') ('.' + $Extension) $progId
+}
+function Assert-FormatAbsent([string] $Extension) {
+    $progId = 'RCMusic.Audio.' + $Extension
+    Assert-RegistryAbsent ($classesKey + '\' + $progId) 'AssociationOwner'
+    Assert-RegistryAbsent ($classesKey + '\' + $progId + '\shell\open\command') ''
+    Assert-RegistryAbsent ($classesKey + '\.' + $Extension + '\OpenWithProgids') $progId
+    Assert-RegistryAbsent ($registryBase + '\RC Music\Capabilities\FileAssociations') ('.' + $Extension)
+}
+function Assert-CleanupProtocol($App) {
+    $markerLines = @(Get-Content -LiteralPath (Join-Path $App.Directory '.rcmusic-install.ini'))
+    if (-not ($markerLines -ccontains 'AssociationCleanupProtocol=2')) { throw 'Missing versioned association cleanup protocol' }
+}
 function Set-ForeignSentinels($Scenario) {
     Write-TestText (Join-Path $Scenario.Root 'media\external.mp3') 'synthetic external media, never played'
     Write-TestText (Join-Path $Scenario.Root 'preferences.json') '{"foreign":"preserve"}'
     Write-TestText (Join-Path $Scenario.Root 'sentinel.txt') 'external sentinel'
     Write-TestText (Join-Path $Scenario.A.ShortcutRoot 'Foreign Player.lnk') 'foreign menu sentinel, never launched'
-    Set-TestValue $userChoiceKey 'ProgId' 'Foreign.Player'
-    Set-TestValue $userChoiceKey 'Hash' 'synthetic-userchoice-never-touch'
-    Set-TestValue ($classesKey + '\.mp3') '' 'Foreign.Player'
+    foreach ($extension in @('mp3', 'wav', 'flac')) {
+        $choice = $registryBase + '\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.' + $extension + '\UserChoice'
+        Set-TestValue $choice 'ProgId' 'Foreign.Player'
+        Set-TestValue $choice 'Hash' 'synthetic-userchoice-never-touch'
+        Set-TestValue ($classesKey + '\.' + $extension) '' 'Foreign.Player'
+        Set-TestValue ($classesKey + '\.' + $extension + '\OpenWithProgids') 'Foreign.Player' ''
+    }
     Set-TestValue $registeredKey 'Foreign Player' 'Software\Foreign\Capabilities'
 }
 function Assert-ForeignSentinels($Scenario) {
@@ -454,9 +526,13 @@ function Assert-ForeignSentinels($Scenario) {
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.Root 'preferences.json'))) '{"foreign":"preserve"}'
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.Root 'sentinel.txt'))) 'external sentinel'
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $Scenario.A.ShortcutRoot 'Foreign Player.lnk'))) 'foreign menu sentinel, never launched'
-    Assert-RegistryString $userChoiceKey 'ProgId' 'Foreign.Player'
-    Assert-RegistryString $userChoiceKey 'Hash' 'synthetic-userchoice-never-touch'
-    Assert-RegistryString ($classesKey + '\.mp3') '' 'Foreign.Player'
+    foreach ($extension in @('mp3', 'wav', 'flac')) {
+        $choice = $registryBase + '\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.' + $extension + '\UserChoice'
+        Assert-RegistryString $choice 'ProgId' 'Foreign.Player'
+        Assert-RegistryString $choice 'Hash' 'synthetic-userchoice-never-touch'
+        Assert-RegistryString ($classesKey + '\.' + $extension) '' 'Foreign.Player'
+        Assert-RegistryString ($classesKey + '\.' + $extension + '\OpenWithProgids') 'Foreign.Player' ''
+    }
     Assert-RegistryString $registeredKey 'Foreign Player' 'Software\Foreign\Capabilities'
 }
 function Test-Case([string] $Name, [scriptblock] $Body) {
@@ -467,6 +543,150 @@ function Test-Case([string] $Name, [scriptblock] $Body) {
 }
 
 try {
+    Test-Case 'format evolution: legacy OFF upgrades to explicit ON without losing the active shortcut or data' {
+        $case = New-Scenario
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        $template = New-LegacyTemplate $case.Directory '80286b712313e46af1fa35356f9e5e26bb66471c'
+        $legacy = New-TestInstaller $case.Directory $case.Root 'A' -AssociationsEnabled $false -LegacyTemplate $template -LegacyHasShortcut
+        Assert-Equal $legacy.FormatSignature '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'
+        Install-App $legacy
+        Assert-Installed $legacy
+        $stale = Copy-Uninstaller $legacy
+        Install-App $case.A
+        Assert-Installed $case.A
+        Assert-CleanupProtocol $case.A
+        Assert-FormatPresent $case.A 'mp3'
+        Assert-FormatPresent $case.A 'wav'
+        if (Test-Path -LiteralPath $legacy.Directory) { throw 'Legacy OFF payload survived completed upgrade' }
+        Uninstall-App $legacy -Executable $stale
+        Assert-Installed $case.A
+        Uninstall-App $case.A
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'format evolution: mp3 wav to wav flac keeps B entries and removes only retired A entries' {
+        $case = New-Scenario
+        $new = New-TestInstaller $case.Directory $case.Root 'A' -FormatExtensions @('wav', 'flac')
+        if ($new.PayloadId -ceq $case.A.PayloadId) { throw 'Format-only correction must change payload identity' }
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A
+        $stale = Copy-Uninstaller $case.A
+        Install-App $new
+        Assert-Installed $new
+        Assert-CleanupProtocol $new
+        Assert-FormatPresent $new 'wav'
+        Assert-FormatPresent $new 'flac'
+        Assert-FormatAbsent 'mp3'
+        Assert-RegistryAbsent $installerKey 'PendingCleanup'
+        if (Test-Path -LiteralPath $case.A.Directory) { throw 'Retired A payload survived successful cleanup' }
+        $published = Get-ScenarioSnapshot $case
+        Uninstall-App $case.A -Executable $stale
+        Assert-Equal (Get-ScenarioSnapshot $case) $published
+        Uninstall-App $new
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'format evolution: ON to OFF removes owned registrations and keeps the new shortcut' {
+        $case = New-Scenario
+        $disabled = New-TestInstaller $case.Directory $case.Root 'A' -AssociationsEnabled $false
+        if ($disabled.PayloadId -ceq $case.A.PayloadId) { throw 'Association flag must affect payload identity' }
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A
+        Install-App $disabled
+        Assert-Installed $disabled
+        Assert-CleanupProtocol $disabled
+        Assert-FormatAbsent 'mp3'
+        Assert-FormatAbsent 'wav'
+        Assert-ForeignSentinels $case
+        Uninstall-App $disabled
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'format evolution: legacy ON without cleanup protocol refuses a changed list before mutation' {
+        $case = New-Scenario
+        $template = New-LegacyTemplate $case.Directory '80286b712313e46af1fa35356f9e5e26bb66471c'
+        $legacy = New-TestInstaller $case.Directory $case.Root 'A' -LegacyTemplate $template -LegacyHasShortcut
+        $new = New-TestInstaller $case.Directory $case.Root 'B' -FormatExtensions @('wav', 'flac')
+        Set-ForeignSentinels $case
+        Install-App $legacy
+        Assert-Installed $legacy
+        $before = Get-ScenarioSnapshot $case
+        Install-App $new 1
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'format evolution: a foreign new ProgID collision retains both payloads and allows explicit retry' {
+        $case = New-Scenario
+        $new = New-TestInstaller $case.Directory $case.Root 'B' -FormatExtensions @('wav', 'flac')
+        Set-ForeignSentinels $case
+        Install-App $case.A
+        $collisionKey = $classesKey + '\RCMusic.Audio.flac'
+        Set-TestValue $collisionKey '' 'foreign FLAC handler'
+        Install-App $new 1
+        Assert-Payload $case.A
+        Assert-Payload $new
+        Assert-Shortcut $case.A
+        Assert-FormatPresent $case.A 'mp3'
+        Assert-FormatPresent $case.A 'wav'
+        Assert-RegistryString $collisionKey '' 'foreign FLAC handler'
+        Assert-RegistryString $installerKey 'PendingPayload' $new.PayloadId
+        Assert-RegistryString $installerKey 'PendingCleanup' $case.A.PayloadId
+        Assert-ForeignSentinels $case
+        # Remove only the exact foreign fixture key, which has no subkeys.
+        Assert-TestKey $collisionKey
+        $registry.DeleteSubKey($collisionKey)
+        Install-App $new
+        Assert-Installed $new
+        Assert-FormatPresent $new 'flac'
+        Assert-FormatAbsent 'mp3'
+        Uninstall-App $new
+        Assert-ForeignSentinels $case
+    }
+    Test-Case 'format evolution: temporary old-format cleanup denial retains pending payloads until retry succeeds' {
+        $case = New-Scenario
+        $new = New-TestInstaller $case.Directory $case.Root 'B' -FormatExtensions @('wav', 'flac')
+        Set-ForeignSentinels $case
+        $before = Get-ScenarioSnapshot $case
+        Install-App $case.A
+        With-TestWriteDenied ($classesKey + '\RCMusic.Audio.mp3\shell\open\command') {
+            Install-App $new 1
+            Assert-Payload $case.A
+            Assert-Payload $new
+            Assert-Shortcut $new
+            Assert-FormatPresent $new 'wav'
+            Assert-FormatPresent $new 'flac'
+            Assert-RegistryString ($classesKey + '\RCMusic.Audio.mp3') 'AssociationOwner' (Join-Path $case.A.Directory 'RCMusic.exe')
+            Assert-RegistryString $installerKey 'PendingCleanup' $case.A.PayloadId
+            Assert-RegistryString $installerKey 'ActivePayload' $new.PayloadId
+            Assert-ForeignSentinels $case
+        }
+        Install-App $new
+        Assert-Installed $new
+        Assert-FormatAbsent 'mp3'
+        Assert-RegistryAbsent $installerKey 'PendingCleanup'
+        if (Test-Path -LiteralPath $case.A.Directory) { throw 'Old payload survived retry after cleanup permission was restored' }
+        Uninstall-App $new
+        Assert-Equal (Get-ScenarioSnapshot $case) $before
+    }
+    Test-Case 'format evolution: foreign edits to a retired format survive cleanup and final uninstall' {
+        $case = New-Scenario
+        $new = New-TestInstaller $case.Directory $case.Root 'B' -FormatExtensions @('wav', 'flac')
+        Set-ForeignSentinels $case
+        Install-App $case.A
+        $commandKey = $classesKey + '\RCMusic.Audio.mp3\shell\open\command'
+        Set-TestValue $commandKey '' 'foreign modified command, never launched'
+        Set-TestValue ($classesKey + '\RCMusic.Audio.mp3') 'ForeignValue' 'preserve'
+        Install-App $new
+        Assert-Installed $new
+        Assert-FormatPresent $new 'wav'
+        Assert-FormatPresent $new 'flac'
+        Assert-RegistryString $commandKey '' 'foreign modified command, never launched'
+        Assert-RegistryString ($classesKey + '\RCMusic.Audio.mp3') 'ForeignValue' 'preserve'
+        Assert-RegistryAbsent ($classesKey + '\RCMusic.Audio.mp3') 'AssociationOwner'
+        Uninstall-App $new
+        Assert-RegistryString $commandKey '' 'foreign modified command, never launched'
+        Assert-RegistryString ($classesKey + '\RCMusic.Audio.mp3') 'ForeignValue' 'preserve'
+        Assert-ForeignSentinels $case
+    }
     Test-Case 'installs nested authenticated payload, ownership, ARP and isolated associations; reinstall is idempotent' {
         $case = New-Scenario
         Set-ForeignSentinels $case

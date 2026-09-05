@@ -1,5 +1,7 @@
 # Roadmap
 
+O checkpoint Windows mais recente é a [declaração local de formatos e sua evolução no instalador](../experiments/m0/candidates/qt/README.md#rc-music-local-formats): áudio básico até EOF caracterizado, entrada explícita no builder, mudança de lista com propriedade/retry e migração de legado OFF. Os checks são funcionais e isolados; não registram associações reais, não retomam benchmarks e não encerram M4.6/M4.8 ou os gates públicos de formatos/distribuição.
+
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  
 **Última revisão:** 2026-09-01
 

@@ -478,6 +478,30 @@ class LocalAudioIntegrationTests final : public QObject {
         QTest::newRow("ogg-vorbis-oga-extension")
             << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".oga") << qint64{2'000} << qint64{20}
             << QStringLiteral("Canção determinística 日本語 🎵");
+
+        // Explicit local selections also reach the decoder with an unknown
+        // suffix. These are temporary copies, not additional corpus fixtures.
+        QTest::newRow("wav-pcm-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE) << QStringLiteral(".audio") << qint64{1'000} << qint64{0}
+            << QStringLiteral("ação 日本 ☕");
+        QTest::newRow("mp3-cbr-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE) << QStringLiteral(".audio") << qint64{2'000} << qint64{50}
+            << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("mp3-vbr-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_MP3_VBR_FILE) << QStringLiteral(".audio") << qint64{2'000} << qint64{50}
+            << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("mp3-unicode-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_MP3_UNICODE_FILE) << QStringLiteral(".audio") << qint64{2'000}
+            << qint64{50} << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("m4a-aac-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_M4A_AAC_FILE) << QStringLiteral(".audio") << qint64{2'000} << qint64{25}
+            << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("flac-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << QStringLiteral(".audio") << qint64{2'000} << qint64{20}
+            << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("ogg-vorbis-neutral-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".audio") << qint64{2'000}
+            << qint64{20} << QStringLiteral("Canção determinística 日本語 🎵");
     }
 
     void opensUnicodeLocalAudioAndDrivesTheRealJourney() {
@@ -532,14 +556,22 @@ class LocalAudioIntegrationTests final : public QObject {
         QVERIFY(presenter.durationMs() > 0);
         QVERIFY(presenter.seekable());
 
+        QVERIFY(presenter.togglePlayback());
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused, 2'000);
+        const auto playback_generation = qt_backend.snapshot().generation;
+        const QString occurrence_id = presenter.currentOccurrenceId();
         const qint64 midpoint_ms = presenter.durationMs() / 2;
         QVERIFY(presenter.beginSeekPreview(midpoint_ms));
         QVERIFY(presenter.commitSeekPreview());
         QTRY_VERIFY_WITH_TIMEOUT(!presenter.seekPending(), 2'000);
-        QVERIFY(presenter.togglePlayback());
-        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused, 2'000);
-        QVERIFY(presenter.confirmedPositionMs() >= midpoint_ms);
+        constexpr qint64 midpoint_tolerance_ms = 500;
+        QVERIFY(presenter.confirmedPositionMs() >= midpoint_ms - midpoint_tolerance_ms);
+        QVERIFY(presenter.confirmedPositionMs() <= midpoint_ms + midpoint_tolerance_ms);
+        QVERIFY(qt_backend.snapshot().position_ms >= midpoint_ms - midpoint_tolerance_ms);
+        QVERIFY(qt_backend.snapshot().position_ms <= midpoint_ms + midpoint_tolerance_ms);
         QVERIFY(presenter.confirmedPositionMs() < presenter.durationMs());
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(qt_backend.snapshot().generation, playback_generation);
 
         QTRY_COMPARE_WITH_TIMEOUT(metadata.lastPollStatus(), MetadataPollStatus::Completed, 5'000);
         QVERIFY(metadata.completionSourcePath().has_value());
@@ -551,6 +583,31 @@ class LocalAudioIntegrationTests final : public QObject {
         QVERIFY(*metadata.metadataDurationMs() <= expected_duration_ms + duration_tolerance_ms);
         QVERIFY(!metadata.metadataError().has_value());
         QCOMPARE(presenter.currentTitle(), expected_final_title);
+
+        // Decode the entire short fixture after the midpoint check. Seeking to
+        // the final packet would only characterize the terminal transition.
+        QCOMPARE(playback.eventCount(PlaybackEventType::Ended), std::size_t{0});
+        QVERIFY(presenter.beginSeekPreview(0));
+        QVERIFY(presenter.commitSeekPreview());
+        QTRY_VERIFY_WITH_TIMEOUT(!presenter.seekPending(), 2'000);
+        QCOMPARE(presenter.confirmedPositionMs(), qint64{0});
+        QCOMPARE(qt_backend.snapshot().position_ms, std::int64_t{0});
+        QVERIFY(presenter.togglePlayback());
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing, 2'000);
+        QTRY_VERIFY_WITH_TIMEOUT(playback.observed(PlaybackEventType::Ended, playback_generation), 5'000);
+
+        bool terminal_events_drained = false;
+        QVERIFY(QMetaObject::invokeMethod(
+            &presenter, [&terminal_events_drained] { terminal_events_drained = true; }, Qt::QueuedConnection));
+        QTRY_VERIFY_WITH_TIMEOUT(terminal_events_drained, 2'000);
+        QCOMPARE(playback.eventCount(PlaybackEventType::Ended), std::size_t{1});
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(presenter.confirmedPositionMs(), presenter.durationMs());
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence_id);
+        QCOMPARE(qt_backend.snapshot().generation, playback_generation);
+        QCOMPARE(qt_backend.snapshot().error, PlaybackErrorCode::None);
+        QVERIFY(!playback.observed(PlaybackStatus::Error));
+        QCOMPARE(playback.loadedPaths().size(), std::size_t{1});
     }
 
     void opensTwoSelectedFilesAndNavigatesWithTheRealBackend() {

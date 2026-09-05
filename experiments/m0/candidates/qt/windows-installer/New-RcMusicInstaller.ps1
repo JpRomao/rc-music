@@ -3,14 +3,15 @@
 param(
     [Parameter(Mandatory)][string] $RuntimeDirectory,
     [Parameter(Mandatory)][string] $OutputDirectory,
-    [string] $MakeNsis
+    [string] $MakeNsis,
+    [string] $FormatMatrix
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or -not [Environment]::Is64BitProcess) { throw 'Windows x64 PowerShell is required to build the installer' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../..'))
 Import-Module (Join-Path $PSScriptRoot 'WindowsInstallerPlan.psm1') -Force
-$plan = New-RcMusicInstallerPlan -RuntimeDirectory $RuntimeDirectory -OutputDirectory $OutputDirectory
+$plan = New-RcMusicInstallerPlan -RuntimeDirectory $RuntimeDirectory -OutputDirectory $OutputDirectory -FormatMatrix $FormatMatrix
 if (-not $MakeNsis) { $MakeNsis = Join-Path $repository 'out/m0/toolchains/nsis-3.12/makensis.exe' }
 $MakeNsis = (Resolve-Path -LiteralPath $MakeNsis).ProviderPath
 $toolchain = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'nsis-toolchain.json') -Raw | ConvertFrom-Json
@@ -82,10 +83,15 @@ if ((Get-FileHash -LiteralPath $plan.runtime_manifest -Algorithm SHA256).Hash.To
     ((Get-InstallerSources | ConvertTo-Json -Compress) -cne $sourceBefore)) {
     throw 'Installer recipe, generated config or runtime manifest changed during compilation'
 }
+if ($null -ne $plan.format_matrix -and
+    (Get-FileHash -LiteralPath $plan.format_matrix.path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $plan.format_matrix.sha256) {
+    throw 'Format matrix changed while compiling the installer'
+}
 $receiptPath = Join-Path $plan.output 'installer-receipt.json'
 $receipt = [ordered]@{
     schema_version = 1; name = 'RC Music'; distribution = 'private-local-development-only'
-    associations_enabled = $false; payload_id = $plan.payload_id
+    associations_enabled = $plan.associations_enabled; payload_id = $plan.payload_id
+    format_signature = $plan.format_signature; formats = $plan.formats; format_matrix = $plan.format_matrix
     runtime_source_commit = $plan.source_commit; runtime_manifest_sha256 = $plan.runtime_manifest_sha256
     recipe_commit = [string] $gitCommit[0]; recipe_dirty = ($recipeStatus.Count -ne 0)
     sources = $sourceFiles; compiler_sha256 = $compilerHash; config_sha256 = $configHash

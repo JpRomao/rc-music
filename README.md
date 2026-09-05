@@ -2,6 +2,8 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
+O incremento Windows mais recente liga o instalador a uma [matriz explícita de formatos validados localmente](experiments/m0/candidates/qt/windows-installer/README.md#matriz-local-e-evolucao-dos-formatos): MP3, AAC em M4A/MP4, FLAC, WAV PCM e Ogg/Vorbis em OGG/OGA. Atualizações podem adicionar/retirar formatos com limpeza por proprietário e preservação dos padrões do usuário. O áudio passou 18/18, o planner 18/18, o lifecycle do instalador 32/32 e associações 14/14. Sem `-FormatMatrix`, o builder continua com associações OFF; os checks não alteram o Registry/menu reais. Isso não é aprovação de release, nem retoma benchmarks.
+
 A [confirmação de substituição de dados de versão futura](experiments/m0/candidates/qt/README.md#replacement-consent) agora vale somente para o aviso e as fontes apresentados. Mudança assíncrona exige novo consentimento; eventos antigos, cancelados ou duplicados são recusados na UI e no C++.
 
 Drop e seletores usam uma [boundary de caminhos compartilhada com o IPC](experiments/m0/candidates/qt/README.md#filesystem-url-boundary): recusam NUL, caminhos não qualificados e namespaces de dispositivos, preservando Unicode, UNC, caminhos estendidos e duplicatas sem consultar o disco na interface.
