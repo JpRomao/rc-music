@@ -500,6 +500,8 @@ O fechamento automatizado local passou 229/229 no CTest Release combinado. O tes
 
 ## 14. Integração com plataforma
 
+O [ADR-0004](decisions/0004-rc-music-identity.md) fixa **RC Music** como nome visível. O candidato mantém `MusicPlayer` nos identificadores internos do Qt para conservar a mesma raiz de configuração e o mesmo lock; a apresentação e a futura identidade de associação não devem impor uma migração implícita dos dados.
+
 ### Windows
 
 - tray e menu;

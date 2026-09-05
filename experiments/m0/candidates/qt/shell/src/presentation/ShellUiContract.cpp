@@ -1,4 +1,5 @@
 #include "presentation/ShellUiContract.hpp"
+#include "presentation/ApplicationIdentity.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -121,7 +122,7 @@ int ShellUiContract::controlTargetPreferred() const noexcept { return layout_.co
 int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_medium_px; }
 int ShellUiContract::radiusSmall() const noexcept { return layout_.radius_small_px; }
 int ShellUiContract::spacingUnit() const noexcept { return layout_.spacing_unit_px; }
-QString ShellUiContract::appName() const { return tr("Player de música"); }
+QString ShellUiContract::appName() const { return ApplicationIdentity::displayName(); }
 QString ShellUiContract::openAudioText() const { return tr("Abrir áudio"); }
 QString ShellUiContract::emptyTitle() const { return tr("Abra um áudio para começar"); }
 QString ShellUiContract::emptyHint() const { return tr("ou arraste arquivos para esta janela"); }

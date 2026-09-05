@@ -4,6 +4,8 @@
 **Versão alvo:** MVP 0.1  
 **Última revisão:** 2026-08-23
 
+**Nome do produto:** RC Music, confirmado pelo mantenedor em 2026-09-05; [ADR-0004](../architecture/decisions/0004-rc-music-identity.md). A confirmação não altera os requisitos ou as prioridades abaixo.
+
 ## 1. Convenções
 
 Cada requisito possui um identificador estável para testes, ADRs e roadmap.

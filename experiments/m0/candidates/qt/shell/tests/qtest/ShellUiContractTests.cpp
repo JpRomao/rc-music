@@ -1,5 +1,6 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/PlaybackTypes.hpp"
+#include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/HighContrastPalette.hpp"
 #include "presentation/LifecycleText.hpp"
@@ -10,10 +11,13 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QMetaMethod>
 #include <QMetaProperty>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QStringList>
 #include <QTest>
 #include <QTranslator>
@@ -92,6 +96,7 @@ class ShellUiContractTests final : public QObject {
     Q_OBJECT
   private slots:
     void initTestCase();
+    void configuresQtDisplayNameWithoutMovingStoredData();
     void exposesFrozenConstantsAndAuthenticatedResources();
     void rejectsUnknownAssetMappings();
     void rejectsUnsupportedTransportStrings();
@@ -116,6 +121,35 @@ class ShellUiContractTests final : public QObject {
 
 void ShellUiContractTests::initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
 
+void ShellUiContractTests::configuresQtDisplayNameWithoutMovingStoredData() {
+    const QString original_organization = QCoreApplication::organizationName();
+    const QString original_application = QCoreApplication::applicationName();
+    const QString original_display_name = QGuiApplication::applicationDisplayName();
+    const auto restore_identity = qScopeGuard([&] {
+        QCoreApplication::setOrganizationName(original_organization);
+        QCoreApplication::setApplicationName(original_application);
+        QGuiApplication::setApplicationDisplayName(original_display_name);
+    });
+
+    QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
+    QCoreApplication::setApplicationName(QStringLiteral("MusicPlayer"));
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("Previous display name"));
+    const QString original_config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    const QString original_data_root = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    QVERIFY(!original_config_root.isEmpty());
+    QVERIFY(!original_data_root.isEmpty());
+
+    for (int configuration = 0; configuration < 2; ++configuration) {
+        ApplicationIdentity::configureQtApplication();
+        QCOMPARE(QCoreApplication::organizationName(), QStringLiteral("MusicPlayer"));
+        QCOMPARE(QCoreApplication::applicationName(), QStringLiteral("MusicPlayer"));
+        QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation), original_config_root);
+        QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation), original_data_root);
+        QCOMPARE(QGuiApplication::applicationDisplayName(), QStringLiteral("RC Music"));
+        QCOMPARE(ApplicationIdentity::displayName(), QStringLiteral("RC Music"));
+    }
+}
+
 void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QVERIFY(qmlTypeId("MusicPlayer.M0", 1, 0, "ShellUiContract") >= 0);
     QVERIFY(qmlTypeId("MusicPlayer.M0", 1, 0, "PlayerPresenter") >= 0);
@@ -134,7 +168,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.radiusSmall(), 8);
     QCOMPARE(contract.radiusMedium(), 12);
     QCOMPARE(contract.spacingUnit(), 4);
-    QCOMPARE(contract.appName(), QStringLiteral("Player de música"));
+    QCOMPARE(contract.appName(), QStringLiteral("RC Music"));
     QCOMPARE(contract.openAudioText(), QStringLiteral("Abrir áudio"));
     QCOMPARE(contract.emptyTitle(), QStringLiteral("Abra um áudio para começar"));
     QCOMPARE(contract.emptyHint(), QStringLiteral("ou arraste arquivos para esta janela"));
@@ -429,9 +463,9 @@ void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
     LifecycleText lifecycle_text;
     PrefixTranslator translator;
     QVERIFY(QCoreApplication::installTranslator(&translator));
+    const QString translated_app_name = contract.appName();
 
     const QStringList translated{
-        contract.appName(),
         contract.openAudioText(),
         contract.emptyTitle(),
         contract.emptyHint(),
@@ -486,6 +520,8 @@ void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
     };
     QVERIFY(QCoreApplication::removeTranslator(&translator));
 
+    QCOMPARE(translated_app_name, QStringLiteral("RC Music"));
+    QCOMPARE(contract.appName(), QStringLiteral("RC Music"));
     for (const QString& value : translated) {
         QVERIFY2(value.startsWith(QStringLiteral("⟦")) && value.endsWith(QStringLiteral("⟧")), qPrintable(value));
     }
@@ -814,5 +850,5 @@ void ShellUiContractTests::rejectsInvalidAppearanceModesEvenInHighContrast() {
 
 } // namespace music_player::m0::test
 
-QTEST_GUILESS_MAIN(music_player::m0::test::ShellUiContractTests)
+QTEST_MAIN(music_player::m0::test::ShellUiContractTests)
 #include "ShellUiContractTests.moc"

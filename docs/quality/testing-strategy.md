@@ -299,6 +299,8 @@ O smoke nativo comprova publicação e limpeza sobre o SMTC real, mas não sinte
 
 ### M4.6 — primeiro recorte da página oficial de Aplicativos Padrão
 
+Para a [identidade RC Music](../../experiments/m0/candidates/qt/README.md#rc-music-identity), verificar marca invariável sob tradução, título da janela QML e configuração repetida do nome visível do Qt, mantendo organização/aplicação e raízes de configuração/dados anteriores. Restaurar as propriedades globais no teste; não escrever dados nem modificar a fixture autenticada. O runner gráfico do contrato usa o mesmo ambiente offscreen estrito do Quick. Isso não comprova identificação SMTC, metadados Win32 ou associações instaladas.
+
 As provas focadas deste recorte permanecem isoladas por fronteira e não abrem as Configurações reais durante a suíte:
 
 - o presenter cobre suporte separado de disponibilidade, transições `Idle` → `Opening` → resultado tipado, sinal dedicado, supressão de solicitações duplicadas em voo, recuperação depois de `Failed`, indisponibilidade sem chamar a plataforma, exceção convertida em falha e conclusão tardia inerte após destruição ou commit efetivo da saída; uma saída ainda reversível permite concluir o handoff e voltar a abrir depois que a persistência falha e cancela a saída;

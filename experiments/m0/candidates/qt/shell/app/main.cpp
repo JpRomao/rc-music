@@ -21,6 +21,7 @@
 #endif
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/WindowPlacement.hpp"
+#include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
@@ -257,8 +258,7 @@ int main(int argc, char* argv[]) {
     Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication application(argc, argv);
-    QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
-    QCoreApplication::setApplicationName(QStringLiteral("MusicPlayer"));
+    music_player::m0::ApplicationIdentity::configureQtApplication();
     application.setQuitOnLastWindowClosed(false);
 #ifdef Q_OS_WIN
     std::unique_ptr<music_player::m0::QtWindowsDiagnosticLogStore> diagnostic_store;

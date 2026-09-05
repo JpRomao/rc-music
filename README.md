@@ -1,4 +1,4 @@
-# Music Player
+# RC Music
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
@@ -90,7 +90,7 @@ O recorte seguinte corrige o [aviso acessível de faixa pulada automaticamente](
 
 O [diagnóstico local Windows](experiments/m0/candidates/qt/README.md#local-diagnostics) agora está integrado ao candidato combinado por `--diagnostics`, desativado por padrão. Registra apenas códigos/contadores, com até 3 arquivos de 256 KiB e retenção de 7 dias aplicada ao gravar. A proteção cobre mensagens Qt e stderr nativo desde o início do executável. Core Qt OFF 224/224, testes focados de diagnóstico/CLI e jornadas reais passaram; a primeira regressão focada de 12 alvos encontrou um contrato do harness IPC dependente de mensagens brutas, corrigido com marcadores fechados exclusivos de teste e revalidado em 2/2. Não se alega suíte global verde nem correção da intermitência anterior do coordinator. Quatro casos de symlink ficaram pulados pela política do host; pacote e validações físicas permanecem pendentes. Nenhum benchmark foi executado.
 
-“Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor. O nome definitivo foi solicitado para desbloquear as decisões de associação, mas ainda não foi confirmado.
+**RC Music** é o nome definitivo confirmado pelo mantenedor. O [ADR-0004](docs/architecture/decisions/0004-rc-music-identity.md) separa o nome visível dos identificadores internos preservados para não perder dados existentes. Identidade visual e licença ainda pertencem ao mantenedor; confirmar o nome não publica formatos nem instala associações.
 
 ## Proposta do produto
 
@@ -217,7 +217,7 @@ O validador documental cobre links relativos, IDs/matriz de requisitos, checks, 
 ## Próximo passo
 
 1. manter M4.1–M4.7 formalmente abertos até os gates residuais correspondentes, sem apagar a evidência funcional local já verde de cada recorte;
-2. registrar o launcher de M4.6 e os recortes de suspend/resume, retry da mesma ocorrência, recuperação da saída padrão, recuperação de taskbar e localização de arquivo em outro path de M4.7 como parciais; identidade/matriz/pacote ainda bloqueiam ProgID/`Capabilities`/`RegisteredApplications`; continuar as funcionalidades Windows pendentes com checks proporcionais, mantendo os ensaios físicos e os gates nativos abertos para uma rodada própria;
+2. continuar M4.6 com o nome confirmado **RC Music**, preservando o armazenamento existente; implementar o template próprio de ProgID/`Capabilities`/`RegisteredApplications` por usuário, condicionado à matriz validada e à integração de pacote, sem escrita em `UserChoice`; manter os recortes de M4.7 e os ensaios físicos/nativos nos limites já documentados;
 3. manter `package-v2`, A/B de shells, Linux e benchmarks suspensos até a paridade funcional, sem apresentar M0.2–M0.6 como concluídos ou aceitar stack.
 
 O roadmap deliberadamente não contém datas. O objetivo é manter o projeto pequeno, verificável e agradável de evoluir.

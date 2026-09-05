@@ -856,6 +856,7 @@ if(M0_QT_SHELL_SUPPORT)
             m0_qt_shell_support
             m0_qt_shell_ui
             m0_qt_shell_uiplugin
+            Qt6::Gui
             Qt6::Test
         )
         target_include_directories(m0_qt_shell_contract_tests PRIVATE src)
@@ -1087,6 +1088,7 @@ if(M0_QT_SHELL_SUPPORT)
         set_tests_properties(m0.qt.shell-ui-contract PROPERTIES
             LABELS "m0;qt;shell-ui-contract"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
+            ENVIRONMENT "${m0_qt_quick_test_environment}"
         )
     endif()
 endif()
