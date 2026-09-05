@@ -3,16 +3,17 @@
 #include "m0/ports/AudioFileLocator.hpp"
 
 #include <QObject>
-#include <QPointer>
 #include <QString>
 
-#include <cstdint>
 #include <functional>
+#include <memory>
 
 class QFileDialog;
 class QWindow;
 
 namespace music_player::m0 {
+
+class QtAudioFileDialog;
 
 class QtAudioFileLocator final : public QObject, public AudioFileLocator {
     Q_OBJECT
@@ -31,16 +32,7 @@ class QtAudioFileLocator final : public QObject, public AudioFileLocator {
     void cancel() noexcept override;
 
   private:
-    void finish(std::uint64_t generation, AudioFileLocationResult result);
-
-    QString title_;
-    QString filter_;
-    DialogFactory factory_;
-    QPointer<QWindow> window_;
-    QPointer<QFileDialog> dialog_;
-    AudioFileLocationCompletion completion_;
-    std::uint64_t generation_{0};
-    bool pending_{false};
+    std::unique_ptr<QtAudioFileDialog> dialog_;
 };
 
 } // namespace music_player::m0

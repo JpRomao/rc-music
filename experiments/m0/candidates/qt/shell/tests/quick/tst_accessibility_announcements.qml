@@ -86,7 +86,18 @@ TestCase {
 
     function test_loadingAndCurrentTrackAreAnnouncedOnceWithoutPlaybackTickSpam() {
         createLocalShell();
-        openLocalTrack("C:/Música/Anúncio seguro 日本語.flac");
+        driver.deferLocalAudioSelection(true);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(localPresenter, "selectingAudioFiles", true);
+        tryVerify(function () {
+            return testCase.driver.accessibleAnnouncementCount() === 1;
+        });
+        compare(driver.lastAccessibleAnnouncement(), "Aguardando seleção de arquivos…");
+        wait(250);
+        compare(driver.accessibleAnnouncementCount(), 1);
+        driver.clearAccessibleAnnouncements();
+        driver.completeLocalAudioSelection(["C:/Música/Anúncio seguro 日本語.flac"]);
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Loading);
 
         tryVerify(function () {
             return testCase.driver.accessibleAnnouncementCount() === 1;

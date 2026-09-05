@@ -254,6 +254,7 @@ TestCase {
         });
         testScenarioDriver.enqueueLocalSelection(["C:/Música/Falha secreta.flac"]); // qmllint disable unqualified
         mouseClick(findChild(errorShell, "open-audio"));
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
         testScenarioDriver.publishFailedLocalMetadata(); // qmllint disable unqualified
         tryVerify(function () {
             return testLocalPlayerPresenter.hasDetailsDiagnostics; // qmllint disable unqualified
@@ -296,6 +297,7 @@ TestCase {
 
         testScenarioDriver.enqueueLocalSelection(["C:/Música/Contagens exatas.flac"]); // qmllint disable unqualified
         mouseClick(findChild(shell, "open-audio"));
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
         testScenarioDriver.publishExactLargeLocalMetadata(); // qmllint disable unqualified
         tryVerify(function () {
             return testLocalPlayerPresenter.hasDetailsDiagnostics; // qmllint disable unqualified
@@ -338,6 +340,7 @@ TestCase {
 
         testScenarioDriver.enqueueLocalSelection(["C:/Música/Faixa modal.mp3"]); // qmllint disable unqualified
         mouseClick(findChild(shell, "open-audio"));
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
         testScenarioDriver.publishCompleteLocalMetadata(); // qmllint disable unqualified
         const opener = findChild(shell, "track-details-playing");
         opener.forceActiveFocus(Qt.TabFocusReason);

@@ -33,13 +33,13 @@
 
 #ifdef M0_QT_COMBINED_AUDIO
 #include "adapters/QtAudioFileLocator.hpp"
+#include "adapters/QtAudioFilesPicker.hpp"
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 #include "m0/domain/LocalAudioFilePolicy.hpp"
 
 #include <QDir>
-#include <QFileDialog>
 #include <QMessageBox>
 #ifdef M0_QT_SHELL_TEST_HOOKS
 #include <QFile>
@@ -374,20 +374,9 @@ int main(int argc, char* argv[]) {
 #endif
         music_player::m0::SingleWorkerMetadataReader metadata_reader(
             std::make_unique<music_player::m0::TagLibMetadataExtractor>());
-        PlayerPresenter::AudioFilePicker audio_file_picker = [&contract] {
-            const QStringList selected =
-                QFileDialog::getOpenFileNames(nullptr, contract.openAudioText(), {}, localAudioDialogFilter());
-            std::vector<std::filesystem::path> paths;
-            paths.reserve(static_cast<std::size_t>(selected.size()));
-            for (const QString& source : selected) {
-#ifdef Q_OS_WIN
-                paths.emplace_back(source.toStdWString());
-#else
-                paths.emplace_back(source.toUtf8().toStdString());
-#endif
-            }
-            return paths;
-        };
+        music_player::m0::QtAudioFilesPicker audio_files_picker(contract.openAudioText(), localAudioDialogFilter());
+        // Synchronous constructors remain a deterministic test seam; production binds the async port below.
+        PlayerPresenter::AudioFilePicker audio_file_picker = [] { return std::vector<std::filesystem::path>{}; };
         music_player::m0::QtAudioFileLocator file_locator(music_player::m0::ApplicationText::locateAudioDialogTitle(),
                                                           localAudioDialogFilter());
         PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
@@ -537,6 +526,8 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_COMBINED_AUDIO
         file_locator.bindWindow(*window);
         presenter.setAudioFileLocator(&file_locator);
+        audio_files_picker.bindWindow(*window);
+        presenter.setAudioFilesPicker(&audio_files_picker);
 #endif
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;

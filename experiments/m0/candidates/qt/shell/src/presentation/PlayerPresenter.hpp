@@ -9,6 +9,7 @@
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/SystemPowerEvents.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
@@ -75,6 +76,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QString locatingOccurrenceId READ locatingOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(QString fileLocationErrorOccurrenceId READ fileLocationErrorOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(bool canLocateCurrentOccurrence READ canLocateCurrentOccurrence NOTIFY stateChanged)
+    Q_PROPERTY(bool selectingAudioFiles READ selectingAudioFiles NOTIFY stateChanged)
+    Q_PROPERTY(bool audioFileSelectionFailed READ audioFileSelectionFailed NOTIFY stateChanged)
     Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
@@ -259,6 +262,10 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString retryingOccurrenceId() const;
     // The supplied locator must outlive the presenter, or be detached before it is destroyed.
     void setAudioFileLocator(AudioFileLocator* locator);
+    // The asynchronous picker must outlive the presenter, or be detached before destruction.
+    void setAudioFilesPicker(AudioFilesPicker* picker);
+    [[nodiscard]] bool selectingAudioFiles() const noexcept;
+    [[nodiscard]] bool audioFileSelectionFailed() const noexcept;
     [[nodiscard]] bool fileLocationAvailable() const noexcept;
     [[nodiscard]] QString locatingOccurrenceId() const;
     [[nodiscard]] QString fileLocationErrorOccurrenceId() const;
@@ -401,6 +408,7 @@ class PlayerPresenter final : public QObject {
     void defaultAppsSettingsChanged();
     void lifecycleChanged();
     void fileLocationFinished(QString occurrence_id, bool changed);
+    void audioFileSelectionFinished(bool changed);
     void queueFocusRequested(int index);
     void sourceImportChanged();
     void windowPlacementFlushRequested();
@@ -463,6 +471,11 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool recoverAudioOutput();
     void finishFileLocation(std::uint64_t request_generation, AudioFileLocationResult result);
     void cancelFileLocation() noexcept;
+    [[nodiscard]] bool beginAudioFileSelection(bool append_only);
+    void finishAudioFileSelection(std::uint64_t generation, AudioFilesSelectionResult result);
+    void cancelAudioFileSelection() noexcept;
+    [[nodiscard]] bool openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
+    [[nodiscard]] bool addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     [[nodiscard]] bool navigate(QueueDirection direction);
     FixtureBundle bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
@@ -486,6 +499,15 @@ class PlayerPresenter final : public QObject {
     QTimer timer_;
     FixtureState state_;
     AudioFilePicker audio_file_picker_{};
+    AudioFilesPicker* audio_files_picker_{nullptr};
+    struct AudioFileSelectionRequest final {
+        std::uint64_t generation{};
+        bool append_only{false};
+    };
+    std::uint64_t audio_file_selection_generation_{0};
+    std::optional<AudioFileSelectionRequest> audio_file_selection_{};
+    bool audio_file_selection_failed_{false};
+    bool file_dialog_cancellation_active_{false};
     AudioFileLocator* audio_file_locator_{nullptr};
     struct FileLocationRequest final {
         std::uint64_t generation{0};

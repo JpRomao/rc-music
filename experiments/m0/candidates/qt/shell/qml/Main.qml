@@ -37,12 +37,15 @@ ApplicationWindow {
     ErrorText {
         id: errorText
     }
+    SourceImportText {
+        id: sourceImportText
+    }
     PlaybackAccessibilityStatus {
         contract: window.uiContract
         presenter: window.presenter
         errorLabels: errorText
     }
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool transportShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
     readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
@@ -50,6 +53,10 @@ ApplicationWindow {
     property int previousPlaybackState: -1
     property int playbackFocusRepairGeneration: 0
     property Item lastActiveFocusItem: null
+    property Item audioSelectionRestoreItem: null
+    property bool audioSelectionPending: false
+    property bool audioSelectionTerminalObserved: false
+    property int audioSelectionFocusRevision: 0
 
     Component.onCompleted: previousPlaybackState = presenter.playbackState
     onActiveFocusItemChanged: {
@@ -113,7 +120,7 @@ ApplicationWindow {
             const currentFocus = window.activeFocusItem;
             if (!window.isPassiveFocusFallback(currentFocus) && !window.isInside(currentFocus, repairSource))
                 return;
-            if (!window.active || windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || queuePanel.clearConfirmationOpen || window.presenter.exiting)
+            if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
                 return;
             if (focusCameFromDisabledTransport && window.transportEnabledForState(window.presenter.playbackState))
                 transport.focusPrimary();
@@ -127,6 +134,42 @@ ApplicationWindow {
 
         function onPlaybackChanged() {
             window.repairPlaybackStateFocus();
+        }
+        function onStateChanged() {
+            if (!window.audioSelectionPending)
+                return;
+            if (window.presenter.selectingAudioFiles) {
+                if (window.audioSelectionTerminalObserved)
+                    window.forgetAudioSelection();
+                return;
+            }
+            window.audioSelectionTerminalObserved = true;
+            const revision = window.audioSelectionFocusRevision;
+            // Cancellation/rebinding need not emit Finished. Give a normal
+            // completion its synchronous Finished before discarding ownership.
+            Qt.callLater(function () {
+                if (revision === window.audioSelectionFocusRevision && window.audioSelectionPending && !window.presenter.selectingAudioFiles)
+                    window.forgetAudioSelection();
+            });
+        }
+        function onAudioFileSelectionFinished(changed) {
+            if (!window.audioSelectionPending)
+                return;
+            window.audioSelectionPending = false;
+            window.audioSelectionTerminalObserved = false;
+            const opener = window.audioSelectionRestoreItem;
+            const revision = window.audioSelectionFocusRevision;
+            window.audioSelectionRestoreItem = null;
+            Qt.callLater(function () {
+                if (revision !== window.audioSelectionFocusRevision || !window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
+                    return;
+                if (opener && opener.visible && opener.enabled)
+                    opener.forceActiveFocus(Qt.TabFocusReason);
+                else if (window.queueOpen && queuePanel.visible)
+                    queuePanel.focusCurrent();
+                else
+                    window.focusPlaybackPrimary(window.presenter.playbackState);
+            });
         }
     }
 
@@ -175,7 +218,7 @@ ApplicationWindow {
             return;
         queueOpen = open;
         Qt.callLater(function () {
-            if (windowNotice.visible || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || window.presenter.exiting)
+            if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
                 return;
             if (window.queueOpen)
                 queuePanel.focusCurrent();
@@ -188,9 +231,25 @@ ApplicationWindow {
     function toggleQueue() {
         setQueueOpen(!queueOpen);
     }
-    function openAudio() {
+    function prepareAudioSelection(opener) {
+        audioSelectionRestoreItem = opener && opener.activeFocus ? opener : activeFocusItem;
+        audioSelectionPending = !presenter.usesFrozenFixture;
+        audioSelectionTerminalObserved = false;
+        ++audioSelectionFocusRevision;
+    }
+    function forgetAudioSelection() {
+        audioSelectionPending = false;
+        audioSelectionTerminalObserved = false;
+        audioSelectionRestoreItem = null;
+        ++audioSelectionFocusRevision;
+    }
+    function openAudio(opener) {
+        if (presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+            return;
+        prepareAudioSelection(opener);
         openAudioRequested();
-        presenter.openAudio();
+        if (!presenter.openAudio())
+            audioSelectionPending = false;
     }
     function changeVolume(percentagePoints) {
         const percent = presenter.volume * 100;
@@ -208,7 +267,7 @@ ApplicationWindow {
         trackDetailsPanel.openFrom(opener);
     }
     function restoreFocusAfterSourceImport() {
-        if (window.presenter.exiting || preferencesPanel.visible || trackDetailsPanel.visible || preferencePersistenceNotice.replacementConfirmationOpen || windowNotice.visible || queuePanel.clearConfirmationOpen)
+        if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
             return;
         if (window.queueOpen && queuePanel.visible)
             queuePanel.focusCurrent();
@@ -268,7 +327,8 @@ ApplicationWindow {
                     width: Math.min(parent.width > 0 ? parent.width : 560, 560)
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract
-                    onOpenAudioRequested: window.openAudio()
+                    openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                    onOpenAudioRequested: opener => window.openAudio(opener)
                 }
                 NowPlayingState {
                     id: nowPlayingState
@@ -277,7 +337,7 @@ ApplicationWindow {
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
-                    onOpenAudioRequested: window.openAudio()
+                    onOpenAudioRequested: opener => window.openAudio(opener)
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
                 ErrorState {
@@ -288,9 +348,34 @@ ApplicationWindow {
                     presenter: window.presenter
                     labels: errorText
                     locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
+                    onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
             }
+        }
+        Text {
+            id: audioSelectionStatus
+            objectName: "audio-file-selection-status"
+            Layout.fillWidth: true
+            visible: window.presenter.selectingAudioFiles || window.presenter.audioFileSelectionFailed
+            text: window.presenter.selectingAudioFiles ? sourceImportText.selectingFiles : sourceImportText.fileSelectionFailed
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            color: window.uiContract.textSecondaryColor
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+            property string lastAnnouncement: ""
+            function updateAnnouncement() {
+                const message = visible ? text : "";
+                if (message === lastAnnouncement)
+                    return;
+                lastAnnouncement = message;
+                if (message.length > 0)
+                    Accessible.announce(message, Accessible.Polite);
+            }
+            onTextChanged: Qt.callLater(updateAnnouncement)
+            onVisibleChanged: Qt.callLater(updateAnnouncement)
         }
         TransportBar {
             id: transport
@@ -320,13 +405,14 @@ ApplicationWindow {
         id: sourceImportStatus
         parent: window.contentItem
         x: mainLayout.x
-        y: Math.max(mainLayout.y, mainLayout.y + transport.y - height - window.uiContract.spacingUnit * 2)
+        y: Math.max(mainLayout.y, mainLayout.y + (audioSelectionStatus.visible ? audioSelectionStatus.y : transport.y) - height - window.uiContract.spacingUnit * 2)
         width: mainLayout.width
         z: 30
         contract: window.uiContract
         presenter: window.presenter
-        focusTakeoverAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        focusTakeoverAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
         onFocusRestoreRequested: window.restoreFocusAfterSourceImport()
+        onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
     }
     PreferencePersistenceNotice {
         id: preferencePersistenceNotice
@@ -339,7 +425,7 @@ ApplicationWindow {
         warning: window.presenter.preferenceWarning
         warningScope: window.presenter.persistenceWarningScope
         fallbackFocusItem: preferencesButton
-        interactionAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onReviewRequested: window.openPreferences()
         onDismissRequested: window.presenter.dismissPreferenceWarning()
         onRetryRequested: window.presenter.retryPreferenceSave()
@@ -392,7 +478,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction
@@ -474,10 +560,6 @@ ApplicationWindow {
                 radius: window.uiContract.radiusMedium
                 border.width: window.uiContract.highContrast ? 2 : 1
                 border.color: window.uiContract.focusColor
-
-                SourceImportText {
-                    id: sourceImportText
-                }
 
                 Text {
                     id: prompt

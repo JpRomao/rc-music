@@ -9,7 +9,8 @@ ColumnLayout {
     property string titleText: contract.emptyTitle
     property string hintText: contract.emptyHint
     property string actionText: contract.openAudioText
-    signal openAudioRequested
+    property bool openingEnabled: true
+    signal openAudioRequested(Item opener)
     spacing: contract.spacingUnit * 4
 
     function focusPrimary() {
@@ -49,8 +50,9 @@ ColumnLayout {
         controlId: "open-audio"
         contract: root.contract
         text: root.actionText
+        enabled: root.openingEnabled
         Layout.maximumWidth: root.width
         Layout.alignment: Qt.AlignHCenter
-        onClicked: root.openAudioRequested()
+        onClicked: root.openAudioRequested(openAudioButton)
     }
 }

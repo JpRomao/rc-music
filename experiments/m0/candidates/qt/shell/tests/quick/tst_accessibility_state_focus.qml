@@ -133,6 +133,7 @@ TestCase {
 
         driver.enqueueLocalSelection(["C:/Música/Foco no progresso.flac"]);
         errorAction.Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
         driver.publishLocalPlaying();
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
         const progress = findChild(shell, "progress");
@@ -210,6 +211,7 @@ TestCase {
         });
         driver.enqueueLocalSelection(["C:/Música/Foco antes do aviso.flac"]);
         verify(presenter.openAudio());
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
         driver.publishLocalPlaying();
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
 

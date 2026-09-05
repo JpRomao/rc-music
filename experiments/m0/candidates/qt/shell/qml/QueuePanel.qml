@@ -16,10 +16,13 @@ FocusScope {
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
     property bool selectedAvailable: false
-    readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
-    readonly property bool selectedLocationAvailable: !presenter.usesFrozenFixture && presenter.fileLocationAvailable && !presenter.exiting && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0
+    readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
+    readonly property bool selectedLocationAvailable: !presenter.usesFrozenFixture && presenter.fileLocationAvailable && !presenter.exiting && !presenter.selectingAudioFiles && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0
     property bool locationFocusRestoreAllowed: true
     property string requestedLocationId: ""
+    property bool addingFilesPending: false
+    property bool addTerminalObserved: false
+    property int addFocusRevision: 0
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
@@ -94,13 +97,18 @@ FocusScope {
         root.playRequested(row.occurrenceId);
     }
     function addFiles() {
-        const selectedIndex = queueList.currentIndex;
-        const hadCurrentTrack = root.presenter.hasCurrentTrack;
-        if (!root.presenter.addAudio())
+        if (!addButton.enabled)
             return;
-        Qt.callLater(function () {
-            root.focusIndex(hadCurrentTrack && selectedIndex >= 0 ? selectedIndex : root.presenter.currentQueueIndex);
-        });
+        root.addingFilesPending = true;
+        root.addTerminalObserved = false;
+        ++root.addFocusRevision;
+        if (!root.presenter.addAudio())
+            root.addingFilesPending = false;
+    }
+    function forgetPendingAdd() {
+        addingFilesPending = false;
+        addTerminalObserved = false;
+        ++addFocusRevision;
     }
     function moveSelected(offset) {
         if (root.selectedOccurrenceId.length === 0)
@@ -185,8 +193,11 @@ FocusScope {
     }
 
     onObservedCurrentOccurrenceIdChanged: {
-        if (visible)
-            Qt.callLater(root.syncCurrent);
+        if (visible && !presenter.selectingAudioFiles && !addingFilesPending)
+            Qt.callLater(function () {
+                if (!root.presenter.selectingAudioFiles && !root.addingFilesPending)
+                    root.syncCurrent();
+            });
     }
 
     Rectangle {
@@ -224,7 +235,7 @@ FocusScope {
                 accessibleName: queueText.add
                 text: "+"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture
+                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
                 onClicked: root.addFiles()
             }
             QueueActionButton {
@@ -538,7 +549,8 @@ FocusScope {
     }
 
     Keys.onEscapePressed: event => {
-        root.closeRequested();
+        if (!root.presenter.selectingAudioFiles)
+            root.closeRequested();
         event.accepted = true;
     }
 
@@ -546,12 +558,42 @@ FocusScope {
         sequence: "Space"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: root.visible && queueList.activeFocus
+        enabled: root.visible && queueList.activeFocus && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
         onActivated: root.playRow(queueList.currentItem, Qt.TabFocusReason)
     }
 
     Connections {
         target: root.presenter
+        function onStateChanged() {
+            if (!root.addingFilesPending)
+                return;
+            if (root.presenter.selectingAudioFiles) {
+                if (root.addTerminalObserved)
+                    root.forgetPendingAdd();
+                return;
+            }
+            root.addTerminalObserved = true;
+            const revision = root.addFocusRevision;
+            Qt.callLater(function () {
+                if (revision === root.addFocusRevision && root.addingFilesPending && !root.presenter.selectingAudioFiles)
+                    root.forgetPendingAdd();
+            });
+        }
+        function onAudioFileSelectionFinished(changed) {
+            if (!root.addingFilesPending)
+                return;
+            root.addingFilesPending = false;
+            root.addTerminalObserved = false;
+            const revision = root.addFocusRevision;
+            // ListView follows model insert/move notifications by identity. Do not
+            // replace its selection with an index captured before the dialog.
+            Qt.callLater(function () {
+                if (revision !== root.addFocusRevision || !root.visible || !root.locationFocusRestoreAllowed || root.presenter.exiting || root.presenter.selectingAudioFiles)
+                    return;
+                if (addButton.visible && addButton.enabled)
+                    addButton.forceActiveFocus(Qt.TabFocusReason);
+            });
+        }
         function onFileLocationFinished(occurrenceId, changed) {
             if (occurrenceId !== root.requestedLocationId)
                 return;
@@ -568,13 +610,16 @@ FocusScope {
             });
         }
         function onQueueFocusRequested(index) {
+            if (root.presenter.selectingAudioFiles || root.addingFilesPending)
+                return;
             if (index < 0) {
                 root.closeRequested();
                 return;
             }
             if (root.visible)
                 Qt.callLater(function () {
-                    root.focusIndex(index);
+                    if (!root.presenter.selectingAudioFiles && !root.addingFilesPending)
+                        root.focusIndex(index);
                 });
         }
     }

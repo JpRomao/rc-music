@@ -228,6 +228,8 @@ Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e co
 - formatos publicados refletem apenas testes verdes;
 - instalável de preview interno no Windows.
 
+O [recorte de seleção principal assíncrona](../experiments/m0/candidates/qt/README.md#async-audio-picker) retoma M2.1/M3.1 no candidato Qt/Windows, usando uma porta C++ e helper Qt compartilhado com Localizar. Abrir anexa/toca a primeira nova ocorrência; Adicionar preserva a faixa atual, aplicando ambos à fila viva na conclusão. Geração/lifetime, validação atômica do lote e foco posterior à conclusão fazem parte do contrato implementado. Presenter, adapters, UI, suíte completa, build Release e composição de produção têm checks automatizados consolidados. O registro mantém a intermitência do coordinator sem causa demonstrada, sem confundir retorno verde com correção. M2/M3 continuam parciais pelos gates restantes, sem retomar benchmarks ou ensaios disruptivos. Sanitização textual/numérica de `FR-023` é o backlog funcional explícito seguinte, sem alegação de exploração ou vulnerabilidade demonstrada.
+
 ## 7. M3 — Experiência completa do player
 
 **Estado:** Em andamento no candidato Qt/Windows; fila/CRUD, importação incremental, painel de detalhes/diagnóstico, armazenamento M3.5, strings/microcopy M3.6 e acessibilidade automatizável M3.7 estão funcionais. Os efeitos locais de restaurar sessão e iniciar minimizado foram integrados depois por M4.1/M4.4. Permanecem abertos desempenho, primeiro frame/integração nativos, `CHK-SEC`, E2E empacotado e validação NVDA; M3.8 permanece adiado.

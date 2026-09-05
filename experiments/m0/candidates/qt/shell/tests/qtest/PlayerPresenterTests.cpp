@@ -3,6 +3,7 @@
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -39,6 +40,42 @@
 
 namespace music_player::m0::test {
 namespace {
+
+class PresenterFilesPicker final : public AudioFilesPicker {
+  public:
+    bool pick(AudioFilesSelectionCompletion completion) override {
+        ++requests;
+        if (!accept)
+            return false;
+        pending = std::move(completion);
+        if (immediate.has_value())
+            complete(*immediate);
+        if (throw_after_completion)
+            throw std::runtime_error{"picker launch failed"};
+        if (reject_after_completion)
+            return false;
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancels;
+        pending = {};
+        if (on_cancel)
+            on_cancel();
+    }
+    void complete(AudioFilesSelectionResult result) {
+        auto callback = std::exchange(pending, {});
+        if (callback)
+            callback(std::move(result));
+    }
+    bool accept{true};
+    bool throw_after_completion{false};
+    bool reject_after_completion{false};
+    int requests{0};
+    int cancels{0};
+    AudioFilesSelectionCompletion pending;
+    std::optional<AudioFilesSelectionResult> immediate;
+    std::function<void()> on_cancel;
+};
 
 class PresenterFileLocator final : public AudioFileLocator {
   public:
@@ -505,6 +542,28 @@ class PlayerPresenterTests final : public QObject {
     void relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition_data();
     void relocatedSourceIsSavedWithItsOccurrenceAndPendingRestorePosition();
     void cancellingFileLocationForExitNotifiesTheBusyProperty();
+    void asynchronousOpenKeepsPlaybackEventsLiveAndAppendsToTheLatestQueue();
+    void asynchronousAddPreservesTheCurrentTrackOrStartsAnEmptyQueue_data();
+    void asynchronousAddPreservesTheCurrentTrackOrStartsAnEmptyQueue();
+    void asynchronousSelectionCancellationFailureAndDuplicateCompletionAreSafe();
+    void asynchronousSelectionRejectsInvalidPathsWithoutChangingPlayback_data();
+    void asynchronousSelectionRejectsInvalidPathsWithoutChangingPlayback();
+    void asynchronousSelectionIsCancelledOnExitAndCannotOutliveThePresenter();
+    void asynchronousSelectionRebindingAndInlineCompletionAreGenerationSafe();
+    void mainSelectionAndFileLocationCannotOverlap();
+    void selectionObserverCanCancelOrDestroyBeforeTheNativeRequest_data();
+    void selectionObserverCanCancelOrDestroyBeforeTheNativeRequest();
+    void inlineSelectionCannotWinAfterLaunchFailure_data();
+    void inlineSelectionCannotWinAfterLaunchFailure();
+    void obsoleteSelectionFinishedCannotAffectAReentrantNewRequest();
+    void failedAudioSelectionPreservesAnActiveImport_data();
+    void failedAudioSelectionPreservesAnActiveImport();
+    void selectionCompletionMayDestroyThePresenter_data();
+    void selectionCompletionMayDestroyThePresenter();
+    void pickerCancellationCannotStartAnotherDialog_data();
+    void pickerCancellationCannotStartAnotherDialog();
+    void pickerCancellationMayDestroyThePresenter_data();
+    void pickerCancellationMayDestroyThePresenter();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay();
     void repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads();
@@ -2676,6 +2735,473 @@ void PlayerPresenterTests::cancellingFileLocationForExitNotifiesTheBusyProperty(
     QVERIFY(!presenter.exiting());
     QVERIFY(presenter.locatingOccurrenceId().isEmpty());
     QVERIFY(presenter.canLocateCurrentOccurrence());
+}
+
+void PlayerPresenterTests::asynchronousOpenKeepsPlaybackEventsLiveAndAppendsToTheLatestQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    const auto first = std::filesystem::absolute(localTestPath(u8"Primeira.wav"));
+    const auto second = std::filesystem::absolute(localTestPath(u8"Segunda.wav"));
+    const auto selected = std::filesystem::absolute(localTestPath(u8"Escolhida 日本語.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{first, second}; });
+    QVERIFY(presenter.openAudio());
+    const QString first_id = presenter.currentOccurrenceId();
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 100,
+                     .duration_ms = 1000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{100});
+    presenter.setAudioFilesPicker(&picker);
+    QSignalSpy finished(&presenter, &PlayerPresenter::audioFileSelectionFinished);
+    QSignalSpy resets(presenter.queueModelObject(), &QAbstractItemModel::modelReset);
+    const int play_calls = backend.play_calls;
+    const int pause_calls = backend.pause_calls;
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.selectingAudioFiles());
+    QVERIFY(!presenter.openAudio());
+    QVERIFY(!presenter.addAudio());
+    QCOMPARE(picker.requests, 1);
+    QCOMPARE(backend.loaded_paths, std::vector{first});
+    QCOMPARE(backend.play_calls, play_calls);
+    QCOMPARE(backend.pause_calls, pause_calls);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 550,
+                     .duration_ms = 1000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{550});
+    QVERIFY(presenter.togglePlayback());
+    QCOMPARE(backend.pause_calls, pause_calls + 1);
+    backend.publishEvent(PlaybackEventType::Ended, {.status = PlaybackStatus::Paused,
+                                                    .position_ms = 1000,
+                                                    .duration_ms = 1000,
+                                                    .seekable = true,
+                                                    .generation = 1});
+    QTRY_COMPARE(backend.loaded_paths, (std::vector{first, second}));
+    QVERIFY(presenter.selectingAudioFiles());
+    picker.complete({AudioFilesSelectionStatus::Selected, {selected, selected}});
+    QTRY_COMPARE(finished.count(), 1);
+    QVERIFY(finished.front().front().toBool());
+    QVERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(!presenter.audioFileSelectionFailed());
+    QCOMPARE(backend.loaded_paths, (std::vector{first, second, selected}));
+    QCOMPARE(presenter.currentQueueIndex(), 2);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 4);
+    QCOMPARE(presenter.queueModelObject()
+                 ->data(presenter.queueModelObject()->index(0, 0), QueueListModel::OccurrenceIdRole)
+                 .toString(),
+             first_id);
+    const auto second_new = presenter.queueModelObject()
+                                ->data(presenter.queueModelObject()->index(3, 0), QueueListModel::OccurrenceIdRole)
+                                .toString();
+    QVERIFY(second_new != presenter.currentOccurrenceId());
+    QCOMPARE(resets.count(), 0);
+}
+
+void PlayerPresenterTests::asynchronousAddPreservesTheCurrentTrackOrStartsAnEmptyQueue_data() {
+    QTest::addColumn<bool>("clear_during_selection");
+    QTest::newRow("keep-current") << false;
+    QTest::newRow("queue-cleared-while-selecting") << true;
+}
+
+void PlayerPresenterTests::asynchronousAddPreservesTheCurrentTrackOrStartsAnEmptyQueue() {
+    QFETCH(bool, clear_during_selection);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    const auto source = std::filesystem::absolute(localTestPath(u8"Atual.wav"));
+    const auto selected = std::filesystem::absolute(localTestPath(u8"Adicionada.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    QVERIFY(presenter.openAudio());
+    const auto current_id = presenter.currentOccurrenceId();
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(presenter.addAudio());
+    if (clear_during_selection)
+        QVERIFY(presenter.clearQueue());
+    const auto before = backend.loaded_paths;
+    picker.complete({AudioFilesSelectionStatus::Selected, {selected, selected}});
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    if (clear_during_selection) {
+        QCOMPARE(backend.loaded_paths, (std::vector{source, selected}));
+        QCOMPARE(presenter.currentQueueIndex(), 0);
+        QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
+    } else {
+        QCOMPARE(backend.loaded_paths, before);
+        QCOMPARE(presenter.currentOccurrenceId(), current_id);
+        QCOMPARE(presenter.queueModelObject()->rowCount(), 3);
+    }
+}
+
+void PlayerPresenterTests::asynchronousSelectionCancellationFailureAndDuplicateCompletionAreSafe() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(presenter.openAudio());
+    const auto obsolete = picker.pending;
+    picker.complete({AudioFilesSelectionStatus::Cancelled, {}});
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(!presenter.audioFileSelectionFailed());
+    QVERIFY(presenter.openAudio());
+    obsolete({AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Antiga.wav"))}});
+    QCoreApplication::processEvents();
+    QVERIFY(presenter.selectingAudioFiles());
+    QVERIFY(backend.loaded_paths.empty());
+    picker.complete({AudioFilesSelectionStatus::Failed, {}});
+    QTRY_VERIFY(presenter.audioFileSelectionFailed());
+    QVERIFY(!presenter.selectingAudioFiles());
+    picker.accept = false;
+    QVERIFY(!presenter.addAudio());
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(presenter.audioFileSelectionFailed());
+    QVERIFY(backend.loaded_paths.empty());
+    picker.accept = true;
+    QVERIFY(presenter.openAudio());
+    QVERIFY(!presenter.audioFileSelectionFailed());
+    backend.load_result = PlaybackCommandResult::Busy;
+    picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Nova.wav"))}});
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(presenter.audioFileSelectionFailed());
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+}
+
+void PlayerPresenterTests::asynchronousSelectionRejectsInvalidPathsWithoutChangingPlayback_data() {
+    QTest::addColumn<std::vector<std::filesystem::path>>("paths");
+    QTest::newRow("empty") << std::vector<std::filesystem::path>{};
+    QTest::newRow("relative") << std::vector{localTestPath(u8"Relativa.wav")};
+    QTest::newRow("root") << std::vector{std::filesystem::current_path().root_path()};
+    auto nul = std::filesystem::absolute(localTestPath(u8"Nul.wav")).native();
+    nul.push_back(std::filesystem::path::value_type{});
+    nul.push_back(static_cast<std::filesystem::path::value_type>('x'));
+    QTest::newRow("embedded-nul") << std::vector{std::filesystem::path{nul}};
+}
+
+void PlayerPresenterTests::asynchronousSelectionRejectsInvalidPathsWithoutChangingPlayback() {
+    QFETCH(std::vector<std::filesystem::path>, paths);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    const auto source = std::filesystem::absolute(localTestPath(u8"Mantida.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    QVERIFY(presenter.openAudio());
+    const auto id = presenter.currentOccurrenceId();
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(presenter.openAudio());
+    picker.complete({AudioFilesSelectionStatus::Selected, paths});
+    QTRY_VERIFY(presenter.audioFileSelectionFailed());
+    QVERIFY(!presenter.selectingAudioFiles());
+    QCOMPARE(presenter.currentOccurrenceId(), id);
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 1);
+}
+
+void PlayerPresenterTests::asynchronousSelectionIsCancelledOnExitAndCannotOutliveThePresenter() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    PreferencesAutosave autosave{writer, Preferences{}, {.now = [&clock] { return clock.now(); }}};
+    auto presenter = std::make_unique<PlayerPresenter>(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.autosave = &autosave, .now = [&clock] { return clock.now(); }});
+    presenter->setAudioFilesPicker(&picker);
+    QVERIFY(presenter->setVolume(0.19));
+    QVERIFY(presenter->openAudio());
+    const auto late = picker.pending;
+    QSignalSpy state(presenter.get(), &PlayerPresenter::stateChanged);
+    QVERIFY(presenter->requestExit());
+    QCOMPARE(picker.cancels, 1);
+    QTRY_VERIFY(!state.empty());
+    QVERIFY(!presenter->selectingAudioFiles());
+    late({AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Tardia.wav"))}});
+    QCoreApplication::processEvents();
+    QVERIFY(backend.loaded_paths.empty());
+    clock.advance(std::chrono::seconds{3});
+    PlayerPresenterTestAccess::pollPersistence(*presenter);
+    QVERIFY(!presenter->exiting());
+    QVERIFY(presenter->openAudio());
+    const auto after_destruction = picker.pending;
+    presenter.reset();
+    after_destruction({AudioFilesSelectionStatus::Cancelled, {}});
+    QCoreApplication::processEvents();
+    QCOMPARE(picker.cancels, 2);
+    QVERIFY(backend.loaded_paths.empty());
+}
+
+void PlayerPresenterTests::asynchronousSelectionRebindingAndInlineCompletionAreGenerationSafe() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker first;
+    PresenterFilesPicker replacement;
+    const auto source = std::filesystem::absolute(localTestPath(u8"Inline.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    presenter.setAudioFilesPicker(&first);
+    QVERIFY(presenter.openAudio());
+    const auto obsolete = first.pending;
+    presenter.setAudioFilesPicker(&replacement);
+    QCOMPARE(first.cancels, 1);
+    QVERIFY(!presenter.selectingAudioFiles());
+    replacement.immediate = AudioFilesSelectionResult{AudioFilesSelectionStatus::Selected, {source}};
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.selectingAudioFiles());
+    QVERIFY(backend.loaded_paths.empty());
+    obsolete({AudioFilesSelectionStatus::Selected, {source, source}});
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 1);
+}
+
+void PlayerPresenterTests::mainSelectionAndFileLocationCannotOverlap() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PresenterFileLocator locator;
+    const auto source = std::filesystem::absolute(localTestPath(u8"Ausente.wav"));
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.hasError());
+    presenter.setAudioFilesPicker(&picker);
+    presenter.setAudioFileLocator(&locator);
+    const auto id = presenter.currentOccurrenceId();
+    QVERIFY(presenter.locateQueueOccurrence(id));
+    QVERIFY(!presenter.openAudio());
+    QVERIFY(!presenter.addAudio());
+    locator.complete({AudioFileLocationStatus::Cancelled, {}});
+    QTRY_VERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QVERIFY(presenter.openAudio());
+    QVERIFY(!presenter.locateQueueOccurrence(id));
+    picker.complete({AudioFilesSelectionStatus::Cancelled, {}});
+    QTRY_VERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(presenter.locateQueueOccurrence(id));
+}
+
+void PlayerPresenterTests::selectionObserverCanCancelOrDestroyBeforeTheNativeRequest_data() {
+    QTest::addColumn<QString>("action");
+    QTest::newRow("exit") << QStringLiteral("exit");
+    QTest::newRow("rebind") << QStringLiteral("rebind");
+    QTest::newRow("destroy") << QStringLiteral("destroy");
+}
+
+void PlayerPresenterTests::selectionObserverCanCancelOrDestroyBeforeTheNativeRequest() {
+    QFETCH(QString, action);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PresenterFilesPicker replacement;
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+                                                       [] { return std::vector<std::filesystem::path>{}; });
+    presenter->setAudioFilesPicker(&picker);
+    bool handled = false;
+    connect(presenter.get(), &PlayerPresenter::stateChanged, presenter.get(), [&] {
+        if (handled || !presenter->selectingAudioFiles())
+            return;
+        handled = true;
+        if (action == QStringLiteral("exit"))
+            static_cast<void>(presenter->requestExit());
+        else if (action == QStringLiteral("rebind"))
+            presenter->setAudioFilesPicker(&replacement);
+        else
+            presenter.reset();
+    });
+    QVERIFY(!presenter->openAudio());
+    QVERIFY(handled);
+    QCOMPARE(picker.requests, 0);
+    QCOMPARE(replacement.requests, 0);
+    QVERIFY(backend.loaded_paths.empty());
+}
+
+void PlayerPresenterTests::inlineSelectionCannotWinAfterLaunchFailure_data() {
+    QTest::addColumn<bool>("throws");
+    QTest::newRow("returns-false") << false;
+    QTest::newRow("throws") << true;
+}
+
+void PlayerPresenterTests::inlineSelectionCannotWinAfterLaunchFailure() {
+    QFETCH(bool, throws);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    picker.immediate = AudioFilesSelectionResult{AudioFilesSelectionStatus::Selected,
+                                                 {std::filesystem::absolute(localTestPath(u8"Não abrir.wav"))}};
+    picker.throw_after_completion = throws;
+    picker.reject_after_completion = !throws;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(!presenter.openAudio());
+    QCoreApplication::processEvents();
+    QVERIFY(!presenter.selectingAudioFiles());
+    QVERIFY(presenter.audioFileSelectionFailed());
+    QVERIFY(backend.loaded_paths.empty());
+}
+
+void PlayerPresenterTests::obsoleteSelectionFinishedCannotAffectAReentrantNewRequest() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    presenter.setAudioFilesPicker(&picker);
+    QSignalSpy finished(&presenter, &PlayerPresenter::audioFileSelectionFinished);
+    bool restarted = false;
+    connect(&presenter, &PlayerPresenter::stateChanged, &presenter, [&] {
+        if (restarted || presenter.selectingAudioFiles() || presenter.queueModelObject()->rowCount() != 1)
+            return;
+        restarted = true;
+        QVERIFY(presenter.addAudio());
+    });
+    QVERIFY(presenter.openAudio());
+    picker.complete(
+        {AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Selecionada.wav"))}});
+    QTRY_VERIFY(restarted);
+    QVERIFY(presenter.selectingAudioFiles());
+    QCOMPARE(picker.requests, 2);
+    QCOMPARE(finished.count(), 0);
+    picker.complete({AudioFilesSelectionStatus::Cancelled, {}});
+    QTRY_COMPARE(finished.count(), 1);
+    QVERIFY(!finished.front().front().toBool());
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 1);
+}
+
+void PlayerPresenterTests::failedAudioSelectionPreservesAnActiveImport_data() {
+    QTest::addColumn<bool>("append_only");
+    QTest::newRow("open") << false;
+    QTest::newRow("add") << true;
+}
+
+void PlayerPresenterTests::failedAudioSelectionPreservesAnActiveImport() {
+    QFETCH(bool, append_only);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    FakeLocalSourceDiscovery discovery;
+    const auto source = localTestPath(u8"Descoberta.wav");
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(source)}, 0));
+    const auto generation = discovery.requests.front().generation;
+    QVERIFY(append_only ? presenter.addAudio() : presenter.openAudio());
+    backend.load_result = PlaybackCommandResult::InvalidArgument;
+    picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Falha.wav"))}});
+    QTRY_VERIFY(presenter.audioFileSelectionFailed());
+    QVERIFY(presenter.sourceImportActive());
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 0ULL);
+    QCOMPARE(presenter.sourceImportIssueCount(), 0ULL);
+    QVERIFY(discovery.cancelled_generations.empty());
+    backend.load_result = PlaybackCommandResult::Accepted;
+    discovery.publishBatch(generation, 1, {source}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 1);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Descoberta"));
+    discovery.publishCompleted({.inspected_count = 1, .accepted_count = 1, .issue_count = 0});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+    QCOMPARE(presenter.sourceImportAcceptedCount(), 1ULL);
+}
+
+void PlayerPresenterTests::selectionCompletionMayDestroyThePresenter_data() {
+    QTest::addColumn<bool>("append_only");
+    QTest::newRow("open") << false;
+    QTest::newRow("add") << true;
+}
+
+void PlayerPresenterTests::selectionCompletionMayDestroyThePresenter() {
+    QFETCH(bool, append_only);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+                                                       [] { return std::vector<std::filesystem::path>{}; });
+    presenter->setAudioFilesPicker(&picker);
+    connect(presenter.get(), &PlayerPresenter::stateChanged, presenter.get(), [&] {
+        if (presenter->queueModelObject()->rowCount() == 1)
+            presenter.reset();
+    });
+    QVERIFY(append_only ? presenter->addAudio() : presenter->openAudio());
+    picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::absolute(localTestPath(u8"Aberta.wav"))}});
+    QTRY_VERIFY(!presenter);
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
+}
+
+void PlayerPresenterTests::pickerCancellationCannotStartAnotherDialog_data() {
+    QTest::addColumn<bool>("exit_requested");
+    QTest::newRow("exit") << true;
+    QTest::newRow("rebind") << false;
+}
+
+void PlayerPresenterTests::pickerCancellationCannotStartAnotherDialog() {
+    QFETCH(bool, exit_requested);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PresenterFilesPicker replacement;
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [] { return std::vector<std::filesystem::path>{}; });
+    presenter.setAudioFilesPicker(&picker);
+    QVERIFY(presenter.openAudio());
+    bool reopened = false;
+    picker.on_cancel = [&] { reopened = presenter.addAudio(); };
+    if (exit_requested)
+        QVERIFY(presenter.requestExit());
+    else
+        presenter.setAudioFilesPicker(&replacement);
+    picker.on_cancel = {};
+    QVERIFY(!reopened);
+    QVERIFY(!presenter.selectingAudioFiles());
+    QCOMPARE(picker.requests, 1);
+    QCOMPARE(picker.cancels, 1);
+    if (!exit_requested) {
+        QVERIFY(presenter.addAudio());
+        QCOMPARE(replacement.requests, 1);
+    }
+}
+
+void PlayerPresenterTests::pickerCancellationMayDestroyThePresenter_data() {
+    QTest::addColumn<bool>("exit_requested");
+    QTest::newRow("exit") << true;
+    QTest::newRow("rebind") << false;
+}
+
+void PlayerPresenterTests::pickerCancellationMayDestroyThePresenter() {
+    QFETCH(bool, exit_requested);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFilesPicker picker;
+    PresenterFilesPicker replacement;
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+                                                       [] { return std::vector<std::filesystem::path>{}; });
+    presenter->setAudioFilesPicker(&picker);
+    QVERIFY(presenter->openAudio());
+    picker.on_cancel = [&] { presenter.reset(); };
+    if (exit_requested)
+        static_cast<void>(presenter->requestExit());
+    else
+        presenter->setAudioFilesPicker(&replacement);
+    QVERIFY(!presenter);
+    QCOMPARE(picker.cancels, 1);
+    QCOMPARE(replacement.requests, 0);
 }
 
 void PlayerPresenterTests::retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue() {

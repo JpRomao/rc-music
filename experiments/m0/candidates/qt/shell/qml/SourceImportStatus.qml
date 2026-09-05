@@ -22,6 +22,7 @@ FocusScope {
     Accessible.role: Accessible.StaticText
     Accessible.name: title.text + ". " + progress.text + (advice.visible ? ". " + advice.text : "")
     signal focusRestoreRequested
+    signal audioFilesOpening(Item opener)
 
     SourceImportText {
         id: sourceText
@@ -219,9 +220,10 @@ FocusScope {
             text: sourceText.recover
             contract: root.contract
             visible: root.recoveryAvailable
-            enabled: visible
+            enabled: visible && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
             onClicked: {
-                root.restoreFocusPending = activeFocus;
+                root.restoreFocusPending = false;
+                root.audioFilesOpening(recoveryButton);
                 if (!root.presenter.dismissSourceImportStatus()) {
                     root.restoreFocusPending = false;
                     return;

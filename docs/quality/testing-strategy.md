@@ -358,6 +358,18 @@ Os contratos de localização preservam a separação entre escolher uma origem 
 
 Reds, Greens consolidados dos alvos e riscos residuais ficam no [registro central de localização](../../experiments/m0/candidates/qt/README.md#file-location-m47); resultados novos não devem ser inferidos dos testes antigos. Uma reexecução verde do coordinator com logs habilitados não demonstra a causa nem corrige a falha intermitente da primeira consolidação. Fakes ou diálogo widget não substituem inspeção do seletor nativo, NVDA, drive físico desconectado ou pacote/E2E Windows. M4.7/`UX-008`/`NFR-REL-005` e Linux permanecem parciais, sem benchmarks neste recorte.
 
+### Seleção principal assíncrona
+
+Os checks de Abrir/Adicionar devem separar aceitação, conclusão e efeito sobre a fila:
+
+- porta/presenter: callback inline reenfileirado, entrega duplicada/atrasada inerte, start rejeitado ou com exceção, lote inválido rejeitado atomicamente, cancelamento sem mutação e rejeição do load preservando contexto;
+- concorrência: fila viva após IPC, avanço, limpeza e reordenação durante o diálogo, preservando IDs/duplicatas; abrir o seletor não envia áudio, mas também não bloqueia comandos e eventos normais;
+- lifecycle: cancelamento por saída, troca de porta e destruição, NOTIFY do fim do estado ocupado mesmo quando persistência impede a saída, sem callback terminal emitido pelo destrutor; reentrância ao publicar início/conclusão não pode aplicar estado antigo;
+- helper Qt: seleção única/múltipla, paths locais Unicode e duplicados, timers ativos, ownership da factory, cancel/rebind, janela recebida destruída durante cancelamento e equivalência do localizador após extração;
+- UI: foco após conclusão efetiva, não após mera aceitação, com ID estável e revalidação de janela/modal/saída; ações mutuamente exclusivas e feedback acessível sem anunciar cancelamento como falha; marcadores locais de solicitação são limpos também quando rebind/saída encerram o estado ocupado sem emitir `Finished`, no mesmo turno de eventos ou depois dele; tarefas de foco já enfileiradas, inclusive `setQueueOpen`, não atravessam um novo seletor.
+
+Reds, Greens consolidados e limites ficam no [registro central do seletor assíncrono](../../experiments/m0/candidates/qt/README.md#async-audio-picker). A invocação deve respeitar o ambiente definido por alvo: exportar `QT_FATAL_WARNINGS=1` globalmente alterou indevidamente dois testes de áudio e foi corrigido sem enfraquecer asserções ou CMake. O retorno verde do coordinator com diagnóstico ampliado não demonstra nem corrige a causa da intermitência anterior. O core Qt OFF não foi reexecutado neste recorte sem mudança comportamental no núcleo. Testes widget/offscreen não substituem a inspeção do diálogo nativo Windows ou NVDA. A sanitização textual/numérica de `FR-023` permanece backlog concreto com política e regressões próprias; este incremento não a valida nem afirma exploração. Nenhum benchmark integra estes checks funcionais.
+
 ### `MetadataReader`
 
 - tags presentes/ausentes;

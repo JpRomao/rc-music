@@ -83,7 +83,9 @@ TestCase {
         keyClick(Qt.Key_Space);
         tryCompare(queueList, "count", 4);
         compare(testScenarioDriver.localLoadCount(), 1); // qmllint disable unqualified
-        verify(queueList.activeFocus);
+        tryVerify(function () {
+            return queueAdd.activeFocus;
+        });
 
         enqueue(["C:/Música/Adicionada pelo retorno.wav"]);
         queueAdd.forceActiveFocus(Qt.TabFocusReason);

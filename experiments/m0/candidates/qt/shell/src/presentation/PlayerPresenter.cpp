@@ -509,6 +509,8 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
 }
 
 PlayerPresenter::~PlayerPresenter() {
+    file_dialog_cancellation_active_ = true;
+    cancelAudioFileSelection();
     cancelFileLocation();
     timer_.stop();
     if (!uses_frozen_fixture_) {
@@ -899,10 +901,106 @@ bool PlayerPresenter::canRetryCurrentOccurrence() const noexcept {
     return current.has_value() && !local_queue_.items()[*current].available;
 }
 
-void PlayerPresenter::setAudioFileLocator(AudioFileLocator* locator) {
-    if (audio_file_locator_ == locator)
+void PlayerPresenter::setAudioFilesPicker(AudioFilesPicker* picker) {
+    if (audio_files_picker_ == picker || file_dialog_cancellation_active_)
         return;
+    const QPointer<PlayerPresenter> guard{this};
+    cancelAudioFileSelection();
+    if (!guard)
+        return;
+    audio_files_picker_ = picker;
+    audio_file_selection_failed_ = false;
+    emit stateChanged();
+}
+
+bool PlayerPresenter::selectingAudioFiles() const noexcept { return audio_file_selection_.has_value(); }
+bool PlayerPresenter::audioFileSelectionFailed() const noexcept { return audio_file_selection_failed_; }
+
+void PlayerPresenter::cancelAudioFileSelection() noexcept {
+    if (!audio_file_selection_.has_value())
+        return;
+    audio_file_selection_.reset();
+    if (audio_files_picker_ != nullptr) {
+        const QPointer<PlayerPresenter> guard{this};
+        const bool already_cancelling = std::exchange(file_dialog_cancellation_active_, true);
+        audio_files_picker_->cancel();
+        if (guard)
+            file_dialog_cancellation_active_ = already_cancelling;
+    }
+}
+
+bool PlayerPresenter::beginAudioFileSelection(const bool append_only) {
+    if (uses_frozen_fixture_ || exiting_ || file_dialog_cancellation_active_ || audio_files_picker_ == nullptr ||
+        selectingAudioFiles() || file_location_request_.has_value())
+        return false;
+    const auto generation = audio_file_selection_generation_ == std::numeric_limits<std::uint64_t>::max()
+                                ? 1
+                                : audio_file_selection_generation_ + 1;
+    audio_file_selection_generation_ = generation;
+    audio_file_selection_ = AudioFileSelectionRequest{generation, append_only};
+    audio_file_selection_failed_ = false;
+    auto* const picker = audio_files_picker_;
+    const QPointer<PlayerPresenter> guard{this};
+    emit stateChanged();
+    if (!guard || !audio_file_selection_.has_value() || audio_file_selection_->generation != generation ||
+        audio_files_picker_ != picker)
+        return false;
+    bool accepted = false;
+    try {
+        accepted = picker->pick([guard, generation](AudioFilesSelectionResult result) {
+            if (!guard)
+                return;
+            QMetaObject::invokeMethod(
+                guard,
+                [guard, generation, result = std::move(result)]() mutable {
+                    if (guard)
+                        guard->finishAudioFileSelection(generation, std::move(result));
+                },
+                Qt::QueuedConnection);
+        });
+    } catch (...) {
+        accepted = false;
+    }
+    if (guard && !accepted)
+        finishAudioFileSelection(generation, {AudioFilesSelectionStatus::Failed, {}});
+    return accepted;
+}
+
+void PlayerPresenter::finishAudioFileSelection(const std::uint64_t generation, AudioFilesSelectionResult result) {
+    if (!audio_file_selection_.has_value() || audio_file_selection_->generation != generation)
+        return;
+    const bool append_only = audio_file_selection_->append_only;
+    audio_file_selection_.reset();
+    if (exiting_)
+        return;
+    const QPointer<PlayerPresenter> guard{this};
+    bool changed = false;
+    if (result.status != AudioFilesSelectionStatus::Cancelled) {
+        const bool valid_paths = result.status == AudioFilesSelectionStatus::Selected && !result.source_paths.empty() &&
+                                 std::ranges::all_of(result.source_paths, [](const std::filesystem::path& path) {
+                                     return path.is_absolute() && !path.filename().empty() &&
+                                            path.native().find(std::filesystem::path::value_type{}) ==
+                                                std::filesystem::path::string_type::npos;
+                                 });
+        if (valid_paths)
+            changed = append_only ? addSelectedAudio(result.source_paths) : openSelectedAudio(result.source_paths);
+        if (!guard || audio_file_selection_generation_ != generation)
+            return;
+        audio_file_selection_failed_ = !changed;
+    }
+    emit stateChanged();
+    // A state observer may exit, delete us or start another selection before this notification.
+    if (guard && !exiting_ && !selectingAudioFiles() && audio_file_selection_generation_ == generation)
+        emit audioFileSelectionFinished(changed);
+}
+
+void PlayerPresenter::setAudioFileLocator(AudioFileLocator* locator) {
+    if (audio_file_locator_ == locator || file_dialog_cancellation_active_)
+        return;
+    const QPointer<PlayerPresenter> guard{this};
     cancelFileLocation();
+    if (!guard)
+        return;
     audio_file_locator_ = locator;
     file_location_error_.reset();
     emit stateChanged();
@@ -929,8 +1027,13 @@ void PlayerPresenter::cancelFileLocation() noexcept {
     if (!file_location_request_.has_value())
         return;
     file_location_request_.reset();
-    if (audio_file_locator_ != nullptr)
+    if (audio_file_locator_ != nullptr) {
+        const QPointer<PlayerPresenter> guard{this};
+        const bool already_cancelling = std::exchange(file_dialog_cancellation_active_, true);
         audio_file_locator_->cancel();
+        if (guard)
+            file_dialog_cancellation_active_ = already_cancelling;
+    }
 }
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
@@ -1335,24 +1438,31 @@ PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { r
 bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
 bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fixture_; }
 bool PlayerPresenter::openAudio() {
-    if (exiting_)
+    if (exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() || file_location_request_.has_value())
         return false;
     if (uses_frozen_fixture_) {
         return loadFrozenQueue();
     }
 
-    const auto selected_paths = audio_file_picker_();
+    if (audio_files_picker_ != nullptr)
+        return beginAudioFileSelection(false);
+    return openSelectedAudio(audio_file_picker_());
+}
+
+bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
     if (selected_paths.empty())
         return false;
     auto candidate = local_queue_;
     const std::size_t first_inserted = candidate.size();
     const bool queue_was_empty = candidate.empty();
     if (!candidate.append(selected_paths)) {
-        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
+        if (!sourceImportActive())
+            rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
         return false;
     }
     if (!local_track_session_->open(candidate.items()[first_inserted].source_path, LocalTrackStartIntent::Autoplay)) {
-        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
+        if (!sourceImportActive())
+            rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
         return false;
     }
     if (!candidate.select(first_inserted))
@@ -1361,9 +1471,12 @@ bool PlayerPresenter::openAudio() {
     local_queue_ = std::move(candidate);
     local_recovery_intent_.reset();
     navigation_items_ = navigationItems(local_queue_);
+    const QPointer<PlayerPresenter> guard{this};
     const bool model_updated = queue_was_empty
                                    ? local_queue_model_.replace(local_queue_)
                                    : local_queue_model_.append(local_queue_.items().subspan(first_inserted));
+    if (!guard)
+        return true;
     if (!model_updated)
         throw std::logic_error{"accepted opened local queue could not be projected"};
     artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
@@ -1371,20 +1484,28 @@ bool PlayerPresenter::openAudio() {
     sessionStructureDidChange();
     reconcileTimer();
     emit stateChanged();
-    emit playbackChanged();
+    if (guard)
+        emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::addAudio() {
-    if (uses_frozen_fixture_ || exiting_)
+    if (uses_frozen_fixture_ || exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() ||
+        file_location_request_.has_value())
         return false;
 
-    const auto selected_paths = audio_file_picker_();
+    if (audio_files_picker_ != nullptr)
+        return beginAudioFileSelection(true);
+    return addSelectedAudio(audio_file_picker_());
+}
+
+bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
     if (selected_paths.empty())
         return false;
     auto candidate = local_queue_;
     const std::size_t first_inserted = candidate.size();
     if (!candidate.append(selected_paths)) {
-        rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
+        if (!sourceImportActive())
+            rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
         return false;
     }
 
@@ -1392,7 +1513,8 @@ bool PlayerPresenter::addAudio() {
     if (needs_current_track) {
         if (!local_track_session_->open(candidate.items()[first_inserted].source_path,
                                         LocalTrackStartIntent::Autoplay)) {
-            rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
+            if (!sourceImportActive())
+                rejectSourceImport(static_cast<std::uint64_t>(selected_paths.size()));
             return false;
         }
         if (!candidate.select(first_inserted))
@@ -1401,8 +1523,11 @@ bool PlayerPresenter::addAudio() {
 
     local_queue_ = std::move(candidate);
     navigation_items_ = navigationItems(local_queue_);
+    const QPointer<PlayerPresenter> guard{this};
     if (!local_queue_model_.append(local_queue_.items().subspan(first_inserted)))
         throw std::logic_error{"accepted local queue append could not be projected"};
+    if (!guard)
+        return true;
     if (needs_current_track) {
         local_recovery_intent_.reset();
         artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
@@ -1411,8 +1536,10 @@ bool PlayerPresenter::addAudio() {
     sessionStructureDidChange();
     reconcileTimer();
     emit stateChanged();
+    if (!guard)
+        return true;
     emit playbackChanged();
-    if (needs_current_track)
+    if (guard && needs_current_track)
         emit queueFocusRequested(static_cast<int>(first_inserted));
     return true;
 }
@@ -1589,7 +1716,8 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
     return true;
 }
 bool PlayerPresenter::locateQueueOccurrence(const QString& occurrence_id) {
-    if (!fileLocationAvailable() || exiting_ || file_location_request_.has_value() || !retryingOccurrenceId().isEmpty())
+    if (!fileLocationAvailable() || exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() ||
+        file_location_request_.has_value() || !retryingOccurrenceId().isEmpty())
         return false;
     const auto target = localOccurrenceIndex(occurrence_id);
     if (!target.has_value() || local_queue_.items()[*target].available)
@@ -2214,12 +2342,18 @@ bool PlayerPresenter::requestRestore() {
     return true;
 }
 bool PlayerPresenter::requestExit() {
-    if (exiting_)
+    if (exiting_ || file_dialog_cancellation_active_)
         return false;
 
-    const bool location_was_pending = file_location_request_.has_value();
+    const QPointer<PlayerPresenter> guard{this};
+    const bool selection_was_pending = selectingAudioFiles() || file_location_request_.has_value();
+    cancelAudioFileSelection();
+    if (!guard)
+        return false;
     cancelFileLocation();
-    if (location_was_pending) {
+    if (!guard)
+        return false;
+    if (selection_was_pending) {
         // Publish after the exit decision so observers cannot reenter with another picker.
         QMetaObject::invokeMethod(this, [this] { emit stateChanged(); }, Qt::QueuedConnection);
     }

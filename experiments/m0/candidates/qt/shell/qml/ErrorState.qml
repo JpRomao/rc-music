@@ -15,6 +15,7 @@ ColumnLayout {
     readonly property bool outputRecovery: !presenter.usesFrozenFixture && presenter.errorActionId === "recover-audio-output"
     property bool locationFocusRestoreAllowed: true
     property string requestedLocationId: ""
+    signal audioFilesOpening(Item opener)
     signal detailsRequested(Item opener)
     Accessible.role: Accessible.AlertMessage
     Accessible.name: titleText + (bodyText.length > 0 ? ". " + bodyText : "")
@@ -72,27 +73,33 @@ ColumnLayout {
         contract: root.contract
         text: root.actionText
         Accessible.description: root.outputRecovery ? root.labels.recoverOutputDescription : ""
-        enabled: root.visible && !root.presenter.exiting && root.presenter.locatingOccurrenceId.length === 0
+        enabled: root.visible && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
         onClicked: {
-            if (enabled && visible)
-                root.presenter.executeErrorAction();
+            if (!enabled || !visible)
+                return;
+            if (!root.presenter.usesFrozenFixture && !root.outputRecovery)
+                root.audioFilesOpening(recoveryButton);
+            root.presenter.executeErrorAction();
         }
     }
     AccessibleActionButton {
+        id: openAnotherButton
         controlId: "error-open-another-audio"
         contract: root.contract
         text: root.labels.openAudioAction
         visible: root.outputRecovery
-        enabled: visible && !root.presenter.exiting && root.presenter.locatingOccurrenceId.length === 0
+        enabled: visible && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
         onClicked: {
-            if (enabled && visible)
-                root.presenter.openAudio();
+            if (!enabled || !visible)
+                return;
+            root.audioFilesOpening(openAnotherButton);
+            root.presenter.openAudio();
         }
     }
     AccessibleActionButton {
@@ -102,7 +109,7 @@ ColumnLayout {
         text: root.labels.retryAction
         Accessible.description: root.labels.retryDescription
         visible: !root.presenter.usesFrozenFixture && root.presenter.canRetryCurrentOccurrence
-        enabled: visible && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
+        enabled: visible && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter
@@ -118,7 +125,7 @@ ColumnLayout {
         text: root.labels.locateAction
         Accessible.description: root.labels.locateDescription
         visible: !root.presenter.usesFrozenFixture && root.presenter.canLocateCurrentOccurrence
-        enabled: visible && root.presenter.fileLocationAvailable && !root.presenter.exiting && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
+        enabled: visible && root.presenter.fileLocationAvailable && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.retryingOccurrenceId.length === 0 && root.presenter.locatingOccurrenceId.length === 0
         Layout.fillWidth: true
         Layout.maximumWidth: 560
         Layout.alignment: Qt.AlignHCenter

@@ -1,6 +1,8 @@
 import QtQuick
 
 QtObject {
+    readonly property string selectingFiles: qsTr("Aguardando seleção de arquivos…")
+    readonly property string fileSelectionFailed: qsTr("Não foi possível abrir o seletor. Tente abrir ou adicionar arquivos novamente.")
     readonly property string dropPrompt: qsTr("Solte para adicionar à fila")
     readonly property string discovering: qsTr("Procurando arquivos de áudio…")
     readonly property string cancelling: qsTr("Cancelando importação…")

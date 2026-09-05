@@ -7,7 +7,7 @@ ColumnLayout {
     objectName: "playing-state"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
-    signal openAudioRequested
+    signal openAudioRequested(Item opener)
     signal detailsRequested(Item opener)
 
     function focusPrimary() {
@@ -74,8 +74,9 @@ ColumnLayout {
         controlId: "open-another-audio"
         contract: root.contract
         text: root.contract.openAudioText
+        enabled: !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
         Layout.alignment: Qt.AlignHCenter
-        onClicked: root.openAudioRequested()
+        onClicked: root.openAudioRequested(openAudioButton)
     }
     AccessibleTransportButton {
         id: detailsButton

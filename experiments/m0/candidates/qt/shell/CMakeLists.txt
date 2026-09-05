@@ -115,8 +115,13 @@ if(M0_QT_SHELL_SUPPORT)
 
     add_library(m0_qt_audio_file_locator STATIC
         include/m0/ports/AudioFileLocator.hpp
+        include/m0/ports/AudioFilesPicker.hpp
+        src/adapters/QtAudioFileDialog.hpp
+        src/adapters/QtAudioFileDialog.cpp
         src/adapters/QtAudioFileLocator.hpp
         src/adapters/QtAudioFileLocator.cpp
+        src/adapters/QtAudioFilesPicker.hpp
+        src/adapters/QtAudioFilesPicker.cpp
     )
     target_include_directories(m0_qt_audio_file_locator PUBLIC include src)
     target_link_libraries(m0_qt_audio_file_locator PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
@@ -446,6 +451,16 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_audio_file_locator_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.audio-file-locator COMMAND m0_qt_audio_file_locator_tests -o -,txt)
+        add_executable(m0_qt_audio_files_picker_tests tests/qtest/QtAudioFilesPickerTests.cpp)
+        target_link_libraries(m0_qt_audio_files_picker_tests PRIVATE m0_qt_audio_file_locator Qt6::Test Qt6::Widgets)
+        target_compile_features(m0_qt_audio_files_picker_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_audio_files_picker_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_audio_files_picker_tests PRIVATE /W4 /WX /permissive-)
+        else()
+            target_compile_options(m0_qt_audio_files_picker_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        endif()
+        add_test(NAME m0.qt.audio-files-picker COMMAND m0_qt_audio_files_picker_tests -o -,txt)
         if(WIN32)
             add_executable(m0_qt_windows_smtc_tests tests/qtest/WindowsSmtcAdapterTests.cpp)
             target_link_libraries(m0_qt_windows_smtc_tests PRIVATE m0_qt_windows_smtc Qt6::Test)
@@ -878,7 +893,7 @@ if(M0_QT_SHELL_SUPPORT)
             cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST m0_windows_font_dir NORMALIZE)
             list(APPEND m0_qt_quick_test_environment "QT_QPA_FONTDIR=${m0_windows_font_dir}")
         endif()
-        set_tests_properties(m0.qt.audio-file-locator PROPERTIES
+        set_tests_properties(m0.qt.audio-file-locator m0.qt.audio-files-picker PROPERTIES
             LABELS "m0;qt;files;locator;UX-008;M4.7"
             TIMEOUT 30
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
@@ -886,6 +901,7 @@ if(M0_QT_SHELL_SUPPORT)
             # every other warning; fatal warnings would abort even the explicitly ignored one.
             ENVIRONMENT "${m0_qt_quick_test_environment};QT_FATAL_WARNINGS=0"
         )
+        set_tests_properties(m0.qt.audio-files-picker PROPERTIES LABELS "m0;qt;files;picker;FR-001;M2.1")
         if(WIN32)
             set_tests_properties(m0.qt.windows.smtc PROPERTIES
                 LABELS "m0;qt;windows;smtc;media-keys;FR-037"

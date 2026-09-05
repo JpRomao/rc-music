@@ -31,6 +31,8 @@ Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve se
 | FR-005 | P0 | Derivado | Detectar formato pelo conteúdo quando possível. Extensão incorreta ou arquivo corrompido deve produzir diagnóstico seguro, nunca crash. |
 | FR-006 | P1 | Derivado | Mostrar filtros no seletor coerentes com a matriz validada e oferecer “todos os arquivos” para diagnóstico. |
 
+O [recorte de seleção principal assíncrona](../../experiments/m0/candidates/qt/README.md#async-audio-picker) implementa no candidato o fluxo de `FR-001` em que Abrir/Adicionar aguardam o usuário sem substituir o processamento normal de áudio, IPC e persistência. A conclusão usa a fila então vigente; aceitar o seletor não confirma alteração da fila nem decode. Os checks automatizados consolidados e riscos residuais são registrados centralmente, sem concluir M2/M3 ou a validação nativa Windows.
+
 ### 2.2 Reprodução
 
 | ID | Prioridade | Origem | Requisito e critério principal |
@@ -56,6 +58,8 @@ Uma extensão de arquivo não é sinônimo de codec. O suporte publicado deve se
 | FR-023 | P0 | Derivado | Tags ausentes ou inválidas não podem impedir reprodução. Texto é sanitizado e arte corrompida ou acima dos limites NFR-LIMIT é descartada em favor do placeholder. |
 | FR-024 | P0 | Derivado | Leitura de tags, arte e propriedades ocorre de forma assíncrona e cancelável. Resultado atrasado de uma faixa antiga não pode sobrescrever a atual. |
 | FR-025 | P2 | Derivado | Editar tags e capa fica fora do MVP. |
+
+Pendência funcional de `FR-023`: a sanitização textual e numérica de metadata ainda exige política explícita e regressões próprias, além de conversão UTF-8, limites de tamanho e `PlainText`. Número da faixa e ano de `FR-021` já existem no extrator e no painel de detalhes; não devem ser classificados como funcionalidades ausentes. Não há alegação de exploração ou vulnerabilidade comprovada neste registro.
 
 ### 2.4 Integração com o desktop
 

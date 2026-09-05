@@ -72,6 +72,8 @@ O quarto recorte de M4.7 acrescenta recuperação da janela após `TaskbarCreate
 
 O quinto recorte de M4.7 acrescenta localização de arquivo em outro path por um seletor assíncrono; QML fornece somente o ID da ocorrência. A fila conserva ordem, duplicatas e identidade, e metadata antiga é limpa. Localizar outra ocorrência não interrompe a faixa atual: o novo path permanece pendente até retry confirmado pelo decoder. A ocorrência atual em erro é reaberta pausada, restaurando a posição quando há seek, sem autoplay. O [registro central de localização](experiments/m0/candidates/qt/README.md#file-location-m47) reúne os checks automatizados verdes, incluindo arquivo renomeado com decoder real, e distingue os riscos ainda abertos. M4.7 não está concluída; diálogo nativo, drive físico, pacote, acessibilidade manual e Linux continuam exigindo validação.
 
+O seletor principal de Abrir/Adicionar implementa o [contrato assíncrono](experiments/m0/candidates/qt/README.md#async-audio-picker), compartilhando o helper de diálogo com Localizar. A escolha é aplicada à fila viva, preserva duplicatas e não interrompe o processamento normal de áudio/IPC enquanto o usuário escolhe. Os checks automatizados foram consolidados: suíte completa, Presenter, adapters, UI, formato, build Release e composição de produção verdes. O registro preserva a intermitência do coordinator sem causa demonstrada; retorno verde não é correção de IPC. M2/M3 e os gates nativos não estão concluídos. Sanitização textual/numérica de metadata em `FR-023` é o próximo backlog funcional explícito, não uma alegação de vulnerabilidade.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor.
 
 ## Proposta do produto
