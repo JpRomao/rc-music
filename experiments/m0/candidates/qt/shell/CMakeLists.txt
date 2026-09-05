@@ -205,6 +205,24 @@ if(M0_QT_SHELL_SUPPORT)
         target_compile_options(m0_qt_system_appearance PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
 
+    if(WIN32)
+        add_library(m0_qt_diagnostic_privacy STATIC
+            src/adapters/QtDiagnosticPrivacy.hpp
+            src/adapters/QtDiagnosticPrivacy.cpp
+        )
+        target_include_directories(m0_qt_diagnostic_privacy PUBLIC src)
+        target_link_libraries(m0_qt_diagnostic_privacy PUBLIC Qt6::Core)
+        target_compile_features(m0_qt_diagnostic_privacy PUBLIC cxx_std_20)
+        add_library(m0_qt_diagnostic_store STATIC src/adapters/QtWindowsDiagnosticLogStore.cpp)
+        target_include_directories(m0_qt_diagnostic_store PUBLIC src)
+        target_link_libraries(m0_qt_diagnostic_store PUBLIC m0_qt_core Qt6::Core)
+        target_compile_features(m0_qt_diagnostic_store PUBLIC cxx_std_20)
+        if(MSVC)
+            target_compile_options(m0_qt_diagnostic_privacy PRIVATE /W4 /WX /permissive-)
+            target_compile_options(m0_qt_diagnostic_store PRIVATE /W4 /WX /permissive-)
+        endif()
+    endif()
+
     add_library(m0_qt_preferences_persistence STATIC
         src/adapters/PreferencesJsonCodec.hpp
         src/adapters/PreferencesJsonCodec.cpp
@@ -402,6 +420,13 @@ if(M0_QT_SHELL_SUPPORT)
     endif()
 
     qt_add_executable(m0_qt_shell app/main.cpp)
+    add_library(m0_qt_diagnostic_binding STATIC src/presentation/ShellDiagnosticBinding.cpp)
+    target_include_directories(m0_qt_diagnostic_binding PUBLIC src)
+    target_link_libraries(m0_qt_diagnostic_binding PUBLIC m0_qt_shell_support m0_qt_shell_ui Qt6::Quick)
+    target_compile_features(m0_qt_diagnostic_binding PUBLIC cxx_std_20)
+    if(MSVC)
+        target_compile_options(m0_qt_diagnostic_binding PRIVATE /W4 /WX /permissive-)
+    endif()
     target_link_libraries(m0_qt_shell PRIVATE
         m0_qt_preferences_persistence
         m0_qt_session_persistence
@@ -419,7 +444,8 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::Widgets
     )
     if(WIN32)
-        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_power_events m0_qt_windows_smtc)
+        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_power_events m0_qt_windows_smtc
+            m0_qt_diagnostic_privacy m0_qt_diagnostic_store m0_qt_diagnostic_binding)
     endif()
     target_include_directories(m0_qt_shell PRIVATE src)
     target_compile_features(m0_qt_shell PRIVATE cxx_std_20)
@@ -431,6 +457,17 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(BUILD_TESTING)
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
+        add_executable(m0_qt_diagnostic_binding_tests tests/qtest/ShellDiagnosticBindingTests.cpp)
+        target_link_libraries(m0_qt_diagnostic_binding_tests PRIVATE m0_qt_diagnostic_binding Qt6::Test)
+        target_compile_definitions(m0_qt_diagnostic_binding_tests PRIVATE
+            M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}" M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}")
+        target_compile_features(m0_qt_diagnostic_binding_tests PRIVATE cxx_std_20)
+        set_target_properties(m0_qt_diagnostic_binding_tests PROPERTIES AUTOMOC ON)
+        if(MSVC)
+            target_compile_options(m0_qt_diagnostic_binding_tests PRIVATE /W4 /WX /permissive-)
+        endif()
+        add_test(NAME m0.qt.diagnostics.binding COMMAND m0_qt_diagnostic_binding_tests)
+        set_tests_properties(m0.qt.diagnostics.binding PROPERTIES TIMEOUT 30)
         add_executable(m0_qt_shell_platform_tests tests/qtest/QtShellPlatformTests.cpp)
         target_link_libraries(m0_qt_shell_platform_tests PRIVATE m0_qt_shell_platform Qt6::Test Qt6::Widgets)
         target_compile_features(m0_qt_shell_platform_tests PRIVATE cxx_std_20)
@@ -660,6 +697,24 @@ if(M0_QT_SHELL_SUPPORT)
                 )
             endif()
             add_test(NAME m0.qt.session.windows-store COMMAND m0_qt_session_windows_store_tests)
+            add_executable(m0_qt_diagnostic_privacy_tests tests/qtest/QtDiagnosticPrivacyTests.cpp)
+            target_link_libraries(m0_qt_diagnostic_privacy_tests PRIVATE m0_qt_diagnostic_privacy Qt6::Test)
+            target_compile_features(m0_qt_diagnostic_privacy_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_diagnostic_privacy_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_diagnostic_privacy_tests PRIVATE /W4 /WX /permissive-)
+            endif()
+            add_test(NAME m0.qt.diagnostics.privacy COMMAND m0_qt_diagnostic_privacy_tests)
+            set_tests_properties(m0.qt.diagnostics.privacy PROPERTIES TIMEOUT 30)
+            add_executable(m0_qt_diagnostic_store_tests tests/qtest/QtWindowsDiagnosticLogStoreTests.cpp)
+            target_link_libraries(m0_qt_diagnostic_store_tests PRIVATE m0_qt_diagnostic_store Qt6::Test)
+            target_compile_features(m0_qt_diagnostic_store_tests PRIVATE cxx_std_20)
+            set_target_properties(m0_qt_diagnostic_store_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_diagnostic_store_tests PRIVATE /W4 /WX /permissive-)
+            endif()
+            add_test(NAME m0.qt.diagnostics.windows-store COMMAND m0_qt_diagnostic_store_tests)
+            set_tests_properties(m0.qt.diagnostics.windows-store PROPERTIES TIMEOUT 30)
         endif()
         add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
         target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
@@ -734,6 +789,19 @@ if(M0_QT_SHELL_SUPPORT)
                 )
             endif()
             add_dependencies(m0_qt_preferences_restart_tests m0_qt_shell)
+            if(M0_QT_AUDIO_SUPPORT)
+                add_executable(m0_qt_diagnostic_executable_tests tests/qtest/DiagnosticExecutableTests.cpp)
+                target_link_libraries(m0_qt_diagnostic_executable_tests PRIVATE m0_qt_preferences_persistence Qt6::Test)
+                target_compile_features(m0_qt_diagnostic_executable_tests PRIVATE cxx_std_20)
+                set_target_properties(m0_qt_diagnostic_executable_tests PROPERTIES AUTOMOC ON)
+                if(MSVC)
+                    target_compile_options(m0_qt_diagnostic_executable_tests PRIVATE /W4 /WX /permissive-)
+                endif()
+                add_dependencies(m0_qt_diagnostic_executable_tests m0_qt_shell)
+                add_test(NAME m0.qt.diagnostics.executable COMMAND m0_qt_diagnostic_executable_tests
+                    $<TARGET_FILE:m0_qt_shell>)
+                set_tests_properties(m0.qt.diagnostics.executable PROPERTIES TIMEOUT 45)
+            endif()
             add_test(NAME m0.qt.preferences.restart COMMAND m0_qt_preferences_restart_tests
                 $<TARGET_FILE:m0_qt_shell>
             )
@@ -835,6 +903,14 @@ if(M0_QT_SHELL_SUPPORT)
         )
         get_target_property(m0_qt_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)
         get_filename_component(m0_qt_runtime_dir "${m0_qt_core_runtime}" DIRECTORY)
+        set_tests_properties(m0.qt.diagnostics.binding PROPERTIES
+            LABELS "m0;qt;diagnostics;NFR-PRIV-003"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}")
+        if(WIN32)
+            set_tests_properties(m0.qt.diagnostics.privacy m0.qt.diagnostics.windows-store PROPERTIES
+                LABELS "m0;qt;diagnostics;NFR-PRIV-003"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}")
+        endif()
         set_tests_properties(m0.qt.fixture.repository-and-model PROPERTIES
             LABELS "m0;qt;fixture;model"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${m0_qt_runtime_dir}"
@@ -1239,7 +1315,7 @@ if(M0_QT_AUDIO_SUPPORT)
 
         if(M0_QT_SHELL_SUPPORT)
             if(WIN32)
-                set_tests_properties(m0.qt.preferences.restart PROPERTIES
+                set_tests_properties(m0.qt.preferences.restart m0.qt.diagnostics.executable PROPERTIES
                     ENVIRONMENT_MODIFICATION
                         "PATH=path_list_prepend:${m0_qt_audio_runtime_dir};PATH=path_list_prepend:${m0_qt_audio_core_runtime_dir}"
                     ENVIRONMENT
@@ -1395,6 +1471,8 @@ add_library(m0_qt_core STATIC
     src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
     src/domain/MetadataSanitization.cpp
+    src/domain/DiagnosticRecord.cpp
+    src/adapters/SingleWorkerDiagnosticWriter.cpp
     src/domain/QueueNavigation.cpp
     src/domain/SessionSnapshot.cpp
     src/domain/WindowPlacement.cpp
@@ -1416,6 +1494,7 @@ if(BUILD_TESTING)
         tests/catch2/LocalAudioFilePolicyTests.cpp
         tests/catch2/LocalFileQueueTests.cpp
         tests/catch2/MetadataSanitizationTests.cpp
+        tests/catch2/DiagnosticLogTests.cpp
         tests/catch2/SingleWorkerLocalSourceDiscoveryTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp

@@ -10,6 +10,8 @@ enum class InitialShellScenario { Empty, Unavailable };
 enum class InitialWindowDisposition { Show, HideToTray, ShowWithTrayUnavailableNotice };
 
 struct ShellLaunchOptions final {
+    bool diagnostics_enabled{false};
+    bool smoke_diagnostics{false};
     InitialShellScenario initial_scenario{InitialShellScenario::Empty};
     bool scenario_control_requested{false};
     bool smoke_error_recovery{false};

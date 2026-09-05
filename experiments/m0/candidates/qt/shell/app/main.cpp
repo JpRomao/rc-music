@@ -4,9 +4,12 @@
 #include "ShellLaunchOptions.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #ifdef Q_OS_WIN
+#include "adapters/QtDiagnosticPrivacy.hpp"
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
+#include "adapters/QtWindowsDiagnosticLogStore.hpp"
 #include "adapters/WindowsPowerEvents.hpp"
 #include "adapters/WindowsSmtcAdapter.hpp"
+#include "m0/adapters/SingleWorkerDiagnosticWriter.hpp"
 #include "m0/adapters/SingleWorkerPreferencesWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #ifdef M0_QT_COMBINED_AUDIO
@@ -27,6 +30,7 @@
 #include "presentation/ShellPlatformBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 #ifdef Q_OS_WIN
+#include "presentation/ShellDiagnosticBinding.hpp"
 #include "presentation/SystemMediaControlsBinding.hpp"
 #include "presentation/SystemPowerEventsBinding.hpp"
 #endif
@@ -158,6 +162,16 @@ applyRestoredWindowPlacement(QWindow& window, const std::optional<music_player::
 [[nodiscard]] int reportSingleInstanceFailure(const music_player::m0::QtSingleInstanceStartResult& result,
                                               const bool suppress_dialog) {
     qCritical().noquote() << "Unable to forward shell sources:" << result.detail;
+#ifdef M0_QT_SHELL_TEST_HOOKS
+    // The executable harness needs closed outcomes, never the external detail.
+    if (suppress_dialog) {
+        if (result.detail == QStringLiteral("tooManyPaths"))
+            std::fputs("M0_SINGLE_INSTANCE_REJECTED tooManyPaths\n", stdout);
+        else if (result.detail == QStringLiteral("temporarilyUnavailable"))
+            std::fputs("M0_SINGLE_INSTANCE_REJECTED temporarilyUnavailable\n", stdout);
+        std::fflush(stdout);
+    }
+#endif
     if (!suppress_dialog) {
         QMessageBox::critical(
             nullptr, music_player::m0::ApplicationText::openSourcesFailureTitle(),
@@ -234,6 +248,11 @@ applyRestoredWindowPlacement(QWindow& window, const std::optional<music_player::
 } // namespace
 
 int main(int argc, char* argv[]) {
+#ifdef Q_OS_WIN
+    // Installed before Qt, plugins and user inputs; never restored during teardown.
+    if (!music_player::m0::installProcessDiagnosticPrivacy())
+        return 1;
+#endif
     Q_INIT_RESOURCE(m0_qt_shell_assets);
     Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
@@ -241,6 +260,10 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
     QCoreApplication::setApplicationName(QStringLiteral("MusicPlayer"));
     application.setQuitOnLastWindowClosed(false);
+#ifdef Q_OS_WIN
+    std::unique_ptr<music_player::m0::QtWindowsDiagnosticLogStore> diagnostic_store;
+    std::unique_ptr<music_player::m0::SingleWorkerDiagnosticWriter> diagnostics;
+#endif
     try {
         QTranslator pt_br_translation;
         if (!pt_br_translation.load(QStringLiteral(":/i18n/music-player_pt_BR.qm")) ||
@@ -260,6 +283,10 @@ int main(int argc, char* argv[]) {
                                    false
 #endif
         );
+#ifndef Q_OS_WIN
+        if (options.diagnostics_enabled)
+            throw std::invalid_argument{"diagnostics is available only on Windows"};
+#endif
 #if defined(Q_OS_WIN) || defined(M0_QT_COMBINED_AUDIO)
         QString config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -296,6 +323,12 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #ifdef Q_OS_WIN
+        if (options.diagnostics_enabled) {
+            diagnostic_store = std::make_unique<music_player::m0::QtWindowsDiagnosticLogStore>(config_root);
+            diagnostics = std::make_unique<music_player::m0::SingleWorkerDiagnosticWriter>(*diagnostic_store);
+            static_cast<void>(diagnostics->submit(
+                {music_player::m0::DiagnosticSeverity::Info, music_player::m0::DiagnosticEvent::ApplicationStarted}));
+        }
         music_player::m0::QtJsonWindowsPreferencesStore preferences_store(config_root);
         const music_player::m0::PreferencesLoadResult loaded_preferences = preferences_store.load();
         music_player::m0::SingleWorkerPreferencesWriter preferences_writer(preferences_store);
@@ -468,6 +501,11 @@ int main(int argc, char* argv[]) {
         PlayerPresenter presenter(bundle, platform);
 #endif
 #endif
+#ifdef Q_OS_WIN
+        std::unique_ptr<music_player::m0::ShellDiagnosticBinding> diagnostic_binding;
+        if (diagnostics)
+            diagnostic_binding = std::make_unique<music_player::m0::ShellDiagnosticBinding>(presenter, *diagnostics);
+#endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
 #ifdef M0_QT_COMBINED_AUDIO
@@ -568,6 +606,35 @@ int main(int argc, char* argv[]) {
         int single_instance_command_count = 0;
         bool session_crash_clear_requested = false;
         int session_recovery_phase = 0;
+        bool diagnostics_completed = false;
+        QTimer diagnostics_timer;
+        if (options.smoke_diagnostics) {
+            diagnostics_timer.setInterval(10);
+            QObject::connect(&diagnostics_timer, &QTimer::timeout, &application, [&] {
+                const auto state = presenter.playbackState();
+                if (state == PlayerPresenter::PlaybackState::Error) {
+                    application.exit(2);
+                    return;
+                }
+                if (state != PlayerPresenter::PlaybackState::Ready && state != PlayerPresenter::PlaybackState::Paused &&
+                    state != PlayerPresenter::PlaybackState::Playing)
+                    return;
+                diagnostics_timer.stop();
+                qWarning("PRIVATE_DIAGNOSTIC_QT https://example.invalid/private?secret=test");
+                std::fputs("PRIVATE_DIAGNOSTIC_NATIVE\n", stderr);
+                std::fflush(stderr);
+                std::fputs("M0_DIAGNOSTICS_DECODER_READY\n", stdout);
+                std::fflush(stdout);
+                diagnostics_completed = presenter.requestExit();
+                if (!diagnostics_completed)
+                    application.exit(2);
+            });
+            diagnostics_timer.start();
+            QTimer::singleShot(10'000, &application, [&] {
+                if (!diagnostics_completed)
+                    application.exit(2);
+            });
+        }
         QTimer session_restart_timer;
         QTimer session_recovery_timer;
         QTimer session_crash_timer;
@@ -974,6 +1041,11 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
         const int result = application.exec();
+#ifdef Q_OS_WIN
+        if (diagnostics)
+            static_cast<void>(diagnostics->submit(
+                {music_player::m0::DiagnosticSeverity::Info, music_player::m0::DiagnosticEvent::ApplicationStopping}));
+#endif
 #ifdef M0_QT_COMBINED_AUDIO
         stop_single_instance();
 #endif
@@ -1008,6 +1080,8 @@ int main(int argc, char* argv[]) {
             qCritical() << "The single-instance executable smoke did not complete its graceful exit";
             return 2;
         }
+        if (options.smoke_diagnostics && (result != 0 || !diagnostics_completed || !presenter.exitCommitted()))
+            return 2;
         if (options.smoke_session_restart_read && (result != 0 || !session_restart_completed || !presenter.exiting())) {
             qCritical() << "The session restart smoke did not complete";
             return 2;
@@ -1030,6 +1104,12 @@ int main(int argc, char* argv[]) {
 #endif
         return result;
     } catch (const std::exception& error) {
+#ifdef Q_OS_WIN
+        if (diagnostics)
+            static_cast<void>(diagnostics->submit({music_player::m0::DiagnosticSeverity::Error,
+                                                   music_player::m0::DiagnosticEvent::StartupFailed,
+                                                   music_player::m0::DiagnosticCode::Unknown}));
+#endif
         qCritical() << "Unable to start the frozen M0 shell:" << error.what();
         return 1;
     }

@@ -56,6 +56,14 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
             source_only = true;
             continue;
         }
+        if (argument == QStringLiteral("--diagnostics")) {
+            if (options.diagnostics_enabled)
+                throw std::invalid_argument{"diagnostics may be enabled only once"};
+            options.diagnostics_enabled = true;
+            continue;
+        }
+        if (argument.startsWith(QStringLiteral("--diagnostics=")))
+            throw std::invalid_argument{"diagnostics does not accept a value"};
         if (argument.startsWith(QStringLiteral("--m0-scenario="))) {
             if (scenario_seen)
                 throw std::invalid_argument{"the M0 shell scenario may be specified only once"};
@@ -77,6 +85,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
             const QString value = argument.sliced(QStringLiteral("--m0-smoke=").size());
             if (value == QStringLiteral("error-recovery"))
                 options.smoke_error_recovery = true;
+            else if (value == QStringLiteral("diagnostics"))
+                options.smoke_diagnostics = true;
             else if (value == QStringLiteral("tray-lifecycle"))
                 options.smoke_tray_lifecycle = true;
             else if (value == QStringLiteral("combined-startup"))
@@ -127,7 +137,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     const bool session_restart = options.smoke_session_restart_read ||
                                  options.smoke_session_crash_before_primary_commit ||
                                  options.smoke_session_recovery_repair || options.smoke_session_defaults_read;
-    const bool startup_behavior = options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence;
+    const bool startup_behavior =
+        options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence || options.smoke_diagnostics;
     const bool executable_smoke = options.smoke_error_recovery || options.smoke_tray_lifecycle ||
                                   options.smoke_combined_startup || preferences_restart || session_restart ||
                                   options.smoke_single_instance_executable || startup_behavior;
@@ -139,7 +150,7 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     if ((preferences_restart || session_restart || options.smoke_single_instance_executable || startup_behavior) &&
         options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the restart smoke requires the empty scenario"};
-    if (options.smoke_startup_source_precedence && options.source_paths.isEmpty())
+    if ((options.smoke_startup_source_precedence || options.smoke_diagnostics) && options.source_paths.isEmpty())
         throw std::invalid_argument{"the startup source precedence smoke requires a source"};
     if (options.smoke_start_minimized_no_tray && !options.source_paths.isEmpty())
         throw std::invalid_argument{"the no-tray startup smoke requires no source"};
@@ -202,6 +213,8 @@ QStringList resolveShellSourcePaths(const QStringList& source_paths, const QStri
 
 void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool test_hooks_enabled,
                                 const bool combined_audio_enabled) {
+    if (options.diagnostics_enabled && !combined_audio_enabled)
+        throw std::invalid_argument{"diagnostics requires the combined audio application"};
     if (!test_hooks_enabled &&
         (options.scenario_control_requested || options.smoke_error_recovery || options.smoke_tray_lifecycle ||
          options.smoke_combined_startup || options.smoke_preferences_restart_write ||
@@ -209,14 +222,14 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
          options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
          options.smoke_session_defaults_read || options.smoke_single_instance_executable ||
          options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence ||
-         options.test_config_root.has_value())) {
+         options.smoke_diagnostics || options.test_config_root.has_value())) {
         throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
         throw std::invalid_argument{"the combined startup smoke requires audio support"};
     if (!combined_audio_enabled && options.smoke_single_instance_executable)
         throw std::invalid_argument{"the single-instance executable smoke requires audio support"};
-    if (!combined_audio_enabled && options.smoke_startup_source_precedence)
+    if (!combined_audio_enabled && (options.smoke_startup_source_precedence || options.smoke_diagnostics))
         throw std::invalid_argument{"the startup source precedence smoke requires audio support"};
     if (!combined_audio_enabled && !options.source_paths.isEmpty())
         throw std::invalid_argument{"shell source paths require audio support"};

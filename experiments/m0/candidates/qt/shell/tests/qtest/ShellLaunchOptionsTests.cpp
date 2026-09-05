@@ -28,6 +28,48 @@ class ShellLaunchOptionsTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void diagnosticsRequireExplicitOptInAndAreNotSourcePaths() {
+        QVERIFY(!parseShellLaunchOptions({QStringLiteral("app")}).diagnostics_enabled);
+        const auto options = parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--diagnostics")});
+        QVERIFY(options.diagnostics_enabled);
+        QVERIFY(options.source_paths.isEmpty());
+        validateShellLaunchOptions(options, false, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, false));
+    }
+
+    void rejectsDuplicateAndMalformedDiagnosticOptions() {
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 (void)parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--diagnostics"),
+                                                                QStringLiteral("--diagnostics")}));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--diagnostics=true")}));
+    }
+
+    void diagnosticFlagCanBeEscapedAsAFileName() {
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--"), QStringLiteral("--diagnostics")});
+        QVERIFY(!options.diagnostics_enabled);
+        QCOMPARE(options.source_paths, QStringList{QStringLiteral("--diagnostics")});
+    }
+
+    void diagnosticSmokeRequiresIsolatedAudioAndIsUnavailableInProduction() {
+        const auto options =
+            parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--m0-smoke=diagnostics"),
+                                     testConfigArgument(QStringLiteral("diagnostics")), QStringLiteral("test.wav")});
+        QVERIFY(options.smoke_diagnostics);
+        validateShellLaunchOptions(options, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, true));
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--m0-smoke=diagnostics")}));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--m0-smoke=diagnostics"),
+                                           testConfigArgument(QStringLiteral("diagnostics"))}));
+    }
+
     void defaultsToTheEmptyScenario() {
         const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell")});
         QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);

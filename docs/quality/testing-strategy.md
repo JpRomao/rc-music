@@ -535,6 +535,8 @@ Mutation testing pode rodar periodicamente no domínio crítico (fila, seek, pre
 
 ## 15. Evidência no commit
 
+Para [diagnóstico local Windows](../../experiments/m0/candidates/qt/README.md#local-diagnostics), separar os testes puros de formato/fila/limites dos testes físicos de slots e dos subprocessos. Um controle sem proteção precisa demonstrar os canais Qt/CRT/Win32 antes de exigir silêncio no filho protegido; stdout fixo e encerramento fatal continuam observáveis. A jornada do executável usa WAV sintético silencioso e config temporária, verifica opt-in, decoder real e evento de sessão inválida, sem suprimir mensagens no runner. Symlink indisponível por política do host é skip registrado, nunca aprovação. Rodar com Qt habilitado não substitui o core Qt OFF.
+
 Antes de commitar comportamento:
 
 - revisar o teste Red e o motivo de falha;

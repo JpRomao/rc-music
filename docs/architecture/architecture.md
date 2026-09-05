@@ -596,6 +596,8 @@ Os princípios de input não confiável, privilégio mínimo e ausência de rede
 
 ## 16. Erros e observabilidade
 
+No candidato combinado Windows, o [diagnóstico local opt-in](../../experiments/m0/candidates/qt/README.md#local-diagnostics) materializa a fronteira de privacidade sem persistência complexa: `DiagnosticEntry`/`DiagnosticRecord` puros, `DiagnosticSink`/`DiagnosticLogStore`, writer único com buffer fixo e store Windows com slots limitados. Só enums e números chegam ao formatter; mensagens externas não são redigidas por heurística, mas descartadas. Um binding na thread da UI projeta eventos públicos do presenter, sem I/O no callback de áudio. O bootstrap instala a proteção de Qt/stderr antes dos plugins, cria o logger apenas após opt-in e obtenção de primária, e o destrói depois dos produtores. Retenção de 3 × 256 KiB e 7 dias é aplicada no append; logs inativos não são apagados por tarefa em background. Detalhes de falha/retenção, canais cobertos e riscos residuais constam do registro central.
+
 Taxonomia mínima:
 
 - `UnsupportedFormat`;
