@@ -416,7 +416,12 @@ class QtSingleInstanceCoordinatorTests final : public QObject {
             return secondary.start(resumed);
         });
         QTRY_VERIFY_WITH_TIMEOUT(resumed_future.wait_for(0ms) == std::future_status::ready, 3'000);
-        QCOMPARE(resumed_future.get().outcome, QtSingleInstanceOutcome::Forwarded);
+        const auto resumed_result = resumed_future.get();
+        QVERIFY2(resumed_result.outcome == QtSingleInstanceOutcome::Forwarded,
+                 qPrintable(QStringLiteral("outcome=%1 detail=%2 pending=%3")
+                                .arg(static_cast<int>(resumed_result.outcome))
+                                .arg(resumed_result.detail)
+                                .arg(primary.pendingCommandCount())));
         QCOMPARE(primary.takeNextCommand()->paths, resumed.paths);
 
         primary.beginShutdown();
