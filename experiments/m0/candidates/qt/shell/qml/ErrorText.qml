@@ -45,10 +45,13 @@ QtObject {
 
     function messageFor(messageKey) {
         switch (messageKey) {
+        case "source_unavailable":
         case "source_unavailable_error":
             return sourceUnavailableMessage;
+        case "invalid_media":
         case "invalid_media_error":
             return invalidMediaMessage;
+        case "access_denied":
         case "access_denied_error":
             return accessDeniedMessage;
         case "backend_failure_error":

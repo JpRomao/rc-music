@@ -403,6 +403,7 @@ class PlayerPresenter final : public QObject {
     void preferencesChanged();
     void preferencePersistenceChanged();
     void playbackChanged();
+    void occurrenceAutomaticallySkipped(QString title, QString errorCode);
     void seekRejected();
     void platformChanged();
     void defaultAppsSettingsChanged();

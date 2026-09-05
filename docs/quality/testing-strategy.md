@@ -145,6 +145,12 @@ Para preservar `FR-011`/`FR-014`/`UX-008`, a cobertura combina presenter com bac
 
 Os Reds, Greens focados, a primeira consolidação que expôs a regressão de foco e o CTest final 273/273 ficam no [registro central de recuperação do transporte](../../experiments/m0/candidates/qt/README.md#transport-recovery), junto de Release, `all_qmllint` e composição de produção revalidados após o último QML. Os testes existentes foram preservados; a expectativa nova incorreta de ausência de autoplay foi alinhada ao contrato de retry explícito, sem ajuste de produção. Core Qt OFF não foi repetido neste recorte sem mudança de núcleo. São regressões de contratos existentes, não novo escopo; offscreen/software não comprova pacote, integração física nativa ou NVDA. Nenhum benchmark pertence ao recorte.
 
+### Aviso de faixa pulada automaticamente
+
+Para `UX-005`/`FR-011`, testar falha de origem seguida de próxima carga aceita, ordem do sinal específico antes do notify geral, motivo tipado e ausência de path bruto/mensagem livre. Quick deve conferir a fala da faixa pulada, supressão do Loading genérico, anúncio posterior da próxima faixa em Ready e deduplicação de eventos da mesma geração, sem fundir ocorrências de IDs distintos com o mesmo título. Durante importação, preservar um aviso agrupado sem dados de faixa e entregá-lo após o resumo, inclusive para falhas de ocorrências que não pertencem ao lote. Rejeição da próxima carga e conclusão obsoleta não devem anunciar avanço aceito.
+
+Cobrir também reentrada que troca seleção/lote durante sinais sem perder nem duplicar `sourceImportChanged`, e títulos com `%2` literal sem substituição recursiva. O [registro central](../../experiments/m0/candidates/qt/README.md#automatic-skip-announcements) distingue Reds/Greens de Presenter/Quick, correção do contrato de texto e suíte global não verde (271/273) com falha de IPC ainda sem causa demonstrada ou correção. A revalidação focada passou CTest 2/2, com contrato UI 22/22 e Quick 153/153 sem falhas/skips; isso não substitui aprovação global nem autoriza relaxar ou repetir o teste de IPC até passar. Não confundir inspeção de sinais/texto QML com audição em NVDA, nem incluir o logger pendente de `NFR-PRIV-003` nesta correção.
+
 ## 7. Testes do domínio
 
 ### Playback state

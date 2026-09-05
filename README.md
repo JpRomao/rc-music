@@ -78,6 +78,8 @@ O incremento seguinte implementa a [sanitização textual/numérica de metadata]
 
 Uma auditoria posterior encontrou duas regressões de [recuperação do transporte](experiments/m0/candidates/qt/README.md#transport-recovery): anterior/próxima disponíveis no presenter ficavam bloqueados pela UI em erro, e um seek local recusado podia deixar preview/feedback sem notificação. Reds e Greens estão confirmados. A primeira suíte completa expôs uma regressão adicional de foco quando o binding ainda não atualizara `enabled`; o ajuste preserva o foco em navegação disponível e usa capacidades do presenter. Após a correção final, Release, `all_qmllint`, CTest 273/273 e produção sem testes passaram. Isso não conclui fases amplas nem comprova pacote ou interação nativa; benchmarks continuam adiados.
 
+O recorte seguinte corrige o [aviso acessível de faixa pulada automaticamente](experiments/m0/candidates/qt/README.md#automatic-skip-announcements): a reprodução já avançava após uma falha, mas o anúncio podia informar somente “Carregando”. Presenter e UI têm Reds e Greens confirmados, incluindo reentrada durante notificações e placeholders literais no título. A suíte global não ficou verde: 271/273, com um contrato de texto depois corrigido e uma falha de IPC ainda sem causa confirmada ou correção. A revalidação focada passou (contrato UI 22/22 e Quick 153/153); isso não representa aprovação global. Logging com retenção de `NFR-PRIV-003` permanece a próxima lacuna auditada, fora deste recorte.
+
 “Music Player” é um nome provisório. Nome, identidade visual e licença ainda pertencem ao mantenedor. O nome definitivo foi solicitado para desbloquear as decisões de associação, mas ainda não foi confirmado.
 
 ## Proposta do produto

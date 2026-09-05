@@ -144,6 +144,114 @@ TestCase {
         compare(driver.accessibleAnnouncementCount(), 1);
     }
 
+    function test_automaticallySkippedFileIsAnnouncedBeforeTheNextTrack_data() {
+        return [
+            {
+                tag: "invalid",
+                missing: false,
+                reason: "corrompido"
+            },
+            {
+                tag: "missing",
+                missing: true,
+                reason: "não está mais disponível"
+            },
+            {
+                tag: "literal-placeholder-in-title",
+                missing: false,
+                reason: "corrompido",
+                title: "Falhou %2 日本"
+            }
+        ];
+    }
+
+    function test_automaticallySkippedFileIsAnnouncedBeforeTheNextTrack(data) {
+        createLocalShell();
+        const title = data.title || "Falhou 日本";
+        driver.enqueueLocalSelection(["C:/Biblioteca privada/" + title + ".mp3", "C:/Biblioteca privada/Seguinte.flac"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(localPresenter, "currentQueueIndex", 0);
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Loading);
+        const queue = findChild(shell, "queue-panel");
+        if (queue.visible)
+            localPresenter.toggleQueue();
+        verify(!queue.visible);
+        driver.clearAccessibleAnnouncements();
+
+        if (data.missing)
+            driver.publishLocalSourceUnavailable();
+        else
+            driver.publishLocalError();
+        tryCompare(localPresenter, "currentQueueIndex", 1);
+        compare(localPresenter.playbackState, PlayerPresenter.Loading);
+        compare(driver.localLoadCount(), 2);
+        compare(driver.accessibleAnnouncementCount(), 1);
+        const announcement = driver.lastAccessibleAnnouncement();
+        verify(announcement.includes("Faixa pulada: " + title), announcement);
+        verify(announcement.includes(data.reason), announcement);
+        verify(announcement.includes("próxima faixa"), announcement);
+        verify(announcement.includes("detalhes na fila"), announcement);
+        verify(!announcement.includes("C:/") && !announcement.includes("Biblioteca privada"));
+        verify(!announcement.includes("invalid_media") && !announcement.includes("source_unavailable"));
+        compare(driver.lastAccessibleAnnouncementPoliteness(), Accessible.Assertive);
+        verify(!queue.visible);
+
+        driver.clearAccessibleAnnouncements();
+        driver.publishLocalReady();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Ready);
+        compare(driver.accessibleAnnouncementCount(), 1);
+        verify(driver.lastAccessibleAnnouncement().includes("Faixa carregada: Seguinte"));
+        driver.clearAccessibleAnnouncements();
+        driver.publishLocalPlaying();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Playing);
+        wait(250);
+        compare(driver.accessibleAnnouncementCount(), 0);
+    }
+
+    function test_duplicateFilesAreAnnouncedForEachSkippedOccurrence() {
+        createLocalShell();
+        const duplicate = "C:/Música/Duplicada.mp3";
+        driver.enqueueLocalSelection([duplicate, duplicate, "C:/Música/Válida.flac"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Loading);
+        driver.clearAccessibleAnnouncements();
+        driver.publishLocalError();
+        tryCompare(localPresenter, "currentQueueIndex", 1);
+        verify(driver.lastAccessibleAnnouncement().includes("Faixa pulada: Duplicada"));
+        compare(driver.accessibleAnnouncementCount(), 1);
+        driver.publishLocalError();
+        tryCompare(localPresenter, "currentQueueIndex", 2);
+        verify(driver.lastAccessibleAnnouncement().includes("Faixa pulada: Duplicada"));
+        compare(driver.accessibleAnnouncementCount(), 2);
+    }
+
+    function test_skippedFilesDuringImportHaveOneDeferredSummary() {
+        createLocalShell();
+        driver.enqueueLocalSelection(["C:/Música/Falha A.mp3", "C:/Música/Falha B.mp3", "C:/Música/Válida.flac"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Loading);
+        startSourceImport("C:/Música/Outro lote ainda sendo descoberto");
+        driver.clearAccessibleAnnouncements();
+
+        driver.publishLocalError();
+        tryCompare(localPresenter, "currentQueueIndex", 1);
+        driver.publishLocalError();
+        tryCompare(localPresenter, "currentQueueIndex", 2);
+        driver.publishLocalReady();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Ready);
+        compare(driver.accessibleAnnouncementCount(), 0);
+
+        completeEmptySourceImport();
+        compare(driver.accessibleAnnouncementCount(), 1);
+        tryVerify(function () {
+            return testCase.driver.accessibleAnnouncementCount() === 2;
+        });
+        verify(driver.lastAccessibleAnnouncement().includes("faixas foram puladas"));
+        verify(driver.lastAccessibleAnnouncement().includes("detalhes na fila"));
+        wait(250);
+        compare(driver.accessibleAnnouncementCount(), 2);
+    }
+
     function test_fixtureTerminalErrorAnnouncesTheVisibleRecoveryAction() {
         createFixtureShell();
 

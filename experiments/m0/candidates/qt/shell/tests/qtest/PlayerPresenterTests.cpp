@@ -532,6 +532,15 @@ class PlayerPresenterTests final : public QObject {
     void localEndedAtQueueTailClearsSelectionWhenConfigured();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues_data();
     void typedLocalErrorMarksOnlyFailedOccurrenceAndContinues();
+    void automaticSourceSkipPublishesContextBeforePlayback_data();
+    void automaticSourceSkipPublishesContextBeforePlayback();
+    void nonAutomaticSourceFailuresDoNotPublishSkippedContext_data();
+    void nonAutomaticSourceFailuresDoNotPublishSkippedContext();
+    void automaticSourceSkipObserversMayDestroyThePresenter_data();
+    void automaticSourceSkipObserversMayDestroyThePresenter();
+    void automaticSourceSkipDoesNotPublishObsoleteNotificationsAfterSelection();
+    void automaticSourceSkipKeepsImportNotificationsIndependent_data();
+    void automaticSourceSkipKeepsImportNotificationsIndependent();
     void retriesTheOriginalUnavailableOccurrenceWithoutDuplicatingOrResettingTheQueue();
     void locatesCurrentMissingFileAndRecoversPausedAtTheConfirmedPosition();
     void locatesOnlyTheChosenOccurrenceWithoutInterruptingAnotherTrack();
@@ -2262,6 +2271,244 @@ void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues(
 
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
     QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::automaticSourceSkipPublishesContextBeforePlayback_data() {
+    QTest::addColumn<int>("error_code");
+    QTest::addColumn<QString>("expected_code");
+    QTest::newRow("missing") << static_cast<int>(PlaybackErrorCode::SourceUnavailable)
+                             << QStringLiteral("source_unavailable");
+    QTest::newRow("invalid") << static_cast<int>(PlaybackErrorCode::InvalidMedia) << QStringLiteral("invalid_media");
+    QTest::newRow("denied") << static_cast<int>(PlaybackErrorCode::AccessDenied) << QStringLiteral("access_denied");
+}
+
+void PlayerPresenterTests::automaticSourceSkipPublishesContextBeforePlayback() {
+    QFETCH(int, error_code);
+    QFETCH(QString, expected_code);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    const std::vector sources{localTestPath(u8"Indisponível 日本語.mp3"), localTestPath(u8"Próxima.wav")};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    const auto failed_id = presenter.currentOccurrenceId();
+    auto* const model = presenter.queueModelObject();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QStringList notifications;
+    QSignalSpy skipped(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped);
+    connect(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped, &presenter,
+            [&](const QString& title, const QString& code) {
+                notifications.append(QStringLiteral("skipped"));
+                QCOMPARE(title, QString::fromUtf8("Indisponível 日本語"));
+                QCOMPARE(code, expected_code);
+                QCOMPARE(presenter.currentQueueIndex(), 1);
+                QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+                QVERIFY(presenter.currentOccurrenceId() != failed_id);
+            });
+    connect(&presenter, &PlayerPresenter::playbackChanged, &presenter,
+            [&] { notifications.append(QStringLiteral("playback")); });
+
+    const PlaybackSnapshot failure{
+        .status = PlaybackStatus::Error, .generation = 1, .error = static_cast<PlaybackErrorCode>(error_code)};
+    backend.publish(failure);
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(notifications, QStringList({QStringLiteral("skipped"), QStringLiteral("playback")}));
+    QCOMPARE(skipped.size(), 1);
+    QCOMPARE(backend.loaded_paths, sources);
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(backend.pause_calls, 0);
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+
+    backend.publishEvent(PlaybackEventType::SnapshotChanged, failure, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(skipped.size(), 1);
+    QCOMPARE(notifications.size(), 2);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QCOMPARE(skipped.size(), 1);
+}
+
+void PlayerPresenterTests::nonAutomaticSourceFailuresDoNotPublishSkippedContext_data() {
+    QTest::addColumn<QString>("scenario");
+    for (const auto* scenario : {"terminal", "rejected-load", "retry", "restored", "output", "ended", "stale"})
+        QTest::newRow(scenario) << QString::fromLatin1(scenario);
+}
+
+void PlayerPresenterTests::nonAutomaticSourceFailuresDoNotPublishSkippedContext() {
+    QFETCH(QString, scenario);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PresenterSessionWriter writer;
+    const std::vector sources{localTestPath(u8"Erro.wav"), localTestPath(u8"Sucessora.wav")};
+    SessionSnapshot initial;
+    if (scenario == QStringLiteral("restored")) {
+        initial = {.queue = {.items = {{{1}, sources[0]}, {{2}, sources[1]}},
+                             .current_occurrence_id = LocalQueueOccurrenceId{1}},
+                   .position_ms = 20'000};
+    }
+    SessionAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata,
+        [sources, scenario] { return scenario == QStringLiteral("terminal") ? std::vector{sources[0]} : sources; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave,
+                                   .session = {.initial = initial,
+                                               .load_status = SessionLoadStatus::Loaded,
+                                               .autosave = &autosave,
+                                               .now = [&clock] { return clock.now(); }}});
+    if (scenario != QStringLiteral("restored"))
+        QVERIFY(presenter.openAudio());
+    const auto failed_id = presenter.currentOccurrenceId();
+    if (scenario == QStringLiteral("retry")) {
+        backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+        QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+        QVERIFY(presenter.retryQueueOccurrence(failed_id));
+    }
+    if (scenario == QStringLiteral("rejected-load"))
+        backend.load_result = PlaybackCommandResult::Busy;
+    QSignalSpy skipped(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped);
+    const auto generation = backend.snapshot().generation;
+    if (scenario == QStringLiteral("ended")) {
+        backend.publishEvent(PlaybackEventType::Ended, {.status = PlaybackStatus::Paused, .generation = generation});
+    } else {
+        backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                             {.status = PlaybackStatus::Error,
+                              .generation = scenario == QStringLiteral("stale") ? 0 : generation,
+                              .error = scenario == QStringLiteral("output") ? PlaybackErrorCode::AudioOutputUnavailable
+                                                                            : PlaybackErrorCode::InvalidMedia},
+                             scenario != QStringLiteral("stale"));
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(skipped.size(), 0);
+    QCOMPARE(presenter.currentQueueIndex(), scenario == QStringLiteral("ended") ? 1 : 0);
+}
+
+void PlayerPresenterTests::automaticSourceSkipObserversMayDestroyThePresenter_data() {
+    QTest::addColumn<int>("notification");
+    QTest::newRow("skipped") << 0;
+    QTest::newRow("state") << 1;
+    QTest::newRow("playback") << 2;
+}
+
+void PlayerPresenterTests::automaticSourceSkipObserversMayDestroyThePresenter() {
+    QFETCH(int, notification);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav")};
+    auto presenter =
+        std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter->openAudio());
+    int notifications = 0;
+    const auto observe = [&] {
+        if (notifications++ == notification)
+            presenter.reset();
+    };
+    connect(presenter.get(), &PlayerPresenter::occurrenceAutomaticallySkipped, this, observe);
+    connect(presenter.get(), &PlayerPresenter::stateChanged, this, observe);
+    connect(presenter.get(), &PlayerPresenter::playbackChanged, this, observe);
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_VERIFY(!presenter);
+    QCOMPARE(notifications, notification + 1);
+    QVERIFY(!backend.callbackInstalled());
+}
+
+void PlayerPresenterTests::automaticSourceSkipDoesNotPublishObsoleteNotificationsAfterSelection() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav"),
+                              localTestPath(u8"Escolha explícita.wav")};
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    const auto explicit_id = presenter.queueModelObject()
+                                 ->data(presenter.queueModelObject()->index(2, 0), QueueListModel::OccurrenceIdRole)
+                                 .toString();
+    QSignalSpy state(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
+    QSignalSpy skipped(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped);
+    connect(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped, &presenter,
+            [&] { QVERIFY(presenter.playQueueOccurrence(explicit_id)); });
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 2);
+    QCOMPARE(skipped.size(), 1);
+    QCOMPARE(state.size(), 1);
+    QCOMPARE(playback.size(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(), explicit_id);
+    QCOMPARE(backend.loaded_paths, sources);
+}
+
+void PlayerPresenterTests::automaticSourceSkipKeepsImportNotificationsIndependent_data() {
+    QTest::addColumn<int>("notification");
+    QTest::addColumn<bool>("replace_import");
+    for (int notification = 0; notification < 3; ++notification) {
+        const auto stage = QByteArray::number(notification);
+        QTest::newRow(("select-after-" + stage).constData()) << notification << false;
+        QTest::newRow(("replace-import-after-" + stage).constData()) << notification << true;
+    }
+}
+
+void PlayerPresenterTests::automaticSourceSkipKeepsImportNotificationsIndependent() {
+    QFETCH(int, notification);
+    QFETCH(bool, replace_import);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    metadata.start_result = MetadataCommandResult::Shutdown;
+    FakeLocalSourceDiscovery discovery;
+    const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav"),
+                              localTestPath(u8"Escolha explícita.wav")};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"Importação original"))}, 0));
+    const auto generation = discovery.requests.back().generation;
+    discovery.publishBatch(generation, 1, sources, {}, 3);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    discovery.publishCompleted({.inspected_count = 3, .accepted_count = 3});
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(presenter.sourceImportState(), PlayerPresenter::SourceImportState::Completed);
+    const auto explicit_id = presenter.queueModelObject()
+                                 ->data(presenter.queueModelObject()->index(2, 0), QueueListModel::OccurrenceIdRole)
+                                 .toString();
+    QSignalSpy imports(&presenter, &PlayerPresenter::sourceImportChanged);
+    const auto reenter = [&] {
+        if (replace_import) {
+            QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"Nova importação"))}, 3));
+        } else {
+            QVERIFY(presenter.playQueueOccurrence(explicit_id));
+        }
+    };
+    if (notification == 0) {
+        connect(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped, &presenter, reenter,
+                Qt::SingleShotConnection);
+    } else if (notification == 1) {
+        connect(&presenter, &PlayerPresenter::stateChanged, &presenter, reenter, Qt::SingleShotConnection);
+    } else {
+        connect(&presenter, &PlayerPresenter::playbackChanged, &presenter, reenter, Qt::SingleShotConnection);
+    }
+
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::InvalidMedia});
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.currentQueueIndex(), replace_import ? 1 : 2);
+    QCOMPARE(presenter.sourceImportState(), replace_import ? PlayerPresenter::SourceImportState::Discovering
+                                                           : PlayerPresenter::SourceImportState::CompletedWithIssues);
+    QCOMPARE(presenter.sourceImportIssueCount(), replace_import ? 0ULL : 1ULL);
+    QCOMPARE(imports.size(), 1);
+    if (replace_import)
+        QVERIFY(discovery.requests.back().generation != generation);
+    else
+        QCOMPARE(discovery.requests.back().generation, generation);
 }
 
 void PlayerPresenterTests::outputLossDuringRecoveryPreservesThePersistedTarget_data() {

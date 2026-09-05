@@ -1985,6 +1985,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     reconcileRestoredPosition();
     bool state_projection_changed = false;
     bool source_import_changed = false;
+    std::optional<std::pair<QString, QString>> automatically_skipped;
     if (retry_event && event.snapshot.status != PlaybackStatus::Loading) {
         if (event.snapshot.status == PlaybackStatus::Ready || event.snapshot.status == PlaybackStatus::Paused ||
             event.snapshot.status == PlaybackStatus::Playing) {
@@ -2000,6 +2001,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         state_projection_changed = true;
     }
     if (result == LocalTrackPlaybackEventResult::OccurrenceUnavailable) {
+        const QString failed_title = currentTitle();
         const auto current = local_queue_.currentIndex();
         if (!current.has_value())
             throw std::logic_error{"a current local playback error requires a current queue occurrence"};
@@ -2039,6 +2041,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
                 next.has_value() && loadLocalOccurrence(*next, start_intent)) {
                 state_projection_changed = true;
                 recovered = true;
+                automatically_skipped.emplace(failed_title, localPlaybackErrorCode(event.snapshot.error));
             }
         }
         if (imported_occurrence && source_import_state_ == SourceImportState::Discovering &&
@@ -2076,11 +2079,27 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     }
     reconcileTimer();
     const bool playback_changed = controller_.confirmedSnapshot() != before;
-    if (state_projection_changed || playback_changed)
+    const auto notification_generation = controller_.confirmedSnapshot().generation;
+    const auto notification_occurrence = local_queue_.currentOccurrenceId();
+    const auto notification_import_generation = source_import_generation_;
+    const auto notification_import_state = source_import_state_;
+    const QPointer<PlayerPresenter> guard{this};
+    const auto notificationStillCurrent = [guard, notification_generation, notification_occurrence] {
+        return guard && !guard->exiting_ &&
+               guard->controller_.confirmedSnapshot().generation == notification_generation &&
+               guard->local_queue_.currentOccurrenceId() == notification_occurrence;
+    };
+    if (automatically_skipped.has_value())
+        emit occurrenceAutomaticallySkipped(automatically_skipped->first, automatically_skipped->second);
+    if (notificationStillCurrent() && (state_projection_changed || playback_changed))
         emit stateChanged();
-    if (playback_changed)
+    if (notificationStillCurrent() && playback_changed)
         emit playbackChanged();
-    if (source_import_changed)
+    // Import issues belong to their discovery batch, not the playback generation.
+    // A track selected by an observer must not hide that batch's updated summary.
+    if (source_import_changed && guard && !guard->exiting_ &&
+        guard->source_import_generation_ == notification_import_generation &&
+        guard->source_import_state_ == notification_import_state)
         emit sourceImportChanged();
 }
 void PlayerPresenter::pollMetadata() {

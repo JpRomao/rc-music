@@ -12,6 +12,7 @@ Item {
     property string announcedTrackOccurrence: ""
     property string announcedError: ""
     property bool deferredErrorPending: false
+    property bool deferredSkippedFilesPending: false
     width: 0
     height: 0
     Accessible.ignored: true
@@ -77,16 +78,35 @@ Item {
     }
 
     function handleSourceImportChanged() {
-        if (presenter.sourceImportActive || !deferredErrorPending)
+        if (presenter.sourceImportActive || (!deferredErrorPending && !deferredSkippedFilesPending))
             return;
         Qt.callLater(function () {
-            if (root.presenter.sourceImportActive || !root.deferredErrorPending)
+            if (root.presenter.sourceImportActive || (!root.deferredErrorPending && !root.deferredSkippedFilesPending))
                 return;
-            const shouldAnnounce = root.presenter.playbackState === PlayerPresenter.Error;
+            const shouldAnnounce = root.deferredErrorPending && root.presenter.playbackState === PlayerPresenter.Error;
             root.deferredErrorPending = false;
+            if (root.deferredSkippedFilesPending) {
+                root.deferredSkippedFilesPending = false;
+                root.announce(labels.skippedDuringImport, Accessible.Assertive);
+            }
             if (shouldAnnounce)
                 root.handlePlaybackChanged();
         });
+    }
+
+    function handleOccurrenceAutomaticallySkipped(title, errorCode) {
+        // The signal precedes playbackChanged and describes the old occurrence.
+        // Observe the accepted successor now so its loading notice does not repeat it.
+        observedState = presenter.playbackState;
+        observedLoadingOccurrence = presenter.currentOccurrenceId;
+        deferredErrorPending = false;
+        if (presenter.sourceImportActive) {
+            // A skipped occurrence may predate this import and be absent from
+            // its issue count. Keep one bounded summary, not a speech backlog.
+            deferredSkippedFilesPending = true;
+            return;
+        }
+        announce(labels.automaticallySkipped(title, errorLabels.messageFor(errorCode)), Accessible.Assertive);
     }
 
     function handleSeekRejected() {
@@ -116,6 +136,10 @@ Item {
 
         function onSeekRejected() {
             root.handleSeekRejected();
+        }
+
+        function onOccurrenceAutomaticallySkipped(title, errorCode) {
+            root.handleOccurrenceAutomaticallySkipped(title, errorCode);
         }
     }
 }
