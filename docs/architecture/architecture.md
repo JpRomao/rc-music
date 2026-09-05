@@ -642,6 +642,8 @@ O candidato implementa o [template NSIS de associações RC Music](../../experim
 - build em ambiente compatível com a glibc mínima;
 - pacotes informam dependências reais e não embutem runtimes sem revisão.
 
+O [instalador local do candidato](../../experiments/m0/candidates/qt/windows-installer/README.md) mantém binários versionados sob a raiz própria por usuário e os dados Qt fora dela. O ID inclui inventário e receita, inclusive para correções exclusivas do instalador. Estado ativo e pendências ficam em namespace próprio do instalador; os ProgIDs continuam separados e com propriedade por executável. Upgrade prepara a nova versão, publica seu cadastro e aposenta a anterior por inventário/hash conferidos; falha no cadastro preserva evidência para retry, sem prometer rollback atômico ou reparo arbitrário de extração incompleta. Remoção não recursiva preserva arquivos desconhecidos e não remove dados pessoais. O artefato local não habilita associações até a aprovação da matriz; testes desse vínculo permanecem isolados. Isso não aceita stack, formatos ou distribuição.
+
 Cada release gera manifesto com versão, commit, hashes, plataforma, formatos testados e validações executadas.
 
 ## 18. Evolução para fontes remotas

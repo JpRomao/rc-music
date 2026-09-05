@@ -1,6 +1,6 @@
-# Template de associações Windows — RC Music
+# Instalador Windows experimental — RC Music
 
-Incremento funcional experimental de M4.6: módulo NSIS reutilizável de cadastro e remoção por usuário, com wrappers para as seções do instalador. Não é um instalador distribuível do player: deployment do runtime, matriz publicada de formatos e jornada Explorer/Aplicativos Padrão permanecem pendentes. O executável de teste chamado `RCMusic.exe` é somente um marcador de texto e nunca é iniciado.
+O candidato possui módulo NSIS de associações, receita do runtime real e integração local de instalação/atualização/remoção. As seções abaixo preservam a evidência de cada incremento. Não é uma release distribuível: matriz publicada de formatos e jornada Explorer/Aplicativos Padrão permanecem pendentes. Os testes de associação/lifecycle usam `RCMusic.exe` sintético e inerte; o teste opcional de instalação real usa o runtime indicado, sem iniciar o player.
 
 ## Integração
 
@@ -71,6 +71,32 @@ O resultado contém `app/`, `runtime-manifest.json` e `qml-imports.json`. O mani
 O smoke usa ambiente reconstruído, sem paths Qt do SDK. Primeiro verifica que o executável OFF recusa os hooks com exit 1, streams vazios e configuração ausente. Depois executa uma cópia ON separada do payload, com configuração temporária, para observar estado vazio real e saída pelo lifecycle. Por fim, copia o teste de integração e QtTest somente para o probe, resolve QtTest pela origem de QtCore registrada no manifesto e exercita as nove linhas de load/play mutado/seek/pause/metadados com o runtime montado. Exige 11/11 incluindo setup/cleanup, sem skips; diagnósticos de corpus/FFmpeg são preservados e não equivalem a streams vazios. Isso não transforma os executáveis instrumentados em parte do aplicativo entregue nem comprova EOF, desktop nativo, áudio audível ou máquina limpa. A matriz experimental de sete extensões ainda não é uma publicação de suporte, e nenhum cadastro real de associações ocorre nesses comandos.
 
 O `windeployqt` do SDK composto falhou no dry-run por procurar Multimedia dentro do SDK base em vez do overlay; não se ignorou essa falha nem se modificou o SDK. A receita explícita usa o scanner e a resolução PE, coerente com a [orientação Qt sobre bibliotecas adicionais e teste sem ambiente de desenvolvimento](https://doc.qt.io/qt-6/windows-deployment.html). Traduções genéricas Qt, licenças/notices/SBOM, segurança, assinatura, pré-requisitos em máquina limpa, instalador/upgrade/uninstall e associação pelo Explorer continuam gates distintos. `LOCAL-DEVELOPMENT.txt` acompanha o runtime para impedir confundi-lo com uma release distribuível.
+
+## Instalador local por usuário
+
+`New-RcMusicInstaller.ps1` transforma um runtime local íntegro e de receita limpa em `RCMusic-Setup.exe`. PowerShell 7 e NSIS são ferramentas de build, não dependências do computador de destino. A montagem não reinstala ferramentas, não reconstrói Qt e não executa benchmarks. O artefato permanece **privado e experimental**, sem assinatura, bootstrapper do CRT ou aprovação de distribuição.
+
+```powershell
+./experiments/m0/candidates/qt/windows-installer/tests/WindowsInstallerPlan.Tests.ps1
+./experiments/m0/candidates/qt/windows-installer/tests/InstallerFiles.Tests.ps1
+./experiments/m0/candidates/qt/windows-installer/tests/Installer.Tests.ps1
+./experiments/m0/candidates/qt/windows-installer/tests/Installer.Tests.ps1 -RuntimeDirectory ./out/m0/rc-music-local/rc-music-windows-dev-717c88a/app -CasePattern 'real runtime*'
+./experiments/m0/candidates/qt/windows-installer/tests/InstallerBuild.Tests.ps1 -RuntimeDirectory ./out/m0/rc-music-local/rc-music-windows-dev-717c88a/app
+```
+
+Para escolher um destino novo do artefato, o builder aceita `-RuntimeDirectory`, `-OutputDirectory` e `-MakeNsis` opcional. O receipt registra os hashes do instalador, compilador, configuração gerada, scripts/templates/helpers e inventário do runtime; não equivale a assinatura. O ID de cada versão inclui os bytes do payload e a receita do instalador, permitindo atualizar também uma correção exclusiva do desinstalador. Entradas inválidas, divergência de hash, build de teste e receita de runtime suja são recusadas antes de criar a saída. Falha de compilação pode deixar uma pasta parcial sem receipt aprovado; não reutilizar nem publicar essa pasta.
+
+O template fixa uma raiz própria sob `LocalAppData/Programs/RC Music`, com diretório separado por ID. Não oferece redirecionamento para uma pasta arbitrária ou remoção de dados pessoais. O executável instalado continua usando os identificadores Qt `MusicPlayer`, fora da árvore de binários. Instalação e desinstalação são por usuário, sem elevação, serviço, tarefa agendada ou lançamento automático do player. Atalhos do menu Iniciar ainda são uma etapa separada.
+
+Instalar prepara e verifica a nova versão antes de atualizar o cadastro ativo. Reinstalar a mesma versão exige marker e bytes íntegros. Atualizar verifica a versão anterior, publica a nova e aposenta a anterior por seu desinstalador com hash conferido contra o marker; mudanças no conjunto de arquivos são permitidas. Falha no cadastro conserva os payloads e estado pendente para retry, sem sucesso silencioso. Uma extração incompleta, sem marker íntegro, não é adotada automaticamente. Não há alegação de rollback atômico, recuperação em qualquer instrução ou proteção contra escritor hostil concorrente. Os hashes/markers são consistência local, não autenticidade contra outro processo do mesmo usuário. A assinatura da lista de formatos deve permanecer igual entre versões neste recorte; o mutex coordena a sessão Windows atual.
+
+A desinstalação usa inventário compilado, hash, validação de caminhos/reparse e remoção não recursiva. Arquivos desconhecidos são preservados; arquivos próprios modificados ou em uso bloqueiam a operação antes da remoção. Não apaga preferências, sessão, logs ou mídia do usuário. O desinstalador antigo não retira o registro ativo de uma versão nova. As operações de arquivos seguem as [instruções NSIS](https://nsis.sourceforge.io/Docs/Chapter4.html), com `Delete` explícito e `RMDir` somente para diretórios vazios.
+
+O builder local deixa associações **desabilitadas**: o manifesto experimental anterior não é uma matriz aprovada. Os testes do mesmo template habilitam MP3/WAV somente como schema sintético, sob `HKCU/Software/RCMusic.InstallerTests/<GUID>/Software`, com diretórios GUID ignorados. Não registram o player real no host, não escrevem `UserChoice` real e não notificam Explorer. O teste opcional com `-RuntimeDirectory` instala/remove bytes do runtime real dentro desse isolamento, sem iniciar o player. Registro real, alteração da lista de formatos, atalhos, inspeção da UI nativa, máquina limpa, segurança/licenças/assinatura e os demais gates M4.6/M4.8 continuam pendentes.
+
+O check do planner passou **12/12**, o helper nativo **25/25** e o lifecycle **15/15**. O caso real passou **1/1**, verificando os **554 arquivos** instalados e removidos, origem intacta e sentinelas externas preservadas. A compilação real com associações OFF passou `/INPUTCHARSET UTF8 /WX`, inclusive num destino com `$R0`, `${RCMUSIC_PAYLOAD_ID}`, `${U+24}`, `$%TEMP%` e Unicode literais. O compilador tem deadline de 60 s; processos de instalação/remoção do harness mantêm 20 s, sem relaxar suas asserções.
+
+O Red adicional de escape mostrou que `$$` não protege dados em todos os contextos NSIS. A receita distingue strings de compilação/runtime e transmite tokens ASCII pelos callbacks; apenas as instruções finais expandem os paths. As passagens de `${U+24}` seguem o [pré-processador NSIS 3.12](https://github.com/NSIS-Dev/nsis/blob/v312/Source/script.cpp). Outros Reds reproduziram remoção indevida com `PendingCleanup` e extração parcial não recuperável. O template corrigido bloqueia a primeira antes de mutações e limpa somente o inventário da tentativa fresca na segunda, antes de publicar cadastro; falha após cadastro continua conservando as versões para retry. Crash no meio dessas operações e falha durante a própria limpeza permanecem limites explícitos.
 
 ## Toolchain e referências
 

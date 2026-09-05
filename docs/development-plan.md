@@ -737,4 +737,6 @@ O recorte seguinte materializa o [template NSIS de associações](../experiments
 
 A [montagem local do runtime real](../experiments/m0/candidates/qt/README.md#rc-music-local-runtime) materializa a base seguinte de M4.6/M4.8: executável OFF, QML, plugins, Multimedia/FFmpeg e TagLib separados do SDK, com inventário/hash e probes de runtime fora do payload. Usa build incremental do aplicativo, não rebuild/empacotamento comparativo de M0. O template de associações continua separado até a integração de instalação, atualização e remoção do payload; registro real e publicação de formatos não são inferidos do manifesto experimental. Não encerrar M4.6/M4.8 ou substituir os gates pendentes pelo smoke local.
 
+O [instalador local experimental](../experiments/m0/candidates/qt/README.md#rc-music-local-installer) integra o payload real ao ciclo Windows de instalação/atualização/remoção de M4.8, com versões separadas e preservação de dados. A composição de associações é testada exclusivamente em Registry isolado, enquanto o artefato local mantém essa publicação desabilitada até existir matriz aprovada. Continuar pelos contratos residuais de formatos, atalhos, recuperação, instalação nativa e segurança; não retomar o empacotamento comparativo/benchmarks nem encerrar M4.6/M4.8 por esse incremento.
+
 Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.

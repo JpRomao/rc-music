@@ -315,6 +315,8 @@ O [recorte posterior do template NSIS](../../experiments/m0/candidates/qt/window
 
 O [runtime real posterior](../../experiments/m0/candidates/qt/README.md#rc-music-local-runtime) exige plano de cópia com origem/destino seguros, criação exclusiva, identidade dos inputs compilados e hashes, seguido de checagem dos arquivos reais montados. Probes rodam sem ambiente Qt herdado: produção OFF recusa hooks e instrumentação separada observa startup/lifecycle com configuração temporária. Executáveis e QtTest dos probes não entram no payload; ausência de SDK no ambiente não substitui máquina limpa, CRT redistribuído, revisão de licenças ou inspeção nativa. Os comandos exatos ficam no README do template.
 
+A [integração local de M4.8](../../experiments/m0/candidates/qt/README.md#rc-music-local-installer) separa testes puros do plano, contrato nativo dos helpers NSIS e jornadas compiladas de instalação/atualização/remoção. O runner de lifecycle usa versões com arquivos adicionados/removidos, Registry GUID e sentinelas de mídia/configuração; verifica os hashes por leitura independente, não apenas exit code. O caso opcional do runtime real instala/remove o inventário inteiro em isolamento, sem tocar a instalação pessoal nem iniciar o player. Build do instalador valida origem, fontes/receipt e compilação `/WX`; esses checks não são benchmark, máquina limpa, inspeção nativa ou aprovação da matriz de formatos.
+
 ### M4.7 — primeiro recorte de suspend/resume no Windows
 
 As provas deste recorte ficam separadas por fronteira e não suspendem fisicamente a máquina:
