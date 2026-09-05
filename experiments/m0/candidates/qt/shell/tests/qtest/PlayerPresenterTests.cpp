@@ -654,6 +654,17 @@ class PlayerPresenterTests final : public QObject {
     void sessionSaveFailureUsesTheExistingWarningAndRetryAction();
     void sessionFutureBlockUsesTheExistingWarningAndReplacementAction();
     void initialSessionFutureVersionUsesTheExistingReplacementAction();
+    void replacementConsentRejectsScopeExpansion_data();
+    void replacementConsentRejectsScopeExpansion();
+    void replacementConsentRejectsMissingAndUnknownRevision_data();
+    void replacementConsentRejectsMissingAndUnknownRevision();
+    void replacementConsentCannotBeReusedAfterWarningReturns();
+    void replacementConsentRejectsReentrantActivation_data();
+    void replacementConsentRejectsReentrantActivation();
+    void replacementConsentDoesNotExpandDuringScheduling();
+    void replacementConsentMayDestroyPresenterAtNotification();
+    void replacementConsentStopsWhenSchedulingDestroysPresenter_data();
+    void replacementConsentStopsWhenSchedulingDestroysPresenter();
     void initialSessionRecoveryWarningsIdentifySessionPersistence_data();
     void initialSessionRecoveryWarningsIdentifySessionPersistence();
     void mixedRecoveryWarningsRevealTheResidualWarning();
@@ -6575,7 +6586,7 @@ void PlayerPresenterTests::sessionFutureBlockUsesTheExistingWarningAndReplacemen
 
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
     QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::SessionPersistence);
-    QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
     QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::NoPersistenceWarningScope);
     PlayerPresenterTestAccess::pollPersistence(presenter);
@@ -6610,11 +6621,297 @@ void PlayerPresenterTests::initialSessionFutureVersionUsesTheExistingReplacement
 
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
     QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::SessionPersistence);
-    QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     PlayerPresenterTestAccess::pollPersistence(presenter);
     QCOMPARE(session_writer.starts.size(), std::size_t{1});
     QVERIFY(session_writer.starts.back().replace_future_version);
     QVERIFY(preferences_writer.starts.empty());
+}
+
+void PlayerPresenterTests::replacementConsentRejectsScopeExpansion_data() {
+    QTest::addColumn<bool>("preferencesFirst");
+    QTest::newRow("preferences-to-combined") << true;
+    QTest::newRow("session-to-combined") << false;
+}
+
+void PlayerPresenterTests::replacementConsentRejectsScopeExpansion() {
+    QFETCH(bool, preferencesFirst);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = preferences,
+            .load_status = preferencesFirst ? PreferencesLoadStatus::FutureVersion : PreferencesLoadStatus::Loaded,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = preferencesFirst ? SessionLoadStatus::Missing : SessionLoadStatus::FutureVersion,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+
+    const QString displayed_revision = presenter.persistenceWarningRevision();
+    QVERIFY(!displayed_revision.isEmpty());
+    QCOMPARE(presenter.persistenceWarningScope(), preferencesFirst
+                                                      ? PlayerPresenter::PersistenceWarningScope::PreferencePersistence
+                                                      : PlayerPresenter::PersistenceWarningScope::SessionPersistence);
+    // A completion from the other store arrives while confirmation is open.
+    if (preferencesFirst) {
+        session_autosave.scheduleRepair();
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+        session_writer.complete(SessionSaveStatus::BlockedByFutureVersion);
+    } else {
+        QVERIFY(presenter.setThemePreference(PlayerPresenter::ThemePreference::DarkTheme));
+        clock.advance(std::chrono::milliseconds{500});
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+        preferences_writer.complete(PreferencesSaveStatus::BlockedByFutureVersion);
+    }
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::CombinedPersistence);
+    const auto preference_revision = preferences_autosave.latestRevision();
+    const auto session_revision = session_autosave.latestRevision();
+    const auto preference_writes = preferences_writer.starts.size();
+    const auto session_writes = session_writer.starts.size();
+    QVERIFY(!presenter.confirmPreferenceReplacement(displayed_revision));
+    QVERIFY(presenter.persistenceWarningRevision() != displayed_revision);
+    QCOMPARE(preferences_autosave.latestRevision(), preference_revision);
+    QCOMPARE(session_autosave.latestRevision(), session_revision);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(preferences_writer.starts.size(), preference_writes);
+    QCOMPARE(session_writer.starts.size(), session_writes);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(preferences_writer.starts.size(), preference_writes + 1);
+    QCOMPARE(session_writer.starts.size(), session_writes + 1);
+    QVERIFY(preferences_writer.starts.back().replace_future_version);
+    QVERIFY(session_writer.starts.back().replace_future_version);
+}
+
+void PlayerPresenterTests::replacementConsentRejectsMissingAndUnknownRevision_data() {
+    QTest::addColumn<QString>("revision");
+    QTest::newRow("empty") << QString{};
+    QTest::newRow("unknown") << QStringLiteral("not-the-displayed-revision");
+}
+
+void PlayerPresenterTests::replacementConsentRejectsMissingAndUnknownRevision() {
+    QFETCH(QString, revision);
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PreferencesAutosave autosave{writer, Preferences{}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = {},
+                                                         .load_status = PreferencesLoadStatus::FutureVersion,
+                                                         .autosave = &autosave});
+    QVERIFY(!presenter.confirmPreferenceReplacement(revision));
+    QVERIFY(!autosave.dirty());
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(writer.starts.empty());
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    const QMetaObject* const meta = presenter.metaObject();
+    QCOMPARE(meta->indexOfMethod("confirmPreferenceReplacement()"), -1);
+    QVERIFY(meta->indexOfMethod("confirmPreferenceReplacement(QString)") >= 0);
+    const int property_index = meta->indexOfProperty("persistenceWarningRevision");
+    QVERIFY(property_index >= 0);
+    const auto property = meta->property(property_index);
+    QVERIFY(!property.isWritable());
+    QCOMPARE(property.notifySignal().methodSignature(), QByteArray("preferencePersistenceChanged()"));
+}
+
+void PlayerPresenterTests::replacementConsentCannotBeReusedAfterWarningReturns() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PreferencesAutosave autosave{writer, Preferences{}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = {},
+                                                         .load_status = PreferencesLoadStatus::FutureVersion,
+                                                         .autosave = &autosave});
+    const QString original_revision = presenter.persistenceWarningRevision();
+    QVERIFY(presenter.confirmPreferenceReplacement(original_revision));
+    QVERIFY(!presenter.confirmPreferenceReplacement(original_revision));
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    // The same public warning/scope can recur after an intervening state.
+    writer.complete(PreferencesSaveStatus::BlockedByFutureVersion);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::PreferencePersistence);
+    QVERIFY(!presenter.confirmPreferenceReplacement(original_revision));
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
+}
+
+void PlayerPresenterTests::replacementConsentRejectsReentrantActivation_data() {
+    QTest::addColumn<bool>("readCurrentRevision");
+    QTest::newRow("captured-revision") << false;
+    QTest::newRow("current-revision") << true;
+}
+
+void PlayerPresenterTests::replacementConsentRejectsReentrantActivation() {
+    QFETCH(bool, readCurrentRevision);
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PresenterPreferencesClock clock;
+    std::function<void()> on_now;
+    PreferencesAutosave autosave{writer, Preferences{}, {.now = [&] {
+                                     if (on_now) {
+                                         auto callback = std::exchange(on_now, {});
+                                         callback();
+                                     }
+                                     return clock.now();
+                                 }}};
+    PlayerPresenter presenter(frozenBundle(), platform,
+                              PlayerPresenterPreferences{.initial = {},
+                                                         .load_status = PreferencesLoadStatus::FutureVersion,
+                                                         .autosave = &autosave});
+    const QString revision = presenter.persistenceWarningRevision();
+    bool nested_accepted = true;
+    on_now = [&] {
+        nested_accepted = presenter.confirmPreferenceReplacement(
+            readCurrentRevision ? presenter.persistenceWarningRevision() : revision);
+    };
+    QVERIFY(presenter.confirmPreferenceReplacement(revision));
+    QVERIFY(!nested_accepted);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(writer.starts.front().replace_future_version);
+}
+
+void PlayerPresenterTests::replacementConsentDoesNotExpandDuringScheduling() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    std::function<void()> on_now;
+    PreferencesAutosave preferences_autosave{preferences_writer, Preferences{}, {.now = [&] {
+                                                 if (on_now) {
+                                                     auto callback = std::exchange(on_now, {});
+                                                     callback();
+                                                 }
+                                                 return clock.now();
+                                             }}};
+    SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = {},
+            .load_status = PreferencesLoadStatus::FutureVersion,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::Missing,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+    session_autosave.scheduleRepair();
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(!session_writer.starts.front().replace_future_version);
+    const QString consent = presenter.persistenceWarningRevision();
+    bool final_notification_received = false;
+    bool nested_notification_accepted = true;
+    QObject::connect(&presenter, &PlayerPresenter::preferencePersistenceChanged, &presenter, [&] {
+        if (final_notification_received ||
+            presenter.persistenceWarningScope() != PlayerPresenter::PersistenceWarningScope::SessionPersistence)
+            return;
+        final_notification_received = true;
+        nested_notification_accepted = presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision());
+    });
+    on_now = [&] {
+        session_writer.complete(SessionSaveStatus::BlockedByFutureVersion);
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+        QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::CombinedPersistence);
+    };
+    QVERIFY(presenter.confirmPreferenceReplacement(consent));
+    QVERIFY(final_notification_received);
+    QVERIFY(!nested_notification_accepted);
+    QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
+    QCOMPARE(presenter.persistenceWarningScope(), PlayerPresenter::PersistenceWarningScope::SessionPersistence);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(preferences_writer.starts.size(), std::size_t{1});
+    QVERIFY(preferences_writer.starts.front().replace_future_version);
+    QCOMPARE(session_writer.starts.size(), std::size_t{1});
+    QVERIFY(!presenter.confirmPreferenceReplacement(consent));
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(session_writer.starts.size(), std::size_t{2});
+    QVERIFY(session_writer.starts.back().replace_future_version);
+}
+
+void PlayerPresenterTests::replacementConsentMayDestroyPresenterAtNotification() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    PreferencesAutosave autosave{writer, Preferences{}};
+    auto presenter = std::make_unique<PlayerPresenter>(
+        frozenBundle(), platform,
+        PlayerPresenterPreferences{
+            .initial = {}, .load_status = PreferencesLoadStatus::FutureVersion, .autosave = &autosave});
+    const QString consent = presenter->persistenceWarningRevision();
+    QObject::connect(presenter.get(), &PlayerPresenter::preferencePersistenceChanged, [&] { presenter.reset(); });
+    QVERIFY(presenter->confirmPreferenceReplacement(consent));
+    QVERIFY(!presenter);
+    QVERIFY(autosave.dirty());
+    autosave.poll();
+    QCOMPARE(writer.starts.size(), std::size_t{1});
+    QVERIFY(writer.starts.front().replace_future_version);
+}
+
+void PlayerPresenterTests::replacementConsentStopsWhenSchedulingDestroysPresenter_data() {
+    QTest::addColumn<bool>("preferencesCallback");
+    QTest::addColumn<int>("destroyAtCall");
+    QTest::newRow("preference-repair") << true << 1;
+    QTest::newRow("preference-authorization") << true << 2;
+    QTest::newRow("session-repair") << false << 1;
+    QTest::newRow("session-authorization") << false << 2;
+}
+
+void PlayerPresenterTests::replacementConsentStopsWhenSchedulingDestroysPresenter() {
+    QFETCH(bool, preferencesCallback);
+    QFETCH(int, destroyAtCall);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    std::unique_ptr<PlayerPresenter> presenter;
+    int callbacks = 0;
+    const auto callback = [&] {
+        if (++callbacks == destroyAtCall)
+            presenter.reset();
+        return clock.now();
+    };
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, Preferences{}, {.now = [&] { return preferencesCallback ? callback() : clock.now(); }}};
+    SessionAutosave session_autosave{
+        session_writer, SessionSnapshot{}, {.now = [&] { return preferencesCallback ? clock.now() : callback(); }}};
+    presenter = std::make_unique<PlayerPresenter>(
+        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{
+            .initial = {},
+            .load_status = PreferencesLoadStatus::FutureVersion,
+            .autosave = &preferences_autosave,
+            .session = {.initial = {},
+                        .load_status = SessionLoadStatus::FutureVersion,
+                        .autosave = &session_autosave,
+                        .now = [&clock] { return clock.now(); }},
+        });
+    const QString consent = presenter->persistenceWarningRevision();
+    QVERIFY(!presenter->confirmPreferenceReplacement(consent));
+    QVERIFY(!presenter);
+    QCOMPARE(callbacks, destroyAtCall);
+    if (preferencesCallback)
+        QVERIFY(!session_autosave.dirty());
 }
 
 void PlayerPresenterTests::initialSessionRecoveryWarningsIdentifySessionPersistence_data() {
@@ -6742,7 +7039,7 @@ void PlayerPresenterTests::mixedFutureVersionAndDefaultsRevealTheResidualWarning
 
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
     QCOMPARE(static_cast<int>(presenter.persistenceWarningScope()), futureScope);
-    QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::UsingDefaults);
     QCOMPARE(static_cast<int>(presenter.persistenceWarningScope()), defaultsScope);
     QVERIFY(presenter.dismissPreferenceWarning());
@@ -7038,7 +7335,7 @@ void PlayerPresenterTests::preferencePollingSleepsAfterTerminalNoticeUntilUserAc
     if (static_cast<PreferencesSaveStatus>(saveStatus) == PreferencesSaveStatus::Failed)
         QVERIFY(presenter.retryPreferenceSave());
     else
-        QVERIFY(presenter.confirmPreferenceReplacement());
+        QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     QVERIFY(timer->isActive());
 
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
@@ -7078,7 +7375,7 @@ void PlayerPresenterTests::projectsTypedPreferenceRecoveryWarningsAndActions() {
     writer.complete(PreferencesSaveStatus::BlockedByFutureVersion);
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::FutureVersion);
-    QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
@@ -7120,7 +7417,7 @@ void PlayerPresenterTests::initialPreferenceLoadWarningsRequireExplicitActions()
     }
 
     QVERIFY(!presenter.dismissPreferenceWarning());
-    QVERIFY(presenter.confirmPreferenceReplacement());
+    QVERIFY(presenter.confirmPreferenceReplacement(presenter.persistenceWarningRevision()));
     QCOMPARE(presenter.preferenceWarning(), PlayerPresenter::PreferenceWarning::NoPreferenceWarning);
     QVERIFY(autosave.dirty());
     PlayerPresenterTestAccess::pollPreferencePersistence(presenter);

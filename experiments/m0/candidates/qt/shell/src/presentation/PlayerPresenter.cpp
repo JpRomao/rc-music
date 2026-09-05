@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QMetaObject>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QTimeZone>
 #include <QVariantMap>
 
@@ -2958,6 +2959,13 @@ PlayerPresenter::PersistenceWarningScope PlayerPresenter::persistenceWarningScop
     return persistence_warning_scope_;
 }
 
+QString PlayerPresenter::persistenceWarningRevision() const {
+    // Never recycle an authorization identity, including at counter exhaustion.
+    if (persistence_warning_revision_ == std::numeric_limits<std::uint64_t>::max())
+        return {};
+    return QString::number(persistence_warning_revision_);
+}
+
 void PlayerPresenter::schedulePreferencePersistence() {
     if (preferences_autosave_ != nullptr)
         static_cast<void>(preferences_autosave_->schedule(preferences()));
@@ -3057,6 +3065,11 @@ void PlayerPresenter::synchronizePreferenceWarning() {
     projectPersistenceWarning();
 }
 
+void PlayerPresenter::advancePersistenceWarningRevision() noexcept {
+    if (persistence_warning_revision_ != std::numeric_limits<std::uint64_t>::max())
+        ++persistence_warning_revision_;
+}
+
 void PlayerPresenter::projectPersistenceWarning() {
     const int preference_priority = persistenceWarningPriority(preference_persistence_warning_);
     const int session_priority = persistenceWarningPriority(session_persistence_warning_);
@@ -3070,6 +3083,7 @@ void PlayerPresenter::projectPersistenceWarning() {
         return;
     preference_warning_ = next_warning;
     persistence_warning_scope_ = next_scope;
+    advancePersistenceWarningRevision();
     emit preferencePersistenceChanged();
 }
 
@@ -3116,31 +3130,59 @@ bool PlayerPresenter::retryPreferenceSave() {
     return true;
 }
 
-bool PlayerPresenter::confirmPreferenceReplacement() {
-    if (exiting_ || preference_warning_ != PreferenceWarning::FutureVersion)
+bool PlayerPresenter::confirmPreferenceReplacement(const QString& expected_revision) {
+    if (exiting_ || persistence_replacement_in_progress_ || preference_warning_ != PreferenceWarning::FutureVersion ||
+        expected_revision.isEmpty() || expected_revision != persistenceWarningRevision())
         return false;
 
-    bool attempted = false;
-    bool succeeded = true;
-    if (preferences_autosave_ != nullptr &&
+    // Freeze the displayed sources before scheduling can invoke another callback.
+    const bool replace_preferences =
+        (persistence_warning_scope_ == PersistenceWarningScope::PreferencePersistence ||
+         persistence_warning_scope_ == PersistenceWarningScope::CombinedPersistence) &&
+        preferences_autosave_ != nullptr &&
         (preferences_future_version_pending_ ||
-         preferences_autosave_->notice() == PreferencesAutosaveNotice::FutureVersionBlocked)) {
-        attempted = true;
+         preferences_autosave_->notice() == PreferencesAutosaveNotice::FutureVersionBlocked);
+    const bool replace_session =
+        (persistence_warning_scope_ == PersistenceWarningScope::SessionPersistence ||
+         persistence_warning_scope_ == PersistenceWarningScope::CombinedPersistence) &&
+        session_autosave_ != nullptr &&
+        (session_future_version_pending_ || session_autosave_->notice() == SessionAutosaveNotice::FutureVersionBlocked);
+    if (!replace_preferences && !replace_session)
+        return false;
+
+    const QPointer<PlayerPresenter> guard{this};
+    persistence_replacement_in_progress_ = true;
+    const auto confirming = qScopeGuard([guard] {
+        if (guard)
+            guard->persistence_replacement_in_progress_ = false;
+    });
+    advancePersistenceWarningRevision();
+    const auto consumed_revision = persistence_warning_revision_;
+    bool succeeded = true;
+    if (replace_preferences) {
         if (!preferences_autosave_->dirty())
             preferences_autosave_->scheduleRepair();
-        if (preferences_autosave_->confirmFutureVersionReplacement()) {
+        if (!guard)
+            return false;
+        const bool authorized = preferences_autosave_->confirmFutureVersionReplacement();
+        if (!guard)
+            return false;
+        if (authorized) {
             preferences_future_version_pending_ = false;
             preference_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
         } else {
             succeeded = false;
         }
     }
-    if (session_autosave_ != nullptr && (session_future_version_pending_ ||
-                                         session_autosave_->notice() == SessionAutosaveNotice::FutureVersionBlocked)) {
-        attempted = true;
+    if (replace_session) {
         if (!session_autosave_->dirty())
             session_autosave_->scheduleRepair();
-        if (session_autosave_->confirmFutureVersionReplacement()) {
+        if (!guard)
+            return false;
+        const bool authorized = session_autosave_->confirmFutureVersionReplacement();
+        if (!guard)
+            return false;
+        if (authorized) {
             session_future_version_pending_ = false;
             session_persistence_warning_ = PreferenceWarning::NoPreferenceWarning;
         } else {
@@ -3148,7 +3190,14 @@ bool PlayerPresenter::confirmPreferenceReplacement() {
         }
     }
     projectPersistenceWarning();
-    if (!attempted || !succeeded)
+    // A failed attempt also consumes consent, even if the warning is unchanged.
+    if (!guard)
+        return succeeded;
+    if (persistence_warning_revision_ == consumed_revision)
+        emit preferencePersistenceChanged();
+    if (!guard)
+        return succeeded;
+    if (!succeeded)
         return false;
     reconcileTimer();
     return true;

@@ -9,9 +9,13 @@ FocusScope {
     required property M0.ShellUiContract contract
     required property int warning
     required property int warningScope
+    required property string warningRevision
     required property Item fallbackFocusItem
     required property bool interactionAllowed
     property Item replacementRestoreFocusItem: null
+    property string replacementIntentRevision: ""
+    property bool replacementIntentActive: false
+    property int replacementFocusRevision: 0
     property int lastAnnouncedWarning: -1
     property int lastAnnouncedWarningScope: -1
     property bool actionOwnedFocus: false
@@ -30,7 +34,7 @@ FocusScope {
     signal reviewRequested
     signal dismissRequested
     signal retryRequested
-    signal replacementConfirmed
+    signal replacementConfirmed(string revision)
     visible: warning !== M0.PlayerPresenter.NoPreferenceWarning
     enabled: visible && interactionAllowed
     implicitHeight: visible ? content.implicitHeight + contract.spacingUnit * 4 : 0
@@ -211,16 +215,41 @@ FocusScope {
     }
 
     function openReplacementConfirmation(opener) {
-        if (!interactionAllowed || warning !== M0.PlayerPresenter.FutureVersion)
+        if (!interactionAllowed || warning !== M0.PlayerPresenter.FutureVersion || warningRevision.length === 0 || replacementConfirmation.visible)
             return;
         replacementRestoreFocusItem = opener;
+        replacementIntentRevision = warningRevision;
+        replacementIntentActive = true;
+        ++replacementFocusRevision;
         replacementConfirmation.open();
+    }
+
+    function consumeReplacementIntent() {
+        replacementIntentActive = false;
+        replacementIntentRevision = "";
+        ++replacementFocusRevision;
+    }
+
+    function invalidateReplacementConfirmation() {
+        if (!replacementIntentActive && !replacementConfirmation.visible && !replacementConfirmation.opened)
+            return;
+        consumeReplacementIntent();
+        if (replacementConfirmation.visible || replacementConfirmation.opened)
+            replacementConfirmation.close();
+    }
+
+    function confirmReplacement() {
+        if (!replacementConfirmation.opened || !replacementIntentActive || replacementIntentRevision !== warningRevision || warning !== M0.PlayerPresenter.FutureVersion || !interactionAllowed)
+            return;
+        const revision = replacementIntentRevision;
+        consumeReplacementIntent();
+        replacementConfirmation.close();
+        replacementConfirmed(revision);
     }
 
     onWarningChanged: {
         restoreFallbackAfterWarningChange();
-        if (warning !== M0.PlayerPresenter.FutureVersion && replacementConfirmation.opened)
-            replacementConfirmation.close();
+        invalidateReplacementConfirmation();
         if (warning === M0.PlayerPresenter.NoPreferenceWarning) {
             lastAnnouncedWarning = -1;
             lastAnnouncedWarningScope = -1;
@@ -229,15 +258,17 @@ FocusScope {
         }
     }
     onWarningScopeChanged: {
+        invalidateReplacementConfirmation();
         if (warning === M0.PlayerPresenter.NoPreferenceWarning) {
             lastAnnouncedWarningScope = -1;
         } else {
             scheduleAnnouncement();
         }
     }
+    onWarningRevisionChanged: invalidateReplacementConfirmation()
     onInteractionAllowedChanged: {
-        if (!interactionAllowed && replacementConfirmation.opened)
-            replacementConfirmation.close();
+        if (!interactionAllowed)
+            invalidateReplacementConfirmation();
         else if (interactionAllowed && focusRestorePending)
             schedulePendingFocusRestore();
     }
@@ -380,15 +411,21 @@ FocusScope {
         closePolicy: Popup.CloseOnEscape
         padding: root.contract.spacingUnit * 4
 
-        onOpened: Qt.callLater(function () {
-            cancelButton.forceActiveFocus(Qt.TabFocusReason);
-        })
+        onOpened: {
+            const revision = root.replacementFocusRevision;
+            Qt.callLater(function () {
+                if (revision === root.replacementFocusRevision && replacementConfirmation.opened && root.replacementIntentActive && root.replacementIntentRevision === root.warningRevision && root.interactionAllowed)
+                    cancelButton.forceActiveFocus(Qt.TabFocusReason);
+            });
+        }
+        onAboutToHide: root.consumeReplacementIntent()
         onClosed: {
             const requested = root.replacementRestoreFocusItem;
+            const revision = root.replacementFocusRevision;
             root.replacementRestoreFocusItem = null;
             if (root.interactionAllowed)
                 Qt.callLater(function () {
-                    if (replacementConfirmation.opened || !root.interactionAllowed)
+                    if (revision !== root.replacementFocusRevision || replacementConfirmation.opened || !root.interactionAllowed)
                         return;
                     const destination = root.isUsableFocusTarget(requested) ? requested : root.fallbackFocusItem;
                     if (root.isUsableFocusTarget(destination))
@@ -454,10 +491,7 @@ FocusScope {
                     activeFocusOnTab: replacementConfirmation.opened
                     KeyNavigation.tab: cancelButton
                     KeyNavigation.backtab: cancelButton
-                    onClicked: {
-                        replacementConfirmation.close();
-                        root.replacementConfirmed();
-                    }
+                    onClicked: root.confirmReplacement()
                 }
             }
         }

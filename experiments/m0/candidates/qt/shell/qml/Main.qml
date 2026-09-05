@@ -425,12 +425,13 @@ ApplicationWindow {
         contract: window.uiContract
         warning: window.presenter.preferenceWarning
         warningScope: window.presenter.persistenceWarningScope
+        warningRevision: window.presenter.persistenceWarningRevision
         fallbackFocusItem: preferencesButton
         interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onReviewRequested: window.openPreferences()
         onDismissRequested: window.presenter.dismissPreferenceWarning()
         onRetryRequested: window.presenter.retryPreferenceSave()
-        onReplacementConfirmed: window.presenter.confirmPreferenceReplacement()
+        onReplacementConfirmed: revision => window.presenter.confirmPreferenceReplacement(revision)
     }
     PreferencesPanel {
         id: preferencesPanel

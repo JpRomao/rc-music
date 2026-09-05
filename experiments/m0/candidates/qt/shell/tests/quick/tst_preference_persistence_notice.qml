@@ -18,11 +18,14 @@ TestCase {
             visible: true
             property int requestedWarning: M0.PlayerPresenter.NoPreferenceWarning
             property int requestedWarningScope: M0.PlayerPresenter.PreferencePersistence
+            property string requestedWarningRevision: "1"
             property bool allowInteraction: true
             property bool preferencesOpened: false
             property int dismissCount: 0
             property int retryCount: 0
             property int replacementCount: 0
+            property var replacementRevisions: []
+            property bool reenterConfirmationOnSignal: false
             property alias persistenceNotice: notice
             property alias fallbackItem: fallback
             property alias competingItem: competing
@@ -46,6 +49,7 @@ TestCase {
                 contract: testShellUiContract // qmllint disable unqualified
                 warning: host.requestedWarning
                 warningScope: host.requestedWarningScope
+                warningRevision: host.requestedWarningRevision
                 fallbackFocusItem: fallback
                 interactionAllowed: host.allowInteraction
                 onReviewRequested: host.preferencesOpened = true
@@ -54,7 +58,14 @@ TestCase {
                     host.requestedWarning = M0.PlayerPresenter.NoPreferenceWarning;
                 }
                 onRetryRequested: ++host.retryCount
-                onReplacementConfirmed: ++host.replacementCount
+                onReplacementConfirmed: revision => {
+                    ++host.replacementCount;
+                    host.replacementRevisions = host.replacementRevisions.concat([revision]);
+                    if (host.reenterConfirmationOnSignal) {
+                        host.reenterConfirmationOnSignal = false;
+                        testCase.findChild(host, "preference-replacement-confirm").clicked();
+                    }
+                }
             }
         }
     }
@@ -354,9 +365,92 @@ TestCase {
         });
         confirm.Accessible.pressAction();
         compare(host.replacementCount, 1);
+        compare(host.replacementRevisions, ["1"]);
         tryVerify(function () {
             return !confirmation.visible;
         });
+    }
+
+    function test_changedWarningIdentityRequiresNewConsent_data() {
+        return [
+            {
+                tag: "expanded-scope",
+                nextScope: M0.PlayerPresenter.CombinedPersistence,
+                nextRevision: "1"
+            },
+            {
+                tag: "other-scope",
+                nextScope: M0.PlayerPresenter.SessionPersistence,
+                nextRevision: "1"
+            },
+            {
+                tag: "new-revision-same-projection",
+                nextScope: M0.PlayerPresenter.PreferencePersistence,
+                nextRevision: "2"
+            }
+        ];
+    }
+
+    function test_changedWarningIdentityRequiresNewConsent(data) {
+        const host = createHost(M0.PlayerPresenter.FutureVersion);
+        const replace = findChild(host, "preference-persistence-replace");
+        const confirmation = findChild(host, "preference-replacement-confirmation");
+        const confirm = findChild(host, "preference-replacement-confirm");
+        replace.Accessible.pressAction();
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        confirm.forceActiveFocus(Qt.TabFocusReason);
+        host.requestedWarningScope = data.nextScope;
+        host.requestedWarningRevision = data.nextRevision;
+        tryVerify(function () {
+            return !confirmation.visible;
+        });
+        compare(host.replacementCount, 0);
+        confirm.clicked();
+        compare(host.replacementCount, 0);
+        verify(!confirm.activeFocus);
+
+        replace.Accessible.pressAction();
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        confirm.Accessible.pressAction();
+        compare(host.replacementCount, 1);
+        compare(host.replacementRevisions, [data.nextRevision]);
+    }
+
+    function test_confirmationConsumesConsentBeforeReentrantActivation() {
+        const host = createHost(M0.PlayerPresenter.FutureVersion);
+        const replace = findChild(host, "preference-persistence-replace");
+        const confirmation = findChild(host, "preference-replacement-confirmation");
+        const confirm = findChild(host, "preference-replacement-confirm");
+        replace.Accessible.pressAction();
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        host.reenterConfirmationOnSignal = true;
+        confirm.Accessible.pressAction();
+        compare(host.replacementCount, 1);
+        compare(host.replacementRevisions, ["1"]);
+        confirm.clicked();
+        compare(host.replacementCount, 1);
+    }
+
+    function test_cancelledOpeningCannotStealFocusFromCompetingModal() {
+        const host = createHost(M0.PlayerPresenter.FutureVersion);
+        const replace = findChild(host, "preference-persistence-replace");
+        const confirmation = findChild(host, "preference-replacement-confirmation");
+        const confirm = findChild(host, "preference-replacement-confirm");
+        // Invalidate in the same turn, before onOpened's deferred focus callback.
+        replace.Accessible.pressAction();
+        host.allowInteraction = false;
+        host.competingItem.forceActiveFocus(Qt.TabFocusReason);
+        wait(0);
+        verify(!confirmation.visible);
+        verify(host.competingItem.activeFocus);
+        confirm.clicked();
+        compare(host.replacementCount, 0);
     }
 
     function test_confirmationNeverStealsFocusAcrossStateOrModalChanges() {

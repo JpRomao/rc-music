@@ -163,6 +163,7 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(PreferenceWarning preferenceWarning READ preferenceWarning NOTIFY preferencePersistenceChanged)
     Q_PROPERTY(PersistenceWarningScope persistenceWarningScope READ persistenceWarningScope NOTIFY
                    preferencePersistenceChanged)
+    Q_PROPERTY(QString persistenceWarningRevision READ persistenceWarningRevision NOTIFY preferencePersistenceChanged)
     Q_PROPERTY(bool trayAvailable READ trayAvailable NOTIFY platformChanged)
     Q_PROPERTY(bool defaultAppsSettingsSupported READ defaultAppsSettingsSupported NOTIFY defaultAppsSettingsChanged)
     Q_PROPERTY(bool defaultAppsSettingsAvailable READ defaultAppsSettingsAvailable NOTIFY defaultAppsSettingsChanged)
@@ -337,6 +338,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool startMinimized() const noexcept;
     [[nodiscard]] PreferenceWarning preferenceWarning() const noexcept;
     [[nodiscard]] PersistenceWarningScope persistenceWarningScope() const noexcept;
+    [[nodiscard]] QString persistenceWarningRevision() const;
     [[nodiscard]] bool trayAvailable() const noexcept;
     [[nodiscard]] bool defaultAppsSettingsSupported() const noexcept;
     [[nodiscard]] bool defaultAppsSettingsAvailable() const noexcept;
@@ -393,7 +395,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setQueueEndPreference(QueueEndPreference behavior);
     Q_INVOKABLE bool dismissPreferenceWarning();
     Q_INVOKABLE bool retryPreferenceSave();
-    Q_INVOKABLE bool confirmPreferenceReplacement();
+    Q_INVOKABLE bool confirmPreferenceReplacement(const QString& expected_revision);
     Q_INVOKABLE bool executeErrorAction();
     Q_INVOKABLE bool skipUnavailable();
     [[nodiscard]] bool advanceOneTick();
@@ -435,6 +437,7 @@ class PlayerPresenter final : public QObject {
     void pollPersistence();
     void synchronizePreferenceWarning();
     void projectPersistenceWarning();
+    void advancePersistenceWarningRevision() noexcept;
     [[nodiscard]] bool sourceExitDrained() const;
     [[nodiscard]] bool beginPersistenceExit();
     void completeExit();
@@ -556,6 +559,8 @@ class PlayerPresenter final : public QObject {
     PreferenceWarning session_persistence_warning_{PreferenceWarning::NoPreferenceWarning};
     PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};
     PersistenceWarningScope persistence_warning_scope_{PersistenceWarningScope::NoPersistenceWarningScope};
+    std::uint64_t persistence_warning_revision_{0};
+    bool persistence_replacement_in_progress_{false};
     std::chrono::milliseconds preference_exit_flush_timeout_{2'000};
     std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{
         [] { return std::chrono::steady_clock::now(); }};

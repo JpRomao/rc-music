@@ -201,6 +201,8 @@ Em C++/Qt, `FakePlaybackBackend` e o adapter Qt Multimedia/FFmpeg precisam satis
 
 ### `SessionStore`
 
+O [consentimento de substituição](../../experiments/m0/candidates/qt/README.md#replacement-consent) também exige testes de boundary, sem disco pessoal: completion falsa muda aviso de uma fonte para ambas enquanto a confirmação está aberta; revisão antiga não altera dirty/revisão dos autosaves nem inicia writes. Cobrir reaparição do mesmo aviso, revisão vazia/desconhecida, reentrada com token antigo/atual e escopo ampliado durante agendamento. Quick deve fechar/inutilizar confirmação cancelada ou desatualizada, emitir somente o token capturado uma vez e proteger o foco de callbacks atrasados. Esses testes não provam integridade física ou atomicidade conjunta dos arquivos.
+
 - round-trip;
 - IDs e posição acima de `2^53` sem perda, com strings decimais não canônicas e overflow rejeitados;
 - documento abaixo/no/acima do limite próprio de 16 MiB;

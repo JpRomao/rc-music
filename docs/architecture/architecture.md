@@ -363,6 +363,8 @@ Chave de cache proposta: path canônico + tamanho + mtime. Cache é otimização
 
 ## 12. Fila e persistência
 
+No candidato Qt/Windows, o [consentimento de substituição futura](../../experiments/m0/candidates/qt/README.md#replacement-consent) é vinculado à revisão do aviso e ao conjunto de fontes exibidas. QML captura a revisão ao abrir o diálogo e a invalida quando aviso, escopo ou interação mudam; o presenter valida a revisão e congela as fontes antes de agendar. Revisão antiga ou reentrada não autoriza outra fonte. Esse token local de apresentação não substitui a inspeção do store, não identifica bytes em disco e não altera a autorização de retry já concedida ao autosave.
+
 Um arquivo JSON de preferências e outro de sessão simplificam migração e recuperação. Formato conceitual:
 
 ```json
