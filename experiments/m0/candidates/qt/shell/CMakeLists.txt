@@ -1175,7 +1175,7 @@ if(M0_QT_AUDIO_SUPPORT)
         src/adapters/TagLibMetadataExtractor.cpp
     )
     target_include_directories(m0_taglib_metadata_extractor PUBLIC include)
-    target_link_libraries(m0_taglib_metadata_extractor PRIVATE TagLib::TagLib Qt6::Gui)
+    target_link_libraries(m0_taglib_metadata_extractor PRIVATE m0_qt_core TagLib::TagLib Qt6::Gui)
     target_compile_features(m0_taglib_metadata_extractor PUBLIC cxx_std_20)
     if(MSVC)
         target_compile_options(m0_taglib_metadata_extractor PRIVATE /W4 /WX /permissive-)
@@ -1327,6 +1327,7 @@ if(M0_QT_AUDIO_SUPPORT)
                 Qt6::Gui
                 Qt6::Test
                 Qt6::Widgets
+                TagLib::TagLib
             )
             target_include_directories(m0_qt_local_audio_integration_tests PRIVATE src)
             target_compile_features(m0_qt_local_audio_integration_tests PRIVATE cxx_std_20)
@@ -1393,6 +1394,7 @@ add_library(m0_qt_core STATIC
     src/application/SessionAutosave.cpp
     src/domain/LocalAudioFilePolicy.cpp
     src/domain/LocalFileQueue.cpp
+    src/domain/MetadataSanitization.cpp
     src/domain/QueueNavigation.cpp
     src/domain/SessionSnapshot.cpp
     src/domain/WindowPlacement.cpp
@@ -1413,6 +1415,7 @@ if(BUILD_TESTING)
         tests/catch2/DeterministicPlaybackBackendTests.cpp
         tests/catch2/LocalAudioFilePolicyTests.cpp
         tests/catch2/LocalFileQueueTests.cpp
+        tests/catch2/MetadataSanitizationTests.cpp
         tests/catch2/SingleWorkerLocalSourceDiscoveryTests.cpp
         tests/catch2/LocalTrackSessionTests.cpp
         tests/catch2/PlayerControllerTests.cpp

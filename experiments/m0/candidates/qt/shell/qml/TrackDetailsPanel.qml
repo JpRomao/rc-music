@@ -72,6 +72,10 @@ Popup {
             return labels.artist;
         case "album":
             return labels.album;
+        case "track_number":
+            return labels.trackNumber;
+        case "year":
+            return labels.year;
         default:
             return labels.unknownField;
         }
@@ -92,6 +96,14 @@ Popup {
 
     function formatDiagnostic(diagnostic) {
         switch (diagnostic.code) {
+        case "metadata_text_sanitized":
+            return formatText(labels.metadataTextSanitized, {
+                field: metadataFieldName(diagnostic.field)
+            });
+        case "metadata_invalid_value":
+            return formatText(labels.metadataInvalidValue, {
+                field: metadataFieldName(diagnostic.field)
+            });
         case "metadata_field_too_large":
             return formatText(labels.metadataFieldTooLarge, {
                 field: metadataFieldName(diagnostic.field),

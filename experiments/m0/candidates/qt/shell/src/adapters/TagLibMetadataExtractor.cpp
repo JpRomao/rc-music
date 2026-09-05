@@ -1,33 +1,44 @@
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
+#include "m0/domain/MetadataSanitization.hpp"
 
 #include <QBuffer>
 #include <QByteArray>
 #include <QImage>
 #include <QImageReader>
 
+#include <apetag.h>
 #include <audioproperties.h>
 #include <flacfile.h>
 #include <flacproperties.h>
+#include <id3v1tag.h>
+#include <id3v2frame.h>
+#include <id3v2tag.h>
+#include <infotag.h>
 #include <mp4file.h>
 #include <mp4properties.h>
+#include <mp4tag.h>
 #include <mpegfile.h>
 #include <mpegheader.h>
 #include <mpegproperties.h>
 #include <tag.h>
 #include <tfile.h>
+#include <tpropertymap.h>
 #include <tvariant.h>
 #include <vorbisfile.h>
 #include <vorbisproperties.h>
 #include <wavfile.h>
 #include <wavproperties.h>
+#include <xiphcomment.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <exception>
 #include <fstream>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -315,18 +326,142 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
     metadata.artwork = std::move(thumbnail);
 }
 
+void recordValueDiagnostic(std::vector<MetadataDiagnostic>& diagnostics, const MetadataDiagnosticCode code,
+                           const MetadataField field) {
+    if (std::none_of(diagnostics.begin(), diagnostics.end(), [=](const MetadataDiagnostic& diagnostic) {
+            return diagnostic.code == code && diagnostic.field == field;
+        })) {
+        diagnostics.push_back({.code = code, .field = field});
+    }
+}
+
+[[nodiscard]] bool originalFieldFits(const std::string_view value, const MetadataField field,
+                                     std::vector<MetadataDiagnostic>& diagnostics) {
+    if (value.size() <= MetadataRetentionBudget::field_limit_bytes) {
+        return true;
+    }
+    if (std::none_of(diagnostics.begin(), diagnostics.end(), [=](const MetadataDiagnostic& diagnostic) {
+            return diagnostic.code == MetadataDiagnosticCode::FieldTooLarge && diagnostic.field == field;
+        })) {
+        diagnostics.push_back({.code = MetadataDiagnosticCode::FieldTooLarge,
+                               .field = field,
+                               .observed_bytes = value.size(),
+                               .limit_bytes = MetadataRetentionBudget::field_limit_bytes});
+    }
+    return false;
+}
+
 [[nodiscard]] std::optional<std::string> retainedUtf8(const TagLib::String& value, const MetadataField field,
                                                       MetadataRetentionBudget& budget,
                                                       std::vector<MetadataDiagnostic>& diagnostics) {
     if (value.isEmpty()) {
         return std::nullopt;
     }
-    auto text = value.to8Bit(true);
-    if (auto diagnostic = budget.tryRetain(field, text.size()); diagnostic.has_value()) {
+    const auto original = value.to8Bit(true);
+    if (!originalFieldFits(original, field, diagnostics)) {
+        return std::nullopt;
+    }
+    auto sanitized = sanitizeMetadataText(original);
+    if (sanitized.disposition == MetadataTextDisposition::Empty ||
+        sanitized.disposition == MetadataTextDisposition::InvalidEncoding) {
+        if (!original.empty()) {
+            recordValueDiagnostic(diagnostics, MetadataDiagnosticCode::InvalidValue, field);
+        }
+        return std::nullopt;
+    }
+    if (auto diagnostic = budget.tryRetain(field, sanitized.text.size()); diagnostic.has_value()) {
         diagnostics.push_back(*diagnostic);
         return std::nullopt;
     }
-    return text;
+    if (sanitized.disposition == MetadataTextDisposition::Sanitized) {
+        recordValueDiagnostic(diagnostics, MetadataDiagnosticCode::TextSanitized, field);
+    }
+    return std::move(sanitized.text);
+}
+
+[[nodiscard]] TagLib::PropertyMap numericProperties(const TagLib::Tag& tag) {
+    if (const auto* id3 = dynamic_cast<const TagLib::ID3v2::Tag*>(&tag); id3 != nullptr) {
+        TagLib::PropertyMap properties;
+        // TextIdentificationFrame::asProperties() replaces the ISO 'T' in DATE
+        // with a space. Read the public frames to validate the original grammar.
+        for (const auto& [frame_id, key] : {std::pair{"TRCK", "TRACKNUMBER"}, std::pair{"TDRC", "DATE"}}) {
+            const auto entry = id3->frameListMap().find(frame_id);
+            if (entry == id3->frameListMap().end()) {
+                continue;
+            }
+            for (const auto* frame : entry->second) {
+                properties.insert(key, frame->toStringList());
+            }
+        }
+        return properties;
+    }
+    if (const auto* legacy = dynamic_cast<const TagLib::ID3v1::Tag*>(&tag); legacy != nullptr) {
+        TagLib::PropertyMap properties;
+        // ID3v1::properties() has already converted the year through signed toInt().
+        // render() is an in-memory public API snapshot, not another file read.
+        const auto rendered = legacy->render();
+        if (rendered.size() == 128 && rendered.mid(0, 3) == "TAG") {
+            auto year = std::string{rendered.data() + 93, 4};
+            while (!year.empty() && year.back() == '\0') {
+                year.pop_back();
+            }
+            if (!year.empty()) {
+                properties.insert("DATE", TagLib::StringList{TagLib::String{year, TagLib::String::Latin1}});
+            }
+        }
+        if (legacy->track() != 0) {
+            properties.insert("TRACKNUMBER", TagLib::StringList{TagLib::String::number(legacy->track())});
+        }
+        return properties;
+    }
+
+    auto properties = tag.properties();
+    if (const auto* mp4 = dynamic_cast<const TagLib::MP4::Tag*>(&tag); mp4 != nullptr && mp4->contains("trkn")) {
+        // The MP4 trkn atom stores unsigned 16-bit number/total. TagLib 2.3.1
+        // parseIntPair reads both using ByteVector::toShort(), projecting the top
+        // half to negative int values. Recover only this known binary format.
+        const auto pair = mp4->item("trkn").toIntPair();
+        const auto number = static_cast<std::uint16_t>(pair.first);
+        const auto total = static_cast<std::uint16_t>(pair.second);
+        auto track = std::to_string(number);
+        if (total != 0) {
+            track += "/" + std::to_string(total);
+        }
+        properties.replace("TRACKNUMBER", TagLib::StringList{TagLib::String{track, TagLib::String::Latin1}});
+    }
+    return properties;
+}
+
+void readNumber(const TagLib::PropertyMap& properties, const std::initializer_list<const char*> keys,
+                const MetadataField field, std::optional<std::uint32_t>& destination, MetadataRetentionBudget& budget,
+                std::vector<MetadataDiagnostic>& diagnostics) {
+    if (destination.has_value()) {
+        return;
+    }
+    for (const auto* key : keys) {
+        const auto entry = properties.find(key);
+        if (entry == properties.end()) {
+            continue;
+        }
+        for (const auto& value : entry->second) {
+            const auto original = value.to8Bit(true);
+            if (original.empty() || !originalFieldFits(original, field, diagnostics)) {
+                continue;
+            }
+            const auto parsed =
+                field == MetadataField::TrackNumber ? parseMetadataTrackNumber(original) : parseMetadataYear(original);
+            if (!parsed.has_value()) {
+                recordValueDiagnostic(diagnostics, MetadataDiagnosticCode::InvalidValue, field);
+                continue;
+            }
+            if (auto diagnostic = budget.tryRetain(field, sizeof(std::uint32_t)); diagnostic.has_value()) {
+                diagnostics.push_back(*diagnostic);
+                return;
+            }
+            destination = parsed;
+            return;
+        }
+    }
 }
 
 [[nodiscard]] std::string stemUtf8(const std::filesystem::path& source_path) {
@@ -362,7 +497,8 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
     return {};
 }
 
-[[nodiscard]] ReadTagsResult readTags(const TagLib::Tag* tag) {
+[[nodiscard]] ReadTagsResult readTags(const TagLib::Tag* tag,
+                                      const std::initializer_list<const TagLib::Tag*> numeric_tags) {
     ReadTagsResult result{};
     if (tag == nullptr) {
         return result;
@@ -372,11 +508,22 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
     result.tags.title = retainedUtf8(tag->title(), MetadataField::Title, budget, result.diagnostics);
     result.tags.artist = retainedUtf8(tag->artist(), MetadataField::Artist, budget, result.diagnostics);
     result.tags.album = retainedUtf8(tag->album(), MetadataField::Album, budget, result.diagnostics);
-    if (tag->track() != 0) {
-        result.tags.track_number = tag->track();
-    }
-    if (tag->year() != 0) {
-        result.tags.year = tag->year();
+    // TagUnion::properties() picks one whole tag and loses per-field fallback.
+    // Concrete file readers supply their public subtags in native priority order.
+    for (const auto* numeric_tag : numeric_tags) {
+        if (numeric_tag == nullptr) {
+            continue;
+        }
+        const auto properties = numericProperties(*numeric_tag);
+        const bool has_vorbis_aliases = dynamic_cast<const TagLib::Ogg::XiphComment*>(numeric_tag) != nullptr;
+        readNumber(properties,
+                   has_vorbis_aliases ? std::initializer_list<const char*>{"TRACKNUMBER", "TRACKNUM"}
+                                      : std::initializer_list<const char*>{"TRACKNUMBER"},
+                   MetadataField::TrackNumber, result.tags.track_number, budget, result.diagnostics);
+        readNumber(properties,
+                   has_vorbis_aliases ? std::initializer_list<const char*>{"DATE", "YEAR"}
+                                      : std::initializer_list<const char*>{"DATE"},
+                   MetadataField::Year, result.tags.year, budget, result.diagnostics);
     }
     return result;
 }
@@ -418,7 +565,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
         return error(MetadataReadErrorCode::UnsupportedFormat, "WAV encoding is not supported by this slice");
     }
 
-    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.ID3v2Tag(), file.InfoTag()}));
     applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
@@ -442,7 +589,8 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
         return error(MetadataReadErrorCode::UnsupportedFormat, "MPEG encoding is not MP3 Layer III");
     }
 
-    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    auto metadata = baseMetadata(
+        source_path, file_size, readTags(file.tag(), {file.ID3v2Tag(false), file.APETag(false), file.ID3v1Tag(false)}));
     applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "MP3";
@@ -457,7 +605,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
         return error(MetadataReadErrorCode::InvalidData, "FLAC metadata or audio properties are invalid");
     }
 
-    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    auto metadata =
+        baseMetadata(source_path, file_size,
+                     readTags(file.tag(), {file.xiphComment(false), file.ID3v2Tag(false), file.ID3v1Tag(false)}));
     applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
@@ -479,7 +629,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
         return error(MetadataReadErrorCode::UnsupportedFormat, "MP4 audio codec is not AAC");
     }
 
-    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.tag()}));
     applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "ISO MP4/M4A";
@@ -494,7 +644,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
         return error(MetadataReadErrorCode::InvalidData, "Ogg Vorbis metadata or audio properties are invalid");
     }
 
-    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag()));
+    auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.tag()}));
     applyArtwork(metadata, embeddedArtwork(file));
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "Ogg";

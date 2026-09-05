@@ -539,6 +539,29 @@ class ScenarioDriver final : public QObject {
             {music_player::m0::MetadataPollStatus::Completed,
              music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
     }
+    Q_INVOKABLE void publishSanitizedLocalMetadata(const bool valid_numeric_fallback) {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        const auto& request = local_metadata_reader_.requests.back();
+        music_player::m0::TrackMetadata track{
+            .source_path = request.source_path,
+            .tags = {.title = std::string{"<b>Título ajustado 日本語</b>"},
+                     .artist = std::string{"Artista ☕"},
+                     .album = std::string{"Álbum"},
+                     .track_number = valid_numeric_fallback ? std::optional<std::uint32_t>{7} : std::nullopt,
+                     .year = valid_numeric_fallback ? std::optional<std::uint32_t>{2026} : std::nullopt},
+            .display_title = "<b>Título ajustado 日本語</b>",
+            .diagnostics = {{.code = music_player::m0::MetadataDiagnosticCode::TextSanitized,
+                             .field = music_player::m0::MetadataField::Title},
+                            {.code = music_player::m0::MetadataDiagnosticCode::InvalidValue,
+                             .field = music_player::m0::MetadataField::TrackNumber},
+                            {.code = music_player::m0::MetadataDiagnosticCode::InvalidValue,
+                             .field = music_player::m0::MetadataField::Year}},
+        };
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
+    }
     Q_INVOKABLE void publishExactLargeLocalMetadata() {
         if (local_metadata_reader_.requests.empty())
             return;

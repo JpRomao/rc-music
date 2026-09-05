@@ -13,6 +13,10 @@
 #include <QTest>
 #include <QTimer>
 
+#include <id3v2tag.h>
+#include <mpegfile.h>
+#include <tpropertymap.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -255,6 +259,60 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void invalidTagsAreSanitizedWithoutInterruptingRealDecodedPlayback() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString filename = directory.filePath(QStringLiteral("Metadados 日本語.mp3"));
+        QVERIFY(QFile::copy(QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE), filename));
+        const auto source = nativePath(filename);
+        {
+            TagLib::MPEG::File file{source.c_str()};
+            QVERIFY(file.isValid());
+            auto* tag = file.ID3v2Tag(true);
+            QVERIFY(tag != nullptr);
+            TagLib::PropertyMap properties;
+            properties["TITLE"].append(TagLib::String("  Canção\t 日本語 \xe2\x80\xae🎵  ", TagLib::String::UTF8));
+            properties["ARTIST"].append(TagLib::String(" \t\r\n ", TagLib::String::UTF8));
+            properties["ALBUM"].append(TagLib::String("Álbum preservado", TagLib::String::UTF8));
+            properties["TRACKNUMBER"].append(TagLib::String("-1"));
+            properties["DATE"].append(TagLib::String("-1"));
+            QVERIFY(tag->setProperties(properties).isEmpty());
+            QVERIFY(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
+                              TagLib::MPEG::File::DoNotDuplicate));
+        }
+        TestPlatform platform;
+        QtMultimediaPlaybackBackend engine;
+        RecordingPlaybackBackend backend(engine);
+        SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
+        PlayerPresenter presenter(frozenBundle(), platform, backend, reader, [source] { return std::vector{source}; });
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+        QTRY_VERIFY_WITH_TIMEOUT(backend.observed(PlaybackStatus::Playing), 5'000);
+        QCOMPARE(engine.pause(), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QTRY_COMPARE_WITH_TIMEOUT(presenter.detailsAlbum(), QStringLiteral("Álbum preservado"), 5'000);
+        QCOMPARE(presenter.currentTitle(), QStringLiteral("Canção 日本語 🎵"));
+        QVERIFY(presenter.detailsArtist().isEmpty());
+        QVERIFY(!presenter.detailsTrackNumber().isValid());
+        QVERIFY(!presenter.detailsYear().isValid());
+        QVERIFY(!presenter.hasError());
+        QCOMPARE(backend.loadedPaths(), std::vector{source});
+        const auto diagnostics = presenter.detailsDiagnostics();
+        for (const auto& expected : {
+                 QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_text_sanitized")},
+                             {QStringLiteral("field"), QStringLiteral("title")}},
+                 QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_invalid_value")},
+                             {QStringLiteral("field"), QStringLiteral("track_number")}},
+                 QVariantMap{{QStringLiteral("code"), QStringLiteral("metadata_invalid_value")},
+                             {QStringLiteral("field"), QStringLiteral("year")}},
+             }) {
+            QVERIFY(diagnostics.contains(expected));
+        }
+        QCOMPARE(engine.shutdown(), PlaybackCommandResult::Accepted);
+        QVERIFY(QFile::exists(filename));
+    }
+
     void renamedSourceRestoresThePersistedOccurrencePausedThroughTheRealDecoder() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

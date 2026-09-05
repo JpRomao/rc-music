@@ -239,6 +239,10 @@ QString metadataFieldId(const MetadataField field) {
         return QStringLiteral("artist");
     case MetadataField::Album:
         return QStringLiteral("album");
+    case MetadataField::TrackNumber:
+        return QStringLiteral("track_number");
+    case MetadataField::Year:
+        return QStringLiteral("year");
     }
     return QStringLiteral("unknown");
 }
@@ -249,6 +253,10 @@ QString metadataDiagnosticId(const MetadataDiagnosticCode code) {
         return QStringLiteral("metadata_field_too_large");
     case MetadataDiagnosticCode::RetainedMetadataTooLarge:
         return QStringLiteral("metadata_total_too_large");
+    case MetadataDiagnosticCode::TextSanitized:
+        return QStringLiteral("metadata_text_sanitized");
+    case MetadataDiagnosticCode::InvalidValue:
+        return QStringLiteral("metadata_invalid_value");
     }
     return QStringLiteral("metadata_invalid_data");
 }

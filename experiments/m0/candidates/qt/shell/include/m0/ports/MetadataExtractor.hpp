@@ -29,9 +29,9 @@ struct AudioStreamProperties final {
     std::string codec{};
 };
 
-enum class MetadataField { Title, Artist, Album };
+enum class MetadataField { Title, Artist, Album, TrackNumber, Year };
 
-enum class MetadataDiagnosticCode { FieldTooLarge, RetainedMetadataTooLarge };
+enum class MetadataDiagnosticCode { FieldTooLarge, RetainedMetadataTooLarge, TextSanitized, InvalidValue };
 
 struct MetadataDiagnostic final {
     MetadataDiagnosticCode code{MetadataDiagnosticCode::FieldTooLarge};

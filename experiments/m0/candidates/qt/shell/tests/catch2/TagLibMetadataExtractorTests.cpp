@@ -7,15 +7,22 @@
 #include <QByteArray>
 #include <QImage>
 
+#include <apetag.h>
 #include <attachedpictureframe.h>
 #include <flacfile.h>
+#include <id3v1tag.h>
 #include <id3v2tag.h>
 #include <mp4file.h>
+#include <mp4tag.h>
 #include <mpegfile.h>
 #include <tag.h>
+#include <tpropertymap.h>
 #include <tvariant.h>
 #include <vorbisfile.h>
+#include <wavfile.h>
+#include <xiphcomment.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -152,6 +159,36 @@ void writeMp3Title(const std::filesystem::path& destination, const std::string& 
     tag->setTitle(TagLib::String{title, TagLib::String::UTF8});
     REQUIRE(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
                       TagLib::MPEG::File::DoNotDuplicate));
+}
+
+[[nodiscard]] TagLib::PropertyMap numericProperties(const std::string& track, const std::string& year) {
+    TagLib::PropertyMap values;
+    values.insert("TRACKNUMBER", TagLib::StringList{TagLib::String{track, TagLib::String::UTF8}});
+    values.insert("DATE", TagLib::StringList{TagLib::String{year, TagLib::String::UTF8}});
+    return values;
+}
+
+template <typename TagLibFile>
+void writeProperties(const std::filesystem::path& destination, const TagLib::PropertyMap& values) {
+    TagLibFile file{destination.c_str()};
+    REQUIRE(file.isValid());
+    REQUIRE(file.setProperties(values).isEmpty());
+    REQUIRE(file.save());
+}
+
+void writeMp3Properties(const std::filesystem::path& destination, const TagLib::PropertyMap& values) {
+    TagLib::MPEG::File file{destination.c_str()};
+    REQUIRE(file.isValid());
+    REQUIRE(file.ID3v2Tag(true)->setProperties(values).isEmpty());
+    REQUIRE(file.save(TagLib::MPEG::File::ID3v2, TagLib::MPEG::File::StripOthers, TagLib::ID3v2::v4,
+                      TagLib::MPEG::File::DoNotDuplicate));
+}
+
+[[nodiscard]] std::size_t diagnosticCount(const TrackMetadata& metadata, const MetadataDiagnosticCode code,
+                                          const MetadataField field) {
+    return static_cast<std::size_t>(std::count_if(
+        metadata.diagnostics.begin(), metadata.diagnostics.end(),
+        [=](const MetadataDiagnostic& diagnostic) { return diagnostic.code == code && diagnostic.field == field; }));
 }
 
 [[nodiscard]] std::vector<std::uint8_t> onePixelPng() {
@@ -862,6 +899,216 @@ TEST_CASE("MR-013 discards one metadata field above the retained byte limit with
     CHECK(metadata.diagnostics.front().limit_bytes == field_limit_bytes);
     REQUIRE(metadata.audio.duration_ms.has_value());
     CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("FR-023 sanitizes display text while preserving Unicode and multi-value joins",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "sanitized.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    TagLib::PropertyMap values;
+    values.insert("TITLE", TagLib::StringList{TagLib::String{" \tCanção\n日本語 🎵\r\n ", TagLib::String::UTF8}});
+    values.insert("ARTIST", TagLib::StringList{TagLib::String{"João", TagLib::String::UTF8},
+                                               TagLib::String{"Ana", TagLib::String::UTF8}});
+    values.insert("ALBUM", TagLib::StringList{TagLib::String{"Álbum\xE2\x80\xAE seguro", TagLib::String::UTF8}});
+    writeMp3Properties(source.path(), values);
+
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.tags.title == std::optional<std::string>{"Canção 日本語 🎵"});
+    CHECK(metadata.display_title == "Canção 日本語 🎵");
+    CHECK(metadata.tags.artist == std::optional<std::string>{"João / Ana"});
+    CHECK(metadata.tags.album == std::optional<std::string>{"Álbum seguro"});
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::TextSanitized, MetadataField::Title) == 1);
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::TextSanitized, MetadataField::Album) == 1);
+    for (const auto& diagnostic : metadata.diagnostics) {
+        CHECK(diagnostic.observed_bytes == 0);
+        CHECK(diagnostic.limit_bytes == 0);
+    }
+    CHECK(metadata.audio.duration_ms.value_or(0) > 0);
+}
+
+TEST_CASE("FR-023 discards semantically empty text and keeps the filename fallback",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "empty-display.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Title(source.path(), " \t\r\n\xE2\x80\xAE\xE2\x80\x8B");
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK_FALSE(metadata.tags.title.has_value());
+    CHECK(metadata.display_title == "empty-display");
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Title) == 1);
+    CHECK(metadata.audio.duration_ms.value_or(0) > 0);
+}
+
+TEST_CASE("FR-023 applies the original text byte limit before whitespace normalization",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "original-limit.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    writeMp3Title(source.path(), std::string(MetadataRetentionBudget::field_limit_bytes, ' ') + "X");
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK_FALSE(metadata.tags.title.has_value());
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::FieldTooLarge, MetadataField::Title) == 1);
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::TextSanitized, MetadataField::Title) == 0);
+}
+
+TEST_CASE("FR-023 validates original ID3 numeric text instead of wrapped or partial getters",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const auto& invalid : {"-1", "+7", "7junk", "4294967296", "999999999999999999999999", "7/0", "7/-9"}) {
+        CAPTURE(invalid);
+        const ScopedTemporaryFile source{temporaryPath(directory, "invalid-numbers.mp3")};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+        writeMp3Properties(source.path(), numericProperties(invalid, "2026-02-30"));
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK_FALSE(metadata.tags.track_number.has_value());
+        CHECK_FALSE(metadata.tags.year.has_value());
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::TrackNumber) == 1);
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Year) == 1);
+        CHECK(metadata.audio.duration_ms.value_or(0) > 0);
+    }
+}
+
+TEST_CASE("FR-023 preserves positive uint32 track numbers and calendar date precision in ID3",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const auto& date :
+         {"2024", "2024-02", "2024-02-29", "2024-02-29T12", "2024-02-29T12:34", "2024-02-29T12:34:56.123-03:00"}) {
+        CAPTURE(date);
+        const ScopedTemporaryFile source{temporaryPath(directory, "valid-numbers.mp3")};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+        writeMp3Properties(source.path(), numericProperties("4294967295/4294967295", date));
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{4'294'967'295U});
+        CHECK(metadata.tags.year == std::optional<std::uint32_t>{2024});
+        CHECK(metadata.diagnostics.empty());
+    }
+}
+
+TEST_CASE("FR-023 validates Vorbis numbers and preserves valid alias fallback per field",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const bool flac : {false, true}) {
+        CAPTURE(flac);
+        const ScopedTemporaryFile source{temporaryPath(directory, flac ? "numeric.flac" : "numeric.ogg")};
+        writeBytes(source.path(),
+                   readBytes(fixture(flac ? "fixtures/valid/flac-16-stereo.flac" : "fixtures/valid/ogg-vorbis.ogg")));
+        auto values = numericProperties("-1", "2026-invalid");
+        values.insert("TRACKNUM", TagLib::StringList{"7/12"});
+        values.insert("YEAR", TagLib::StringList{"2024-02-29T12:34Z"});
+        if (flac) {
+            writeProperties<TagLib::FLAC::File>(source.path(), values);
+        } else {
+            writeProperties<TagLib::Vorbis::File>(source.path(), values);
+        }
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{7});
+        CHECK(metadata.tags.year == std::optional<std::uint32_t>{2024});
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::TrackNumber) == 1);
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Year) == 1);
+    }
+}
+
+TEST_CASE("FR-023 preserves MP4 track pairs and rejects invalid original date text",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const bool valid : {false, true}) {
+        CAPTURE(valid);
+        const ScopedTemporaryFile source{temporaryPath(directory, "numeric.m4a")};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/m4a-aac-lc.m4a")));
+        writeProperties<TagLib::MP4::File>(source.path(), numericProperties("7/12", valid ? "2024-02-29" : "2024oops"));
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{7});
+        CHECK(metadata.tags.year == (valid ? std::optional<std::uint32_t>{2024} : std::nullopt));
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Year) == (valid ? 0 : 1));
+    }
+}
+
+TEST_CASE("FR-023 preserves MPEG subtag fallback independently and deduplicates invalid numeric diagnostics",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "mixed-tags.mp3")};
+    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+    {
+        TagLib::MPEG::File file{source.path().c_str()};
+        REQUIRE(file.isValid());
+        auto values = numericProperties("-1", "2024bad");
+        values.insert("TITLE", TagLib::StringList{"Primary title"});
+        REQUIRE(file.ID3v2Tag(true)->setProperties(values).isEmpty());
+        REQUIRE(file.APETag(true)->setProperties(numericProperties("7/12", "-2")).isEmpty());
+        file.ID3v1Tag(true)->setYear(1998);
+        file.ID3v1Tag(true)->setTrack(9);
+        file.ID3v1Tag(true)->setArtist("Legacy artist");
+        REQUIRE(file.save(TagLib::MPEG::File::AllTags, TagLib::MPEG::File::StripNone, TagLib::ID3v2::v4,
+                          TagLib::MPEG::File::DoNotDuplicate));
+    }
+    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.tags.title == std::optional<std::string>{"Primary title"});
+    CHECK(metadata.tags.artist == std::optional<std::string>{"Legacy artist"});
+    CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{7});
+    CHECK(metadata.tags.year == std::optional<std::uint32_t>{1998});
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::TrackNumber) == 1);
+    CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Year) == 1);
+}
+
+TEST_CASE("FR-023 preserves the unsigned MP4 binary track pair across the TagLib signed projection",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const int track : {32'767, 32'768, 65'535}) {
+        CAPTURE(track);
+        const ScopedTemporaryFile source{temporaryPath(directory, "unsigned-track.m4a")};
+        writeBytes(source.path(), readBytes(fixture("fixtures/valid/m4a-aac-lc.m4a")));
+        {
+            TagLib::MP4::File file{source.path().c_str()};
+            REQUIRE(file.isValid());
+            file.tag()->setItem("trkn", TagLib::MP4::Item{track, 65'535});
+            REQUIRE(file.save());
+        }
+        {
+            TagLib::MP4::File reopened{source.path().c_str()};
+            REQUIRE(reopened.isValid());
+            const auto pair = reopened.tag()->item("trkn").toIntPair();
+            // TagLib 2.3.1 reads the unsigned 16-bit atom through toShort().
+            REQUIRE(static_cast<std::uint16_t>(pair.first) == static_cast<std::uint16_t>(track));
+            REQUIRE(static_cast<std::uint16_t>(pair.second) == 65'535);
+        }
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{static_cast<std::uint32_t>(track)});
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::TrackNumber) == 0);
+    }
+}
+
+TEST_CASE("FR-023 rejects malformed legacy ID3v1 years before unsigned conversion",
+          "[m0][qt][metadata][taglib][FR-023][sanitization]") {
+    const ScopedTemporaryDirectory directory;
+    for (const std::string raw_year : {"-1  ", "20xx", "1998"}) {
+        CAPTURE(raw_year);
+        const ScopedTemporaryFile source{temporaryPath(directory, "legacy.mp3")};
+        auto bytes = withoutId3Tags(readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
+        std::vector<std::uint8_t> tag(128, 0);
+        tag[0] = 'T';
+        tag[1] = 'A';
+        tag[2] = 'G';
+        std::copy(raw_year.begin(), raw_year.end(), tag.begin() + 93);
+        tag[126] = 7;
+        bytes.insert(bytes.end(), tag.begin(), tag.end());
+        writeBytes(source.path(), bytes);
+        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto& metadata = requireMetadata(result);
+        CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{7});
+        CHECK(metadata.tags.year == (raw_year == "1998" ? std::optional<std::uint32_t>{1998} : std::nullopt));
+        CHECK(diagnosticCount(metadata, MetadataDiagnosticCode::InvalidValue, MetadataField::Year) ==
+              (raw_year == "1998" ? 0 : 1));
+    }
 }
 
 TEST_CASE("MR-101 composes the asynchronous reader with the real TagLib extractor",

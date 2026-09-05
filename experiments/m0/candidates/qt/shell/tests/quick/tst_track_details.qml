@@ -284,6 +284,85 @@ TestCase {
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
     }
 
+    function test_sanitizedMetadataDiagnosticsRemainPlainTextAndActionable_data() {
+        return [
+            {
+                tag: "unknown-values",
+                numericFallback: false
+            },
+            {
+                tag: "valid-secondary-values",
+                numericFallback: true
+            }
+        ];
+    }
+
+    function test_sanitizedMetadataDiagnosticsRemainPlainTextAndActionable(data) {
+        testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
+        const shell = createTemporaryObject(localShellComponent, null);
+        verify(shell);
+        shell.width = 720;
+        shell.height = 520;
+        shell.requestActivate();
+        tryVerify(function () {
+            return shell.active;
+        });
+        testScenarioDriver.enqueueLocalSelection(["C:/Música/Diagnóstico ajustado.mp3"]); // qmllint disable unqualified
+        mouseClick(findChild(shell, "open-audio"));
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        const currentId = testLocalPlayerPresenter.currentOccurrenceId; // qmllint disable unqualified
+        const opener = findChild(shell, "track-details-playing");
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const panel = findChild(shell, "track-details-panel");
+        tryVerify(function () {
+            return panel.opened;
+        });
+        const copyPath = findChild(shell, "details-copy-path");
+        copyPath.forceActiveFocus(Qt.TabFocusReason);
+        testScenarioDriver.publishSanitizedLocalMetadata(data.numericFallback); // qmllint disable unqualified
+        tryVerify(function () {
+            return testLocalPlayerPresenter.hasDetailsDiagnostics; // qmllint disable unqualified
+        });
+        verify(copyPath.activeFocus);
+        const title = findChild(shell, "details-title-value");
+        compare(title.text, "<b>Título ajustado 日本語</b>");
+        compare(title.textFormat, Text.PlainText);
+        compare(findChild(shell, "details-artist-value").text, "Artista ☕");
+        compare(findChild(shell, "details-track-number-value").text, data.numericFallback ? "7" : "Não informado");
+        compare(findChild(shell, "details-year-value").text, data.numericFallback ? "2026" : "Não informado");
+        const toggle = findChild(shell, "details-diagnostics-toggle");
+        toggle.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const diagnostics = findChild(shell, "details-diagnostics-value");
+        tryVerify(function () {
+            return diagnostics.visible;
+        });
+        compare(diagnostics.textFormat, TextEdit.PlainText);
+        compare(diagnostics.text, "Título foi ajustado para exibição.\nUm valor inválido de Número da faixa foi ignorado.\nUm valor inválido de Ano foi ignorado.");
+        verify(!diagnostics.text.includes("metadata_") && !diagnostics.text.includes("undefined") && !diagnostics.text.includes("NaN"));
+        verify(!diagnostics.text.includes("<b>") && !diagnostics.text.includes("C:/") && !diagnostics.text.includes("0 bytes"));
+        const copyDiagnostics = findChild(shell, "details-copy-diagnostics");
+        copyDiagnostics.forceActiveFocus(Qt.TabFocusReason);
+        const scroll = findChild(shell, "track-details-scroll");
+        tryVerify(function () {
+            return isFullyVisibleInViewport(copyDiagnostics, scroll);
+        });
+        keyClick(Qt.Key_Return);
+        compare(testScenarioDriver.clipboardText(), diagnostics.text); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.playbackState, PlayerPresenter.Playing); // qmllint disable unqualified
+        compare(testLocalPlayerPresenter.currentOccurrenceId, currentId); // qmllint disable unqualified
+        compare(testScenarioDriver.localLoadCount(), 1); // qmllint disable unqualified
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !panel.visible && opener.activeFocus;
+        });
+        shell.destroy();
+        testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
+    }
+
     function test_byteCountsBeyondJavaScriptSafeIntegerRemainExact() {
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
         const shell = createTemporaryObject(localShellComponent, null);

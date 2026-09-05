@@ -586,6 +586,8 @@ class PlayerPresenterTests final : public QObject {
     void currentMetadataCompletionReplacesFallbackAndStopsPolling();
     void projectsCompleteFixtureDetailsWithExplicitUnknowns();
     void projectsStructuredLocalDetailsWithoutLeakingReaderMessages();
+    void projectsSanitizedMetadataDiagnosticsAsClosedIdentifiers_data();
+    void projectsSanitizedMetadataDiagnosticsAsClosedIdentifiers();
     void projectsExactDecimalByteCountsBeyondJavascriptSafeInteger();
     void artworkCacheServesOnlyTheCurrentGenerationWithoutCopyingPixels();
     void currentArtworkUsesAnOpaqueUrlAndAcceptedOpenClearsIt();
@@ -3953,6 +3955,56 @@ void PlayerPresenterTests::projectsStructuredLocalDetailsWithoutLeakingReaderMes
     QCOMPARE(presenter.detailsDiagnostics(), failed_diagnostics);
     QVERIFY(!presenter.detailsDiagnostics().front().toMap().values().contains(
         QStringLiteral("DO NOT EXPOSE: C:\\private\\reader-secret.flac")));
+}
+
+void PlayerPresenterTests::projectsSanitizedMetadataDiagnosticsAsClosedIdentifiers_data() {
+    QTest::addColumn<MetadataDiagnosticCode>("code");
+    QTest::addColumn<MetadataField>("field");
+    QTest::addColumn<QString>("code_id");
+    QTest::addColumn<QString>("field_id");
+    QTest::newRow("sanitized-title") << MetadataDiagnosticCode::TextSanitized << MetadataField::Title
+                                     << QStringLiteral("metadata_text_sanitized") << QStringLiteral("title");
+    QTest::newRow("sanitized-artist") << MetadataDiagnosticCode::TextSanitized << MetadataField::Artist
+                                      << QStringLiteral("metadata_text_sanitized") << QStringLiteral("artist");
+    QTest::newRow("sanitized-album") << MetadataDiagnosticCode::TextSanitized << MetadataField::Album
+                                     << QStringLiteral("metadata_text_sanitized") << QStringLiteral("album");
+    QTest::newRow("invalid-track-number") << MetadataDiagnosticCode::InvalidValue << MetadataField::TrackNumber
+                                          << QStringLiteral("metadata_invalid_value") << QStringLiteral("track_number");
+    QTest::newRow("invalid-year") << MetadataDiagnosticCode::InvalidValue << MetadataField::Year
+                                  << QStringLiteral("metadata_invalid_value") << QStringLiteral("year");
+}
+
+void PlayerPresenterTests::projectsSanitizedMetadataDiagnosticsAsClosedIdentifiers() {
+    QFETCH(MetadataDiagnosticCode, code);
+    QFETCH(MetadataField, field);
+    QFETCH(QString, code_id);
+    QFETCH(QString, field_id);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::filesystem::path source = localTestPath(u8"Diagnóstico seguro 日本語.mp3");
+    TrackMetadata track{
+        .source_path = source,
+        .tags = {.title = std::string{"Título ajustado"}},
+        .display_title = "Título ajustado",
+        .diagnostics = {{.code = code, .field = field}},
+    };
+    metadata.poll_results.push_back(
+        {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
+    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+                              [source] { return std::vector<std::filesystem::path>{source}; });
+    QVERIFY(presenter.openAudio());
+    QTRY_VERIFY(presenter.hasDetailsDiagnostics());
+    const QVariantList expected{
+        QVariantMap{{QStringLiteral("code"), code_id}, {QStringLiteral("field"), field_id}},
+    };
+    QCOMPARE(presenter.detailsDiagnostics(), expected);
+    QVERIFY(!presenter.hasDetailsTrackNumber());
+    QVERIFY(!presenter.detailsTrackNumber().isValid());
+    QVERIFY(!presenter.hasDetailsYear());
+    QVERIFY(!presenter.detailsYear().isValid());
+    QCOMPARE(presenter.detailsTitle(), QStringLiteral("Título ajustado"));
+    QCOMPARE(backend.loaded_paths.size(), std::size_t{1});
 }
 
 void PlayerPresenterTests::projectsExactDecimalByteCountsBeyondJavascriptSafeInteger() {

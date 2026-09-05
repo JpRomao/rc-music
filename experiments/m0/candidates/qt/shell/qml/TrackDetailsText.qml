@@ -40,6 +40,8 @@ QtObject {
     readonly property string metadataUnsupportedFormat: qsTr("O formato não é suportado pelo leitor de metadados.")
     readonly property string metadataInvalidData: qsTr("Não foi possível ler os metadados deste arquivo.")
     readonly property string metadataReadFailed: qsTr("Falha ao ler os metadados deste arquivo.")
+    readonly property string metadataTextSanitized: qsTr("{field} foi ajustado para exibição.")
+    readonly property string metadataInvalidValue: qsTr("Um valor inválido de {field} foi ignorado.")
     readonly property string metadataFieldTooLarge: qsTr("{field} foi ignorado: {observed} bytes excedem o limite de {limit} bytes.")
     readonly property string metadataTotalTooLarge: qsTr("{field} foi ignorado: o total de {observed} bytes excede o limite de {limit} bytes.")
     readonly property string artworkEncodedBytesExceeded: qsTr("A capa foi descartada porque possui {bytes} bytes codificados, acima do limite.")

@@ -368,7 +368,7 @@ Os checks de Abrir/Adicionar devem separar aceitação, conclusão e efeito sobr
 - helper Qt: seleção única/múltipla, paths locais Unicode e duplicados, timers ativos, ownership da factory, cancel/rebind, janela recebida destruída durante cancelamento e equivalência do localizador após extração;
 - UI: foco após conclusão efetiva, não após mera aceitação, com ID estável e revalidação de janela/modal/saída; ações mutuamente exclusivas e feedback acessível sem anunciar cancelamento como falha; marcadores locais de solicitação são limpos também quando rebind/saída encerram o estado ocupado sem emitir `Finished`, no mesmo turno de eventos ou depois dele; tarefas de foco já enfileiradas, inclusive `setQueueOpen`, não atravessam um novo seletor.
 
-Reds, Greens consolidados e limites ficam no [registro central do seletor assíncrono](../../experiments/m0/candidates/qt/README.md#async-audio-picker). A invocação deve respeitar o ambiente definido por alvo: exportar `QT_FATAL_WARNINGS=1` globalmente alterou indevidamente dois testes de áudio e foi corrigido sem enfraquecer asserções ou CMake. O retorno verde do coordinator com diagnóstico ampliado não demonstra nem corrige a causa da intermitência anterior. O core Qt OFF não foi reexecutado neste recorte sem mudança comportamental no núcleo. Testes widget/offscreen não substituem a inspeção do diálogo nativo Windows ou NVDA. A sanitização textual/numérica de `FR-023` permanece backlog concreto com política e regressões próprias; este incremento não a valida nem afirma exploração. Nenhum benchmark integra estes checks funcionais.
+Reds, Greens consolidados e limites ficam no [registro central do seletor assíncrono](../../experiments/m0/candidates/qt/README.md#async-audio-picker). A invocação deve respeitar o ambiente definido por alvo: exportar `QT_FATAL_WARNINGS=1` globalmente alterou indevidamente dois testes de áudio e foi corrigido sem enfraquecer asserções ou CMake. O retorno verde do coordinator com diagnóstico ampliado não demonstra nem corrige a causa da intermitência anterior. O core Qt OFF não foi reexecutado naquele recorte sem mudança comportamental no núcleo. Testes widget/offscreen não substituem a inspeção do diálogo nativo Windows ou NVDA. A sanitização textual/numérica de `FR-023` pertence ao incremento separado descrito abaixo; os checks do seletor não a validam nem afirmam exploração. Nenhum benchmark integra estes checks funcionais.
 
 ### `MetadataReader`
 
@@ -379,6 +379,19 @@ Reds, Greens consolidados e limites ficam no [registro central do seletor assín
 - cancelamento, geração/resultado atrasado, budget de 2 s e ausência de acúmulo de jobs;
 - propriedades por formato;
 - extensão enganosa.
+
+### Sanitização textual e numérica de metadata
+
+O recorte funcional de `FR-023` começa em Catch2 puro e segue pelas fronteiras de extração e apresentação:
+
+- texto: UTF-8 válido nos limites de escalares, sequências truncadas/overlong, surrogates e valores acima de U+10FFFF; rejeição atômica sem prefixo parcial, idempotência, espaços/controles e ausência após transformação;
+- preservação: scripts/acento combinado, ZWJ/ZWNJ, variation selectors e emoji; markup permanece literal, sem transliteração ou promessa de remover toda categoria Unicode invisível;
+- números: leitura integral, zeros à esquerda, faixa/total, fronteiras `uint32_t`, ano simples, calendário e precisões de horário aceitas; vazio, sinais, lixo, NUL, overflow e datas/componentes impossíveis são rejeitados;
+- adapter: o limite pré-normalização não pode ser contornado por espaços/controles; ausência, diagnóstico por campo e fallback não transformam uma tag inválida em falha de reprodução; derivados temporários autenticados não ampliam o corpus canônico;
+- presenter/UI: códigos fechados e microcopy localizada sem conteúdo descartado; ausência não vira zero falso, e novos diagnósticos não produzem texto de contagem de bytes enganoso;
+- integração real: leitura das tags transformadas e reprodução do arquivo temporário devem comprovar o caminho integrado sem arquivos pessoais ou áudio audível como dependência.
+
+Policy, extrator e apresentação têm Red/Green confirmado; o core sem Qt também passou sua suíte completa. Caracterização integrada real, suíte Release combinada e composição de produção também passaram, com checks automatizados consolidados no [registro central](../../experiments/m0/candidates/qt/README.md#metadata-sanitization), sem usar os resultados anteriores como evidência nova. Este recorte não prova limites internos do TagLib, fuzz/corpus hostil completo, pacote, NVDA ou Linux e não encerra `FR-023`/`CHK-SEC`. Benchmarks permanecem adiados.
 
 ## 9. Corpus de áudio
 
