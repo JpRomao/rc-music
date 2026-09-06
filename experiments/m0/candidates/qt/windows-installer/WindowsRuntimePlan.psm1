@@ -143,6 +143,44 @@ function Copy-RcMusicRuntimePlan {
     return $verified
 }
 
+function Get-RcMusicDesktopBuildConfiguration {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][Collections.IDictionary] $Cache,
+        [Parameter(Mandatory)][string] $RepositoryRoot,
+        [ValidateSet('ON', 'OFF')][string] $BuildTesting = 'OFF'
+    )
+    $root = Get-RcMusicRuntimeAbsolutePath $RepositoryRoot
+    foreach ($required in @{ CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = $BuildTesting }.GetEnumerator()) {
+        if ($Cache[$required.Key] -cne $required.Value) {
+            throw "Unsupported desktop build configuration: $($required.Key)"
+        }
+    }
+    $sourceHome = $Cache['CMAKE_HOME_DIRECTORY']
+    if ($sourceHome -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($sourceHome)) {
+        throw 'Unsupported desktop build entrypoint path'
+    }
+    $sourceHome = [IO.Path]::GetFullPath($sourceHome).TrimEnd('\', '/')
+    $legacy = Join-Path $root 'experiments/m0/candidates/qt/shell'
+    if ($sourceHome -ieq $root) {
+        if ($Cache['RC_MUSIC_BUILD_DESKTOP'] -cne 'ON') {
+            throw 'Unsupported desktop build configuration: RC_MUSIC_BUILD_DESKTOP'
+        }
+        $entrypoint = 'product'
+    } elseif ($sourceHome -ieq $legacy) {
+        if ($Cache['M0_QT_AUDIO_SUPPORT'] -cne 'ON' -or $Cache['M0_QT_SHELL_SUPPORT'] -cne 'ON') {
+            throw 'Unsupported desktop build configuration: legacy audio and shell must be enabled'
+        }
+        $entrypoint = 'legacy'
+    } else { throw 'Unsupported desktop build entrypoint' }
+    return [pscustomobject]@{
+        entrypoint = $entrypoint
+        target = 'm0_qt_shell'
+        executable = 'm0_qt_shell.exe'
+        qml_source = Join-Path $root 'src/ui/qml'
+    }
+}
+
 function Get-RcMusicSourceSnapshot {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $RepositoryRoot)
@@ -156,7 +194,9 @@ function Get-RcMusicSourceSnapshot {
         'cmake',
         'include',
         'src',
-        'tests'
+        'tests',
+        'tools',
+        'assets'
     )
     $topLevel = @(& git --no-optional-locks -C $root rev-parse --show-toplevel 2>&1)
     if ($LASTEXITCODE -ne 0 -or $topLevel.Count -ne 1 -or
@@ -173,4 +213,4 @@ function Get-RcMusicSourceSnapshot {
     return [pscustomobject]@{ commit = [string]$head[0]; input_paths = $inputPaths }
 }
 
-Export-ModuleMember -Function New-RcMusicRuntimePlan, Copy-RcMusicRuntimePlan, Get-RcMusicSourceSnapshot
+Export-ModuleMember -Function New-RcMusicRuntimePlan, Copy-RcMusicRuntimePlan, Get-RcMusicSourceSnapshot, Get-RcMusicDesktopBuildConfiguration

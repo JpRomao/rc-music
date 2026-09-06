@@ -111,7 +111,7 @@ O [segundo recorte](../bootstrap-separation.md) separa a construção real da ap
 
 O terceiro recorte exclui da compilação combinada OFF os tipos/fontes de fixture e o backend determinístico. A capacidade interna `RC_MUSIC_ENABLE_FIXTURE_SCENARIOS`, pública nos alvos Qt para manter layout/registro coerentes, só existe nos builds com testes ou no shell histórico sem áudio. A API QML permanece estável, com ações históricas inertes em produção e uma única implementação dos fluxos reais. O [check do grafo de produção](../../scripts/Test-ProductionBoundary.ps1) exige fontes reais presentes e dependências históricas ausentes.
 
-A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário promovê-la e separar seu configure da autenticação e dos caminhos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime empacotado foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
+A [unidade gráfica promovida](../desktop-build.md) agora compila na raiz: `RC_MUSIC_BUILD_DESKTOP=ON` entra em `src/CMakeLists.txt`, que carrega o módulo compartilhado `cmake/RcMusicDesktop.cmake`. Isso limita o scanner Qt às fontes reais e não encaminha ao experimento. O consumidor histórico usa os mesmos alvos/fontes e injeta seus próprios cenários; ligar testes na raiz não os ativa na aplicação. O build OFF não encontra QtTest/QuickTest nem lê corpus, protocolo ou fixture. A proveniência cobre também `assets` e `tools`; nenhum novo runtime empacotado foi gerado.
 
 ```text
 /
@@ -119,26 +119,23 @@ A árvore abaixo continua sendo o destino da composição gráfica, não uma ale
 ├── README.md
 ├── docs/
 ├── CMakeLists.txt
+├── cmake/                       # core, desktop e testes compartilhados
+├── include/m0/                  # domain, application, ports e headers públicos
+├── assets/                      # SVGs próprios; originais históricos preservados
 ├── src/
+│   ├── CMakeLists.txt           # escopo do scanner Qt
 │   ├── domain/                  # C++ puro; sem QObject/QML
 │   ├── application/             # C++ puro; sem QObject/QML
-│   ├── ports/                   # contratos C++ puros
-│   ├── adapters/
-│   │   ├── audio/
-│   │   ├── metadata/
-│   │   └── persistence/
-│   ├── platform/
-│   │   ├── windows/
-│   │   └── linux/
+│   ├── adapters/                # áudio, metadata, persistência e Windows
+│   ├── boundary/                # conversão segura de caminhos
 │   ├── presentation/            # boundary/presenters C++ com Qt
-│   ├── ui/                       # QML, componentes, temas e assets
-│   └── main.cpp
+│   ├── ui/                      # qml/ e translations/
+│   └── app/                     # bootstrap, IPC e recurso Windows
 ├── tests/
-│   ├── contract/
-│   ├── integration/
-│   ├── e2e/
-│   └── fixtures/audio/
-└── tools/
+│   ├── core/
+│   ├── qt/                      # oito arquivos promovidos
+│   └── support/                 # fake determinístico exclusivo de testes
+└── tools/                       # gerador do ícone Windows
 ```
 
 Como registro da alternativa não adotada, o mapeamento Tauri previsto era (não implementar no produto):

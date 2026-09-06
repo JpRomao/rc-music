@@ -2,6 +2,8 @@
 
 **Data:** 2026-09-06. **Escopo:** segundo recorte de M1.1, preparando M1.10; etapas globais ainda abertas.
 
+**Continuação:** a [promoção gráfica posterior](desktop-build.md) também separa fontes e configure na raiz. As limitações de composição experimental abaixo descrevem estes recortes anteriores, não o estado atual do build desktop.
+
 Depois do [core promovido](core-build.md), o executável combinado Windows inicia sem construir `FixtureBundle` nem carregar os JSONs congelados de apresentação/fila. Este incremento implementa parte de `NFR-STACK-002` e preserva os contratos de UI de M1.10; não é ainda um executável gráfico independente do experimento.
 
 ## Mudança e compatibilidade

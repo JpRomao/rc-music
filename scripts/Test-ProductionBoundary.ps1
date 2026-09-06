@@ -5,6 +5,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+Import-Module (Join-Path $repository 'experiments/m0/candidates/qt/windows-installer/WindowsRuntimePlan.psm1') -Force
 
 # Inspect the configured dependency graph, not stale object files or a test build.
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
@@ -15,21 +17,19 @@ function Get-CacheValue([string]$Name) {
     return ($entries[0] -split '=', 2)[1]
 }
 
-foreach ($requirement in @{
-    CMAKE_GENERATOR = 'Ninja'
-    CMAKE_BUILD_TYPE = 'Release'
-    BUILD_TESTING = 'OFF'
-    M0_QT_SHELL_SUPPORT = 'ON'
-    M0_QT_AUDIO_SUPPORT = 'ON'
-}.GetEnumerator()) {
-    if ((Get-CacheValue $requirement.Key) -cne $requirement.Value) {
-        throw "Unsupported build configuration: $($requirement.Key) must be $($requirement.Value)"
+if ((Get-CacheValue 'CMAKE_GENERATOR') -cne 'Ninja') { throw 'Unsupported build configuration: Ninja is required' }
+$buildCache = @{}
+foreach ($line in $cache) {
+    if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') {
+        if ($buildCache.ContainsKey($Matches[1])) { throw "Duplicate CMake cache entry: $($Matches[1])" }
+        $buildCache[$Matches[1]] = $Matches[2]
     }
 }
+$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $buildCache -RepositoryRoot $repository -BuildTesting 'OFF'
 
 $ninja = Get-CacheValue 'CMAKE_MAKE_PROGRAM'
 if (-not (Test-Path -LiteralPath $ninja -PathType Leaf)) { throw 'Configured Ninja executable is missing' }
-$commands = @(& $ninja -C $buildRoot -t commands m0_qt_shell.exe)
+$commands = @(& $ninja -C $buildRoot -t commands $configuration.executable)
 if ($LASTEXITCODE -ne 0 -or $commands.Count -eq 0) { throw 'Could not inspect the executable dependency graph' }
 $graph = $commands -join "`n"
 foreach ($source in @('PlayerPresenter.cpp', 'LocalQueueListModel.cpp', 'QtMultimediaPlaybackBackend.cpp')) {
@@ -40,6 +40,9 @@ foreach ($source in @('PlayerPresenter.cpp', 'LocalQueueListModel.cpp', 'QtMulti
 if ($graph -notmatch '(?i)/out:m0_qt_shell\.exe(?:\s|$)') { throw 'The expected executable link command is missing' }
 
 $violations = [System.Collections.Generic.List[string]]::new()
+if ($configuration.entrypoint -ceq 'product' -and $graph -match '[\\/]experiments[\\/]') {
+    $violations.Add('Historical source/include path: product compilation references experiments')
+}
 foreach ($source in @('FixtureRepository.cpp', 'QueueListModel.cpp', 'DeterministicPlaybackBackend.cpp')) {
     if ($graph -match ('[\\/]' + [regex]::Escape($source) + '(?:["\s]|$)')) {
         $violations.Add("Historical source: $source")

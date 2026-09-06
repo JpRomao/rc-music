@@ -17,8 +17,17 @@ if(BUILD_TESTING OR (M0_QT_SHELL_SUPPORT AND NOT M0_QT_AUDIO_SUPPORT))
     set(m0_fixture_scenarios_enabled ON)
 endif()
 
-add_library(m0_qt_core INTERFACE)
-target_link_libraries(m0_qt_core INTERFACE rc_music_core rc_music_workers)
+set(RC_MUSIC_DESKTOP_SHELL_SUPPORT "${M0_QT_SHELL_SUPPORT}")
+set(RC_MUSIC_DESKTOP_AUDIO_SUPPORT "${M0_QT_AUDIO_SUPPORT}")
+include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicDesktop.cmake")
+
+# Historical tests/scenarios consume the same promoted implementation.
+include_directories(
+    "${RC_MUSIC_SOURCE_ROOT}/src"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation"
+    "${RC_MUSIC_SOURCE_ROOT}/src/app"
+    include src app
+)
 if(m0_fixture_scenarios_enabled)
     rc_music_add_test_support()
     target_link_libraries(m0_qt_core INTERFACE rc_music_test_support)
@@ -105,178 +114,18 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
     endforeach()
 
-    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS
-        Core
-        Gui
-        Network
-        Qml
-        Quick
-        QuickControls2
-        QuickLayouts
-        QuickTest
-        LinguistTools
-        Svg
-        Test
-        Widgets
-    )
-    qt_standard_project_setup(REQUIRES 6.11)
-    set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
-
-    add_library(m0_qt_audio_file_locator STATIC
-        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/AudioFileLocator.hpp"
-        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/AudioFilesPicker.hpp"
-        src/adapters/QtAudioFileDialog.hpp
-        src/adapters/QtAudioFileDialog.cpp
-        src/adapters/QtAudioFileLocator.hpp
-        src/adapters/QtAudioFileLocator.cpp
-        src/adapters/QtAudioFilesPicker.hpp
-        src/adapters/QtAudioFilesPicker.cpp
-    )
-    target_include_directories(m0_qt_audio_file_locator PUBLIC include src)
-    target_link_libraries(m0_qt_audio_file_locator PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
-    target_compile_features(m0_qt_audio_file_locator PUBLIC cxx_std_20)
-    set_target_properties(m0_qt_audio_file_locator PROPERTIES AUTOMOC ON)
-    if(MSVC)
-        target_compile_options(m0_qt_audio_file_locator PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_audio_file_locator PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    add_library(m0_qt_shell_platform STATIC
-        src/adapters/QtShellPlatform.hpp
-        src/adapters/QtShellPlatform.cpp
-    )
-    target_include_directories(m0_qt_shell_platform PUBLIC include src)
-    target_link_libraries(m0_qt_shell_platform PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
-    if(WIN32)
-        target_sources(m0_qt_shell_platform PRIVATE
-            src/adapters/WindowsTaskbarEvents.hpp
-            src/adapters/WindowsTaskbarEvents.cpp
-        )
-        target_link_libraries(m0_qt_shell_platform PRIVATE user32)
-    endif()
-    target_compile_features(m0_qt_shell_platform PUBLIC cxx_std_20)
-    set_target_properties(m0_qt_shell_platform PROPERTIES AUTOMOC ON)
-    if(MSVC)
-        target_compile_options(m0_qt_shell_platform PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_shell_platform PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    if(WIN32)
-        add_library(m0_qt_windows_smtc STATIC
-            "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/SystemMediaControls.hpp"
-            src/adapters/WindowsSmtcAdapter.hpp
-            src/adapters/WindowsSmtcAdapter.cpp
-            src/adapters/WinRtSmtcNativeBoundary.cpp
-        )
-        target_include_directories(m0_qt_windows_smtc PUBLIC include src)
-        target_link_libraries(m0_qt_windows_smtc PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE windowsapp)
-        target_compile_features(m0_qt_windows_smtc PUBLIC cxx_std_20)
-        set_target_properties(m0_qt_windows_smtc PROPERTIES AUTOMOC ON)
-        if(MSVC)
-            target_compile_options(m0_qt_windows_smtc PRIVATE /W4 /WX /permissive-)
-        else()
-            target_compile_options(m0_qt_windows_smtc PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    # Authenticate the copies actually embedded by the shared product target.
+    foreach(asset_id IN ITEMS placeholder track)
+        set(promoted_asset "${RC_MUSIC_SOURCE_ROOT}/assets/cover-${asset_id}.svg")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${promoted_asset}")
+        file(SHA256 "${promoted_asset}" actual_sha256)
+        file(SIZE "${promoted_asset}" actual_size)
+        if(NOT actual_sha256 STREQUAL m0_expected_${asset_id}_sha256 OR
+           NOT actual_size EQUAL m0_expected_${asset_id}_size)
+            message(FATAL_ERROR "Promoted ${asset_id} SVG does not match the authenticated manifest")
         endif()
+    endforeach()
 
-        add_library(m0_qt_windows_power_events STATIC
-            "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/SystemPowerEvents.hpp"
-            src/adapters/WindowsPowerEvents.hpp
-            src/adapters/WindowsPowerEvents.cpp
-            src/adapters/Win32SuspendResumeNativeBoundary.cpp
-        )
-        target_include_directories(m0_qt_windows_power_events PUBLIC include src)
-        target_link_libraries(m0_qt_windows_power_events PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE user32)
-        target_compile_features(m0_qt_windows_power_events PUBLIC cxx_std_20)
-        set_target_properties(m0_qt_windows_power_events PROPERTIES AUTOMOC ON)
-        if(MSVC)
-            target_compile_options(m0_qt_windows_power_events PRIVATE /W4 /WX /permissive-)
-        else()
-            target_compile_options(m0_qt_windows_power_events PRIVATE -Wall -Wextra -Wpedantic -Werror)
-        endif()
-    endif()
-
-    add_library(m0_qt_system_appearance STATIC
-        src/adapters/QtSystemAppearance.hpp
-        src/adapters/QtSystemAppearance.cpp
-    )
-    target_include_directories(m0_qt_system_appearance PUBLIC src)
-    target_link_libraries(m0_qt_system_appearance PUBLIC Qt6::Core Qt6::Gui)
-    target_compile_features(m0_qt_system_appearance PUBLIC cxx_std_20)
-    set_target_properties(m0_qt_system_appearance PROPERTIES AUTOMOC ON)
-    if(WIN32)
-        target_link_libraries(m0_qt_system_appearance PRIVATE user32)
-    endif()
-    if(MSVC)
-        target_compile_options(m0_qt_system_appearance PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_system_appearance PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    if(WIN32)
-        add_library(m0_qt_diagnostic_privacy STATIC
-            src/adapters/QtDiagnosticPrivacy.hpp
-            src/adapters/QtDiagnosticPrivacy.cpp
-        )
-        target_include_directories(m0_qt_diagnostic_privacy PUBLIC src)
-        target_link_libraries(m0_qt_diagnostic_privacy PUBLIC Qt6::Core)
-        target_compile_features(m0_qt_diagnostic_privacy PUBLIC cxx_std_20)
-        add_library(m0_qt_diagnostic_store STATIC src/adapters/QtWindowsDiagnosticLogStore.cpp)
-        target_include_directories(m0_qt_diagnostic_store PUBLIC src)
-        target_link_libraries(m0_qt_diagnostic_store PUBLIC m0_qt_core Qt6::Core)
-        target_compile_features(m0_qt_diagnostic_store PUBLIC cxx_std_20)
-        if(MSVC)
-            target_compile_options(m0_qt_diagnostic_privacy PRIVATE /W4 /WX /permissive-)
-            target_compile_options(m0_qt_diagnostic_store PRIVATE /W4 /WX /permissive-)
-        endif()
-    endif()
-
-    add_library(m0_qt_preferences_persistence STATIC
-        src/adapters/PreferencesJsonCodec.hpp
-        src/adapters/PreferencesJsonCodec.cpp
-    )
-    if(WIN32)
-        target_sources(m0_qt_preferences_persistence PRIVATE
-            src/adapters/QtJsonWindowsPreferencesStore.hpp
-            src/adapters/QtJsonWindowsPreferencesStore.cpp
-        )
-    endif()
-    target_include_directories(m0_qt_preferences_persistence PUBLIC include src)
-    target_link_libraries(m0_qt_preferences_persistence PUBLIC m0_qt_core Qt6::Core)
-    target_compile_features(m0_qt_preferences_persistence PUBLIC cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_qt_preferences_persistence PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_preferences_persistence PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    add_library(m0_qt_session_persistence STATIC
-        src/adapters/SessionJsonCodec.hpp
-        src/adapters/SessionJsonCodec.cpp
-    )
-    if(WIN32)
-        target_sources(m0_qt_session_persistence PRIVATE
-            src/adapters/QtJsonWindowsSessionStore.hpp
-            src/adapters/QtJsonWindowsSessionStore.cpp
-        )
-    endif()
-    target_include_directories(m0_qt_session_persistence PUBLIC include src)
-    target_link_libraries(m0_qt_session_persistence PUBLIC m0_qt_core Qt6::Core)
-    target_compile_features(m0_qt_session_persistence PUBLIC cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_qt_session_persistence PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_session_persistence PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    add_library(m0_qt_shell_support STATIC
-        include/m0/presentation/LocalQueueListModel.hpp
-        src/presentation/LocalQueueListModel.cpp
-    )
-    target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
-    target_link_libraries(m0_qt_shell_support PUBLIC m0_qt_core Qt6::Core)
-    target_compile_features(m0_qt_shell_support PUBLIC cxx_std_20)
     if(m0_fixture_scenarios_enabled)
         target_sources(m0_qt_shell_support PRIVATE
             include/m0/adapters/fixture/FixtureRepository.hpp
@@ -292,119 +141,12 @@ if(M0_QT_SHELL_SUPPORT)
                 M0_FROZEN_QUEUE_SHA256="${m0_expected_queue_sha256}"
         )
     endif()
-    set_target_properties(m0_qt_shell_support PROPERTIES AUTOMOC ON)
-    if(MSVC)
-        target_compile_options(m0_qt_shell_support PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_shell_support PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    set_source_files_properties(qml/Main.qml PROPERTIES QT_RESOURCE_ALIAS "Main.qml")
-    set_source_files_properties(qml/EmptyState.qml PROPERTIES QT_RESOURCE_ALIAS "EmptyState.qml")
-    set_source_files_properties(qml/AccessibleActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "AccessibleActionButton.qml")
-    set_source_files_properties(qml/TransportSlider.qml PROPERTIES QT_RESOURCE_ALIAS "TransportSlider.qml")
-    set_source_files_properties(qml/PreferencesPanel.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesPanel.qml")
-    set_source_files_properties(qml/PreferencePersistenceNotice.qml PROPERTIES
-        QT_RESOURCE_ALIAS "PreferencePersistenceNotice.qml"
-    )
-    set_source_files_properties(qml/WindowNotice.qml PROPERTIES QT_RESOURCE_ALIAS "WindowNotice.qml")
-    set_source_files_properties(qml/PreferencesText.qml PROPERTIES QT_RESOURCE_ALIAS "PreferencesText.qml")
-    set_source_files_properties(qml/QueueText.qml PROPERTIES QT_RESOURCE_ALIAS "QueueText.qml")
-    set_source_files_properties(qml/QueueActionButton.qml PROPERTIES QT_RESOURCE_ALIAS "QueueActionButton.qml")
-    set_source_files_properties(qml/QueueClearConfirmation.qml PROPERTIES QT_RESOURCE_ALIAS "QueueClearConfirmation.qml")
-    set_source_files_properties(qml/SourceImportStatus.qml PROPERTIES QT_RESOURCE_ALIAS "SourceImportStatus.qml")
-    set_source_files_properties(qml/SourceImportText.qml PROPERTIES QT_RESOURCE_ALIAS "SourceImportText.qml")
-    set_source_files_properties(qml/PreferenceChoice.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceChoice.qml")
-    set_source_files_properties(qml/PreferenceToggle.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceToggle.qml")
-    set_source_files_properties(qml/PreferenceSecondsField.qml PROPERTIES QT_RESOURCE_ALIAS "PreferenceSecondsField.qml")
-    set_source_files_properties(qml/TrackDetailsField.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsField.qml")
-    set_source_files_properties(qml/TrackDetailsPanel.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsPanel.qml")
-    set_source_files_properties(qml/TrackDetailsText.qml PROPERTIES QT_RESOURCE_ALIAS "TrackDetailsText.qml")
-    set_source_files_properties(qml/ErrorText.qml PROPERTIES QT_RESOURCE_ALIAS "ErrorText.qml")
-    set_source_files_properties(qml/PlaybackAccessibilityStatus.qml PROPERTIES QT_RESOURCE_ALIAS "PlaybackAccessibilityStatus.qml")
-    set_source_files_properties(qml/PlaybackAccessibilityText.qml PROPERTIES QT_RESOURCE_ALIAS "PlaybackAccessibilityText.qml")
-    set_source_files_properties(qml/TransportText.qml PROPERTIES QT_RESOURCE_ALIAS "TransportText.qml")
-    qt_add_library(m0_qt_shell_ui STATIC)
-    qt_add_qml_module(m0_qt_shell_ui
-        URI MusicPlayer.M0
-        VERSION 1.0
-        OUTPUT_DIRECTORY "${QT_QML_OUTPUT_DIRECTORY}/MusicPlayer/M0"
-        SOURCES
-            src/presentation/ShellUiContract.hpp
-            src/presentation/ShellUiContract.cpp
-            src/presentation/ArtworkImageProvider.hpp
-            src/presentation/ArtworkImageProvider.cpp
-            src/presentation/ApplicationText.hpp
-            src/presentation/PlayerPresenter.hpp
-            src/presentation/PlayerPresenter.cpp
-            src/presentation/PlayerPresenterScenarioControl.hpp
-            src/presentation/SystemMediaControlsBinding.hpp
-            src/presentation/SystemMediaControlsBinding.cpp
-            src/presentation/SystemPowerEventsBinding.hpp
-            src/presentation/SystemPowerEventsBinding.cpp
-            src/presentation/LifecycleText.hpp
-        QML_FILES
-            qml/Main.qml
-            qml/EmptyState.qml
-            qml/AccessibleActionButton.qml
-            qml/AccessibleTransportButton.qml
-            qml/NowPlayingState.qml
-            qml/ErrorState.qml
-            qml/ErrorText.qml
-            qml/PlaybackAccessibilityStatus.qml
-            qml/PlaybackAccessibilityText.qml
-            qml/TransportBar.qml
-            qml/TransportText.qml
-            qml/TransportSlider.qml
-            qml/QueuePanel.qml
-            qml/QueueText.qml
-            qml/QueueActionButton.qml
-            qml/QueueClearConfirmation.qml
-            qml/SourceImportStatus.qml
-            qml/SourceImportText.qml
-            qml/PreferencesPanel.qml
-            qml/PreferencePersistenceNotice.qml
-            qml/WindowNotice.qml
-            qml/PreferencesText.qml
-            qml/PreferenceChoice.qml
-            qml/PreferenceToggle.qml
-            qml/PreferenceSecondsField.qml
-            qml/TrackDetailsField.qml
-            qml/TrackDetailsPanel.qml
-            qml/TrackDetailsText.qml
-    )
-    qt_add_translations(m0_qt_shell_ui
-        SOURCE_TARGETS m0_qt_shell_ui
-        TS_FILES translations/music-player_pt_BR.ts
-        RESOURCE_PREFIX "/i18n"
-        LUPDATE_TARGET m0_qt_shell_ui_lupdate
-        LRELEASE_TARGET m0_qt_shell_ui_lrelease
-    )
-    target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
-    target_link_libraries(m0_qt_shell_ui PRIVATE
-        m0_qt_shell_support
-        Qt6::Core
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::QuickLayouts
-    )
-    target_compile_features(m0_qt_shell_ui PUBLIC cxx_std_20)
     if(m0_fixture_scenarios_enabled)
+        target_include_directories(m0_qt_shell_support PUBLIC include)
+        target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
         target_compile_definitions(m0_qt_shell_ui PUBLIC RC_MUSIC_ENABLE_FIXTURE_SCENARIOS)
+        target_sources(m0_qt_shell_ui PRIVATE src/presentation/PlayerPresenterScenarioControl.hpp)
     endif()
-    set_source_files_properties("${M0_PLACEHOLDER_ASSET_FILE}" PROPERTIES
-        QT_RESOURCE_ALIAS "assets/cover-placeholder.svg"
-    )
-    set_source_files_properties("${M0_TRACK_ASSET_FILE}" PROPERTIES
-        QT_RESOURCE_ALIAS "assets/cover-track.svg"
-    )
-    qt_add_resources(m0_qt_shell_ui m0_qt_shell_assets
-        PREFIX "/m0"
-        FILES
-            "${M0_PLACEHOLDER_ASSET_FILE}"
-            "${M0_TRACK_ASSET_FILE}"
-    )
     if(m0_fixture_scenarios_enabled)
         add_library(m0_qt_fixture_data STATIC EXCLUDE_FROM_ALL)
         target_link_libraries(m0_qt_fixture_data PRIVATE Qt6::Core)
@@ -418,93 +160,11 @@ if(M0_QT_SHELL_SUPPORT)
                 "${M0_QUEUE_FILE}"
         )
     endif()
-    if(MSVC)
-        target_compile_options(m0_qt_shell_ui PRIVATE /W4 /WX /permissive- /wd4702)
-        target_compile_options(m0_qt_shell_uiplugin PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_shell_ui PRIVATE -Wall -Wextra -Wpedantic -Werror)
-        target_compile_options(m0_qt_shell_uiplugin PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    add_library(m0_qt_shell_bootstrap STATIC
-        app/OpenSourcesCommand.hpp
-        app/OpenSourcesCommand.cpp
-        app/OpenSourcesDispatcher.hpp
-        app/OpenSourcesDispatcher.cpp
-        app/QtSingleInstanceCoordinator.hpp
-        app/QtSingleInstanceCoordinator.cpp
-        app/ShellLaunchOptions.hpp
-        app/ShellLaunchOptions.cpp
-    )
-    target_include_directories(m0_qt_shell_bootstrap PUBLIC app PRIVATE src)
-    target_link_libraries(m0_qt_shell_bootstrap PUBLIC Qt6::Core PRIVATE Qt6::Network)
-    target_compile_features(m0_qt_shell_bootstrap PUBLIC cxx_std_20)
-    set_target_properties(m0_qt_shell_bootstrap PROPERTIES AUTOMOC ON)
-    if(MSVC)
-        target_compile_options(m0_qt_shell_bootstrap PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_shell_bootstrap PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    qt_add_executable(m0_qt_shell app/main.cpp)
-    if(WIN32)
-        enable_language(RC)
-        add_executable(m0_qt_windows_icon_generator EXCLUDE_FROM_ALL tools/BuildWindowsIcon.cpp)
-        target_link_libraries(m0_qt_windows_icon_generator PRIVATE Qt6::Core Qt6::Gui Qt6::Svg)
-        set_target_properties(m0_qt_windows_icon_generator PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
-        if(MSVC)
-            target_compile_options(m0_qt_windows_icon_generator PRIVATE /W4 /WX /permissive-)
-        endif()
-        set(M0_WINDOWS_ICON_FILE "${CMAKE_CURRENT_BINARY_DIR}/rc-music.ico")
-        add_custom_command(OUTPUT "${M0_WINDOWS_ICON_FILE}"
-            COMMAND "${CMAKE_COMMAND}" -E env "PATH=$<TARGET_FILE_DIR:Qt6::Core>"
-                "$<TARGET_FILE:m0_qt_windows_icon_generator>" "${M0_TRACK_ASSET_FILE}" "${M0_WINDOWS_ICON_FILE}"
-            DEPENDS m0_qt_windows_icon_generator "${M0_TRACK_ASSET_FILE}"
-            COMMENT "Generate the Windows icon from the authenticated tray artwork"
-            VERBATIM)
-        add_custom_target(m0_qt_windows_icon DEPENDS "${M0_WINDOWS_ICON_FILE}")
-        add_dependencies(m0_qt_shell m0_qt_windows_icon)
-        set(m0_windows_resource "${CMAKE_CURRENT_BINARY_DIR}/WindowsResources.rc")
-        configure_file(app/WindowsResources.rc.in "${m0_windows_resource}" @ONLY)
-        set_source_files_properties("${m0_windows_resource}" PROPERTIES OBJECT_DEPENDS "${M0_WINDOWS_ICON_FILE}")
-        target_sources(m0_qt_shell PRIVATE "${m0_windows_resource}")
-    endif()
-    add_library(m0_qt_diagnostic_binding STATIC src/presentation/ShellDiagnosticBinding.cpp)
-    target_include_directories(m0_qt_diagnostic_binding PUBLIC src)
-    target_link_libraries(m0_qt_diagnostic_binding PUBLIC m0_qt_shell_support m0_qt_shell_ui Qt6::Quick)
-    target_compile_features(m0_qt_diagnostic_binding PUBLIC cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_qt_diagnostic_binding PRIVATE /W4 /WX /permissive-)
-    endif()
-    target_link_libraries(m0_qt_shell PRIVATE
-        m0_qt_preferences_persistence
-        m0_qt_session_persistence
-        m0_qt_shell_platform
-        m0_qt_system_appearance
-        m0_qt_shell_bootstrap
-        m0_qt_shell_support
-        m0_qt_shell_ui
-        m0_qt_shell_uiplugin
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::Svg
-        Qt6::Widgets
-    )
     if(NOT M0_QT_AUDIO_SUPPORT)
         target_link_libraries(m0_qt_shell PRIVATE m0_qt_fixture_data)
     endif()
-    if(WIN32)
-        target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_power_events m0_qt_windows_smtc
-            m0_qt_diagnostic_privacy m0_qt_diagnostic_store m0_qt_diagnostic_binding)
-    endif()
-    target_include_directories(m0_qt_shell PRIVATE src)
-    target_compile_features(m0_qt_shell PRIVATE cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_qt_shell PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_shell PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if(BUILD_TESTING)
+        find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test QuickTest)
     endif()
 
     if(BUILD_TESTING)
@@ -530,7 +190,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_platform_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-platform COMMAND m0_qt_shell_platform_tests)
-        add_executable(m0_qt_audio_file_locator_tests tests/qtest/QtAudioFileLocatorTests.cpp)
+        add_executable(m0_qt_audio_file_locator_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAudioFileLocatorTests.cpp")
         target_link_libraries(m0_qt_audio_file_locator_tests PRIVATE m0_qt_audio_file_locator Qt6::Test Qt6::Widgets)
         target_compile_features(m0_qt_audio_file_locator_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_audio_file_locator_tests PROPERTIES AUTOMOC ON)
@@ -540,7 +200,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_audio_file_locator_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.audio-file-locator COMMAND m0_qt_audio_file_locator_tests -o -,txt)
-        add_executable(m0_qt_audio_files_picker_tests tests/qtest/QtAudioFilesPickerTests.cpp)
+        add_executable(m0_qt_audio_files_picker_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAudioFilesPickerTests.cpp")
         target_link_libraries(m0_qt_audio_files_picker_tests PRIVATE m0_qt_audio_file_locator Qt6::Test Qt6::Widgets)
         target_compile_features(m0_qt_audio_files_picker_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_audio_files_picker_tests PROPERTIES AUTOMOC ON)
@@ -690,7 +350,7 @@ if(M0_QT_SHELL_SUPPORT)
             -o "${CMAKE_CURRENT_BINARY_DIR}/system-appearance-test.txt,txt"
             -o -,txt
         )
-        add_executable(m0_qt_preferences_json_codec_tests tests/qtest/PreferencesJsonCodecTests.cpp)
+        add_executable(m0_qt_preferences_json_codec_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PreferencesJsonCodecTests.cpp")
         target_link_libraries(m0_qt_preferences_json_codec_tests PRIVATE m0_qt_preferences_persistence Qt6::Test)
         target_include_directories(m0_qt_preferences_json_codec_tests PRIVATE src)
         target_compile_features(m0_qt_preferences_json_codec_tests PRIVATE cxx_std_20)
@@ -701,7 +361,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_preferences_json_codec_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.preferences.json-codec COMMAND m0_qt_preferences_json_codec_tests)
-        add_executable(m0_qt_session_json_codec_tests tests/qtest/SessionJsonCodecTests.cpp)
+        add_executable(m0_qt_session_json_codec_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/SessionJsonCodecTests.cpp")
         target_link_libraries(m0_qt_session_json_codec_tests PRIVATE m0_qt_session_persistence Qt6::Test)
         target_include_directories(m0_qt_session_json_codec_tests PRIVATE src)
         target_compile_features(m0_qt_session_json_codec_tests PRIVATE cxx_std_20)
@@ -768,7 +428,7 @@ if(M0_QT_SHELL_SUPPORT)
             add_test(NAME m0.qt.diagnostics.windows-store COMMAND m0_qt_diagnostic_store_tests)
             set_tests_properties(m0.qt.diagnostics.windows-store PROPERTIES TIMEOUT 30)
         endif()
-        add_executable(m0_qt_shell_launch_tests tests/qtest/ShellLaunchOptionsTests.cpp)
+        add_executable(m0_qt_shell_launch_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ShellLaunchOptionsTests.cpp")
         target_link_libraries(m0_qt_shell_launch_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
         target_compile_features(m0_qt_shell_launch_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_shell_launch_tests PROPERTIES AUTOMOC ON)
@@ -778,7 +438,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_launch_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-launch-options COMMAND m0_qt_shell_launch_tests)
-        add_executable(m0_qt_open_sources_command_tests tests/qtest/OpenSourcesCommandTests.cpp)
+        add_executable(m0_qt_open_sources_command_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/OpenSourcesCommandTests.cpp")
         target_link_libraries(m0_qt_open_sources_command_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
         target_compile_features(m0_qt_open_sources_command_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_open_sources_command_tests PROPERTIES AUTOMOC ON)
@@ -788,7 +448,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_open_sources_command_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.open-sources.command COMMAND m0_qt_open_sources_command_tests)
-        add_executable(m0_qt_open_sources_dispatcher_tests tests/qtest/OpenSourcesDispatcherTests.cpp)
+        add_executable(m0_qt_open_sources_dispatcher_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/OpenSourcesDispatcherTests.cpp")
         target_link_libraries(m0_qt_open_sources_dispatcher_tests PRIVATE m0_qt_shell_bootstrap Qt6::Test)
         target_compile_features(m0_qt_open_sources_dispatcher_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_open_sources_dispatcher_tests PROPERTIES AUTOMOC ON)
@@ -799,7 +459,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.open-sources.dispatcher COMMAND m0_qt_open_sources_dispatcher_tests)
         add_executable(m0_qt_single_instance_coordinator_tests
-            tests/qtest/QtSingleInstanceCoordinatorTests.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtSingleInstanceCoordinatorTests.cpp"
         )
         target_link_libraries(m0_qt_single_instance_coordinator_tests PRIVATE
             m0_qt_shell_bootstrap
@@ -922,7 +582,7 @@ if(M0_QT_SHELL_SUPPORT)
             M0_PLACEHOLDER_SIZE=${m0_expected_placeholder_size}
             M0_TRACK_SHA256="${m0_expected_track_sha256}"
             M0_TRACK_SIZE=${m0_expected_track_size}
-            M0_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+            M0_QML_SOURCE_DIR="${RC_MUSIC_SOURCE_ROOT}/src/ui/qml"
         )
         set_target_properties(m0_qt_shell_contract_tests PROPERTIES AUTOMOC ON)
         if(MSVC)
@@ -1298,52 +958,6 @@ if(M0_QT_AUDIO_SUPPORT)
        NOT m0_audio_corpus_wrong_extension_size EQUAL 96044)
         message(FATAL_ERROR
             "The committed wrong-extension audio corpus fixture does not match its authenticated identity")
-    endif()
-
-    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Gui Multimedia)
-    find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
-
-    add_library(m0_qt_audio_adapters STATIC
-        include/m0/adapters/QtMultimediaPlaybackBackend.hpp
-        src/adapters/QtMultimediaPlaybackBackend.cpp
-    )
-    target_include_directories(m0_qt_audio_adapters PUBLIC include)
-    target_link_libraries(m0_qt_audio_adapters PUBLIC m0_qt_core Qt6::Multimedia)
-    target_compile_features(m0_qt_audio_adapters PUBLIC cxx_std_20)
-    set_target_properties(m0_qt_audio_adapters PROPERTIES AUTOMOC ON)
-    if(MSVC)
-        target_compile_options(m0_qt_audio_adapters PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_audio_adapters PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    add_library(m0_taglib_metadata_extractor STATIC
-        include/m0/adapters/TagLibMetadataExtractor.hpp
-        "${RC_MUSIC_SOURCE_ROOT}/include/m0/domain/ArtworkLimits.hpp"
-        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/MetadataExtractor.hpp"
-        src/adapters/TagLibMetadataExtractor.cpp
-    )
-    target_include_directories(m0_taglib_metadata_extractor PUBLIC include)
-    target_link_libraries(m0_taglib_metadata_extractor PUBLIC rc_music_contracts PRIVATE m0_qt_core TagLib::TagLib Qt6::Gui)
-    target_compile_features(m0_taglib_metadata_extractor PUBLIC cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_taglib_metadata_extractor PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_taglib_metadata_extractor PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    if(M0_QT_SHELL_SUPPORT)
-        target_link_libraries(m0_qt_shell PRIVATE
-            m0_qt_audio_adapters
-            m0_qt_audio_file_locator
-            m0_taglib_metadata_extractor
-        )
-        target_compile_definitions(m0_qt_shell PRIVATE M0_QT_COMBINED_AUDIO)
-        add_custom_command(TARGET m0_qt_shell POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:TagLib::tag>"
-                "$<TARGET_FILE_DIR:m0_qt_shell>"
-        )
     endif()
 
     if(BUILD_TESTING)

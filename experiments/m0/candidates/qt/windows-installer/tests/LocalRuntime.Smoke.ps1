@@ -9,6 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or -not [Environment]::Is64BitProcess) { throw 'Windows x64 PowerShell is required' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../../..'))
+Import-Module (Join-Path $PSScriptRoot '../WindowsRuntimePlan.psm1') -Force
 if (-not $InstrumentedBuildDirectory) {
     $InstrumentedBuildDirectory = Join-Path $repository 'out/m0/builds/qt-audio/combined-shell-20260829-01'
 }
@@ -29,12 +30,7 @@ $cache = @{}
 foreach ($line in (Get-Content -LiteralPath (Join-Path $InstrumentedBuildDirectory 'CMakeCache.txt'))) {
     if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $cache[$Matches[1]] = $Matches[2] }
 }
-foreach ($required in @{ BUILD_TESTING = 'ON'; CMAKE_BUILD_TYPE = 'Release';
-        M0_QT_AUDIO_SUPPORT = 'ON'; M0_QT_SHELL_SUPPORT = 'ON' }.GetEnumerator()) {
-    if ($cache[$required.Key] -cne $required.Value) {
-        throw "Invalid instrumented build setting: $($required.Key)"
-    }
-}
+$null = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $repository -BuildTesting 'ON'
 
 $testRoot = Join-Path $repository ('out/m0/test-runs/rc-music-runtime-smoke/' + [Guid]::NewGuid().ToString('N'))
 $probeDirectory = Join-Path $testRoot 'probe relocatable 日本'

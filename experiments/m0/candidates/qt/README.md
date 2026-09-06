@@ -624,12 +624,12 @@ if (-not (Test-Path -LiteralPath $clangFormat -PathType Leaf) -or
     throw 'Execute o preflight: ferramentas de formato ausentes.'
 }
 
-$cppFiles = @(rg --files $formatSource (Join-Path $formatRepo 'include') (Join-Path $formatRepo 'src') (Join-Path $formatRepo 'tests') -g '*.cpp' -g '*.hpp')
+$cppFiles = @(rg --files $formatSource (Join-Path $formatRepo 'include') (Join-Path $formatRepo 'src') (Join-Path $formatRepo 'tests') (Join-Path $formatRepo 'tools') -g '*.cpp' -g '*.hpp')
 if ($LASTEXITCODE -ne 0 -or $cppFiles.Count -eq 0) { throw 'Falha ao enumerar C++.' }
 & $clangFormat --dry-run --Werror @cppFiles
 if ($LASTEXITCODE -ne 0) { throw 'Formato C++ divergente.' }
 
-$qmlFiles = @(rg --files $formatSource -g '*.qml')
+$qmlFiles = @(rg --files $formatSource (Join-Path $formatRepo 'src/ui/qml') -g '*.qml')
 if ($LASTEXITCODE -ne 0 -or $qmlFiles.Count -eq 0) { throw 'Falha ao enumerar QML.' }
 foreach ($qmlFile in $qmlFiles) {
     $formattedLines = @(& $qmlFormat --newline unix $qmlFile)

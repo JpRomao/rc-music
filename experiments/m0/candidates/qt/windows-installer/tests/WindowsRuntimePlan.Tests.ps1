@@ -69,14 +69,15 @@ function New-SourceRepository([switch] $WithProductSources) {
     $s = New-Scenario
     $directory = Join-Path $s.Base 'source-repository'
     $inputPaths = @('experiments/m0/candidates/qt/shell', 'experiments/m0/protocol', 'experiments/m0/shared/shell-fixture')
-    $productInputPaths = @('CMakeLists.txt', 'cmake', 'include', 'src', 'tests')
+    $productInputPaths = @('CMakeLists.txt', 'cmake', 'include', 'src', 'tests', 'tools', 'assets')
     foreach ($path in $inputPaths) {
         $parent = Join-Path $directory $path
         $null = New-Item -ItemType Directory -Path $parent
         [IO.File]::WriteAllText((Join-Path $parent 'input.txt'), 'committed synthetic source')
     }
     if ($WithProductSources) {
-        foreach ($file in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp')) {
+        foreach ($file in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp',
+                'tools/icon.cpp', 'assets/icon.svg')) {
             $target = Join-Path $directory $file
             $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force
             [IO.File]::WriteAllText($target, 'committed synthetic product source')
@@ -269,7 +270,8 @@ try {
         Assert-Equal $snapshot.commit $source.Commit
         Assert-Equal ($snapshot.input_paths -join '|') ($source.InputPaths -join '|')
     }
-    foreach ($path in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp')) {
+    foreach ($path in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp',
+            'tools/icon.cpp', 'assets/icon.svg')) {
         Test-Case "source snapshot rejects an unstaged promoted input: $path" {
             $source = New-SourceRepository -WithProductSources
             [IO.File]::WriteAllText((Join-Path $source.Directory $path), 'changed product source')
@@ -287,6 +289,54 @@ try {
             $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force
             [IO.File]::WriteAllText($target, 'untracked product source')
             Assert-Rejected { Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory } 'dirty|changed|clean|input'
+        }
+    }
+    foreach ($entrypoint in @('product', 'legacy')) {
+        foreach ($testing in @('ON', 'OFF')) {
+            Test-Case "maps the $entrypoint desktop entrypoint with BUILD_TESTING=$testing" {
+                $source = New-SourceRepository
+                $cache = @{ CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = $testing }
+                if ($entrypoint -ceq 'product') {
+                    $cache.CMAKE_HOME_DIRECTORY = $source.Directory
+                    $cache.RC_MUSIC_BUILD_DESKTOP = 'ON'
+                } else {
+                    $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'experiments/m0/candidates/qt/shell'
+                    $cache.M0_QT_SHELL_SUPPORT = 'ON'
+                    $cache.M0_QT_AUDIO_SUPPORT = 'ON'
+                }
+                $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache `
+                    -RepositoryRoot $source.Directory -BuildTesting $testing
+                Assert-Equal $configuration.entrypoint $entrypoint
+                Assert-Equal $configuration.target 'm0_qt_shell'
+                Assert-Equal $configuration.executable 'm0_qt_shell.exe'
+                Assert-Equal $configuration.qml_source (Join-Path $source.Directory 'src/ui/qml')
+            }
+        }
+    }
+    foreach ($invalid in @('unknown entrypoint', 'missing product flag', 'disabled product flag', 'debug',
+            'wrong testing mode', 'legacy missing audio', 'legacy missing shell', 'relative home')) {
+        Test-Case "rejects unsupported desktop build: $invalid" {
+            $source = New-SourceRepository
+            $cache = @{ CMAKE_HOME_DIRECTORY = $source.Directory; CMAKE_BUILD_TYPE = 'Release'
+                BUILD_TESTING = 'OFF'; RC_MUSIC_BUILD_DESKTOP = 'ON' }
+            switch ($invalid) {
+                'unknown entrypoint' { $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'foreign' }
+                'missing product flag' { $cache.Remove('RC_MUSIC_BUILD_DESKTOP') }
+                'disabled product flag' { $cache.RC_MUSIC_BUILD_DESKTOP = 'OFF' }
+                'debug' { $cache.CMAKE_BUILD_TYPE = 'Debug' }
+                'wrong testing mode' { $cache.BUILD_TESTING = 'ON' }
+                'legacy missing audio' {
+                    $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'experiments/m0/candidates/qt/shell'
+                    $cache.M0_QT_SHELL_SUPPORT = 'ON'
+                }
+                'legacy missing shell' {
+                    $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'experiments/m0/candidates/qt/shell'
+                    $cache.M0_QT_AUDIO_SUPPORT = 'ON'
+                }
+                'relative home' { $cache.CMAKE_HOME_DIRECTORY = 'relative' }
+            }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $cache `
+                -RepositoryRoot $source.Directory -BuildTesting 'OFF' } '^Unsupported desktop build'
         }
     }
 } finally {

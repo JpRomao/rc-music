@@ -1,6 +1,6 @@
 # Núcleo de produto — primeiro recorte de M1.1
 
-**Estado:** núcleo promovido; aplicação gráfica ainda em composição experimental.
+**Estado:** núcleo promovido; a [unidade gráfica também possui build raiz](desktop-build.md). A evidência abaixo preserva o primeiro recorte.
 **Data:** 2026-09-05.
 
 O [ADR-0005](architecture/decisions/0005-windows-product-stack.md) autoriza reutilizar o C++ existente. O CMake da raiz agora compila fontes próprias, sem encaminhar para o experimento. Não é ainda o build/distribuição completo do aplicativo e não encerra M1.1, M1.2 ou M1.
@@ -14,15 +14,15 @@ O [ADR-0005](architecture/decisions/0005-windows-product-stack.md) autoriza reut
 | `rc_music_workers` | Cinco adapters `SingleWorker*` em `src/adapters`; core e Threads; descoberta Windows isolada neste alvo, fora do domínio |
 | `rc_music_test_support` | Backend determinístico em `tests/support`; solicitado apenas pelos testes ou shell histórico de fixture |
 | `rc_music_core_tests` | Dezoito fontes em `tests/core`; mesmos 224 casos Catch2, sem `QCoreApplication` |
-| Consumidor Qt existente | `m0_qt_core` é uma interface sobre os alvos acima; adapters Qt/TagLib, presenter, QML e bootstrap ainda ficam em `experiments/m0/candidates/qt/shell` |
+| Consumidor Qt | `m0_qt_core` é uma interface sobre os alvos acima; adapters Qt/TagLib, presenter, QML e bootstrap foram posteriormente promovidos à raiz, conforme o [build desktop](desktop-build.md) |
 
 Os 67 arquivos C++ foram movidos, não copiados: hashes após normalizar finais de linha em LF permaneceram iguais. A `.clang-format` também foi movida para a raiz, preservando a regra herdada pelo shell. Namespace/include `m0`, dados e locks `MusicPlayer` e marca visível RC Music permanecem intactos.
 
-`BUILD_TESTING=OFF` na raiz não pede Catch2, Qt, testes, corpus, protocolo ou fixture. Com testes ON, o caminho absoluto de Catch2 3.15.3 é explícito e a versão é conferida; não há download automático. Usar o source tree já verificado no preflight não torna o harness uma dependência de execução do core.
+Com `RC_MUSIC_BUILD_DESKTOP=OFF` (default), `BUILD_TESTING=OFF` na raiz não pede Catch2, Qt, testes, corpus, protocolo ou fixture. Com testes ON, o caminho absoluto de Catch2 3.15.3 é explícito e a versão é conferida; não há download automático. Usar o source tree já verificado no preflight não torna o harness uma dependência de execução do core.
 
 `Test-M0Layout.ps1` e a suíte agregada M0 que inclui `Contract.Tests.ps1` mantêm a proibição pré-M0.10 de `src`/`CMakeLists.txt` na raiz. Esses comandos pertencem ao snapshot histórico, não aos gates da promoção. O módulo, inventário e protocolo autenticados não foram editados ou reancorados. A independência do core é verificada pelo build da exportação mínima descrito abaixo, não por relaxar o contrato experimental.
 
-O shell histórico sem áudio ainda solicita o backend determinístico mesmo com testes OFF. Os [recortes seguintes de bootstrap](bootstrap-separation.md) removem a exigência de `FixtureBundle` dos construtores reais, os JSONs embutidos e, depois, os tipos/fontes de cenário do build combinado OFF. O build ON conserva esse suporte para os testes históricos. Promover a unidade gráfica e separar seu configure dos inputs M0 continua pendente; esses recortes não autorizam chamar o executável de produto independente.
+O shell histórico sem áudio ainda solicita o backend determinístico mesmo com testes OFF. Os [recortes seguintes de bootstrap](bootstrap-separation.md) removem a exigência de `FixtureBundle` dos construtores reais, os JSONs embutidos e, depois, os tipos/fontes de cenário do build combinado OFF. O ON histórico conserva esse suporte. A [promoção desktop posterior](desktop-build.md) separa também fontes e configure, sem ativar cenários no ON da raiz.
 
 ## Build Windows
 

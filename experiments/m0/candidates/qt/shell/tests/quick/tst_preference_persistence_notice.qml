@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtTest
 import MusicPlayer.M0 as M0
-import "../../qml" as Shell
+import MusicPlayer.M0 as Shell
 
 TestCase {
     id: testCase

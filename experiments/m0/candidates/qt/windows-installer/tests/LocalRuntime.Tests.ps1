@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 [CmdletBinding()]
-param([string] $OutputDirectory)
+param([string] $OutputDirectory, [string] $BuildDirectory)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -8,7 +8,7 @@ $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../../..
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $repository ('out/m0/rc-music-local/' + [Guid]::NewGuid().ToString('N'))
 }
-$result = & (Join-Path $PSScriptRoot '../New-RcMusicLocalRuntime.ps1') -OutputDirectory $OutputDirectory
+$result = & (Join-Path $PSScriptRoot '../New-RcMusicLocalRuntime.ps1') -OutputDirectory $OutputDirectory -BuildDirectory $BuildDirectory
 foreach ($relative in @('RCMusic.exe', 'qt.conf', 'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Quick.dll',
         'Qt6Multimedia.dll', 'tag.dll', 'avcodec-61.dll', 'avformat-61.dll',
         'plugins/platforms/qwindows.dll', 'plugins/multimedia/ffmpegmediaplugin.dll',

@@ -50,22 +50,18 @@ $cache = @{}
 foreach ($line in (Get-Content -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))) {
     if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $cache[$Matches[1]] = $Matches[2] }
 }
-foreach ($required in @{ BUILD_TESTING = 'OFF'; CMAKE_BUILD_TYPE = 'Release'; M0_QT_AUDIO_SUPPORT = 'ON'; M0_QT_SHELL_SUPPORT = 'ON' }.GetEnumerator()) {
-    if ($cache[$required.Key] -cne $required.Value) { throw "Invalid build setting: $($required.Key)" }
-}
-$source = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../shell')).Path
-if ([IO.Path]::GetFullPath($cache.CMAKE_HOME_DIRECTORY) -ine $source) { throw 'Build does not belong to the current Qt shell' }
+$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $repository -BuildTesting 'OFF'
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
 $dumpbin = Join-Path ([IO.Path]::GetDirectoryName($cache.CMAKE_CXX_COMPILER)) 'dumpbin.exe'
 $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository
 # This is an incremental application build, never a Qt SDK rebuild or benchmark.
-$null = Invoke-RuntimeTool $cache.CMAKE_COMMAND @('--build', $BuildDirectory, '--target', 'm0_qt_shell')
+$null = Invoke-RuntimeTool $cache.CMAKE_COMMAND @('--build', $BuildDirectory, '--target', $configuration.target)
 $afterBuild = Get-RcMusicSourceSnapshot -RepositoryRoot $repository
 if ($sourceSnapshot.commit -cne $afterBuild.commit) { throw 'Source commit changed during the application build' }
 $scannerText = Invoke-RuntimeTool (Join-Path $qt 'bin/qmlimportscanner.exe') @(
-    '-rootPath', (Join-Path $source 'qml'), '-importPath', (Join-Path $BuildDirectory 'qml'), '-importPath', (Join-Path $qt 'qml'))
+    '-rootPath', $configuration.qml_source, '-importPath', (Join-Path $BuildDirectory 'qml'), '-importPath', (Join-Path $qt 'qml'))
 $modules = @($scannerText | ConvertFrom-Json -Depth 20)
 $files = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
 $peQueue = [Collections.Generic.Queue[object]]::new()
@@ -81,7 +77,7 @@ function Add-RuntimeFile([string] $SourceFile, [string] $RelativePath) {
     $files.Add($RelativePath, $entry)
     if ([IO.Path]::GetExtension($SourceFile) -in @('.exe', '.dll')) { $peQueue.Enqueue($entry) }
 }
-Add-RuntimeFile (Join-Path $BuildDirectory 'm0_qt_shell.exe') 'RCMusic.exe'
+Add-RuntimeFile (Join-Path $BuildDirectory $configuration.executable) 'RCMusic.exe'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'qt.conf') 'qt.conf'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'LOCAL-DEVELOPMENT.txt') 'LOCAL-DEVELOPMENT.txt'
 foreach ($plugin in @('platforms/qwindows.dll', 'platforms/qoffscreen.dll', 'imageformats/qjpeg.dll',
