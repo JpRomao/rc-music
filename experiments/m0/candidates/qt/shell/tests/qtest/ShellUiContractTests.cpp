@@ -12,6 +12,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QIcon>
+#include <QImage>
 #include <QMetaMethod>
 #include <QMetaProperty>
 #include <QRegularExpression>
@@ -21,6 +23,7 @@
 #include <QStringList>
 #include <QTest>
 #include <QTranslator>
+#include <QWindow>
 #include <QtQml/qqml.h>
 
 #include <optional>
@@ -97,6 +100,7 @@ class ShellUiContractTests final : public QObject {
   private slots:
     void initTestCase();
     void configuresQtDisplayNameWithoutMovingStoredData();
+    void configuresTheExistingArtworkAsTheApplicationAndWindowIcon();
     void exposesFrozenConstantsAndAuthenticatedResources();
     void rejectsUnknownAssetMappings();
     void rejectsUnsupportedTransportStrings();
@@ -126,10 +130,12 @@ void ShellUiContractTests::configuresQtDisplayNameWithoutMovingStoredData() {
     const QString original_organization = QCoreApplication::organizationName();
     const QString original_application = QCoreApplication::applicationName();
     const QString original_display_name = QGuiApplication::applicationDisplayName();
+    const QIcon original_window_icon = QGuiApplication::windowIcon();
     const auto restore_identity = qScopeGuard([&] {
         QCoreApplication::setOrganizationName(original_organization);
         QCoreApplication::setApplicationName(original_application);
         QGuiApplication::setApplicationDisplayName(original_display_name);
+        QGuiApplication::setWindowIcon(original_window_icon);
     });
 
     QCoreApplication::setOrganizationName(QStringLiteral("MusicPlayer"));
@@ -148,6 +154,39 @@ void ShellUiContractTests::configuresQtDisplayNameWithoutMovingStoredData() {
         QCOMPARE(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation), original_data_root);
         QCOMPARE(QGuiApplication::applicationDisplayName(), QStringLiteral("RC Music"));
         QCOMPARE(ApplicationIdentity::displayName(), QStringLiteral("RC Music"));
+    }
+}
+
+void ShellUiContractTests::configuresTheExistingArtworkAsTheApplicationAndWindowIcon() {
+    const QString original_organization = QCoreApplication::organizationName();
+    const QString original_application = QCoreApplication::applicationName();
+    const QString original_display_name = QGuiApplication::applicationDisplayName();
+    const QIcon original_window_icon = QGuiApplication::windowIcon();
+    const auto restore_identity = qScopeGuard([&] {
+        QCoreApplication::setOrganizationName(original_organization);
+        QCoreApplication::setApplicationName(original_application);
+        QGuiApplication::setApplicationDisplayName(original_display_name);
+        QGuiApplication::setWindowIcon(original_window_icon);
+    });
+    const QIcon expected_icon{QStringLiteral(":/m0/assets/cover-track.svg")};
+    QVERIFY(!expected_icon.isNull());
+    QVERIFY(!expected_icon.pixmap(32, 32).isNull());
+
+    QGuiApplication::setWindowIcon(QIcon{});
+    ApplicationIdentity::configureQtApplication();
+    QVERIFY(!QGuiApplication::windowIcon().isNull());
+    QWindow window;
+    QVERIFY(!window.isVisible());
+    QVERIFY(!window.icon().isNull());
+    for (const int size : {16, 32, 64}) {
+        const QImage expected = expected_icon.pixmap(size, size).toImage();
+        const QImage application_icon = QGuiApplication::windowIcon().pixmap(size, size).toImage();
+        const QImage window_icon = window.icon().pixmap(size, size).toImage();
+        QVERIFY(!expected.isNull());
+        QVERIFY(!application_icon.isNull());
+        QVERIFY(!window_icon.isNull());
+        QCOMPARE(application_icon, expected);
+        QCOMPARE(window_icon, expected);
     }
 }
 

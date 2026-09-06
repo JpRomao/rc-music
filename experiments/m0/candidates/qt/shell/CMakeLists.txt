@@ -420,6 +420,28 @@ if(M0_QT_SHELL_SUPPORT)
     endif()
 
     qt_add_executable(m0_qt_shell app/main.cpp)
+    if(WIN32)
+        enable_language(RC)
+        add_executable(m0_qt_windows_icon_generator EXCLUDE_FROM_ALL tools/BuildWindowsIcon.cpp)
+        target_link_libraries(m0_qt_windows_icon_generator PRIVATE Qt6::Core Qt6::Gui Qt6::Svg)
+        set_target_properties(m0_qt_windows_icon_generator PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+        if(MSVC)
+            target_compile_options(m0_qt_windows_icon_generator PRIVATE /W4 /WX /permissive-)
+        endif()
+        set(M0_WINDOWS_ICON_FILE "${CMAKE_CURRENT_BINARY_DIR}/rc-music.ico")
+        add_custom_command(OUTPUT "${M0_WINDOWS_ICON_FILE}"
+            COMMAND "${CMAKE_COMMAND}" -E env "PATH=$<TARGET_FILE_DIR:Qt6::Core>"
+                "$<TARGET_FILE:m0_qt_windows_icon_generator>" "${M0_TRACK_ASSET_FILE}" "${M0_WINDOWS_ICON_FILE}"
+            DEPENDS m0_qt_windows_icon_generator "${M0_TRACK_ASSET_FILE}"
+            COMMENT "Generate the Windows icon from the authenticated tray artwork"
+            VERBATIM)
+        add_custom_target(m0_qt_windows_icon DEPENDS "${M0_WINDOWS_ICON_FILE}")
+        add_dependencies(m0_qt_shell m0_qt_windows_icon)
+        set(m0_windows_resource "${CMAKE_CURRENT_BINARY_DIR}/WindowsResources.rc")
+        configure_file(app/WindowsResources.rc.in "${m0_windows_resource}" @ONLY)
+        set_source_files_properties("${m0_windows_resource}" PROPERTIES OBJECT_DEPENDS "${M0_WINDOWS_ICON_FILE}")
+        target_sources(m0_qt_shell PRIVATE "${m0_windows_resource}")
+    endif()
     add_library(m0_qt_diagnostic_binding STATIC src/presentation/ShellDiagnosticBinding.cpp)
     target_include_directories(m0_qt_diagnostic_binding PUBLIC src)
     target_link_libraries(m0_qt_diagnostic_binding PUBLIC m0_qt_shell_support m0_qt_shell_ui Qt6::Quick)
@@ -878,6 +900,23 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_shell_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.shell-ui-contract COMMAND m0_qt_shell_contract_tests)
+        if(WIN32)
+            add_executable(m0_qt_windows_executable_identity_tests tests/qtest/WindowsExecutableIdentityTests.cpp)
+            target_link_libraries(m0_qt_windows_executable_identity_tests PRIVATE
+                Qt6::Core Qt6::Test user32 version)
+            set_target_properties(m0_qt_windows_executable_identity_tests PROPERTIES AUTOMOC ON)
+            if(MSVC)
+                target_compile_options(m0_qt_windows_executable_identity_tests PRIVATE /W4 /WX /permissive-)
+            endif()
+            add_dependencies(m0_qt_windows_executable_identity_tests m0_qt_shell)
+            add_test(NAME m0.qt.windows.executable-identity
+                COMMAND m0_qt_windows_executable_identity_tests "$<TARGET_FILE:m0_qt_shell>")
+            set_tests_properties(m0.qt.windows.executable-identity PROPERTIES
+                LABELS "m0;qt;windows;identity"
+                TIMEOUT 20
+                ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+                ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+        endif()
         add_executable(m0_qt_quick_tests tests/quick/quick_main.cpp)
         target_link_libraries(m0_qt_quick_tests PRIVATE
             m0_qt_system_appearance

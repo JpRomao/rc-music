@@ -36,6 +36,8 @@ O estado Red é observado na execução local/CI focada e seu teste + motivo de 
 
 ## 3. Pirâmide e responsabilidades
 
+A [identidade nativa do executável Windows](../../experiments/m0/candidates/qt/README.md#windows-executable-identity) possui provas separadas: comparação dos pixels Qt de aplicação/janela com o SVG existente, smoke do root QML real e leitura do PE sem executar o app. `LoadLibraryExW` em modo de recursos verifica grupo único, sete resoluções decodificáveis pelo Windows e `VERSIONINFO` experimental; executar o mesmo oracle contra o build OFF. Preservar nomes/raízes, hooks reservados e manifesto de caminhos longos. Isso não equivale a inspeção visual no Explorer, atalho instalado, assinatura ou licença de distribuição.
+
 A regressão do [menu contextual da fila](../../experiments/m0/candidates/qt/README.md#queue-menu-occurrence) combina abertura por teclado sobre C e erro/avanço automático A→B antes de acionar o menu. Verifica IDs/ordem, path carregado e contagem de comandos do backend falso, não apenas o destaque visual. Remoção do alvo, inserção/reordenação e nova abertura também devem preservar a autoridade da ocorrência; callbacks tardios de foco não podem tirar o teclado do menu aberto. É teste funcional da apresentação com presenter real, sem usar mídia pessoal ou medir performance.
 
 ```text

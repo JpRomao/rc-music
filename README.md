@@ -2,6 +2,8 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
+O executável Windows agora incorpora [ícone e propriedades de identificação](experiments/m0/candidates/qt/README.md#windows-executable-identity). Janela e bandeja usam a mesma arte já existente; o `.exe` identifica RC Music como candidato M0 experimental, sem mudar os dados `MusicPlayer`. A leitura nativa passou nos builds com/sem testes; o instalador privado anterior ainda não inclui os últimos incrementos.
+
 Entradas de abertura com [caminhos inválidos ou ambíguos](experiments/m0/candidates/qt/README.md#invalid-shell-source-feedback) agora recebem uma orientação para usar caminhos completos ou o seletor do RC Music, antes de iniciar IPC ou áudio. O lote inteiro é recusado sem expor caminhos ou detalhes internos.
 
 O [menu contextual da fila](experiments/m0/candidates/qt/README.md#queue-menu-occurrence) agora fixa a ocorrência escolhida: a troca automática de música não redireciona “Remover”, “Tocar”, mover ou recuperar para outra faixa. Se o alvo desaparecer, o menu fecha e suas ações ficam inertes.

@@ -1,0 +1,38 @@
+#include <windows.h>
+#include <winver.h>
+#pragma code_page(65001)
+
+// Reuse the existing private M0 artwork; this is not a new product logo.
+1 ICON "@M0_WINDOWS_ICON_FILE@"
+
+LANGUAGE LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN
+
+// Zero is a non-release sentinel. The immutable build identity stays in the receipt.
+1 VERSIONINFO
+FILEVERSION 0,0,0,0
+PRODUCTVERSION 0,0,0,0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS VS_FF_PRERELEASE | VS_FF_PRIVATEBUILD
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041604B0"
+        BEGIN
+            VALUE "CompanyName", "\0"
+            VALUE "FileDescription", "RC Music\0"
+            VALUE "FileVersion", "M0 experimental\0"
+            VALUE "InternalName", "MusicPlayer\0"
+            VALUE "OriginalFilename", "m0_qt_shell.exe\0"
+            VALUE "ProductName", "RC Music\0"
+            VALUE "ProductVersion", "M0 experimental\0"
+            VALUE "PrivateBuild", "Candidato M0 local e privado; não é uma versão publicada.\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x416, 1200
+    END
+END

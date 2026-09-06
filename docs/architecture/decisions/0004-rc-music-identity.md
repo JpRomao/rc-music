@@ -28,6 +28,8 @@ O mantenedor confirmou explicitamente **RC Music** como nome definitivo. A ident
 
 O usuário vê RC Music sem migração de armazenamento. As pastas de configuração podem continuar com o nome técnico anterior. A identidade textual deixa de ser impedimento de M4.6; matriz publicada, integração do instalador, registro e seus testes ainda precisam ser implementados/validados. Esta decisão não aceita stack ou engine, não conclui M0/M4.6 e não autoriza distribuição ou registro no sistema durante o desenvolvimento.
 
+O [incremento nativo posterior](../../../experiments/m0/candidates/qt/README.md#windows-executable-identity) aplica o nome confirmado às propriedades do PE e reutiliza o SVG privado já usado na bandeja para o ícone da janela/executável. Isso não escolhe uma nova arte definitiva nem altera a licença existente. Os recursos indicam `M0 experimental`, com versão numérica zero como sentinela de não-release; a identidade imutável continua no receipt. `OriginalFilename` conserva `m0_qt_shell.exe`, nome de build anterior à renomeação pelo staging para `RCMusic.exe`.
+
 ## Critérios de revisão
 
 Revisar somente diante de novo nome solicitado pelo mantenedor ou de uma migração deliberada dos identificadores de armazenamento. Qualquer migração deve preservar preferências/sessão e a coordenação de instância única, incluindo rollback.

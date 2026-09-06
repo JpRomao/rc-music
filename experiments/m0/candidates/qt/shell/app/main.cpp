@@ -395,12 +395,12 @@ int main(int argc, char* argv[]) {
             options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
-        music_player::m0::QtShellPlatform platform(
-            QIcon{QStringLiteral(":/m0/assets/cover-track.svg")}, contract.appName(),
-            {contract.actionPlay(), contract.actionPause(), contract.actionPrevious(), contract.actionNext(),
-             lifecycle_text.showAction(), lifecycle_text.hideAction(), lifecycle_text.exitAction(),
-             lifecycle_text.noTrack()},
-            std::move(availability_reader));
+        music_player::m0::QtShellPlatform platform(music_player::m0::ApplicationIdentity::icon(), contract.appName(),
+                                                   {contract.actionPlay(), contract.actionPause(),
+                                                    contract.actionPrevious(), contract.actionNext(),
+                                                    lifecycle_text.showAction(), lifecycle_text.hideAction(),
+                                                    lifecycle_text.exitAction(), lifecycle_text.noTrack()},
+                                                   std::move(availability_reader));
         music_player::m0::QtSystemAppearance system_appearance;
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
@@ -787,6 +787,8 @@ int main(int argc, char* argv[]) {
                     QObject* const empty_state =
                         root != nullptr ? root->findChild<QObject*>(QStringLiteral("emptyState")) : nullptr;
                     combined_startup_smoke_completed = root != nullptr && window->isVisible() &&
+                                                       !QGuiApplication::windowIcon().pixmap(32, 32).isNull() &&
+                                                       !window->icon().pixmap(32, 32).isNull() &&
                                                        !presenter.usesFrozenFixture() && !presenter.hasCurrentTrack() &&
                                                        presenter.queueModelObject() != nullptr &&
                                                        presenter.queueModelObject()->rowCount() == 0 &&
