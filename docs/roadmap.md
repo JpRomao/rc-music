@@ -416,16 +416,16 @@ Biblioteca indexada é o primeiro caso que pode justificar SQLite. Cada candidat
 
 ## 11. R1 — Fontes remotas e YouTube
 
-**Estado:** Pesquisa; sem promessa de release.
+**Estado:** escopo de produto aceito no [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), implementação planejada; suporte a YouTube continua pesquisa independente sem promessa de release.
 
-Ordem:
+Ordem atual:
 
-1. streams HTTP/podcasts autorizados e capacidades sem duração/seek;
-2. threat model e cache remoto;
-3. revisão jurídica/políticas do provedor;
-4. comparação resolver próprio, libmpv e sidecar;
-5. protótipo isolado sem distribuição;
-6. ADR com decisão de implementar, oferecer player oficial visível ou rejeitar.
+1. registrar ferramentas, termos/licenças e threat model para mídia autorizada, sem compartilhar cookies/credenciais;
+2. extensão principal opcional Brave/Chromium: detecção/lista/seleção múltipla e envio explícito;
+3. serviço compartilhado de download e conversão de MP4 com áudio para MP3, com progresso/cancelamento e importação local segura;
+4. Lite preserva o player sem engine embarcada; Completa acrescenta navegação interna isolada, após escolha técnica. Ambas integram a extensão externa;
+5. seleção opcional no instalador e regras de upgrade/remoção/ponte entre edições, sem presumir publicação ou instalação automática no navegador;
+6. extensão YouTube independente, com pacote/identidade/permissões próprios e revisão de viabilidade; não bloqueia nenhum passo da principal.
 
 Critério obrigatório: qualquer falha remota deixa playback local intacto. YouTube audio-only em background/tray pode ser incompatível com políticas oficiais e é aceitável que a pesquisa termine em “não implementar”.
 
@@ -441,7 +441,9 @@ Critério obrigatório: qualquer falha remota deixa playback local intacto. YouT
 | Restauração | fila + persistência atômica |
 | Release Windows | M2 + M3 + M4 + M5 |
 | Release Linux | stack aprovada + M2/M3 + integrações Tier 2 |
-| URL remota | player local estável + ADR-0003 + R1 |
+| Extensão principal e downloads | ADR-0006 + gates técnicos/segurança de R1; não depende de YouTube |
+| Edição Completa | núcleo Lite + engine de navegação isolada validada + integração comum |
+| Streaming remoto/YouTube | ADR-0003/R1 e decisões de viabilidade específicas; sem aprovação implícita pelo ADR-0006 |
 
 ## 13. Controle de escopo
 
@@ -459,3 +461,5 @@ Até a release 0.1, rejeitar por padrão:
 - formatos sem fixture/teste.
 
 Uma exceção requer necessidade real, requisito rastreável, impacto nos marcos e commit documental antes da implementação.
+
+Exceção confirmada em 2026-09-06: FR-050–053/ADR-0006 incluem extensões externas opcionais, download/conversão e a edição Completa com navegação interna. Isso não cria uma plataforma genérica de plugins, não transforma o player em reprodutor de vídeo e não aprova automaticamente engine, ferramentas, distribuição ou acesso a conteúdo restrito. A Lite permanece disponível sem esses componentes de navegação.

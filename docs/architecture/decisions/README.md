@@ -18,6 +18,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0003](0003-local-first-and-remote-sources.md) | Proposto | Mecanismo para isolar fontes remotas; local-first já é requisito |
 | [0004](0004-rc-music-identity.md) | Aceito | Nome definitivo RC Music e continuidade dos dados locais |
 | [0005](0005-windows-product-stack.md) | Aceito | C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib; A/B deixa de bloquear o produto Windows |
+| [0006](0006-browser-editions-and-extensions.md) | Aceito | Escopo Lite/Completa, Brave/Chromium e extensões principal/YouTube independentes; ferramentas e implementação pendentes |
 
 ## Processo
 

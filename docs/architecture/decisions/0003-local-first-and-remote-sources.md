@@ -8,6 +8,8 @@
 
 Local-first, funcionamento offline no MVP e independência de rede já são requisitos confirmados, não decisões pendentes deste ADR. O que permanece proposto é o mecanismo arquitetural para uma possível reprodução por URL, especialmente YouTube, com riscos técnicos, operacionais, legais e de política.
 
+Atualização de escopo em 2026-09-06: o [ADR-0006](0006-browser-editions-and-extensions.md) aceita a organização futura Lite/Completa e extensões independentes, com Brave/Chromium como alvo. Download/conversão seguido de importação local não aceita automaticamente este mecanismo de streaming; este ADR permanece `Proposto` e a revisão de ferramentas/provedores continua obrigatória.
+
 ## Restrições já confirmadas
 
 - arquivos locais e operação offline formam o MVP;

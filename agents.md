@@ -145,7 +145,7 @@ Após a decisão explícita registrada no ADR-0005:
 
 - desenvolver o produto Windows com a stack aceita, promovendo a implementação existente sem duplicar lógica ou romper os contratos do núcleo;
 - não apresentar migração, budgets, acessibilidade nativa, Linux ou release como concluídos apenas porque a stack foi aceita;
-- não integrar serviços remotos;
+- limitar navegação/download remoto ao escopo opcional do [ADR-0006](docs/architecture/decisions/0006-browser-editions-and-extensions.md), após as decisões técnicas, revisão de segurança/licenças e testes próprios; não integrar outros serviços remotos;
 - não adicionar telemetria, atualização automática ou persistência complexa;
 - preservar protocolos, fixtures e evidências históricas M0; checks do experimento não viram dependências permanentes do produto;
 - manter requisitos de segurança/licenças/distribuição e o ADR-0003 de fontes remotas nos seus próprios gates; esta decisão não autoriza instalação/registro no host ou retomada de interação nativa interrompida.

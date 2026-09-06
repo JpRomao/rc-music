@@ -4,6 +4,8 @@ Player de áudio desktop pessoal, local-first, Windows-first e planejado para Li
 
 Para usar a versão local, consulte o [manual de uso e solução de problemas](docs/user-guide.md). Ele explica abertura, fila, atalhos, preferências e recuperação; não pressupõe instalação nem aprovação de release.
 
+**Próximo escopo aceito, ainda não implementado:** [edições Lite/Completa e integração com Brave/Chromium](docs/architecture/decisions/0006-browser-editions-and-extensions.md). A Lite mantém o player sem navegador interno; a Completa acrescenta navegação isolada. Ambas terão extensão externa opcional, com lista/seleção múltipla, download e conversão de áudio para MP3. YouTube fica em outra extensão opcional e não bloqueia a principal. Essa separação não aprova engine, ferramentas, instalação ou publicação.
+
 Os atalhos da janela principal agora reservam Espaço para reprodução, inclusive após clicar em outro botão; setas controlam seek/volume e Shift+setas anterior/próxima. F1 liga/desliga modo aleatório e F2 repetição da fila, com controles visíveis e preferências persistidas. O [manual](docs/user-guide.md#reprodução-e-teclado) descreve também Enter para ativar controles e Ctrl+↑/↓ para selecionar linhas.
 
 **Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [build Windows da raiz](docs/desktop-build.md) compila a aplicação real sem configure, fixtures ou corpus do experimento; o [core independente](docs/core-build.md) continua disponível sem Qt. Fontes e testes promovidos têm uma única implementação, também consumida pelo histórico.

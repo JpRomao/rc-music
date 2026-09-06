@@ -93,14 +93,16 @@ Refinamento confirmado de `FR-037` em 2026-09-06: na janela principal, `←`/`�
 | FR-044 | P0 | Derivado | Configuração inválida usa backup válido ou defaults e mostra aviso acionável. Migrações de esquema são versionadas. |
 | FR-045 | P1 | Derivado | Restaurar tamanho/posição da janela apenas quando continuar visível em algum monitor conectado. |
 
-### 2.6 Fontes remotas futuras
+### 2.6 Extensões, navegação e fontes remotas planejadas
 
 | ID | Prioridade | Origem | Requisito e critério principal |
 |---|---:|---|---|
-| FR-050 | P2 | Confirmado | Investigar reprodução por URL de vídeo do YouTube, se técnica, jurídica e operacionalmente viável. |
-| FR-051 | P2 | Derivado | Fontes remotas são resolvidas por adaptador separado. Falha, expiração ou indisponibilidade remota não afeta arquivos locais. |
+| FR-050 | P2 | Confirmado | YouTube é uma extensão opcional separada da principal, sem ser requisito obrigatório ou dependência dela. Investigar download/conversão e eventual reprodução por URL somente se técnica, jurídica e operacionalmente viáveis. |
+| FR-051 | P1 | Confirmado | Extensão principal opcional para Brave/Chromium detecta mídia, lista candidatos com seleção individual/múltipla e envia somente os selecionados para download/conversão no RC Music. Integra Lite e Completa por adaptador separado; falha, expiração ou indisponibilidade remota não afeta arquivos locais. |
 | FR-052 | P2 | Derivado | Antes de implementar, registrar ADR sobre termos do serviço, licença, distribuição e atualização de qualquer ferramenta externa. |
 | FR-053 | P2 | Derivado | Tratar cancelamento, timeout, URL expirada, live, conteúdo privado/restrito, headers necessários e ausência de seek. Nenhum comando externo pode ser montado por concatenação de shell. |
+
+Refinamento confirmado de FR-050–053 em 2026-09-06, detalhado no [ADR-0006](../architecture/decisions/0006-browser-editions-and-extensions.md): **Lite** preserva o player atual e exclui a engine de navegação; **Completa** acrescenta navegação interna isolada. Ambas oferecem integração opcional com a extensão externa. A principal e a de YouTube têm pacotes, permissões e instalação independentes; suporte a YouTube não pode ser oferecido indiretamente pela principal. A integração é inicialmente desmarcada no instalador; ativação no navegador respeita seu fluxo próprio, sem políticas compulsórias. MP4 com áudio deve ser convertido em MP3 antes de ser importado no player; fonte sem áudio, DRM ou codec não suportado deve falhar de modo acionável. Download tem progresso/cancelamento e só publica arquivo local validado, sem sobrescrever arquivos pessoais. Não há suporte universal prometido, captura de microfone, histórico de navegação ou coleta implícita de cookies. O escopo está aceito, mas extensões, edições e downloader ainda não estão implementados; ferramentas, engine e distribuição precisam de decisão técnica/revisão próprias.
 
 ## 3. Requisitos de UX e acessibilidade
 

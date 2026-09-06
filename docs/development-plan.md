@@ -76,7 +76,7 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 - A/B não foi demonstrado. Tauri/Rust e suas ferramentas ficam fora das dependências e checks do produto; o histórico comparativo não será repetido como condição de M1.
 - Budgets continuam metas não comprovadas; benchmarks e Linux ficam adiados, sem alegação de sucesso ou eliminação de seus requisitos aplicáveis.
 - Segurança/licenças, corpus hostil restante, jornadas nativas/acessíveis e distribuição continuam com seus gates próprios.
-- YouTube continua pesquisa futura sem promessa de implementação.
+- O [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceita o escopo planejado Lite/Completa e extensão opcional para Brave/Chromium. YouTube fica em extensão independente, sem bloquear a principal; engine, ferramentas e gates do provedor/distribuição continuam pendentes.
 
 ### 2.3 Checkpoint atual — entrada em M1
 
@@ -587,16 +587,22 @@ FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entr
 
 ## 14. R1 — Fontes remotas e YouTube
 
-**Pré-condição:** release local estável ou decisão explícita de pesquisa isolada. ADR-0003 continua `Proposto` até essa autorização.
+**Escopo atualizado:** o mantenedor confirmou Brave/Chromium, edições Lite/Completa e extensões principal/YouTube independentes no [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md). Essa é a exceção explícita para planejar o módulo opcional sem aguardar release local; não é aprovação de engine, downloader, instalação ou publicação. ADR-0003 continua `Proposto` para streaming remoto. A principal avança sem depender do resultado da pesquisa YouTube.
 
 | ID | Pesquisa/experimento | Requisitos | Checks | Saída possível |
 |---|---|---|---|---|
 | R1.1 | Streams HTTP/podcasts autorizados | FR-051, NFR-PRIV-004 | `CHK-TDD`, `CHK-SEC`, `CHK-PERF`, `CHK-CLOSE` | adapter isolado ou rejeição |
 | R1.2 | Threat model de rede, cache, redirects, SSRF e privacidade | FR-051–053 | `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | controles/limites aceitos |
 | R1.3 | Revisão jurídica/políticas do provedor | FR-050, FR-052 | fontes oficiais, licença, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | implementar, usar player oficial ou rejeitar |
-| R1.4 | Comparar resolver próprio, libmpv e sidecar | FR-050–053 | `CHK-TDD` para comportamento do protótipo, `CHK-SEC`, `CHK-PERF`, `CHK-PACKAGE`, `CHK-CLOSE` | um candidato ou nenhum |
+| R1.4 | Comparar resolver próprio, libmpv e sidecar — somente pesquisa de streaming, não pré-requisito de downloads | FR-050–053 | `CHK-TDD` para comportamento do protótipo, `CHK-SEC`, `CHK-PERF`, `CHK-PACKAGE`, `CHK-CLOSE`; pesquisa e benchmarks adiados | um candidato ou nenhum |
 | R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek | FR-053 | `CHK-TDD`, `CHK-E2E`, `CHK-SEC`, `CHK-CLOSE` | falhas remotas controladas |
 | R1.6 | ADR final e protótipo sem distribuição | FR-050–053 | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | feature planejada, player oficial visível ou pesquisa encerrada |
+| R1.7 | Extensão principal Brave/Chromium: detectar/listar/deduplicar, selecionar múltiplos e enviar explicitamente | FR-051–053 | `CHK-TDD`, `CHK-SEC`, `CHK-UI`, `CHK-CLOSE` | popup e protocolo validados em páginas sintéticas, sem YouTube |
+| R1.8 | Serviço comum de download/conversão MP3 e importação de arquivo finalizado, isolado do playback | FR-051–053 | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | progresso/cancelamento/limites e falhas sem afetar o player |
+| R1.9 | Composições Lite/Completa: decidir engine e adicionar navegação interna isolada somente à Completa | FR-051–053, NFR-MAINT-002 | `CHK-DOC`, `CHK-TDD`, `CHK-SEC`, `CHK-UI`, `CHK-CLOSE` | mesma base e integração externa, engine ausente na Lite |
+| R1.10 | Opcionais no instalador, identidades/ponte, upgrade entre edições e separação de YouTube | FR-050–053 | `CHK-TDD`, `CHK-PACKAGE`, `CHK-SEC`, `CHK-CLOSE` | seleção independente e remoção por proprietário, sem instalação compulsória |
+
+Sequência prioritária: threat model R1.2 e avaliação específica de downloader/conversor/ponte por FR-052, implementar R1.7/R1.8 com fakes e fixtures locais, validar R1.9 e depois as composições/opcionais R1.10. A principal não depende da comparação de engines de streaming R1.4 nem da retomada de `CHK-PERF`. R1.3/FR-050 trata YouTube separadamente, sem virar pré-requisito da principal. A navegação interna usa os mesmos serviços de seleção/download; não presumir execução literal da extensão do Brave dentro da engine embarcada. Critérios e limites de instalação/privacidade estão no ADR-0006. Nenhuma dessas novas etapas está concluída; benchmarks permanecem adiados.
 
 Regras invariantes:
 
@@ -668,10 +674,10 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-043` | M1.7–M1.9, M4.1 | fila/item/posição restaurados em pausa |
 | `FR-044` | M1.7–M1.9, M3.5, M4.1 | migração, corrupção, backup e defaults |
 | `FR-045` | M4.2 | monitor removido, DPI e janela sempre visível |
-| `FR-050` | R1.3–R1.6 | revisão técnica/política e ADR; implementação pode ser rejeitada |
-| `FR-051` | R1.1–R1.2, R1.4–R1.6 | adapter remoto isolado e falha sem efeito local |
-| `FR-052` | R1.2–R1.4, R1.6 | fontes oficiais, licença/distribuição e ADR |
-| `FR-053` | R1.2, R1.4–R1.6 | harness remoto, timeout/cancelamento e zero concatenação shell |
+| `FR-050` | R1.3–R1.6, R1.10 | extensão YouTube separada e opcional, revisão técnica/política; não bloqueia a principal |
+| `FR-051` | R1.1–R1.2, R1.4–R1.10 | extensão Brave/Chromium, Lite/Completa e download/conversão isolados do playback |
+| `FR-052` | R1.2–R1.4, R1.6, R1.9–R1.10 | fontes oficiais, engine/ferramentas, licença/distribuição por artefato e ADR |
+| `FR-053` | R1.2, R1.4–R1.10 | harness remoto, timeout/cancelamento, arquivos finais seguros e zero concatenação shell |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
@@ -736,6 +742,10 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 ## 17. Próxima sequência segura
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
+
+Próximo escopo confirmado em 2026-09-06: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), Brave/Chromium, Lite sem navegador e Completa com navegação interna isolada; ambas integradas à extensão externa opcional. Principal e YouTube serão artefatos independentes. Priorizar R1.7/R1.8 após os gates técnicos/segurança, depois R1.9/R1.10, preservando o player atual. Este checkpoint é documental: nenhuma extensão/engine/downloader foi implementada, dependência instalada ou pacote novo gerado; testes e estados de conclusão permanecem abertos.
+
+Checks deste refinamento documental: `scripts/validate-docs.ps1` passou com 62 Markdown, 83 requisitos, 17 checks e 80 etapas; `scripts/validate-traceability.ps1` passou com 18 planejados, 63 em andamento e 2 comprovados; `git diff --check` sem erros. Esses resultados validam os contratos/vínculos, não a execução das funcionalidades planejadas.
 
 Correção Windows de 2026-09-06, commit `bfeb90f`: [abertura sem terminal adicional](windows-integration-tests.md#abertura-sem-terminal-adicional) muda somente o subsistema do executável de produção para GUI e preserva os consoles de testes. Red pelo PE console, Green de identidade ON/OFF, build Release e fronteiras estão no registro central. A [cópia local atualizada](windows-runtime.md#runtime-sem-terminal-adicional) foi gerada sem instalar, com hashes e identidade PE 6/6; não repetir montagem, encerrar fases amplas ou retomar benchmarks por essa correção.
 

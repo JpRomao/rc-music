@@ -283,6 +283,12 @@ Assinaturas finais serão escritas por TDD, mas os contratos conceituais são:
 - manter o receptor nativo privado e estável separado da janela visual, com ciclo de vida encerrado somente no shutdown;
 - limitar retries de inscrição nativa por backoff finito e permitir reativação somente por ação explícita ou mudança observada do estado da aplicação.
 
+### Downloads opcionais e edições Lite/Completa
+
+O [ADR-0006](decisions/0006-browser-editions-and-extensions.md) aceita o escopo planejado de Brave/Chromium, extensões principal/YouTube independentes e duas composições da mesma aplicação. Lite não inclui engine de navegação; Completa acrescenta uma superfície remota isolada, sem acesso direto à fachada privilegiada. Ambas usam os mesmos contratos de integração externa, quando o componente opcional estiver habilitado. A engine interna e as ferramentas de download/conversão ainda não foram escolhidas para implementação.
+
+Pedidos de download terão fronteira própria: seleção explícita → execução cancelável/limitada → MP3 local validado e finalizado → importação local existente. `OpenSources` continua aceitando paths locais; rede não entra no backend de reprodução por conveniência. A principal não recebe capacidade de YouTube por encaminhamento, mesmo se o componente independente estiver presente. O ADR registra os critérios de isolamento, permissões, instalação e testes; nenhum desses módulos é anunciado como já disponível.
+
 ### `MediaSourceResolver`
 
 - converter origem solicitada em descriptor reproduzível;

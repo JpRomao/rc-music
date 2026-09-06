@@ -1145,7 +1145,7 @@
     },
     {
       "id": "FR-050",
-      "plan": "R1.3–R1.6",
+      "plan": "R1.3–R1.6, R1.10",
       "status": "planejado",
       "verification": "future",
       "tests": [],
@@ -1157,15 +1157,19 @@
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
           "marker": "YouTube exige ADR próprio e revisão de termos antes de código/distribuição;"
+        },
+        {
+          "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
+          "marker": "## Decisão de produto"
         }
       ],
       "remaining": [
-        "Após release local estável ou autorização explícita de pesquisa isolada, investigar viabilidade técnica/jurídica/operacional e registrar decisão; não há reprodução remota implementada ou prometida."
+        "O escopo de extensão YouTube separada e opcional foi aceito no ADR-0006; investigar viabilidade técnica/de termos, ferramentas e distribuição, implementar e validar em gates próprios, sem bloquear a principal. Não há extensão ou reprodução remota implementada."
       ]
     },
     {
       "id": "FR-051",
-      "plan": "R1.1–R1.2, R1.4–R1.6",
+      "plan": "R1.1–R1.2, R1.4–R1.10",
       "status": "planejado",
       "verification": "future",
       "tests": [],
@@ -1177,15 +1181,19 @@
         {
           "path": "docs/development-plan.md",
           "marker": "Falha remota nunca altera a disponibilidade de arquivos locais."
+        },
+        {
+          "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
+          "marker": "## Decisão de produto"
         }
       ],
       "remaining": [
-        "Autorizar R1, definir e implementar o adaptador remoto separado e seus testes de falha/expiração sem alterar a disponibilidade local; ADR-0003 permanece proposto."
+        "Implementar e validar a extensão principal Brave/Chromium com lista e seleção múltipla, protocolo tipado e download/conversão isolados, compartilhados por Lite e Completa; decidir e implementar navegação interna somente na Completa e integração externa opcional nos instaladores. O escopo de produto está aceito; resolução/streaming remoto do ADR-0003 permanece proposto."
       ]
     },
     {
       "id": "FR-052",
-      "plan": "R1.2–R1.4, R1.6",
+      "plan": "R1.2–R1.4, R1.6, R1.9–R1.10",
       "status": "planejado",
       "verification": "future",
       "tests": [],
@@ -1197,15 +1205,19 @@
         {
           "path": "docs/development-plan.md",
           "marker": "| R1.3 | Revisão jurídica/políticas do provedor"
+        },
+        {
+          "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
+          "marker": "## Desenho técnico a validar antes da implementação"
         }
       ],
       "remaining": [
-        "Antes de qualquer implementação remota, registrar ADR aprovado com termos, licenças, distribuição e atualização das ferramentas escolhidas, apoiado em fontes oficiais atuais."
+        "O ADR-0006 aceita somente a organização do produto. Antes de adicionar dependências remotas, decidir e registrar engine/ferramentas, versões, hashes, termos, licenças, distribuição e atualização por artefato com fontes oficiais atuais; validar registro no Brave e upgrade/ownership entre edições."
       ]
     },
     {
       "id": "FR-053",
-      "plan": "R1.2, R1.4–R1.6",
+      "plan": "R1.2, R1.4–R1.10",
       "status": "planejado",
       "verification": "future",
       "tests": [],
@@ -1217,10 +1229,14 @@
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
           "marker": "## Regras para uma implementação remota futura"
+        },
+        {
+          "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
+          "marker": "## Critérios de aceitação e revisão"
         }
       ],
       "remaining": [
-        "Após autorização de R1, implementar os cenários remotos de cancelamento, timeout, expiração, live/restrições, headers e ausência de seek; provar execução sem concatenação de shell."
+        "Implementar cenários determinísticos de cancelamento, timeout, expiração, live/restrições, headers e ausência de seek, mais limites/redirects/SSRF, arquivos parciais e finalização segura do download/conversão. Provar ausência de shell concatenado e isolamento de páginas remotas, clientes principal/YouTube e ponte privilegiada; gates ainda abertos."
       ]
     },
     {
