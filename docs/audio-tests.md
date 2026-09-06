@@ -48,6 +48,20 @@ Playback e integração usam Qt Multimedia/FFmpeg com saída mutada; a integraç
 
 Os [comandos de desenvolvimento](development-commands.md) mantêm o fluxo de configure/build antes de CTest. Para uma seleção proporcional no build ON já atualizado, pode-se usar `ctest --test-dir out/product/desktop-tests --output-on-failure --no-tests=error -R '^rc_music\.(audio|metadata)\.'` ou o label `audio`. A seleção não substitui os demais checks relevantes à mudança.
 
+## Preservação do log CTest
+
+Em 2026-09-06, a consulta `--show-only=json-v1` usada pela guarda de labels foi corrigida: ela abria `LastTest.log` no build da suíte em execução, truncando a evidência anterior. O CTest continua lendo o registro real, seus includes e propriedades finais por `--test-dir`; `--overwrite BuildDirectory` direciona os arquivos auxiliares para um temporário exclusivo, removido ao terminar. Não há cópia/restauração do log original nem interpretação manual dos arquivos internos do Catch2.
+
+A separação corresponde ao comportamento do [CTest 3.31.5](https://github.com/Kitware/CMake/blob/v3.31.5/Source/cmCTest.cxx): o override muda também a busca de customizações. Por isso a guarda recusa explicitamente `CTestCustom.cmake`/`CTestCustom.ctest` no build, em vez de ignorá-los silenciosamente; esses arquivos não existem na configuração validada.
+
+[AudioRegistrationRegressionTests.cmake](../tests/cmake/AudioRegistrationRegressionTests.cmake), registrado como `rc_music.audio.registration-regression`, usa sete casos pequenos sem Qt: registro válido com label aplicada após include, label ausente/incorreta, `audio-extra`, registro vazio, include inválido e os dois arquivos de customização. Todos preservam o SHA-256 de um log sentinela e comprovam que nenhuma entrada de teste foi executada; paths incluem espaços e Unicode. A guarda original continua exigindo que todos os casos de metadata tenham exatamente o label `audio` entre seus labels.
+
+- **Red:** a inspeção válida alterou o log sentinela antes da correção.
+- **Green:** os sete casos de regressão passaram; reconfigure e seleção integrada passaram **4/4 em 1,11 s**, incluindo a consulta dos **35 casos reais** de metadata e testes antes/depois dela. `LastTest.log` conservou os quatro registros, sem regiões NUL de truncamento.
+- A raiz registra agora **297 entradas CTest**. Esta alteração somente nos checks CMake não repetiu a suíte completa de áudio/UI, build de produção ou benchmarks; o total completo **296/296** do [incremento anterior](process-tests.md) continua sendo evidência daquele checkpoint.
+
+Esta correção não recupera logs históricos truncados nem amplia a validação funcional/nativa do produto.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.

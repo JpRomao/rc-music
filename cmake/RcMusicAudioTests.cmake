@@ -85,4 +85,8 @@ function(rc_music_add_audio_tests corpus_root)
         "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DCTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
         -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/AudioRegistrationTests.cmake")
     set_tests_properties(rc_music.audio.test-registration PROPERTIES LABELS "audio" TIMEOUT 15)
+    add_test(NAME rc_music.audio.registration-regression COMMAND "${CMAKE_COMMAND}"
+        "-DSCRATCH_DIRECTORY=${CMAKE_BINARY_DIR}/tests/cmake" "-DCTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+        -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/AudioRegistrationRegressionTests.cmake")
+    set_tests_properties(rc_music.audio.registration-regression PROPERTIES LABELS "audio;boundary" TIMEOUT 30)
 endfunction()

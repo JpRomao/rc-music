@@ -2,9 +2,31 @@ cmake_minimum_required(VERSION 3.31)
 if(NOT DEFINED BUILD_DIRECTORY OR NOT DEFINED CTEST_COMMAND)
     message(FATAL_ERROR "Audio registration requires the configured build and CTest")
 endif()
+cmake_path(ABSOLUTE_PATH BUILD_DIRECTORY NORMALIZE OUTPUT_VARIABLE build_root)
+# CTest's log-directory override also changes where it reads customization.
+# Never silently ignore customization introduced into the real build later.
+foreach(custom IN ITEMS CTestCustom.cmake CTestCustom.ctest)
+    if(EXISTS "${build_root}/${custom}")
+        message(FATAL_ERROR "Registration inspection requires explicit support for ${custom}")
+    endif()
+endforeach()
+string(RANDOM LENGTH 24 ALPHABET 0123456789abcdef probe_id)
+set(probe_root "${build_root}/Testing/Temporary/rc-music-metadata-inventory-${probe_id}")
+if(EXISTS "${probe_root}")
+    message(FATAL_ERROR "Refusing to reuse a metadata inventory directory")
+endif()
+file(MAKE_DIRECTORY "${probe_root}")
+# --show-only still opens LastTest.log. Keep discovery in the real --test-dir,
+# but direct CTest's diagnostic files to a directory owned by this invocation.
 execute_process(COMMAND "${CTEST_COMMAND}" --test-dir "${BUILD_DIRECTORY}"
+    --overwrite "BuildDirectory=${probe_root}"
     --show-only=json-v1 -R "^rc_music[.]metadata[.]"
-    RESULT_VARIABLE status OUTPUT_VARIABLE inventory ERROR_VARIABLE error)
+    RESULT_VARIABLE status OUTPUT_VARIABLE inventory ERROR_VARIABLE error TIMEOUT 10)
+cmake_path(IS_PREFIX build_root "${probe_root}" NORMALIZE owned)
+if(NOT owned OR NOT probe_root MATCHES "/rc-music-metadata-inventory-[0-9a-f]+$")
+    message(FATAL_ERROR "Refusing cleanup outside the owned metadata inventory")
+endif()
+file(REMOVE_RECURSE "${probe_root}")
 if(NOT status STREQUAL "0")
     message(FATAL_ERROR "Cannot read metadata test registration: ${error}")
 endif()
