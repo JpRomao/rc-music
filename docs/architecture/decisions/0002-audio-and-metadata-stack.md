@@ -1,8 +1,11 @@
 # ADR-0002: Comparação de áudio e metadados por stack
 
-**Estado:** Proposto  
+**Estado:** Substituído
+
 **Data:** 2026-08-23  
 **Decisor:** mantenedor do projeto
+
+Substituído em 2026-09-05 pelo [ADR-0005](0005-windows-product-stack.md): Qt Multimedia/FFmpeg e TagLib foram escolhidos explicitamente. O protocolo comparativo abaixo é histórico; corpus, confiabilidade, segurança e obrigações de distribuição do caminho adotado não são dispensados.
 
 ## Contexto
 

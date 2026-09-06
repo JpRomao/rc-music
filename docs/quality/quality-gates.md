@@ -1,9 +1,9 @@
 # Gates de qualidade
 
-**Estado:** contrato inicial; comandos definitivos serão ativados após o M0
-**Última revisão:** 2026-08-23
+**Estado:** contrato vigente; comandos raiz de produto a materializar em M1
+**Última revisão:** 2026-09-05
 
-Gates de comportamento, segurança e plataforma são invariantes. Durante o M0, cada candidato executa seus checks nativos e o protocolo comum NFR-STACK. Depois do ADR, os comandos definitivos pertencem apenas à stack vencedora; toolchains experimentais não são acumulados no produto.
+Gates de comportamento, segurança e plataforma são invariantes. O [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) aceita C++/Qt, Qt Multimedia/FFmpeg e TagLib e retira A/B como pré-requisito de desenvolvimento Windows. Os comandos definitivos pertencem somente a essa stack; toolchains experimentais não são acumulados no produto. Benchmarks e Linux permanecem adiados, sem aprovação dos budgets ou dos gates de release.
 
 O catálogo de IDs `CHK-*`, a ordem de execução e a evidência mínima por incremento ficam no [plano de desenvolvimento](../development-plan.md). Este documento continua sendo o contrato técnico de cada gate.
 
@@ -37,14 +37,14 @@ O check documental já é executável:
 & .\scripts\validate-docs.ps1
 ```
 
-### C++/Qt no M0
+### C++/Qt no produto
 
 - format/check de C++ e QML;
 - configuração e build CMake Release reproduzíveis;
 - Catch2 via CTest e Qt Test/Qt Quick Test onde aplicável;
 - inspeção dos módulos, plugins, DLLs Qt e configuração FFmpeg distribuídos.
 
-### Rust/Tauri no M0
+### Rust/Tauri no M0 — histórico, não obrigatório para o produto
 
 ```powershell
 cargo fmt --all -- --check
@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-### Svelte no M0
+### Svelte no M0 — histórico, não obrigatório para o produto
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -65,7 +65,7 @@ pnpm build
 
 ### Gate agregado após a decisão
 
-O bootstrap da stack aceita deve expor na raiz um comando `validate` documentado. O runner concreto pode ser PowerShell/CMake/CTest no ramo Qt ou o gerenciador adotado no ramo Tauri. Ele executa apenas checks determinísticos e adequados a todo commit; E2E, packaging, soak e benchmarks usam comandos separados.
+O bootstrap da stack aceita deve expor na raiz um comando `validate` documentado com PowerShell/CMake/CTest. Ele executa apenas checks determinísticos e adequados a todo commit; E2E, packaging, soak e benchmarks usam comandos separados. A extração do núcleo deve provar build OFF sem Qt/Catch2/fixture M0 e reutilização da mesma biblioteca no consumidor Qt; um wrapper que mantém dependências experimentais obrigatórias não encerra M1.
 
 ## 4. Pipeline recomendado
 

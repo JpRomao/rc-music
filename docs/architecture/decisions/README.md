@@ -13,10 +13,11 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 
 | ADR | Estado | Assunto |
 |---|---|---|
-| [0001](0001-language-and-ui-stack.md) | Proposto | Comparação A/B entre C++/Qt e Rust/Tauri/Svelte |
-| [0002](0002-audio-and-metadata-stack.md) | Proposto | Comparação de áudio e metadados por stack |
+| [0001](0001-language-and-ui-stack.md) | Substituído | Proposta histórica de comparação A/B; ver ADR-0005 |
+| [0002](0002-audio-and-metadata-stack.md) | Substituído | Proposta histórica de comparação de áudio; ver ADR-0005 |
 | [0003](0003-local-first-and-remote-sources.md) | Proposto | Mecanismo para isolar fontes remotas; local-first já é requisito |
 | [0004](0004-rc-music-identity.md) | Aceito | Nome definitivo RC Music e continuidade dos dados locais |
+| [0005](0005-windows-product-stack.md) | Aceito | C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib; A/B deixa de bloquear o produto Windows |
 
 ## Processo
 

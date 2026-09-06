@@ -1,6 +1,14 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-09-01
+**Atualizado em:** 2026-09-05
+
+**Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos pelo mantenedor no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B e checks Rust/Tauri deixam de ser pré-requisitos para desenvolver o produto Windows. A decisão não é uma vitória comparativa medida; Linux e benchmarks ficam adiados, com requisitos e budgets preservados.
+
+**Próxima etapa:** promoção técnica incremental para M1, ainda pendente. A implementação existente em `experiments/m0/candidates/qt/shell` será reutilizada, separando fixture/harness da unidade de produto sem duplicar lógica nem mudar os identificadores de dados `MusicPlayer`. Aceitar a stack não conclui migração, funcionalidades, acessibilidade nativa, segurança/licenças ou release.
+
+## Histórico funcional anterior à aceitação
+
+Os marcos e pendências abaixo registram os respectivos recortes históricos, não uma auditoria atual de todas as funcionalidades. Referências a stack ainda proposta ou A/B suspenso descrevem aquela fase e foram substituídas pelo ADR-0005; a evidência por incremento e o próximo checkpoint vigente ficam no [registro Qt](../experiments/m0/candidates/qt/README.md) e no [plano](development-plan.md).
 
 **Fase:** M0.6 em andamento, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos; lifecycle/eventos tipados e geração isolada estão verdes, assim como `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia; `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib cobrem a matriz básica por conteúdo, enquanto polling/`MR-016`/`MR-017`/`MR-020` permanecem verdes no reader assíncrono limitado. Uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, mas playback inicia independentemente e o Qt pode decodificar candidatos, logo não há rejeição ponta a ponta nem classificação de suporte. A composição UI oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas válidas sobre sete fixtures autenticadas com fallback Unicode, autoplay, play/pause, seek e metadata assíncrona com adapters reais e saída mutada. O erro local agora conserva título/contexto Unicode e oferece reabrir; regressões de metadata/playback/integração usam prefixos temporários de 64 bytes derivados de MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis para cobrir erro tipado, M4A sem faixa de áudio, recuperação e descarte de geração antiga. Esses derivados não são fixtures canônicas; M0.5/M0.6, áudio audível, comportamento ponta a ponta dos candidatos, hostis canônicos restantes, arte/limites, gates nativos e decisão de stack permanecem pendentes
 
@@ -56,7 +64,7 @@ Este recorte cobre somente suspend/resume de `FR-038` e não encerra M4.7. Não 
 
 O segundo recorte de M4.7 introduz a ação acessível “Tentar reproduzir novamente” na fila e no erro. `retryQueueOccurrence(ID)` reutiliza somente o path interno da ocorrência original, preserva ID, ordem, duplicatas e modelo, e mantém a indisponibilidade durante o loading até `Ready`, `Playing` ou `Paused` da nova geração. Falha conserva diagnóstico e permite nova tentativa explícita, sem loop ou avanço automático; load rejeitado conserva seleção e backend anteriores. A intenção explícita prevalece sobre lotes posteriores da importação, e a contagem de problemas mantém o histórico por ID mesmo depois de recuperar um item. “Abrir outro áudio” continua disponível. O [registro central do segundo recorte](../experiments/m0/candidates/qt/README.md#retry-m47) distingue contrato, evidência intermediária e checks finais. Dispositivo, drive físico, localizar arquivo em outro path, Explorer, pacote/E2E nativo, Linux e os gates globais de M4.7/`NFR-REL-005` permanecem pendentes.
 
-**Código do produto:** ainda não iniciado
+**Promoção do código para o produto:** autorizada pelo ADR-0005, mas ainda não concluída; o diretório experimental não passa automaticamente a ser uma unidade de produto independente.
 
 ## 1. O que está confirmado
 
@@ -64,7 +72,7 @@ Os itens de produto/processo abaixo vieram diretamente do mantenedor:
 
 - player desktop pessoal, leve e rápido;
 - Windows é mais importante que Linux, mas ambos devem ser contemplados;
-- Rust ou C++ são candidatos de implementação;
+- C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib são a stack aceita para o produto Windows;
 - UI/UX moderna, leve e minimalista é a prioridade mais alta;
 - MP3, M4A e outros formatos comuns devem ser investigados/suportados;
 - bandeja no Windows;
@@ -78,8 +86,8 @@ Os itens de produto/processo abaixo vieram diretamente do mantenedor:
 - desenvolvimento seguirá TDD;
 - `agents.md` deveria ser o primeiro arquivo;
 - mudanças devem ser sempre commitadas;
-- o M0 usará C++20 + Qt 6 Quick/QML como hipótese principal de desempenho e Rust + Tauri 2 + Svelte como desafiante A/B direto;
-- shell/UI e backend de áudio serão comparados separadamente antes da escolha da stack.
+- o M0 foi autorizado originalmente com Qt como hipótese principal e Tauri como desafiante, com shell/UI e áudio comparados separadamente; esse processo seletivo é histórico, substituído pelo ADR-0005;
+- A/B não é mais pré-requisito da stack ou de M1; benchmarks e Linux permanecem adiados, sem resultados presumidos;
 - o baseline derivado, fila/sessão P0 e o experimento M0.0–M0.10 foram autorizados em 2026-08-23.
 
 Os contratos experimentais derivados sob a autorização do M0 são:
@@ -88,21 +96,20 @@ Os contratos experimentais derivados sob a autorização do M0 são:
 - ambiente `M0-E1`, protocolo `M0-P1` e layout `M0-L1` ficam congelados antes da coleta.
 - M0.1 foi concluído em `24d12ea` com fixture, harness, summary comum e piloto sintético `P` não decisório; nenhuma coleta A/B foi executada.
 
-Esses contratos confirmam a direção do experimento, não a aceitação de uma stack.
+Esses contratos preservam o método e a evidência do experimento. A aceitação posterior da stack decorre da decisão explícita do mantenedor no ADR-0005, não de um resultado A/B.
 
-## 2. O que é recomendado, mas ainda proposto
+## 2. Decisões vigentes e propostas remanescentes
 
 | Decisão | Recomendação | Estado |
 |---|---|---|
-| Hipótese principal de shell/UI | C++20 + Qt 6 Quick/QML, com domínio e aplicação em C++ puro | Baseline experimental; ADR-0001 comparativo ainda proposto |
-| Desafiante direto de shell/UI | Rust + Tauri 2 + Svelte/TypeScript/Vite | Baseline experimental; ADR-0001 comparativo ainda proposto |
-| Áudio no candidato Qt | Qt Multimedia/FFmpeg atrás de `PlaybackBackend` | Ramo do ADR-0002 comparativo; não aceito |
-| Áudio no candidato Tauri | Rodio/CPAL + cadeia Symphonia compatível e testada, sem versão direta duplicada | Ramo do ADR-0002 comparativo; não aceito |
-| Metadata | TagLib no baseline Qt; Lofty + filesystem no baseline Tauri | Candidatos do M0; não aceitos |
-| Estrutura | uma unidade de build e distribuição com módulos internos; extrações só por necessidade demonstrada | Proposto |
-| Persistência | JSON versionado e atômico; sem banco no MVP | Proposto |
-| Integração | porta comum e adapter SMTC Windows materializados no candidato Qt; MPRIS Linux e associações nativas ainda propostos | Parcial no candidato; stack não aceita |
-| Windows package | NSIS como baseline experimental por usuário para provar Default Apps; tecnologia final definida no M0 | Proposto |
+| Shell/UI | C++20 + Qt 6 Quick/QML Basic customizado, com domínio e aplicação em C++ puro | Aceito no ADR-0005; ADR-0001 substituído |
+| Áudio | Qt Multimedia/FFmpeg atrás de `PlaybackBackend` | Aceito no ADR-0005; ADR-0002 substituído |
+| Metadata | TagLib atrás da porta de leitura | Aceito no ADR-0005 |
+| Alternativas M0 | Rust/Tauri/Svelte, Rodio/Symphonia/Lofty | Não escolhidas; artefatos históricos preservados, sem checks obrigatórios para o produto |
+| Estrutura | uma unidade de build e distribuição com módulos internos; promover a implementação existente sem duplicação | Direção aceita; promoção técnica M1 pendente |
+| Persistência | JSON versionado e atômico; sem banco no MVP | Implementada localmente; preservar schemas e raízes MusicPlayer |
+| Integração | portas e adapters Windows da implementação existente; Linux posterior | Aceitação da stack não conclui gates nativos/funcionais |
+| Windows package | runtime/instalador NSIS local experimental por usuário | Evidência local separada; release, licenças e máquina limpa pendentes |
 | Linux package | `.deb` primeiro, AppImage depois | Proposto |
 | Remoto | porta isolada, desativada no MVP | Proposto em ADR-0003 |
 
@@ -127,35 +134,35 @@ Estes comportamentos não foram todos pedidos literalmente, mas foram autorizado
 - pt-BR inicial com strings preparadas para tradução;
 - metas de startup, memória, CPU e latência;
 - limites iniciais de arte/metadata/IPC, a validar no M0;
-- NSIS como baseline experimental Windows por usuário e `.deb` como primeiro pacote Linux; a tecnologia Windows final será escolhida no M0.
+- NSIS como instalador local experimental Windows por usuário e `.deb` como proposta de primeiro pacote Linux; distribuição e validações nativas mantêm gates próprios.
 
 Os detalhes executáveis permanecem nos [requisitos](product/requirements.md), na [UX](product/ux-specification.md) e no inventário de preferências do [registro M0](m0/README.md).
 
 ## 4. Decisões em aberto
 
-1. escolher shell/UI e backend de áudio somente após as comparações separadas e a decisão explícita por ADR;
-2. nome e identidade visual do aplicativo;
+1. concluir a promoção técnica de M1 e os gates funcionais da stack já aceita;
+2. definir a identidade visual final, preservando o nome RC Music já aceito no ADR-0004;
 3. licença para eventual distribuição pública;
 4. exigir versão portátil no 0.1 ou depois;
 5. aprovar/recalibrar budgets após medições;
 6. decidir no futuro se YouTube será pesquisado, oferecido via player oficial ou rejeitado.
 
-Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de decisão ou evidência M0 antes do bootstrap definitivo.
+Nenhuma dessas perguntas reabre automaticamente a seleção de stack. ADR-0001/0002 estão `Substituído` pelo ADR-0005 `Aceito`; ADR-0003 permanece `Proposto`. M1 não depende de concluir A/B, benchmarks ou Linux, mas sua promoção técnica precisa de implementação e evidência próprias.
 
 ## 5. Alegações que ainda não podem ser feitas
 
-- “o app já oferece suporte publicado a WAV/MP3/M4A/FLAC/Ogg/Opus”: o candidato experimental percorre a matriz básica WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis com Qt Multimedia e integra metadata/título Unicode à apresentação, mas os testes mantêm volume zero/mudo; não há prova audível/dispositivo físico nem formato aprovado ou matriz publicada. Opus/ALAC continuam candidatos: o extrator isolado retorna `UnsupportedFormat`, porém playback pode iniciar e o Qt pode decodificá-los, de modo que o comportamento integrado não foi classificado;
+- “o app já oferece suporte publicado a WAV/MP3/M4A/FLAC/Ogg/Opus”: a matriz explícita da entrega local e suas evidências não aprovam release ou todos os perfis desses contêineres/codecs. Os testes de integração usam saída mutada, sem prova audível/dispositivo físico; Opus/ALAC não são declarados por essa matriz. A aceitação do engine não amplia automaticamente os formatos suportados;
 - “é leve”: os budgets são metas, não medidas;
 - “funciona em Linux”: arquitetura e plano existem, build não;
-- “pode ser app padrão”: o launcher oficial está funcional localmente, mas não há ProgID, `Capabilities`, `RegisteredApplications`, formatos publicados, associação, instalador ou escolha confirmada pelo Windows;
+- “já está validado como app padrão no Windows”: launcher, instalador e cadastro de ProgID/`Capabilities`/`RegisteredApplications` têm recortes locais e testes isolados; isso não comprova instalação/associação no host, escolha confirmada pelo usuário no Windows ou distribuição aprovada. O ADR-0005 não autoriza essas mutações nem escrita em `UserChoice`;
 - “a recuperação de sessão está concluída”: `restoreLastSession` já controla a leitura e a restauração local de fila/item/posição sempre pausada no candidato Qt/Windows, inclusive nos cenários destrutivos descritos acima; `startMinimized` também possui efeito local condicionado à tray em M4.4. As jornadas empacotadas/nativas de M4.1/M4.4 continuam pendentes, portanto FR-042/FR-043/FR-044 não estão integralmente concluídos;
 - “a instância única está concluída no Windows”: M4.3 já possui lock na raiz de configuração do usuário, `QLocalServer::UserAccessOption`, argumentos nativos, IPC `openSources` limitado, uma única inicialização do backend e drenagem de comandos ACKados no executável Release instrumentado; associação instalada/double-click pelo Explorer, foreground real, quoting do shell, ACL entre usuários, fuzz/property e o pacote nativo ainda não foram aprovados;
 - “alto contraste está resolvido”: existe implementação e evidência automatizada com paletas injetadas, mas isso não comprova Windows real, ramos internos do Qt Basic, Linux, NVDA ou DPI nativo nem fecha UX-006;
 - “a bandeja está validada no Windows”: menu, avisos, fallback, start behavior e saída ordenada passaram em testes automatizados e de processo Release instrumentado, mas isso não comprova ícone/tray/Explorer reais, primeiro frame sem flash, ativação nativa, NVDA ou Linux;
 - “o pacote está validado em máquina sem SDK ou pronto para distribuir”: inventário, imports PE e smokes offscreen original/relocado passaram sem paths Qt do SDK no ambiente filho, mas isso não remove o SDK do host nem resolve CRT externo, licenças, segurança ou ambiente limpo;
-- “o SDK Qt composto já corrige o player”: o run autenticado e verificado contém Qtbase/QML/Quick/Svg/D3D e a receita `package-v2` está congelada, mas ela ainda não foi executada para construir, executar ou empacotar o shell e não prova carregabilidade, ABI, CRT, PCRE2, licenças/notices/SBOM ou redistribuição;
+- “a aceitação da stack aprova o SDK e todos os riscos transitivos”: builds/runtimes e correções possuem evidências específicas, sem aprovação global de segurança, ABI, CRT, licenças/notices/SBOM ou redistribuição. A receita histórica `package-v2` não vira dependência de M1 nem ganha resultado por este ADR;
 - “YouTube é suportado”: é pesquisa futura com possível incompatibilidade de políticas;
-- “ADRs foram aceitos”: todos continuam `Proposto`.
+- “a stack venceu o A/B” ou “a aceitação concluiu M1/release”: o ADR-0005 aceita a direção técnica por decisão explícita; não há vitória comparativa medida, promoção automática do diretório experimental nem dispensa dos gates restantes.
 
 ## 6. Prontidão documental
 
@@ -165,9 +172,9 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Visão | `product/vision.md` | Baseline |
 | Requisitos | [Requisitos](product/requirements.md) | Para revisão |
 | UX | [UX](product/ux-specification.md) | Proposta para protótipo |
-| Stack | [Análise](architecture/stack-analysis.md) | Recomendação |
-| Arquitetura | [Arquitetura](architecture/architecture.md) | Proposta |
-| ADRs | [Índice](architecture/decisions/README.md) | Propostos |
+| Stack | [Análise](architecture/stack-analysis.md) | Stack aceita no ADR-0005; comparação histórica preservada |
+| Arquitetura | [Arquitetura](architecture/architecture.md) | Direção aceita; promoção técnica M1 pendente |
+| ADRs | [Índice](architecture/decisions/README.md) | ADR-0004/0005 aceitos; ADR-0001/0002 substituídos; ADR-0003 proposto |
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
 | Corpus | [Corpus](quality/test-corpus.md) | M0.5 em andamento; WAV e matriz básica de codecs autenticados, sem suporte publicado; os prefixos truncados atuais são derivados temporários, não fixtures canônicas; arte/limites e truncados versionados pendentes |
@@ -176,15 +183,17 @@ Nenhuma dessas perguntas bloqueia a documentação. ADR-0001/0002 precisam de de
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
 | Release | [Processo](delivery/release-process.md) | Proposta |
-| M0 | [Ambiente, protocolo e evidências](m0/README.md) | M0.0/M0.1 concluídos; M0.2 aberto; SDK Qt composto autenticado; M0.5 com 12 fixtures; Qt Multimedia/TagLib, reader limitado, jornada local integrada, recuperação por quatro derivados temporários truncados e importação incremental de arquivos/diretórios verdes em M0.6; áudio audível, automação nativa, pacote v2, comportamento ponta a ponta de Opus/ALAC, corpus hostil canônico/limites, gates e decisão pendentes |
+| M0 | [Ambiente, protocolo e evidências](m0/README.md) | Histórico preservado; decisão de stack atendida pelo ADR-0005; ensaios não executados permanecem sem resultado e não bloqueiam M1 |
 
 ## 7. Próximo passo recomendado
 
-O M0 está autorizado sem aceitar stack. A sequência atual é:
+Com a stack aceita, a sequência atual é:
 
 1. manter M4.1–M4.7 formalmente abertas até os gates residuais correspondentes, registrando separadamente a evidência funcional local já verde;
-2. tratar o launcher oficial como recorte parcial de M4.6 e suspend/resume e retry da mesma ocorrência como recortes parciais de M4.7; identidade/matriz/pacote ainda bloqueiam o registro; prosseguir por dispositivo, drive físico, localização de arquivo em outro path e restart do Explorer, preservando os gates nativos;
-3. manter `package-v2`, Linux, M0.3/M0.4, A/B e benchmarks suspensos até a paridade funcional, preservando seus gates e ADRs como pendentes.
+2. promover incrementalmente a implementação C++/Qt existente para M1, separando dependências experimentais e preservando portas, testes, dados e a identidade RC Music/MusicPlayer; a promoção ainda exige checks técnicos próprios;
+3. continuar pelas lacunas funcionais Windows do checkpoint vigente, sem impor A/B, toolchains do ramo não escolhido, `package-v2`, benchmarks ou Linux como pré-requisitos; preservar requisitos residuais e não retomar interação nativa interrompida ou instalar/registrar no host sem autorização própria.
+
+Os parágrafos seguintes preservam o histórico de implementação e validação; menções a decisão pendente não descrevem o estado vigente após o ADR-0005.
 
 No modo de fixture, a navegação manual segue a [política experimental comum](m0/README.md): anterior reinicia após 3 s quando há seek ou busca o anterior disponível; próxima pula indisponíveis sem circular a fila. Trocas começam em zero e preservam estado de reprodução, volume, mudo e modelo; vazio, carregando, erro e seek ocupado não navegam. EOF continua `clamp_paused`, e a recuperação do cenário de erro permanece separada. CRUD, avanço automático por `ended`, fim da fila real e persistência não entram nesta fatia nem concluem FR-011/FR-016/FR-017.
 
@@ -204,4 +213,4 @@ A [triagem de segurança](m0/evidence/m0-2-security-triage.md) acrescenta achado
 
 A fila tem validação funcional: menos de 64 delegates associados a índices via `itemAtIndex` nos pontos testados da navegação. Isso não conta o pool completo nem as instanciações ao longo da execução e não fecha NFR-PERF-006. A inspeção manual na fatia de fila virtualizada não foi realizada porque a sessão Computer Use foi interrompida. A [tentativa posterior autorizada](m0/evidence/m0-2-native-attempt-20260827.md) permaneceu visualmente inconclusiva e não aprovou gates nativos/NVDA. Após a preparação `b59a247` e o primeiro cancelamento, a [nova instalação autorizada](m0/evidence/m0-2-msvc-installation.md) terminou com sucesso, sem reboot, e MSVC 19.44.35228 passou no novo build/CTest 65/65 e receipt real. A integração histórica ao pacote passou nos smokes offscreen; depois, o [Qtbase corrigido](m0/evidence/m0-2-qtbase-refresh.md) foi reconstruído e o [SDK composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md) publicou 9.880 folhas/2.400.301.667 bytes no run `f75eb9bea8280844c6d1a2b3f4`, aprovado pelo verificador independente. A receita `package-v2` está implementada e congelada, sem alegação de execução real. Ainda faltam build/runtime/ABI contra essa identidade, pacote v2 e seus smokes; CRT, PCRE2, licenças/notices/SBOM, redistribuição, acessibilidade nativa/NVDA, `CHK-SEC`, desempenho, M0.2 e decisão de stack permanecem pendentes.
 
-Até essa decisão, não iniciar implementação de produto conforme [agents.md](../agents.md).
+A implementação do produto Windows está autorizada conforme [agents.md](../agents.md) e ADR-0005. Isso não declara M1 concluída nem transforma qualquer ensaio histórico não executado em aprovado.

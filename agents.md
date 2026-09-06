@@ -106,7 +106,9 @@ Testes não devem depender de internet, YouTube, dispositivos específicos ou ar
 
 ## 7. Qualidade e validação
 
-Durante o M0, cada candidato executa seus checks nativos e o protocolo comparativo comum; validar somente um ramo não comprova o A/B. Se o candidato Qt existir, a validação inclui format/check de C++ e QML, build CMake Release reproduzível, Catch2/CTest e Qt Test aplicável. Se o candidato Rust/Tauri existir, a validação mínima inclui, conforme aplicável:
+O [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md) aceita C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib para o produto Windows. A validação atual inclui format/check de C++ e QML, build CMake Release reproduzível, Catch2/CTest e Qt Test aplicável, sempre proporcionais à mudança. A/B e checks do ramo não escolhido deixam de ser pré-requisitos do produto; benchmarks e Linux permanecem adiados, sem aprovação de desempenho ou de release.
+
+No histórico M0, cada candidato executava seus checks nativos e o protocolo comparativo comum; validar somente um ramo não comprova o A/B. Se um experimento Rust/Tauri for retomado explicitamente, sua validação mínima inclui, conforme aplicável:
 
 ```powershell
 cargo fmt --all -- --check
@@ -139,10 +141,11 @@ Uma mudança só está pronta quando:
 
 ## 10. Restrições atuais
 
-Até que a documentação inicial e as ADRs de stack sejam revisadas:
+Após a decisão explícita registrada no ADR-0005:
 
-- não iniciar implementação do produto;
-- não escolher definitivamente toolkit de UI ou engine de áudio;
+- desenvolver o produto Windows com a stack aceita, promovendo a implementação existente sem duplicar lógica ou romper os contratos do núcleo;
+- não apresentar migração, budgets, acessibilidade nativa, Linux ou release como concluídos apenas porque a stack foi aceita;
 - não integrar serviços remotos;
 - não adicionar telemetria, atualização automática ou persistência complexa;
-- tratar toda stack proposta como recomendação, não como decisão aceita.
+- preservar protocolos, fixtures e evidências históricas M0; checks do experimento não viram dependências permanentes do produto;
+- manter requisitos de segurança/licenças/distribuição e o ADR-0003 de fontes remotas nos seus próprios gates; esta decisão não autoriza instalação/registro no host ou retomada de interação nativa interrompida.

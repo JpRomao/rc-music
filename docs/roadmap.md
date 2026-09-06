@@ -1,11 +1,16 @@
 # Roadmap
 
+**Decisão vigente:** C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib aceitos pelo mantenedor em 2026-09-05 no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B não é mais pré-requisito do produto. A próxima frente é a promoção incremental em M1, ainda por implementar e validar; não há aprovação retroativa dos benchmarks ou gates experimentais.
+
+Benchmarks e Linux permanecem adiados. Tauri/Rust e seus checks ficam fora das dependências do produto; os registros comparativos são preservados como histórico. A confirmação de stack não reautoriza Computer Use interrompido, instalação no host ou distribuição pública.
+
 O incremento funcional posterior corrige [progresso e volume por acessibilidade](../experiments/m0/candidates/qt/README.md#accessible-slider-input), com ações/valor direto aplicados ao player e regressões de sincronização, pausa e bloqueios. Builds ON/OFF e checks focados passaram; o instalador citado abaixo ainda não contém essa correção. Não encerra acessibilidade nativa ou release.
 
 O checkpoint Windows mais recente é a [entrega local atualizada](../experiments/m0/candidates/qt/windows-installer/README.md#local-delivery-refresh), que incorpora os incrementos do menu da fila, feedback de abertura e identidade do executável. A matriz foi revalidada no novo runtime e o instalador compilado de receita limpa passou na conferência de inventário; instalação/remoção dos bytes reais ocorreu somente em isolamento. Preserva a evolução de formatos com propriedade/retry e legado OFF já implementada. Não houve associação real, benchmark ou fechamento de M4.6/M4.8 e dos gates públicos de distribuição.
 
-**Estado:** proposta de ordem e escopo; sem compromisso de datas  
-**Última revisão:** 2026-09-01
+**Estado:** stack aceita; sequência de promoção e conclusão Windows, sem compromisso de datas
+
+**Última revisão:** 2026-09-05
 
 ## 1. Como ler
 
@@ -25,10 +30,10 @@ Os incrementos, checks e evidências de cada passo estão no [plano de desenvolv
 D0 Documentação
       │
       ▼
-M0 Spikes A/B Qt ↔ Tauri ── nenhum atende ─► revisar/Slint
-      │ escolher e aprovar
+M0 Histórico dos spikes + decisão explícita ADR-0005
+      │ stack Windows aceita; A/B não bloqueia
       ▼
-M1 Fundação TDD
+M1 Promoção incremental + fundação TDD
       ▼
 M2 Vertical slice local
       ▼
@@ -45,7 +50,7 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 
 ## 3. D0 — Baseline documental
 
-**Estado:** Concluído em D0.9; baseline autorizado apenas para o M0.
+**Estado:** Concluído em D0.9; aquela autorização cobria apenas M0. A decisão posterior do ADR-0005 permite iniciar a promoção do produto Windows.
 
 ### Entregas
 
@@ -65,13 +70,17 @@ R1 Fontes remotas/YouTube (pesquisa separada)
 - todos os arquivos commitados;
 - mantenedor revisou os itens confirmados, derivados e em aberto sem aceitar antecipadamente uma stack.
 
-## 4. M0 — Spikes de decisão
+## 4. M0 — Histórico dos spikes e escolha resolvida
 
-**Estado:** Em andamento; M0.0 e M0.1 concluídos; M0.2 permanece aberto e seus trabalhos pesados estão suspensos; M0.5 possui 12 fixtures sintéticas autenticadas; M0.6 cobre lifecycle/eventos tipados e geração isolada, `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis e `PB-004` para MP3 VBR/M4A AAC via Qt Multimedia, além de `MR-001`, `MR-003`, `MR-018`, `MR-019` e `MR-101`–`MR-103` no TagLib com `MR-018` aplicado à matriz básica por conteúdo; Opus/ALAC recebem `UnsupportedFormat` somente numa caracterização separada do extrator, sem rejeição ponta a ponta. O reader assíncrono continua limitado, e a integração aplicação/QML percorre nove linhas válidas sobre sete fixtures, incluindo aliases `.mp4`/`.oga`, com seleção injetada na fronteira do seletor de sete extensões em caixa baixa/alta, fallback Unicode, autoplay, play/pause, seek e metadata assíncrona. Quatro regressões adicionais derivam prefixos temporários de 64 bytes de MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis e cobrem erro tipado, contexto Unicode/reabertura, recuperação e descarte de geração antiga; elas não são fixtures canônicas. M0.5/M0.6, áudio audível, automação nativa, comportamento ponta a ponta dos candidatos, hostis canônicos restantes, arte/limites, gates nativos/manuais, `CHK-SEC` e decisão de stack permanecem pendentes.
+**Estado:** a parte decisória M0-D/M0.10 é atendida pelo [ADR-0005](architecture/decisions/0005-windows-product-stack.md) commitado, por escolha explícita do mantenedor. M0.0/M0.1 e os recortes funcionais conservam suas evidências; etapas comparativas e medições ausentes não são consideradas concluídas. Os riscos aplicáveis de produto seguem em M1–M5.
 
-**Objetivo:** eliminar riscos estruturais antes de construir o produto.
+**Objetivo vigente:** preservar o histórico e os riscos do experimento, sem impedir a promoção incremental da stack aceita por exigir um novo A/B.
 
 Este roadmap usa rótulos macro `M0-A` a `M0-D`. O plano executável detalha o mesmo trabalho como M0.0–M0.10: `M0-A` = M0.0–M0.4, `M0-B` = M0.5–M0.8, `M0-C` = M0.9 e `M0-D` = M0.10. Os dois namespaces não devem ser intercambiados em evidências.
+
+### Registros históricos anteriores à decisão
+
+Os relatos abaixo mantêm o estado de cada recorte, inclusive menções antigas a stack proposta, ausência de builds ou próximas tarefas. Não representam a sequência vigente; a aceitação está em M0-D e o próximo trabalho real está em M1. Nenhum número antigo é apresentado como nova validação.
 
 Ambiente, protocolo e layout foram congelados em [M0-E1/M0-P1/M0-L1](m0/README.md). O [preflight Qt](m0/evidence/m0-2-preflight.md) fechou a toolchain necessária ao início de M0.2; Qt Multimedia e TagLib já foram preparados em raízes isoladas para os primeiros slices M0.6, e provisionamentos de etapas posteriores continuam bloqueando somente seus checks dependentes.
 
@@ -99,7 +108,9 @@ O seletor real agora usa multiseleção e entrega todos os paths ao core. A fila
 
 Na jornada de falha, o presenter mantém o título/contexto Unicode da seleção local e oferece reabrir. O adapter rejeita como mídia inválida um M4A truncado que o Qt chega a carregar sem faixa de áudio, após uma confirmação curta que evita consumir o autoplay por ordem transitória dos sinais. Metadata, playback e integração exercitam quatro prefixos temporários de 64 bytes derivados das fontes autenticadas MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis, observando erro tipado, recuperação com a fonte válida e descarte de callbacks/resultados antigos. O primeiro Green de playback-lifecycle e integração passou **2/2**, respectivamente em **5,21 s** e **1,42 s**; após o build dos cinco alvos relevantes e a correção da corrida, o CTest focado completo passou **17/17 em 11,87 s**. Os prefixos não entram no manifesto/corpus canônico; nenhum benchmark, A/B ou empacotamento foi executado nesse incremento.
 
-### M0-A — UI e shell A/B
+### M0-A — UI e shell A/B (protocolo histórico)
+
+Não é tarefa obrigatória do produto atual. A retomada comparativa exige pedido explícito; os critérios de UX/acessibilidade continuam aplicáveis ao Qt aceito.
 
 Construir dois shells descartáveis em Release, C++/Qt Quick e Rust/Tauri/Svelte, com os mesmos assets, dados e roteiro. Não usar áudio nem rede reais nesta etapa.
 
@@ -117,7 +128,9 @@ O [protocolo M0-P1](m0/protocol.md) versiona fixture, roteiro, marcador externo,
 
 Executar nos dois candidatos a mesma jornada NVDA/teclado, high contrast, movimento reduzido, escala e smoke Linux. No Tauri, revisar CSP/capabilities e a árvore WebView2; no Qt, revisar nomes/roles acessíveis, bindings/animations contínuos e plugins distribuídos.
 
-### M0-B — Áudio e metadata A/B
+### M0-B — Áudio e metadata A/B (protocolo histórico)
+
+O ramo Rust e o ensaio comparativo não são dependências de M1. Corpus, segurança e contratos funcionais permanecem necessários para Qt Multimedia/FFmpeg e TagLib; budgets não foram aprovados como cumpridos.
 
 Usando harness mínimo e o mesmo corpus:
 
@@ -137,9 +150,11 @@ No ramo Qt, a vertical real usa esse corpus para percorrer autoplay, seek, pausa
 
 Publicar a primeira matriz de formatos por candidato. Somente caminhos viáveis avançam; o produto final não empacota os dois engines.
 
-Sessões curtas eliminam problemas cedo, mas cada ramo ainda viável executa o soak de oito horas definido no ADR-0002 antes da decisão M0-D. O aplicativo integrado repete o soak em M5.
+O protocolo original exigia soak antes da seleção. O ADR-0005 retira essa condição de entrada em M1; o soak de oito horas do produto e as medições permanecem gates posteriores em M5, adiados e sem resultado alegado.
 
-### M0-C — Integração e pacote comparáveis
+### M0-C — Integração e pacote comparáveis (protocolo histórico)
+
+A comparação entre candidatos foi arquivada. A integração/pacote Windows continua em M4/M5 com a receita local existente; Linux permanece adiado, não validado.
 
 Provar, para cada candidato ainda viável:
 
@@ -151,54 +166,51 @@ Provar, para cada candidato ainda viável:
 
 No candidato finalista, usar NSIS como baseline experimental para completar a prova com ProgID, `Capabilities`, `RegisteredApplications`, tela oficial de apps padrão, SMTC/teclas de mídia, suspend/resume, reinício do Explorer, upgrade e uninstall. A tecnologia final do instalador só é aceita após a evidência. Se esse aprofundamento revelar custo estrutural, executar a mesma prova no outro candidato antes da decisão.
 
-### M0-D — Decisão
+### M0-D — Decisão aceita
 
-Combinar UI e áudio somente nos candidatos viáveis, reexecutar os budgets e comparar com a [análise de stack](architecture/stack-analysis.md):
+O [ADR-0005](architecture/decisions/0005-windows-product-stack.md) registra C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib como escolha definitiva do mantenedor para o produto Windows e substitui ADR-0001/0002. ADR-0003 permanece `Proposto`; ADR-0004 permanece `Aceito`, com RC Music visível e MusicPlayer interno.
 
-- aceitar ADR-0001/0002 e registrar medidas, ambiente, tolerâncias, licenças e riscos; ou
-- declarar empate de medição e escolher por UX comprovada, acessibilidade, manutenção pessoal, segurança e licenciamento; ou
-- considerar spike Slint equivalente se nenhum candidato atender por footprint da UI; ou
-- revisar backend, requisito ou orçamento com o mantenedor quando nenhum caminho for viável.
+A escolha não deriva de vitória ou empate medido entre candidatos, não comprova budgets e não aprova os gates remanescentes. A/B deixa de ser obrigatório; não criar Tauri nem repetir benchmarks para permitir M1.
 
-### Gate de saída
+### Gate de decisão / entrada em M1
 
-- pelo menos uma stack atende UX, formatos principais, plataforma e budgets aceitos;
-- ADRs mudam de estado em commit explícito;
-- protótipo descartável é removido ou promovido conscientemente;
-- riscos e baseline de hardware publicados.
+- decisão explícita, ADR aceito e contratos alinhados em commit;
+- protocolo/evidências históricos preservados, sem atribuir resultados não executados;
+- primeiro incremento de promoção delimitado com código, dependências, testes e critérios de saída próprios;
+- riscos de corpus, segurança/licenças, acessibilidade, integração e distribuição ainda rastreados; Linux e benchmarks adiados.
+
+Esse gate autoriza a próxima etapa, não conclui todos os trabalhos M0 nem qualquer requisito de release.
 
 ## 5. M1 — Fundação dirigida por testes
 
-**Estado:** Planejado.  
-**Objetivo:** criar o menor esqueleto sustentável após a stack ser aceita.
+**Estado:** próxima frente autorizada após o commit da decisão; ainda não concluída.
 
-### Sequência TDD
+**Objetivo:** promover incrementalmente a implementação existente para uma unidade real de produto Windows, preservando código/testes e retirando acoplamentos ao harness experimental. Não reescrever o player nem considerar um wrapper na raiz sobre o CMake M0 como promoção concluída.
 
-1. bootstrap repositório e gates antes de feature;
-2. tipos `TrackId`, tempo, volume e preferências;
-3. máquina de estado de playback;
-4. fila por ID e regras anterior/próxima;
-5. portas e fakes mínimos;
-6. controller de aplicação e snapshots;
-7. boundary UI/aplicação com validação;
-8. shell UI consumindo fake.
+### Sequência de promoção e TDD
+
+1. inventariar uma fatia existente a promover: fontes, targets, dependências pinadas, testes e recursos de runtime versus fixture;
+2. extrair/compor sua unidade real de build/test no produto, preservando o core independente de Qt e a identidade dos dados;
+3. verificar equivalência da mudança estrutural e reaproveitar as regressões de tipos, estado, fila, portas e controller; mudanças de comportamento seguem Red–Green–Refactor;
+4. compor scripts de validação a partir dos runners existentes e CI Windows, sem dependências Rust/Tauri;
+5. promover presenter/shell e distinguir execução com fakes da composição real de áudio, antes de declarar o executável independente de M0.
 
 ### Entregas
 
-- manifests/lockfiles/toolchain pinados;
-- scripts `format`, `lint`, `check`, `test`, `build`, `validate`;
-- CI Windows/Linux básica;
-- cobertura do core;
-- configuração de segurança e privilégios própria da stack aceita;
-- fixtures iniciais e manifesto;
-- primeiro executável ainda sem alegação de player completo.
+- unidade de produto com fontes/dependências efetivamente promovidas, não só um entrypoint delegado;
+- manifests/toolchain pinados e inventário do que ainda permanece no experimento;
+- scripts `format`, `lint`, `check`, `test`, `build`, `validate` e CI Windows; extensão Linux adiada;
+- core, portas, fakes e regressões existentes reutilizados, com cobertura apurada;
+- configuração de segurança/privilégios e recursos de produto separados das fixtures autenticadas históricas;
+- evidência de configure/build/test da unidade promovida, sem alegação de release completa.
 
 ### Gate de saída
 
-- ciclo Red–Green–Refactor evidenciado pelo teste e motivo de falha registrados no handoff; commits finais permanecem verdes;
+- cada incremento tem checks proporcionais e commit; comportamento alterado tem Red observado, movimentação mecânica tem equivalência verificada;
 - domínio roda sem toolkit de UI ou backend de áudio concreto;
-- UI roda contra fake;
-- gates rápidos verdes em Windows e Linux;
+- UI roda contra fake e a composição real permanece separada, sem dependência permanente do harness M0;
+- `validate` e CI Windows verdes sobre a unidade real; Linux adiado sem inferir suporte validado;
+- cobertura, rastreabilidade e fronteiras satisfazem a seção M1 do plano; código preexistente não fecha automaticamente todas as etapas;
 - arquitetura real corresponde aos documentos ou ADR é atualizado.
 
 ## 6. M2 — Vertical slice de reprodução local
@@ -421,7 +433,8 @@ Critério obrigatório: qualquer falha remota deixa playback local intacto. YouT
 
 | Entrega | Depende de |
 |---|---|
-| Escolher stack | M0 UI + áudio + integração |
+| Stack Windows | decidida explicitamente no ADR-0005; sem A/B como pré-requisito |
+| Promover unidade de produto | decisão commitada + fontes/fronteiras/testes identificados + checks M1 próprios |
 | Declarar formatos | corpus e adapter real |
 | Construir UI final | protótipo/acessibilidade do toolkit |
 | Associação padrão | formato aprovado + instalador |

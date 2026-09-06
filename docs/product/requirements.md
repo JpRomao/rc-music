@@ -1,8 +1,9 @@
 # Requisitos do produto
 
-**Estado:** baseline para revisão  
+**Estado:** baseline vigente; stack Windows aceita no ADR-0005
+
 **Versão alvo:** MVP 0.1  
-**Última revisão:** 2026-08-23
+**Última revisão:** 2026-09-05
 
 **Nome do produto:** RC Music, confirmado pelo mantenedor em 2026-09-05; [ADR-0004](../architecture/decisions/0004-rc-music-identity.md). A confirmação não altera os requisitos ou as prioridades abaixo.
 
@@ -132,18 +133,18 @@ Metas iniciais para Windows x64, SSD e máquina de referência a ser registrada 
 
 As metas são orçamentos de engenharia, não alegações antes da medição. Se o spike provar que uma meta conflita com compatibilidade ou acessibilidade, a alteração exige ADR e números reproduzíveis.
 
-### 4.2 Seleção de stack e comprovação no M0
+### 4.2 Stack aceita e comprovação do produto
 
-A direção abaixo foi confirmada pelo mantenedor para orientar o experimento, mas não aceita antecipadamente uma stack. Medições reproduzíveis, UX e acessibilidade prevalecem sobre pressupostos baseados somente na linguagem.
+A decisão explícita do mantenedor no [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) substitui a seleção por A/B dos ADRs anteriores. Os IDs abaixo permanecem estáveis, mas agora separam escolha técnica de comprovação de qualidade. Aceitar a stack não comprova desempenho, suporte Linux, corpus completo ou distribuição.
 
 | ID | Requisito |
 |---|---|
-| NFR-STACK-001 | O M0 trata C++20 + Qt 6 Quick/QML como hipótese principal para menor cold start e memória no Windows, com Tauri 2 + Svelte como desafiante A/B direto. Qt não é aceito apenas por ser C++, e Tauri não é rejeitado apenas por usar WebView. |
-| NFR-STACK-002 | Os shells são comparados em build Release com o mesmo recorte de UX, assets, dados, roteiro e baseline de máquina. O ensaio de shell não usa áudio ou rede reais; os backends são comparados separadamente no mesmo corpus para não atribuir à linguagem custos do decoder ou da saída. |
-| NFR-STACK-003 | O protocolo, cenários, métricas e tolerâncias são registrados antes da coleta e medem o candidato completo, incluindo processos auxiliares. O ensaio de shell cobre NFR-PERF-001/004–006; o ensaio de áudio cobre NFR-PERF-002/003/007; a combinação final revalida NFR-PERF-001–007. Tamanho do pacote e pré-requisitos offline são relatados separadamente da RAM. |
-| NFR-STACK-004 | Os dois candidatos passam pelos mesmos gates UX-004–007, integração de bandeja e build/smoke Linux de referência. Falha de acessibilidade P0 bloqueia o candidato mesmo que ele vença em recursos. |
-| NFR-STACK-005 | O candidato Qt usa como baseline C++20, Qt 6 Quick/QML com estilo Basic customizado, Qt Multimedia/FFmpeg e TagLib. Domínio e aplicação permanecem C++ puro, sem dependência de `QObject`/QML; o motor implementa a porta `PlaybackBackend`, e o pacote passa pelos gates de Qt LGPL e configuração/licença do FFmpeg. O desafiante usa o baseline Tauri/Rust documentado nos ADRs propostos. |
-| NFR-STACK-006 | Somente candidatos que atendam aos budgets vigentes de UI e áudio, ou a desvios explicitamente aprovados por ADR, podem ser aceitos. Resultado dentro das tolerâncias pré-registradas é empate; nesse caso, decidir por UX comprovada, acessibilidade, manutenção para uma pessoa, segurança e licenciamento. A escolha final exige ADR explícito com números e ambiente reproduzível. |
+| NFR-STACK-001 | C++20 + Qt 6 Quick/QML é a stack definitiva do produto Windows, escolhida explicitamente pelo mantenedor no ADR-0005. A escolha não é uma alegação de superioridade de startup/memória sobre Tauri e não exige concluir o A/B. |
+| NFR-STACK-002 | O produto tem uma única implementação e unidade de build/distribuição da stack aceita. Reutilizar os módulos/testes existentes sem duplicar regras; experimentos, fixtures comparativas e toolchains não escolhidas ficam fora das dependências permanentes do produto. Preservar seus registros históricos sem exigir reexecução para cada incremento. |
+| NFR-STACK-003 | As medições posteriores do produto usam Release, protocolo/cenários/métricas/tolerâncias registrados antes da coleta, ambiente e commit identificáveis e toda a árvore de processos. Separar custo de shell e áudio e revalidar NFR-PERF-001–007 no app combinado; pacote/pré-requisitos são relatados separadamente da RAM. Os benchmarks estão adiados, não aprovados. |
+| NFR-STACK-004 | O produto mantém os gates UX-004–007 e integração de bandeja Windows; falha de acessibilidade P0 bloqueia release. Linux conserva build/smoke e integrações próprios para etapa posterior, sem bloquear o desenvolvimento Windows ou ser anunciado como validado antecipadamente. |
+| NFR-STACK-005 | A stack usa C++20, Qt 6 Quick/QML com estilo Basic customizado, Qt Multimedia/FFmpeg e TagLib. Domínio e aplicação permanecem C++ puro, sem `QObject`/QML; o motor implementa `PlaybackBackend`. Distribuir um único engine, com versões/configuração deliberadas e gates de segurança, Qt LGPL, FFmpeg/codec e TagLib antes de distribuição. |
+| NFR-STACK-006 | O ADR-0005 aceita a escolha técnica e retira A/B/benchmarks como pré-requisito de entrada em M1. Budgets, corpus, segurança, acessibilidade e distribuição continuam pendentes até prova proporcional; mudar metas, dispensar P0 ou trocar stack exige nova decisão explícita, não pode ser inferido dessa aceitação. |
 
 ### 4.3 Confiabilidade e segurança
 

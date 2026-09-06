@@ -1,10 +1,10 @@
 # Arquitetura do sistema
 
-**Estado:** proposta de referência; candidatos condicionados ao M0 e a ADR explícito
-**Stacks de experimento:** C++20 + Qt 6 Quick/QML (hipótese principal) e Rust + Tauri 2 + Svelte (desafiante A/B)
-**Última revisão:** 2026-09-01
+**Estado:** arquitetura vigente da stack aceita; promoção técnica do código pendente
+**Stack do produto:** C++20 + Qt 6 Quick/QML, Qt Multimedia/FFmpeg e TagLib
+**Última revisão:** 2026-09-05
 
-As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities são independentes da stack. Os mapeamentos Qt e Tauri deste documento são projeções experimentais dessas mesmas fronteiras para o M0, conforme NFR-STACK-001–006; nenhum deles representa uma stack aceita antes das medições e de ADR explícito.
+O [ADR-0005](decisions/0005-windows-product-stack.md) registra a escolha explícita do mantenedor, sem exigir A/B antes do desenvolvimento Windows. As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities permanecem independentes do toolkit. O mapeamento Qt passa a ser a direção do produto; Tauri permanece somente como alternativa histórica, não dependência a implementar. Aceitação técnica não encerra migração, benchmarks, acessibilidade nativa, Linux ou distribuição.
 
 ## 1. Objetivos arquiteturais
 
@@ -36,13 +36,13 @@ Não é objetivo criar framework de plugins, microserviços, servidor local púb
 
 O aplicativo é uma instância desktop única do ponto de vista do usuário. A quantidade de processos internos do shell é detalhe medido, não assumido. A camada visual somente apresenta estado e envia intenções; não hospeda regras de domínio nem abre conteúdo remoto.
 
-## 3. Componentes e mapeamentos dos candidatos
+## 3. Componentes do produto e alternativa histórica
 
 O fluxo invariante é:
 
 `ui → boundary/presenter → application → domain/ports ← adapters`
 
-### Hipótese principal: C++20 + Qt 6 Quick/QML
+### Produto: C++20 + Qt 6 Quick/QML
 
 ```text
 QML / Qt Quick UI
@@ -60,7 +60,7 @@ Application C++ puro → Domain/Ports C++ puro ← Adapters
 
 `QObject`, tipos QML e detalhes de sinais/slots terminam no boundary/presenter ou nos adapters. `domain`, `application` e `ports` não importam headers Qt e permanecem testáveis como C++ puro.
 
-### Desafiante A/B: Rust + Tauri 2 + Svelte
+### Alternativa histórica não adotada: Rust + Tauri 2 + Svelte
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
@@ -103,7 +103,7 @@ Application C++ puro → Domain/Ports C++ puro ← Adapters
 
 ## 4. Estrutura do produto após a decisão
 
-Durante os spikes, ambos os candidatos ficam isolados pelo [layout M0-L1](../m0/layout.md) e não criam scaffold de produto na raiz. Após M0.10, a stack vencedora começa M1 como uma única unidade de build e distribuição organizada em módulos internos. Se o candidato Qt vencer, o mapeamento inicial é:
+Os spikes e seus inputs autenticados continuam preservados pelo [layout M0-L1](../m0/layout.md). O ADR-0005 satisfaz a decisão de M0.10 e permite iniciar M1 com uma única unidade C++ de build/distribuição. A árvore abaixo é o destino, não uma alegação de migração já executada. Promover módulos e testes existentes sem duplicar implementação; primeiro extrair o núcleo puro, depois separar apresentação/bootstrap de `FixtureBundle`, autenticação e recursos comparativos M0. Preservar IDs de dados, nomes técnicos compatíveis e atualizar a proveniência dos builders antes de gerar novos runtimes com fontes movidas.
 
 ```text
 /
@@ -133,7 +133,7 @@ Durante os spikes, ambos os candidatos ficam isolados pelo [layout M0-L1](../m0/
 └── tools/
 ```
 
-Se o desafiante Tauri vencer o M0, o mapeamento equivalente é:
+Como registro da alternativa não adotada, o mapeamento Tauri previsto era (não implementar no produto):
 
 ```text
 /
@@ -687,12 +687,11 @@ YouTube só recebe implementação após ADR específico; o caminho oficialmente
 
 ## 20. Decisões e gates
 
-Permanecem propostos:
+Decisões vigentes:
 
-- NFR-STACK-001–006: C++20 + Qt 6 Quick/QML é a hipótese principal e Tauri 2 + Svelte é o desafiante A/B, sem aceitação antecipada;
-- baseline Qt do M0: Qt Multimedia/FFmpeg + TagLib atrás das portas comuns;
-- ADR-0001 e ADR-0002: registram a comparação dos candidatos de UI e áudio; ambos permanecem `Proposto`;
-- requisito confirmado: player local-first e offline no MVP;
-- ADR-0003: mecanismo proposto para isolar um resolver remoto futuro.
+- ADR-0005 aceito: C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib; substitui ADR-0001/0002 e retira A/B como pré-requisito do produto Windows;
+- ADR-0004 aceito: RC Music visível e identificadores internos preservados;
+- player local-first/offline continua requisito confirmado;
+- ADR-0003 continua `Proposto`: não implementar resolver remoto no MVP por causa da decisão de stack.
 
-O M0 deve comparar o mesmo recorte de UX, acessibilidade e integração e medir shells e backends de áudio separadamente. Somente candidatos que atendam aos budgets — ou a desvios aprovados — podem chegar à decisão; empate dentro das tolerâncias pré-registradas é resolvido pelos critérios de NFR-STACK-006. Até ADR explícito com números e ambiente reproduzível, esta arquitetura descreve candidatos, não uma implementação nem uma stack aceita.
+NFR-STACK-001–006 preservam separação do núcleo e comprovação proporcional. A migração do código experimental para uma unidade de produto ainda exige checks; os resultados históricos não provam o build promovido. Desempenho e Linux ficam para etapas posteriores, sem alegar aprovação; segurança, licenças, corpus, acessibilidade e distribuição mantêm seus próprios gates antes de release.

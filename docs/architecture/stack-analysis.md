@@ -1,23 +1,31 @@
-# Análise e recomendação de stack
+# Análise histórica e decisão de stack
 
-**Estado:** recomendação técnica; decisão ainda não aceita  
-**Data da pesquisa:** 2026-08-23  
-**ADR relacionado:** `decisions/0001-language-and-ui-stack.md`
+**Estado:** C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib aceitos no ADR-0005; comparação histórica preservada
+
+**Data da pesquisa:** 2026-08-23
+
+**Atualização da decisão:** 2026-09-05
+
+**ADR vigente:** [ADR-0005](decisions/0005-windows-product-stack.md), que substitui ADR-0001/0002
 
 ## 1. Resumo executivo
 
-O M0 compara dois candidatos, sem aceitar antecipadamente nenhum deles:
+O mantenedor aceitou **C++20 + Qt 6 Quick/QML Basic customizado, Qt Multimedia/FFmpeg e TagLib** para o produto Windows e retirou A/B como pré-requisito. A aceitação é uma decisão de produto/manutenção, não uma vitória comparativa medida. A promoção técnica da implementação existente para M1 permanece pendente; não criar uma segunda implementação nem considerar o diretório experimental uma unidade de produto independente sem separar seus acoplamentos de fixture/harness.
+
+Linux, medições de desempenho e os respectivos requisitos/budgets permanecem para etapas posteriores. Checks Rust/Tauri não são dependências do produto. Gates funcionais, segurança, licenças, acessibilidade nativa e release não são dispensados pelo ADR-0005.
+
+A pesquisa abaixo preserva hipóteses, pesos, fontes e o desenho comparativo de 2026-08-23, sem revalidar suas avaliações como fatos atuais. O M0 original previa dois candidatos, sem aceitação antecipada:
 
 1. **hipótese principal de desempenho:** C++20 + Qt 6 Quick/QML, estilo Basic customizado, Qt Multimedia/FFmpeg e TagLib;
 2. **desafiante A/B:** Rust + Tauri 2 + Svelte/Vite, Rodio/CPAL/Symphonia e Lofty.
 
-Qt é a hipótese principal porque a prioridade Windows-first e os budgets estritos tornam menor cold start e menor piso de memória especialmente valiosos. Isso não constitui benchmark: Qt Quick também possui engine QML/JavaScript, scene graph e módulos distribuídos, enquanto Qt Multimedia/FFmpeg pode elevar memória e pacote. Tauri reutiliza o WebView do sistema e favorece segurança de memória e velocidade de iteração visual, mas sua árvore multiprocesso pode elevar o piso de RAM.
+Qt era a hipótese principal porque a prioridade Windows-first e os budgets estritos tornam menor cold start e menor piso de memória especialmente valiosos. Isso não constitui benchmark: Qt Quick também possui engine QML/JavaScript, scene graph e módulos distribuídos, enquanto Qt Multimedia/FFmpeg pode elevar memória e pacote. Tauri reutiliza o WebView do sistema e favorece segurança de memória e velocidade de iteração visual, mas sua árvore multiprocesso pode elevar o piso de RAM.
 
-O primeiro ensaio isola UI/shell com o mesmo recorte visual e backend falso. O segundo compara áudio e metadata no mesmo corpus. Somente combinações viáveis são integradas e medidas novamente. UX, acessibilidade e manutenção para uma pessoa são gates, não desempates cosméticos.
+O primeiro ensaio previsto isolava UI/shell com o mesmo recorte visual e backend falso. O segundo compararia áudio e metadata no mesmo corpus; somente combinações viáveis seriam integradas e medidas novamente. Esse roteiro não permanece pré-requisito para M1. UX, acessibilidade e manutenção continuam critérios do produto.
 
-Não se recomenda misturar Qt e Tauri nem distribuir dois motores de áudio. A escolha final continua `Proposta` até o ADR registrar números reproduzíveis nos termos de NFR-STACK-001–006.
+O produto mantém somente a stack aceita e um engine deliberado, sem misturar Qt/Tauri ou distribuir engines alternativos. Os ensaios comparativos não executados continuam sem resultado; a decisão explícita substitui o antigo requisito de números A/B antes da aceitação.
 
-## 2. Critérios de decisão
+## 2. Critérios históricos de comparação
 
 Os pesos refletem o pedido do mantenedor e são instrumentos de comparação, não benchmarks:
 
@@ -33,7 +41,7 @@ Os pesos refletem o pedido do mantenedor e são instrumentos de comparação, n�
 
 ## 3. Opções avaliadas
 
-Escala qualitativa: 1 (fraco) a 5 (forte). O total serve apenas para visualizar trade-offs; medições do M0 prevalecem.
+Escala qualitativa histórica: 1 (fraco) a 5 (forte). O total serve apenas para visualizar trade-offs, não comprova budgets e não é a justificativa de uma vitória A/B para a decisão atual.
 
 | Opção | UX | Leveza | Simplicidade | Multiplataforma | Integração | Segurança/TDD | Licença | Leitura |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
@@ -105,7 +113,7 @@ Riscos:
 - acessibilidade Windows/Linux deve ser provada com leitores de tela reais;
 - a licença royalty-free/GPL/comercial precisa ser conferida para o modo de distribuição escolhido.
 
-Permanece alternativa de contingência se nenhum dos dois candidatos principais atender aos budgets e o problema comprovado estiver concentrado no footprint da UI.
+Foi registrada como contingência caso nenhum candidato principal atendesse aos budgets por footprint da UI. Retomar essa alternativa agora exige revisão explícita da stack aceita, não um fallback automático.
 
 Fontes: [backends e renderers](https://docs.slint.dev/latest/docs/slint/guide/backends-and-renderers/backends_and_renderers/), [estilos](https://docs.slint.dev/latest/docs/slint/reference/std-widgets/style/) e [licenciamento](https://slint.dev/terms-and-conditions).
 
@@ -115,7 +123,9 @@ Iced possui arquitetura funcional atraente e licença permissiva, mas seu própr
 
 Fontes: [Iced](https://github.com/iced-rs/iced) e [egui](https://docs.rs/egui/latest/egui/).
 
-## 4. Baselines candidatos por camada
+## 4. Baselines históricos por camada
+
+A coluna Qt corresponde à direção aceita no ADR-0005; a coluna Tauri registra a alternativa não escolhida e não impõe toolchains ou checks ao produto. A tabela não aprova Linux, formatos ou distribuição.
 
 | Camada | Hipótese Qt | Desafiante Tauri | Regra comum |
 |---|---|---|---|
@@ -132,7 +142,7 @@ Fontes: [Iced](https://github.com/iced-rs/iced) e [egui](https://docs.rs/egui/la
 
 No candidato Qt, `QObject`, tipos Qt e QML não entram no domínio nem nos casos de uso. No candidato Tauri, DTOs/commands e tipos do WebView também não entram no núcleo. Ambos implementam as mesmas portas conceituais e fakes para tornar a comparação sobre produto, não sobre regras diferentes.
 
-Não adicionar runtime assíncrono, ORM, banco, container de DI, gerador de código ou framework de estado global sem necessidade concreta. O projeto começa como uma única unidade de build e distribuição, com módulos internos; uma stack substitui a outra após a decisão.
+Não adicionar runtime assíncrono, ORM, banco, container de DI, gerador de código ou framework de estado global sem necessidade concreta. A promoção deve produzir uma única unidade de build e distribuição com módulos internos; essa separação técnica ainda está pendente, apesar da stack já aceita.
 
 ## 5. Áudio e formatos
 
@@ -142,7 +152,7 @@ No candidato Qt, `QMediaPlayer`/Qt Multimedia usa o backend FFmpeg padrão para 
 
 No candidato Tauri, Rodio fornece a API de reprodução/seek, CPAL cuida da saída e a versão Symphonia resolvida por Rodio cuida dos codecs habilitados; Lofty lê metadata. O M0 não adiciona uma segunda Symphonia sem decisão e registra `cargo tree -d -e features`. Fontes: [Rodio e `Player`](https://docs.rs/rodio/latest/rodio/struct.Player.html), [Symphonia](https://github.com/pdeljanov/Symphonia), [CPAL](https://github.com/RustAudio/cpal), [Lofty](https://github.com/Serial-ATA/lofty-rs) e [`FileProperties`](https://docs.rs/lofty/latest/lofty/file/struct.FileProperties.html).
 
-Os dois caminhos executam a mesma suite `PlaybackBackend` e o mesmo corpus. A comparação separa open-to-audible, seek-to-audible, duração/precisão, CPU, memória, entradas inválidas e underruns. Em qualquer candidato, trabalho bloqueante no caminho de tempo real exige prefetch/ring buffer limitado ou rejeição do backend.
+O protocolo original previa a mesma suite `PlaybackBackend` e corpus nos dois caminhos, separando open-to-audible, seek-to-audible, duração/precisão, CPU, memória, entradas inválidas e underruns. Não há aprovação desses resultados por esta decisão. No produto Qt, contratos de playback/metadata e trabalho não bloqueante continuam obrigatórios; a alternativa Rust não precisa ser implementada ou medida para avançar.
 
 ### 5.2 Recursos a habilitar
 
@@ -165,7 +175,7 @@ M4A é contêiner, não codec. HE-AAC, DRM e arquivos incomuns não são prometi
 | libmpv | URLs complexas e compatibilidade baseada em FFmpeg justificarem substituir o engine | API/configuração, FFmpeg, licenças e empacotamento |
 | FFmpeg direto | DSP ou controle de pipeline não atendido pelos candidatos virar requisito | API extensa, concorrência, segurança e distribuição próprias |
 
-Qt Multimedia e Rodio são candidatos mutuamente exclusivos do M0, não dois engines do produto. A decisão mantém apenas o vencedor; qualquer troca posterior substitui o adapter e exige testes de contrato e nova comparação do bundle.
+Qt Multimedia/FFmpeg é o engine aceito; Rodio permanece somente no histórico M0. Qualquer troca posterior exige decisão explícita, substituição do adapter, testes de contrato e avaliação do bundle, sem engine de fallback silencioso.
 
 ## 6. Integrações de plataforma
 
@@ -177,11 +187,13 @@ Qt Multimedia e Rodio são candidatos mutuamente exclusivos do M0, não dois eng
 - suspend/resume por porta própria e adapter Win32 com um `QWindow`/`HWND` privado, invisível e estável na thread da UI, independente da surface visual; `RegisterSuspendResumeNotification`/`DEVICE_NOTIFY_WINDOW_HANDLE` permanece ativo até shutdown, falha inicial usa backoff single-shot finito de 1 s/5 s/30 s e só reinicia após o orçamento por `start()` explícito ou `applicationStateChanged`; somente `Suspending`/`Resumed` nativos são entregues, as mensagens reconhecidas são consumidas com resultado `TRUE`, duplicatas consecutivas permanecem deduplicadas e suspensão não vira pause/autoplay;
 - ProgID, extensions, `Capabilities` e `RegisteredApplications` declarados por template/hook NSIS próprio, sem depender apenas de `bundle.fileAssociations`;
 - botão “Abrir Aplicativos Padrão” usa uma URI interna fixa para abrir Configurações; não aceita URI da UI, não altera `UserChoice` e o handoff não substitui evidência de ProgID/capabilities/instalador;
-- NSIS por usuário como baseline experimental, com Qt deployment ou bundle Tauri conforme o candidato; a tecnologia final é decidida no M0 e recebe assinatura quando houver distribuição pública.
+- NSIS por usuário e runtime Qt como entrega local experimental existente; o bundle Tauri pertence ao histórico. A promoção e a distribuição pública mantêm gates próprios, incluindo assinatura quando aplicável.
 
 Fontes: [SMTC para desktop](https://learn.microsoft.com/en-us/windows/win32/api/systemmediatransportcontrolsinterop/nf-systemmediatransportcontrolsinterop-isystemmediatransportcontrolsinterop-getforwindow), [registro de notificações de suspensão/retomada](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registersuspendresumenotification), [modelo de associações](https://learn.microsoft.com/en-us/windows/compatibility/file-type-and-protocol-associations-model), [plataforma de apps padrão](https://learn.microsoft.com/en-us/windows/apps/develop/windows-integration/default-apps-platform) e [instalador Tauri no Windows](https://v2.tauri.app/distribute/windows-installer/).
 
 ### Linux
+
+Requisitos planejados e adiados, sem suporte validado nem bloqueio de entrada em M1 Windows:
 
 - MPRIS 2 por adapter D-Bus;
 - `.desktop`, ícones e MIME types no pacote;
@@ -207,27 +219,27 @@ Fontes: [políticas para desenvolvedores do YouTube](https://developers.google.c
 
 ## 8. Licenças e distribuição
 
-Antes de aceitar a stack:
+A stack já foi aceita; antes de aprovar distribuição, continuam necessários os gates de segurança/licenças do projeto. A análise histórica não equivale a parecer jurídico ou licença pública escolhida:
 
 - registrar a licença de toda dependência direta e transitiva;
-- validar a licença royalty-free do Slint apenas se ele virar candidato final;
-- se Qt for escolhido, usar preferencialmente link dinâmico e cumprir LGPL; link estático só após validar mecanismo de relink e todas as demais obrigações;
-- se FFmpeg/mpv/GStreamer entrar, registrar opções do build e componentes GPL/nonfree;
+- validar licenças de alternativas somente se uma nova decisão as introduzir;
+- registrar o modelo de link do Qt aceito e cumprir suas obrigações; link estático só após validar mecanismo de relink e todas as demais obrigações aplicáveis;
+- registrar opções do build FFmpeg e componentes GPL/nonfree; mpv/GStreamer não entram por esta decisão;
 - verificar patentes/royalties de codecs para os territórios de distribuição;
-- manter `LICENSES/` e notices no pacote quando a implementação começar;
-- usar `cargo-deny` ou ferramenta equivalente como gate, sem tratar relatório automático como parecer jurídico.
+- manter `LICENSES/`, notices e SBOM conforme os gates do pacote;
+- usar verificações adequadas à stack aceita, sem exigir `cargo-deny`/toolchains Rust para o produto nem tratar relatório automático como parecer jurídico.
 
 Referência: [checklist de licença do FFmpeg](https://ffmpeg.org/legal.html).
 
-## 9. Spike de decisão M0
+## 9. Spike de decisão M0 — protocolo histórico substituído
 
-A stack só passa de `Proposto` para `Aceito` após três comparações controladas, detalhadas no roadmap e em NFR-STACK-001–006:
+O processo anterior condicionava a aceitação a três comparações controladas, detalhadas no roteiro M0 e nos requisitos de stack. O ADR-0005 substitui esse pré-requisito; conservar o protocolo abaixo não exige executá-lo para construir o produto nem declara seus ensaios aprovados:
 
 1. **shell/UI:** Qt Quick e Tauri/Svelte implementam o mesmo recorte com backend falso, assets e roteiro comuns; áudio e rede reais ficam fora;
 2. **áudio/metadata:** Qt Multimedia/FFmpeg/TagLib e Rodio/Symphonia/Lofty executam a mesma suite de contrato e corpus sem UI final;
 3. **combinação:** somente candidatos viáveis integram shell, áudio e o mínimo de plataforma para revalidar budgets e UX.
 
-Para cada candidato, o gate exige:
+Para cada candidato, o protocolo previa:
 
 - fluxo Tier 1 no Windows e build/smoke Tier 2 no Linux de referência;
 - estado vazio/tocando/erro, fila, preferências, temas, slider e tray equivalentes;
@@ -240,7 +252,7 @@ Para cada candidato, o gate exige:
 
 O protocolo e as tolerâncias são congelados antes da coleta. Resultados dentro da tolerância são empate e deslocam a decisão para UX comprovada, acessibilidade, manutenção pessoal, segurança e licenciamento. O spike de associação demonstra `Capabilities`/`RegisteredApplications`, ausência de tomada silenciosa de `UserChoice` e limpeza escopada no uninstall.
 
-### Contingências predefinidas
+### Contingências históricas
 
 - apenas um candidato atende → integrar e revalidar esse candidato antes de aceitar;
 - os dois atendem e empatam → aplicar os critérios não numéricos registrados, sem inventar precisão;
@@ -250,8 +262,8 @@ O protocolo e as tolerâncias são congelados antes da coleta. Resultados dentro
 ## 10. Decisões que ainda pertencem ao mantenedor
 
 - escolher licença e se o repositório será público;
-- definir nome e identidade visual;
+- definir a identidade visual final; o nome RC Music já foi aceito no [ADR-0004](decisions/0004-rc-music-identity.md), preservando MusicPlayer nos identificadores de dados;
 - decidir se a versão portátil é requisito ou somente conveniência;
 - aprovar ou reajustar os orçamentos após as primeiras medições.
 
-A execução M0 foi autorizada em D0.9. Windows 11 Tier 1, Windows 10 legado e Ubuntu 24.04 LTS Tier 2 foram congelados no [ambiente M0-E1](../m0/environment.md), sem aceitar Qt ou Tauri.
+A execução M0 foi autorizada em D0.9. Windows 11 Tier 1, Windows 10 legado e Ubuntu 24.04 LTS Tier 2 foram congelados no [ambiente M0-E1](../m0/environment.md), originalmente sem aceitação de stack. A decisão posterior está no ADR-0005 e não aprova retroativamente desempenho, Linux, promoção M1 ou release. O [ADR-0003](decisions/0003-local-first-and-remote-sources.md) de fontes remotas permanece `Proposto`.

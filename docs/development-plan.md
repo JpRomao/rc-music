@@ -3,9 +3,9 @@
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
 **Última revisão:** 2026-09-05
-**Marco atual:** M0.6 — em andamento funcional, com empacotamento/A-B/automação nativa/benchmarks pesados suspensos por orientação do mantenedor; a porta C++ e o adapter Qt cobrem lifecycle/eventos tipados, geração, `PB-001`/`PB-006` para WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis, `PB-004` para MP3 VBR/M4A AAC, além de `PB-002`, `PB-003`, `PB-007`–`PB-012` e `PB-101`–`PB-103` nos recortes já documentados; TagLib cobre `MR-001`, `MR-003`, `MR-005`, `MR-008`, `MR-011`–`MR-013`, `MR-018`, `MR-019` e `MR-101`–`MR-103`, com `MR-018` aplicado à matriz básica por conteúdo, limite por campo textual medido em bytes UTF-8, limite agregado de retenção provado na policy e cobertura experimental de capa derivada em runtime, e o reader assíncrono limitado cobre polling tipado, `MR-016`, `MR-017` e `MR-020`; uma caracterização separada do extrator retorna `UnsupportedFormat` para Opus/ALAC, sem constituir rejeição ponta a ponta porque playback inicia independentemente e o Qt pode decodificar candidatos. A composição aplicação/QML oferece `.mp3`, `.m4a`, `.mp4`, `.flac`, `.ogg`, `.oga` e `.wav` em variantes minúsculas/maiúsculas e percorre nove linhas válidas sobre sete fixtures autenticadas, incluindo aliases `.mp4`/`.oga`, com fallback Unicode, autoplay, play/pause, seek, metadata assíncrona e capa embutida por provider opaco isolado pela geração. Regressões adicionais exercitam, em runtime, prefixos temporários de 64 bytes derivados de MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis: metadata e playback retornam erro tipado, o M4A carregado sem faixa de áudio é rejeitado, o erro local preserva título/contexto Unicode e oferece reabrir, e cargas válidas posteriores descartam a geração antiga. Esses derivados não são fixtures canônicas; confirmação de rejeição do engine em `PB-005`, áudio audível, automação do diálogo, comportamento ponta a ponta de Opus/ALAC, fixtures hostis/capas canônicas, bordas reais abaixo/exatamente nos limites de arte, risco de pré-alocação do TagLib, stack, engine e formatos aceitos continuam pendentes
+**Marco atual:** decisão de stack aceita pelo mantenedor em 2026-09-05: C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib, conforme [ADR-0005](architecture/decisions/0005-windows-product-stack.md). M0.10 registra essa escolha explícita, sem vitória A/B ou aprovação dos budgets; a próxima frente é M1, com promoção incremental do código existente para uma unidade de produto Windows. Essa promoção ainda precisa de implementação e validação próprias; os gates remanescentes de corpus, segurança, acessibilidade, integração, distribuição e desempenho não estão concluídos.
 
-Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança, distribuição e a comparação C++/Qt versus Rust/Tauri já documentados. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
+Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
 ## 1. Regras de uso
 
@@ -68,23 +68,29 @@ Mudança exclusivamente documental não recebe teste artificial, mas executa `CH
 | Fixture, harness comparativo e piloto sintético M0.1 | `[x]` | [`M0.1`](m0/evidence/m0-1.md), `24d12ea` |
 | Preflight autenticado da toolchain Qt para M0.2 | `[x]` | [`M0.2-preflight`](m0/evidence/m0-2-preflight.md), contrato `ac00a565…1952` |
 
-### 2.2 Estado que não pode ser inferido
+### 2.2 Decisão vigente e limites
 
-- Não existe código do produto, scaffold na raiz ou instalador; existe apenas o candidato experimental Qt sob `experiments/m0`, agora com o shell de fixture e uma primeira composição funcional local contra o corpus autenticado.
-- Nenhum formato foi comprovado.
-- Nenhuma stack ou engine foi aceita.
-- ADR-0001, ADR-0002 e ADR-0003 continuam `Proposto`.
-- Os budgets são metas, não medições.
-- Windows possui build Release e pacote local de avaliação do candidato Qt com MSVC 14.44 e receita commitada, inventário verificado e smokes offscreen original/relocado aprovados; a validação nativa é parcial. Os stages históricos permanecem identificados separadamente. Linux e o candidato Tauri ainda não possuem build.
+- A stack Windows está aceita pelo mantenedor no [ADR-0005](architecture/decisions/0005-windows-product-stack.md); ADR-0001 e ADR-0002 ficam substituídos. ADR-0003 continua `Proposto` e ADR-0004 continua `Aceito`.
+- Existe código funcional C++/Qt, runtime e instalador local experimental sob `experiments/m0`; isso não equivale à promoção concluída de M1 nem à aprovação de release.
+- A matriz local validada continua limitada aos formatos, runtime e evidências declarados; aceitar o engine não aprova codecs adicionais ou distribuição pública.
+- A/B não foi demonstrado. Tauri/Rust e suas ferramentas ficam fora das dependências e checks do produto; o histórico comparativo não será repetido como condição de M1.
+- Budgets continuam metas não comprovadas; benchmarks e Linux ficam adiados, sem alegação de sucesso ou eliminação de seus requisitos aplicáveis.
+- Segurança/licenças, corpus hostil restante, jornadas nativas/acessíveis e distribuição continuam com seus gates próprios.
 - YouTube continua pesquisa futura sem promessa de implementação.
 
-### 2.3 Checkpoint M0 atual
+### 2.3 Checkpoint atual — entrada em M1
+
+O mantenedor resolveu a decisão de stack e autorizou a atualização dos contratos. Após o commit documental de M0.10/[ADR-0005](architecture/decisions/0005-windows-product-stack.md), iniciar o recorte de promoção definido na seção 8: reaproveitar o domínio, as portas, os adapters e os testes existentes, com uma unidade real de produto e fronteiras verificáveis. Um wrapper na raiz que apenas delega ao experimento não satisfaz esse critério. Não reiniciar as funcionalidades já implementadas nem declarar M1 inteiro concluído por essa escolha.
+
+Os relatos abaixo preservam o estado e as evidências de cada incremento. Afirmações antigas de “stack proposta”, A/B obrigatório ou autorizações limitadas ao M0 descrevem aquele momento; a decisão e a sequência vigentes são esta seção, M0.10 e a seção 17.
 
 A auditoria funcional posterior encontrou uma regressão de `FR-016`: o menu contextual podia acompanhar a nova faixa após avanço automático e agir sobre a ocorrência errada. O [recorte do menu da fila](../experiments/m0/candidates/qt/README.md#queue-menu-occurrence) mantém alvo por ID e invalidação segura. O incremento seguinte corrige o [feedback de caminhos inválidos antes do IPC](../experiments/m0/candidates/qt/README.md#invalid-shell-source-feedback), com rejeição atômica e mensagem segura, preservando hooks reservados silenciosos em produção. A [identificação do executável Windows](../experiments/m0/candidates/qt/README.md#windows-executable-identity) inclui ícone em sete tamanhos e propriedades experimentais, com leitura nativa ON/OFF e nomes/raízes preservados. A [entrega local atualizada](../experiments/m0/candidates/qt/windows-installer/README.md#local-delivery-refresh) incorpora esses três incrementos: runtime `a43faa1`, matriz/receita `28c1ff2`, áudio 18/18, leitura PE 5/5 e instalação/remoção isolada 1/1. O registro centraliza hashes e limites; não houve instalação no host ou benchmark. As pendências funcionais e de recuperação Windows continuam como foco; inspeção visual nativa, ativação real e os demais gates globais permanecem abertos.
 
 Checkpoint Windows anterior: [matriz local e evolução de formatos do instalador](../experiments/m0/candidates/qt/README.md#rc-music-local-formats). A caracterização cobre seek pausado e reprodução integral até EOF, com 18/18 no runtime privado; o builder aceita somente declaração local explícita e vinculada, ficando OFF sem argumento. O protocolo v2 acrescenta/retira formatos, migra legado OFF e conserva retry/entradas externas. Planner 18/18, lifecycle 32/32 e associações 14/14 passaram após Reds e revisão. O README do instalador centraliza comandos, hashes e limites; os registros abaixo preservam os checkpoints anteriores. M4.6/M4.8 e aprovação pública seguem abertos, sem benchmarks.
 
-A autoria documental e a revisão do mantenedor estão concluídas. A [autorização D0.9](m0/README.md) aceita o baseline derivado e permite apenas o escopo experimental M0.0–M0.10; Qt, Tauri e os backends continuam candidatos.
+#### Histórico anterior à aceitação da stack
+
+A autoria documental e a revisão do mantenedor fecharam D0.9. A [autorização histórica D0.9](m0/README.md) permitia apenas M0.0–M0.10, quando Qt, Tauri e os backends ainda eram candidatos. O [ADR-0005](architecture/decisions/0005-windows-product-stack.md) substitui essa limitação para o desenvolvimento Windows atual.
 
 M0.1 foi concluído em `24d12ea`, com evidência consolidada em [`m0-1.md`](m0/evidence/m0-1.md). O marco fechou fixture, agenda/estatística, markers, Evidence recuperável, detector visual sintético, árvore/identidade/cleanup sintéticos, summary comum puro e o piloto Windows `P`. O caminho nominal do piloto permanece `partial/etw_live_not_implemented`; o fallback pós-falha de snapshot é `unavailable/pre_snapshot_fallback`. Ambos exigem cleanup completo e zero sobreviventes. `P` usa role `synthetic_pilot`, `decision_eligible=false` e nunca entra em snapshot-set, batch ou summary comum A/B. Nenhuma coleta comparativa A/B ocorreu e nenhuma stack ou engine foi aceita.
 
@@ -172,7 +178,7 @@ M3.5 está funcional no candidato Qt/Windows no recorte de armazenamento, sem en
 
 ## 4. Catálogo de checks
 
-Os nomes abaixo são contratos lógicos. Hoje `CHK-DOC` e a parcela Git de `CHK-CLOSE` são executáveis pelo validador versionado. M0 cria runners separados por candidato; M1 cria o comando raiz `validate` da stack vencedora. Um comando futuro nunca pode ser relatado como executado antes de existir no repositório.
+Os nomes abaixo são contratos lógicos. Hoje `CHK-DOC` e a parcela Git de `CHK-CLOSE` são executáveis pelo validador versionado. M0 criou runners experimentais; M1 compõe o comando raiz `validate` da stack aceita, sem incluir Tauri/Rust. Um comando futuro nunca pode ser relatado como executado antes de existir no repositório.
 
 | ID | Check | Evidência mínima |
 |---|---|---|
@@ -205,7 +211,7 @@ O runner valida arquivos contratuais, links relativos, IDs e contagens de requis
 
 ### 4.2 Regras de performance
 
-Os budgets dos requisitos são vigentes. Tolerâncias operacionais que ainda não aparecem nos requisitos ou em ADR aceito são **proposta inicial de protocolo**: M0.0 precisa congelá-las em commit antes da coleta, e qualquer alteração posterior invalida a comparação já iniciada.
+Os budgets dos requisitos são vigentes, mas não foram aprovados como cumpridos pela escolha de stack. Benchmarks estão adiados e não bloqueiam a entrada em M1. As regras comparativas abaixo pertencem ao protocolo histórico; uma futura medição do produto deve declarar seu escopo e ambiente sem exigir o ramo Tauri. Tolerâncias operacionais que ainda não aparecem nos requisitos ou em ADR aceito são **proposta inicial de protocolo**: M0.0 precisa congelá-las em commit antes da coleta, e qualquer alteração posterior invalida a comparação já iniciada.
 
 - Build Release identificado por commit e toolchain.
 - Máquina, SO, energia, display scale e dispositivos registrados.
@@ -243,7 +249,7 @@ Uma exceção de gate possui ID, requisito afetado, aprovador, justificativa, mi
 | Decisão | Prazo máximo | Bloqueia |
 |---|---|---|
 | Aprovar requisitos derivados usados no M0 e autorizar o experimento | fim de D0 | todo M0 |
-| Escolher distribuição Linux de referência e versões Wayland/X11 | M0.0 | `CHK-LINUX`, decisão da stack |
+| Retomar distribuição Linux de referência e versões Wayland/X11 | quando Linux for retomado | `CHK-LINUX` e alegação de suporte Linux; não a stack Windows aceita |
 | Registrar matriz Windows 11, Windows 10 legado e máquina de benchmark | M0.0 | comparação justa e suporte declarado |
 | Definir licença do repositório e modelo local/público | antes de distribuir protótipo | licenças, pacote e release |
 | Tratar NSIS como baseline experimental; aceitar tecnologia final após M0 | M0.9 | associação, upgrade e uninstall |
@@ -251,10 +257,10 @@ Uma exceção de gate possui ID, requisito afetado, aprovador, justificativa, mi
 | Confirmar fila e restauração de sessão como P0 | fim de D0 | escopo M1–M4 |
 | Aprovar inventário e opções de todas as preferências do MVP | D0.9 | schema M1.9 e experiência M3/M4 |
 | Congelar método, tolerâncias e descarte de benchmark | M0.0, antes de M0.1 | qualquer coleta comparativa |
-| Registrar resultado/vencedor nos ADR-0001 e ADR-0002 ou criar ADR final | M0.10 | bootstrap M1 |
-| Nome e identidade visual | antes do acabamento M3 | ícones, strings e pacote final |
+| Registrar a escolha explícita C++/Qt/Multimedia/FFmpeg/TagLib no ADR-0005 | M0.10; decisão recebida em 2026-09-05 | commit documental habilita a promoção M1; comparação não é pré-requisito |
+| Preservar RC Music visível e MusicPlayer interno conforme ADR-0004 | decisão de nome já resolvida | mudanças futuras de identidade exigem decisão própria; sem migração implícita de dados |
 
-NSIS é o baseline experimental para provar o modelo de Default Apps no Windows; não é decisão final do empacotador antes do M0. O tray/pacote básico de M0.2/M0.3 comprova paridade do shell; M0.9 executa a prova nativa aprofundada apenas nos candidatos ainda viáveis.
+NSIS permanece a receita experimental local de Default Apps/instalação já implementada; a aceitação da stack não concede aprovação pública de empacotamento. A paridade entre shells pertence ao histórico M0.2/M0.3; as provas nativas restantes seguem o caminho Windows em M4/M5, sem outro candidato obrigatório.
 
 ## 6. D0 — Fechamento documental
 
@@ -274,41 +280,49 @@ NSIS é o baseline experimental para provar o modelo de Default Apps no Windows;
 
 ### Gate D0
 
-**Go alcançado:** D0.9 concluído; documentos commitados; ADRs de stack continuam `Proposto`. M0.0 deve agora fechar responsáveis, ambientes e protocolo antes de qualquer coleta.
+**Go histórico alcançado:** D0.9 autorizou apenas o experimento e M0.0 fechou seu protocolo. Essa decisão não aprovou medidas nem stack naquele momento.
 
-**No-go:** criar scaffold de produto ou aceitar stack por preferência antes da evidência M0.
+**Estado vigente:** o [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceita a stack por decisão explícita posterior do mantenedor e permite a promoção M1. Continuam proibidos resultados comparativos inventados, gates declarados sem evidência e ampliação de escopo sem autorização.
 
-## 7. M0 — Spikes comparativos e decisão de stack
+## 7. M0 — Histórico dos spikes e decisão de stack
 
-**Objetivo:** escolher uma combinação coerente de shell, UI, áudio, metadata e distribuição com evidência reproduzível.
+**Estado:** escolha Windows resolvida pelo [ADR-0005](architecture/decisions/0005-windows-product-stack.md), sem concluir retrospectivamente as etapas experimentais ou medições ausentes.
+
+**Objetivo vigente:** preservar evidências e riscos dos spikes e registrar a decisão explícita que habilita M1. A/B, benchmarks e build Linux deixaram de ser pré-requisitos da escolha; qualidade e distribuição seguem seus gates próprios.
 
 Os IDs abaixo são o namespace executável. No roadmap macro, `M0-A` corresponde a M0.0–M0.4, `M0-B` a M0.5–M0.8, `M0-C` a M0.9 e `M0-D` a M0.10.
 
-Código M0 é experimental, mas comportamento observável de shell, adapter, tray ou pacote continua seguindo TDD nos dois candidatos. Somente instrumentação descartável que mede API/ambiente, sem comportamento de produto, pode trocar `CHK-TDD` por validação determinística do próprio harness. Código promovido ao produto mantém seus testes e volta a passar pelo ciclo TDD do baseline; harness de medição não vira arquitetura por acidente.
+Código ainda sob M0 mantém sua classificação experimental até a promoção deliberada. Comportamento observável de shell, adapter, tray ou pacote continua seguindo TDD no caminho Qt aceito; o ramo Tauri não integra mais a execução obrigatória. Somente instrumentação descartável que mede API/ambiente, sem comportamento de produto, pode trocar `CHK-TDD` por validação determinística do próprio harness. Código promovido ao produto mantém seus testes e volta a passar pelo ciclo TDD do baseline; harness de medição não vira arquitetura por acidente.
 
-### 7.1 Sequência
+### 7.1 Sequência histórica e destino atual
+
+M0.0–M0.9 conservam seus IDs e evidências. As linhas comparativas não executadas ficam arquivadas como protocolo, não como gates verdes nem tarefas obrigatórias antes de M1; seus riscos de produto relevantes continuam em M4/M5.
 
 | ID | Entrega | Requisitos/decisões | Checks obrigatórios | Go/No-go |
 |---|---|---|---|---|
 | M0.0 | Fechar Linux de referência, matriz Windows, licença experimental, protocolo e layout temporário dos spikes | `[x]` [evidência](m0/evidence/m0-0.md); NFR-STACK-001–006 | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-SEC`, `CHK-CLOSE` | decisões/protocolo em `81f9f2f`; provisionamentos ausentes bloqueiam apenas a etapa dependente |
 | M0.1 | Fixture comum de estado, fila de 1.000 itens, assets, roteiro, marcadores externos, templates de evidência e harness de coleta | `[x]` [`evidência`](m0/evidence/m0-1.md); preparação parcial de NFR-STACK-002–003 | `CHK-TDD`, `CHK-TRACE`, `CHK-DOC`, `CHK-CLOSE`; `CHK-PERF` N/A/não executado por ausência de candidato/medição, contrato preparado e execução real adiada para M0.4 | concluído em `24d12ea`; piloto repetível e não decisório; nenhum candidato recebeu cenário diferente |
 | M0.2 | Shell C++20/Qt Quick/QML com backend falso, temas, slider, fila, preferências e tray básico | Em andamento; shell/bandeja implementados sob a [política comum](m0/README.md); pacote histórico MSVC 14.44 com smokes offscreen original/relocado aprovados; [SDK Qt composto autenticado](m0/evidence/m0-2-qt-composite-sdk.md), ainda sem build/package v2; validação nativa parcial e segurança pendente; [preflight concluído](m0/evidence/m0-2-preflight.md); FR-012, FR-014–015, FR-030, FR-040; UX-001–010 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Release medível; core sem Qt; zero bloqueio P0 |
-| M0.3 | Shell Rust/Tauri/Svelte equivalente, sem áudio/rede real | mesmos IDs de M0.2 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
-| M0.4 | Comparação cega ao resultado dos shells | NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | `CHK-PERF`, `CHK-A11Y`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-TRACE`, `CHK-CLOSE` | Eliminar candidato com P0, build ausente ou budget sem exceção |
+| M0.3 | Shell Rust/Tauri/Svelte — fora da sequência do produto | Histórico, não executado; mesmos IDs de M0.2 | Históricos: `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Paridade funcional e de roteiro com Qt |
+| M0.4 | Comparação dos shells — arquivada, não demonstrada e não exigida para M1 | NFR-PERF-001, NFR-PERF-004–006; NFR-STACK-001–004, NFR-STACK-006 | `CHK-PERF`, `CHK-A11Y`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-TRACE`, `CHK-CLOSE` | Eliminar candidato com P0, build ausente ou budget sem exceção |
 | M0.5 | Corpus licenciado, manifesto, receitas, hashes e catálogo canônico de casos `PlaybackBackend`/`MetadataReader` | Em andamento: WAV e codecs básicos autenticados; prefixos temporários de 64 bytes exercitam truncamento em quatro codecs, tags temporárias exercitam o limite por campo e capas temporárias exercitam extração/rejeição, mas não são fixtures canônicas; fixtures versionadas de arte e truncamento e bordas reais abaixo/exatamente nos limites pendem. O limite agregado de metadata está provado na policy; o adapter atual não o alcança porque contabiliza no máximo 48 KiB + 8 bytes para três textos e dois números. FR-002, FR-005, FR-020–024; NFR-LIMIT-001–003, NFR-REL-001, NFR-REL-006 | `CHK-CORPUS`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | Expectativas e tolerâncias versionadas; nenhum arquivo pessoal/comercial |
 | M0.6 | Adapter Qt Multimedia/FFmpeg + TagLib no harness comum | Em andamento: [slices funcionais](m0/evidence/m0-6-qt-audio-first-slices.md) cobrem lifecycle/eventos tipados e geração isolada; `PB-001`/`PB-006` percorrem WAV PCM, MP3 CBR/VBR/Unicode, M4A/AAC, FLAC 16-bit e Ogg/Vorbis, `PB-004` cobre MP3 VBR/M4A AAC e os demais casos já documentados preservam `PB-002`, `PB-003`, `PB-007`–`PB-012` e `PB-101`–`PB-103`; `MR-001`, `MR-003`, `MR-005`, `MR-008`, `MR-011`–`MR-013`, `MR-018`, `MR-019` e `MR-101`–`MR-103` cobrem a matriz básica por conteúdo, tags Unicode, fallback, limites experimentais e hostis existentes; a retenção agregada de 256 KiB é provada por policy, mas o caminho integrado atual chega no máximo a 48 KiB + 8 bytes; `MR-006`/`MR-007`/`MR-009`/`MR-010` ainda têm somente policy aritmética. Opus/ALAC têm apenas uma caracterização separada `UnsupportedFormat` no extrator, não rejeição ponta a ponta; o reader limitado cobre polling tipado, `MR-016`, `MR-017` e `MR-020`; a composição aplicação/QML oferece sete extensões em caixa baixa/alta, percorre nove linhas válidas sobre sete fixtures e apresenta capa por provider opaco/assíncrono isolado pela geração. Quatro regressões adicionais usam derivados temporários truncados para cobrir erro tipado, M4A sem faixa de áudio, contexto Unicode/reabertura, recuperação e descarte de geração antiga em metadata/playback/integração; tags e capas temporárias não substituem o corpus canônico. Confirmação de rejeição do engine em `PB-005`, automação do diálogo, comportamento ponta a ponta de Opus/ALAC, hostis/capas canônicos, bordas reais abaixo/exatamente nos limites, pré-alocação segura do parser e áudio audível pendentes; FR-001–002, FR-010, FR-012, FR-014, FR-020–024; NFR-STACK-005 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Pacote usa backend/plugins esperados; erros controlados |
-| M0.7 | Adapter Rodio/CPAL/Symphonia + Lofty no mesmo harness | mesmos IDs de M0.6 | `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Uma cadeia Symphonia; sem bloqueio inaceitável do callback |
-| M0.8 | Comparação de áudio, 500 trocas/seeks, armazenamento lento e soak de oito horas nos ramos viáveis | NFR-PERF-002–003, NFR-PERF-007; NFR-REL-001–002; NFR-STACK-002–003, NFR-STACK-005–006 | `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-TRACE`, `CHK-CLOSE` | Formatos P0, estabilidade e cancelamento passam |
-| M0.9 | Integração/pacote comparável e prova aprofundada do finalista | FR-004, FR-030–038; NFR-LIMIT-004, NFR-PRIV-001 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Single-instance, tray, pacote e caminho nativo viáveis |
-| M0.10 | Combinar UI+áudio, reexecutar budgets e decidir | NFR-PERF-001–007, NFR-STACK-001–006 | todos os checks M0, `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | ADR registra vencedor, ambiente, números, riscos e alternativas |
+| M0.7 | Adapter Rodio/CPAL/Symphonia + Lofty — fora da sequência do produto | Histórico, não executado; mesmos IDs de M0.6 | Históricos: `CHK-TDD`, `CHK-FAST`, `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-CLOSE` | Uma cadeia Symphonia; sem bloqueio inaceitável do callback |
+| M0.8 | Protocolo histórico de comparação/soak — não demonstrado; estabilidade e budgets do produto seguem em M5 | NFR-PERF-002–003, NFR-PERF-007; NFR-REL-001–002; NFR-STACK-002–003, NFR-STACK-005–006 | `CHK-CORPUS`, `CHK-PERF`, `CHK-SEC`, `CHK-TRACE`, `CHK-CLOSE` | Formatos P0, estabilidade e cancelamento passam |
+| M0.9 | Integração/pacote comparável históricos; provas Windows restantes seguem em M4/M5, Linux adiado | FR-004, FR-030–038; NFR-LIMIT-004, NFR-PRIV-001 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-PACKAGE`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE` | Single-instance, tray, pacote e caminho nativo viáveis |
+| M0.10 | Registrar a stack Windows aceita pelo mantenedor e a entrada em M1 | Decisão explícita em 2026-09-05; [ADR-0005](architecture/decisions/0005-windows-product-stack.md); NFR-STACK-001–006 | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE`; sem teste artificial ou nova coleta | ADR aceito e contratos commitados; sem vencedor A/B, budget aprovado ou fechamento automático de M0/M1 |
 
 ### 7.2 Checks específicos do shell
+
+Referência histórica do experimento: somente os checks Qt proporcionais ao recorte promovido integram o produto atual. Tauri/A/B não são dependências; benchmarks e Linux continuam adiados, não aprovados.
 
 - Qt: CMake Release reproduzível, format/check C++/QML, Catch2/CTest, Qt Test/Quick Test aplicável, `qmllint`, plugins/DLLs inventariados, nomes/roles acessíveis e nenhuma dependência Qt em domain/application.
 - Tauri: `cargo fmt`, Clippy com warnings negados, testes Rust, install congelado do frontend, format/lint/typecheck/test/build, CSP/capabilities mínimas, IPC estreito/coalescido, nenhuma navegação remota e árvore WebView2 completa nas métricas.
 - Ambos: janela acionável P95 ≤ 800 ms, CPU pausada média < 0,5%, private working set ocioso < 80 MiB, fila de 1.000 itens sem bloqueio > 100 ms, jornada NVDA/teclado/contraste/100–200%/movimento reduzido e smoke Linux. Input-to-visible é registrado como diagnóstico do componente visual; NFR-PERF-003 só fecha no ensaio de áudio/combinação.
 
 ### 7.3 Checks específicos de áudio
+
+O protocolo comparativo abaixo não é mais condição de seleção. Os contratos funcionais, corpus e limites continuam aplicáveis a Qt Multimedia/FFmpeg e TagLib; desempenho e soak do produto permanecem metas futuras, sem execução alegada.
 
 - Mesmo manifesto, fixtures, IDs, dispositivo e método para ambos.
 - MP3 CBR/VBR, M4A/AAC-LC, FLAC, WAV e Ogg/Vorbis recebem resultado explícito; Opus/ALAC permanecem candidatos.
@@ -321,42 +335,44 @@ Código M0 é experimental, mas comportamento observável de shell, adapter, tra
 
 ### 7.4 Decisão M0
 
-1. Se apenas um candidato passa, combinar e medir novamente antes de aceitar.
-2. Se os dois passam dentro das tolerâncias, decidir por UX comprovada, acessibilidade, manutenção pessoal, segurança, licenciamento e integração.
-3. Se ambos falham por footprint do shell, solicitar autorização para spike Slint equivalente.
-4. Se a falha é apenas do áudio, revisar o backend sem trocar automaticamente a UI.
-5. Se um requisito é inviável, voltar ao mantenedor; não relaxar orçamento silenciosamente.
-6. Atualizar ADR-0001 e ADR-0002 com seção de resultados e vencedor, ou criar ADR final que os substitua.
-7. Remover o protótipo perdedor ou preservá-lo fora do produto com motivo explícito; não manter dois toolchains/engines na release.
+1. O mantenedor aceitou C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib no [ADR-0005](architecture/decisions/0005-windows-product-stack.md); ADR-0001/0002 ficam substituídos.
+2. A escolha é uma decisão de produto, não vitória, empate ou inferioridade comprovada em A/B. Não altera os budgets para fazê-los passar.
+3. Tauri/Rust e seus checks ficam fora das dependências do produto; arquivos históricos permanecem separados, sem apagar evidências.
+4. Promover o código Qt existente em incrementos testados, preservando domínio puro, portas, comportamento, privacidade e identidade local.
+5. Tratar riscos remanescentes de corpus, segurança/licenças, acessibilidade, Windows e distribuição no marco responsável; benchmarks e Linux ficam adiados.
 
-### Gate M0
+### Gate de decisão M0.10 / entrada M1
 
-**Go:** uma combinação cumpre UX, acessibilidade, formatos P0, Windows Tier 1, smoke Linux, segurança/licenças e budgets vigentes ou exceções aprovadas; ADR final commitado.
+**Go:** decisão explícita registrada no ADR aceito, contratos alinhados, checks documentais/revisão e commit; o primeiro incremento M1 tem unidade real e critérios próprios definidos.
 
-**No-go:** iniciar M1 com ADR ainda `Proposto`, evidência incomparável ou protótipos misturados.
+**No-go:** apresentar A/B ou budgets como aprovados, declarar todos os spikes concluídos, promover código sem validar suas fronteiras ou tratar um wrapper de build como toda a fundação.
 
-## 8. M1 — Fundação TDD da stack vencedora
+## 8. M1 — Promoção incremental e fundação da stack aceita
 
-**Objetivo:** criar a menor unidade de build/distribuição sustentável, com domínio puro, fakes e validação automatizada antes das features reais.
+**Estado:** próxima frente autorizada; ainda não concluída. O código existente já implementa comportamentos de M1–M4 no experimento; cada promoção deve inventariar o que reutiliza, o que falta e os checks que realmente executa.
+
+**Objetivo:** extrair/compor a menor unidade real de produto Windows, preservando domínio puro, portas, adapters e testes existentes. M1.1 começa por uma fatia identificada de código e sua unidade de build/test, não por reimplementar features nem por adicionar somente comandos que encaminham ao CMake experimental. O modo de fixture/harness permanece distinguível da composição real; wrappers úteis de M1.2 não substituem essa separação.
+
+O primeiro recorte é extrair o core C++ puro como implementação única, mantendo o shell Qt existente como consumidor. A autenticação de fixture/corpus/Catch2 hoje acoplada ao CMake experimental, inclusive OFF, precisa ficar explicitamente separada da unidade promovida; o acoplamento de apresentação/main a `FixtureBundle` permanece inventariado para os recortes seguintes. Antes de gerar novos runtimes após mover fontes, atualizar a proveniência em `WindowsRuntimePlan` e seus checks. Nenhum código é migrado pelo aceite documental.
 
 ADR-0003 não autoriza implementar `MediaSourceResolver` ou seu fake no MVP. M1 usa `LocalFile` tipado; a porta remota só entra após decisão específica em R1.
 
 | ID | Incremento TDD | Requisitos principais | Checks obrigatórios | Critério de saída |
 |---|---|---|---|---|
-| M1.1 | Scaffold da stack vencedora, versões pinadas, lockfiles/manifests e uma unidade de build | NFR-MAINT-003 | `CHK-PREFLIGHT`, `CHK-FAST`, `CHK-SEC`, `CHK-CLOSE` | configure/build em Windows e Linux; nenhum pacote prematuro |
+| M1.1 | Promover uma unidade real C++/Qt existente para a estrutura de produto, com versões pinadas e build próprio | NFR-MAINT-003, NFR-STACK-002 | `CHK-PREFLIGHT`, `CHK-FAST`, `CHK-ARCH`, `CHK-SEC`, `CHK-CLOSE` | fontes/fronteiras e testes promovidos identificados; configure/build/test Windows e core sem Qt nessa unidade; não apenas wrapper sobre o experimento; Linux adiado explicitamente |
 | M1.2 | Scripts raiz `format`, `lint`, `check`, `test`, `build`, `validate` e check documental | NFR-MAINT-001, NFR-MAINT-004–005 | `CHK-TDD` para o runner quando aplicável, `CHK-DOC`, `CHK-FAST`, `CHK-CLOSE` | um entrypoint `validate` executa checks rápidos reais |
-| M1.3 | CI Windows/Linux para checks rápidos e artefatos diagnósticos | NFR-MAINT-004–005 | `CHK-FAST`, `CHK-DOC`, `CHK-CLOSE` | mesmos scripts locais/CI; commit identificável |
+| M1.3 | CI Windows para checks rápidos e artefatos diagnósticos; extensão Linux adiada | NFR-MAINT-004–005 | `CHK-FAST`, `CHK-DOC`, `CHK-CLOSE` | mesmos scripts locais/CI Windows e commit identificável; nenhum resultado Linux inferido |
 | M1.4 | Tipos `TrackId`, `Position`, `Duration`, `Volume`, saltos e erros tipados | FR-013–014, NFR-REL-001 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | invariantes/clamps/property tests verdes |
 | M1.5 | Máquina de estados de playback e descarte por geração | FR-010, FR-014–015, FR-024 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-CLOSE` | transições válidas/inválidas e eventos antigos cobertos |
 | M1.6 | Fila por ID, duplicatas, anterior/próxima e fim | FR-011, FR-016–017 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | property tests e navegação determinística verdes |
 | M1.7 | Portas `PlaybackBackend`, `MetadataReader`, `SessionStore`, `PlatformIntegration`, relógio e IDs; fakes mínimos | FR-020–024, FR-030–038, FR-042–044 | `CHK-TDD`, `CHK-ARCH`, `CHK-FAST`, `CHK-CLOSE` | core compila/testa sem toolkit, SO, arquivo ou áudio real |
 | M1.8 | Controller, comandos comuns, snapshots e coalescing | FR-012–016, FR-037, NFR-LIMIT-004 | `CHK-TDD`, `CHK-FAST`, `CHK-ARCH`, `CHK-TRACE`, `CHK-CLOSE` | UI/tray/plataforma podem usar os mesmos casos de uso |
 | M1.9 | Esquema versionado de preferências/sessão e política de redação, rotação e retenção de logs | FR-042–044, NFR-PRIV-002–003 | `CHK-TDD`, `CHK-SEC`, `CHK-FAST`, `CHK-CLOSE` | round-trip de todo o inventário; formatter sem conteúdo/path/URL sensível; limites de idade/bytes/arquivos declarados e testados abaixo/no/acima |
-| M1.10 | Boundary/presenter e shell real consumindo somente fakes | UX-001–008, UX-010 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-ARCH`, `CHK-E2E`, `CHK-CLOSE` | jornada visual falsa; sem regra de negócio na UI |
+| M1.10 | Promover boundary/presenter e validar shell contra fakes, mantendo a composição real separada | UX-001–008, UX-010 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-ARCH`, `CHK-E2E`, `CHK-CLOSE` | jornada visual falsa; sem regra de negócio na UI |
 
 ### Gate M1
 
-- `validate` verde localmente e na CI.
+- Unidade de produto real identificada, com fontes e dependências promovidas; `validate` verde localmente e na CI Windows. Linux permanece adiado, sem alegação de cobertura.
 - Domain/application cobertos inicialmente por ≥ 90% lines/85% branches e ≥ 85%/80%, respectivamente; utilities de presentation atingem ≥ 85%/80% quando M1.10 as introduzir. Ferramenta e formato do relatório são registrados no bootstrap.
 - Testes não usam sleeps, rede, arquivos pessoais ou dispositivo real.
 - UI roda contra fake e o core roda sem toolkit/backend.
@@ -533,7 +549,7 @@ O [registro central de localização](../experiments/m0/candidates/qt/README.md#
 | M5.4 | 500 trocas/seeks, soak integrado de oito horas e regressão de recursos | NFR-PERF-002–007 | `CHK-PERF`, `CHK-CORPUS`, `CHK-CLOSE` | budgets/tendência/handles/threads dentro do protocolo |
 | M5.5 | Performance completa de cold start, áudio, UI e fila | NFR-PERF-001–006 | `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | P50/P95 publicados; regressão ≥10% confirmada bloqueia |
 | M5.6 | Acessibilidade final Windows e smoke Linux | UX-001–010 | `CHK-UI`, `CHK-A11Y`, `CHK-E2E`, `CHK-CLOSE` | zero bloqueador P0; formulário manual completo |
-| M5.7 | Advisories, licenças, Qt/FFmpeg ou Rust/JS, notices, SBOM e política final de logs | NFR-REL-006, NFR-PRIV-003 | `CHK-FAST`, `CHK-SEC`, `CHK-PACKAGE`, `CHK-CLOSE` | zero Critical/High explorável sem waiver; zero obrigação/licença não atendida; redação e retenção abaixo/no/acima dos limites verdes |
+| M5.7 | Advisories, licenças C++/Qt/FFmpeg/TagLib, notices, SBOM e política final de logs | NFR-REL-006, NFR-PRIV-003 | `CHK-FAST`, `CHK-SEC`, `CHK-PACKAGE`, `CHK-CLOSE` | zero Critical/High explorável sem waiver; zero obrigação/licença não atendida; redação e retenção abaixo/no/acima dos limites verdes |
 | M5.8 | Changelog, manual, troubleshooting, versão, pacote e RC | critérios MVP 1–11 | `CHK-PACKAGE`, `CHK-RELEASE`, `CHK-DOC`, `CHK-CLOSE` | RC instalada/atualizada/removida em ambiente limpo |
 | M5.9 | Tag e artefatos finais; publicação somente após autorização | todos os gates | `CHK-RELEASE`, `CHK-CLOSE` | tag aponta ao commit validado; hashes após assinatura/pacote final |
 
@@ -669,12 +685,12 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `NFR-PERF-005` | M0.1–M0.4, M0.10, M5.5 | private working set da árvore em 5 s/60 s/pico |
 | `NFR-PERF-006` | M0.1–M0.4, M3.2, M3.8, M5.5 | 1.000 itens e bloqueio visual máximo |
 | `NFR-PERF-007` | M0.8, M0.10, M5.4 | soak de oito horas pelo protocolo proposto em 4.2 e aprovado em M0.0 |
-| `NFR-STACK-001` | M0.0–M0.4, M0.10 | A/B Qt/Tauri sem aceitação por linguagem |
-| `NFR-STACK-002` | M0.0–M0.8, M0.10 | fixture/roteiro iguais e áudio separado do shell |
-| `NFR-STACK-003` | M0.0–M0.10 | protocolo congelado, árvore completa e combinação final |
-| `NFR-STACK-004` | M0.2–M0.4, M0.9–M0.10 | a11y/tray/Linux bloqueiam candidato |
-| `NFR-STACK-005` | M0.5–M0.10 | baselines reais, boundaries e licenças inventariados |
-| `NFR-STACK-006` | M0.4, M0.8–M0.10 | budgets/exceções e ADR com desempate explícito |
+| `NFR-STACK-001` | M0.10 | escolha explícita pelo mantenedor no ADR-0005; sem alegação de vitória A/B |
+| `NFR-STACK-002` | M1.1–M1.2 | unidade real de produto e implementação única; experimentos/toolchains não escolhidas fora das dependências |
+| `NFR-STACK-003` | M5.4–M5.5 | protocolo, ambiente/commit, árvore de processos e medições futuras separados da escolha |
+| `NFR-STACK-004` | M3.7, M4.4–M4.5, M5.6 | gates de UX/acessibilidade/Windows preservados; Linux adiado |
+| `NFR-STACK-005` | M1.1, M1.7, M4.8, M5.7 | domínio puro, um engine deliberado, versões/configuração e gates de segurança/licenças |
+| `NFR-STACK-006` | M0.10, M5.1, M5.4–M5.9 | decisão aceita não comprova budgets nem dispensa gates de produto |
 | `NFR-REL-001` | M0.5–M0.8, M1.4–M1.7, M2.1–M2.6, M5.2–M5.3 | corpus/fuzz e zero crash reproduzível conhecido |
 | `NFR-REL-002` | M0.6–M0.8, M2.2, M5.4 | auditoria do callback e underrun controlado |
 | `NFR-REL-003` | M1.9, M3.5, M4.1 | fault injection e escrita atômica recuperável |
@@ -709,21 +725,27 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 - FR-003, FR-004, FR-005, FR-011, FR-016, FR-017, FR-032, FR-037, FR-038, FR-040 e FR-053 recebem cenários explícitos.
 - NFR-LIMIT-001–004 exigem casos abaixo, exatamente no limite e acima.
 - Preferências reais saem de M4 e entram em M3; M4 mantém sessão completa e recuperação.
-- Soak exploratório elimina cedo; oito horas é obrigatório em cada ramo M0 ainda viável e novamente no produto integrado M5.
-- Tray/pacote básico compara shells; a integração nativa aprofundada ocorre em M0.9/M4.
-- NSIS é baseline experimental, não decisão final antes do M0.
+- Soak de oito horas e budgets continuam gates futuros do produto em M5; comparação entre ramos não é pré-requisito de M1.
+- Comparação de tray/pacote entre shells permanece histórica; integração Windows aprofundada e pacote seguem em M4/M5.
+- NSIS mantém o escopo experimental local; aceitar a stack não autoriza distribuição pública.
 
 ## 17. Próxima sequência segura
 
-Checkpoint de jornada Windows: o [isolamento manual do build ON](../experiments/m0/candidates/qt/README.md#isolated-native-journey) passou 101/101 testes e recusa real em produção. A janela nativa mostrou transporte, detalhes, volume e gravação da sessão com WAV sintética; seletor completo e restauração observada continuam sem validação. O usuário interrompeu Computer Use, portanto não retomá-lo sem confirmação. O instalador permanece inalterado e os gates amplos continuam abertos; não repetir suites verdes ou benchmarks sem mudança relevante. A promoção do candidato a produto continua sujeita à decisão explícita de stack e revisão dos critérios de M0.10/M1, sem inferir aprovação pela prioridade Windows.
+**Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
+
+Checkpoint de jornada Windows: o [isolamento manual do build ON](../experiments/m0/candidates/qt/README.md#isolated-native-journey) passou 101/101 testes e recusa real em produção. A janela nativa mostrou transporte, detalhes, volume e gravação da sessão com WAV sintética; seletor completo e restauração observada continuam sem validação. O usuário interrompeu Computer Use, portanto não retomá-lo sem confirmação. O instalador permanece inalterado e os gates amplos continuam abertos; não repetir suites verdes ou benchmarks sem mudança relevante. A decisão explícita de stack agora foi recebida; a promoção continua sujeita aos critérios próprios de M1 e à validação do código efetivamente promovido.
 
 Checkpoint funcional mais recente: os [sliders acessíveis](../experiments/m0/candidates/qt/README.md#accessible-slider-input) agora aplicam progresso/volume ao player por ações e valor direto, com sincronização que não transforma ticks ou mudança de duração em comandos. Red/Green, Quick 187/187, startup e builds ON/OFF constam do registro central. O instalador a43faa1 permanece anterior a essa correção; não foi recompilado nem instalado. Prosseguir somente por lacunas funcionais comprovadas ou gates nativos autorizados; este incremento não encerra M3.7/M5.6 ou os gates amplos, não retoma benchmarks e não introduz protocolo de recuperação geral do instalador.
 
-1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.
-2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
-3. M0.1 fechou gates e commit antes de qualquer shell, preservando um cenário comum contra benchmark enviesado.
-4. O preflight Qt/QML, `clang-format`, NVDA e o SDK Qt composto foram autenticados; para concluir o shell M0.2, reconstruir/empacotar contra a nova identidade, repetir smokes e gates nativos/segurança; depois executar M0.3 com o mesmo recorte.
-5. Por orientação do mantenedor, priorizar integralmente as funcionalidades do caminho C++/Qt no Windows; Linux, A/B e benchmarks ficam depois da paridade funcional, sem apagar seus gates nem apresentar a stack como aceita. Tocar linha, CRUD/reordenação, entrada incremental, detalhes/diagnóstico, armazenamento M3.5, strings/microcopy M3.6 e acessibilidade automatizável M3.7 estão verdes deterministicamente; `Ended`, válido → inválido → válido e fim sem circular também possuem caracterização Qt real. M4.1 já possui snapshot/hidratação puros, porta/codec v1, store Windows, writer/autosave, bootstrap condicional, presenter com restauração pausada, restart Release ligado/desligado, recuperação destrutiva local e lock multiprocesso. M4.1 permanece formalmente aberta pelas jornadas empacotadas/nativas correspondentes. M4.2 está funcional localmente com schema de preferências v2 e migração v1, policy/restauração segura e restart em dois processos. M4.3 está funcional localmente com instância única, argumentos/paths nativos, IPC tipado limitado, encaminhamento ao pipeline real e drenagem antes da saída. M4.4 está funcional localmente com disposição inicial por capacidade/preferência/fonte, ownership explícito da ocultação e shutdown do backend antes da saída da plataforma. M4.5 está funcional localmente com porta comum, binding e SMTC C++/WinRT real, mantendo teclas físicas, pacote, MPRIS/Linux e gates amplos pendentes. M4.6 possui um primeiro recorte funcional local para a página oficial de Aplicativos Padrão, mas continua aberta por identidade, matriz publicada, registro, pacote, Linux e gates amplos. M4.7 possui recortes de suspend/resume, retry explícito da mesma ocorrência indisponível, recuperação pausada da saída padrão, recuperação da janela após `TaskbarCreated` e localização de arquivo em outro path. Os checks automatizados de relocalização estão verdes conforme seu registro central; seletor nativo, dispositivo/drive físicos, restart real do Explorer, sleep físico, pacote e Linux continuam pendentes. Prosseguir pelo desenvolvimento funcional Windows restante sem declarar M4.6 ou M4.7 concluída. Gates nativos, corpus, limites e alegações de formato continuam abertos onde indicado.
+1. Registrar e commitar a decisão aceita, o ADR-0005 e os contratos alinhados, sem novas instalações, builds ou comparações por causa da mudança documental.
+2. Delimitar M1.1 com uma unidade real de código existente a extrair/compor no produto: fontes, targets, dependências, testes, fixtures e fronteiras de runtime/harness explícitos. Não reiniciar o player nem considerar um wrapper suficiente.
+3. Promover essa unidade com checks Windows proporcionais, core independente de Qt e preservação de comportamento/identidade; registrar o que ainda depende do experimento e os gates omitidos. Alteração comportamental exige Red; movimentação mecânica exige equivalência verificada.
+4. Compor M1.2 e a validação/CI Windows a partir dos runners existentes, sem manter Rust/Tauri como dependência. Não marcar M1 completo antes de seus critérios de saída.
+5. Continuar lacunas funcionais Windows comprovadas e hardening dos componentes promovidos. Preservar gates de corpus, segurança/licenças, acessibilidade, recuperação e distribuição; benchmarks/Linux ficam adiados. Não retomar Computer Use sem confirmação do usuário.
+
+### Checkpoints históricos de evolução Windows
+
+Os registros seguintes documentam a ordem dos recortes anteriores; suas antigas “próximas tarefas” e decisões pendentes não substituem a sequência vigente acima.
 
 O [recorte de recuperação do transporte](../experiments/m0/candidates/qt/README.md#transport-recovery) está corrigido e seus checks estão consolidados; não repetir esses checks sem mudança relevante nem encerrar fases amplas. O [aviso acessível de faixa pulada automaticamente](../experiments/m0/candidates/qt/README.md#automatic-skip-announcements), cujo Red Quick confirmou perda de contexto e de aviso deferido durante importação, está corrigido; Presenter e Quick passaram, mas a suíte global ficou não verde (271/273): contrato de texto corrigido e falha de IPC ainda sem causa confirmada ou correção. A validação proporcional está concluída: contrato UI 22/22 e Quick 153/153 no CTest focado 2/2, formato final e composição de produção conforme registro central. Não apresentar Green global nem repetir IPC/full para buscar aprovação. A próxima lacuna Windows já auditada é logging com retenção de `NFR-PRIV-003`, em incremento próprio com TDD, sem incluir logger neste commit nem afirmar vulnerabilidade ou silêncio de bibliotecas nativas. O nome definitivo foi solicitado e ainda não confirmado; registro de associações continua dependente de identidade e matriz, sem inventar essas decisões. Validações nativas/físicas, pacote e Linux mantêm seus limites, sem retomar benchmarks ou ensaios disruptivos.
 
@@ -751,4 +773,4 @@ O recorte seguinte entrega o [atalho do menu Iniciar](../experiments/m0/candidat
 
 O recorte de [formatos locais](../experiments/m0/candidates/qt/README.md#rc-music-local-formats) fecha a ligação explícita entre a matriz caracterizada e o builder, além da evolução controlada da lista entre versões. O instalador pode ser compilado ON somente com `-FormatMatrix`; compilar não instala no host. Prosseguir pelas lacunas funcionais Windows ainda comprovadamente abertas, sem repetir estes checks sem mudança relevante; registro/ativação nativos, recuperação geral, máquina limpa e segurança/distribuição mantêm seus gates separados.
 
-Não iniciar M1 enquanto M0.10 e o ADR final não estiverem commitados.
+Após o commit documental de M0.10/ADR-0005, iniciar a promoção M1 delimitada acima. Isso não declara medições históricas, demais etapas M0 ou gates de release concluídos.

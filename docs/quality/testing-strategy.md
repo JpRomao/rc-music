@@ -1,7 +1,7 @@
 # Estratégia de testes e TDD
 
 **Estado:** contrato de qualidade inicial  
-**Última revisão:** 2026-09-01
+**Última revisão:** 2026-09-05
 **Escopo:** domínio, aplicação, adapters, UI, plataforma e distribuição
 
 ## 1. Objetivo
@@ -64,11 +64,11 @@ A regressão do [menu contextual da fila](../../experiments/m0/candidates/qt/REA
 | Plataforma/pacote | lento/manual | Windows/Linux | tray, associação, SMTC/MPRIS, instalação, upgrade e uninstall |
 | Performance/soak | longo | máquina controlada | budgets, leaks, latência e estabilidade |
 
-## 4. Organização proposta
+## 4. Organização da stack aceita
 
-O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos candidatos. Cada linguagem pode ter seu harness idiomático, mas não pode omitir um caso porque sua API concreta o torna inconveniente.
+O [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) aceita a stack C++/Qt. Reutilizar os contratos e testes existentes na promoção: o núcleo deve compilar/testar independentemente de Qt e da fixture M0, e a composição Qt deve continuar consumindo a mesma implementação. Regressões históricas continuam oráculos, não uma segunda fonte das regras nem prova automática de build migrado.
 
-### C++20 + Qt 6 Quick/QML — hipótese principal
+### C++20 + Qt 6 Quick/QML — produto
 
 - usar Catch2 como runner único para domínio, application e contratos C++ puros; não adicionar uma segunda suite equivalente;
 - registrar os executáveis no CTest e manter testes independentes de `QCoreApplication` quando o código exercitado pertence ao núcleo;
@@ -76,7 +76,9 @@ O ciclo TDD, os casos de contrato, o corpus e os IDs de cenário são comuns aos
 - injetar factories C++ nas suites de contrato para executar os mesmos casos contra fakes e contra Qt Multimedia/FFmpeg, TagLib e persistência concreta;
 - confirmar que testes de `domain`, `application` e `ports` compilam sem headers, tipos, event loop ou plugins Qt.
 
-### Rust + Tauri 2 + Svelte — desafiante A/B
+### Rust + Tauri 2 + Svelte — histórico, fora dos checks do produto
+
+As convenções abaixo permanecem documentadas somente para eventual experimento explicitamente retomado. Não instalar/exigir essas ferramentas no desenvolvimento C++ Windows.
 
 - manter testes unitários Rust próximos ao módulo em `#[cfg(test)]` quando ajudam a leitura;
 - manter casos de uso e contratos Rust no diretório de testes definido pelo bootstrap, sem exigir WebView/Tauri para o núcleo;
@@ -530,6 +532,8 @@ Tray, associações, SMTC/MPRIS e install/uninstall devem ter smoke tests espec�
 
 ### Comparação A/B do M0
 
+Protocolo histórico, não pré-requisito de M1 após o ADR-0005. A/B só será retomado por solicitação explícita. Benchmarks do produto e Linux continuam adiados, sem reduzir metas nem declarar gates de release aprovados. Os recortes de evidência anteriores deste documento conservam seus limites originais.
+
 - congelar antes da coleta o protocolo, os cenários, marcadores, tolerâncias e critérios de descarte;
 - comparar shells Release com o mesmo recorte de UX, assets, dados, roteiro e baseline de máquina, usando backend falso e sem áudio ou rede reais;
 - separar primeira execução, cold start e execução aquecida, com pelo menos 20 lançamentos válidos por cenário e candidato;
@@ -538,7 +542,7 @@ Tray, associações, SMTC/MPRIS e install/uninstall devem ter smoke tests espec�
 - comparar Qt Multimedia/FFmpeg + TagLib e Rodio/CPAL/Symphonia + Lofty separadamente dos shells, usando o mesmo corpus, ambiente de áudio e casos de contrato;
 - cobrir NFR-PERF-001–007 e tratar falha de acessibilidade P0 como bloqueadora, independentemente do resultado de recursos.
 
-Não executar benchmark confiável junto de jobs concorrentes ou build debug. Registrar hardware, SO, energia, versão/commit, amostra, processo/árvore observada e método. Resultado dentro das tolerâncias pré-registradas é empate e segue os critérios de NFR-STACK-006, não preferência de linguagem.
+Não executar benchmark confiável junto de jobs concorrentes ou build debug. Registrar hardware, SO, energia, versão/commit, amostra, processo/árvore observada e método. No protocolo histórico, resultado dentro das tolerâncias pré-registradas era empate; não atribuir vitória comparativa à decisão explícita atual.
 
 ## 13. Cobertura e mutação
 

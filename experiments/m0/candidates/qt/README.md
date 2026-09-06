@@ -1,6 +1,6 @@
-# Candidato Qt
+# Base Qt — origem experimental M0
 
-Shell experimental C++20/Qt Quick de M0.2. A stack continua apenas como candidata: este diretório não é o scaffold do produto e não aceita o ADR-0001.
+O [ADR-0005](../../../../docs/architecture/decisions/0005-windows-product-stack.md) aceita C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib como stack definitiva do produto Windows, sem exigir A/B. Este diretório conserva a implementação originada em M0.2 e ainda não é o scaffold final: a promoção incremental deve reutilizar seus módulos/testes e retirar dependências do harness experimental. Os registros abaixo descrevem o estado no momento de cada incremento; referências históricas a stack não aceita foram superadas pela decisão, não por novas medições. Instalação/distribuição, Linux, benchmarks e a interação nativa interrompida mantêm seus limites.
 
 <a id="rc-music-identity"></a>
 

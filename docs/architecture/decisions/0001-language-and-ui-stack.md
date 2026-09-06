@@ -1,8 +1,11 @@
 # ADR-0001: Comparação entre C++/Qt e Rust/Tauri/Svelte
 
-**Estado:** Proposto  
+**Estado:** Substituído
+
 **Data:** 2026-08-23  
 **Decisor:** mantenedor do projeto
+
+Substituído em 2026-09-05 pelo [ADR-0005](0005-windows-product-stack.md), mediante decisão explícita do mantenedor, não por vitória medida no A/B. O texto abaixo preserva a proposta e o protocolo históricos; não bloqueia o desenvolvimento Windows atual.
 
 ## Contexto
 
