@@ -108,7 +108,7 @@ Refinamento confirmado de `FR-037` em 2026-09-06: na janela principal, `←`/`�
 |---|---:|---|
 | UX-001 | P0 | A ação primária “Abrir áudio” é evidente no estado vazio e acessível em até uma interação. |
 | UX-002 | P0 | Play/pause, progresso, saltos, anterior/próxima e volume permanecem visíveis durante reprodução. |
-| UX-003 | P0 | A tela principal mostra somente informações essenciais; detalhes técnicos usam painel ou folha sob demanda. |
+| UX-003 | P0 | A tela principal mostra somente informações essenciais; detalhes técnicos usam painel ou folha sob demanda. No Windows, abrir o aplicativo de produção não cria uma janela de terminal adicional. |
 | UX-004 | P0 | Fluxo principal completo por teclado, com foco visível, ordem lógica e nomes acessíveis em botões de ícone. |
 | UX-005 | P0 | Leitor de tela anuncia troca de faixa, erros e ações importantes, mas não cada atualização do cronômetro. |
 | UX-006 | P0 | Contraste mínimo WCAG 2.2 AA, escala funcional de 100% a 200%, alto contraste do Windows e preferência de movimento reduzido. |

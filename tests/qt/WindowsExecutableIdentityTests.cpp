@@ -1,5 +1,6 @@
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QFile>
 #include <QFileInfo>
 #include <QScopeGuard>
 #include <QSet>
@@ -10,6 +11,7 @@
 #include <qt_windows.h>
 #include <winver.h>
 
+#include <cstddef>
 #include <utility>
 
 namespace music_player::m0::test {
@@ -112,6 +114,31 @@ class WindowsExecutableIdentityTests final : public QObject {
             const auto release_icon = qScopeGuard([icon] { DestroyIcon(icon); });
         }
         QCOMPARE(actual_sizes, expected_sizes);
+    }
+
+    void usesWindowsGuiSubsystemWithoutAnAutomaticConsole() {
+        QFile executable(executable_);
+        QVERIFY(executable.open(QIODevice::ReadOnly));
+        const QByteArray dos = executable.read(sizeof(IMAGE_DOS_HEADER));
+        QCOMPARE(dos.size(), qsizetype{sizeof(IMAGE_DOS_HEADER)});
+        QCOMPARE(qFromLittleEndian<quint16>(dos.constData()), quint16{IMAGE_DOS_SIGNATURE});
+        const auto pe_offset = qFromLittleEndian<qint32>(dos.constData() + offsetof(IMAGE_DOS_HEADER, e_lfanew));
+        QVERIFY(pe_offset >= qint32{sizeof(IMAGE_DOS_HEADER)});
+        QVERIFY(executable.seek(pe_offset));
+        const QByteArray signature = executable.read(sizeof(DWORD));
+        QCOMPARE(signature.size(), qsizetype{sizeof(DWORD)});
+        QCOMPARE(qFromLittleEndian<quint32>(signature.constData()), quint32{IMAGE_NT_SIGNATURE});
+        const QByteArray header = executable.read(sizeof(IMAGE_FILE_HEADER));
+        QCOMPARE(header.size(), qsizetype{sizeof(IMAGE_FILE_HEADER)});
+        const auto optional_size =
+            qFromLittleEndian<quint16>(header.constData() + offsetof(IMAGE_FILE_HEADER, SizeOfOptionalHeader));
+        const QByteArray optional = executable.read(optional_size);
+        QCOMPARE(optional.size(), qsizetype{optional_size});
+        QVERIFY(optional.size() >= qsizetype{offsetof(IMAGE_OPTIONAL_HEADER64, Subsystem) + sizeof(WORD)});
+        QCOMPARE(qFromLittleEndian<quint16>(optional.constData()), quint16{IMAGE_NT_OPTIONAL_HDR64_MAGIC});
+        const auto subsystem =
+            qFromLittleEndian<quint16>(optional.constData() + offsetof(IMAGE_OPTIONAL_HEADER64, Subsystem));
+        QCOMPARE(subsystem, quint16{IMAGE_SUBSYSTEM_WINDOWS_GUI});
     }
 
     void publishesOnlyTheKnownProductIdentity() {

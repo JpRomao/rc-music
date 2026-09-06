@@ -5,6 +5,12 @@
 
 A raiz passa a executar a cobertura de bindings, plataforma, persistência, privacidade e identidade do executável que não exige interação com o desktop. As 12 fontes foram movidas sem alteração de bytes; o consumidor histórico usa os mesmos arquivos. Os quatro smokes nativos permanecem separados do runner diário. Os cinco drivers instrumentados, ainda separados naquele incremento, foram incluídos pela [promoção posterior de processos](process-tests.md), com composição exclusiva de testes e gates de build/testes validados.
 
+## Abertura sem terminal adicional
+
+Correção solicitada em 2026-09-06 (`UX-003`): somente o alvo de aplicação `m0_qt_shell` recebe `WIN32_EXECUTABLE TRUE` no Windows. Qt fornece seu entry point gráfico para a mesma `main`; não há `WinMain` própria, script para esconder janela ou alteração de lógica/dados. Runners e shells instrumentados de testes conservam seus protocolos de console.
+
+O teste `usesWindowsGuiSubsystemWithoutAnAutomaticConsole` lê cabeçalhos PE do arquivo sem executá-lo, validando assinaturas, tamanhos, PE32+ e subsistema. Red: **5 passagens/1 falha**, subsistema observado **3 (console)** em vez de **2 (Windows GUI)**. Após a correção, builds Release ON/OFF passaram; CTest focado **3/3** (identidade, startup instrumentado combinado e fronteira de processo), identidade sobre o executável OFF **6/6**, sem skips, e grafo de produção **248 comandos** sem suporte/cenários históricos. A mudança não exige repetir áudio, fila, UI ou benchmarks. Interação nativa, instalação e gates amplos continuam separados.
+
 ## Os 12 alvos promovidos
 
 [RcMusicWindowsTests.cmake](../cmake/RcMusicWindowsTests.cmake) registra oito suites de adapters/identidade somente com Windows, desktop e `BUILD_TESTING=ON`. Os quatro bindings são registrados em [tests/ui/CMakeLists.txt](../tests/ui/CMakeLists.txt), usando a [variante exclusiva de testes da UI](ui-tests.md). Todos recebem o label CTest `windows`.
@@ -22,7 +28,7 @@ A raiz passa a executar a cobertura de bindings, plataforma, persistência, priv
 | `rc_music.windows.session-store` | [QtJsonWindowsSessionStoreTests.cpp](../tests/qt/QtJsonWindowsSessionStoreTests.cpp) | Store real e locks em diretório temporário; um filho do próprio teste mantém o lock. |
 | `rc_music.windows.diagnostic-privacy` | [QtDiagnosticPrivacyTests.cpp](../tests/qt/QtDiagnosticPrivacyTests.cpp) | Mensagens sintéticas e captura de saída de filhos do próprio teste, incluindo término fatal deliberado de um filho. |
 | `rc_music.windows.diagnostic-store` | [QtWindowsDiagnosticLogStoreTests.cpp](../tests/qt/QtWindowsDiagnosticLogStoreTests.cpp) | Store real, relógio falso, retenção e fronteiras de arquivos/links somente em diretórios temporários. |
-| `rc_music.windows.executable-identity` | [WindowsExecutableIdentityTests.cpp](../tests/qt/WindowsExecutableIdentityTests.cpp) | Lê ícones e VERSIONINFO do executável produzido, carregado como dados/recursos; não inicia a aplicação. |
+| `rc_music.windows.executable-identity` | [WindowsExecutableIdentityTests.cpp](../tests/qt/WindowsExecutableIdentityTests.cpp) | Lê o subsistema GUI no PE, ícones e VERSIONINFO do executável produzido; não inicia a aplicação. |
 
 Os stores não abrem mídia pessoal nem configurações existentes. Caminhos Unicode/UNC serializados nos testes de sessão são dados sintéticos, não fontes de áudio. O teste de identidade depende do build de `m0_qt_shell`, mas inspeciona o PE com `LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE`; os ícones temporários são liberados pelo próprio teste.
 

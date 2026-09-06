@@ -1294,6 +1294,10 @@
         {
           "path": "tests/ui/quick/tst_track_details.qml",
           "marker": "function test_localPartialDetailsUpdateCopyAndRemainActionableOnError()"
+        },
+        {
+          "path": "tests/qt/WindowsExecutableIdentityTests.cpp",
+          "marker": "void usesWindowsGuiSubsystemWithoutAnAutomaticConsole()"
         }
       ],
       "evidence": [
@@ -1304,6 +1308,10 @@
         {
           "path": "docs/product/ux-specification.md",
           "marker": "## 6. Detalhes da faixa"
+        },
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Abertura sem terminal adicional"
         }
       ],
       "remaining": [

@@ -182,6 +182,7 @@ if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
     qt_add_executable(m0_qt_shell "${RC_MUSIC_SOURCE_ROOT}/src/app/main.cpp")
     set_target_properties(m0_qt_shell PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
     if(WIN32)
+        set_target_properties(m0_qt_shell PROPERTIES WIN32_EXECUTABLE TRUE)
         enable_language(RC)
         add_executable(m0_qt_windows_icon_generator EXCLUDE_FROM_ALL
             "${RC_MUSIC_SOURCE_ROOT}/tools/BuildWindowsIcon.cpp")
