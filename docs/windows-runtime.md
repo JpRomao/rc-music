@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** staging e helpers promovidos; os gates de validação do pacote/distribuição continuam abertos.
+**Estado:** runtime local atualizado montado e inventário verificado; execução do payload, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-09-06.
 
 ## Implementação única
@@ -51,7 +51,27 @@ O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
 
-## Evidência e limites do incremento
+## Runtime local gerado em 2026-09-06
+
+Após autorização explícita **“Sim, gerar sem instalar”**, o runtime foi montado com as ferramentas locais existentes e o cache desktop raiz Release/OFF `out/product/m1-desktop-release-off-20260906`, conferido contra `tools/windows.example.psd1`. O processo usou o ambiente MSVC 14.44/SDK Windows 10.0.22621.0; não houve download nem rebuild de SDK.
+
+Comando desta execução, dentro desse ambiente de desenvolvimento (o destino era novo; uma repetição exige outro destino):
+
+```powershell
+& ./packaging/windows/tests/LocalRuntime.Tests.ps1 -BuildDirectory out/product/m1-desktop-release-off-20260906 -OutputDirectory out/product/rc-music-local/rc-music-windows-dev-3f22fda
+```
+
+O gate terminou com exit 0 após build incremental, scanner QML, leitura de imports PE, cópia e verificação de hashes. Uma conferência independente somente leitura confirmou:
+
+- commit de origem **`3f22fda7ae58e6ca2a2bf0587c8f0a620ad44cb9`**, checkout limpo, `recipe_dirty=false`, `BUILD_TESTING=OFF`, arquitetura x64;
+- **554 arquivos / 96.076.407 bytes**, sem extras, ausentes, artefatos de teste ou mídia; **71 PEs x64** pelos headers; o `RCMusic.exe` copiado coincide com o executável do build;
+- **5/5 hashes** da receita promovida iguais aos fontes, e manifesto SHA-256 **`c3f43d26601fdafd5d8ebe7e779f2c7f34827361681b729cecb182d83f1b742c`**.
+
+O payload está em `out/product/rc-music-local/rc-music-windows-dev-3f22fda/app`; manifesto e `qml-imports.json` ficam no diretório pai, ignorados pelo Git. Esse runtime alimentou a [compilação do setup privado](windows-installer.md#instalador-local-gerado-em-2026-09-06). O identificador de versão do executável ainda é `M0 experimental`; não foi inventada versão de release.
+
+Não houve execução do player, `LocalRuntime.Smoke.ps1`, probes, setup ou nova declaração de formatos. A conferência de bytes/headers/imports não demonstra carregabilidade, playback no pacote, máquina limpa ou lifecycle. CRT/pré-requisitos externos, segurança, licenças/notices/SBOM, assinatura e gates nativos continuam pendentes. Nenhum pacote histórico foi substituído.
+
+## Evidência e limites da promoção original
 
 - Guarda de produção: baseline **7/7**, Red **7 passes/1 falha** pelo import histórico ausente na exportação, Green **8/8** com import raiz. A inspeção read-only do build OFF existente confirmou **248 comandos**, fontes reais presentes e suporte experimental ausente, sem rebuild.
 - Planner de runtime: baseline **56/56**, Red **50 passes/14 falhas**, Green **64/64**, preservando planejamento/cópia. Com `-IncludeLegacy`, **68/68** inclui quatro caracterizações de propagação de falhas pelos encaminhadores. Alternar import direto/histórico na mesma sessão passou **4/4**. A seleção de probes ON e os snapshots produto/histórico têm regressões específicas.

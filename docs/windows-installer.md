@@ -1,13 +1,13 @@
 # Instalador Windows — receita de produto
 
-**Estado:** implementação e planejamento promovidos; compilação/lifecycle desta receita e gates de distribuição ainda pendentes.
+**Estado:** setup privado da receita promovida compilado com associações OFF; execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-09-06.
 
 ## Fonte única e proveniência
 
 [`packaging/windows`](../packaging/windows/New-RcMusicInstaller.ps1) reúne o builder, o planejador, o leitor de formatos e os quatro templates/helpers NSIS. A geração da configuração e os quatro arquivos NSIS preservam a lógica anterior; os NSIS foram comparados byte a byte à revisão `3f539d6`. LF é fixado por `.gitattributes` para conservar esses bytes em outro checkout.
 
-O produto não importa o experimento. Os caminhos antigos são encaminhadores, e a compatibilidade com a declaração v1 é explícita. O template corrente do harness histórico aponta diretamente para a fonte promovida; os snapshots de versões antigas continuam vindo de seus commits fixos. Os includes dos encaminhadores são ancorados em `__FILEDIR__`, com diretório de busca explícito, conforme a [documentação do pré-processador NSIS](https://nsis.sourceforge.io/Docs/Chapter5.html). A resolução foi inspecionada estaticamente; não houve nova compilação NSIS.
+O produto não importa o experimento. Os caminhos antigos são encaminhadores, e a compatibilidade com a declaração v1 é explícita. O template corrente do harness histórico aponta diretamente para a fonte promovida; os snapshots de versões antigas continuam vindo de seus commits fixos. Os includes dos encaminhadores são ancorados em `__FILEDIR__`, com diretório de busca explícito, conforme a [documentação do pré-processador NSIS](https://nsis.sourceforge.io/Docs/Chapter5.html). Os encaminhadores foram inspecionados estaticamente; sua compilação não foi exercitada. A compilação direta da receita de produto está registrada abaixo.
 
 `Get-RcMusicInstallerRecipeHashes` é o inventário único de nove fontes reais, com caminhos relativos à raiz e SHA-256. Planejamento, identidade do payload, builder e revalidação pós-compilação usam essa mesma lista, não hashes dos encaminhadores. O recibo mantém schema 1 e acrescenta `recipe_path_base=repository`. Corrigir somente um helper muda a identidade; runtime e recibos antigos não são reatribuídos a um commit novo.
 
@@ -54,7 +54,26 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
 
-## Evidência e limites
+## Instalador local gerado em 2026-09-06
+
+Após autorização explícita para **gerar sem instalar**, a entrada de produto compilou o [runtime atualizado](windows-runtime.md#runtime-local-gerado-em-2026-09-06) do commit limpo **`3f22fda7ae58e6ca2a2bf0587c8f0a620ad44cb9`**, usando NSIS 3.12 já provisionado e conferido pelo recibo. Comando executado com exit 0, sem `-FormatMatrix` e em destino então inexistente:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-3f22fda/app -OutputDirectory out/product/rc-music-installer/rc-music-windows-dev-3f22fda -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+```
+
+Conferência posterior somente leitura do artefato, configuração e recibo:
+
+- `RCMusic-Setup.exe`: **37.980.884 bytes**, SHA-256 **`83166f6cb8d056ceb283ec781046cda45c2b77253672e5d3eee053c356e12ea2`**;
+- `installer-receipt.json`: SHA-256 **`33f20a4c55ba4e1082884299decd13d1eabaff83660a9a2b3dbdd73a46778339`**, receita/runtime vinculados ao commit acima e `recipe_dirty=false`;
+- inventário de **554 arquivos** coincide com o manifesto do runtime; nove hashes de fontes e hash do compilador coincidem com os inputs atuais. Hashes do setup, configuração e manifesto foram reconferidos;
+- associações **OFF**, lista/callbacks de formatos vazios e assinatura do conjunto vazio conferida independentemente; nenhum corpus/matriz histórico foi usado para inferir formatos;
+- replanejamento sem escrita reproduziu o payload ID **`ca04ad5303fd47c690b5a6cffa1075ffad59266e21fb30d8383498a8cfd762e9`**;
+- Authenticode: **`NotSigned`**. Artefatos privados e ignorados pelo Git, sem publicação.
+
+Essa execução comprova compilação da receita direta e consistência dos artefatos, não instalação, atualização, remoção, launch ou playback. Nenhum setup/player/probe foi executado, nenhum Registry/menu/associação foi alterado e nenhum runtime/pacote anterior foi sobrescrito. `InstallerBuild.Tests.ps1` histórico não foi executado: o builder de produto foi chamado diretamente, seguido das verificações acima. Lifecycle, formatos do runtime novo, CRT/máquina limpa, segurança/licenças e validações nativas seguem abertos; não se trata de release aprovada.
+
+## Evidência e limites da promoção original
 
 - Planner: baseline **20/20**; Red arquitetural por entrada promovida ausente; Green **25/25** produto e **26/26** com legado. Após integrar o leitor final, **26/26** novamente. Exportações ON/OFF não dependem do experimento; modificar somente um helper copiado muda seu hash e o ID, sem modificar a origem.
 - Leitor: Red inicial **2 passes/11 falhas**, Green **14/14** produto e **15/15** com legado. Red escalar **13 passes/2 falhas** reproduziu aceitação de schema textual; ambos os modos agora exigem inteiro. Catálogo, aliases, tipos e hashes têm regressões próprias.
