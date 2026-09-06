@@ -19,7 +19,7 @@ ColumnLayout {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
-    function commitKeyboardSeek(target) {
+    function commitImmediateSeek(target) {
         if (presenter.beginSeekPreview(target))
             presenter.commitSeekPreview();
     }
@@ -69,9 +69,25 @@ ColumnLayout {
             anchors.fill: parent
             contract: root.contract
             property bool dragStarted: false
+            property bool synchronizingValue: false
+            property bool initialized: false
             from: 0
-            to: root.presenter.hasDuration ? root.presenter.durationMs : 0
-            value: root.presenter.positionMs
+            function synchronizeValue() {
+                synchronizingValue = true;
+                to = root.presenter.hasDuration ? root.presenter.durationMs : 0;
+                value = root.presenter.positionMs;
+                synchronizingValue = false;
+            }
+            Component.onCompleted: {
+                synchronizeValue();
+                initialized = true;
+            }
+            Connections {
+                target: root.presenter
+                function onPlaybackChanged() {
+                    progress.synchronizeValue();
+                }
+            }
             stepSize: 1000
             enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPending
             Accessible.role: Accessible.Slider
@@ -81,7 +97,18 @@ ColumnLayout {
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             activeFocusOnTab: true
+            // Qt accessibility writes value directly, without moved or pressed.
+            // Presenter updates (including duration clamping) are not commands.
+            onValueChanged: {
+                if (!initialized || synchronizingValue || pressed)
+                    return;
+                if (enabled && !dragStarted && !root.presenter.seekPreviewActive && Number.isFinite(value) && value !== root.presenter.positionMs)
+                    root.commitImmediateSeek(value);
+                synchronizeValue();
+            }
             onMoved: {
+                if (!pressed)
+                    return;
                 if (!dragStarted) {
                     dragStarted = root.presenter.beginSeekPreview(value);
                 } else {
@@ -93,6 +120,8 @@ ColumnLayout {
                     root.presenter.commitSeekPreview();
                     dragStarted = false;
                 }
+                if (!pressed)
+                    synchronizeValue();
             }
             Keys.onPressed: event => {
                 let target = root.presenter.positionMs;
@@ -110,7 +139,7 @@ ColumnLayout {
                     target = Math.max(from, target - 10000);
                 else
                     return;
-                root.commitKeyboardSeek(target);
+                root.commitImmediateSeek(target);
                 event.accepted = true;
             }
         }
@@ -195,12 +224,29 @@ ColumnLayout {
             onClicked: root.presenter.toggleMute()
         }
         TransportSlider {
+            id: volume
             objectName: "volume"
             enabled: root.playbackEnabled
             contract: root.contract
             from: 0
             to: 100
-            value: root.presenter.volume * 100
+            property bool synchronizingValue: false
+            property bool initialized: false
+            function synchronizeValue() {
+                synchronizingValue = true;
+                value = root.presenter.volume * 100;
+                synchronizingValue = false;
+            }
+            Component.onCompleted: {
+                synchronizeValue();
+                initialized = true;
+            }
+            Connections {
+                target: root.presenter
+                function onPreferencesChanged() {
+                    volume.synchronizeValue();
+                }
+            }
             stepSize: 1
             implicitWidth: 120
             activeFocusOnTab: true
@@ -209,7 +255,21 @@ ColumnLayout {
             Accessible.name: root.contract.volumeName
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
-            onMoved: root.presenter.setVolume(value / 100)
+            onValueChanged: {
+                if (!initialized || synchronizingValue || pressed)
+                    return;
+                if (enabled && Number.isFinite(value))
+                    root.presenter.setVolume(value / 100);
+                synchronizeValue();
+            }
+            onMoved: {
+                if (pressed)
+                    root.presenter.setVolume(value / 100);
+            }
+            onPressedChanged: {
+                if (!pressed)
+                    synchronizeValue();
+            }
         }
     }
 }

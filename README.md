@@ -2,6 +2,8 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
+Os [ajustes acessíveis de progresso e volume](experiments/m0/candidates/qt/README.md#accessible-slider-input) agora comandam o player, incluindo definição direta de valor, sem depender de soltar o mouse. A regressão passou com a suíte Quick 187/187 e startup; os builds Release ON/OFF foram atualizados. O instalador abaixo permanece intacto e ainda não inclui essa correção posterior.
+
 A [entrega local atualizada](experiments/m0/candidates/qt/windows-installer/README.md#local-delivery-refresh) inclui menu da fila, aviso de caminhos inválidos e identificação do executável. O instalador está em `out/m0/rc-music-installer/rc-music-windows-dev-a43faa1/RCMusic-Setup.exe`: runtime e receita limpos, áudio 18/18, leitura PE 5/5 e instalação/remoção isolada 1/1. Não foi instalado no host; continua privado/experimental, sem assinatura ou aprovação de distribuição.
 
 O executável Windows incorpora [ícone e propriedades de identificação](experiments/m0/candidates/qt/README.md#windows-executable-identity). Janela e bandeja usam a mesma arte já existente; o `.exe` identifica RC Music como candidato M0 experimental, sem mudar os dados `MusicPlayer`. A leitura nativa passou nos builds com/sem testes.

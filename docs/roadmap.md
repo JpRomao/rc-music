@@ -1,5 +1,7 @@
 # Roadmap
 
+O incremento funcional posterior corrige [progresso e volume por acessibilidade](../experiments/m0/candidates/qt/README.md#accessible-slider-input), com ações/valor direto aplicados ao player e regressões de sincronização, pausa e bloqueios. Builds ON/OFF e checks focados passaram; o instalador citado abaixo ainda não contém essa correção. Não encerra acessibilidade nativa ou release.
+
 O checkpoint Windows mais recente é a [entrega local atualizada](../experiments/m0/candidates/qt/windows-installer/README.md#local-delivery-refresh), que incorpora os incrementos do menu da fila, feedback de abertura e identidade do executável. A matriz foi revalidada no novo runtime e o instalador compilado de receita limpa passou na conferência de inventário; instalação/remoção dos bytes reais ocorreu somente em isolamento. Preserva a evolução de formatos com propriedade/retry e legado OFF já implementada. Não houve associação real, benchmark ou fechamento de M4.6/M4.8 e dos gates públicos de distribuição.
 
 **Estado:** proposta de ordem e escopo; sem compromisso de datas  

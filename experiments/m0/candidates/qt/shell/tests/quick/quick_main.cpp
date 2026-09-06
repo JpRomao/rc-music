@@ -110,8 +110,9 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         ++pause_calls;
         return music_player::m0::PlaybackCommandResult::Accepted;
     }
-    music_player::m0::PlaybackCommandResult seekTo(std::int64_t) override {
+    music_player::m0::PlaybackCommandResult seekTo(std::int64_t target) override {
         ++seek_calls;
+        last_seek_target = target;
         return std::exchange(reject_next_seek, false) ? music_player::m0::PlaybackCommandResult::Busy
                                                       : music_player::m0::PlaybackCommandResult::Accepted;
     }
@@ -142,6 +143,7 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
         pause_calls = 0;
         unload_calls = 0;
         seek_calls = 0;
+        last_seek_target = 0;
         reject_next_seek = false;
     }
 
@@ -152,6 +154,7 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
     int pause_calls{0};
     int unload_calls{0};
     int seek_calls{0};
+    std::int64_t last_seek_target{0};
     bool reject_next_seek{false};
 
   private:
@@ -497,6 +500,14 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE void publishLocalPaused() { local_backend_.publish(music_player::m0::PlaybackStatus::Paused); }
     Q_INVOKABLE void rejectNextLocalSeek() { local_backend_.reject_next_seek = true; }
     Q_INVOKABLE int localSeekCount() const noexcept { return local_backend_.seek_calls; }
+    Q_INVOKABLE qlonglong localSeekTarget() const noexcept { return local_backend_.last_seek_target; }
+    Q_INVOKABLE void publishLocalPosition(const qlonglong position, const qlonglong duration = 180000) {
+        local_backend_.snapshot_.position_ms = position;
+        local_backend_.snapshot_.duration_ms = duration;
+        if (local_backend_.event_callback_)
+            local_backend_.event_callback_(
+                {music_player::m0::PlaybackEventType::SnapshotChanged, local_backend_.snapshot_});
+    }
     Q_INVOKABLE void publishLocalUnseekablePlaying() {
         local_backend_.publish(music_player::m0::PlaybackStatus::Playing, false);
     }
@@ -723,6 +734,25 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int accessibleAnnouncementCount() const noexcept { return accessible_announcement_count; }
     Q_INVOKABLE int lastAccessibleAnnouncementPoliteness() const noexcept {
         return last_accessible_announcement_politeness;
+    }
+    Q_INVOKABLE bool accessibleSetValue(QObject* object, const double value) const {
+        QAccessibleInterface* const interface = QAccessible::queryAccessibleInterface(object);
+        if (interface == nullptr || !interface->isValid() || interface->valueInterface() == nullptr)
+            return false;
+        interface->valueInterface()->setCurrentValue(value);
+        return true;
+    }
+    Q_INVOKABLE bool accessibleAdjust(QObject* object, const bool increase) const {
+        QAccessibleInterface* const interface = QAccessible::queryAccessibleInterface(object);
+        if (interface == nullptr || !interface->isValid())
+            return false;
+        QAccessibleActionInterface* const actions = interface->actionInterface();
+        const QString action =
+            increase ? QAccessibleActionInterface::increaseAction() : QAccessibleActionInterface::decreaseAction();
+        if (actions == nullptr || !actions->actionNames().contains(action))
+            return false;
+        actions->doAction(action);
+        return true;
     }
     Q_INVOKABLE QVariantMap accessibleSnapshot(QObject* object) const {
         QVariantMap snapshot{{QStringLiteral("valid"), false},     {QStringLiteral("parentValid"), false},

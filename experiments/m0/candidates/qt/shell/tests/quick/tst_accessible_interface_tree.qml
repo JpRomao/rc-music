@@ -51,6 +51,155 @@ TestCase {
         testScenarioDriver.resetLocalScenario(); // qmllint disable unqualified
     }
 
+    function openLocalTrack() {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        driver.enqueueLocalSelection(["C:/Música/Controle acessível.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+    }
+
+    function test_accessibleProgressActionCommitsWithoutPointerRelease_data() {
+        return [
+            {
+                tag: "increase",
+                action: "increase",
+                target: 21000
+            },
+            {
+                tag: "decrease",
+                action: "decrease",
+                target: 19000
+            },
+            {
+                tag: "range-value",
+                action: "set",
+                target: 42000
+            }
+        ];
+    }
+
+    function test_accessibleProgressActionCommitsWithoutPointerRelease(data) {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        openLocalTrack();
+        driver.publishLocalPosition(20000);
+        tryCompare(presenter, "confirmedPositionMs", 20000);
+        const progress = findChild(shell, "progress");
+        const positionBefore = presenter.confirmedPositionMs;
+        const seeksBefore = driver.localSeekCount();
+        verify(!progress.pressed);
+        if (data.action === "set")
+            verify(driver.accessibleSetValue(progress, data.target));
+        else
+            verify(driver.accessibleAdjust(progress, data.action === "increase"));
+        compare(driver.localSeekCount(), seeksBefore + 1);
+        compare(driver.localSeekTarget(), data.target);
+        verify(presenter.seekPending);
+        compare(presenter.confirmedPositionMs, positionBefore);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        verify(driver.accessibleSetValue(progress, 60000));
+        compare(driver.localSeekCount(), seeksBefore + 1);
+        compare(progress.value, presenter.positionMs);
+        driver.publishLocalPosition(data.target);
+        tryCompare(presenter, "seekPending", false);
+        verify(!presenter.seekPreviewActive);
+        compare(progress.value, data.target);
+        compare(driver.localSeekCount(), seeksBefore + 1);
+    }
+
+    function test_accessibleVolumeActionChangesPlayerVolume() {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        openLocalTrack();
+        const volume = findChild(shell, "volume");
+        verify(presenter.setVolume(0.5));
+        verify(driver.accessibleAdjust(volume, true));
+        compare(presenter.volume, 0.51);
+        verify(driver.accessibleAdjust(volume, false));
+        compare(presenter.volume, 0.5);
+        verify(driver.accessibleSetValue(volume, 75));
+        compare(presenter.volume, 0.75);
+        compare(driver.localSeekCount(), 0);
+    }
+
+    function test_presenterUpdatesDoNotSeekAndReconcileAccessibleValues() {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        openLocalTrack();
+        const progress = findChild(shell, "progress");
+        driver.publishLocalPosition(120000);
+        tryCompare(progress, "value", 120000);
+        driver.publishLocalPosition(5000, 10000);
+        tryCompare(progress, "to", 10000);
+        compare(progress.value, 5000);
+        compare(driver.localSeekCount(), 0);
+        verify(!presenter.seekPreviewActive && !presenter.seekPending);
+        driver.publishLocalPaused();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
+        driver.rejectNextLocalSeek();
+        verify(driver.accessibleSetValue(progress, 9000));
+        compare(driver.localSeekCount(), 1);
+        verify(!presenter.seekPreviewActive && !presenter.seekPending);
+        compare(progress.value, presenter.confirmedPositionMs);
+        compare(presenter.playbackState, PlayerPresenter.Paused);
+        driver.publishLocalUnseekablePlaying();
+        tryCompare(progress, "enabled", false);
+        verify(driver.accessibleSetValue(progress, 15000));
+        verify(driver.accessibleAdjust(progress, true));
+        compare(driver.localSeekCount(), 1);
+        compare(progress.value, presenter.positionMs);
+    }
+
+    function test_accessibleSeekClampsAndKeepsPlaybackPaused() {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        openLocalTrack();
+        driver.publishLocalPaused();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
+        driver.publishLocalPosition(9500, 10000);
+        tryCompare(presenter, "confirmedPositionMs", 9500);
+        const progress = findChild(shell, "progress");
+        const playsBefore = driver.localPlayCount();
+        verify(driver.accessibleAdjust(progress, true));
+        compare(driver.localSeekTarget(), 10000);
+        compare(driver.localSeekCount(), 1);
+        driver.publishLocalPosition(10000, 10000);
+        tryCompare(presenter, "seekPending", false);
+        verify(driver.accessibleSetValue(progress, -1000));
+        compare(driver.localSeekTarget(), 0);
+        compare(driver.localSeekCount(), 2);
+        driver.publishLocalPosition(0, 10000);
+        tryCompare(presenter, "seekPending", false);
+        compare(presenter.playbackState, PlayerPresenter.Paused);
+        compare(driver.localPlayCount(), playsBefore);
+    }
+
+    function test_accessibleVolumeClampsAndDisabledInputsAreInert() {
+        const driver = testScenarioDriver; // qmllint disable unqualified
+        const presenter = testLocalPlayerPresenter; // qmllint disable unqualified
+        openLocalTrack();
+        const volume = findChild(shell, "volume");
+        verify(driver.accessibleSetValue(volume, 110));
+        compare(presenter.volume, 1);
+        verify(driver.accessibleAdjust(volume, true));
+        compare(presenter.volume, 1);
+        verify(driver.accessibleSetValue(volume, -10));
+        compare(presenter.volume, 0);
+        verify(driver.accessibleAdjust(volume, false));
+        compare(presenter.volume, 0);
+        verify(presenter.setVolume(0.8));
+        compare(volume.value, 80);
+        verify(presenter.clearQueue());
+        tryCompare(volume, "enabled", false);
+        verify(driver.accessibleSetValue(volume, 20));
+        verify(driver.accessibleAdjust(volume, false));
+        compare(presenter.volume, 0.8);
+        compare(volume.value, 80);
+    }
+
     function test_publicControlsExistInTheNativeAccessibleTree() {
         verifyControl(findChild(shell, "open-audio"), Accessible.Button, "Abrir áudio", true);
         verifyControl(findChild(shell, "preferences"), Accessible.Button, "Preferências", true);

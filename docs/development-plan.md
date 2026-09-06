@@ -715,6 +715,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
+Checkpoint funcional mais recente: os [sliders acessíveis](../experiments/m0/candidates/qt/README.md#accessible-slider-input) agora aplicam progresso/volume ao player por ações e valor direto, com sincronização que não transforma ticks ou mudança de duração em comandos. Red/Green, Quick 187/187, startup e builds ON/OFF constam do registro central. O instalador a43faa1 permanece anterior a essa correção; não foi recompilado nem instalado. Prosseguir somente por lacunas funcionais comprovadas ou gates nativos autorizados; este incremento não encerra M3.7/M5.6 ou os gates amplos, não retoma benchmarks e não introduz protocolo de recuperação geral do instalador.
+
 1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.
 2. Fechar distribuição Linux, matriz Windows, licença experimental e protocolo de medição.
 3. M0.1 fechou gates e commit antes de qualquer shell, preservando um cenário comum contra benchmark enviesado.
