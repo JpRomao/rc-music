@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setup privado da receita promovida compilado com associações OFF; execução/lifecycle e gates de distribuição ainda pendentes.
+**Estado:** setups privados OFF e com declaração v2 compilados; execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-09-06.
 
 ## Fonte única e proveniência
@@ -79,7 +79,25 @@ Conferência posterior somente leitura do artefato, configuração e recibo:
 - replanejamento sem escrita reproduziu o payload ID **`ca04ad5303fd47c690b5a6cffa1075ffad59266e21fb30d8383498a8cfd762e9`**;
 - Authenticode: **`NotSigned`**. Artefatos privados e ignorados pelo Git, sem publicação.
 
-Essa execução comprova compilação da receita direta e consistência dos artefatos, não instalação, atualização, remoção, launch ou playback. Nenhum setup/player/probe foi executado, nenhum Registry/menu/associação foi alterado e nenhum runtime/pacote anterior foi sobrescrito. `InstallerBuild.Tests.ps1` histórico não foi executado: o builder de produto foi chamado diretamente, seguido das verificações acima. Lifecycle, formatos do runtime novo, CRT/máquina limpa, segurança/licenças e validações nativas seguem abertos; não se trata de release aprovada.
+Essa execução comprova compilação da receita direta e consistência dos artefatos, não instalação, atualização, remoção, launch ou playback. Na geração OFF nenhum setup/player/probe foi executado, nenhum Registry/menu/associação foi alterado e nenhum runtime/pacote anterior foi sobrescrito. `InstallerBuild.Tests.ps1` histórico não foi executado: o builder de produto foi chamado diretamente, seguido das verificações acima. A validação local posterior dos perfis e o setup separado constam abaixo; lifecycle, CRT/máquina limpa, segurança/licenças e validações nativas seguem abertos, sem release aprovada.
+
+## Instalador com formatos v2
+
+Após o smoke e o commit da declaração **`cc1de1c4145af1c81c840d4f4689ffa4955d69db`**, a mesma receita de produto compilou um setup separado com `-FormatMatrix` explícito. Não foi remontado o runtime nem substituído o setup OFF. Comando executado em fonte limpa, exit 0:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-3f22fda/app -OutputDirectory out/product/rc-music-installer/rc-music-windows-dev-3f22fda-formats-v2 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe -FormatMatrix packaging/windows/formats/rc-music-windows-dev-3f22fda.v2.json
+```
+
+Conferência posterior somente leitura aprovada:
+
+- setup **37.989.715 bytes**, SHA-256 **`bcdd56db5fc3a0c71c90357f5e5a4017d09cb89a730c48c73a9c275040f60f2a`**;
+- recibo SHA-256 **`6f67139c7b168b08e26aca49ae3515ba06356bf347d77194518986966ca939d4`**; receita `cc1de1c`, runtime `3f22fda`, `recipe_dirty=false`;
+- nove hashes de fontes, compilador, manifesto, declaração/resultado e 554 arquivos do runtime coincidem com os inputs; configuração compilada contém exatamente os sete callbacks, associações ON e a assinatura da declaração;
+- replanejamento sem escrita reproduziu inventário, declaração completa, formatos, assinatura e payload ID registrados; nenhuma saída de verificação foi criada;
+- Authenticode **`NotSigned`**; o setup OFF conserva SHA-256 `83166f6cb8d056ceb283ec781046cda45c2b77253672e5d3eee053c356e12ea2`.
+
+ON aqui significa código/configuração de cadastro incluídos no setup, **não cadastro executado ou app escolhido como padrão no Windows**. Nenhum setup foi iniciado; não houve install/upgrade/uninstall, mudança de Registry/associações, Computer Use ou publicação. A versão continua privada/experimental, restrita aos perfis locais testados, e exige seus gates de lifecycle, integração nativa e distribuição.
 
 ## Evidência e limites da promoção original
 

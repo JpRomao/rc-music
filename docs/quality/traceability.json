@@ -786,6 +786,10 @@
         {
           "path": "packaging/windows/tests/FormatMatrix.Tests.ps1",
           "marker": "product declaration returns only requested format and exact provenance without output"
+        },
+        {
+          "path": "packaging/windows/tests/LocalRuntime.Smoke.ps1",
+          "marker": "Sixteen synthetic codec rows"
         }
       ],
       "evidence": [
@@ -800,10 +804,14 @@
         {
           "path": "docs/windows-installer.md",
           "marker": "## Catálogo factual e declaração por runtime"
+        },
+        {
+          "path": "docs/windows-installer.md",
+          "marker": "## Instalador com formatos v2"
         }
       ],
       "remaining": [
-        "Revalidar tipos declarados e escolha de padrão no pacote do produto promovido; os testes atuais de instalação/Registry usam namespaces isolados e a entrega registrada é histórica/experimental."
+        "Confirmar registro e escolha de padrão no Windows com o pacote promovido; perfis básicos, declaração v2 e compilação do setup ON estão verificados localmente, mas esse setup não foi executado e lifecycle/ativação nativa continuam pendentes."
       ]
     },
     {
@@ -1741,7 +1749,7 @@
         }
       ],
       "remaining": [
-        "App, suites e receitas de runtime/instalador estão promovidos; verificar compilação e lifecycle desta composição e a declaração revisada para um runtime novo, sem transferir evidências históricas.",
+        "App, suites e receitas estão promovidos; runtime e setups OFF/ON foram gerados, com smoke e declaração v2 revisada para os perfis básicos. Validar lifecycle e composição instalada sem transferir evidências históricas.",
         "Concluir M1.1–M1.2 sem reintroduzir fixtures comparativas ou toolchains não escolhidas como dependências do produto."
       ]
     },
