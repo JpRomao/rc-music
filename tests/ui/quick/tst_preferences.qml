@@ -324,7 +324,7 @@ TestCase {
         compare(panel.background.color.toString(), "#21252d");
         compare(findChild(shell, "progress").palette.highlight.toString(), "#8b83ff");
         compare(findChild(shell, "volume").palette.text.toString(), "#f5f7fa");
-        compare(findChild(shell, "progress").background.color.toString(), "#69717d");
+        compare(findChild(shell, "progress").background.color.toString(), "#bbc2cc");
         compare(findChild(shell, "progress").background.children[0].color.toString(), "#8b83ff");
         compare(findChild(shell, "progress").handle.color.toString(), "#181b21");
         selectChoice(theme, 1);

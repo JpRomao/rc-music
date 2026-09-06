@@ -228,7 +228,7 @@ TestCase {
         verify(testShellUiContract.reducedMotion); // qmllint disable unqualified
         keyClick(Qt.Key_L, Qt.ControlModifier);
         scrollBar.active = true;
-        compare(scrollBar.contentItem.opacity, 0.75);
+        compare(scrollBar.contentItem.opacity, 1);
         scrollBar.active = false;
         compare(scrollBar.contentItem.opacity, 0);
     }

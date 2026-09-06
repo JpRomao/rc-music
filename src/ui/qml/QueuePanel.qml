@@ -464,29 +464,9 @@ FocusScope {
                 }
             }
 
-            ScrollBar.vertical: ScrollBar {
-                id: scrollBar
+            ScrollBar.vertical: AccessibleScrollBar {
                 objectName: "queue-scrollbar"
-                activeFocusOnTab: false
-                contentItem: Rectangle {
-                    implicitWidth: 6
-                    implicitHeight: 6
-                    radius: width / 2
-                    color: root.contract.highContrast ? root.contract.textPrimaryColor : (scrollBar.pressed ? root.contract.accentColor : root.contract.borderColor)
-                    opacity: root.contract.highContrast ? 1 : (scrollBar.policy === ScrollBar.AlwaysOn || (scrollBar.active && scrollBar.size < 1) ? 0.75 : 0)
-                    Behavior on opacity {
-                        enabled: !root.contract.highContrast
-                        NumberAnimation {
-                            duration: root.contract.feedbackTransitionMs
-                        }
-                    }
-                }
-                background: Rectangle {
-                    visible: root.contract.highContrast
-                    color: root.contract.surfaceColor
-                    border.width: 1
-                    border.color: root.contract.textPrimaryColor
-                }
+                contract: root.contract
             }
 
             Rectangle {

@@ -6,7 +6,7 @@ Slider {
     id: control
     required property ShellUiContract contract
     readonly property bool focusIndicatorVisible: activeFocus && enabled
-    readonly property color outlineColor: contract.highContrast && !enabled ? contract.disabledTextColor : contract.borderColor
+    readonly property color outlineColor: contract.highContrast && !enabled ? contract.disabledTextColor : contract.textSecondaryColor
     readonly property color fillColor: contract.highContrast && !enabled ? contract.disabledTextColor : contract.accentColor
     implicitHeight: contract.controlTargetMinimum
     padding: 6
@@ -31,7 +31,7 @@ Slider {
         width: control.availableWidth
         height: implicitHeight
         radius: 3
-        color: control.contract.highContrast ? control.contract.surfaceColor : control.contract.borderColor
+        color: control.contract.highContrast ? control.contract.surfaceColor : control.outlineColor
         border.width: control.contract.highContrast ? 1 : 0
         border.color: control.outlineColor
         scale: control.mirrored ? -1 : 1
@@ -43,6 +43,7 @@ Slider {
         }
     }
     Rectangle {
+        objectName: "slider-focus-indicator"
         anchors.fill: parent
         color: "transparent"
         radius: control.contract.radiusSmall

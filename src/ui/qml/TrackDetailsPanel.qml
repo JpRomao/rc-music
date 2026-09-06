@@ -351,6 +351,15 @@ Popup {
             clip: true
             contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical: AccessibleScrollBar {
+                objectName: "details-scrollbar"
+                contract: root.contract
+                parent: detailsScroll
+                x: detailsScroll.mirrored ? 0 : detailsScroll.width - width
+                y: detailsScroll.topPadding
+                height: detailsScroll.availableHeight
+                active: detailsScroll.ScrollBar.horizontal.active
+            }
             onAvailableHeightChanged: root.scheduleFocusedItemVisibility()
             onHeightChanged: root.scheduleFocusedItemVisibility()
 

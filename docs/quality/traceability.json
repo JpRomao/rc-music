@@ -1352,6 +1352,22 @@
         {
           "path": "tests/ui/quick/tst_high_contrast.qml",
           "marker": "function test_highContrastJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_color_contrast.qml",
+          "marker": "function test_sliderIndicatorsContrastWithActualCanvas(data)"
+        },
+        {
+          "path": "tests/ui/quick/tst_color_contrast.qml",
+          "marker": "function test_activeQueueScrollThumbIncludesOpacity(data)"
+        },
+        {
+          "path": "tests/ui/quick/tst_color_contrast.qml",
+          "marker": "function test_publishedTextPairsInBothThemes(data)"
+        },
+        {
+          "path": "tests/ui/quick/tst_details_scroll_contrast.qml",
+          "marker": "function test_detailsScrollingKeepsItsVisibleThumbContrasting(data)"
         }
       ],
       "evidence": [
@@ -1362,10 +1378,14 @@
         {
           "path": "docs/ui-tests.md",
           "marker": "mas não comprova NVDA, DPI/alto contraste nativos, diálogo do sistema ou dispositivos físicos."
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "### Contraste de indicadores e textos"
         }
       ],
       "remaining": [
-        "Concluir a verificação WCAG 2.2 AA dos pares e estados publicados; o contraste de pelo menos 3:1 do aro primário não comprova sozinho contraste de todos os textos e controles.",
+        "Completar a revisão de todas as combinações e estados publicados: a tabela textual, botão primário, sliders e scrollbars já têm prova numérica com composição alfa, mas não representam uma enumeração automática de toda a UI nem cada frame transitório.",
         "Validar escala nativa de 100%, 150% e 200%, alto contraste do Windows e movimento reduzido no produto; snapshots injetados e QT_SCALE_FACTOR offscreen permanecem evidência parcial."
       ]
     },

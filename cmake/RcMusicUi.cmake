@@ -9,6 +9,7 @@ function(rc_music_add_ui target support qml_output)
             EmptyState.qml
             AccessibleActionButton.qml
             AccessibleTransportButton.qml
+            AccessibleScrollBar.qml
             NowPlayingState.qml
             ErrorState.qml
             ErrorText.qml

@@ -219,6 +219,8 @@ Direção proposta:
 
 Tokens obrigatórios: canvas, surface, surface-raised, text-primary, text-secondary, accent, on-accent, border, focus, error, warning e success. Todo par publicado deve satisfazer contraste aplicável.
 
+Nos controles de progresso/volume, o trilho neutro e o contorno do thumb usam `text-secondary`: a borda decorativa sozinha não oferecia 3:1 contra o canvas claro. Os indicadores ativos de rolagem da fila e dos detalhes usam o mesmo componente, com opacidade final integral. A conferência de contraste considera a composição alfa sobre o fundo adjacente, não apenas o token opaco. Isso não muda a paleta de alto contraste escolhida pelo sistema nem elimina a validação nativa de UX-006.
+
 ## 12. Acessibilidade e validação manual
 
 Antes do MVP:
