@@ -742,10 +742,12 @@ Checkpoint funcional mais recente: os [sliders acessíveis](../experiments/m0/ca
 1. Preservar a decisão aceita já registrada no commit `c324114` e a evidência do [core promovido](core-build.md): fonte única, builds ON/OFF, testes reutilizados e proveniência atualizada. Não reabrir a escolha de stack ou repetir checks sem mudança relevante.
 2. Preservar a [unidade gráfica promovida](desktop-build.md): fontes e configure na raiz, sem dependência dos inputs M0, com implementação única compartilhada pelo consumidor histórico. O ON da raiz não ativa cenários de demonstração na aplicação; os cenários permanecem no ON histórico. Não repetir essa separação nem duplicar lógica.
 3. Validar a próxima unidade promovida com checks Windows proporcionais e preservação de comportamento/identidade. Alteração comportamental exige Red; movimentação mecânica exige equivalência verificada. O harness autenticado pré-M0.10 fica no snapshot histórico, não deve ser relaxado/reancorado para aceitar diretórios de produto.
-4. Consolidar M1.2 e a validação/CI Windows de M1.3 a partir do build raiz e dos runners existentes, promovendo a cobertura restante sem manter Rust/Tauri como dependência. Não marcar M1 completo antes de seus critérios de saída.
+4. Preservar os [comandos locais de M1.2](development-commands.md), já implementados com `validate` real, build de produção separado e testes dos runners. Prosseguir com rastreabilidade, promoção da cobertura restante e validação/CI Windows de M1.3, sem manter Rust/Tauri como dependência. Não marcar M1 completo antes de seus critérios de saída.
 5. Continuar lacunas funcionais Windows comprovadas e hardening dos componentes promovidos. Preservar gates de corpus, segurança/licenças, acessibilidade, recuperação e distribuição; benchmarks/Linux ficam adiados. Não retomar Computer Use sem confirmação do usuário.
 
 ### Checkpoints históricos de evolução Windows
+
+Incremento M1.2 de 2026-09-06: `scripts/develop.ps1` executa `format`, `check`, `build`, `test`, `lint` e `validate` sobre o CMake raiz, com ferramentas locais explícitas. A [evidência central](development-commands.md#evidencia-do-incremento) registra os ciclos Red/Green dos scripts, build Release OFF, `validate` ON e os testes promovidos. Cache de outra configuração/toolchain é recusado antes do build; check QML compara stdout sem `--check`; ausência de testes e falhas de processos não geram sucesso. Nenhum benchmark, instalação, interação nativa, SDK novo ou CI remoto foi executado. Isso não encerra rastreabilidade, a promoção dos testes históricos ou os demais gates M1.
 
 Os registros seguintes documentam a ordem dos recortes anteriores; suas antigas “próximas tarefas” e decisões pendentes não substituem a sequência vigente acima.
 

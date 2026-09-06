@@ -16,6 +16,8 @@ O build raiz agora compila o RC Music real, com Qt Quick, Qt Multimedia/FFmpeg e
 
 ## Configure, build e testes
 
+Para o fluxo diário, use os [comandos consolidados](development-commands.md): `scripts/develop.ps1 build` para produção e `scripts/develop.ps1 validate` para os checks da unidade promovida. O guia explica o arquivo de ferramentas e não exige preparar manualmente o ambiente MSVC. A receita explícita abaixo permanece como referência do build e da sua proveniência.
+
 PowerShell 7 x64, na raiz. Use o [ambiente MSVC já provisionado](core-build.md#build-windows): CMake 3.31+, MSVC 19.44/toolset 14.44 e SDK Windows 10.0.22621.0. Os caminhos abaixo correspondem às dependências existentes no host, sem instalação, download ou reconstrução de SDK:
 
 ```powershell

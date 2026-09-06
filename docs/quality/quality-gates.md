@@ -1,7 +1,7 @@
 # Gates de qualidade
 
-**Estado:** contrato vigente; comandos raiz de produto a materializar em M1
-**Última revisão:** 2026-09-05
+**Estado:** contrato vigente; comandos locais da unidade promovida executáveis, CI e demais gates M1 pendentes
+**Última revisão:** 2026-09-06
 
 Gates de comportamento, segurança e plataforma são invariantes. O [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) aceita C++/Qt, Qt Multimedia/FFmpeg e TagLib e retira A/B como pré-requisito de desenvolvimento Windows. Os comandos definitivos pertencem somente a essa stack; toolchains experimentais não são acumulados no produto. Benchmarks e Linux permanecem adiados, sem aprovação dos budgets ou dos gates de release.
 
@@ -27,9 +27,9 @@ Gates locais validam o working tree que será commitado. CI e release validam co
 | Dependência | todos os testes afetados, advisories, licença, bundle e changelog upstream |
 | Release | todos os gates, E2E, package smoke, performance e checklist manual |
 
-## 3. Comandos previstos
+## 3. Comandos locais e gates restantes
 
-Enquanto não houver scaffold, estes comandos são contrato de desenho e podem ser ajustados no primeiro commit de build. A raiz deve oferecer scripts equivalentes e documentados.
+O [runner Windows da raiz](../development-commands.md) oferece `format`, `lint`, `check`, `test`, `build` e `validate` sobre as fontes de produto, sem chamar o harness experimental. Ferramentas são configuradas explicitamente; nenhuma ação instala ou baixa dependências. O `validate` atual cobre formato, documentos, regressões dos scripts, diff, configure/build Release, `all_qmllint` e CTest dos testes promovidos. A cobertura histórica ainda não promovida, CI, cobertura/sanitizers, E2E e gates de release não são inferidos desse resultado.
 
 O check documental já é executável:
 
@@ -65,7 +65,7 @@ pnpm build
 
 ### Gate agregado após a decisão
 
-O bootstrap da stack aceita deve expor na raiz um comando `validate` documentado com PowerShell/CMake/CTest. Ele executa apenas checks determinísticos e adequados a todo commit; E2E, packaging, soak e benchmarks usam comandos separados. A extração do núcleo deve provar build OFF sem Qt/Catch2/fixture M0 e reutilização da mesma biblioteca no consumidor Qt; um wrapper que mantém dependências experimentais obrigatórias não encerra M1.
+O entrypoint `scripts/develop.ps1 validate` está implementado com PowerShell/CMake/CTest e documentado no guia acima. Ele executa os checks locais da unidade promovida; E2E, packaging, soak e benchmarks continuam gates separados, não executados por esse runner. A extração do núcleo comprova build OFF sem Qt/Catch2/fixture M0 e reutilização da mesma biblioteca no consumidor Qt, conforme o [registro do core](../core-build.md). CI e promoção dos testes restantes ainda exigem incrementos próprios; o comando agregado não encerra M1 nem substitui os gates afetados de cada módulo.
 
 ## 4. Pipeline recomendado
 

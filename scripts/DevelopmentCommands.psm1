@@ -1,0 +1,189 @@
+#Requires -Version 7.0
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Assert-RcMusicBuildDirectory {
+    param(
+        [Parameter(Mandatory)][string] $RepositoryRoot,
+        [Parameter(Mandatory)][string] $BuildDirectory,
+        [Parameter(Mandatory)][ValidateSet('ON', 'OFF')][string] $Testing,
+        [Collections.IDictionary] $Tools
+    )
+    $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\', '/')
+    $build = [IO.Path]::GetFullPath($BuildDirectory).TrimEnd('\', '/')
+    $output = [IO.Path]::GetFullPath((Join-Path $root 'out/product')).TrimEnd('\', '/') + '\'
+    if (-not $build.StartsWith($output, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Build directory must be a child of the product output area'
+    }
+    $ancestor = $build
+    while ($ancestor) {
+        if (Test-Path -LiteralPath $ancestor) {
+            $item = Get-Item -LiteralPath $ancestor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Build output may not traverse a reparse point'
+            }
+        }
+        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+    }
+    $cachePath = Join-Path $build 'CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cachePath)) { return }
+    $cache = @{}
+    foreach ($line in Get-Content -LiteralPath $cachePath) {
+        if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') {
+            if ($cache.ContainsKey($Matches[1])) { throw 'Duplicate CMake cache entry' }
+            $cache[$Matches[1]] = $Matches[2]
+        }
+    }
+    foreach ($entry in @{
+        CMAKE_GENERATOR = 'Ninja'; CMAKE_BUILD_TYPE = 'Release'
+        BUILD_TESTING = $Testing; RC_MUSIC_BUILD_DESKTOP = 'ON'
+    }.GetEnumerator()) {
+        if ($cache[$entry.Key] -cne $entry.Value) { throw "Unsupported cached configuration: $($entry.Key)" }
+    }
+    $homePath = $cache['CMAKE_HOME_DIRECTORY']
+    if ($homePath -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($homePath) -or
+        [IO.Path]::GetFullPath($homePath).TrimEnd('\', '/') -ine $root) {
+        throw 'Unsupported cached configuration: source directory'
+    }
+    if ($Tools) {
+        $paths = @{
+            CMAKE_COMMAND = $Tools.CMake; CMAKE_CXX_COMPILER = $Tools.Compiler; CMAKE_MAKE_PROGRAM = $Tools.Ninja
+            Qt6_DIR = Join-Path $Tools.QtPrefix 'lib/cmake/Qt6'
+            Qt6Multimedia_DIR = $Tools.QtMultimediaPackage; QT_HOST_PATH = $Tools.QtHost
+            TagLib_DIR = Join-Path $Tools.TagLibPrefix 'lib/cmake/taglib'
+        }
+        if ($Testing -eq 'ON') { $paths['RC_MUSIC_CATCH2_SOURCE_DIR'] = $Tools.Catch2Source }
+        foreach ($key in $cache.Keys) {
+            if ($key -match '^(Qt6\w+)_DIR$' -and $key -ne 'Qt6Multimedia_DIR' -and
+                $cache[$key] -notlike '*-NOTFOUND') {
+                $package = $Matches[1]
+                $paths[$key] = @(Join-Path $Tools.QtPrefix "lib/cmake/$package")
+                if ($package.EndsWith('Tools')) { $paths[$key] += Join-Path $Tools.QtHost "lib/cmake/$package" }
+            }
+        }
+        foreach ($entry in $paths.GetEnumerator()) {
+            $actual = $cache[$entry.Key]
+            $matchesSelected = $false
+            if ($actual -is [string] -and [IO.Path]::IsPathFullyQualified($actual)) {
+                $actual = [IO.Path]::GetFullPath($actual).TrimEnd('\', '/')
+                foreach ($expected in @($entry.Value)) {
+                    if ($actual -ieq [IO.Path]::GetFullPath($expected).TrimEnd('\', '/')) { $matchesSelected = $true }
+                }
+            }
+            if (-not $matchesSelected) {
+                throw "Unsupported cached toolchain: $($entry.Key). Select a fresh product build directory for another toolchain."
+            }
+        }
+    }
+}
+
+function Read-RcMusicDevelopmentTools {
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $RepositoryRoot,
+        [Parameter(Mandatory)][ValidateSet('format', 'check', 'build', 'test', 'lint', 'validate')][string] $Task
+    )
+    $data = Import-PowerShellDataFile -LiteralPath $Path
+    $allowed = @('CMake', 'CTest', 'Ninja', 'Compiler', 'ClangFormat', 'QmlFormat', 'QtPrefix',
+        'QtMultimediaPackage', 'QtHost', 'TagLibPrefix', 'Catch2Source', 'VisualStudioRoot')
+    foreach ($key in $data.Keys) {
+        if ($key -notin $allowed) { throw "Unknown toolchain field: $key" }
+        if ($data[$key] -isnot [string] -or [string]::IsNullOrWhiteSpace($data[$key]) -or
+            $data[$key].Contains(';') -or $data[$key] -match '[\x00\r\n]') {
+            throw "Invalid toolchain path: $key"
+        }
+    }
+    $required = @()
+    if ($Task -in @('format', 'check', 'validate')) { $required += @('ClangFormat', 'QmlFormat') }
+    if ($Task -in @('build', 'test', 'lint', 'validate')) {
+        $required += @('CMake', 'Ninja', 'Compiler', 'QtPrefix', 'QtMultimediaPackage',
+            'QtHost', 'TagLibPrefix', 'VisualStudioRoot')
+        if ($Task -ne 'build') { $required += @('CTest', 'Catch2Source') }
+    }
+    $resolved = @{}
+    foreach ($key in $required) {
+        if (-not $data.ContainsKey($key)) { throw "Missing toolchain field: $key" }
+        $pathValue = $data[$key]
+        if (-not [IO.Path]::IsPathFullyQualified($pathValue)) { $pathValue = Join-Path $RepositoryRoot $pathValue }
+        $pathValue = [IO.Path]::GetFullPath($pathValue)
+        $pathType = if ($key -in @('CMake', 'CTest', 'Ninja', 'Compiler', 'ClangFormat', 'QmlFormat')) { 'Leaf' } else { 'Container' }
+        if (-not (Test-Path -LiteralPath $pathValue -PathType $pathType)) { throw "Toolchain path is unavailable: $key" }
+        $resolved[$key] = $pathValue
+    }
+    return $resolved
+}
+
+function Get-RcMusicDevelopmentPlan {
+    param(
+        [Parameter(Mandatory)][ValidateSet('format', 'check', 'build', 'test', 'lint', 'validate')][string] $Task,
+        [Parameter(Mandatory)][string] $RepositoryRoot,
+        [Parameter(Mandatory)][string] $BuildDirectory,
+        [Parameter(Mandatory)][Collections.IDictionary] $Tools,
+        [ValidateRange(1, 16)][int] $Jobs = 4,
+        [switch] $Apply
+    )
+    if ($Apply -and $Task -ne 'format') { throw 'Apply is only valid for format' }
+    $steps = [Collections.Generic.List[object]]::new()
+    $pwsh = (Get-Process -Id $PID).Path
+    function Add-Step([string] $Name, [string] $File, [string[]] $Arguments) {
+        $steps.Add([pscustomobject]@{ Name = $Name; File = $File; Arguments = $Arguments; WorkingDirectory = $RepositoryRoot })
+    }
+    if ($Task -in @('format', 'check', 'validate')) {
+        $arguments = @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/Format-Source.ps1'),
+            '-ClangFormat', $Tools.ClangFormat, '-QmlFormat', $Tools.QmlFormat)
+        if ($Apply) { $arguments += '-Apply' }
+        Add-Step 'format' $pwsh $arguments
+    }
+    if ($Task -in @('check', 'validate')) {
+        Add-Step 'docs' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/validate-docs.ps1'))
+        Add-Step 'runner-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentCommands.Tests.ps1'))
+        Add-Step 'format-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/FormatSource.Tests.ps1'))
+        Add-Step 'diff' 'git' @('diff', '--check')
+    }
+    if ($Task -in @('build', 'test', 'lint', 'validate')) {
+        $testing = if ($Task -eq 'build') { 'OFF' } else { 'ON' }
+        $configure = @('-S', $RepositoryRoot, '-B', $BuildDirectory, '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release', '-DRC_MUSIC_BUILD_DESKTOP=ON', "-DBUILD_TESTING=$testing",
+            "-DCMAKE_MAKE_PROGRAM=$($Tools.Ninja)", "-DCMAKE_CXX_COMPILER=$($Tools.Compiler)",
+            "-DCMAKE_PREFIX_PATH=$($Tools.QtPrefix);$($Tools.TagLibPrefix)",
+            "-DQt6Multimedia_DIR=$($Tools.QtMultimediaPackage)", "-DQT_HOST_PATH=$($Tools.QtHost)")
+        if ($testing -eq 'ON') { $configure += "-DRC_MUSIC_CATCH2_SOURCE_DIR=$($Tools.Catch2Source)" }
+        Add-Step 'configure' $Tools.CMake $configure
+        $arguments = @('--build', $BuildDirectory, '--parallel', [string]$Jobs)
+        if ($Task -eq 'build') { $arguments += @('--target', 'm0_qt_shell') }
+        Add-Step 'build' $Tools.CMake $arguments
+        if ($Task -in @('lint', 'validate')) {
+            Add-Step 'lint' $Tools.CMake @('--build', $BuildDirectory, '--target', 'all_qmllint')
+        }
+        if ($Task -in @('test', 'validate')) {
+            Add-Step 'test' $Tools.CTest @('--test-dir', $BuildDirectory, '--output-on-failure', '--no-tests=error')
+        }
+    }
+    return $steps.ToArray()
+}
+
+function Invoke-RcMusicDevelopmentPlan {
+    param([Parameter(Mandatory)][object[]] $Plan, [scriptblock] $Invoker)
+    if ($Plan.Count -eq 0) { throw 'Development plan must not be empty' }
+    if (-not $Invoker) {
+        $Invoker = {
+            param($step)
+            $arguments = [string[]]$step.Arguments
+            $output = @(& $step.File @arguments 2>&1)
+            [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+        }
+    }
+    foreach ($step in $Plan) {
+        Write-Host "[$($step.Name)] $([IO.Path]::GetFileName($step.File))"
+        Push-Location -LiteralPath $step.WorkingDirectory
+        try { $result = & $Invoker $step } finally { Pop-Location }
+        if ($null -eq $result -or $result -is [array] -or
+            $null -eq $result.PSObject.Properties['ExitCode'] -or $result.ExitCode -isnot [int] -or
+            $null -eq $result.PSObject.Properties['Output']) { throw "Invalid process result for $($step.Name)" }
+        foreach ($line in $result.Output) { Write-Host ([string]$line) }
+        if ($result.ExitCode -ne 0) { throw "Development step $($step.Name) failed with exit code $($result.ExitCode)" }
+    }
+}
+
+Export-ModuleMember -Function Read-RcMusicDevelopmentTools, Assert-RcMusicBuildDirectory,
+    Get-RcMusicDevelopmentPlan, Invoke-RcMusicDevelopmentPlan

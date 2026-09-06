@@ -2,7 +2,15 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-**Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [build Windows da raiz](docs/desktop-build.md) agora compila a aplicação real sem configure, fixtures ou corpus do experimento; o [core independente](docs/core-build.md) continua disponível sem Qt. Fontes e testes promovidos têm uma única implementação, também consumida pelo histórico. A raiz passou 232/232 testes; ligar testes nela não ativa cenários de demonstração na aplicação. Os comandos estão no [guia do desktop](docs/desktop-build.md#configure-build-e-testes). M1 não está concluído. Benchmarks e Linux continuam adiados, sem aprovação de release ou retomada da interação nativa interrompida.
+**Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [build Windows da raiz](docs/desktop-build.md) agora compila a aplicação real sem configure, fixtures ou corpus do experimento; o [core independente](docs/core-build.md) continua disponível sem Qt. Fontes e testes promovidos têm uma única implementação, também consumida pelo histórico. A raiz passou 232/232 testes; ligar testes nela não ativa cenários de demonstração na aplicação. Os [comandos locais consolidados](docs/development-commands.md) oferecem `format`, `check`, `build`, `test`, `lint` e `validate`. M1 não está concluído. Benchmarks e Linux continuam adiados, sem aprovação de release ou retomada da interação nativa interrompida.
+
+Check completo da unidade Windows promovida, com ferramentas locais já disponíveis e sem downloads:
+
+```powershell
+pwsh -NoProfile -File scripts/develop.ps1 validate -ToolchainFile tools/windows.example.psd1
+```
+
+O [guia dos comandos](docs/development-commands.md) explica os caminhos do exemplo, a configuração pessoal opcional e a separação entre build de produção e testes. CI e promoção da cobertura restante continuam pendentes.
 
 Os recortes e contagens abaixo preservam o histórico de implementação anterior à decisão; expressões de stack ainda candidata nesses registros descrevem aquele momento. Para o trabalho atual, prevalecem o ADR-0005 e a seção 17 do [plano](docs/development-plan.md).
 

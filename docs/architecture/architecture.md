@@ -1,8 +1,8 @@
 # Arquitetura do sistema
 
-**Estado:** arquitetura vigente da stack aceita; núcleo promovido, composição gráfica ainda pendente
+**Estado:** arquitetura vigente da stack aceita; núcleo e composição gráfica promovidos, cobertura restante e gates M1 pendentes
 **Stack do produto:** C++20 + Qt 6 Quick/QML, Qt Multimedia/FFmpeg e TagLib
-**Última revisão:** 2026-09-05
+**Última revisão:** 2026-09-06
 
 O [ADR-0005](decisions/0005-windows-product-stack.md) registra a escolha explícita do mantenedor, sem exigir A/B antes do desenvolvimento Windows. As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities permanecem independentes do toolkit. O mapeamento Qt passa a ser a direção do produto; Tauri permanece somente como alternativa histórica, não dependência a implementar. Aceitação técnica não encerra migração, benchmarks, acessibilidade nativa, Linux ou distribuição.
 
