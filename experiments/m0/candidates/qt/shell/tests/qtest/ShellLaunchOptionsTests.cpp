@@ -413,6 +413,62 @@ class ShellLaunchOptionsTests final : public QObject {
         validateShellLaunchOptions(options, true, true);
     }
 
+    void acceptsStandaloneIsolatedConfigOnlyWithTestHooks_data() {
+        QTest::addColumn<bool>("combined_audio_enabled");
+        QTest::newRow("fixture shell") << false;
+        QTest::newRow("combined shell") << true;
+    }
+
+    void acceptsStandaloneIsolatedConfigOnlyWithTestHooks() {
+        QFETCH(bool, combined_audio_enabled);
+        try {
+            const QString root = testConfigRoot(QStringLiteral("manual journey 日本"));
+            const auto options = parseShellLaunchOptions(
+                {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-test-config-root=") + root});
+            QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+            QCOMPARE(options.initial_scenario, InitialShellScenario::Empty);
+            QVERIFY(!options.scenario_control_requested);
+            QVERIFY(!options.diagnostics_enabled);
+            QVERIFY(!options.smoke_diagnostics);
+            QVERIFY(!options.smoke_error_recovery);
+            QVERIFY(!options.smoke_tray_lifecycle);
+            QVERIFY(!options.smoke_combined_startup);
+            QVERIFY(!options.smoke_preferences_restart_write);
+            QVERIFY(!options.smoke_preferences_restart_read);
+            QVERIFY(!options.smoke_session_restart_read);
+            QVERIFY(!options.smoke_session_crash_before_primary_commit);
+            QVERIFY(!options.smoke_session_recovery_repair);
+            QVERIFY(!options.smoke_session_defaults_read);
+            QVERIFY(!options.smoke_single_instance_executable);
+            QVERIFY(!options.smoke_start_minimized_no_tray);
+            QVERIFY(!options.smoke_startup_source_precedence);
+            QVERIFY(options.source_paths.isEmpty());
+            validateShellLaunchOptions(options, true, combined_audio_enabled);
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                     validateShellLaunchOptions(options, false, combined_audio_enabled));
+        } catch (const std::invalid_argument& error) {
+            QFAIL(error.what());
+        }
+    }
+
+    void standaloneIsolatedConfigPreservesSourcesAndDelimiter() {
+        try {
+            const QString first = QStringLiteral("C:/Música 日本/abertura & (01).wav");
+            const QString escaped = QStringLiteral("--m0-test-config-root=literal.wav");
+            const auto options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell"), first,
+                                                          testConfigArgument(QStringLiteral("manual sources")),
+                                                          QStringLiteral("--"), escaped, first});
+            QCOMPARE(options.test_config_root,
+                     std::optional<QString>{QDir::cleanPath(testConfigRoot(QStringLiteral("manual sources")))});
+            QCOMPARE(options.source_paths, QStringList({first, escaped, first}));
+            validateShellLaunchOptions(options, true, true);
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, true));
+        } catch (const std::invalid_argument& error) {
+            QFAIL(error.what());
+        }
+    }
+
     void rejectsEveryClosedControlInProduction_data() {
         QTest::addColumn<QStringList>("arguments");
         QTest::newRow("explicit default scenario")
@@ -522,8 +578,13 @@ class ShellLaunchOptionsTests final : public QObject {
             << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=start-minimized-no-tray"),
                            testConfigArgument(QStringLiteral("no tray with source")), QStringLiteral("--"),
                            QStringLiteral("C:/Música/abertura.wav")};
-        QTest::newRow("root without restart")
-            << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("without restart"))};
+        QTest::newRow("standalone relative root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-test-config-root=relative")};
+        QTest::newRow("standalone empty root")
+            << QStringList{QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-test-config-root=")};
+        QTest::newRow("standalone duplicate root")
+            << QStringList{QStringLiteral("m0_qt_shell"), testConfigArgument(QStringLiteral("one")),
+                           testConfigArgument(QStringLiteral("two"))};
         QTest::newRow("relative root") << QStringList{QStringLiteral("m0_qt_shell"),
                                                       QStringLiteral("--m0-smoke=preferences-restart-read"),
                                                       QStringLiteral("--m0-test-config-root=relative")};

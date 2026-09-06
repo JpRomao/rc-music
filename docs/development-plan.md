@@ -715,6 +715,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
+Checkpoint de jornada Windows: o [isolamento manual do build ON](../experiments/m0/candidates/qt/README.md#isolated-native-journey) passou 101/101 testes e recusa real em produção. A janela nativa mostrou transporte, detalhes, volume e gravação da sessão com WAV sintética; seletor completo e restauração observada continuam sem validação. O usuário interrompeu Computer Use, portanto não retomá-lo sem confirmação. O instalador permanece inalterado e os gates amplos continuam abertos; não repetir suites verdes ou benchmarks sem mudança relevante. A promoção do candidato a produto continua sujeita à decisão explícita de stack e revisão dos critérios de M0.10/M1, sem inferir aprovação pela prioridade Windows.
+
 Checkpoint funcional mais recente: os [sliders acessíveis](../experiments/m0/candidates/qt/README.md#accessible-slider-input) agora aplicam progresso/volume ao player por ações e valor direto, com sincronização que não transforma ticks ou mudança de duração em comandos. Red/Green, Quick 187/187, startup e builds ON/OFF constam do registro central. O instalador a43faa1 permanece anterior a essa correção; não foi recompilado nem instalado. Prosseguir somente por lacunas funcionais comprovadas ou gates nativos autorizados; este incremento não encerra M3.7/M5.6 ou os gates amplos, não retoma benchmarks e não introduz protocolo de recuperação geral do instalador.
 
 1. O mantenedor revisa os derivados e autoriza D0.9/M0 sem aceitar stack.

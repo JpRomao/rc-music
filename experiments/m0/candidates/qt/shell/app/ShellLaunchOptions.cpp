@@ -139,14 +139,9 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                                  options.smoke_session_recovery_repair || options.smoke_session_defaults_read;
     const bool startup_behavior =
         options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence || options.smoke_diagnostics;
-    const bool executable_smoke = options.smoke_error_recovery || options.smoke_tray_lifecycle ||
-                                  options.smoke_combined_startup || preferences_restart || session_restart ||
-                                  options.smoke_single_instance_executable || startup_behavior;
     if ((preferences_restart || session_restart || options.smoke_single_instance_executable || startup_behavior) &&
         !options.test_config_root.has_value())
         throw std::invalid_argument{"the restart smoke requires its test config root"};
-    if (options.test_config_root.has_value() && !executable_smoke)
-        throw std::invalid_argument{"the M0 test config root requires an executable smoke"};
     if ((preferences_restart || session_restart || options.smoke_single_instance_executable || startup_behavior) &&
         options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the restart smoke requires the empty scenario"};
