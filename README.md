@@ -6,6 +6,8 @@ Player de áudio desktop pessoal, local-first, Windows-first e planejado para Li
 
 A [rastreabilidade executável](docs/quality/traceability.md) integra `check` e `validate`: os 83 requisitos têm destinos, evidências e lacunas explícitas, consultáveis também por teste. Ela não substitui a execução dos testes nem transforma gates pendentes em funcionalidades ausentes.
 
+A [receita de runtime Windows](docs/windows-runtime.md) foi promovida para `packaging/windows`, com implementação única e sem imports do experimento no produto. Seus checks sintéticos são separados da montagem real; este incremento não atualiza o instalador local nem aprova distribuição.
+
 Check completo da unidade Windows promovida, com ferramentas locais já disponíveis e sem downloads:
 
 ```powershell

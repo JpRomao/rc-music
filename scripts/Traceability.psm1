@@ -26,7 +26,7 @@ function Assert-TraceJsonKeys([Text.Json.JsonElement] $Element) {
 
 function Read-TraceFile([string] $Root, $Path) {
     # Only durable project files belong in this inventory, never output or personal data.
-    $allowed = '^(?:(?:docs|tests|scripts|src|include|cmake|tools|experiments)/[^\\:]+|README\.md|agents\.md|CMakeLists\.txt)$'
+    $allowed = '^(?:(?:docs|tests|scripts|src|include|cmake|tools|packaging|experiments)/[^\\:]+|README\.md|agents\.md|CMakeLists\.txt)$'
     if ($Path -isnot [string] -or $Path -cnotmatch $allowed -or
         $Path -match '[\x00-\x1f<>"|?*]' -or @($Path.Split('/') | Where-Object { $_ -in @('', '.', '..') -or $_ -match '[. ]$' }).Count) {
         throw "Invalid repository reference path: $Path"

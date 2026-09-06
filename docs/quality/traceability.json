@@ -1700,6 +1700,14 @@
         {
           "path": "tests/cmake/ProcessBuildBoundaryTests.cmake",
           "marker": "function(require_product_graph graph graph_build_root)"
+        },
+        {
+          "path": "scripts/tests/ProductionBoundary.Tests.ps1",
+          "marker": "exported production guard runs without experiments from an unrelated working directory"
+        },
+        {
+          "path": "packaging/windows/tests/RuntimeRecipe.Tests.ps1",
+          "marker": "Get-RuntimeRecipeFiles"
         }
       ],
       "evidence": [
@@ -1710,10 +1718,14 @@
         {
           "path": "docs/process-tests.md",
           "marker": "## Isolamento, ABI e recursos"
+        },
+        {
+          "path": "docs/windows-runtime.md",
+          "marker": "## Implementação única"
         }
       ],
       "remaining": [
-        "A unidade gráfica e suas suites estão promovidas, mas a promoção da unidade de distribuição e dos scripts ainda vinculados ao diretório experimental não está encerrada.",
+        "App, suites e receita de runtime estão promovidos; instalador e sua matriz de formatos ainda dependem do recorte histórico e exigem promoção própria.",
         "Concluir M1.1–M1.2 sem reintroduzir fixtures comparativas ou toolchains não escolhidas como dependências do produto."
       ]
     },
@@ -2212,10 +2224,14 @@
         {
           "path": "docs/core-build.md",
           "marker": "Não é ainda o build/distribuição completo do aplicativo"
+        },
+        {
+          "path": "docs/windows-runtime.md",
+          "marker": "## Implementação única"
         }
       ],
       "remaining": [
-        "Concluir a unidade de distribuição de produto e a promoção dos scripts de runtime/instalador ainda sob o experimento.",
+        "A receita de runtime já tem fonte única na raiz; concluir a unidade de distribuição, promovendo instalador e declaração de formatos sem reaproveitar aprovação de corpus/runtime histórico.",
         "Preservar módulos internos e fonte única sem introduzir pacotes independentes sem benefício demonstrado; M1.1 continua aberto."
       ]
     },

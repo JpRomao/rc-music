@@ -1,7 +1,8 @@
 #Requires -Version 7.0
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'WindowsRuntimePlan.psm1') -Force
+$runtimePlanner = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../../packaging/windows/RcMusicRuntimePlan.psm1'))
+Import-Module $runtimePlanner -Force
 
 function ConvertTo-RcMusicNsisLiteral([string] $Value, [switch] $Runtime,
     [ValidateRange(1, 2)][int] $Passes = 1) {
@@ -138,6 +139,11 @@ function New-RcMusicInstallerPlan {
         ForEach-Object {
             [pscustomobject]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
         })
+    # Historical keys stay relative to this recipe; promoted sources use their
+    # explicit repository-relative key without changing the receipt schema.
+    $runtimePlannerKey = 'packaging/windows/RcMusicRuntimePlan.psm1'
+    $recipeHashes += [pscustomobject]@{ path = $runtimePlannerKey
+        sha256 = (Get-FileHash -LiteralPath (Join-Path $repository $runtimePlannerKey) -Algorithm SHA256).Hash.ToLowerInvariant() }
     $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $declaration = if ($FormatMatrix) { Read-RcMusicFormatMatrix $FormatMatrix $manifestHash $output } else { $null }
     $formats = @(if ($declaration) { $declaration.formats })

@@ -6,7 +6,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-Import-Module (Join-Path $repository 'experiments/m0/candidates/qt/windows-installer/WindowsRuntimePlan.psm1') -Force
+Import-Module (Join-Path $repository 'packaging/windows/RcMusicRuntimePlan.psm1') -Force
 
 # Inspect the configured dependency graph, not stale object files or a test build.
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path

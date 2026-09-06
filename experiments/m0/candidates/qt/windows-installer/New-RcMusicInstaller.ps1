@@ -21,16 +21,21 @@ if ($compilerHash -cne $toolchain.compilerSha256) { throw 'NSIS compiler does no
 function Get-InstallerSources {
     $names = @('New-RcMusicInstaller.ps1', 'WindowsInstallerPlan.psm1', 'WindowsRuntimePlan.psm1',
         'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh', 'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json')
-    return @($names | ForEach-Object {
+    $sources = @($names | ForEach-Object {
         [pscustomobject]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     })
+    $runtimePlannerKey = 'packaging/windows/RcMusicRuntimePlan.psm1'
+    $sources += [pscustomobject]@{ path = $runtimePlannerKey
+        sha256 = (Get-FileHash -LiteralPath (Join-Path $repository $runtimePlannerKey) -Algorithm SHA256).Hash.ToLowerInvariant() }
+    return $sources
 }
 $sourceFiles = Get-InstallerSources
 $sourceBefore = $sourceFiles | ConvertTo-Json -Compress
 if ($sourceBefore -cne ($plan.recipe_hashes | ConvertTo-Json -Compress)) { throw 'Installer recipe changed after planning' }
 $gitCommit = @(& git --no-optional-locks -C $repository rev-parse --verify HEAD 2>&1)
 if ($LASTEXITCODE -ne 0 -or $gitCommit.Count -ne 1) { throw 'Cannot record installer recipe commit' }
-$recipeStatus = @(& git --no-optional-locks -C $repository status --porcelain=v1 --untracked-files=all -- experiments/m0/candidates/qt/windows-installer 2>&1)
+$recipeStatus = @(& git --no-optional-locks -C $repository status --porcelain=v1 --untracked-files=all -- `
+    experiments/m0/candidates/qt/windows-installer packaging/windows/RcMusicRuntimePlan.psm1 2>&1)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot record installer recipe status' }
 
 # A failed build may leave this fresh directory without a success receipt.

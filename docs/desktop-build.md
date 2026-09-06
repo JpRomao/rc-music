@@ -61,6 +61,8 @@ O executável produzido fica diretamente no diretório de build, mas não é um 
 
 ## Validação do incremento
 
+Incremento posterior: a [receita de runtime](windows-runtime.md) e seus helpers estão em `packaging/windows`. O snapshot de produto não exige inputs M0; os encaminhadores históricos usam a mesma implementação. O guia separa checks sintéticos, montagem real e smoke, sem reatribuir evidências dos pacotes anteriores.
+
 - Produção raiz em `out/product/m1-desktop-release-off-20260906`: configure/build Release aprovados; grafo de 246 comandos com fontes reais presentes e fontes/includes experimentais, fake e cenários ausentes; CTest registra zero testes e o cache não encontra QtTest/QuickTest.
 - Raiz ON em `out/product/m1-desktop-release-on-20260906`: configure/build Release e CTest **232/232**, em 10,06 s: 224 casos core e oito alvos Qt.
 - Core-only, após reconfigurar com o novo entrypoint: build e CTest **224/224**, em 4,42 s; não encontra Qt.

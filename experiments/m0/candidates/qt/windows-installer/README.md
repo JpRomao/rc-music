@@ -1,5 +1,7 @@
 # Instalador Windows experimental — RC Music
 
+**Atualização de 2026-09-06:** a [receita de runtime e seus helpers](../../../../../docs/windows-runtime.md) foram promovidos para `packaging/windows`. Os caminhos de runtime abaixo são encaminhadores compatíveis, não outra implementação. O instalador passa a registrar o hash real do planejador promovido; sua matriz e os artefatos históricos permanecem intactos. Este incremento não montou/instalou outro pacote nem revalidou formatos.
+
 O candidato possui módulo NSIS de associações, receita do runtime real e integração local de instalação/atualização/remoção. A [matriz local explícita](#matriz-local-e-evolucao-dos-formatos) habilita somente os formatos básicos caracterizados com o runtime indicado; sem esse argumento, associações permanecem OFF. As seções abaixo preservam a evidência de cada incremento. Não é uma release distribuível: suporte público e jornada Explorer/Aplicativos Padrão permanecem pendentes. Os testes de associação/lifecycle usam `RCMusic.exe` sintético e inerte; o teste opcional de instalação real usa o runtime indicado, sem iniciar o player.
 
 <a id="local-delivery-refresh"></a>

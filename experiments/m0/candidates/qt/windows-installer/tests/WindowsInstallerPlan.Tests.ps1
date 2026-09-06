@@ -5,6 +5,32 @@ Import-Module (Join-Path $PSScriptRoot '../WindowsInstallerPlan.psm1') -Force
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../../../..'))
 $runId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path $repository ('out/m0/test-runs/rc-music-installer-plan/' + $runId)
+
+function Assert-SafeTestRoot {
+    $expectedRoot = Join-Path $repository ('out/m0/test-runs/rc-music-installer-plan/' + $runId)
+    if ($runId -cnotmatch '\A[0-9a-f]{32}\z' -or
+        -not [IO.Path]::IsPathFullyQualified($testRoot) -or
+        [IO.Path]::GetFullPath($testRoot) -cne [IO.Path]::GetFullPath($expectedRoot)) {
+        throw 'Unsafe installer-plan test root identity'
+    }
+    $ancestor = [IO.Path]::GetFullPath($testRoot)
+    while ($ancestor) {
+        try {
+            $attributes = [IO.File]::GetAttributes($ancestor)
+            if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                ($attributes -band [IO.FileAttributes]::Directory) -eq 0) {
+                throw 'Unsafe installer-plan test root ancestor'
+            }
+        } catch {
+            $cause = $_.Exception.GetBaseException()
+            if ($cause -isnot [IO.FileNotFoundException] -and $cause -isnot [IO.DirectoryNotFoundException]) { throw }
+        }
+        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+    }
+}
+
+Assert-SafeTestRoot
+if (Test-Path -LiteralPath $testRoot) { throw 'Installer-plan test GUID must be fresh' }
 $null = New-Item -ItemType Directory -Path $testRoot
 $state = @{ Passed = 0; Failed = 0 }
 function Assert-True([bool] $Condition, [string] $Message) { if (-not $Condition) { throw $Message } }
@@ -116,6 +142,46 @@ try {
         $after = Get-RcMusicInstallerIdentity -InventoryJson '[]' -RecipeHashes @(@{ path = 'template.nsi'; sha256 = ('b' * 64) })
         Assert-True ($before -cne $after) 'Installer-only fix reused the obsolete uninstaller identity'
     }
+    Test-Case 'the promoted runtime implementation is hashed alongside every historical recipe key' {
+        $f = New-Fixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        $promotedPath = 'packaging/windows/RcMusicRuntimePlan.psm1'
+        $promoted = @($p.recipe_hashes | Where-Object { $_.path -ceq $promotedPath })
+        Assert-True ($promoted.Count -eq 1) 'Promoted runtime implementation is absent from the installer recipe'
+        $expectedHash = (Get-FileHash -LiteralPath (Join-Path $repository $promotedPath) -Algorithm SHA256).Hash.ToLowerInvariant()
+        Assert-True ($promoted[0].sha256 -ceq $expectedHash) 'Recipe did not hash the actual promoted implementation'
+        $historical = @('New-RcMusicInstaller.ps1', 'WindowsInstallerPlan.psm1', 'WindowsRuntimePlan.psm1',
+            'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh', 'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json')
+        Assert-True ($p.recipe_hashes.Count -eq $historical.Count + 1) 'Unexpected recipe shape or duplicate source'
+        foreach ($path in $historical) {
+            $entry = @($p.recipe_hashes | Where-Object { $_.path -ceq $path })
+            Assert-True ($entry.Count -eq 1) ('Historical receipt key changed: ' + $path)
+            $hash = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot ('../' + $path)) -Algorithm SHA256).Hash.ToLowerInvariant()
+            Assert-True ($entry[0].sha256 -ceq $hash) ('Historical receipt source changed: ' + $path)
+        }
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Recipe inspection created output'
+    }
+    Test-Case 'a runtime implementation-only correction changes the real package identity' {
+        $f = New-Fixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        $promotedPath = 'packaging/windows/RcMusicRuntimePlan.psm1'
+        Assert-True ($p.recipe_hashes.path -ccontains $promotedPath) 'Runtime implementation has no package identity input'
+        $inventory = @($p.files | ForEach-Object {
+            [ordered]@{ path = $_.relative_path; size = $_.size_bytes; sha256 = $_.sha256 }
+        }) | ConvertTo-Json -Depth 4 -Compress
+        $packageIdentity = [ordered]@{ inventory = $inventory; format_signature = $p.format_signature
+            format_matrix_sha256 = $null } | ConvertTo-Json -Compress
+        $before = Get-RcMusicInstallerIdentity -InventoryJson $packageIdentity -RecipeHashes $p.recipe_hashes
+        Assert-True ($before -ceq $p.payload_id) 'The real package identity ignored its reported recipe'
+        $changed = @($p.recipe_hashes | ForEach-Object {
+            $hash = $_.sha256
+            if ($_.path -ceq $promotedPath) { $hash = $(if ($hash -ceq ('a' * 64)) { 'b' * 64 } else { 'a' * 64 }) }
+            [pscustomobject]@{ path = $_.path; sha256 = $hash }
+        })
+        $after = Get-RcMusicInstallerIdentity -InventoryJson $packageIdentity -RecipeHashes $changed
+        Assert-True ($before -cne $after) 'Runtime-only correction reused the obsolete installer identity'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Identity calculation created output'
+    }
     Test-Case 'plans a private per-user installer without creating its destination' {
         $f = New-Fixture
         $p = New-RcMusicInstallerPlan -RuntimeDirectory $f.App -OutputDirectory $f.Output
@@ -223,10 +289,8 @@ try {
     }
 } finally {
     # Exact fresh GUID owned by this test; no junction fixtures are created here.
-    $expectedRoot = Join-Path $repository ('out/m0/test-runs/rc-music-installer-plan/' + $runId)
-    if ($runId -cmatch '^[0-9a-f]{32}$' -and [IO.Path]::GetFullPath($testRoot) -ceq [IO.Path]::GetFullPath($expectedRoot)) {
-        Remove-Item -LiteralPath $testRoot -Recurse -Force
-    } else { throw 'Unsafe installer-plan test cleanup path' }
+    Assert-SafeTestRoot
+    Remove-Item -LiteralPath $testRoot -Recurse -Force
 }
 Write-Host "Windows installer plan: $($state.Passed) passed, $($state.Failed) failed."
 if ($state.Failed -gt 0) { exit 1 }

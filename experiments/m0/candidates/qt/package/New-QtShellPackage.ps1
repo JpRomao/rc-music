@@ -73,7 +73,7 @@ function Get-SourceStatus {
 if (@(Get-SourceStatus).Count -ne 0) { throw 'Commit shell/fixture/protocol changes before building an identified package.' }
 $commit = @(& git -C $repository rev-parse HEAD) -join ''
 if ($LASTEXITCODE -ne 0 -or $commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Could not identify the source commit.' }
-$recipeStatus = @(& git -C $repository status --porcelain=v1 --untracked-files=all -- 'experiments/m0/candidates/qt/package' $refreshContractRelative)
+$recipeStatus = @(& git -C $repository status --porcelain=v1 --untracked-files=all -- 'experiments/m0/candidates/qt/package' 'packaging/windows/PeDependencyReport.psm1' $refreshContractRelative)
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect package recipe status.' }
 
 $packageParent = Resolve-QtShellPackageChildPath $repository 'out/m0/packages/qt-shell'
@@ -205,7 +205,15 @@ $closure = [pscustomobject] [ordered] @{
 }
 Write-Json (Join-Path $evidence 'pe-closure.v1.json') $closure
 
-$recipeFiles = @('New-QtShellPackage.ps1', 'QtShellPackageBuilder.psm1', 'QtShellPackageManifest.psm1', 'QtShellPackagePrerequisites.psm1', 'qt.conf', 'LOCAL-EVALUATION.txt')
+$recipeFiles = @(
+    'experiments/m0/candidates/qt/package/New-QtShellPackage.ps1',
+    'experiments/m0/candidates/qt/package/QtShellPackageBuilder.psm1',
+    'experiments/m0/candidates/qt/package/QtShellPackageManifest.psm1',
+    'experiments/m0/candidates/qt/package/QtShellPackagePrerequisites.psm1',
+    'experiments/m0/candidates/qt/package/qt.conf',
+    'experiments/m0/candidates/qt/package/LOCAL-EVALUATION.txt',
+    'packaging/windows/PeDependencyReport.psm1'
+)
 $metadata = [pscustomobject] [ordered] @{
     purpose = 'm0.2-private-local-evaluation'
     source_commit = $commit
@@ -231,7 +239,8 @@ $metadata = [pscustomobject] [ordered] @{
     pe_closure_sha256 = Get-Sha256 (Join-Path $evidence 'pe-closure.v1.json')
     tools = @($prerequisites.tools) + @($compilerIdentity.tools)
     build_environment = $prerequisites.environment
-    recipe = @($recipeFiles | ForEach-Object { [pscustomobject] @{ relative_path = $_; sha256 = Get-Sha256 (Join-Path $PSScriptRoot $_) } })
+    recipe_path_base = 'repository'
+    recipe = @($recipeFiles | ForEach-Object { [pscustomobject] @{ relative_path = $_; sha256 = Get-Sha256 (Resolve-QtShellPackageChildPath $repository $_) } })
     external_msvc_runtime = @($closure.external_files | Where-Object { $_.kind -eq 'host-msvc-runtime' })
     redistribution_allowed = $false
     known_limits = @(

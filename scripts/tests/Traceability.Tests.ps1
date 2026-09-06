@@ -121,6 +121,20 @@ try {
         $report = Read-Report
         Assert-True (-not $report.allRequirementsProven) 'Implementation became proof'
     }
+    Test-Case 'promoted packaging tests are durable references without accepting output or traversal' {
+        $null = New-Item -ItemType Directory -Path (Join-Path $testRoot 'packaging/windows/tests')
+        [IO.File]::WriteAllText((Join-Path $testRoot 'packaging/windows/tests/Example.Tests.ps1'), '# plans a confined runtime')
+        $manifest = New-Manifest
+        $manifest.records[0].tests = @(@{ path = 'packaging/windows/tests/Example.Tests.ps1'; marker = 'plans a confined runtime' })
+        Write-Manifest $manifest
+        $report = Read-Report
+        Assert-True (-not $report.allRequirementsProven) 'Packaging reference became fulfillment proof'
+        foreach ($path in @('packaging/../out/private.txt', 'packaging/windows/../../../secrets.txt', 'out/product/runtime-manifest.json')) {
+            $manifest.records[0].tests[0].path = $path
+            Write-Manifest $manifest
+            Assert-Rejected { Read-Report } 'path'
+        }
+    }
     Test-Case 'planned future work is valid without pretending to have tests' {
         $manifest = New-Manifest
         $manifest.records[1].status = 'planejado'; $manifest.records[1].verification = 'future'

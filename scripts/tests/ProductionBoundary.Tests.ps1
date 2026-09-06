@@ -2,9 +2,27 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$testParent = Join-Path $repository 'out/m0/test-runs/production-boundary'
+$testParent = Join-Path $repository 'out/product/test-runs/production-boundary'
 $testId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path $testParent $testId
+function Assert-TestRoot {
+    if ($testId -cnotmatch '^[0-9a-f]{32}$' -or
+        [IO.Path]::GetFullPath($testRoot) -cne [IO.Path]::GetFullPath((Join-Path $testParent $testId))) {
+        throw 'Unsafe test target'
+    }
+    $cursor = [IO.Path]::GetFullPath($testRoot)
+    while ($cursor) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $item.PSIsContainer) {
+                throw 'Test target contains a reparse point or file ancestor'
+            }
+        }
+        $cursor = [IO.Path]::GetDirectoryName($cursor)
+    }
+}
+Assert-TestRoot
+if (Test-Path -LiteralPath $testRoot) { throw 'Refusing to reuse a test directory' }
 $null = New-Item -ItemType Directory -Path $testRoot
 $state = @{ Passed = 0; Failed = 0; Next = 0 }
 
@@ -12,7 +30,7 @@ function Test-Case([string] $Name, [scriptblock] $Body) {
     try { & $Body; $state.Passed++; Write-Host "[PASS] $Name" }
     catch { $state.Failed++; Write-Host "[FAIL] $Name :: $($_.Exception.Message)" }
 }
-function New-Build([string] $Entrypoint = 'product', [string] $ExtraCommand = '') {
+function New-Build([string] $Entrypoint = 'product', [string] $ExtraCommand = '', [string] $SourceRepository = $repository) {
     $state.Next++
     $directory = Join-Path $testRoot ('case-' + $state.Next)
     $null = New-Item -ItemType Directory -Path $directory
@@ -32,9 +50,9 @@ $global:LASTEXITCODE = 0
     )
     if ($ExtraCommand) { $commands += $ExtraCommand }
     [IO.File]::WriteAllLines((Join-Path $directory 'commands.txt'), $commands)
-    $sourceHome = if ($Entrypoint -ceq 'product') { $repository }
-        elseif ($Entrypoint -ceq 'legacy') { Join-Path $repository 'experiments/m0/candidates/qt/shell' }
-        else { Join-Path $repository 'foreign-source' }
+    $sourceHome = if ($Entrypoint -ceq 'product') { $SourceRepository }
+        elseif ($Entrypoint -ceq 'legacy') { Join-Path $SourceRepository 'experiments/m0/candidates/qt/shell' }
+        else { Join-Path $SourceRepository 'foreign-source' }
     $cache = @('CMAKE_GENERATOR:INTERNAL=Ninja', 'CMAKE_BUILD_TYPE:STRING=Release', 'BUILD_TESTING:BOOL=OFF',
         "CMAKE_HOME_DIRECTORY:INTERNAL=$sourceHome", "CMAKE_MAKE_PROGRAM:FILEPATH=$ninja")
     if ($Entrypoint -ceq 'product') { $cache += 'RC_MUSIC_BUILD_DESKTOP:BOOL=ON' }
@@ -52,6 +70,47 @@ function Assert-Rejected([string] $Directory, [string] $Pattern) {
 }
 
 try {
+    Test-Case 'exported production guard runs without experiments from an unrelated working directory' {
+        $export = Join-Path $testRoot 'export source 日本'
+        $null = New-Item -ItemType Directory -Path (Join-Path $export 'scripts'), (Join-Path $export 'packaging/windows')
+        Copy-Item -LiteralPath (Join-Path $repository 'scripts/Test-ProductionBoundary.ps1') -Destination (Join-Path $export 'scripts')
+        Copy-Item -LiteralPath (Join-Path $repository 'packaging/windows/RcMusicRuntimePlan.psm1') -Destination (Join-Path $export 'packaging/windows')
+        $build = New-Build -SourceRepository $export
+        $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+        $start.WorkingDirectory = $testRoot
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        foreach ($argument in @('-NoProfile', '-NonInteractive', '-File',
+                (Join-Path $export 'scripts/Test-ProductionBoundary.ps1'), '-BuildDirectory', $build)) {
+            $start.ArgumentList.Add($argument)
+        }
+        $process = [Diagnostics.Process]::new()
+        $process.StartInfo = $start
+        $started = $false
+        try {
+            $started = $process.Start()
+            if (-not $started) { throw 'Could not start exported guard' }
+            $stdout = $process.StandardOutput.ReadToEndAsync()
+            $stderr = $process.StandardError.ReadToEndAsync()
+            if (-not $process.WaitForExit(10000)) { throw 'Exported guard exceeded its deadline' }
+            $output = $stdout.GetAwaiter().GetResult()
+            $errorText = $stderr.GetAwaiter().GetResult()
+            if ($process.ExitCode -ne 0 -or -not [string]::IsNullOrWhiteSpace($errorText) -or
+                $output -notmatch 'OK: production graph inspected \(4 commands\)') {
+                throw "Exported guard failed: $output $errorText"
+            }
+            if (Test-Path -LiteralPath (Join-Path $export 'experiments')) { throw 'Export acquired an experimental dependency' }
+        } finally {
+            if ($started -and -not $process.HasExited) {
+                $process.Kill($true)
+                if (-not $process.WaitForExit(5000)) { throw 'Owned guard process survived cleanup' }
+            }
+            $process.Dispose()
+        }
+    }
     Test-Case 'accepts product OFF without M0 options or test dependencies' {
         $build = New-Build
         & (Join-Path $repository 'scripts/Test-ProductionBoundary.ps1') -BuildDirectory $build | Out-Null
@@ -79,6 +138,7 @@ try {
         Assert-Rejected (New-Build 'legacy' 'cl.exe /c "C:/source/FixtureRepository.cpp"') 'Historical'
     }
 } finally {
+    Assert-TestRoot
     $resolvedRoot = [IO.Path]::GetFullPath($testRoot)
     if ($testId -cnotmatch '^[0-9a-f]{32}$' -or
         $resolvedRoot -cne [IO.Path]::GetFullPath((Join-Path $testParent $testId))) { throw 'Unsafe test cleanup target' }
