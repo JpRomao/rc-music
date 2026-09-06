@@ -270,7 +270,11 @@ int main(int argc, char* argv[]) {
 #ifndef M0_QT_COMBINED_AUDIO
     Q_INIT_RESOURCE(m0_qt_fixture_data);
 #endif
+#ifdef RC_MUSIC_TEST_UI_VARIANT
+    Q_INIT_RESOURCE(rc_music_test_ui_translations);
+#else
     Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
+#endif
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication application(argc, argv);
     music_player::m0::ApplicationIdentity::configureQtApplication();

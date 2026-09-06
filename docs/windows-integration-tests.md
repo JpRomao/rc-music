@@ -3,7 +3,7 @@
 **Escopo:** promoção de 12 suites de integração; não encerra M1 nem os gates nativos ou de release.
 **Data:** 2026-09-06.
 
-A raiz passa a executar a cobertura de bindings, plataforma, persistência, privacidade e identidade do executável que não exige interação com o desktop. As 12 fontes foram movidas sem alteração de bytes; o consumidor histórico usa os mesmos arquivos. Quatro smokes nativos e cinco drivers de aplicação instrumentada permanecem separados, sem serem ativados no `validate` diário.
+A raiz passa a executar a cobertura de bindings, plataforma, persistência, privacidade e identidade do executável que não exige interação com o desktop. As 12 fontes foram movidas sem alteração de bytes; o consumidor histórico usa os mesmos arquivos. Os quatro smokes nativos permanecem separados do runner diário. Os cinco drivers instrumentados, ainda separados naquele incremento, foram incluídos pela [promoção posterior de processos](process-tests.md), com composição exclusiva de testes e gates de build/testes validados.
 
 ## Os 12 alvos promovidos
 
@@ -34,11 +34,11 @@ Os quatro bindings ligam `rc_music_test_ui` e `rc_music_ui_scenario_support`, co
 
 O binding de diagnóstico merece uma distinção: o seu executável de teste compila diretamente a mesma fonte [ShellDiagnosticBinding.cpp](../src/presentation/ShellDiagnosticBinding.cpp), sob a configuração da UI de cenário. Ele não liga `m0_qt_diagnostic_binding`, pois essa biblioteca traz a UI de produção. Isso evita misturar dois layouts C++ de `PlayerPresenter` no mesmo processo, sem duplicar a implementação do binding.
 
-A guarda [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cmake) agora examina os comandos alcançáveis da aplicação, do Quick e dos quatro bindings. Exige a variante correta em cada consumidor, incluindo presenter, moc/registro QML e a compilação única do binding de diagnóstico. Recusa a UI de produção nos testes de cenário e suporte/macros/recursos de cenário na aplicação. A guarda tem label `ui;boundary`: entra no `validate` completo, mas não na seleção dos 12 pelo label `windows`. O grafo de comandos não substitui a revisão do conteúdo dos QRCs alcançáveis.
+A guarda [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cmake) agora examina os comandos alcançáveis da aplicação, do Quick e dos quatro bindings. Exige a variante correta em cada consumidor, incluindo presenter, moc/registro QML e a compilação única do binding de diagnóstico. Recusa a UI de produção nos testes de cenário e suporte/macros/recursos de cenário na aplicação. A guarda tem label `ui;boundary`: entra no `validate` completo, mas não na seleção pelo label `windows`. O grafo de comandos não substitui a revisão do conteúdo dos QRCs alcançáveis.
 
 Os oito testes de adapters/identidade não precisam de `FixtureRepository`, cenário ou hooks de CLI do app. Filhos usados por sessão/privacidade são executáveis dos próprios testes, não uma aplicação de produto instrumentada. Os guards de timeout encerram somente esses filhos próprios.
 
-## Cobertura que permanece separada
+## Smokes separados e promoção posterior de processos
 
 ### Quatro smokes com QPA Windows
 
@@ -53,17 +53,9 @@ As fontes abaixo permanecem em [tests/qtest do consumidor histórico](../experim
 
 Os quatro conservam sua configuração histórica serial e QPA `windows`. A separação não transforma esses testes em ensaios físicos nem declara seus gates concluídos por equivalência com `offscreen`.
 
-### Cinco drivers de aplicação instrumentada
+### Cinco drivers promovidos em composição própria
 
-| Suite | Jornada histórica |
-|---|---|
-| `PreferencesRestartTests` | Gravação/leitura de preferências entre processos e inicialização minimizada. |
-| `SessionRestartTests` | Reinício, recuperação e falha antes do commit primário da sessão. |
-| `SingleInstanceExecutableTests` | Processos primário/secundário, IPC, limites e feedback de entrada. |
-| `DiagnosticExecutableTests` | Opt-in e ausência de diagnóstico, decoder e ciclo de vida no executável. |
-| `ShellExecutableSmokeTests` | Driver dos smokes de startup combinado e cenários históricos de erro/bandeja. |
-
-Esses drivers usam `QProcess`, raiz temporária e argumentos reservados `--m0-smoke`/`--m0-test-config-root`; algumas jornadas históricas também usam cenários e fixtures. Sua futura promoção exige uma composição instrumentada exclusiva de testes. Habilitar hooks na aplicação real ON para fazer esses drivers funcionarem não é uma solução aceita. Fontes, assertions e registro histórico permanecem disponíveis; não foram executados implicitamente pela nova seleção de 12.
+O [guia de processos](process-tests.md) concentra o mapa das sete jornadas de preferências, sessão, IPC, diagnóstico e lifecycle, registradas e validadas na raiz com dois executáveis instrumentados exclusivos de testes. Ambos usam a mesma main e ABI da UI de teste, sem habilitar hooks na aplicação real ON/OFF. Fontes/assertions e consumo histórico foram preservados. Essa promoção não inclui os quatro smokes QPA Windows acima.
 
 ## Comandos existentes
 
@@ -80,9 +72,11 @@ Por padrão, usam `.tools/windows.psd1` e `out/product/desktop-tests`. Para sele
 ctest --test-dir out/product/desktop-tests --output-on-failure --no-tests=error -L windows
 ```
 
-Use o `CTest` do arquivo de ferramentas se ele não estiver no `PATH`, e ajuste o diretório ao build efetivamente configurado. Essa seleção contém 12 registros CTest, não o total de funções/linhas internas de QtTest. Não execute simultaneamente configure/builds no mesmo diretório.
+Use o `CTest` do arquivo de ferramentas se ele não estiver no `PATH`, e ajuste o diretório ao build efetivamente configurado. Com a [promoção de processos](process-tests.md), essa seleção passa de 12 para 19 registros CTest: as 12 suites deste guia mais sete jornadas instrumentadas. A seleção `-L process` contém essas sete jornadas e sua guarda de fronteira, totalizando oito. Não são contagens de funções/linhas internas de QtTest. Não execute simultaneamente configure/builds no mesmo diretório.
 
 ## Evidência do incremento
+
+O registro abaixo preserva a promoção original das 12 suites, anterior à inclusão das jornadas de processo. Seus totais não são a evidência da composição posterior.
 
 - Baseline histórico antes dos movimentos: **8/8** de plataforma, bindings e identidade em **3,34 s**; **4/4** de stores/privacidade em **1,78 s**.
 - As **12 fontes movidas têm SHA-256 byte-idêntico** às originais. A promoção mecânica preserva as assertions e não exige Red artificial de comportamento.
@@ -118,4 +112,4 @@ Há **quatro linhas de symlink** no teste de store de diagnóstico que podem usa
 
 O teste de privacidade provoca `qFatal` deliberadamente em um filho próprio, com a interface de erro Windows/CRT desabilitada nesse filho. Isso não representa controle sobre políticas externas de dump do host. Locks e arquivos temporários são reais, mas não constituem sandbox completa contra um ator concorrente do mesmo usuário.
 
-Não houve nova interação nativa, teste físico de áudio/teclas/energia, benchmark, Linux, instalação, associação de arquivos ou atualização de runtime/instalador neste incremento. `offscreen` e fronteiras falsas não comprovam integração visual nativa, NVDA ou comportamento de dispositivos. CI Windows, os quatro smokes, os cinco drivers instrumentados e os demais gates de segurança/licenças/release continuam separados no [plano](development-plan.md).
+Não houve nova interação nativa, teste físico de áudio/teclas/energia, benchmark, Linux, instalação, associação de arquivos ou atualização de runtime/instalador neste incremento. `offscreen` e fronteiras falsas não comprovam integração visual nativa, NVDA ou comportamento de dispositivos. A [promoção dos drivers instrumentados](process-tests.md) tem evidência e validação próprias; CI Windows, os quatro smokes e os demais gates de segurança/licenças/release continuam separados no [plano](development-plan.md).

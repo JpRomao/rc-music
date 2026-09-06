@@ -1,4 +1,5 @@
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/RcMusicShell.cmake")
 
 # Both entry points use the same desktop sources and targets. The caller chooses
 # shell/audio support; test resources and test instrumentation belong to it.
@@ -208,29 +209,7 @@ if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
     target_link_libraries(m0_qt_diagnostic_binding PUBLIC m0_qt_shell_support m0_qt_shell_ui Qt6::Quick)
     rc_music_configure_cpp(m0_qt_diagnostic_binding)
 
-    target_link_libraries(m0_qt_shell PRIVATE
-        m0_qt_preferences_persistence
-        m0_qt_session_persistence
-        m0_qt_shell_platform
-        m0_qt_system_appearance
-        m0_qt_shell_bootstrap
-        m0_qt_shell_support
-        m0_qt_shell_ui
-        m0_qt_shell_uiplugin
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::Svg
-        Qt6::Widgets
-    )
-    if(WIN32)
-        target_link_libraries(m0_qt_shell PRIVATE
-            m0_qt_windows_power_events m0_qt_windows_smtc
-            m0_qt_diagnostic_privacy m0_qt_diagnostic_store m0_qt_diagnostic_binding)
-    endif()
-    target_include_directories(m0_qt_shell PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src")
-    rc_music_configure_cpp(m0_qt_shell)
+    rc_music_link_shell(m0_qt_shell m0_qt_shell_ui m0_qt_shell_support m0_qt_diagnostic_binding)
 endif()
 
 if(RC_MUSIC_DESKTOP_AUDIO_SUPPORT)
@@ -258,12 +237,6 @@ if(RC_MUSIC_DESKTOP_AUDIO_SUPPORT)
     rc_music_configure_cpp(m0_taglib_metadata_extractor)
 
     if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
-        target_link_libraries(m0_qt_shell PRIVATE
-            m0_qt_audio_adapters m0_qt_audio_file_locator m0_taglib_metadata_extractor)
-        target_compile_definitions(m0_qt_shell PRIVATE M0_QT_COMBINED_AUDIO)
-        add_custom_command(TARGET m0_qt_shell POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "$<TARGET_FILE:TagLib::tag>" "$<TARGET_FILE_DIR:m0_qt_shell>"
-        )
+        rc_music_link_shell_audio(m0_qt_shell)
     endif()
 endif()

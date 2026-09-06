@@ -172,6 +172,7 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(BUILD_TESTING)
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
+        target_include_directories(m0_qt_shell PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/process/support")
         add_executable(m0_qt_diagnostic_binding_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/ShellDiagnosticBindingTests.cpp")
         target_link_libraries(m0_qt_diagnostic_binding_tests PRIVATE m0_qt_diagnostic_binding Qt6::Test)
         target_compile_definitions(m0_qt_diagnostic_binding_tests PRIVATE
@@ -486,7 +487,8 @@ if(M0_QT_SHELL_SUPPORT)
             TIMEOUT 30
         )
         if(WIN32)
-            add_executable(m0_qt_preferences_restart_tests tests/qtest/PreferencesRestartTests.cpp)
+            add_executable(m0_qt_preferences_restart_tests
+                "${RC_MUSIC_SOURCE_ROOT}/tests/process/qtest/PreferencesRestartTests.cpp")
             target_link_libraries(m0_qt_preferences_restart_tests PRIVATE
                 m0_qt_preferences_persistence
                 m0_qt_session_persistence
@@ -505,7 +507,8 @@ if(M0_QT_SHELL_SUPPORT)
             endif()
             add_dependencies(m0_qt_preferences_restart_tests m0_qt_shell)
             if(M0_QT_AUDIO_SUPPORT)
-                add_executable(m0_qt_diagnostic_executable_tests tests/qtest/DiagnosticExecutableTests.cpp)
+                add_executable(m0_qt_diagnostic_executable_tests
+                    "${RC_MUSIC_SOURCE_ROOT}/tests/process/qtest/DiagnosticExecutableTests.cpp")
                 target_link_libraries(m0_qt_diagnostic_executable_tests PRIVATE m0_qt_preferences_persistence Qt6::Test)
                 target_compile_features(m0_qt_diagnostic_executable_tests PRIVATE cxx_std_20)
                 set_target_properties(m0_qt_diagnostic_executable_tests PROPERTIES AUTOMOC ON)
@@ -521,7 +524,8 @@ if(M0_QT_SHELL_SUPPORT)
                 $<TARGET_FILE:m0_qt_shell>
             )
         endif()
-        add_executable(m0_qt_shell_executable_smoke_tests tests/qtest/ShellExecutableSmokeTests.cpp)
+        add_executable(m0_qt_shell_executable_smoke_tests
+            "${RC_MUSIC_SOURCE_ROOT}/tests/process/qtest/ShellExecutableSmokeTests.cpp")
         target_link_libraries(m0_qt_shell_executable_smoke_tests PRIVATE Qt6::Core Qt6::Test)
         target_compile_features(m0_qt_shell_executable_smoke_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_shell_executable_smoke_tests PROPERTIES AUTOMOC ON)
@@ -1011,7 +1015,8 @@ if(M0_QT_AUDIO_SUPPORT)
                     ENVIRONMENT
                         "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
                 )
-                add_executable(m0_qt_session_restart_tests tests/qtest/SessionRestartTests.cpp)
+                add_executable(m0_qt_session_restart_tests
+                    "${RC_MUSIC_SOURCE_ROOT}/tests/process/qtest/SessionRestartTests.cpp")
                 target_link_libraries(m0_qt_session_restart_tests PRIVATE
                     m0_qt_session_persistence
                     Qt6::Core
@@ -1039,7 +1044,7 @@ if(M0_QT_AUDIO_SUPPORT)
                         "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
                 )
                 add_executable(m0_qt_single_instance_executable_tests
-                    tests/qtest/SingleInstanceExecutableTests.cpp
+                    "${RC_MUSIC_SOURCE_ROOT}/tests/process/qtest/SingleInstanceExecutableTests.cpp"
                 )
                 target_link_libraries(m0_qt_single_instance_executable_tests PRIVATE
                     m0_qt_shell_bootstrap

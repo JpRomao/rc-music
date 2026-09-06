@@ -36,6 +36,8 @@ A [licença preservada](../tests/ui/fixtures/LICENSE.assets.txt), `LicenseRef-Mu
 
 Os JSONs são ligados por `m0_qt_fixture_data` somente aos testes que precisam dos recursos. Presenter/repositório também recebem caminhos explícitos para as cópias locais. A tradução pt-BR e os assets usam as mesmas fontes de produção; o Quick inicializa a tradução da sua própria variante.
 
+A [promoção posterior das jornadas de processo](process-tests.md), com gates de build/testes validados, reutiliza essa mesma UI de teste em dois shells compilados da main compartilhada. Ambos preservam a ABI de cenário; somente `rc_music_fixture_test_shell` incorpora os JSONs, enquanto `rc_music_test_shell` usa áudio combinado sem esses recursos. Não é uma terceira implementação da UI nem instrumentação do executável real.
+
 ## Comandos e fronteira verificável
 
 Os [comandos de desenvolvimento existentes](development-commands.md) já cobrem a promoção; não há novo wrapper:
@@ -67,4 +69,4 @@ O novo teste [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cm
 
 Os testes UI usam `offscreen`, renderização software e estilo Basic, com backends/portas determinísticos para as jornadas. Isso preserva regressões de foco, teclado, acessibilidade, fila, preferências e recuperação, mas não comprova NVDA, DPI/alto contraste nativos, diálogo do sistema ou dispositivos físicos.
 
-Não houve nova interação nativa, uso de áudio pessoal, benchmark, Linux, instalação/associação no host ou atualização de runtime/instalador neste recorte. A promoção não aprova release. O [incremento Windows posterior](windows-integration-tests.md) acrescenta os quatro bindings à variante e amplia o teste de fronteira, sem alterar esta evidência histórica de 276 registros. A migração dos smokes nativos e drivers do app instrumentado, CI Windows e os gates de segurança, licenças e distribuição continuam separados no [plano](development-plan.md).
+Não houve nova interação nativa, uso de áudio pessoal, benchmark, Linux, instalação/associação no host ou atualização de runtime/instalador neste recorte. A promoção não aprova release. O [incremento Windows posterior](windows-integration-tests.md) acrescenta os quatro bindings à variante e amplia o teste de fronteira, sem alterar esta evidência histórica de 276 registros. A [composição dos drivers instrumentados](process-tests.md) também tem gates de build/testes validados; smokes nativos, CI Windows e os gates de segurança, licenças e distribuição continuam separados no [plano](development-plan.md).
