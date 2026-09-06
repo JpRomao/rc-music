@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado montado, com recusa OFF, startup instrumentado e jornadas de codecs verificados; uso nativo do app instalado, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtime local atualizado com atalhos/modos de fila montado e hashes verificados; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-09-06.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
@@ -52,6 +52,21 @@ pwsh -NoProfile -File packaging/windows/tests/LocalRuntime.Smoke.ps1 -RuntimeDir
 O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt/Multimedia/TagLib. Não baixa dependências, reconstrói SDK, copia CRT/System32 ou instala. Recusa saída existente; falha tardia pode deixar diretório parcial, sem rollback ou reutilização automática. O runtime permanece privado/experimental, não uma release.
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
+
+## Runtime com atalhos e modos de fila
+
+Em 2026-09-06, após implementar o [pedido de atalhos e modos persistentes](ui-tests.md#atalhos-principais-e-modos-de-fila), foi gerada uma nova cópia local do commit limpo **`fc11d405bd88b61b2635e50cf98915fda72dc7e6`**, sem instalar. A receita e as dependências não mudaram; foram usados o mesmo MSVC 14.44/SDK Windows 10.0.22621.0 e cache Release/OFF existentes.
+
+```powershell
+& ./packaging/windows/tests/LocalRuntime.Tests.ps1 -BuildDirectory out/product/m1-desktop-release-off-20260906 -OutputDirectory out/product/rc-music-local/rc-music-windows-dev-fc11d40
+```
+
+Montagem e conferência independente somente leitura passaram: **554 arquivos / 96.111.223 bytes**, inventário exato, todos os hashes/tamanhos iguais ao manifesto, **5/5 hashes** da receita conferidos e **71 relatórios de imports PE**. O manifesto registra `build_testing=false`, x64 e `recipe_dirty=false`; o executável copiado coincide com o build de produção.
+
+- Executável: `out/product/rc-music-local/rc-music-windows-dev-fc11d40/app/RCMusic.exe`, **1.877.504 bytes**, SHA-256 `5296c1ed01847ec6f6efb38679f0fa7ab49ade6e5aa7a0415a21dcb246491e71`.
+- Manifesto: `out/product/rc-music-local/rc-music-windows-dev-fc11d40/runtime-manifest.json`, SHA-256 `c466dd6ffe18770da1c1ae60048aad38ab57d2ee467b5d02b8b10c76ebbf2f60`.
+
+Use esse executável para experimentar os novos atalhos. O runtime `3f22fda` e os dois setups anteriores foram preservados; **os setups não foram recompilados e não contêm este incremento**. Não houve execução do app/setup, Registry, downloads, smoke de codecs do pacote ou benchmarks nesta montagem. Os testes funcionais/build/lint estão no registro do incremento; não se transfere o smoke 18/18 nem a declaração de formatos vinculados ao runtime anterior. A versão continua local privada/experimental, sem assinatura ou aprovação de distribuição.
 
 ## Runtime local gerado em 2026-09-06
 
