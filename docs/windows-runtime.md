@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado com atalhos/modos de fila montado e hashes verificados; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtime local atualizado sem terminal adicional, com atalhos/modos de fila, montado e hashes verificados; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-09-06.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
@@ -52,6 +52,21 @@ pwsh -NoProfile -File packaging/windows/tests/LocalRuntime.Smoke.ps1 -RuntimeDir
 O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt/Multimedia/TagLib. Não baixa dependências, reconstrói SDK, copia CRT/System32 ou instala. Recusa saída existente; falha tardia pode deixar diretório parcial, sem rollback ou reutilização automática. O runtime permanece privado/experimental, não uma release.
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
+
+## Runtime sem terminal adicional
+
+Atualização de 2026-09-06, do commit limpo **`bfeb90f1f6a3489a2868204d66b928765c9738a5`**: o executável usa o subsistema Windows GUI e não cria console automático. Inclui os atalhos e modos de fila de `fc11d40`. A [regressão PE](windows-integration-tests.md#abertura-sem-terminal-adicional) passou também sobre o `RCMusic.exe` efetivamente copiado: **6/6**, sem executar o app.
+
+```powershell
+& ./packaging/windows/tests/LocalRuntime.Tests.ps1 -BuildDirectory out/product/m1-desktop-release-off-20260906 -OutputDirectory out/product/rc-music-local/rc-music-windows-dev-bfeb90f
+```
+
+Montagem e conferência independente passaram: **554 arquivos / 96.112.759 bytes**, inventário exato, tamanhos/hashes conferidos, **5/5 hashes** da receita, 71 relatórios PE, `build_testing=false` e `recipe_dirty=false`.
+
+- Executável: `out/product/rc-music-local/rc-music-windows-dev-bfeb90f/app/RCMusic.exe`, **1.879.040 bytes**, SHA-256 `44fed6b91d7e92a4e0620db7670c3067db35684b2e367a7444af5778f718358d`.
+- Manifesto: `out/product/rc-music-local/rc-music-windows-dev-bfeb90f/runtime-manifest.json`, SHA-256 `a9b73ec53a21e03a5a84d6c9130909c0a686d7718491b423e0751dd5d0d28073`.
+
+Encerre a versão anterior por **Sair** antes de abrir esta cópia; uma segunda abertura encaminha para a instância que já estiver rodando. Não houve instalação, Registry, alteração de dados pessoais, nova execução de codecs/benchmarks ou substituição dos runtimes/setups anteriores. Setups antigos ainda abrem o executável anterior. O smoke de áudio e a declaração de formatos antigos não são transferidos para esse artefato; permanece uma versão local privada/experimental.
 
 ## Runtime com atalhos e modos de fila
 
