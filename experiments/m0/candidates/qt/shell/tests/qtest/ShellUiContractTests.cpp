@@ -102,6 +102,10 @@ class ShellUiContractTests final : public QObject {
     void configuresQtDisplayNameWithoutMovingStoredData();
     void configuresTheExistingArtworkAsTheApplicationAndWindowIcon();
     void exposesFrozenConstantsAndAuthenticatedResources();
+    void productDefaultsMatchTheFrozenHistoricalContract();
+    void productAppearanceMatchesTheHistoricalContract();
+    void productTextRetainsTheHistoricalTranslationContract();
+    void historicalConstructorRetainsAcceptedVisualOverrides();
     void rejectsUnknownAssetMappings();
     void rejectsUnsupportedTransportStrings();
     void rejectsUnsupportedPreferenceStrings();
@@ -124,7 +128,10 @@ class ShellUiContractTests final : public QObject {
     void rejectsInvalidAppearanceModesEvenInHighContrast();
 };
 
-void ShellUiContractTests::initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
+void ShellUiContractTests::initTestCase() {
+    Q_INIT_RESOURCE(m0_qt_shell_assets);
+    Q_INIT_RESOURCE(m0_qt_fixture_data);
+}
 
 void ShellUiContractTests::configuresQtDisplayNameWithoutMovingStoredData() {
     const QString original_organization = QCoreApplication::organizationName();
@@ -394,6 +401,108 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
                      QStringLiteral(":/m0/data/fixture.v1.json"), QStringLiteral(":/m0/data/queue.v1.json")}));
     QVERIFY(!QFile::exists(QStringLiteral(":/m0/assets/assets/cover-placeholder.svg")));
     QVERIFY(!QFile::exists(QStringLiteral(":/m0/data/assets/cover-placeholder.svg")));
+}
+
+void ShellUiContractTests::productDefaultsMatchTheFrozenHistoricalContract() {
+    QObject owner;
+    ShellUiContract product(&owner);
+    QCOMPARE(product.parent(), &owner);
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract historical(bundle);
+    const QMetaObject* meta = product.metaObject();
+    for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
+        const QMetaProperty property = meta->property(index);
+        const QVariant expected = property.read(&historical);
+        QVERIFY2(expected.isValid(), property.name());
+        QVERIFY2(property.read(&product) == expected, property.name());
+    }
+}
+
+void ShellUiContractTests::productAppearanceMatchesTheHistoricalContract() {
+    ShellUiContract product(nullptr);
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract historical(bundle);
+    QSignalSpy product_changed(&product, &ShellUiContract::appearanceChanged);
+    QSignalSpy historical_changed(&historical, &ShellUiContract::appearanceChanged);
+    QVERIFY(product_changed.isValid());
+    QVERIFY(historical_changed.isValid());
+
+    for (const ThemeMode theme : {ThemeMode::System, ThemeMode::Light, ThemeMode::Dark}) {
+        for (const MotionMode motion : {MotionMode::System, MotionMode::Reduced}) {
+            for (const bool system_dark : {false, true}) {
+                for (const bool system_reduced : {false, true}) {
+                    for (const std::optional<HighContrastPalette>& high_contrast :
+                         {std::optional<HighContrastPalette>{},
+                          std::optional<HighContrastPalette>{lightHighContrastPalette()},
+                          std::optional<HighContrastPalette>{HighContrastPalette{}}}) {
+                        for (int repetition = 0; repetition < 2; ++repetition) {
+                            product.updateAppearance(theme, motion, system_dark, system_reduced, high_contrast);
+                            historical.updateAppearance(theme, motion, system_dark, system_reduced, high_contrast);
+                            QCOMPARE(appearanceColors(product), appearanceColors(historical));
+                            QCOMPARE(product.disabledTextColor(), historical.disabledTextColor());
+                            QCOMPARE(product.highContrast(), historical.highContrast());
+                            QCOMPARE(product.darkTheme(), historical.darkTheme());
+                            QCOMPARE(product.reducedMotion(), historical.reducedMotion());
+                            QCOMPARE(product.panelTransitionMs(), historical.panelTransitionMs());
+                            QCOMPARE(product.feedbackTransitionMs(), historical.feedbackTransitionMs());
+                            QCOMPARE(product_changed.count(), historical_changed.count());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    product.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
+    historical.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
+    QCOMPARE(appearanceColors(product), paletteColors(bundle.themes.light));
+    QCOMPARE(product.panelTransitionMs(), bundle.motion.normal.panel_transition_ms);
+    QCOMPARE(product.feedbackTransitionMs(), bundle.motion.normal.feedback_transition_ms);
+    QCOMPARE(product_changed.count(), historical_changed.count());
+}
+
+void ShellUiContractTests::productTextRetainsTheHistoricalTranslationContract() {
+    ShellUiContract product(nullptr);
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract historical(bundle);
+    PrefixTranslator translator;
+    QVERIFY(QCoreApplication::installTranslator(&translator));
+    const auto restore_translator = qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
+    const QMetaObject* meta = product.metaObject();
+    for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
+        const QMetaProperty property = meta->property(index);
+        if (property.metaType() != QMetaType::fromType<QString>())
+            continue;
+        QVERIFY2(property.read(&product) == property.read(&historical), property.name());
+    }
+    QCOMPARE(product.appName(), QStringLiteral("RC Music"));
+    QCOMPARE(product.openAudioText(), QStringLiteral("⟦Abrir áudio⟧"));
+    QCOMPARE(product.errorBody(), QStringLiteral("⟦A faixa de teste está indisponível.⟧"));
+    QCOMPARE(bundle.strings.app_name, QStringLiteral("Player de música"));
+    QCOMPARE(bundle.strings.action_open_audio, QStringLiteral("Abrir áudio"));
+}
+
+void ShellUiContractTests::historicalConstructorRetainsAcceptedVisualOverrides() {
+    FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    bundle.layout_tokens.radius_small_px = 9;
+    bundle.layout_tokens.radius_medium_px = 13;
+    bundle.layout_tokens.spacing_unit_px = 5;
+    bundle.themes.light.surface = QStringLiteral("#FEFEFE");
+    bundle.themes.dark.canvas = QStringLiteral("#101112");
+    bundle.motion.normal.panel_transition_ms = 180;
+    bundle.motion.normal.feedback_transition_ms = 130;
+    bundle.motion.reduced.panel_transition_ms = 2;
+    bundle.motion.reduced.feedback_transition_ms = 1;
+    ShellUiContract contract(bundle);
+    QCOMPARE(contract.radiusSmall(), 9);
+    QCOMPARE(contract.radiusMedium(), 13);
+    QCOMPARE(contract.spacingUnit(), 5);
+    QCOMPARE(appearanceColors(contract), paletteColors(bundle.themes.light));
+    QCOMPARE(contract.panelTransitionMs(), 180);
+    QCOMPARE(contract.feedbackTransitionMs(), 130);
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::Reduced, false, false);
+    QCOMPARE(appearanceColors(contract), paletteColors(bundle.themes.dark));
+    QCOMPARE(contract.panelTransitionMs(), 2);
+    QCOMPARE(contract.feedbackTransitionMs(), 1);
 }
 
 void ShellUiContractTests::rejectsUnknownAssetMappings() {

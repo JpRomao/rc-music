@@ -376,8 +376,6 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::QuickLayouts
     )
     target_compile_features(m0_qt_shell_ui PUBLIC cxx_std_20)
-    set_source_files_properties("${M0_FIXTURE_FILE}" PROPERTIES QT_RESOURCE_ALIAS "data/fixture.v1.json")
-    set_source_files_properties("${M0_QUEUE_FILE}" PROPERTIES QT_RESOURCE_ALIAS "data/queue.v1.json")
     set_source_files_properties("${M0_PLACEHOLDER_ASSET_FILE}" PROPERTIES
         QT_RESOURCE_ALIAS "assets/cover-placeholder.svg"
     )
@@ -387,11 +385,22 @@ if(M0_QT_SHELL_SUPPORT)
     qt_add_resources(m0_qt_shell_ui m0_qt_shell_assets
         PREFIX "/m0"
         FILES
-            "${M0_FIXTURE_FILE}"
-            "${M0_QUEUE_FILE}"
             "${M0_PLACEHOLDER_ASSET_FILE}"
             "${M0_TRACK_ASSET_FILE}"
     )
+    if(BUILD_TESTING OR NOT M0_QT_AUDIO_SUPPORT)
+        add_library(m0_qt_fixture_data STATIC EXCLUDE_FROM_ALL)
+        target_link_libraries(m0_qt_fixture_data PRIVATE Qt6::Core)
+        set_target_properties(m0_qt_fixture_data PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+        set_source_files_properties("${M0_FIXTURE_FILE}" PROPERTIES QT_RESOURCE_ALIAS "data/fixture.v1.json")
+        set_source_files_properties("${M0_QUEUE_FILE}" PROPERTIES QT_RESOURCE_ALIAS "data/queue.v1.json")
+        qt_add_resources(m0_qt_fixture_data m0_qt_fixture_data
+            PREFIX "/m0"
+            FILES
+                "${M0_FIXTURE_FILE}"
+                "${M0_QUEUE_FILE}"
+        )
+    endif()
     if(MSVC)
         target_compile_options(m0_qt_shell_ui PRIVATE /W4 /WX /permissive- /wd4702)
         target_compile_options(m0_qt_shell_uiplugin PRIVATE /W4 /WX /permissive-)
@@ -466,6 +475,9 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::Svg
         Qt6::Widgets
     )
+    if(NOT M0_QT_AUDIO_SUPPORT)
+        target_link_libraries(m0_qt_shell PRIVATE m0_qt_fixture_data)
+    endif()
     if(WIN32)
         target_link_libraries(m0_qt_shell PRIVATE m0_qt_windows_power_events m0_qt_windows_smtc
             m0_qt_diagnostic_privacy m0_qt_diagnostic_store m0_qt_diagnostic_binding)
@@ -879,6 +891,7 @@ if(M0_QT_SHELL_SUPPORT)
             m0_qt_shell_support
             m0_qt_shell_ui
             m0_qt_shell_uiplugin
+            m0_qt_fixture_data
             Qt6::Gui
             Qt6::Test
         )
@@ -924,6 +937,7 @@ if(M0_QT_SHELL_SUPPORT)
             m0_qt_shell_support
             m0_qt_shell_ui
             m0_qt_shell_uiplugin
+            m0_qt_fixture_data
             Qt6::QuickControls2
             Qt6::QuickTest
         )

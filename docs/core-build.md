@@ -22,7 +22,7 @@ Os 67 arquivos C++ foram movidos, não copiados: hashes após normalizar finais 
 
 `Test-M0Layout.ps1` e a suíte agregada M0 que inclui `Contract.Tests.ps1` mantêm a proibição pré-M0.10 de `src`/`CMakeLists.txt` na raiz. Esses comandos pertencem ao snapshot histórico, não aos gates da promoção. O módulo, inventário e protocolo autenticados não foram editados ou reancorados. A independência do core é verificada pelo build da exportação mínima descrito abaixo, não por relaxar o contrato experimental.
 
-O shell histórico ainda solicita o backend determinístico mesmo com testes OFF, pois seu presenter mantém o modo de fixture. Separar `FixtureBundle`, recursos e bootstrap real é o próximo recorte; mover o core não demonstra essa separação nem autoriza chamar o executável histórico de produto independente.
+O shell histórico ainda solicita o backend determinístico mesmo com testes OFF, pois seu presenter mantém o modo de fixture. O [recorte seguinte de bootstrap](bootstrap-separation.md) remove a exigência de `FixtureBundle` dos construtores reais e os JSONs embutidos do executável combinado. Tipos e implementações históricas ainda são compilados; retirá-los da unidade gráfica e promovê-la para a raiz continua pendente. Nenhum dos dois recortes autoriza chamar o executável histórico de produto independente.
 
 ## Build Windows
 

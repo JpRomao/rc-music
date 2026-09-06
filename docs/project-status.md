@@ -1,10 +1,10 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-09-05
+**Atualizado em:** 2026-09-06
 
 **Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos pelo mantenedor no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B e checks Rust/Tauri deixam de ser pré-requisitos para desenvolver o produto Windows. A decisão não é uma vitória comparativa medida; Linux e benchmarks ficam adiados, com requisitos e budgets preservados.
 
-**Promoção M1 em andamento:** o [núcleo extraído](core-build.md) compila na raiz sem Qt/fixture/harness e reutiliza os 224 testes existentes. O shell permanece consumidor das mesmas bibliotecas. O próximo recorte é separar apresentação/bootstrap de `FixtureBundle`; ainda não há executável gráfico independente na raiz. Não foram alterados identificadores `MusicPlayer`, fixtures ou manifests históricos. Isso não conclui M1, funcionalidades, acessibilidade nativa, segurança/licenças ou release.
+**Promoção M1 em andamento:** o [núcleo extraído](core-build.md) compila na raiz sem Qt/fixture/harness e reutiliza os 224 testes existentes. O shell permanece consumidor das mesmas bibliotecas. O [bootstrap real separado](bootstrap-separation.md) dispensa `FixtureBundle` na construção e não embute os JSONs de demonstração; apresentação, áudio e restauração passaram nos checks proporcionais. Tipos/fake históricos ainda são compilados e não há executável gráfico independente na raiz. Não foram alterados identificadores `MusicPlayer`, fixtures ou manifests históricos. Isso não conclui M1, funcionalidades, acessibilidade nativa, segurança/licenças ou release.
 
 ## Histórico funcional anterior à aceitação
 

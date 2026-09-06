@@ -19,7 +19,9 @@
 #include "m0/application/SessionStartup.hpp"
 #endif
 #endif
+#ifndef M0_QT_COMBINED_AUDIO
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#endif
 #include "m0/domain/WindowPlacement.hpp"
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
@@ -91,7 +93,9 @@
 #include <utility>
 #include <vector>
 
+#ifndef M0_QT_COMBINED_AUDIO
 using music_player::m0::FixtureRepository;
+#endif
 using music_player::m0::PlayerPresenter;
 using music_player::m0::ShellUiContract;
 using music_player::m0::experiment::InitialShellScenario;
@@ -257,6 +261,9 @@ int main(int argc, char* argv[]) {
         return 1;
 #endif
     Q_INIT_RESOURCE(m0_qt_shell_assets);
+#ifndef M0_QT_COMBINED_AUDIO
+    Q_INIT_RESOURCE(m0_qt_fixture_data);
+#endif
     Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication application(argc, argv);
@@ -381,9 +388,13 @@ int main(int argc, char* argv[]) {
         };
 #endif
 #endif
+#ifdef M0_QT_COMBINED_AUDIO
+        ShellUiContract contract(nullptr);
+#else
         const auto bundle = FixtureRepository{}.load(QStringLiteral(":/m0/data/fixture.v1.json"),
                                                      QStringLiteral(":/m0/data/queue.v1.json"));
         ShellUiContract contract(bundle);
+#endif
         music_player::m0::LifecycleText lifecycle_text;
         std::function<bool()> availability_reader;
 #ifdef M0_QT_SHELL_TEST_HOOKS
@@ -418,8 +429,7 @@ int main(int argc, char* argv[]) {
         PlayerPresenter::AudioFilePicker audio_file_picker = [] { return std::vector<std::filesystem::path>{}; };
         music_player::m0::QtAudioFileLocator file_locator(music_player::m0::ApplicationText::locateAudioDialogTitle(),
                                                           localAudioDialogFilter());
-        PlayerPresenter presenter(bundle, platform, backend, metadata_reader, std::move(audio_file_picker),
-                                  artwork_cache,
+        PlayerPresenter presenter(platform, backend, metadata_reader, std::move(audio_file_picker), artwork_cache,
 #ifdef Q_OS_WIN
                                   std::move(presenter_preferences)
 #else
@@ -789,6 +799,8 @@ int main(int argc, char* argv[]) {
                     combined_startup_smoke_completed = root != nullptr && window->isVisible() &&
                                                        !QGuiApplication::windowIcon().pixmap(32, 32).isNull() &&
                                                        !window->icon().pixmap(32, 32).isNull() &&
+                                                       !QFile::exists(QStringLiteral(":/m0/data/fixture.v1.json")) &&
+                                                       !QFile::exists(QStringLiteral(":/m0/data/queue.v1.json")) &&
                                                        !presenter.usesFrozenFixture() && !presenter.hasCurrentTrack() &&
                                                        presenter.queueModelObject() != nullptr &&
                                                        presenter.queueModelObject()->rowCount() == 0 &&

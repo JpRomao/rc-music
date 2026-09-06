@@ -213,25 +213,23 @@ class PlayerPresenter final : public QObject {
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlayerPresenterPreferences preferences,
                     QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, QObject* parent = nullptr);
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, PlayerPresenterPreferences preferences,
+                    QObject* parent = nullptr);
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, std::shared_ptr<ArtworkImageCache> artwork_cache,
+                    QObject* parent = nullptr);
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, std::shared_ptr<ArtworkImageCache> artwork_cache,
                     PlayerPresenterPreferences preferences, QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, LocalSourceDiscovery& source_discovery,
+                    QObject* parent = nullptr);
+    PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
+                    AudioFilePicker audio_file_picker, LocalSourceDiscovery& source_discovery,
                     std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
-                    std::shared_ptr<ArtworkImageCache> artwork_cache, PlayerPresenterPreferences preferences,
-                    QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
-                    LocalSourceDiscovery& source_discovery, QObject* parent = nullptr);
-    PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
-                    MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
-                    LocalSourceDiscovery& source_discovery, std::shared_ptr<ArtworkImageCache> artwork_cache,
-                    QObject* parent = nullptr);
     ~PlayerPresenter() override;
 
     [[nodiscard]] QString stateId() const;
@@ -483,7 +481,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool navigate(QueueDirection direction);
     [[nodiscard]] bool skipByPreference(bool forward);
     [[nodiscard]] bool finishSeekCommand(bool accepted, std::uint64_t generation);
-    FixtureBundle bundle_;
+    std::unique_ptr<FixtureBundle> fixture_bundle_;
     std::vector<QueueNavigationItem> navigation_items_;
     PlatformIntegration& platform_;
     bool tray_available_;

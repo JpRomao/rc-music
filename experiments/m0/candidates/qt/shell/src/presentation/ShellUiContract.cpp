@@ -1,4 +1,5 @@
 #include "presentation/ShellUiContract.hpp"
+#include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "presentation/ApplicationIdentity.hpp"
 
 #include <stdexcept>
@@ -25,39 +26,42 @@ void validateHighContrastPalette(const HighContrastPalette& palette) {
 
 } // namespace
 
-ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
-    : QObject(parent), window_(bundle.window), layout_(bundle.layout_tokens), strings_(bundle.strings),
-      themes_(bundle.themes), motion_(bundle.motion) {
-    if (window_.client_width_px != 960 || window_.client_height_px != 640 || window_.minimum_width_px != 720 ||
-        window_.minimum_height_px != 520 || layout_.queue_panel_min_width_px != 320 ||
-        layout_.queue_panel_max_width_px != 380 || layout_.control_target_min_px != 40 ||
-        layout_.control_target_preferred_px != 44 || strings_.app_name != QStringLiteral("Player de música") ||
-        strings_.action_open_audio != QStringLiteral("Abrir áudio") ||
-        strings_.empty_title != QStringLiteral("Abra um áudio para começar") ||
-        strings_.empty_hint != QStringLiteral("ou arraste arquivos para esta janela") ||
-        strings_.action_play != QStringLiteral("Reproduzir") || strings_.action_pause != QStringLiteral("Pausar") ||
-        strings_.action_previous != QStringLiteral("Faixa anterior") ||
-        strings_.action_next != QStringLiteral("Próxima faixa") ||
-        strings_.skip_backward_short != QStringLiteral("−{seconds}") ||
-        strings_.skip_forward_short != QStringLiteral("+{seconds}") ||
-        strings_.skip_backward_name != QStringLiteral("Voltar {seconds} segundos") ||
-        strings_.skip_forward_name != QStringLiteral("Avançar {seconds} segundos") ||
-        strings_.progress_name != QStringLiteral("Posição da faixa") ||
-        strings_.volume_name != QStringLiteral("Volume") || strings_.action_mute != QStringLiteral("Silenciar") ||
-        strings_.action_unmute != QStringLiteral("Ativar som") || strings_.queue_title != QStringLiteral("Fila") ||
-        strings_.not_informed != QStringLiteral("Não informado") ||
-        strings_.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
-        strings_.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
-        strings_.action_skip != QStringLiteral("Pular") ||
-        strings_.action_retry != QStringLiteral("Tentar novamente") ||
-        strings_.preferences_title != QStringLiteral("Preferências") ||
-        strings_.section_general != QStringLiteral("Geral") ||
-        strings_.section_playback != QStringLiteral("Reprodução") ||
-        strings_.section_appearance != QStringLiteral("Aparência") ||
-        strings_.theme_system != QStringLiteral("Sistema") || strings_.theme_light != QStringLiteral("Claro") ||
-        strings_.theme_dark != QStringLiteral("Escuro") || strings_.motion_system != QStringLiteral("Sistema") ||
-        strings_.motion_reduced != QStringLiteral("Reduzido") || themes_.light.canvas != QStringLiteral("#F6F7F9") ||
-        themes_.light.accent != QStringLiteral("#4F46E5")) {
+ShellUiContract::ShellUiContract(QObject* parent) : QObject(parent) {}
+
+ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent) : ShellUiContract(parent) {
+    const FixtureWindow& window = bundle.window;
+    const FixtureLayoutTokens& layout = bundle.layout_tokens;
+    const FixtureStrings& strings = bundle.strings;
+    const FixtureThemes& themes = bundle.themes;
+    if (window.client_width_px != 960 || window.client_height_px != 640 || window.minimum_width_px != 720 ||
+        window.minimum_height_px != 520 || layout.queue_panel_min_width_px != 320 ||
+        layout.queue_panel_max_width_px != 380 || layout.control_target_min_px != 40 ||
+        layout.control_target_preferred_px != 44 || strings.app_name != QStringLiteral("Player de música") ||
+        strings.action_open_audio != QStringLiteral("Abrir áudio") ||
+        strings.empty_title != QStringLiteral("Abra um áudio para começar") ||
+        strings.empty_hint != QStringLiteral("ou arraste arquivos para esta janela") ||
+        strings.action_play != QStringLiteral("Reproduzir") || strings.action_pause != QStringLiteral("Pausar") ||
+        strings.action_previous != QStringLiteral("Faixa anterior") ||
+        strings.action_next != QStringLiteral("Próxima faixa") ||
+        strings.skip_backward_short != QStringLiteral("−{seconds}") ||
+        strings.skip_forward_short != QStringLiteral("+{seconds}") ||
+        strings.skip_backward_name != QStringLiteral("Voltar {seconds} segundos") ||
+        strings.skip_forward_name != QStringLiteral("Avançar {seconds} segundos") ||
+        strings.progress_name != QStringLiteral("Posição da faixa") ||
+        strings.volume_name != QStringLiteral("Volume") || strings.action_mute != QStringLiteral("Silenciar") ||
+        strings.action_unmute != QStringLiteral("Ativar som") || strings.queue_title != QStringLiteral("Fila") ||
+        strings.not_informed != QStringLiteral("Não informado") ||
+        strings.error_title != QStringLiteral("Não foi possível abrir esta faixa") ||
+        strings.error_body != QStringLiteral("A faixa de teste está indisponível.") ||
+        strings.action_skip != QStringLiteral("Pular") || strings.action_retry != QStringLiteral("Tentar novamente") ||
+        strings.preferences_title != QStringLiteral("Preferências") ||
+        strings.section_general != QStringLiteral("Geral") ||
+        strings.section_playback != QStringLiteral("Reprodução") ||
+        strings.section_appearance != QStringLiteral("Aparência") ||
+        strings.theme_system != QStringLiteral("Sistema") || strings.theme_light != QStringLiteral("Claro") ||
+        strings.theme_dark != QStringLiteral("Escuro") || strings.motion_system != QStringLiteral("Sistema") ||
+        strings.motion_reduced != QStringLiteral("Reduzido") || themes.light.canvas != QStringLiteral("#F6F7F9") ||
+        themes.light.accent != QStringLiteral("#4F46E5")) {
         throw std::invalid_argument{"unsupported empty shell fixture"};
     }
     const FixtureAsset& placeholder = assetById(bundle, QStringLiteral("cover-placeholder"));
@@ -66,6 +70,21 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent)
         track.relative_path != QStringLiteral("assets/cover-track.svg")) {
         throw std::invalid_argument{"empty shell asset mapping drifted"};
     }
+
+    window_ = {window.client_width_px, window.client_height_px, window.minimum_width_px, window.minimum_height_px};
+    layout_ = {layout.queue_panel_min_width_px, layout.queue_panel_max_width_px,
+               layout.control_target_min_px,    layout.control_target_preferred_px,
+               layout.radius_small_px,          layout.radius_medium_px,
+               layout.spacing_unit_px};
+    const auto convert_palette = [](const FixturePalette& source) {
+        return Palette{source.canvas,         source.surface, source.surface_raised, source.text_primary,
+                       source.text_secondary, source.accent,  source.on_accent,      source.border,
+                       source.focus,          source.error,   source.warning,        source.success};
+    };
+    light_palette_ = convert_palette(themes.light);
+    dark_palette_ = convert_palette(themes.dark);
+    normal_motion_ = {bundle.motion.normal.panel_transition_ms, bundle.motion.normal.feedback_transition_ms};
+    reduced_motion_timings_ = {bundle.motion.reduced.panel_transition_ms, bundle.motion.reduced.feedback_transition_ms};
 }
 
 void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
@@ -154,7 +173,9 @@ QString ShellUiContract::themeLight() const { return tr("Claro"); }
 QString ShellUiContract::themeDark() const { return tr("Escuro"); }
 QString ShellUiContract::motionSystem() const { return tr("Sistema"); }
 QString ShellUiContract::motionReduced() const { return tr("Reduzido"); }
-const FixturePalette& ShellUiContract::palette() const noexcept { return dark_theme_ ? themes_.dark : themes_.light; }
+const ShellUiContract::Palette& ShellUiContract::palette() const noexcept {
+    return dark_theme_ ? dark_palette_ : light_palette_;
+}
 QString ShellUiContract::canvasColor() const {
     return high_contrast_ ? high_contrast_->window.name() : palette().canvas;
 }
@@ -198,10 +219,10 @@ bool ShellUiContract::highContrast() const noexcept { return high_contrast_.has_
 bool ShellUiContract::darkTheme() const noexcept { return dark_theme_; }
 bool ShellUiContract::reducedMotion() const noexcept { return reduced_motion_; }
 int ShellUiContract::panelTransitionMs() const noexcept {
-    return reduced_motion_ ? motion_.reduced.panel_transition_ms : motion_.normal.panel_transition_ms;
+    return reduced_motion_ ? reduced_motion_timings_.panel_transition_ms : normal_motion_.panel_transition_ms;
 }
 int ShellUiContract::feedbackTransitionMs() const noexcept {
-    return reduced_motion_ ? motion_.reduced.feedback_transition_ms : motion_.normal.feedback_transition_ms;
+    return reduced_motion_ ? reduced_motion_timings_.feedback_transition_ms : normal_motion_.feedback_transition_ms;
 }
 QUrl ShellUiContract::placeholderSource() const { return placeholder_source_; }
 QUrl ShellUiContract::trackSource() const { return track_source_; }

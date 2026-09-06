@@ -2,7 +2,7 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
-**Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [núcleo já possui build próprio na raiz](docs/core-build.md), com os mesmos 224 testes e sem Qt/fixture/harness para compilar. O shell Windows consome essa implementação única; a separação de apresentação/bootstrap ainda está pendente. M1 não está concluído. Benchmarks e Linux continuam adiados, sem aprovação de release ou retomada da interação nativa interrompida.
+**Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [núcleo já possui build próprio na raiz](docs/core-build.md), com os mesmos 224 testes e sem Qt/fixture/harness para compilar. O shell Windows consome essa implementação única e seu [bootstrap real já dispensa os JSONs de demonstração](docs/bootstrap-separation.md), preservando defaults, interface e sessão. Ainda falta retirar os componentes históricos compilados e promover a unidade gráfica para a raiz. M1 não está concluído. Benchmarks e Linux continuam adiados, sem aprovação de release ou retomada da interação nativa interrompida.
 
 Os recortes e contagens abaixo preservam o histórico de implementação anterior à decisão; expressões de stack ainda candidata nesses registros descrevem aquele momento. Para o trabalho atual, prevalecem o ADR-0005 e a seção 17 do [plano](docs/development-plan.md).
 

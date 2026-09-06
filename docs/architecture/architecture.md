@@ -107,7 +107,9 @@ Os spikes e seus inputs autenticados continuam preservados pelo [layout M0-L1](.
 
 O [primeiro recorte implementado](../core-build.md) moveu headers para `include/m0/{domain,application,ports}`, regras para `src/{domain,application}`, workers para `src/adapters` e testes para `tests/core`. `rc_music_core` depende somente de contratos C++ puros; `rc_music_workers` contém concorrência/filesystem e o adapter Windows, enquanto `rc_music_test_support` isola o backend determinístico. O shell legado consome esses alvos sem cópia das regras. O core raiz OFF compila inclusive numa exportação sem `experiments` e `tests`; os namespaces `m0` foram mantidos para evitar alteração incidental de APIs.
 
-A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário separar apresentação/bootstrap de `FixtureBundle`, autenticação e recursos comparativos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
+O [segundo recorte](../bootstrap-separation.md) separa a construção real da apresentação dos dados congelados: `PlayerPresenter` recebe portas, preferências e serviços sem `FixtureBundle`; `ShellUiContract` possui defaults próprios, equivalentes ao contrato visual histórico. Os JSONs de demonstração ficam em um alvo de recursos exclusivo dos consumidores históricos/testes, ausente do executável combinado ON/OFF. Construtores históricos preservam os mesmos cenários e validações, sem duplicar regras de reprodução.
+
+A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário retirar tipos/fake/implementações históricos da compilação real e separar o configure da autenticação e dos caminhos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime empacotado foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
 
 ```text
 /

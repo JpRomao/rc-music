@@ -491,6 +491,8 @@ class PlayerPresenterTests final : public QObject {
 
   private slots:
     void fixtureOpenAudioPreservesTheFrozenModeContract();
+    void productDefaultsAndEmptyStateNeedNoFixture();
+    void productDefaultsRejectUnavailableAudioPreferences();
     void localOpenCancellationIsInert();
     void localOpenPublishesUnicodeFallbackAndStartsMetadata();
     void localOpenPublishesOrderedQueueWithDistinctDuplicateOccurrences();
@@ -721,7 +723,7 @@ void PlayerPresenterTests::localOpenCancellationIsInert() {
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     int picker_calls = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
+    PlayerPresenter presenter(platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
         ++picker_calls;
         return {};
     });
@@ -745,12 +747,67 @@ void PlayerPresenterTests::localOpenCancellationIsInert() {
     QCOMPARE(source_imports.size(), 0);
 }
 
+void PlayerPresenterTests::productDefaultsAndEmptyStateNeedNoFixture() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto source = localTestPath(u8"Produto 日本語.wav");
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; }, discovery);
+
+    QVERIFY(!presenter.usesFrozenFixture());
+    QCOMPARE(presenter.preferences(), Preferences{});
+    QCOMPARE(presenter.stateId(), QStringLiteral("empty"));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(presenter.assetId(), QStringLiteral("cover-placeholder"));
+    QVERIFY(presenter.hasMessage());
+    QCOMPARE(presenter.messageKey(), QStringLiteral("empty_title"));
+    QCOMPARE(presenter.primaryActionId(), QStringLiteral("open-audio"));
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QVERIFY(!presenter.queueLoaded());
+    QVERIFY(!presenter.hasContextTrack());
+    QVERIFY(!backend.volumes.empty());
+    QVERIFY(!backend.muted_values.empty());
+    QCOMPARE(backend.volumes.back(), Preferences{}.volume);
+    QCOMPARE(backend.muted_values.back(), Preferences{}.muted);
+    QVERIFY(backend.loaded_paths.empty());
+    QVERIFY(metadata.requests.empty());
+    QCOMPARE(backend.play_calls, 0);
+
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(presenter.stateId(), QStringLiteral("playing"));
+    QCOMPARE(presenter.assetId(), QStringLiteral("cover-track"));
+    QVERIFY(!presenter.hasMessage());
+    QVERIFY(presenter.messageKey().isEmpty());
+    QCOMPARE(presenter.primaryActionId(), QStringLiteral("play-pause"));
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QCOMPARE(metadata.requests.front().source_path, source);
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Produto 日本語"));
+}
+
+void PlayerPresenterTests::productDefaultsRejectUnavailableAudioPreferences() {
+    for (const bool reject_volume : {false, true}) {
+        AvailableTrayPlatform platform;
+        PresenterPlaybackBackend backend;
+        PresenterMetadataReader metadata;
+        if (reject_volume)
+            backend.volume_result = PlaybackCommandResult::Shutdown;
+        else
+            backend.muted_result = PlaybackCommandResult::Shutdown;
+        const auto construct = [&] {
+            PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+        };
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, construct());
+        QVERIFY(!backend.callbackInstalled());
+    }
+}
+
 void PlayerPresenterTests::localOpenPublishesUnicodeFallbackAndStartsMetadata() {
     AvailableTrayPlatform platform;
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source = localTestPath(u8"Abertura 日本語.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
 
@@ -785,7 +842,7 @@ void PlayerPresenterTests::localOpenPublishesOrderedQueueWithDistinctDuplicateOc
         localTestPath(u8"Segunda ☕.m4a"),
         localTestPath(u8"Primeira 日本語.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QAbstractItemModelTester model_tester(model, QAbstractItemModelTester::FailureReportingMode::QtTest);
     QSignalSpy resets(model, &QAbstractItemModel::modelReset);
@@ -824,8 +881,7 @@ void PlayerPresenterTests::openingAdditionalFilesPreservesTheQueueAndPlaysTheFir
         {newly_opened, first},
     };
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [&] { return selections.at(selection_index++); });
+    PlayerPresenter presenter(platform, backend, metadata, [&] { return selections.at(selection_index++); });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = model->data(model->index(0, 0), QueueListModel::OccurrenceIdRole).toString();
@@ -868,7 +924,7 @@ void PlayerPresenterTests::localQueueNavigationAvoidsAutoplayAndPreservesDuplica
     const std::filesystem::path duplicate = localTestPath(u8"Duplicada 日本語.mp3");
     const std::filesystem::path final_source = localTestPath(u8"Final ☕.m4a");
     const std::vector<std::filesystem::path> selections{duplicate, duplicate, final_source};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
@@ -909,7 +965,7 @@ void PlayerPresenterTests::playNowUsesTheStableLocalOccurrenceIdAndAutoplays() {
     PresenterMetadataReader metadata;
     const std::filesystem::path duplicate = localTestPath(u8"Duplicada 日本語.mp3");
     const std::vector<std::filesystem::path> selections{duplicate, duplicate};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
@@ -958,7 +1014,7 @@ void PlayerPresenterTests::playNowPromotesTheCurrentPendingLoadWithoutReloading(
         localTestPath(u8"Primeira.mp3"),
         localTestPath(u8"Segunda.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
@@ -991,8 +1047,7 @@ void PlayerPresenterTests::localQueueAppendMoveAndNonCurrentRemovalUseFineGraine
     const std::filesystem::path final_source = localTestPath(u8"Final.ogg");
     const std::vector<std::vector<std::filesystem::path>> selections{{first, second}, {first, final_source}};
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [&] { return selections.at(selection_index++); });
+    PlayerPresenter presenter(platform, backend, metadata, [&] { return selections.at(selection_index++); });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -1074,7 +1129,7 @@ void PlayerPresenterTests::removingCurrentUsesAForwardSuccessorOrLeavesPlaybackE
     const std::filesystem::path second = localTestPath(u8"Segunda.mp3");
     const std::filesystem::path third = localTestPath(u8"Terceira.mp3");
     const std::vector<std::filesystem::path> selections{first, second, third};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
@@ -1149,7 +1204,7 @@ void PlayerPresenterTests::removingPausedCurrentKeepsTheSuccessorReady() {
     const std::filesystem::path first = localTestPath(u8"Primeira.mp3");
     const std::filesystem::path second = localTestPath(u8"Segunda.mp3");
     const std::vector<std::filesystem::path> selections{first, second};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
@@ -1185,8 +1240,7 @@ void PlayerPresenterTests::addingAfterTheQueueBecomesEmptyStartsTheFirstNewOccur
     const std::filesystem::path duplicate = localTestPath(u8"Duplicada 日本語.mp3");
     const std::vector<std::vector<std::filesystem::path>> selections{{first}, {duplicate, duplicate}};
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [&] { return selections.at(selection_index++); });
+    PlayerPresenter presenter(platform, backend, metadata, [&] { return selections.at(selection_index++); });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString removed_id = presenter.currentOccurrenceId();
@@ -1231,8 +1285,7 @@ void PlayerPresenterTests::typedSourceImportPreservesOrderDuplicatesAndNativeMet
     const auto metacharacters = localTestPath(u8R"(Abertura "aspas" & ^ % ! [x].ogg)");
     const std::vector<std::filesystem::path> selection{current, anchor};
     const std::vector<std::filesystem::path> sources{duplicate, metacharacters, duplicate};
-    PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    PlayerPresenter presenter(platform, backend, metadata, [selection] { return selection; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -1267,7 +1320,7 @@ void PlayerPresenterTests::typedSourceImportRejectsBusyWithoutMutatingTheActiveB
     const auto first = localTestPath(u8"Primeira.mp3");
     const auto ignored = localTestPath(u8"Ignorada 日本語 & ^.flac");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QSignalSpy import_changed(&presenter, &PlayerPresenter::sourceImportChanged);
 
@@ -1302,7 +1355,7 @@ void PlayerPresenterTests::exitDrainsActiveAndAcceptedSourceImportsBeforeCommit(
     const auto second = localTestPath(u8"Segunda ACK 日本 & 'tema'.flac");
     bool accepted_work_drained = false;
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     presenter.setSourceExitDrainedProbe([&] { return accepted_work_drained; });
 
     QVERIFY(presenter.openSourcePaths({first}, 0));
@@ -1391,7 +1444,7 @@ void PlayerPresenterTests::exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDr
     FakeLocalSourceDiscovery discovery;
     const auto source = localTestPath(u8"Importação local em andamento.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     presenter.setSourceExitDrainedProbe([] { return true; });
 
     QVERIFY(presenter.importDroppedUrls({QUrl::fromLocalFile(displayPath(source))}, 0));
@@ -1415,8 +1468,7 @@ void PlayerPresenterTests::droppedSourceImportValidatesBoundaryAndKeepsStableAnc
     const auto inserted_first = localTestPath(u8"Inserida 1.ogg");
     const auto inserted_second = localTestPath(u8"Inserida 2.wav");
     const std::vector<std::filesystem::path> selection{first, anchor};
-    PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    PlayerPresenter presenter(platform, backend, metadata, [selection] { return selection; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -1478,7 +1530,7 @@ void PlayerPresenterTests::droppedSourceImportRejectsMalformedPathsWithoutLosing
     FakeLocalSourceDiscovery discovery;
     const auto valid = localTestPath(u8"Válida 日本語 %00.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
 
     QVERIFY(!presenter.importDroppedUrls({invalidUrl}, 0));
     QVERIFY(discovery.requests.empty());
@@ -1522,7 +1574,7 @@ void PlayerPresenterTests::droppedSourceImportPreservesAbsoluteWindowsPaths() {
     PresenterMetadataReader metadata;
     FakeLocalSourceDiscovery discovery;
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     const auto url = QUrl::fromLocalFile(path);
     QVERIFY(url.isValid());
     QVERIFY(presenter.importDroppedUrls({url}, 0));
@@ -1548,8 +1600,7 @@ void PlayerPresenterTests::sourceImportTracksMovedAnchorAndFallsBackAfterItsRemo
     const auto batch_two = localTestPath(u8"Y.mp3");
     const auto batch_three = localTestPath(u8"Z.mp3");
     const std::vector<std::filesystem::path> selection{first, predecessor, anchor, tail};
-    PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    PlayerPresenter presenter(platform, backend, metadata, [selection] { return selection; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString anchor_id = model->data(model->index(2, 0), QueueListModel::OccurrenceIdRole).toString();
@@ -1593,7 +1644,7 @@ void PlayerPresenterTests::sourceImportOnEmptyQueuePreservesTransientFirstLoadAn
     const auto playable = localTestPath(u8"Valida.mp3");
     backend.load_results = {static_cast<PlaybackCommandResult>(transient_result), PlaybackCommandResult::Accepted};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(rejected), localTestUrl(playable)}, 0));
@@ -1627,7 +1678,7 @@ void PlayerPresenterTests::sourceImportMarksInvalidArgumentLoadUnavailableAndCon
     const auto playable = localTestPath(u8"Válida.mp3");
     backend.load_results = {PlaybackCommandResult::InvalidArgument, PlaybackCommandResult::Accepted};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(invalid), localTestUrl(playable)}, 0));
@@ -1655,7 +1706,7 @@ void PlayerPresenterTests::sourceImportCountsAnAsynchronousFailureOnceAfterCompl
     FakeLocalSourceDiscovery discovery;
     const auto invalid = localTestPath(u8"Corrompida.bin");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QSignalSpy source_import_changed(&presenter, &PlayerPresenter::sourceImportChanged);
 
@@ -1696,7 +1747,7 @@ void PlayerPresenterTests::dismissingSourceImportStopsTrackingCompletedOccurrenc
     FakeLocalSourceDiscovery discovery;
     const auto imported = localTestPath(u8"Importada.mp3");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(imported)}, 0));
@@ -1722,7 +1773,7 @@ void PlayerPresenterTests::startingANewSourceImportStopsTrackingPreviousOccurren
     const auto previous = localTestPath(u8"Anterior.mp3");
     const auto next = localTestPath(u8"Nova.mp3");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(previous)}, 0));
@@ -1757,7 +1808,7 @@ void PlayerPresenterTests::sourceImportResumesAutoplayWhenALaterBatchFollowsAnAs
     const auto invalid = localTestPath(u8"Primeira corrompida.bin");
     const auto playable = localTestPath(u8"Segunda válida.mp3");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
@@ -1792,8 +1843,7 @@ void PlayerPresenterTests::sourceImportDoesNotArmAutoplayAfterItsInitialTrackIsR
     const auto existing = localTestPath(u8"Existente.mp3");
     const auto imported = localTestPath(u8"Importada.mp3");
     const std::vector<std::filesystem::path> selection{existing};
-    PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [selection] { return selection; }, discovery);
+    PlayerPresenter presenter(platform, backend, metadata, [selection] { return selection; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString existing_id = presenter.currentOccurrenceId();
@@ -1821,7 +1871,7 @@ void PlayerPresenterTests::sourceImportIssuesBetweenBatchesDoNotCancelValidFiles
     const auto ignored = localTestPath(u8"ignorada.txt");
     const auto second = localTestPath(u8"Segunda.ogg");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
@@ -1853,7 +1903,7 @@ void PlayerPresenterTests::cancellingSourceImportKeepsConsumedBatchesAndDiscards
     const auto consumed = localTestPath(u8"Consumida.wav");
     const auto late = localTestPath(u8"Tardia.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QAbstractItemModel* const model = presenter.queueModelObject();
 
     QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
@@ -1887,7 +1937,7 @@ void PlayerPresenterTests::rejectedQueuePlaybackTransitionsLeaveTheQueueAtomic()
     const std::filesystem::path first = localTestPath(u8"Primeira.mp3");
     const std::filesystem::path second = localTestPath(u8"Segunda.mp3");
     const std::vector<std::filesystem::path> selections{first, second};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -1933,7 +1983,7 @@ void PlayerPresenterTests::transientNavigationRejectionKeepsTheTargetAvailable()
         localTestPath(u8"Atual.mp3"),
         localTestPath(u8"Próxima.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
@@ -1963,7 +2013,7 @@ void PlayerPresenterTests::rejectedLocalOpenDoesNotStartMetadataOrPublishTrackSt
     backend.load_result = PlaybackCommandResult::NotReady;
     PresenterMetadataReader metadata;
     const std::filesystem::path source{LR"(C:\audio\rejected.wav)"};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
     QSignalSpy source_imports(&presenter, &PlayerPresenter::sourceImportChanged);
@@ -1991,8 +2041,7 @@ void PlayerPresenterTests::rejectedAdditionalOpenPreservesTheCurrentLocalQueue()
         {localTestPath(u8"rejected.wav")},
     };
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [&] { return selections.at(selection_index++); });
+    PlayerPresenter presenter(platform, backend, metadata, [&] { return selections.at(selection_index++); });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -2031,8 +2080,7 @@ void PlayerPresenterTests::rejectedAddPreservesTheCurrentLocalQueue() {
         {std::filesystem::path{}},
     };
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [&] { return selections.at(selection_index++); });
+    PlayerPresenter presenter(platform, backend, metadata, [&] { return selections.at(selection_index++); });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString current_id = presenter.currentOccurrenceId();
@@ -2073,7 +2121,7 @@ void PlayerPresenterTests::localPlaybackErrorKeepsContextAndOffersReopen() {
         std::filesystem::path{LR"(C:\Música\Recuperada 日本語.mp3)"},
     };
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
+    PlayerPresenter presenter(platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
         if (selection_index >= selections.size())
             return {};
         return {selections[selection_index++]};
@@ -2156,7 +2204,7 @@ void PlayerPresenterTests::typedLocalPlaybackErrorsExposeAnExecutableRecovery() 
         localTestPath(u8"Recuperada pela ação ☕.flac"),
     };
     std::size_t selection_index = 0;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
+    PlayerPresenter presenter(platform, backend, metadata, [&]() -> std::vector<std::filesystem::path> {
         if (selection_index >= selections.size())
             return {};
         return {selections[selection_index++]};
@@ -2198,7 +2246,7 @@ void PlayerPresenterTests::localEndedAdvancesToNextOccurrenceWithAutoplay() {
         localTestPath(u8"Primeira 日本語.mp3"),
         localTestPath(u8"Segunda ☕.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString second_id = model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString();
@@ -2237,7 +2285,7 @@ void PlayerPresenterTests::localEndedAtQueueTailKeepsSelection() {
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source = localTestPath(u8"Última 日本語.mp3");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     const QString occurrence_id = presenter.currentOccurrenceId();
 
@@ -2267,7 +2315,7 @@ void PlayerPresenterTests::localEndedAtQueueTailClearsSelectionWhenConfigured() 
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source = localTestPath(u8"Última 日本語.mp3");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection));
     QVERIFY(presenter.openAudio());
@@ -2321,7 +2369,7 @@ void PlayerPresenterTests::typedLocalErrorMarksOnlyFailedOccurrenceAndContinues(
     PresenterMetadataReader metadata;
     const std::filesystem::path duplicate = localTestPath(u8"Duplicada 日本語.mp3");
     const std::vector<std::filesystem::path> selections{duplicate, duplicate};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
@@ -2385,7 +2433,7 @@ void PlayerPresenterTests::automaticSourceSkipPublishesContextBeforePlayback() {
     PresenterMetadataReader metadata;
     metadata.start_result = MetadataCommandResult::Shutdown;
     const std::vector sources{localTestPath(u8"Indisponível 日本語.mp3"), localTestPath(u8"Próxima.wav")};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
     QVERIFY(presenter.openAudio());
     const auto failed_id = presenter.currentOccurrenceId();
     auto* const model = presenter.queueModelObject();
@@ -2451,7 +2499,7 @@ void PlayerPresenterTests::nonAutomaticSourceFailuresDoNotPublishSkippedContext(
     }
     SessionAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata,
+        platform, backend, metadata,
         [sources, scenario] { return scenario == QStringLiteral("terminal") ? std::vector{sources[0]} : sources; },
         PlayerPresenterPreferences{.autosave = &preferences_autosave,
                                    .session = {.initial = initial,
@@ -2499,8 +2547,7 @@ void PlayerPresenterTests::automaticSourceSkipObserversMayDestroyThePresenter() 
     PresenterMetadataReader metadata;
     metadata.start_result = MetadataCommandResult::Shutdown;
     const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav")};
-    auto presenter =
-        std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    auto presenter = std::make_unique<PlayerPresenter>(platform, backend, metadata, [sources] { return sources; });
     QVERIFY(presenter->openAudio());
     int notifications = 0;
     const auto observe = [&] {
@@ -2524,7 +2571,7 @@ void PlayerPresenterTests::automaticSourceSkipDoesNotPublishObsoleteNotification
     metadata.start_result = MetadataCommandResult::Shutdown;
     const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav"),
                               localTestPath(u8"Escolha explícita.wav")};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
     QVERIFY(presenter.openAudio());
     const auto explicit_id = presenter.queueModelObject()
                                  ->data(presenter.queueModelObject()->index(2, 0), QueueListModel::OccurrenceIdRole)
@@ -2565,7 +2612,7 @@ void PlayerPresenterTests::automaticSourceSkipKeepsImportNotificationsIndependen
     const std::vector sources{localTestPath(u8"Falha.wav"), localTestPath(u8"Destino.wav"),
                               localTestPath(u8"Escolha explícita.wav")};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"Importação original"))}, 0));
     const auto generation = discovery.requests.back().generation;
     discovery.publishBatch(generation, 1, sources, {}, 3);
@@ -2625,7 +2672,7 @@ void PlayerPresenterTests::outputLossDuringRecoveryPreservesThePersistedTarget()
     const SessionSnapshot persisted = persistedSessionSnapshot();
     SessionAutosave autosave{writer, persisted, {.now = [&clock] { return clock.now(); }}};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{.autosave = &preferences_autosave,
                                    .session = {.initial = persisted,
                                                .load_status = SessionLoadStatus::Loaded,
@@ -2680,8 +2727,7 @@ void PlayerPresenterTests::audioOutputRecoveryPreservesOccurrenceAndPositionWith
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Saída 日本語.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     const QString id = presenter.currentOccurrenceId();
     auto* const model = presenter.queueModelObject();
@@ -2726,8 +2772,7 @@ void PlayerPresenterTests::repeatedAudioOutputRecoveryRetainsPositionAndRejectsB
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Saída.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Error,
                      .position_ms = 750,
@@ -2759,8 +2804,7 @@ void PlayerPresenterTests::supersededAudioOutputRecoveryCannotSeekTheNewSelectio
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Saída.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Error,
                      .position_ms = 750,
@@ -2789,7 +2833,7 @@ void PlayerPresenterTests::locatesCurrentMissingFileAndRecoversPausedAtTheConfir
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Antiga 日本語.wav");
     const auto replacement = std::filesystem::absolute(localTestPath(u8"Nova pasta/Renomeada 日本語.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(!presenter.fileLocationAvailable());
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.fileLocationAvailable());
@@ -2842,8 +2886,7 @@ void PlayerPresenterTests::locatesOnlyTheChosenOccurrenceWithoutInterruptingAnot
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Duplicada.wav");
     const auto replacement = std::filesystem::absolute(localTestPath(u8"Outra pasta/Duplicada.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source, source}; });
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.openAudio());
     const QString missing = presenter.currentOccurrenceId();
@@ -2891,7 +2934,7 @@ void PlayerPresenterTests::fileLocationCancellationRemovalAndDuplicateCompletion
     PresenterMetadataReader metadata;
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Ausente.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.openAudio());
     const QString id = presenter.currentOccurrenceId();
@@ -2923,7 +2966,7 @@ void PlayerPresenterTests::failedFileLocationPreservesThePreviousSourceAndRemain
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Original.wav");
     const auto replacement = std::filesystem::absolute(localTestPath(u8"Recusada.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
@@ -2959,8 +3002,8 @@ void PlayerPresenterTests::fileLocationCompletionCannotOutliveExitOrThePresenter
     PresenterMetadataReader metadata;
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Saída.wav");
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
-                                                       [source] { return std::vector{source}; });
+    auto presenter =
+        std::make_unique<PlayerPresenter>(platform, backend, metadata, [source] { return std::vector{source}; });
     presenter->setAudioFileLocator(&locator);
     QVERIFY(presenter->openAudio());
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
@@ -2986,7 +3029,7 @@ void PlayerPresenterTests::synchronousFileLocationCompletionIsDeferredAndSingleS
     PresenterFileLocator locator;
     const auto source = localTestPath(u8"Antes.wav");
     const auto replacement = std::filesystem::absolute(localTestPath(u8"Depois.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
@@ -3027,7 +3070,7 @@ void PlayerPresenterTests::relocatedSourceIsSavedWithItsOccurrenceAndPendingRest
         .position_ms = 42'000};
     SessionAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{.autosave = &preferences_autosave,
                                    .session = {.initial = initial,
                                                .load_status = SessionLoadStatus::Loaded,
@@ -3067,7 +3110,7 @@ void PlayerPresenterTests::cancellingFileLocationForExitNotifiesTheBusyProperty(
     PreferencesAutosave autosave{writer, initial, {.now = [&clock] { return clock.now(); }}};
     const auto source = localTestPath(u8"Cancelada.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{.initial = initial, .autosave = &autosave, .now = [&clock] { return clock.now(); }});
     presenter.setAudioFileLocator(&locator);
     QVERIFY(presenter.openAudio());
@@ -3094,7 +3137,7 @@ void PlayerPresenterTests::asynchronousOpenKeepsPlaybackEventsLiveAndAppendsToTh
     const auto first = std::filesystem::absolute(localTestPath(u8"Primeira.wav"));
     const auto second = std::filesystem::absolute(localTestPath(u8"Segunda.wav"));
     const auto selected = std::filesystem::absolute(localTestPath(u8"Escolhida 日本語.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{first, second}; });
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector{first, second}; });
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
     backend.publish({.status = PlaybackStatus::Playing,
@@ -3164,7 +3207,7 @@ void PlayerPresenterTests::asynchronousAddPreservesTheCurrentTrackOrStartsAnEmpt
     PresenterFilesPicker picker;
     const auto source = std::filesystem::absolute(localTestPath(u8"Atual.wav"));
     const auto selected = std::filesystem::absolute(localTestPath(u8"Adicionada.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     const auto current_id = presenter.currentOccurrenceId();
     presenter.setAudioFilesPicker(&picker);
@@ -3190,8 +3233,7 @@ void PlayerPresenterTests::asynchronousSelectionCancellationFailureAndDuplicateC
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     presenter.setAudioFilesPicker(&picker);
     QVERIFY(presenter.openAudio());
     const auto obsolete = picker.pending;
@@ -3241,7 +3283,7 @@ void PlayerPresenterTests::asynchronousSelectionRejectsInvalidPathsWithoutChangi
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
     const auto source = std::filesystem::absolute(localTestPath(u8"Mantida.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     const auto id = presenter.currentOccurrenceId();
     presenter.setAudioFilesPicker(&picker);
@@ -3263,7 +3305,7 @@ void PlayerPresenterTests::asynchronousSelectionIsCancelledOnExitAndCannotOutliv
     PresenterPreferencesClock clock;
     PreferencesAutosave autosave{writer, Preferences{}, {.now = [&clock] { return clock.now(); }}};
     auto presenter = std::make_unique<PlayerPresenter>(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{.autosave = &autosave, .now = [&clock] { return clock.now(); }});
     presenter->setAudioFilesPicker(&picker);
     QVERIFY(presenter->setVolume(0.19));
@@ -3296,8 +3338,7 @@ void PlayerPresenterTests::asynchronousSelectionRebindingAndInlineCompletionAreG
     PresenterFilesPicker first;
     PresenterFilesPicker replacement;
     const auto source = std::filesystem::absolute(localTestPath(u8"Inline.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     presenter.setAudioFilesPicker(&first);
     QVERIFY(presenter.openAudio());
     const auto obsolete = first.pending;
@@ -3321,7 +3362,7 @@ void PlayerPresenterTests::mainSelectionAndFileLocationCannotOverlap() {
     PresenterFilesPicker picker;
     PresenterFileLocator locator;
     const auto source = std::filesystem::absolute(localTestPath(u8"Ausente.wav"));
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [=] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
     QTRY_VERIFY(presenter.hasError());
@@ -3354,7 +3395,7 @@ void PlayerPresenterTests::selectionObserverCanCancelOrDestroyBeforeTheNativeReq
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
     PresenterFilesPicker replacement;
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+    auto presenter = std::make_unique<PlayerPresenter>(platform, backend, metadata,
                                                        [] { return std::vector<std::filesystem::path>{}; });
     presenter->setAudioFilesPicker(&picker);
     bool handled = false;
@@ -3392,8 +3433,7 @@ void PlayerPresenterTests::inlineSelectionCannotWinAfterLaunchFailure() {
                                                  {std::filesystem::absolute(localTestPath(u8"Não abrir.wav"))}};
     picker.throw_after_completion = throws;
     picker.reject_after_completion = !throws;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     presenter.setAudioFilesPicker(&picker);
     QVERIFY(!presenter.openAudio());
     QCoreApplication::processEvents();
@@ -3407,8 +3447,7 @@ void PlayerPresenterTests::obsoleteSelectionFinishedCannotAffectAReentrantNewReq
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     presenter.setAudioFilesPicker(&picker);
     QSignalSpy finished(&presenter, &PlayerPresenter::audioFileSelectionFinished);
     bool restarted = false;
@@ -3446,7 +3485,7 @@ void PlayerPresenterTests::failedAudioSelectionPreservesAnActiveImport() {
     FakeLocalSourceDiscovery discovery;
     const auto source = localTestPath(u8"Descoberta.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     presenter.setAudioFilesPicker(&picker);
     QVERIFY(presenter.importDroppedUrls({localTestUrl(source)}, 0));
     const auto generation = discovery.requests.front().generation;
@@ -3481,7 +3520,7 @@ void PlayerPresenterTests::selectionCompletionMayDestroyThePresenter() {
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+    auto presenter = std::make_unique<PlayerPresenter>(platform, backend, metadata,
                                                        [] { return std::vector<std::filesystem::path>{}; });
     presenter->setAudioFilesPicker(&picker);
     connect(presenter.get(), &PlayerPresenter::stateChanged, presenter.get(), [&] {
@@ -3507,8 +3546,7 @@ void PlayerPresenterTests::pickerCancellationCannotStartAnotherDialog() {
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
     PresenterFilesPicker replacement;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     presenter.setAudioFilesPicker(&picker);
     QVERIFY(presenter.openAudio());
     bool reopened = false;
@@ -3541,7 +3579,7 @@ void PlayerPresenterTests::pickerCancellationMayDestroyThePresenter() {
     PresenterMetadataReader metadata;
     PresenterFilesPicker picker;
     PresenterFilesPicker replacement;
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
+    auto presenter = std::make_unique<PlayerPresenter>(platform, backend, metadata,
                                                        [] { return std::vector<std::filesystem::path>{}; });
     presenter->setAudioFilesPicker(&picker);
     QVERIFY(presenter->openAudio());
@@ -3560,8 +3598,7 @@ void PlayerPresenterTests::retriesTheOriginalUnavailableOccurrenceWithoutDuplica
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Reconectada 日本語.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     auto* const model = presenter.queueModelObject();
     const QString first_id = presenter.currentOccurrenceId();
@@ -3607,8 +3644,7 @@ void PlayerPresenterTests::rejectedRetryPreservesTheCurrentTrackAndRepeatedFailu
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Retry.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     auto* const model = presenter.queueModelObject();
     const QString first_id = presenter.currentOccurrenceId();
@@ -3665,8 +3701,7 @@ void PlayerPresenterTests::retryCompletionCannotReviveAnOccurrenceAfterAnotherEx
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Original.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [source] { return std::vector{source, source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
     QVERIFY(presenter.openAudio());
     const QString first_id = presenter.currentOccurrenceId();
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
@@ -3698,7 +3733,7 @@ void PlayerPresenterTests::retryReconcilesASynchronousLoadCompletion() {
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Synchronous.wav");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     const QString id = presenter.currentOccurrenceId();
     backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
@@ -3731,7 +3766,7 @@ void PlayerPresenterTests::explicitRetryPreventsLaterImportBatchesFromTakingOver
     const auto source = localTestPath(u8"Restaurada.wav");
     const auto later = localTestPath(u8"Lote seguinte.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
     QVERIFY(presenter.importDroppedUrls({localTestUrl(source), localTestUrl(later)}, 0));
     const auto generation = discovery.requests.front().generation;
     discovery.publishBatch(generation, 1, {source}, {}, 1);
@@ -3764,7 +3799,7 @@ void PlayerPresenterTests::localErrorContinuationPreservesStayReadyIntent() {
         localTestPath(u8"Inválida.mp3"),
         localTestPath(u8"Terceira.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
@@ -3798,7 +3833,7 @@ void PlayerPresenterTests::localErrorContinuationPreservesPausedPlayback() {
         localTestPath(u8"Primeira.mp3"),
         localTestPath(u8"Segunda.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
     QTRY_COMPARE(backend.play_calls, 1);
@@ -3825,7 +3860,7 @@ void PlayerPresenterTests::rejectedAutomaticContinuationRemainsManuallyRecoverab
         localTestPath(u8"Inválida.mp3"),
         localTestPath(u8"Recuperável.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     const QString failed_id = presenter.currentOccurrenceId();
@@ -3870,7 +3905,7 @@ void PlayerPresenterTests::rejectedContinuationPreservesConfirmedPlayingIntent()
         localTestPath(u8"Segunda.mp3"),
         localTestPath(u8"Terceira.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
     QTRY_COMPARE(backend.play_calls, 1);
@@ -3919,7 +3954,7 @@ void PlayerPresenterTests::staleLocalTerminalEventsAreInertAfterAdvance() {
         localTestPath(u8"Primeira.mp3"),
         localTestPath(u8"Segunda.mp3"),
     };
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
     QAbstractItemModel* const model = presenter.queueModelObject();
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
@@ -3967,7 +4002,7 @@ void PlayerPresenterTests::currentReadyEventAutoplaysAndStaleEventsAreIgnored() 
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source{LR"(C:\audio\ready.wav)"};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
 
@@ -4001,7 +4036,7 @@ void PlayerPresenterTests::localTransportAcceptsAsynchronousPlayAndSeekWithALoca
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source{LR"(C:\audio\transport.wav)"};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready,
                      .position_ms = 5'000,
@@ -4078,7 +4113,7 @@ void PlayerPresenterTests::rejectedLocalSeekNotifiesRestoredStateBeforeFeedback(
     SessionAutosave autosave{writer, {}, {.now = [&clock] { return clock.now(); }}};
     const auto source = localTestPath(u8"Seek recusado.wav");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{.autosave = &preferences_autosave,
                                    .session = {.autosave = &autosave, .now = [&clock] { return clock.now(); }}});
     QVERIFY(presenter.openAudio());
@@ -4140,8 +4175,8 @@ void PlayerPresenterTests::rejectedLocalSeekNotificationMayDestroyThePresenter()
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const auto source = localTestPath(u8"Seek e destruição.wav");
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
-                                                       [source] { return std::vector{source}; });
+    auto presenter =
+        std::make_unique<PlayerPresenter>(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(presenter->openAudio());
     backend.publish({.status = PlaybackStatus::Paused,
                      .position_ms = 20'000,
@@ -4163,7 +4198,7 @@ void PlayerPresenterTests::rejectedLocalSeekDoesNotAnnounceAfterAReentrantTrackC
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::vector sources{localTestPath(u8"Seek anterior.wav"), localTestPath(u8"Faixa seguinte.wav")};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [sources] { return sources; });
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Paused,
                      .position_ms = 20'000,
@@ -4188,8 +4223,7 @@ void PlayerPresenterTests::inertLocalSeekCommandsDoNotAnnounceRejection() {
     AvailableTrayPlatform platform;
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
-                              [] { return std::vector<std::filesystem::path>{}; });
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
     QSignalSpy rejected(&presenter, &PlayerPresenter::seekRejected);
     QVERIFY(!presenter.commitSeekPreview());
@@ -4216,7 +4250,7 @@ void PlayerPresenterTests::currentMetadataCompletionReplacesFallbackAndStopsPoll
     };
     metadata.poll_results.push_back(
         {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
     QSignalSpy playback(&presenter, &PlayerPresenter::playbackChanged);
     QAbstractItemModel* const model = presenter.queueModelObject();
@@ -4346,7 +4380,7 @@ void PlayerPresenterTests::projectsStructuredLocalDetailsWithoutLeakingReaderMes
         {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
     const std::filesystem::path failed_source = localTestPath(u8"Falha secreta.flac");
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata,
+        platform, backend, metadata,
         [selections = std::deque<std::vector<std::filesystem::path>>{{source}, {failed_source}}]() mutable {
             auto selection = std::move(selections.front());
             selections.pop_front();
@@ -4489,7 +4523,7 @@ void PlayerPresenterTests::projectsSanitizedMetadataDiagnosticsAsClosedIdentifie
     };
     metadata.poll_results.push_back(
         {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+    PlayerPresenter presenter(platform, backend, metadata,
                               [source] { return std::vector<std::filesystem::path>{source}; });
     QVERIFY(presenter.openAudio());
     QTRY_VERIFY(presenter.hasDetailsDiagnostics());
@@ -4528,7 +4562,7 @@ void PlayerPresenterTests::projectsExactDecimalByteCountsBeyondJavascriptSafeInt
     };
     metadata.poll_results.push_back(
         {MetadataPollStatus::Completed, MetadataReadCompletion{MetadataGeneration{1}, source, std::move(track)}});
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
 
     QVERIFY(presenter.openAudio());
     QTRY_VERIFY(presenter.hasDetailsDiagnostics());
@@ -4611,7 +4645,7 @@ void PlayerPresenterTests::currentArtworkUsesAnOpaqueUrlAndAcceptedOpenClearsIt(
     });
     auto cache = std::make_shared<ArtworkImageCache>();
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata,
+        platform, backend, metadata,
         [&]() -> std::vector<std::filesystem::path> {
             if (selection_index >= selections.size())
                 return {};
@@ -4652,7 +4686,7 @@ void PlayerPresenterTests::terminalMetadataStatusStopsPollingWithoutReplacingFal
     PresenterMetadataReader metadata;
     metadata.poll_results.push_back({MetadataPollStatus::StaleGeneration, std::nullopt});
     const std::filesystem::path source{LR"(C:\audio\fallback.wav)"};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
     QSignalSpy states(&presenter, &PlayerPresenter::stateChanged);
 
     QVERIFY(presenter.openAudio());
@@ -4672,8 +4706,8 @@ void PlayerPresenterTests::destructionClearsPlaybackCallbackAndCancelsPendingMet
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source{LR"(C:\audio\pending.wav)"};
-    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform, backend, metadata,
-                                                       [source] { return std::vector{source}; });
+    auto presenter =
+        std::make_unique<PlayerPresenter>(platform, backend, metadata, [source] { return std::vector{source}; });
     QVERIFY(backend.callbackInstalled());
     QVERIFY(presenter->openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 1'000, .generation = 1});
@@ -4931,7 +4965,7 @@ void PlayerPresenterTests::asynchronousExplicitTransportUsesTheLatestUnacknowled
     PresenterPlaybackBackend backend;
     PresenterMetadataReader metadata;
     const std::filesystem::path source{LR"(C:\audio\transport-intent.wav)"};
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata,
+    PlayerPresenter presenter(platform, backend, metadata,
                               [source] { return std::vector<std::filesystem::path>{source}; });
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Paused,
@@ -4978,7 +5012,7 @@ void PlayerPresenterTests::navigationUsesTheLatestTransportIntentBeforeAcknowled
         AvailableTrayPlatform platform;
         PresenterPlaybackBackend backend;
         PresenterMetadataReader metadata;
-        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+        PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
         QVERIFY(presenter.openAudio());
         backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
         QTRY_COMPARE(backend.play_calls, 1);
@@ -5001,7 +5035,7 @@ void PlayerPresenterTests::navigationUsesTheLatestTransportIntentBeforeAcknowled
         AvailableTrayPlatform platform;
         PresenterPlaybackBackend backend;
         PresenterMetadataReader metadata;
-        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [selections] { return selections; });
+        PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
         QVERIFY(presenter.openAudio());
         backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 1});
         QTRY_COMPARE(backend.play_calls, 1);
@@ -5597,7 +5631,7 @@ void PlayerPresenterTests::loadsPersistedPreferencesBeforePresentationWithoutAut
     PreferencesAutosave autosave{writer, loaded, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = loaded, .load_status = PreferencesLoadStatus::Loaded, .autosave = &autosave});
 
@@ -5641,7 +5675,7 @@ void PlayerPresenterTests::restoresPersistedSessionPausedBeforePresentationWitho
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5706,7 +5740,7 @@ void PlayerPresenterTests::acceptsAnApproximateConfirmedPositionWhenRestoring() 
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5750,7 +5784,7 @@ void PlayerPresenterTests::waitsForRestorableDurationBeforeApplyingThePersistedP
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5787,7 +5821,7 @@ void PlayerPresenterTests::userSelectionCancelsPendingRestoreWithoutApplyingItsP
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5831,7 +5865,7 @@ void PlayerPresenterTests::explicitPlayOfTheRestoredLoadingOccurrenceCancelsItsP
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5898,7 +5932,7 @@ void PlayerPresenterTests::explicitTransportCancelsRestoreAfterReadyBeforeSeekCo
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -5952,7 +5986,7 @@ void PlayerPresenterTests::restoredEndOfFileRemainsPausedWhenEndedArrives() {
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6000,7 +6034,7 @@ void PlayerPresenterTests::explicitPlayAfterRestoredEndOfFileAllowsANewEndedEven
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6052,7 +6086,7 @@ void PlayerPresenterTests::restoreDisabledIgnoresAProvidedPersistedSession() {
     SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6087,7 +6121,7 @@ void PlayerPresenterTests::reenablingRestoreForcesTheCurrentSessionToReplaceStal
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6124,7 +6158,7 @@ void PlayerPresenterTests::exitWaitsForBothPreferenceAndSessionPersistence() {
     platform.on_exit = [&] { shutdown_order.append(QStringLiteral("platform-exit")); };
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6186,7 +6220,7 @@ void PlayerPresenterTests::pendingSessionExitFreezesLocalPlaybackAndMetadataUnti
                                                      localTestPath(u8"Depois da saída.wav")};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [sources] { return sources; },
+        platform, backend, metadata, [sources] { return sources; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6258,7 +6292,7 @@ void PlayerPresenterTests::coalescesStructuralSessionMutationsIntoTheLatestSnaps
     std::size_t selection_index = 0;
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [&] { return selections.at(selection_index++); },
+        platform, backend, metadata, [&] { return selections.at(selection_index++); },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6325,7 +6359,7 @@ void PlayerPresenterTests::persistsOnlyConfirmedPositionsOnPeriodicAndUrgentChec
     const auto source = localTestPath(u8"Checkpoint 日本語.wav");
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6442,7 +6476,7 @@ void PlayerPresenterTests::systemSuspendStartsAnImmediateConfirmedCheckpointWith
     const auto source = localTestPath(u8"Suspend checkpoint.wav");
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6544,7 +6578,7 @@ void PlayerPresenterTests::systemResumeReconcilesUnreportedBackendStateAndDedupl
     PresenterMetadataReader metadata;
     metadata.start_result = MetadataCommandResult::Shutdown;
     const auto source = localTestPath(u8"Resume reconciliation.mp3");
-    PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; });
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source}; });
 
     QVERIFY(presenter.openAudio());
     backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 5'000, .seekable = true, .generation = 1});
@@ -6612,7 +6646,7 @@ void PlayerPresenterTests::sessionSaveFailureUsesTheExistingWarningAndRetryActio
     const auto source = localTestPath(u8"Falha de sessão.mp3");
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6652,7 +6686,7 @@ void PlayerPresenterTests::sessionFutureBlockUsesTheExistingWarningAndReplacemen
     const auto source = localTestPath(u8"Sessão futura.flac");
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Missing,
@@ -6694,7 +6728,7 @@ void PlayerPresenterTests::initialSessionFutureVersionUsesTheExistingReplacement
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -6733,7 +6767,7 @@ void PlayerPresenterTests::replacementConsentRejectsScopeExpansion() {
         preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = preferencesFirst ? PreferencesLoadStatus::FutureVersion : PreferencesLoadStatus::Loaded,
@@ -6889,7 +6923,7 @@ void PlayerPresenterTests::replacementConsentDoesNotExpandDuringScheduling() {
                                              }}};
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = {},
             .load_status = PreferencesLoadStatus::FutureVersion,
@@ -6982,7 +7016,7 @@ void PlayerPresenterTests::replacementConsentStopsWhenSchedulingDestroysPresente
     SessionAutosave session_autosave{
         session_writer, SessionSnapshot{}, {.now = [&] { return preferencesCallback ? clock.now() : callback(); }}};
     presenter = std::make_unique<PlayerPresenter>(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = {},
             .load_status = PreferencesLoadStatus::FutureVersion,
@@ -7025,7 +7059,7 @@ void PlayerPresenterTests::initialSessionRecoveryWarningsIdentifySessionPersiste
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,
@@ -7056,7 +7090,7 @@ void PlayerPresenterTests::mixedRecoveryWarningsRevealTheResidualWarning() {
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::RecoveredFromBackup,
@@ -7112,7 +7146,7 @@ void PlayerPresenterTests::mixedFutureVersionAndDefaultsRevealTheResidualWarning
     SessionAutosave session_autosave{session_writer, SessionSnapshot{}, {.now = [&clock] { return clock.now(); }}};
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = static_cast<PreferencesLoadStatus>(preferencesLoadStatus),
@@ -7148,7 +7182,7 @@ void PlayerPresenterTests::sessionOnlyExitTimeoutUsesTheExistingFailureWarning()
     const auto source = localTestPath(u8"Timeout de sessão.wav");
 
     PlayerPresenter presenter(
-        frozenBundle(), platform, backend, metadata, [source] { return std::vector{source}; },
+        platform, backend, metadata, [source] { return std::vector{source}; },
         PlayerPresenterPreferences{
             .initial = preferences,
             .load_status = PreferencesLoadStatus::Loaded,

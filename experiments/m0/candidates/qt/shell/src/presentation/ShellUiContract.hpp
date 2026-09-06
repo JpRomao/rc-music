@@ -1,6 +1,5 @@
 #pragma once
 
-#include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/domain/PlaybackTypes.hpp"
 #include "presentation/HighContrastPalette.hpp"
 
@@ -12,6 +11,8 @@
 #include <optional>
 
 namespace music_player::m0 {
+
+struct FixtureBundle;
 
 class ShellUiContract final : public QObject {
     Q_OBJECT
@@ -82,6 +83,7 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QUrl trackSource READ trackSource CONSTANT)
 
   public:
+    explicit ShellUiContract(QObject* parent);
     explicit ShellUiContract(const FixtureBundle& bundle, QObject* parent = nullptr);
     void updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
                           std::optional<HighContrastPalette> high_contrast = std::nullopt);
@@ -153,13 +155,54 @@ class ShellUiContract final : public QObject {
     void appearanceChanged();
 
   private:
-    [[nodiscard]] const FixturePalette& palette() const noexcept;
+    struct Window final {
+        int client_width_px;
+        int client_height_px;
+        int minimum_width_px;
+        int minimum_height_px;
+    };
+    struct LayoutTokens final {
+        int queue_panel_min_width_px;
+        int queue_panel_max_width_px;
+        int control_target_min_px;
+        int control_target_preferred_px;
+        int radius_small_px;
+        int radius_medium_px;
+        int spacing_unit_px;
+    };
+    struct Palette final {
+        QString canvas;
+        QString surface;
+        QString surface_raised;
+        QString text_primary;
+        QString text_secondary;
+        QString accent;
+        QString on_accent;
+        QString border;
+        QString focus;
+        QString error;
+        QString warning;
+        QString success;
+    };
+    struct MotionTimings final {
+        int panel_transition_ms;
+        int feedback_transition_ms;
+    };
 
-    FixtureWindow window_;
-    FixtureLayoutTokens layout_;
-    FixtureStrings strings_;
-    FixtureThemes themes_;
-    FixtureMotion motion_;
+    [[nodiscard]] const Palette& palette() const noexcept;
+
+    Window window_{960, 640, 720, 520};
+    LayoutTokens layout_{320, 380, 40, 44, 8, 12, 4};
+    Palette light_palette_{QStringLiteral("#F6F7F9"), QStringLiteral("#FFFFFF"), QStringLiteral("#FFFFFF"),
+                           QStringLiteral("#15171A"), QStringLiteral("#4F5660"), QStringLiteral("#4F46E5"),
+                           QStringLiteral("#FFFFFF"), QStringLiteral("#8A929E"), QStringLiteral("#2457D6"),
+                           QStringLiteral("#B42318"), QStringLiteral("#8A4B08"), QStringLiteral("#167344")};
+    Palette dark_palette_{QStringLiteral("#111318"), QStringLiteral("#181B21"), QStringLiteral("#21252D"),
+                          QStringLiteral("#F5F7FA"), QStringLiteral("#BBC2CC"), QStringLiteral("#8B83FF"),
+                          QStringLiteral("#0B0C10"), QStringLiteral("#69717D"), QStringLiteral("#A9C2FF"),
+                          QStringLiteral("#FF8A80"), QStringLiteral("#FFC46B"), QStringLiteral("#6DDA9B")};
+    MotionTimings normal_motion_{160, 120};
+    MotionTimings reduced_motion_timings_{0, 0};
     std::optional<HighContrastPalette> high_contrast_;
     bool dark_theme_{false};
     bool reduced_motion_{false};

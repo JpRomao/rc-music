@@ -367,15 +367,17 @@ void addSaturated(std::uint64_t& target, const std::uint64_t increment) noexcept
 } // namespace
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+    : QObject(parent), fixture_bundle_(std::make_unique<FixtureBundle>(std::move(bundle))),
+      navigation_items_(navigationItems(*fixture_bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
-      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
-      controller_(backend_, platform), queue_model_(this), local_queue_model_(this), timer_(this),
-      state_(stateById(bundle_, bundle_.default_state_id)), artwork_cache_(std::make_shared<ArtworkImageCache>()) {
+      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(*fixture_bundle_))),
+      backend_(*owned_backend_), controller_(backend_, platform), queue_model_(this), local_queue_model_(this),
+      timer_(this), state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
+      artwork_cache_(std::make_shared<ArtworkImageCache>()) {
     initializeDefaults();
-    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
+    timer_.setInterval(static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
@@ -386,16 +388,18 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
 
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform,
                                  PlayerPresenterPreferences preferences, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
+    : QObject(parent), fixture_bundle_(std::make_unique<FixtureBundle>(std::move(bundle))),
+      navigation_items_(navigationItems(*fixture_bundle_)), platform_(platform),
       tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
-      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(bundle_))), backend_(*owned_backend_),
-      controller_(backend_, platform, PlaybackSnapshot{}, preferences.initial), queue_model_(this),
-      local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
+      owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(*fixture_bundle_))),
+      backend_(*owned_backend_), controller_(backend_, platform, PlaybackSnapshot{}, preferences.initial),
+      queue_model_(this), local_queue_model_(this), timer_(this),
+      state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
       artwork_cache_(std::make_shared<ArtworkImageCache>()) {
     initializePersistedPreferences(preferences);
-    timer_.setInterval(static_cast<int>(bundle_.fake_backend.snapshots.interval_ms));
+    timer_.setInterval(static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
         pollPersistence();
@@ -405,27 +409,25 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     reconcileTimer();
 }
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent)
-    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
+    : PlayerPresenter(platform, playback_backend, metadata_reader, std::move(audio_file_picker),
                       std::make_shared<ArtworkImageCache>(), parent) {}
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  PlayerPresenterPreferences preferences, QObject* parent)
-    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
+    : PlayerPresenter(platform, playback_backend, metadata_reader, std::move(audio_file_picker),
                       std::make_shared<ArtworkImageCache>(), std::move(preferences), parent) {}
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()),
+    : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
-      queue_model_(this), local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
-      audio_file_picker_(std::move(audio_file_picker)),
+      queue_model_(this), local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)),
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
@@ -433,18 +435,16 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     initializeLocalMode();
 }
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  std::shared_ptr<ArtworkImageCache> artwork_cache,
                                  PlayerPresenterPreferences preferences, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()),
+    : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(), backend_(playback_backend),
       controller_(backend_, platform, backend_.snapshot(), preferences.initial), queue_model_(this),
-      local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
-      audio_file_picker_(std::move(audio_file_picker)),
+      local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)),
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
@@ -452,23 +452,21 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     initializeLocalMode(&preferences);
 }
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  LocalSourceDiscovery& source_discovery, QObject* parent)
-    : PlayerPresenter(std::move(bundle), platform, playback_backend, metadata_reader, std::move(audio_file_picker),
-                      source_discovery, std::make_shared<ArtworkImageCache>(), parent) {}
+    : PlayerPresenter(platform, playback_backend, metadata_reader, std::move(audio_file_picker), source_discovery,
+                      std::make_shared<ArtworkImageCache>(), parent) {}
 
-PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlaybackBackend& playback_backend,
+PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker,
                                  LocalSourceDiscovery& source_discovery,
                                  std::shared_ptr<ArtworkImageCache> artwork_cache, QObject* parent)
-    : QObject(parent), bundle_(std::move(bundle)), navigation_items_(navigationItems(bundle_)), platform_(platform),
-      tray_available_(platform.trayAvailable()),
+    : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
-      queue_model_(this), local_queue_model_(this), timer_(this), state_(stateById(bundle_, bundle_.default_state_id)),
-      audio_file_picker_(std::move(audio_file_picker)),
+      queue_model_(this), local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)), source_discovery_(&source_discovery), uses_frozen_fixture_(false) {
     initializeLocalMode();
@@ -481,10 +479,14 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
         throw std::invalid_argument{"artwork image cache is required"};
     if (source_discovery_ == nullptr)
         throw std::invalid_argument{"local source discovery is required"};
-    if (preferences == nullptr)
-        initializeDefaults();
-    else
+    if (preferences == nullptr) {
+        const Preferences& defaults = controller_.preferences();
+        if (backend_.setVolume(defaults.volume) != PlaybackCommandResult::Accepted ||
+            backend_.setMuted(defaults.muted) != PlaybackCommandResult::Accepted)
+            invalidMapping("default audio preferences");
+    } else {
         initializePersistedPreferences(*preferences);
+    }
     backend_.setEventCallback([this](const PlaybackEvent& event) {
         const PlaybackEvent copy = event;
         QMetaObject::invokeMethod(this, [this, copy] { handlePlaybackEvent(copy); }, Qt::QueuedConnection);
@@ -521,15 +523,15 @@ PlayerPresenter::~PlayerPresenter() {
 }
 
 void PlayerPresenter::initializeDefaults() {
-    const FixtureDefaults& defaults = bundle_.preferences.defaults;
+    const FixtureDefaults& defaults = fixture_bundle_->preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
     const MotionMode motion = motionMode(defaults.motion);
     const CloseBehavior close = closeBehavior(defaults.close_behavior);
     const QueueEndBehavior queue_end = queueEndBehavior(defaults.queue_end_behavior);
-    for (const FixtureState& fixture_state : bundle_.states) {
+    for (const FixtureState& fixture_state : fixture_bundle_->states) {
         static_cast<void>(mapPlaybackState(fixture_state.playback_state));
     }
-    static_cast<void>(stateById(bundle_, QStringLiteral("playing")));
+    static_cast<void>(stateById(*fixture_bundle_, QStringLiteral("playing")));
     if (defaults.volume_percent < 0 || defaults.volume_percent > 100 || defaults.skip_backward_seconds < 1 ||
         defaults.skip_backward_seconds > 300 || defaults.skip_forward_seconds < 1 ||
         defaults.skip_forward_seconds > 300 || (defaults.start_minimized && !platform_.trayAvailable())) {
@@ -560,9 +562,11 @@ void PlayerPresenter::initializePersistedPreferences(const PlayerPresenterPrefer
         throw std::invalid_argument{"preferences exit flush timeout cannot be negative"};
     if (!validPreferences(preferences.initial))
         invalidMapping("persisted preferences");
-    for (const FixtureState& fixture_state : bundle_.states)
-        static_cast<void>(mapPlaybackState(fixture_state.playback_state));
-    static_cast<void>(stateById(bundle_, QStringLiteral("playing")));
+    if (uses_frozen_fixture_) {
+        for (const FixtureState& fixture_state : fixture_bundle_->states)
+            static_cast<void>(mapPlaybackState(fixture_state.playback_state));
+        static_cast<void>(stateById(*fixture_bundle_, QStringLiteral("playing")));
+    }
 
     if (backend_.setVolume(preferences.initial.volume) != PlaybackCommandResult::Accepted ||
         backend_.setMuted(preferences.initial.muted) != PlaybackCommandResult::Accepted) {
@@ -779,8 +783,8 @@ int PlayerPresenter::currentQueueIndex() const noexcept {
         return current.has_value() ? static_cast<int>(*current) : -1;
     }
     if (state_.current_occurrence_id.has_value()) {
-        for (qsizetype index = 0; index < bundle_.queue.size(); ++index) {
-            if (bundle_.queue.at(index).occurrence_id == *state_.current_occurrence_id)
+        for (qsizetype index = 0; index < fixture_bundle_->queue.size(); ++index) {
+            if (fixture_bundle_->queue.at(index).occurrence_id == *state_.current_occurrence_id)
                 return static_cast<int>(index);
         }
     }
@@ -838,16 +842,14 @@ bool PlayerPresenter::canGoNext() const noexcept { return navigationTarget(Queue
 QString PlayerPresenter::assetId() const {
     if (uses_frozen_fixture_)
         return state_.asset_id;
-    return stateById(bundle_, local_track_session_->hasTrack() ? QStringLiteral("playing") : QStringLiteral("empty"))
-        .asset_id;
+    return local_track_session_->hasTrack() ? QStringLiteral("cover-track") : QStringLiteral("cover-placeholder");
 }
 bool PlayerPresenter::hasMessage() const noexcept {
     return uses_frozen_fixture_ ? state_.message_key.has_value() : !local_track_session_->hasTrack();
 }
 QString PlayerPresenter::messageKey() const {
-    return uses_frozen_fixture_
-               ? state_.message_key.value_or(QString{})
-               : (local_track_session_->hasTrack() ? QString{} : state_.message_key.value_or(QString{}));
+    return uses_frozen_fixture_ ? state_.message_key.value_or(QString{})
+                                : (local_track_session_->hasTrack() ? QString{} : QStringLiteral("empty_title"));
 }
 QString PlayerPresenter::primaryActionId() const {
     if (uses_frozen_fixture_)
@@ -1034,7 +1036,7 @@ void PlayerPresenter::cancelFileLocation() noexcept {
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
         return nullptr;
-    for (const QueueItem& item : bundle_.queue) {
+    for (const QueueItem& item : fixture_bundle_->queue) {
         if (item.occurrence_id == *state_.current_occurrence_id)
             return &item;
     }
@@ -1043,7 +1045,7 @@ const QueueItem* PlayerPresenter::currentTrack() const noexcept {
 const QueueItem* PlayerPresenter::contextTrack() const noexcept {
     if (!state_.context_occurrence_id.has_value())
         return nullptr;
-    for (const QueueItem& item : bundle_.queue) {
+    for (const QueueItem& item : fixture_bundle_->queue) {
         if (item.occurrence_id == *state_.context_occurrence_id)
             return &item;
     }
@@ -1051,8 +1053,9 @@ const QueueItem* PlayerPresenter::contextTrack() const noexcept {
 }
 const FixtureTrackDetails* PlayerPresenter::currentFixtureTrackDetails() const noexcept {
     const QueueItem* const track = currentTrack();
-    return track != nullptr && track->occurrence_id == bundle_.track_details.occurrence_id ? &bundle_.track_details
-                                                                                           : nullptr;
+    return track != nullptr && track->occurrence_id == fixture_bundle_->track_details.occurrence_id
+               ? &fixture_bundle_->track_details
+               : nullptr;
 }
 const TrackMetadata* PlayerPresenter::currentLocalTrackMetadata() const noexcept {
     if (uses_frozen_fixture_ || local_track_session_ == nullptr)
@@ -2739,13 +2742,13 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
         return true;
     }
 
-    const QueueItem& track = bundle_.queue.at(static_cast<qsizetype>(*target));
+    const QueueItem& track = fixture_bundle_->queue.at(static_cast<qsizetype>(*target));
     auto* const fixture_backend = fixtureBackend();
     if (fixture_backend == nullptr || !track.duration_ms.has_value() ||
         !fixture_backend->selectTrack(*track.duration_ms, controller_.effectivePlaybackStatus()))
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
-    state_ = stateById(bundle_, QStringLiteral("playing"));
+    state_ = stateById(*fixture_bundle_, QStringLiteral("playing"));
     state_.current_occurrence_id = track.occurrence_id;
     state_.position_ms = backend_.snapshot().position_ms;
     state_.duration_ms = backend_.snapshot().duration_ms;
@@ -3197,7 +3200,7 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
         !fixture_backend->enterUnavailableScenario())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
-    state_ = stateById(bundle_, QStringLiteral("error"));
+    state_ = stateById(*fixture_bundle_, QStringLiteral("error"));
     reconcileTimer();
     emit stateChanged();
     emit playbackChanged();
@@ -3247,7 +3250,7 @@ bool PlayerPresenter::skipUnavailable() {
         !fixture_backend->restoreInitialScenario())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
-    state_ = stateById(bundle_, QStringLiteral("playing"));
+    state_ = stateById(*fixture_bundle_, QStringLiteral("playing"));
     state_.position_ms = backend_.snapshot().position_ms;
     state_.duration_ms = backend_.snapshot().duration_ms;
     state_.seekable = backend_.snapshot().seekable;
@@ -3302,7 +3305,7 @@ void PlayerPresenter::reconcileTimer() {
     const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
     const bool session_needed = session_autosave_ != nullptr && session_autosave_->needsPolling();
     const bool needed = application_needed || preferences_needed || session_needed;
-    int interval_ms = uses_frozen_fixture_ ? static_cast<int>(bundle_.fake_backend.snapshots.interval_ms) : 25;
+    int interval_ms = uses_frozen_fixture_ ? static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms) : 25;
     if (session_needed && !application_needed && !preferences_needed && !session_autosave_->writeActive()) {
         if (const auto wakeup = session_autosave_->nextWakeup(); wakeup.has_value()) {
             const auto now = session_now_();
@@ -3322,14 +3325,14 @@ void PlayerPresenter::reconcileTimer() {
         timer_.stop();
 }
 bool PlayerPresenter::loadFrozenQueue() {
-    if (exiting_ || !uses_frozen_fixture_ || queue_model_.loaded() || bundle_.queue.isEmpty())
+    if (exiting_ || !uses_frozen_fixture_ || queue_model_.loaded() || fixture_bundle_->queue.isEmpty())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
-    state_ = stateById(bundle_, QStringLiteral("playing"));
+    state_ = stateById(*fixture_bundle_, QStringLiteral("playing"));
     state_.position_ms = backend_.snapshot().position_ms;
     state_.duration_ms = backend_.snapshot().duration_ms;
     state_.seekable = backend_.snapshot().seekable;
-    if (!queue_model_.loadOnce(bundle_.queue))
+    if (!queue_model_.loadOnce(fixture_bundle_->queue))
         return false;
     reconcileTimer();
     emit stateChanged();

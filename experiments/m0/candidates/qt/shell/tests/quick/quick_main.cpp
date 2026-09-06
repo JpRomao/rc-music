@@ -856,6 +856,7 @@ class EmptyShellQuickTestSetup final : public QObject {
     void applicationAvailable() {
         previous_accessibility_update_handler = QAccessible::installUpdateHandler(recordAccessibilityUpdate);
         Q_INIT_RESOURCE(m0_qt_shell_assets);
+        Q_INIT_RESOURCE(m0_qt_fixture_data);
         Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
         QQuickStyle::setStyle(QStringLiteral("Basic"));
         translation_installed_ = pt_br_translation_.load(QStringLiteral(":/i18n/music-player_pt_BR.qm")) &&
@@ -885,7 +886,7 @@ class EmptyShellQuickTestSetup final : public QObject {
                                                   },
                                                   engine);
         auto* local_presenter = new music_player::m0::PlayerPresenter(
-            *bundle_, platform_, local_backend_, local_metadata_reader_,
+            platform_, local_backend_, local_metadata_reader_,
             [this] {
                 if (local_selections_.empty())
                     return std::vector<std::filesystem::path>{};

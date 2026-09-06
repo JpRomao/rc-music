@@ -311,7 +311,7 @@ class ShellPlatformBindingTests final : public QObject {
         BindingMetadataReader metadata;
         const std::vector<std::filesystem::path> paths{L"C:/m0/faixa Unicode.wav", L"C:/m0/outra.wav",
                                                        L"C:/m0/faixa Unicode.wav"};
-        PlayerPresenter presenter(frozenBundle(), platform, backend, metadata, [&] { return paths; });
+        PlayerPresenter presenter(platform, backend, metadata, [&] { return paths; });
         QWindow window;
         window.resize(960, 640);
         window.showMaximized();

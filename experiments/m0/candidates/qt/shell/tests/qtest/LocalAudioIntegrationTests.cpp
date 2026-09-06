@@ -1,7 +1,6 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
-#include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
@@ -249,10 +248,6 @@ class RecordingMetadataReader final : public MetadataReader {
     std::optional<MetadataReadErrorCode> metadata_error_{};
 };
 
-[[nodiscard]] FixtureBundle frozenBundle() {
-    return FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE));
-}
-
 } // namespace
 
 class LocalAudioIntegrationTests final : public QObject {
@@ -284,7 +279,7 @@ class LocalAudioIntegrationTests final : public QObject {
         QtMultimediaPlaybackBackend engine;
         RecordingPlaybackBackend backend(engine);
         SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader, [source] { return std::vector{source}; });
+        PlayerPresenter presenter(platform, backend, reader, [source] { return std::vector{source}; });
         if (!presenter.muted())
             QVERIFY(presenter.toggleMute());
         QVERIFY(presenter.openAudio());
@@ -341,7 +336,7 @@ class LocalAudioIntegrationTests final : public QObject {
         PreferencesAutosave preferences_autosave{preferences_writer, preferences, {.now = now}};
         SessionAutosave session_autosave{session_writer, restored, {.now = now}};
         PlayerPresenter presenter(
-            frozenBundle(), platform, backend, reader, [] { return std::vector<std::filesystem::path>{}; },
+            platform, backend, reader, [] { return std::vector<std::filesystem::path>{}; },
             PlayerPresenterPreferences{.initial = preferences,
                                        .autosave = &preferences_autosave,
                                        .now = now,
@@ -380,8 +375,7 @@ class LocalAudioIntegrationTests final : public QObject {
         TestPlatform platform;
         SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
         const auto source = nativePath(QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE));
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader,
-                                  [source] { return std::vector{source, source}; });
+        PlayerPresenter presenter(platform, backend, reader, [source] { return std::vector{source, source}; });
         if (!presenter.muted())
             QVERIFY(presenter.toggleMute());
         QVERIFY(presenter.openAudio());
@@ -425,7 +419,7 @@ class LocalAudioIntegrationTests final : public QObject {
         QtMultimediaPlaybackBackend engine;
         RecordingPlaybackBackend backend(engine);
         SingleWorkerMetadataReader reader(std::make_unique<TagLibMetadataExtractor>());
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader, [source] { return std::vector{source}; });
+        PlayerPresenter presenter(platform, backend, reader, [source] { return std::vector{source}; });
         if (!presenter.muted())
             QVERIFY(presenter.toggleMute());
         QVERIFY(presenter.openAudio());
@@ -525,8 +519,7 @@ class LocalAudioIntegrationTests final : public QObject {
         TestPlatform platform;
         int picker_calls = 0;
 
-        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::vector<std::filesystem::path> {
+        PlayerPresenter presenter{platform, playback, metadata, [&]() -> std::vector<std::filesystem::path> {
                                       ++picker_calls;
                                       return {selected_path};
                                   }};
@@ -626,8 +619,7 @@ class LocalAudioIntegrationTests final : public QObject {
         RecordingMetadataReader metadata{worker};
         TestPlatform platform;
         int picker_calls = 0;
-        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::vector<std::filesystem::path> {
+        PlayerPresenter presenter{platform, playback, metadata, [&]() -> std::vector<std::filesystem::path> {
                                       ++picker_calls;
                                       return selected_paths;
                                   }};
@@ -684,8 +676,7 @@ class LocalAudioIntegrationTests final : public QObject {
         RecordingMetadataReader metadata{worker};
         TestPlatform platform;
         int picker_calls = 0;
-        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::vector<std::filesystem::path> {
+        PlayerPresenter presenter{platform, playback, metadata, [&]() -> std::vector<std::filesystem::path> {
                                       ++picker_calls;
                                       return selected_paths;
                                   }};
@@ -784,8 +775,7 @@ class LocalAudioIntegrationTests final : public QObject {
         SingleWorkerMetadataReader worker{std::make_unique<TagLibMetadataExtractor>()};
         RecordingMetadataReader metadata{worker};
         TestPlatform platform;
-        PlayerPresenter presenter{frozenBundle(), platform, playback, metadata,
-                                  [&]() -> std::vector<std::filesystem::path> {
+        PlayerPresenter presenter{platform, playback, metadata, [&]() -> std::vector<std::filesystem::path> {
                                       if (selection_index >= selections.size())
                                           return {};
                                       return {selections[selection_index++]};

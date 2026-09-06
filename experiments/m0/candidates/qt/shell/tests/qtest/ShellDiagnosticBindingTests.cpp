@@ -131,8 +131,7 @@ class ShellDiagnosticBindingTests final : public QObject {
         TestBackend backend;
         TestMetadataReader reader;
         RecordingSink sink;
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader,
-                                  [] { return std::vector{syntheticSource()}; });
+        PlayerPresenter presenter(platform, backend, reader, [] { return std::vector{syntheticSource()}; });
         ShellDiagnosticBinding binding(presenter, sink);
         QVERIFY(sink.entries.empty());
         QVERIFY(presenter.openAudio());
@@ -159,8 +158,7 @@ class ShellDiagnosticBindingTests final : public QObject {
         TestBackend backend;
         TestMetadataReader reader;
         RecordingSink sink;
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader,
-                                  [] { return std::vector{syntheticSource()}; });
+        PlayerPresenter presenter(platform, backend, reader, [] { return std::vector{syntheticSource()}; });
         QVERIFY(presenter.openAudio());
         backend.fail(PlaybackErrorCode::AudioOutputChanged);
         QTRY_VERIFY(presenter.hasError());
@@ -174,7 +172,7 @@ class ShellDiagnosticBindingTests final : public QObject {
         TestBackend backend;
         TestMetadataReader reader;
         RecordingSink sink;
-        PlayerPresenter presenter(frozenBundle(), platform, backend, reader,
+        PlayerPresenter presenter(platform, backend, reader,
                                   [] { return std::vector{syntheticSource(), syntheticSource()}; });
         ShellDiagnosticBinding binding(presenter, sink);
         QVERIFY(presenter.openAudio());
@@ -257,7 +255,7 @@ class ShellDiagnosticBindingTests final : public QObject {
         SessionAutosave session_autosave(session_writer, SessionSnapshot{});
         RecordingSink sink;
         PlayerPresenter presenter(
-            frozenBundle(), platform, backend, reader, [] { return std::vector<std::filesystem::path>{}; },
+            platform, backend, reader, [] { return std::vector<std::filesystem::path>{}; },
             {.load_status = PreferencesLoadStatus::InvalidUsingDefaults,
              .autosave = &preferences_autosave,
              .session = {.load_status = SessionLoadStatus::InvalidUsingDefaults, .autosave = &session_autosave}});
