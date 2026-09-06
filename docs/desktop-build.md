@@ -14,6 +14,8 @@ O build raiz agora compila o RC Music real, com Qt Quick, Qt Multimedia/FFmpeg e
 - O nome técnico do alvo/executável continua `m0_qt_shell`/`m0_qt_shell.exe`. A marca visível é RC Music; namespace QML `MusicPlayer.M0`, recursos, tradução, IDs de dados e locks permanecem compatíveis. Isto não altera propriedades de distribuição ou migra dados.
 - Oito arquivos de testes Qt foram movidos, sem cópias ou mudança de assertions, para `tests/qt`: abertura/argumentos, comandos e despacho IPC, coordenação de instância, codecs de preferências/sessão e seletores de áudio. Os testes históricos de presenter, UI, bindings e áudio ainda são consumidores do mesmo código promovido.
 
+Incremento posterior: as [três suites de áudio](audio-tests.md) também foram promovidas, byte-idênticas, e passaram a integrar o CTest da raiz com corpus sintético próprio autenticado. O consumidor histórico reutiliza essas mesmas fontes. Presenter, UI e bindings ainda exigem a promoção de sua composição exclusiva de testes; isso não ativa cenários no executável de produto.
+
 ## Configure, build e testes
 
 Para o fluxo diário, use os [comandos consolidados](development-commands.md): `scripts/develop.ps1 build` para produção e `scripts/develop.ps1 validate` para os checks da unidade promovida. O guia explica o arquivo de ferramentas e não exige preparar manualmente o ambiente MSVC. A receita explícita abaixo permanece como referência do build e da sua proveniência.

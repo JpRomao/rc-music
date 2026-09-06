@@ -38,7 +38,7 @@ function New-Fixture {
 }
 function New-FormatMatrix($Fixture) {
     $corpusPath = Join-Path $repository 'experiments/m0/shared/audio-corpus/manifest.v1.json'
-    $testPath = Join-Path $repository 'experiments/m0/candidates/qt/shell/tests/qtest/LocalAudioIntegrationTests.cpp'
+    $testPath = Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp'
     $matrix = [ordered]@{ schema_version = 1; scope = 'windows-x64-local-development'; validation_status = 'passed-local'
         runtime_manifest_sha256 = (Get-FileHash -LiteralPath $Fixture.ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
         corpus_manifest_sha256 = (Get-FileHash -LiteralPath $corpusPath -Algorithm SHA256).Hash.ToLowerInvariant()

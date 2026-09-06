@@ -962,7 +962,7 @@ if(M0_QT_AUDIO_SUPPORT)
 
     if(BUILD_TESTING)
         find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
-        add_executable(m0_qt_audio_adapter_tests tests/qtest/QtMultimediaPlaybackBackendTests.cpp)
+        add_executable(m0_qt_audio_adapter_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtMultimediaPlaybackBackendTests.cpp")
         target_link_libraries(m0_qt_audio_adapter_tests PRIVATE m0_qt_audio_adapters Qt6::Test)
         target_compile_features(m0_qt_audio_adapter_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_audio_adapter_tests PRIVATE
@@ -1080,7 +1080,7 @@ if(M0_QT_AUDIO_SUPPORT)
                     "${m0_qt_quick_test_environment};QT_MEDIA_BACKEND=ffmpeg;QT_PLUGIN_PATH=${m0_qt_audio_prefix}/plugins"
             )
             add_executable(m0_qt_local_audio_integration_tests
-                tests/qtest/LocalAudioIntegrationTests.cpp
+                "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LocalAudioIntegrationTests.cpp"
             )
             target_link_libraries(m0_qt_local_audio_integration_tests PRIVATE
                 m0_qt_shell_support
@@ -1138,7 +1138,7 @@ if(BUILD_TESTING)
 
     if(M0_QT_AUDIO_SUPPORT)
         add_executable(m0_taglib_metadata_extractor_tests
-            tests/catch2/TagLibMetadataExtractorTests.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/audio/TagLibMetadataExtractorTests.cpp"
         )
         target_link_libraries(m0_taglib_metadata_extractor_tests PRIVATE
             m0_qt_core

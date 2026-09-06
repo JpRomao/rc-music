@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.31)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/RcMusicAudioFixtures.cmake")
+set(corpus "${CMAKE_CURRENT_LIST_DIR}/../audio/corpus")
+if(CASE STREQUAL "valid")
+    rc_music_validate_audio_corpus("${corpus}")
+elseif(CASE STREQUAL "empty")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/empty.bin" 0
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+elseif(CASE STREQUAL "size")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/empty.bin" 1
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+elseif(CASE STREQUAL "hash")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/empty.bin" 0
+        "0000000000000000000000000000000000000000000000000000000000000000")
+elseif(CASE STREQUAL "missing")
+    _rc_music_require_audio_fixture("${corpus}" "missing.bin" 0 "unused")
+elseif(CASE STREQUAL "directory")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures" 0 "unused")
+else()
+    message(FATAL_ERROR "Unknown probe case")
+endif()

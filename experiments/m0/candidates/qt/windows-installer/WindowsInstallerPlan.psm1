@@ -36,7 +36,7 @@ function Read-RcMusicFormatMatrix([string] $Path, [string] $RuntimeManifestHash,
     if ($matrixInput.files[0].size_bytes -gt 65536) { throw 'Format matrix exceeds 64 KiB' }
     $matrix = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $corpusPath = Join-Path $repository 'experiments/m0/shared/audio-corpus/manifest.v1.json'
-    $testPath = Join-Path $repository 'experiments/m0/candidates/qt/shell/tests/qtest/LocalAudioIntegrationTests.cpp'
+    $testPath = Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp'
     if ($matrix.schema_version -ne 1 -or $matrix.scope -cne 'windows-x64-local-development' -or
         $matrix.validation_status -cne 'passed-local' -or $matrix.backend -cne 'QtMultimedia/FFmpeg' -or
         $matrix.runtime_manifest_sha256 -cne $RuntimeManifestHash -or

@@ -63,4 +63,13 @@ function(rc_music_add_desktop_tests)
         LABELS "desktop;qt;files;locator;UX-008")
     set_tests_properties(rc_music.desktop.audio-files-picker PROPERTIES
         LABELS "desktop;qt;files;picker;FR-001")
+
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioFixtures.cmake")
+    set(audio_corpus "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
+    rc_music_validate_audio_corpus("${audio_corpus}")
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioTests.cmake")
+    rc_music_add_audio_tests("${audio_corpus}")
+    add_test(NAME rc_music.audio.corpus-integrity COMMAND "${CMAKE_COMMAND}" -P
+        "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/AudioCorpusTests.cmake")
+    set_tests_properties(rc_music.audio.corpus-integrity PROPERTIES LABELS "audio;fixtures" TIMEOUT 15)
 endfunction()
