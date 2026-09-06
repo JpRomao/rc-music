@@ -4,7 +4,11 @@
 
 **Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos pelo mantenedor no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B e checks Rust/Tauri deixam de ser pré-requisitos para desenvolver o produto Windows. A decisão não é uma vitória comparativa medida; Linux e benchmarks ficam adiados, com requisitos e budgets preservados.
 
-**Promoção M1 em andamento:** o [núcleo extraído](core-build.md) compila na raiz sem Qt/fixture/harness e reutiliza os 224 testes existentes. O shell permanece consumidor das mesmas bibliotecas. O [bootstrap e build de produção](bootstrap-separation.md) dispensam `FixtureBundle` na construção e excluem JSONs, tipos/fontes de cenário e backend falso da composição combinada OFF. O ON conserva os testes históricos. Ainda não há executável gráfico independente na raiz: falta promover essa unidade e separar seu configure dos inputs M0. Não foram alterados identificadores `MusicPlayer`, fixtures ou manifests históricos. Isso não conclui M1, funcionalidades, acessibilidade nativa, segurança/licenças ou release.
+**Promoção técnica existente, M1 ainda aberto:** o [núcleo extraído](core-build.md) e a [aplicação gráfica](desktop-build.md) compilam na raiz, sem encaminhar o configure ao experimento. O produto e o consumidor histórico compartilham uma implementação. As suites de [áudio](audio-tests.md), [UI](ui-tests.md), [integrações Windows](windows-integration-tests.md) e [processo](process-tests.md) estão no build raiz; cenários, fakes e hooks ficam nos alvos exclusivos de testes, não na aplicação real ON/OFF. Os [comandos locais](development-commands.md) e a [rastreabilidade executável](quality/traceability.md) também estão implementados. Não foram alterados dados/identificadores `MusicPlayer` ou evidências históricas.
+
+**Entrega local existente:** há [runtime Release/OFF](windows-runtime.md#runtime-local-gerado-em-2026-09-06) do commit `3f22fda`, com smoke automatizado de startup/codecs, e [dois instaladores separados](windows-installer.md): OFF e com declaração local de formatos v2. A autorização foi **“Sim, gerar sem instalar”**; nenhum desses setups foi executado. Permanecem privados/experimentais, sem assinatura ou aprovação de distribuição. O [manual de uso e solução de problemas](user-guide.md) descreve a operação implementada, sem substituir a validação nativa.
+
+**Lacunas de fechamento:** cobertura ainda não apurada; CI Windows sem provedor/runner definido; jornadas nativas e de instalação/upgrade/uninstall sem fechamento; segurança/licenças/notices/SBOM, CRT/máquina limpa e acessibilidade final ainda abertos. Linux e benchmarks seguem adiados. Esses gates não significam que reprodução, fila, preferências e sessão precisem ser reimplementadas, nem permitem declarar M1/M4/M5 concluídos.
 
 ## Histórico funcional anterior à aceitação
 
@@ -106,7 +110,7 @@ Esses contratos preservam o método e a evidência do experimento. A aceitação
 | Áudio | Qt Multimedia/FFmpeg atrás de `PlaybackBackend` | Aceito no ADR-0005; ADR-0002 substituído |
 | Metadata | TagLib atrás da porta de leitura | Aceito no ADR-0005 |
 | Alternativas M0 | Rust/Tauri/Svelte, Rodio/Symphonia/Lofty | Não escolhidas; artefatos históricos preservados, sem checks obrigatórios para o produto |
-| Estrutura | uma unidade de build e distribuição com módulos internos; promover a implementação existente sem duplicação | Direção aceita; promoção técnica M1 pendente |
+| Estrutura | uma unidade de build e distribuição com módulos internos; fonte única | Aplicação, testes e receitas promovidos; cobertura, CI e gates M1 pendentes |
 | Persistência | JSON versionado e atômico; sem banco no MVP | Implementada localmente; preservar schemas e raízes MusicPlayer |
 | Integração | portas e adapters Windows da implementação existente; Linux posterior | Aceitação da stack não conclui gates nativos/funcionais |
 | Windows package | runtime/instalador NSIS local experimental por usuário | Evidência local separada; release, licenças e máquina limpa pendentes |
@@ -140,7 +144,7 @@ Os detalhes executáveis permanecem nos [requisitos](product/requirements.md), n
 
 ## 4. Decisões em aberto
 
-1. concluir a promoção técnica de M1 e os gates funcionais da stack já aceita;
+1. definir repositório/provedor/runner para CI Windows e obter evidência de cobertura e dos gates residuais M1 da unidade já promovida;
 2. definir a identidade visual final, preservando o nome RC Music já aceito no ADR-0004;
 3. licença para eventual distribuição pública;
 4. exigir versão portátil no 0.1 ou depois;
@@ -173,7 +177,7 @@ Nenhuma dessas perguntas reabre automaticamente a seleção de stack. ADR-0001/0
 | Requisitos | [Requisitos](product/requirements.md) | Para revisão |
 | UX | [UX](product/ux-specification.md) | Proposta para protótipo |
 | Stack | [Análise](architecture/stack-analysis.md) | Stack aceita no ADR-0005; comparação histórica preservada |
-| Arquitetura | [Arquitetura](architecture/architecture.md) | Direção aceita; promoção técnica M1 pendente |
+| Arquitetura | [Arquitetura](architecture/architecture.md) | Unidade real promovida; critérios de saída M1 ainda abertos |
 | ADRs | [Índice](architecture/decisions/README.md) | ADR-0004/0005 aceitos; ADR-0001/0002 substituídos; ADR-0003 proposto |
 | TDD | [Estratégia](quality/testing-strategy.md) | Contrato inicial |
 | Gates | [Gates](quality/quality-gates.md) | Contrato inicial |
@@ -182,7 +186,8 @@ Nenhuma dessas perguntas reabre automaticamente a seleção de stack. ADR-0001/0
 | Roadmap | [Roadmap](roadmap.md) | Proposto |
 | Workflow | [Workflow](development-workflow.md) | Contrato inicial |
 | Segurança | [Threat model](security/threat-model.md) | Baseline local |
-| Release | [Processo](delivery/release-process.md) | Proposta |
+| Manual | [Uso e solução de problemas](user-guide.md) | Operação local documentada; não é aceite nativo ou RC |
+| Release | [Processo](delivery/release-process.md) | Gates atuais separados dos artefatos privados já gerados |
 | M0 | [Ambiente, protocolo e evidências](m0/README.md) | Histórico preservado; decisão de stack atendida pelo ADR-0005; ensaios não executados permanecem sem resultado e não bloqueiam M1 |
 
 ## 7. Próximo passo recomendado
@@ -190,7 +195,7 @@ Nenhuma dessas perguntas reabre automaticamente a seleção de stack. ADR-0001/0
 Com a stack aceita, a sequência atual é:
 
 1. manter M4.1–M4.7 formalmente abertas até os gates residuais correspondentes, registrando separadamente a evidência funcional local já verde;
-2. promover incrementalmente a implementação C++/Qt existente para M1, separando dependências experimentais e preservando portas, testes, dados e a identidade RC Music/MusicPlayer; a promoção ainda exige checks técnicos próprios;
+2. preservar a unidade C++/Qt, testes e receitas promovidos e obter as evidências residuais de M1, especialmente cobertura e CI Windows, sem repetir a separação já verificada;
 3. continuar pelas lacunas funcionais Windows do checkpoint vigente, sem impor A/B, toolchains do ramo não escolhido, `package-v2`, benchmarks ou Linux como pré-requisitos; preservar requisitos residuais e não retomar interação nativa interrompida ou instalar/registrar no host sem autorização própria.
 
 Os parágrafos seguintes preservam o histórico de implementação e validação; menções a decisão pendente não descrevem o estado vigente após o ADR-0005.

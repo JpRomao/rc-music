@@ -1,9 +1,17 @@
 # Processo de release e distribuição
 
-**Estado:** proposta operacional; ainda não há executável  
-**Última revisão:** 2026-08-23
+**Estado:** processo de release da stack aceita; runtime e instaladores locais gerados, sem RC aprovada
+**Última revisão:** 2026-09-06
 
-NSIS e os detalhes de runtime/toolchain de Qt/C++ ou Tauri/Rust só viram contrato definitivo após o ADR-0001. As regras de evidência, consentimento, assinatura e validação de pacote valem para qualquer stack escolhida.
+O [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) aceita C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib. O produto possui [build gráfico raiz](../desktop-build.md), [receita de runtime](../windows-runtime.md) e [receita NSIS por usuário](../windows-installer.md). Tauri/Rust e a seleção A/B são históricos, não pré-requisitos desta entrega. Linux e benchmarks permanecem adiados, não aprovados; os gates abaixo continuam necessários para alegar release.
+
+## Estado local e limites de autorização
+
+Em 2026-09-06, o runtime privado Release/OFF `3f22fda` foi montado e passou no [smoke automatizado](../windows-runtime.md#smoke-automatizado-do-runtime). Foram compilados o setup OFF e um setup separado com [formatos v2 declarados](../windows-installer.md#instalador-com-formatos-v2), preservando o anterior. Inventários, hashes e recibos estão nos respectivos guias; a compilação não equivale a instalar, registrar tipos ou escolher defaults.
+
+A autorização recebida foi **“Sim, gerar sem instalar”**. Nenhum desses setups foi executado; não houve alteração das associações do host. Ambos continuam experimentais e sem assinatura. Instalação/lifecycle, interação nativa interrompida e publicação exigem autorização específica; esse processo documentado não a concede. O [manual local](../user-guide.md) cobre uso e solução de problemas, não comprova RC, acessibilidade nativa ou execução em máquina limpa.
+
+Antes de propor RC, ainda faltam evidências de cobertura/CI e dos gates de corpus, segurança/licenças/notices/SBOM, pré-requisitos externos, acessibilidade e lifecycle aplicáveis. Não usar resultados históricos de outro pacote para preencher esses gates. Adiamento de benchmarks/Linux não é waiver ou resultado de aprovação.
 
 ## 1. Princípios
 
@@ -27,6 +35,8 @@ Usar SemVer:
 
 Versão deve coincidir em todos os manifests, executáveis, bundle e metadata dos artefatos da stack escolhida. Um script/check deve impedir divergência.
 
+Esse gate de versão ainda está pendente: o executável local continua identificado como `M0 experimental`, e o nome do artefato inclui o commit de origem. Isso não constitui versão SemVer/RC nem autoriza reetiquetar os binários existentes. Definir a versão de release e sincronizar seus campos exige incremento próprio antes do candidato a release.
+
 ## 3. Canais
 
 | Canal | Uso | Garantia |
@@ -41,7 +51,7 @@ Não implementar auto-update no MVP. Download/instalação são manuais até exi
 
 | Plataforma | Artefato inicial | Futuro/condicional |
 |---|---|---|
-| Windows x64 | NSIS por usuário, baseline a confirmar no M0 | portátil `.zip`; MSI somente se houver caso real |
+| Windows x64 | NSIS por usuário, receita local implementada; gates de release pendentes | portátil `.zip`; MSI somente se houver caso real |
 | Linux x64 | `.deb` da distribuição de referência | AppImage; `.rpm` após demanda |
 
 Cada artefato acompanha:
@@ -62,9 +72,9 @@ Cada artefato acompanha:
 2. triagem de bugs P0/P1;
 3. working tree limpa;
 4. dependências/lockfiles revisados;
-5. versão proposta e changelog;
-6. documentos, matriz de formatos e suporte atualizados;
-7. suite rápida Windows/Linux verde;
+5. versão proposta e changelog; a versão experimental atual não substitui esse gate;
+6. documentos, [manual e troubleshooting](../user-guide.md), matriz de formatos e suporte atualizados;
+7. [validação local e CI Windows](../development-commands.md) verdes; Linux somente quando retomado com ambiente e escopo definidos, sem inferir resultado;
 8. corpus completo, E2E e smoke de plataforma verdes;
 9. performance/soak dentro do baseline aceito;
 10. segurança, licenças e acessibilidade concluídas.
@@ -82,17 +92,19 @@ Cada artefato acompanha:
 
 Um rebuild de verificação deve produzir comportamento/conteúdo equivalente; builds bit-for-bit são desejáveis, mas só podem ser alegados quando medidos.
 
+Montagem/compilação autorizadas não devem disparar automaticamente a seção seguinte. Os builders atuais usam ferramentas locais explícitas e destinos novos; não instalam dependências, não executam setup e não alteram os padrões do Windows. Repetir a geração somente quando houver mudança relevante ou necessidade de validação aprovada.
+
 ## 7. Validação Windows
 
-Em VM/máquina descartável para cada caminho relevante:
+Com autorização específica, em VM/máquina descartável para cada caminho relevante. Os harnesses históricos que executam setup ou usam Registry isolado também ficam fora da autorização “gerar sem instalar”.
 
 ### Instalação limpa
 
 - instalar por usuário sem admin quando possível;
 - iniciar pelo menu e por arquivo;
-- verificar ícone, versão, diretórios e runtime distribuído: WebView2 no Tauri ou DLLs/plugins Qt/FFmpeg no candidato Qt;
+- verificar ícone, versão, diretórios e DLLs/plugins Qt/FFmpeg/TagLib realmente distribuídos, além dos pré-requisitos externos;
 - validar que nenhuma extensão virou default sem escolha;
-- inspecionar que o template/hook NSIS registrou apenas o ProgID, `Capabilities` e `RegisteredApplications` do app; não usar `bundle.fileAssociations` isoladamente como prova;
+- inspecionar ProgIDs, `Capabilities`, `RegisteredApplications` e `OpenWithProgids` próprios, apenas para os formatos declarados, sem modificar `UserChoice` ou padrões de terceiros;
 - abrir página oficial de defaults;
 - escolher o app e abrir MP3/M4A com paths Unicode/espaços;
 - validar tray, SMTC e saída real.
@@ -123,8 +135,10 @@ Em VM/máquina descartável para cada caminho relevante:
 
 ## 8. Validação Linux
 
+Etapa adiada. Os itens abaixo são obrigações futuras de uma distribuição Linux, não comandos para executar durante a prioridade Windows nem resultados já obtidos.
+
 - instalar `.deb` na versão mínima e atual da distribuição de referência;
-- validar dependências Qt ou WebKitGTK e o backend de áudio efetivamente distribuído;
+- validar dependências Qt/FFmpeg/TagLib e o backend de áudio efetivamente distribuído;
 - abrir por menu, CLI e MIME;
 - testar MPRIS e media keys;
 - testar tray ou fallback visível no ambiente;
