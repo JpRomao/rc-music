@@ -5,6 +5,7 @@
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
+#include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
@@ -525,39 +526,8 @@ class ScenarioDriver final : public QObject {
         local_backend_.snapshot_.position_ms = 47'000;
         local_backend_.publish(music_player::m0::PlaybackStatus::Error);
     }
-    Q_INVOKABLE void publishCompleteLocalMetadata() {
-        if (local_metadata_reader_.requests.empty())
-            return;
-        const auto& request = local_metadata_reader_.requests.back();
-        music_player::m0::TrackMetadata track{
-            .source_path = request.source_path,
-            .file_size_bytes = 4'096,
-            .tags = {.title = std::string{"Título controlado"},
-                     .artist = std::string{"Artista"},
-                     .album = std::string{"Álbum"},
-                     .track_number = 7,
-                     .year = 2026},
-            .display_title = "Título controlado",
-            .audio = {.duration_ms = 123'456,
-                      .sample_rate_hz = 48'000,
-                      .channels = 2,
-                      .bit_depth = 24,
-                      .bitrate_kbps = 320,
-                      .container = "MP3",
-                      .codec = "MPEG-1 Audio Layer III"},
-            .diagnostics = {{.code = music_player::m0::MetadataDiagnosticCode::FieldTooLarge,
-                             .field = music_player::m0::MetadataField::Title,
-                             .observed_bytes = 16'385,
-                             .limit_bytes = 16'384}},
-            .artwork_diagnostics = {{.code = music_player::m0::ArtworkDiagnosticCode::AxisPixelsExceeded,
-                                     .encoded_bytes = 1'024,
-                                     .width_pixels = 4'097,
-                                     .height_pixels = 320}},
-        };
-        local_metadata_reader_.poll_results.push_back(
-            {music_player::m0::MetadataPollStatus::Completed,
-             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
-    }
+    Q_INVOKABLE void publishCompleteLocalMetadata() { publishLocalMetadata(false); }
+    Q_INVOKABLE void publishArtworkLocalMetadata() { publishLocalMetadata(true); }
     Q_INVOKABLE void publishSanitizedLocalMetadata(const bool valid_numeric_fallback) {
         if (local_metadata_reader_.requests.empty())
             return;
@@ -811,6 +781,47 @@ class ScenarioDriver final : public QObject {
     }
 
   private:
+    void publishLocalMetadata(const bool with_artwork) {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        const auto& request = local_metadata_reader_.requests.back();
+        music_player::m0::TrackMetadata track{
+            .source_path = request.source_path,
+            .file_size_bytes = 4'096,
+            .tags = {.title = std::string{"Título controlado"},
+                     .artist = std::string{"Artista"},
+                     .album = std::string{"Álbum"},
+                     .track_number = 7,
+                     .year = 2026},
+            .display_title = "Título controlado",
+            .audio = {.duration_ms = 123'456,
+                      .sample_rate_hz = 48'000,
+                      .channels = 2,
+                      .bit_depth = 24,
+                      .bitrate_kbps = 320,
+                      .container = "MP3",
+                      .codec = "MPEG-1 Audio Layer III"},
+            .diagnostics = {{.code = music_player::m0::MetadataDiagnosticCode::FieldTooLarge,
+                             .field = music_player::m0::MetadataField::Title,
+                             .observed_bytes = 16'385,
+                             .limit_bytes = 16'384}},
+            .artwork_diagnostics = {{.code = music_player::m0::ArtworkDiagnosticCode::AxisPixelsExceeded,
+                                     .encoded_bytes = 1'024,
+                                     .width_pixels = 4'097,
+                                     .height_pixels = 320}},
+        };
+        if (with_artwork) {
+            track.artwork = music_player::m0::ArtworkThumbnail{
+                .width_pixels = 2,
+                .height_pixels = 2,
+                .rgba8888 = std::make_shared<const std::vector<std::uint8_t>>(
+                    std::vector<std::uint8_t>{255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255})};
+        }
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
+    }
+
     [[nodiscard]] static QUrl sourceToUrl(const QString& source) {
         const bool windows_path =
             source.size() >= 3 && source.at(1) == u':' && (source.at(2) == u'/' || source.at(2) == u'\\');
@@ -889,6 +900,9 @@ class EmptyShellQuickTestSetup final : public QObject {
                                                       .now = [this] { return pending_exit_now_; },
                                                   },
                                                   engine);
+        auto local_artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
+        engine->addImageProvider(music_player::m0::ArtworkImageProvider::providerId(),
+                                 new music_player::m0::ArtworkImageProvider(local_artwork_cache));
         auto* local_presenter = new music_player::m0::PlayerPresenter(
             platform_, local_backend_, local_metadata_reader_,
             [this] {
@@ -898,7 +912,7 @@ class EmptyShellQuickTestSetup final : public QObject {
                 local_selections_.pop_front();
                 return selection;
             },
-            local_source_discovery_, engine);
+            local_source_discovery_, local_artwork_cache, engine);
         local_presenter->setAudioFileLocator(&local_file_locator_);
         local_files_picker_.selection_reader = [this] {
             if (local_selections_.empty())

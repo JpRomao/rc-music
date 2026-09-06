@@ -67,6 +67,20 @@ O novo teste [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cm
 
 ## Limites
 
+### Geometria durante metadata e capa
+
+Em 2026-09-06, a lacuna automatizada de UX-009 foi coberta por [tst_metadata_layout.qml](../tests/ui/quick/tst_metadata_layout.qml). O teste compara capa/placeholder, bloco central, slots de texto, ações e controles internos do transporte entre Loading, Playing, conclusão assíncrona de metadata e abertura da faixa seguinte, em 720×520 e 960×640. Títulos fallback são verificados; larguras intrínsecas de texto podem variar, mas centro horizontal, posição vertical e altura do slot não podem saltar. A tolerância geométrica é de 0,5 pixel lógico, sem medir performance.
+
+O baseline sem capa passou **4/4** no executável existente: não foi demonstrado defeito no QML de produção. A primeira tentativa de sincronização aguardava render de um Item sem conteúdo próprio e terminou em timeout; isso era limitação do harness, não Red do produto. `waitForPolish(Window)`, conforme a API Qt local, aguarda o layout de todos os itens sem sleep artificial. A extensão de capa teve Red **4 passagens/2 falhas** pela ausência do helper; o [bootstrap Quick](../tests/ui/quick/quick_main.cpp) passou a compartilhar o cache e registrar o mesmo provider da aplicação, com uma thumbnail RGBA 2×2 sintética em memória. `Image.Ready`, visibilidade e URL do provider são exigidos antes da comparação. A troca seguinte limpa a capa e conserva a geometria.
+
+O alvo Quick Release foi recompilado; Green focal **6/6**, seguido de CTest **3/3** (Quick completo **193/193**, contrato UI **29/29** e fronteira da composição), sem falhas/skips. A revisão acrescentou controles internos da barra e confirmação do placeholder/títulos; o focal final permaneceu **6/6**. Nenhum código de produção mudou, portanto não houve rebuild OFF, corpus de áudio ou execução completa dos 297 registros neste incremento. O helper anterior preserva seus mesmos dados e a montagem agora é compartilhada, sem copiar assets ou alterar fixtures autenticadas.
+
+Formato final **172 C++/53 QML**, rastreabilidade **83 IDs**, documentos **56 Markdown/83 requisitos/17 checks/76 etapas** e diff passaram. O incremento paralelo de diagnósticos dos comandos tem validação/commit próprios, sem somar seus testes à cobertura da UI.
+
+A prova cobre geometria assentada após polish, não cada frame transitório, strings extremas, pixel-perfect entre plataformas ou inspeção visual Windows. UX-009 permanece `em andamento` no [manifesto](quality/traceability.json), com o gate nativo separado.
+
+### Gates externos
+
 Os testes UI usam `offscreen`, renderização software e estilo Basic, com backends/portas determinísticos para as jornadas. Isso preserva regressões de foco, teclado, acessibilidade, fila, preferências e recuperação, mas não comprova NVDA, DPI/alto contraste nativos, diálogo do sistema ou dispositivos físicos.
 
 Não houve nova interação nativa, uso de áudio pessoal, benchmark, Linux, instalação/associação no host ou atualização de runtime/instalador neste recorte. A promoção não aprova release. O [incremento Windows posterior](windows-integration-tests.md) acrescenta os quatro bindings à variante e amplia o teste de fronteira, sem alterar esta evidência histórica de 276 registros. A [composição dos drivers instrumentados](process-tests.md) também tem gates de build/testes validados; smokes nativos, CI Windows e os gates de segurança, licenças e distribuição continuam separados no [plano](development-plan.md).

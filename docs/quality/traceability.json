@@ -1442,6 +1442,10 @@
       "verification": "mixed",
       "tests": [
         {
+          "path": "tests/ui/quick/tst_metadata_layout.qml",
+          "marker": "function test_loadingMetadataAndTrackChangesKeepGeometry(data)"
+        },
+        {
           "path": "tests/ui/quick/tst_empty_shell.qml",
           "marker": "function test_emptyPlayingErrorJourney()"
         },
@@ -1452,8 +1456,8 @@
       ],
       "evidence": [
         {
-          "path": "src/ui/qml/NowPlayingState.qml",
-          "marker": "implicitHeight: 192"
+          "path": "docs/ui-tests.md",
+          "marker": "### Geometria durante metadata e capa"
         },
         {
           "path": "docs/product/ux-specification.md",
@@ -1461,8 +1465,7 @@
         }
       ],
       "remaining": [
-        "Obter prova específica de geometria antes/depois de Loading para Playing e durante troca de faixa com metadata/capa assíncronas; encaixe na janela mínima e textos longos não medem por si só deslocamentos entre estados.",
-        "Concluir a inspeção visual dessas transições no produto Windows, sem apresentar placeholder de tamanho fixo como aprovação integral da estabilidade do layout."
+        "Concluir a inspeção visual dessas transições no produto Windows; a geometria assentada após polish e a capa carregada em offscreen não comprovam todos os frames transitórios ou aprovação visual nativa."
       ]
     },
     {
