@@ -108,7 +108,7 @@ $env:QT_FORCE_STDERR_LOGGING = '1'
 & out/m0/builds/qt-audio/combined-shell-20260829-01/m0_qt_windows_executable_identity_tests.exe out/m0/builds/qt-audio/m43-production-release-20260901/m0_qt_shell.exe
 ```
 
-A comparação Qt verifica pixels da aplicação/janela; o teste PE prova decodificação das sete imagens, não equivalência pixel a pixel com o SVG nem apresentação visual no Explorer. Ícone em execução e ícone embutido seguem as superfícies separadas da [documentação Qt](https://doc.qt.io/qt-6/appicon.html); as propriedades seguem o [contrato VERSIONINFO](https://learn.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource). Não houve registro, alteração de atalhos reais ou inspeção nativa visual. O instalador privado `d793563` ainda não incorpora este incremento, o aviso de caminhos inválidos ou a correção do menu da fila; a atualização da entrega local segue pendente, assim como os gates globais de Windows/distribuição.
+A comparação Qt verifica pixels da aplicação/janela; o teste PE prova decodificação das sete imagens, não equivalência pixel a pixel com o SVG nem apresentação visual no Explorer. Ícone em execução e ícone embutido seguem as superfícies separadas da [documentação Qt](https://doc.qt.io/qt-6/appicon.html); as propriedades seguem o [contrato VERSIONINFO](https://learn.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource). Não houve registro, alteração de atalhos reais ou inspeção nativa visual. O instalador histórico `d793563` não incorpora este incremento, o aviso de caminhos inválidos ou a correção do menu da fila; a [entrega local posterior](windows-installer/README.md#local-delivery-refresh) os reúne e registra os novos checks. Os gates globais de Windows/distribuição continuam abertos.
 
 ## Estado
 
