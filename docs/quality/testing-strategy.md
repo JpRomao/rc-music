@@ -258,6 +258,8 @@ O fechamento automatizado passou 225/225 no CTest Release combinado, 183/183 num
 
 ### M4.3 — instância única, shell e IPC limitado
 
+O [feedback de caminhos inválidos antes do IPC](../../experiments/m0/candidates/qt/README.md#invalid-shell-source-feedback) usa o smoke instrumentado existente com fontes vazias, recurso Qt, drive-relative, dispositivo Windows e lote válido seguido de inválido. Exige exit 2, somente o marker fechado `invalidPaths`, stderr vazio e raiz de configuração ainda inexistente. O catálogo verifica a orientação acionável, tradução e fallback sem interpolação externa. A composição `BUILD_TESTING=OFF` deve continuar recusando os hooks reservados silenciosamente em exit 1, antes de qualquer configuração. Essa prova valida o encaminhamento ao reporter compartilhado, não a exibição do `QMessageBox` nativo, suprimida no harness.
+
 O [caso de resposta IPC retida após falha da espera de escrita](../../experiments/m0/candidates/qt/README.md#ipc-buffered-reply) usa socket falso e a mesma transação conectada de produção. ACK/NACK completos são distinguidos de resposta ausente, parcial, malformada, excessiva ou com bytes extras; escrita parcial/rejeitada, bytes ainda pendentes e deadline não podem virar sucesso. Cada linha verifica uma única escrita e o frame exato. Preservar também o teste multiprocesso e a regressão antiga de ACK perdido, sem afrouxar assertions ou repetir até passar. O registro central separa Red determinístico e Green proporcional de qualquer alegação global/histórica.
 
 As provas do recorte funcional local de M4.3 permanecem separadas por fronteira:

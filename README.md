@@ -2,6 +2,8 @@
 
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
+Entradas de abertura com [caminhos inválidos ou ambíguos](experiments/m0/candidates/qt/README.md#invalid-shell-source-feedback) agora recebem uma orientação para usar caminhos completos ou o seletor do RC Music, antes de iniciar IPC ou áudio. O lote inteiro é recusado sem expor caminhos ou detalhes internos.
+
 O [menu contextual da fila](experiments/m0/candidates/qt/README.md#queue-menu-occurrence) agora fixa a ocorrência escolhida: a troca automática de música não redireciona “Remover”, “Tocar”, mover ou recuperar para outra faixa. Se o alvo desaparecer, o menu fecha e suas ações ficam inertes.
 
 O incremento do instalador Windows liga sua receita a uma [matriz explícita de formatos validados localmente](experiments/m0/candidates/qt/windows-installer/README.md#matriz-local-e-evolucao-dos-formatos): MP3, AAC em M4A/MP4, FLAC, WAV PCM e Ogg/Vorbis em OGG/OGA. Atualizações podem adicionar/retirar formatos com limpeza por proprietário e preservação dos padrões do usuário. O áudio passou 18/18, o planner 18/18, o lifecycle do instalador 32/32 e associações 14/14. Sem `-FormatMatrix`, o builder continua com associações OFF; os checks não alteram o Registry/menu reais. Isso não é aprovação de release, nem retoma benchmarks.

@@ -104,6 +104,7 @@ class ShellUiContractTests final : public QObject {
     void essentialQmlTextIsCentralizedAndExtractable();
     void distinguishesTechnicalBooleanSelectorsFromVisibleText();
     void classifiesSingleInstanceFailuresThroughTheTextCatalog();
+    void invalidSourcePathsHaveActionableFeedbackWithoutExternalDetails();
     void shellTextCanBeTranslatedWithoutChangingTheFixture();
     void themeModesUseFixturePalettesWithExplicitPrecedence();
     void motionModesUseFixtureTimingsWithExplicitPrecedence();
@@ -457,6 +458,18 @@ void ShellUiContractTests::classifiesSingleInstanceFailuresThroughTheTextCatalog
              QStringLiteral("Não foi possível encaminhar os arquivos para o player."));
 }
 
+void ShellUiContractTests::invalidSourcePathsHaveActionableFeedbackWithoutExternalDetails() {
+    const QString message = ApplicationText::openSourcesFailureMessage(QStringLiteral("invalidPaths"), false);
+    QCOMPARE(message, QStringLiteral("A solicitação contém um caminho inválido ou ambíguo. Use caminhos completos "
+                                     "ou abra os arquivos pelo seletor do RC Music."));
+    QVERIFY(!message.contains(QStringLiteral("invalidPaths")));
+    const QString hostile_detail = QStringLiteral("C:private-track <b>hostile</b>\nexception detail");
+    const QString fallback = ApplicationText::openSourcesFailureMessage(hostile_detail, false);
+    QCOMPARE(fallback, QStringLiteral("Não foi possível encaminhar os arquivos para o player."));
+    QVERIFY(!fallback.contains(QStringLiteral("private-track")));
+    QVERIFY(!fallback.contains(QStringLiteral("<b>")));
+}
+
 void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
     const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
     ShellUiContract contract(bundle);
@@ -499,6 +512,7 @@ void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture() {
         contract.motionReduced(),
         ApplicationText::localAudioDialogFilter({QStringLiteral("*.wav")}),
         ApplicationText::openSourcesFailureTitle(),
+        ApplicationText::openSourcesFailureMessage(QStringLiteral("invalidPaths"), false),
         ApplicationText::openSourcesFailureMessage(QStringLiteral("tooManyPaths"), false),
         ApplicationText::openSourcesFailureMessage(QStringLiteral("queueFull"), false),
         ApplicationText::openSourcesFailureMessage(QStringLiteral("temporarilyUnavailable"), false),

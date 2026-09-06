@@ -19,6 +19,9 @@ class ApplicationText final {
     [[nodiscard]] static QString openSourcesFailureTitle() { return tr("Não foi possível abrir os arquivos"); }
 
     [[nodiscard]] static QString openSourcesFailureMessage(const QString& detail, const bool timed_out) {
+        if (detail == QStringLiteral("invalidPaths"))
+            return tr("A solicitação contém um caminho inválido ou ambíguo. Use caminhos completos ou abra os arquivos "
+                      "pelo seletor do RC Music.");
         if (detail == QStringLiteral("tooManyPaths") || detail == QStringLiteral("payloadTooLarge"))
             return tr("A solicitação contém arquivos demais ou excede o limite permitido.");
         if (detail == QStringLiteral("queueFull"))

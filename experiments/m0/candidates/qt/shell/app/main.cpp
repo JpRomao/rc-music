@@ -160,13 +160,15 @@ applyRestoredWindowPlacement(QWindow& window, const std::optional<music_player::
     return native_paths;
 }
 
-[[nodiscard]] int reportSingleInstanceFailure(const music_player::m0::QtSingleInstanceStartResult& result,
-                                              const bool suppress_dialog) {
-    qCritical().noquote() << "Unable to forward shell sources:" << result.detail;
+[[nodiscard]] int reportOpenSourcesFailure(const music_player::m0::QtSingleInstanceStartResult& result,
+                                           const bool suppress_dialog) {
+    qCritical().noquote() << "Unable to open shell sources:" << result.detail;
 #ifdef M0_QT_SHELL_TEST_HOOKS
     // The executable harness needs closed outcomes, never the external detail.
     if (suppress_dialog) {
-        if (result.detail == QStringLiteral("tooManyPaths"))
+        if (result.detail == QStringLiteral("invalidPaths"))
+            std::fputs("M0_SINGLE_INSTANCE_REJECTED invalidPaths\n", stdout);
+        else if (result.detail == QStringLiteral("tooManyPaths"))
             std::fputs("M0_SINGLE_INSTANCE_REJECTED tooManyPaths\n", stdout);
         else if (result.detail == QStringLiteral("temporarilyUnavailable"))
             std::fputs("M0_SINGLE_INSTANCE_REJECTED temporarilyUnavailable\n", stdout);
@@ -295,9 +297,19 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
 #ifdef M0_QT_COMBINED_AUDIO
-        const music_player::m0::OpenSourcesCommand initial_sources{
-            .paths = resolveShellSourcePaths(options.source_paths, QDir::currentPath()),
-        };
+#ifdef M0_QT_SHELL_TEST_HOOKS
+        const bool suppress_source_failure_dialog = options.smoke_single_instance_executable;
+#else
+        constexpr bool suppress_source_failure_dialog = false;
+#endif
+        music_player::m0::OpenSourcesCommand initial_sources;
+        try {
+            initial_sources.paths = resolveShellSourcePaths(options.source_paths, QDir::currentPath());
+        } catch (const std::invalid_argument&) {
+            return reportOpenSourcesFailure(
+                {music_player::m0::QtSingleInstanceOutcome::Rejected, QStringLiteral("invalidPaths")},
+                suppress_source_failure_dialog);
+        }
         music_player::m0::QtSingleInstanceCoordinator single_instance{music_player::m0::QtSingleInstanceOptions{
             .lock_file_path = QDir{config_root}.filePath(QStringLiteral("single-instance.lock")),
             .server_name_prefix = QStringLiteral("music-player.open-sources.v1"),
@@ -313,13 +325,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (single_instance_result.outcome != music_player::m0::QtSingleInstanceOutcome::Primary) {
-            return reportSingleInstanceFailure(single_instance_result,
-#ifdef M0_QT_SHELL_TEST_HOOKS
-                                               options.smoke_single_instance_executable
-#else
-                                               false
-#endif
-            );
+            return reportOpenSourcesFailure(single_instance_result, suppress_source_failure_dialog);
         }
 #endif
 #ifdef Q_OS_WIN

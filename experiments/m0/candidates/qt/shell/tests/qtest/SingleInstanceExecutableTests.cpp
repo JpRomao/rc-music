@@ -254,6 +254,51 @@ class SingleInstanceExecutableTests final : public QObject {
         : shell_executable_(std::move(shell_executable)), audio_fixture_(std::move(audio_fixture)) {}
 
   private slots:
+    void rejectsInvalidSourcePathsWithSafeFeedbackBeforeStartingIpcOrAudio_data() {
+        QTest::addColumn<QStringList>("sources");
+        QTest::newRow("empty") << QStringList{QString{}};
+        QTest::newRow("Qt resource") << QStringList{QStringLiteral(":/audio/private-track.wav")};
+#ifdef Q_OS_WIN
+        QTest::newRow("drive relative") << QStringList{QStringLiteral("C:private-track.mp3")};
+        QTest::newRow("Win32 device") << QStringList{QStringLiteral(R"(\\.\pipe\private-track.wav)")};
+#endif
+        QTest::newRow("valid then invalid is atomic")
+            << QStringList{QStringLiteral("valid local audio.wav"), QStringLiteral(":/audio/private-track.wav")};
+    }
+
+    void rejectsInvalidSourcePathsWithSafeFeedbackBeforeStartingIpcOrAudio() {
+        QFETCH(QStringList, sources);
+        QVERIFY(QFileInfo::exists(shell_executable_));
+        QVERIFY(QFileInfo::exists(audio_fixture_));
+        QTemporaryDir root{QDir::tempPath() + QStringLiteral("/music player invalid input 日本-XXXXXX")};
+        QVERIFY(root.isValid());
+        const QString config_root = root.filePath(QStringLiteral("uncreated configuration"));
+        QVERIFY(!QFileInfo::exists(config_root));
+        QVERIFY(QFile::copy(audio_fixture_, root.filePath(QStringLiteral("valid local audio.wav"))));
+        QStringList trailing{QStringLiteral("--")};
+        trailing.append(sources);
+
+        QProcess process;
+        RunningProcessGuard process_guard{process};
+        configureShellProcess(process, shell_executable_, config_root, root.path(), trailing);
+        process.start();
+        QVERIFY2(process.waitForStarted(process_start_timeout_ms), qPrintable(process.errorString()));
+        QVERIFY(process.waitForFinished(secondary_finish_timeout_ms));
+        const QByteArray output = process.readAllStandardOutput();
+        const QByteArray error = process.readAllStandardError();
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(process.exitCode(), 2);
+        QCOMPARE(output.trimmed(), QByteArrayLiteral("M0_SINGLE_INSTANCE_REJECTED invalidPaths"));
+        QVERIFY(error.isEmpty());
+        QVERIFY(!containsProtocolLine(output, forwarded_marker));
+        QVERIFY(!containsProtocolLine(output, backend_ready_marker));
+        QVERIFY(!lineWithPrefix(output, primary_ready_prefix).has_value());
+        QVERIFY(!output.contains("private-track"));
+        // The coordinator creates its config/lock root before becoming primary.
+        // Absence proves the invalid batch never reached IPC or audio startup.
+        QVERIFY(!QFileInfo::exists(config_root));
+    }
+
     void explicitInitialSourceOverridesStartMinimized() {
         QVERIFY2(QFileInfo::exists(shell_executable_), qPrintable(shell_executable_));
         QVERIFY2(QFileInfo::exists(audio_fixture_), qPrintable(audio_fixture_));
@@ -501,15 +546,15 @@ class SingleInstanceExecutableTests final : public QObject {
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     const QStringList arguments = application.arguments();
-    if (arguments.size() != 3) {
+    if (arguments.size() < 3) {
         qCritical("Expected the shell executable and the versioned WAV fixture.");
         return 2;
     }
 
     SingleInstanceExecutableTests tests{arguments.at(1), arguments.at(2)};
-    int test_argc = 1;
-    char* test_argv[] = {argv[0], nullptr};
-    return QTest::qExec(&tests, test_argc, test_argv);
+    QStringList test_arguments{arguments.front()};
+    test_arguments.append(arguments.sliced(3));
+    return QTest::qExec(&tests, test_arguments);
 }
 
 #include "SingleInstanceExecutableTests.moc"
