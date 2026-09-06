@@ -78,6 +78,6 @@ Movimentações mecânicas não mudam regras de negócio; os runners alterados t
 
 ## Próximos gates
 
-Os [scripts raiz de M1.2](development-commands.md) estão consolidados, assim como a cobertura básica de UI/áudio. Prosseguir com cobertura restante de bindings/plataforma e processos, rastreabilidade e CI Windows de M1.3. M1.1 não encerra automaticamente preflight, arquitetura, segurança/licenças e fechamento global de M1. Preservar os gates funcionais, recuperação, acessibilidade nativa e distribuição ainda abertos no [plano](development-plan.md).
+Os [scripts raiz de M1.2](development-commands.md) estão consolidados, assim como a cobertura básica de UI/áudio. A [promoção de integrações Windows](windows-integration-tests.md) acrescenta quatro bindings e oito suites de adapters/stores/identidade PE; o CTest raiz passa 288/288, conservando quatro skips de symlink por política do host. Prosseguir com os smokes nativos e drivers do app instrumentado ainda separados, rastreabilidade e CI Windows de M1.3. M1.1 não encerra automaticamente preflight, arquitetura, segurança/licenças e fechamento global de M1. Preservar os gates funcionais, recuperação, acessibilidade nativa e distribuição ainda abertos no [plano](development-plan.md).
 
 Não houve benchmark, A/B, Linux, instalação/associação no host, uso de áudios pessoais, Computer Use ou atualização do instalador a43faa1. A promoção não aprova release pública.

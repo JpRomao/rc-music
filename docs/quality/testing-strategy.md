@@ -74,6 +74,8 @@ O [primeiro recorte de promoção do núcleo](../core-build.md) reutiliza os 224
 
 As [suites de áudio promovidas](../audio-tests.md) exercitam playback Qt/FFmpeg, metadata TagLib e integração com o presenter real sem instrumentação de cenário. Os 12 binários sintéticos e a licença ficam em `tests/audio/corpus`, autenticados por tamanho/SHA-256 e ausentes da composição de produção. As fontes dos testes permanecem únicas e também atendem o consumidor histórico; cópias temporárias para tags/capas/truncamento não alteram os inputs canônicos. Os checks de CMake cobrem a recusa de inputs divergentes e a presença de metadata na seleção `audio`.
 
+As [integrações Windows promovidas](../windows-integration-tests.md) separam adapters/stores sem cenário dos bindings que exigem a [variante de UI](../ui-tests.md). O teste da fronteira CMake verifica a ABI e o grafo realmente alcançável de app, Quick e quatro bindings. A suite diária não deve registrar smokes QPA Windows como se fossem offscreen. Locks e privacy podem relançar somente seus próprios executáveis de teste, com raízes temporárias e watchdogs; o caso fatal sintético não é crash do player. Registrar skips condicionais de symlink sem elevar permissões do host nem apresentá-los como cobertura executada. A identidade PE usa leitura de recursos, não lançamento da aplicação.
+
 - usar Catch2 como runner único para domínio, application e contratos C++ puros; não adicionar uma segunda suite equivalente;
 - registrar os executáveis no CTest e manter testes independentes de `QCoreApplication` quando o código exercitado pertence ao núcleo;
 - usar Qt Test para presenters, adapters Qt e integrações de sinais/slots; usar Qt Quick Test somente onde renderização/comportamento QML for necessário;

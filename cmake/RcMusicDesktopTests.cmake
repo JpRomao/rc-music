@@ -64,6 +64,9 @@ function(rc_music_add_desktop_tests)
     set_tests_properties(rc_music.desktop.audio-files-picker PROPERTIES
         LABELS "desktop;qt;files;picker;FR-001")
 
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicWindowsTests.cmake")
+    rc_music_add_windows_tests()
+
     include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioFixtures.cmake")
     set(audio_corpus "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
     rc_music_validate_audio_corpus("${audio_corpus}")

@@ -113,6 +113,8 @@ O terceiro recorte exclui da compilação combinada OFF os tipos/fontes de fixtu
 
 A [unidade gráfica promovida](../desktop-build.md) agora compila na raiz: `RC_MUSIC_BUILD_DESKTOP=ON` entra em `src/CMakeLists.txt`, que carrega o módulo compartilhado `cmake/RcMusicDesktop.cmake`. Isso limita o scanner Qt às fontes reais e não encaminha ao experimento. O consumidor histórico usa os mesmos alvos/fontes e injeta seus próprios cenários; ligar testes na raiz não os ativa na aplicação. O build OFF não encontra QtTest/QuickTest nem lê corpus, protocolo ou fixture. A proveniência cobre também `assets` e `tools`; nenhum novo runtime empacotado foi gerado.
 
+A [UI de testes](../ui-tests.md) usa a mesma fábrica de fontes C++/QML, mas compila uma variante separada com a macro de cenário: objetos, registrar, plugins e recursos não se misturam com a aplicação real. Os [testes de integrações Windows](../windows-integration-tests.md) reutilizam adapters reais com boundaries controladas e stores temporários; quatro bindings consomem somente essa UI de teste. O binding de diagnóstico compila sua mesma fonte diretamente no executável de teste, sem ligar a biblioteca de produção que traria a ABI real do presenter. A inspeção PE lê o executável sem executá-lo. Smokes QPA Windows e drivers do app instrumentado permanecem gates separados, não ativados pelo runner diário.
+
 ```text
 /
 ├── agents.md
@@ -133,7 +135,10 @@ A [unidade gráfica promovida](../desktop-build.md) agora compila na raiz: `RC_M
 │   └── app/                     # bootstrap, IPC e recurso Windows
 ├── tests/
 │   ├── core/
-│   ├── qt/                      # oito arquivos promovidos
+│   ├── qt/                      # adapters, persistência, plataforma e áudio Qt
+│   ├── audio/                   # metadata e corpus sintético privado
+│   ├── ui/                      # variante de cenários, bindings, Quick e fixtures
+│   ├── cmake/                   # integridade, registro e fronteiras do build
 │   └── support/                 # fake determinístico exclusivo de testes
 └── tools/                       # gerador do ícone Windows
 ```

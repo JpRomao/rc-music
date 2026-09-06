@@ -93,6 +93,34 @@ set_tests_properties(rc_music.ui.quick PROPERTIES LABELS "ui;qt;quick" TIMEOUT 9
     ENVIRONMENT "${ui_environment}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
+add_ui_test(rc_music_ui_shell_platform_binding_tests rc_music.ui.shell-platform-binding
+    qtest/ShellPlatformBindingTests.cpp rc_music_test_ui m0_qt_shell_platform Qt6::Widgets)
+add_ui_test(rc_music_ui_system_media_controls_binding_tests rc_music.ui.system-media-controls-binding
+    qtest/SystemMediaControlsBindingTests.cpp rc_music_test_ui)
+add_ui_test(rc_music_ui_system_power_events_binding_tests rc_music.ui.system-power-events-binding
+    qtest/SystemPowerEventsBindingTests.cpp rc_music_test_ui)
+add_ui_test(rc_music_ui_diagnostic_binding_tests rc_music.ui.diagnostic-binding
+    qtest/ShellDiagnosticBindingTests.cpp rc_music_test_ui)
+# The production diagnostic library brings the production presenter ABI with it.
+# Compile its same source into this test consumer under the scenario ABI instead.
+target_sources(rc_music_ui_diagnostic_binding_tests PRIVATE
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ShellDiagnosticBinding.cpp")
+foreach(target IN ITEMS rc_music_ui_shell_platform_binding_tests
+        rc_music_ui_system_media_controls_binding_tests rc_music_ui_system_power_events_binding_tests
+        rc_music_ui_diagnostic_binding_tests)
+    target_compile_definitions(${target} PRIVATE
+        M0_TEST_FIXTURE_FILE="${ui_fixtures}/fixture.v1.json"
+        M0_TEST_QUEUE_FILE="${ui_fixtures}/queue.v1.json")
+endforeach()
+set_tests_properties(rc_music.ui.shell-platform-binding PROPERTIES
+    LABELS "windows;ui;qt;binding;tray;lifecycle;FR-030;FR-031;FR-038" TIMEOUT 10)
+set_tests_properties(rc_music.ui.system-media-controls-binding PROPERTIES
+    LABELS "windows;ui;qt;binding;system-media-controls;FR-037" TIMEOUT 15)
+set_tests_properties(rc_music.ui.system-power-events-binding PROPERTIES
+    LABELS "windows;ui;qt;binding;power;FR-038" TIMEOUT 15)
+set_tests_properties(rc_music.ui.diagnostic-binding PROPERTIES
+    LABELS "windows;ui;qt;binding;diagnostics;NFR-PRIV-003" TIMEOUT 30)
+
 add_test(NAME rc_music.ui.build-boundary COMMAND "${CMAKE_COMMAND}"
     "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
     -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/UiBuildBoundaryTests.cmake")

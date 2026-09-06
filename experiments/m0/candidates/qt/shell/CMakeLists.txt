@@ -172,7 +172,7 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(BUILD_TESTING)
         target_compile_definitions(m0_qt_shell PRIVATE M0_QT_SHELL_TEST_HOOKS)
-        add_executable(m0_qt_diagnostic_binding_tests tests/qtest/ShellDiagnosticBindingTests.cpp)
+        add_executable(m0_qt_diagnostic_binding_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/ShellDiagnosticBindingTests.cpp")
         target_link_libraries(m0_qt_diagnostic_binding_tests PRIVATE m0_qt_diagnostic_binding Qt6::Test)
         target_compile_definitions(m0_qt_diagnostic_binding_tests PRIVATE
             M0_TEST_FIXTURE_FILE="${M0_FIXTURE_FILE}" M0_TEST_QUEUE_FILE="${M0_QUEUE_FILE}")
@@ -183,7 +183,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.diagnostics.binding COMMAND m0_qt_diagnostic_binding_tests)
         set_tests_properties(m0.qt.diagnostics.binding PROPERTIES TIMEOUT 30)
-        add_executable(m0_qt_shell_platform_tests tests/qtest/QtShellPlatformTests.cpp)
+        add_executable(m0_qt_shell_platform_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtShellPlatformTests.cpp")
         target_link_libraries(m0_qt_shell_platform_tests PRIVATE m0_qt_shell_platform Qt6::Test Qt6::Widgets)
         target_compile_features(m0_qt_shell_platform_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_shell_platform_tests PROPERTIES AUTOMOC ON)
@@ -214,7 +214,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.audio-files-picker COMMAND m0_qt_audio_files_picker_tests -o -,txt)
         if(WIN32)
-            add_executable(m0_qt_windows_smtc_tests tests/qtest/WindowsSmtcAdapterTests.cpp)
+            add_executable(m0_qt_windows_smtc_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsSmtcAdapterTests.cpp")
             target_link_libraries(m0_qt_windows_smtc_tests PRIVATE m0_qt_windows_smtc Qt6::Test)
             target_compile_features(m0_qt_windows_smtc_tests PRIVATE cxx_std_20)
             set_target_properties(m0_qt_windows_smtc_tests PROPERTIES AUTOMOC ON)
@@ -282,7 +282,7 @@ if(M0_QT_SHELL_SUPPORT)
             endif()
             add_test(NAME m0.qt.windows.tray-recovery COMMAND m0_qt_windows_tray_recovery_tests -o -,txt)
         endif()
-        add_executable(m0_qt_shell_platform_binding_tests tests/qtest/ShellPlatformBindingTests.cpp)
+        add_executable(m0_qt_shell_platform_binding_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/ShellPlatformBindingTests.cpp")
         target_link_libraries(m0_qt_shell_platform_binding_tests PRIVATE
             m0_qt_shell_platform m0_qt_shell_support m0_qt_shell_ui Qt6::Test Qt6::Widgets)
         target_include_directories(m0_qt_shell_platform_binding_tests PRIVATE src)
@@ -299,7 +299,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.shell-platform-binding COMMAND m0_qt_shell_platform_binding_tests)
         add_executable(m0_qt_system_media_controls_binding_tests
-            tests/qtest/SystemMediaControlsBindingTests.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/SystemMediaControlsBindingTests.cpp"
         )
         target_link_libraries(m0_qt_system_media_controls_binding_tests PRIVATE
             m0_qt_shell_support m0_qt_shell_ui Qt6::Test
@@ -320,7 +320,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.system-media-controls.binding COMMAND m0_qt_system_media_controls_binding_tests)
         add_executable(m0_qt_system_power_events_binding_tests
-            tests/qtest/SystemPowerEventsBindingTests.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/SystemPowerEventsBindingTests.cpp"
         )
         target_link_libraries(m0_qt_system_power_events_binding_tests PRIVATE
             m0_qt_shell_support m0_qt_shell_ui Qt6::Test
@@ -340,7 +340,7 @@ if(M0_QT_SHELL_SUPPORT)
             )
         endif()
         add_test(NAME m0.qt.system-power-events.binding COMMAND m0_qt_system_power_events_binding_tests)
-        add_executable(m0_qt_system_appearance_tests tests/qtest/QtSystemAppearanceTests.cpp)
+        add_executable(m0_qt_system_appearance_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtSystemAppearanceTests.cpp")
         target_link_libraries(m0_qt_system_appearance_tests PRIVATE m0_qt_system_appearance Qt6::Test)
         target_compile_features(m0_qt_system_appearance_tests PRIVATE cxx_std_20)
         set_target_properties(m0_qt_system_appearance_tests PROPERTIES AUTOMOC ON)
@@ -377,7 +377,7 @@ if(M0_QT_SHELL_SUPPORT)
         add_test(NAME m0.qt.session.json-codec COMMAND m0_qt_session_json_codec_tests)
         if(WIN32)
             add_executable(m0_qt_preferences_windows_store_tests
-                tests/qtest/QtJsonWindowsPreferencesStoreTests.cpp
+                "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonWindowsPreferencesStoreTests.cpp"
             )
             target_link_libraries(m0_qt_preferences_windows_store_tests PRIVATE
                 m0_qt_preferences_persistence
@@ -395,7 +395,7 @@ if(M0_QT_SHELL_SUPPORT)
             endif()
             add_test(NAME m0.qt.preferences.windows-store COMMAND m0_qt_preferences_windows_store_tests)
             add_executable(m0_qt_session_windows_store_tests
-                tests/qtest/QtJsonWindowsSessionStoreTests.cpp
+                "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonWindowsSessionStoreTests.cpp"
             )
             target_link_libraries(m0_qt_session_windows_store_tests PRIVATE
                 m0_qt_session_persistence
@@ -412,7 +412,7 @@ if(M0_QT_SHELL_SUPPORT)
                 )
             endif()
             add_test(NAME m0.qt.session.windows-store COMMAND m0_qt_session_windows_store_tests)
-            add_executable(m0_qt_diagnostic_privacy_tests tests/qtest/QtDiagnosticPrivacyTests.cpp)
+            add_executable(m0_qt_diagnostic_privacy_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtDiagnosticPrivacyTests.cpp")
             target_link_libraries(m0_qt_diagnostic_privacy_tests PRIVATE m0_qt_diagnostic_privacy Qt6::Test)
             target_compile_features(m0_qt_diagnostic_privacy_tests PRIVATE cxx_std_20)
             set_target_properties(m0_qt_diagnostic_privacy_tests PROPERTIES AUTOMOC ON)
@@ -421,7 +421,7 @@ if(M0_QT_SHELL_SUPPORT)
             endif()
             add_test(NAME m0.qt.diagnostics.privacy COMMAND m0_qt_diagnostic_privacy_tests)
             set_tests_properties(m0.qt.diagnostics.privacy PROPERTIES TIMEOUT 30)
-            add_executable(m0_qt_diagnostic_store_tests tests/qtest/QtWindowsDiagnosticLogStoreTests.cpp)
+            add_executable(m0_qt_diagnostic_store_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtWindowsDiagnosticLogStoreTests.cpp")
             target_link_libraries(m0_qt_diagnostic_store_tests PRIVATE m0_qt_diagnostic_store Qt6::Test)
             target_compile_features(m0_qt_diagnostic_store_tests PRIVATE cxx_std_20)
             set_target_properties(m0_qt_diagnostic_store_tests PROPERTIES AUTOMOC ON)
@@ -595,7 +595,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_test(NAME m0.qt.shell-ui-contract COMMAND m0_qt_shell_contract_tests)
         if(WIN32)
-            add_executable(m0_qt_windows_executable_identity_tests tests/qtest/WindowsExecutableIdentityTests.cpp)
+            add_executable(m0_qt_windows_executable_identity_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsExecutableIdentityTests.cpp")
             target_link_libraries(m0_qt_windows_executable_identity_tests PRIVATE
                 Qt6::Core Qt6::Test user32 version)
             set_target_properties(m0_qt_windows_executable_identity_tests PROPERTIES AUTOMOC ON)
