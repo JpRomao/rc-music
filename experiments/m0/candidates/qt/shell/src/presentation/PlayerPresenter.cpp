@@ -55,6 +55,7 @@ constexpr std::int64_t restored_position_tolerance_ms = 50;
     throw std::invalid_argument{std::string{"unknown fixture mapping: "} + field};
 }
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 ThemeMode themeMode(const QString& value) {
     if (value == QStringLiteral("system"))
         return ThemeMode::System;
@@ -88,6 +89,7 @@ QueueEndBehavior queueEndBehavior(const QString& value) {
         return QueueEndBehavior::StopClearSelection;
     invalidMapping("queue_end_behavior");
 }
+#endif
 
 [[nodiscard]] bool validPreferences(const Preferences& preferences) noexcept {
     switch (preferences.theme) {
@@ -126,6 +128,7 @@ QueueEndBehavior queueEndBehavior(const QString& value) {
            preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300 && valid_window_placement;
 }
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 PlayerPresenter::PlaybackState mapPlaybackState(const QString& value) {
     if (value == QStringLiteral("unloaded"))
         return PlayerPresenter::PlaybackState::Unloaded;
@@ -141,6 +144,7 @@ PlayerPresenter::PlaybackState mapPlaybackState(const QString& value) {
         return PlayerPresenter::PlaybackState::Error;
     invalidMapping("playback_state");
 }
+#endif
 
 PlayerPresenter::PlaybackState mapPlaybackState(const PlaybackStatus status) {
     switch (status) {
@@ -160,6 +164,7 @@ PlayerPresenter::PlaybackState mapPlaybackState(const PlaybackStatus status) {
     invalidMapping("domain playback status");
 }
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 PlaybackStatus mapDomainPlaybackStatus(const QString& value) {
     if (value == QStringLiteral("unloaded"))
         return PlaybackStatus::Empty;
@@ -211,6 +216,7 @@ std::vector<QueueNavigationItem> navigationItems(const FixtureBundle& bundle) {
         entries.push_back({item.available});
     return entries;
 }
+#endif
 
 std::vector<QueueNavigationItem> navigationItems(const LocalFileQueue& queue) {
     std::vector<QueueNavigationItem> entries;
@@ -366,6 +372,7 @@ void addSaturated(std::uint64_t& target, const std::uint64_t increment) noexcept
 
 } // namespace
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent)
     : QObject(parent), fixture_bundle_(std::make_unique<FixtureBundle>(std::move(bundle))),
       navigation_items_(navigationItems(*fixture_bundle_)), platform_(platform),
@@ -373,9 +380,9 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(*fixture_bundle_))),
-      backend_(*owned_backend_), controller_(backend_, platform), queue_model_(this), local_queue_model_(this),
-      timer_(this), state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
-      artwork_cache_(std::make_shared<ArtworkImageCache>()) {
+      backend_(*owned_backend_), controller_(backend_, platform), local_queue_model_(this), timer_(this),
+      state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
+      artwork_cache_(std::make_shared<ArtworkImageCache>()), uses_frozen_fixture_(true) {
     initializeDefaults();
     timer_.setInterval(static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
@@ -395,9 +402,8 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
       owned_backend_(std::make_unique<DeterministicPlaybackBackend>(backendConfig(*fixture_bundle_))),
       backend_(*owned_backend_), controller_(backend_, platform, PlaybackSnapshot{}, preferences.initial),
-      queue_model_(this), local_queue_model_(this), timer_(this),
-      state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
-      artwork_cache_(std::make_shared<ArtworkImageCache>()) {
+      local_queue_model_(this), timer_(this), state_(stateById(*fixture_bundle_, fixture_bundle_->default_state_id)),
+      artwork_cache_(std::make_shared<ArtworkImageCache>()), uses_frozen_fixture_(true) {
     initializePersistedPreferences(preferences);
     timer_.setInterval(static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms));
     timer_.setTimerType(Qt::PreciseTimer);
@@ -408,6 +414,7 @@ PlayerPresenter::PlayerPresenter(FixtureBundle bundle, PlatformIntegration& plat
     });
     reconcileTimer();
 }
+#endif
 
 PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend,
                                  MetadataReader& metadata_reader, AudioFilePicker audio_file_picker, QObject* parent)
@@ -426,12 +433,12 @@ PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend&
     : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
-      owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
-      queue_model_(this), local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
+      backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()), local_queue_model_(this),
+      timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)),
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
-      source_discovery_(owned_source_discovery_.get()), uses_frozen_fixture_(false) {
+      source_discovery_(owned_source_discovery_.get()) {
     initializeLocalMode();
 }
 
@@ -442,13 +449,12 @@ PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend&
     : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
-      owned_backend_(), backend_(playback_backend),
-      controller_(backend_, platform, backend_.snapshot(), preferences.initial), queue_model_(this),
+      backend_(playback_backend), controller_(backend_, platform, backend_.snapshot(), preferences.initial),
       local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
       artwork_cache_(std::move(artwork_cache)),
       owned_source_discovery_(std::make_unique<SingleWorkerLocalSourceDiscovery>()),
-      source_discovery_(owned_source_discovery_.get()), uses_frozen_fixture_(false) {
+      source_discovery_(owned_source_discovery_.get()) {
     initializeLocalMode(&preferences);
 }
 
@@ -465,10 +471,10 @@ PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend&
     : QObject(parent), platform_(platform), tray_available_(platform.trayAvailable()),
       default_apps_settings_supported_(platform.defaultAppsSettingsSupported()),
       default_apps_settings_available_(default_apps_settings_supported_ && platform.defaultAppsSettingsAvailable()),
-      owned_backend_(), backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()),
-      queue_model_(this), local_queue_model_(this), timer_(this), audio_file_picker_(std::move(audio_file_picker)),
+      backend_(playback_backend), controller_(backend_, platform, backend_.snapshot()), local_queue_model_(this),
+      timer_(this), audio_file_picker_(std::move(audio_file_picker)),
       local_track_session_(std::make_unique<LocalTrackSession>(backend_, metadata_reader)),
-      artwork_cache_(std::move(artwork_cache)), source_discovery_(&source_discovery), uses_frozen_fixture_(false) {
+      artwork_cache_(std::move(artwork_cache)), source_discovery_(&source_discovery) {
     initializeLocalMode();
 }
 
@@ -522,6 +528,7 @@ PlayerPresenter::~PlayerPresenter() {
     }
 }
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 void PlayerPresenter::initializeDefaults() {
     const FixtureDefaults& defaults = fixture_bundle_->preferences.defaults;
     const ThemeMode theme = themeMode(defaults.theme);
@@ -552,6 +559,7 @@ void PlayerPresenter::initializeDefaults() {
         invalidMapping("start_minimized");
     controller_.setQueueEndBehavior(queue_end);
 }
+#endif
 
 void PlayerPresenter::initializePersistedPreferences(const PlayerPresenterPreferences& preferences) {
     if (preferences.autosave == nullptr)
@@ -562,11 +570,13 @@ void PlayerPresenter::initializePersistedPreferences(const PlayerPresenterPrefer
         throw std::invalid_argument{"preferences exit flush timeout cannot be negative"};
     if (!validPreferences(preferences.initial))
         invalidMapping("persisted preferences");
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         for (const FixtureState& fixture_state : fixture_bundle_->states)
             static_cast<void>(mapPlaybackState(fixture_state.playback_state));
         static_cast<void>(stateById(*fixture_bundle_, QStringLiteral("playing")));
     }
+#endif
 
     if (backend_.setVolume(preferences.initial.volume) != PlaybackCommandResult::Accepted ||
         backend_.setMuted(preferences.initial.muted) != PlaybackCommandResult::Accepted) {
@@ -755,8 +765,10 @@ void PlayerPresenter::reconcileRestoredPosition() {
 }
 
 QString PlayerPresenter::stateId() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return state_.state_id;
+#endif
     if (controller_.confirmedSnapshot().status == PlaybackStatus::Error)
         return QStringLiteral("error");
     return local_track_session_->hasTrack() ? QStringLiteral("playing") : QStringLiteral("empty");
@@ -765,50 +777,79 @@ PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
     return mapPlaybackState(controller_.confirmedSnapshot().status);
 }
 bool PlayerPresenter::queueLoaded() const noexcept {
-    return uses_frozen_fixture_ ? state_.queue_loaded : !local_queue_.empty();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.queue_loaded;
+#endif
+    return !local_queue_.empty();
 }
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
-    return uses_frozen_fixture_ ? state_.current_occurrence_id.has_value()
-                                : local_queue_.currentOccurrenceId().has_value();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.current_occurrence_id.has_value();
+#endif
+    return local_queue_.currentOccurrenceId().has_value();
 }
 QString PlayerPresenter::currentOccurrenceId() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return state_.current_occurrence_id.value_or(QString{});
+#endif
     const auto current = local_queue_.currentOccurrenceId();
     return current.has_value() ? LocalQueueListModel::occurrenceId(*current) : QString{};
 }
 int PlayerPresenter::currentQueueIndex() const noexcept {
-    if (!uses_frozen_fixture_) {
-        const auto current = local_queue_.currentIndex();
-        return current.has_value() ? static_cast<int>(*current) : -1;
-    }
-    if (state_.current_occurrence_id.has_value()) {
-        for (qsizetype index = 0; index < fixture_bundle_->queue.size(); ++index) {
-            if (fixture_bundle_->queue.at(index).occurrence_id == *state_.current_occurrence_id)
-                return static_cast<int>(index);
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        if (state_.current_occurrence_id.has_value()) {
+            for (qsizetype index = 0; index < fixture_bundle_->queue.size(); ++index) {
+                if (fixture_bundle_->queue.at(index).occurrence_id == *state_.current_occurrence_id)
+                    return static_cast<int>(index);
+            }
         }
+        return -1;
     }
-    return -1;
+#endif
+    const auto current = local_queue_.currentIndex();
+    return current.has_value() ? static_cast<int>(*current) : -1;
 }
 bool PlayerPresenter::hasContextOccurrence() const noexcept {
-    return uses_frozen_fixture_ && state_.context_occurrence_id.has_value();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.context_occurrence_id.has_value();
+#endif
+    return false;
 }
 QString PlayerPresenter::contextOccurrenceId() const {
-    return uses_frozen_fixture_ ? state_.context_occurrence_id.value_or(QString{}) : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.context_occurrence_id.value_or(QString{});
+#endif
+    return QString{};
 }
 bool PlayerPresenter::hasPosition() const noexcept {
-    return uses_frozen_fixture_ ? state_.position_ms.has_value() : local_track_session_->hasTrack();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.position_ms.has_value();
+#endif
+    return local_track_session_->hasTrack();
 }
 qint64 PlayerPresenter::positionMs() const noexcept { return controller_.displayedPositionMs(); }
 qint64 PlayerPresenter::confirmedPositionMs() const noexcept { return controller_.confirmedSnapshot().position_ms; }
 bool PlayerPresenter::seekPreviewActive() const noexcept { return controller_.seekPreviewActive(); }
 bool PlayerPresenter::seekPending() const noexcept { return controller_.seekPending(); }
 bool PlayerPresenter::hasDuration() const noexcept {
-    return uses_frozen_fixture_ ? state_.duration_ms.has_value() : localDurationMs().has_value();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.duration_ms.has_value();
+#endif
+    return localDurationMs().has_value();
 }
 qint64 PlayerPresenter::durationMs() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
+#endif
     return localDurationMs().value_or(0);
 }
 bool PlayerPresenter::seekable() const noexcept {
@@ -840,20 +881,31 @@ std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirectio
 bool PlayerPresenter::canGoPrevious() const noexcept { return navigationTarget(QueueDirection::Previous).has_value(); }
 bool PlayerPresenter::canGoNext() const noexcept { return navigationTarget(QueueDirection::Next).has_value(); }
 QString PlayerPresenter::assetId() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return state_.asset_id;
+#endif
     return local_track_session_->hasTrack() ? QStringLiteral("cover-track") : QStringLiteral("cover-placeholder");
 }
 bool PlayerPresenter::hasMessage() const noexcept {
-    return uses_frozen_fixture_ ? state_.message_key.has_value() : !local_track_session_->hasTrack();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.message_key.has_value();
+#endif
+    return !local_track_session_->hasTrack();
 }
 QString PlayerPresenter::messageKey() const {
-    return uses_frozen_fixture_ ? state_.message_key.value_or(QString{})
-                                : (local_track_session_->hasTrack() ? QString{} : QStringLiteral("empty_title"));
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.message_key.value_or(QString{});
+#endif
+    return local_track_session_->hasTrack() ? QString{} : QStringLiteral("empty_title");
 }
 QString PlayerPresenter::primaryActionId() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return state_.primary_action_id;
+#endif
     if (hasError())
         return errorActionId();
     if (!local_track_session_->hasTrack())
@@ -861,26 +913,35 @@ QString PlayerPresenter::primaryActionId() const {
     return QStringLiteral("play-pause");
 }
 bool PlayerPresenter::hasError() const noexcept {
-    return uses_frozen_fixture_ ? state_.error_code.has_value()
-                                : controller_.confirmedSnapshot().status == PlaybackStatus::Error;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return state_.error_code.has_value();
+#endif
+    return controller_.confirmedSnapshot().status == PlaybackStatus::Error;
 }
 QString PlayerPresenter::errorCode() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return state_.error_code.value_or(QString{});
+#endif
     return hasError() ? localPlaybackErrorCode(controller_.confirmedSnapshot().error) : QString{};
 }
 QString PlayerPresenter::errorMessageKey() const {
     if (!hasError())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return messageKey();
+#endif
     return localPlaybackErrorMessageKey(controller_.confirmedSnapshot().error);
 }
 QString PlayerPresenter::errorActionId() const {
     if (!hasError())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return primaryActionId();
+#endif
     return isAudioOutputError(controller_.confirmedSnapshot().error) ? QStringLiteral("recover-audio-output")
                                                                      : QStringLiteral("open-audio");
 }
@@ -1033,6 +1094,7 @@ void PlayerPresenter::cancelFileLocation() noexcept {
             file_dialog_cancellation_active_ = already_cancelling;
     }
 }
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 const QueueItem* PlayerPresenter::currentTrack() const noexcept {
     if (!state_.current_occurrence_id.has_value())
         return nullptr;
@@ -1057,6 +1119,8 @@ const FixtureTrackDetails* PlayerPresenter::currentFixtureTrackDetails() const n
                ? &fixture_bundle_->track_details
                : nullptr;
 }
+#endif
+
 const TrackMetadata* PlayerPresenter::currentLocalTrackMetadata() const noexcept {
     if (uses_frozen_fixture_ || local_track_session_ == nullptr)
         return nullptr;
@@ -1064,37 +1128,55 @@ const TrackMetadata* PlayerPresenter::currentLocalTrackMetadata() const noexcept
     return metadata.has_value() ? &*metadata : nullptr;
 }
 bool PlayerPresenter::hasCurrentTrack() const noexcept {
-    return uses_frozen_fixture_ ? currentTrack() != nullptr : local_track_session_->hasTrack();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return currentTrack() != nullptr;
+#endif
+    return local_track_session_->hasTrack();
 }
 QString PlayerPresenter::currentTitle() const {
-    if (!uses_frozen_fixture_)
-        return fromUtf8(local_track_session_->displayTitle());
-    const QueueItem* const track = currentTrack();
-    return track != nullptr ? track->title : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->title : QString{};
+    }
+#endif
+    return fromUtf8(local_track_session_->displayTitle());
 }
 QString PlayerPresenter::currentArtist() const {
-    if (!uses_frozen_fixture_)
-        return fromUtf8(local_track_session_->artist());
-    const QueueItem* const track = currentTrack();
-    return track != nullptr ? track->artist : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->artist : QString{};
+    }
+#endif
+    return fromUtf8(local_track_session_->artist());
 }
 QString PlayerPresenter::currentAlbum() const {
-    if (!uses_frozen_fixture_)
-        return fromUtf8(local_track_session_->album());
-    const QueueItem* const track = currentTrack();
-    return track != nullptr ? track->album : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = currentTrack();
+        return track != nullptr ? track->album : QString{};
+    }
+#endif
+    return fromUtf8(local_track_session_->album());
 }
 QUrl PlayerPresenter::currentArtworkSource() const { return artwork_cache_->currentSource(); }
 bool PlayerPresenter::detailsAvailable() const noexcept {
-    return uses_frozen_fixture_ ? currentTrack() != nullptr
-                                : local_track_session_ != nullptr && local_track_session_->hasTrack();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return currentTrack() != nullptr;
+#endif
+    return local_track_session_ != nullptr && local_track_session_->hasTrack();
 }
 bool PlayerPresenter::hasDetailsFileName() const { return !detailsFileName().isEmpty(); }
 QString PlayerPresenter::detailsFileName() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const QueueItem* const track = currentTrack();
         return track != nullptr ? track->file_name : QString{};
     }
+#endif
     if (!detailsAvailable())
         return {};
     return displayPath(local_track_session_->sourcePath().filename());
@@ -1106,32 +1188,40 @@ QString PlayerPresenter::detailsFilePath() const {
     return hasDetailsFilePath() ? displayPath(local_track_session_->sourcePath()) : QString{};
 }
 bool PlayerPresenter::hasDetailsFileSize() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && details->size_bytes > 0;
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->file_size_bytes > 0;
 }
 QVariant PlayerPresenter::detailsFileSizeBytes() const {
     if (!hasDetailsFileSize())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->size_bytes));
+#endif
     return unsignedVariant(static_cast<std::uint64_t>(currentLocalTrackMetadata()->file_size_bytes));
 }
 QString PlayerPresenter::detailsFileSizeBytesText() const {
     if (!hasDetailsFileSize())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedDecimal(static_cast<std::uint64_t>(currentFixtureTrackDetails()->size_bytes));
+#endif
     return unsignedDecimal(static_cast<std::uint64_t>(currentLocalTrackMetadata()->file_size_bytes));
 }
 bool PlayerPresenter::hasDetailsModifiedUtc() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && !details->modified_utc.isEmpty();
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->last_modified_time.has_value() &&
            !modifiedUtc(*metadata->last_modified_time).isEmpty();
@@ -1139,33 +1229,42 @@ bool PlayerPresenter::hasDetailsModifiedUtc() const noexcept {
 QString PlayerPresenter::detailsModifiedUtc() const {
     if (!hasDetailsModifiedUtc())
         return {};
-    return uses_frozen_fixture_ ? currentFixtureTrackDetails()->modified_utc
-                                : modifiedUtc(*currentLocalTrackMetadata()->last_modified_time);
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return currentFixtureTrackDetails()->modified_utc;
+#endif
+    return modifiedUtc(*currentLocalTrackMetadata()->last_modified_time);
 }
 bool PlayerPresenter::hasDetailsTitle() const { return !detailsTitle().isEmpty(); }
 QString PlayerPresenter::detailsTitle() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const QueueItem* const track = currentTrack();
         return track != nullptr ? track->title : QString{};
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->tags.title.has_value() ? fromUtf8(*metadata->tags.title) : QString{};
 }
 bool PlayerPresenter::hasDetailsArtist() const { return !detailsArtist().isEmpty(); }
 QString PlayerPresenter::detailsArtist() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const QueueItem* const track = currentTrack();
         return track != nullptr ? track->artist : QString{};
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->tags.artist.has_value() ? fromUtf8(*metadata->tags.artist) : QString{};
 }
 bool PlayerPresenter::hasDetailsAlbum() const { return !detailsAlbum().isEmpty(); }
 QString PlayerPresenter::detailsAlbum() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const QueueItem* const track = currentTrack();
         return track != nullptr ? track->album : QString{};
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->tags.album.has_value() ? fromUtf8(*metadata->tags.album) : QString{};
 }
@@ -1184,95 +1283,119 @@ QVariant PlayerPresenter::detailsYear() const {
     return hasDetailsYear() ? unsignedVariant(*currentLocalTrackMetadata()->tags.year) : QVariant{};
 }
 bool PlayerPresenter::hasDetailsDuration() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const QueueItem* const track = currentTrack();
         return track != nullptr && track->duration_ms.has_value() && *track->duration_ms > 0;
     }
+#endif
     return localDurationMs().has_value();
 }
 QVariant PlayerPresenter::detailsDurationMs() const {
     if (!hasDetailsDuration())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return QVariant::fromValue<qint64>(*currentTrack()->duration_ms);
+#endif
     return QVariant::fromValue<qint64>(*localDurationMs());
 }
 bool PlayerPresenter::hasDetailsContainer() const { return !detailsContainer().isEmpty(); }
 QString PlayerPresenter::detailsContainer() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr ? details->container : QString{};
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr ? fromUtf8(metadata->audio.container) : QString{};
 }
 bool PlayerPresenter::hasDetailsCodec() const { return !detailsCodec().isEmpty(); }
 QString PlayerPresenter::detailsCodec() const {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr ? details->codec : QString{};
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr ? fromUtf8(metadata->audio.codec) : QString{};
 }
 bool PlayerPresenter::hasDetailsBitrate() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && details->bitrate_bps > 0;
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->audio.bitrate_kbps.has_value() && *metadata->audio.bitrate_kbps > 0;
 }
 QVariant PlayerPresenter::detailsBitrateBps() const {
     if (!hasDetailsBitrate())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->bitrate_bps));
+#endif
     return unsignedVariant(static_cast<std::uint64_t>(*currentLocalTrackMetadata()->audio.bitrate_kbps) * 1'000U);
 }
 bool PlayerPresenter::hasDetailsSampleRate() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && details->sample_rate_hz > 0;
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->audio.sample_rate_hz.has_value() && *metadata->audio.sample_rate_hz > 0;
 }
 QVariant PlayerPresenter::detailsSampleRateHz() const {
     if (!hasDetailsSampleRate())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->sample_rate_hz));
+#endif
     return unsignedVariant(*currentLocalTrackMetadata()->audio.sample_rate_hz);
 }
 bool PlayerPresenter::hasDetailsChannels() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && details->channels > 0;
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->audio.channels.has_value() && *metadata->audio.channels > 0;
 }
 QVariant PlayerPresenter::detailsChannels() const {
     if (!hasDetailsChannels())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedVariant(static_cast<std::uint64_t>(currentFixtureTrackDetails()->channels));
+#endif
     return unsignedVariant(*currentLocalTrackMetadata()->audio.channels);
 }
 bool PlayerPresenter::hasDetailsBitDepth() const noexcept {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         const auto* const details = currentFixtureTrackDetails();
         return details != nullptr && details->bit_depth.has_value() && *details->bit_depth > 0;
     }
+#endif
     const auto* const metadata = currentLocalTrackMetadata();
     return metadata != nullptr && metadata->audio.bit_depth.has_value() && *metadata->audio.bit_depth > 0;
 }
 QVariant PlayerPresenter::detailsBitDepth() const {
     if (!hasDetailsBitDepth())
         return {};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return unsignedVariant(static_cast<std::uint64_t>(*currentFixtureTrackDetails()->bit_depth));
+#endif
     return unsignedVariant(*currentLocalTrackMetadata()->audio.bit_depth);
 }
 bool PlayerPresenter::hasDetailsDiagnostics() const { return !detailsDiagnostics().isEmpty(); }
@@ -1344,30 +1467,48 @@ QVariantList PlayerPresenter::detailsDiagnostics() const {
     return diagnostics;
 }
 bool PlayerPresenter::hasContextTrack() const noexcept {
-    return uses_frozen_fixture_ ? contextTrack() != nullptr : hasError() && local_track_session_->hasTrack();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return contextTrack() != nullptr;
+#endif
+    return hasError() && local_track_session_->hasTrack();
 }
 QString PlayerPresenter::contextTitle() const {
-    if (!uses_frozen_fixture_)
-        return hasContextTrack() ? currentTitle() : QString{};
-    const QueueItem* const track = contextTrack();
-    return track != nullptr ? track->title : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = contextTrack();
+        return track != nullptr ? track->title : QString{};
+    }
+#endif
+    return hasContextTrack() ? currentTitle() : QString{};
 }
 QString PlayerPresenter::contextArtist() const {
-    if (!uses_frozen_fixture_)
-        return hasContextTrack() ? currentArtist() : QString{};
-    const QueueItem* const track = contextTrack();
-    return track != nullptr ? track->artist : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = contextTrack();
+        return track != nullptr ? track->artist : QString{};
+    }
+#endif
+    return hasContextTrack() ? currentArtist() : QString{};
 }
 QString PlayerPresenter::contextAlbum() const {
-    if (!uses_frozen_fixture_)
-        return hasContextTrack() ? currentAlbum() : QString{};
-    const QueueItem* const track = contextTrack();
-    return track != nullptr ? track->album : QString{};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+        const QueueItem* const track = contextTrack();
+        return track != nullptr ? track->album : QString{};
+    }
+#endif
+    return hasContextTrack() ? currentAlbum() : QString{};
 }
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 QueueListModel* PlayerPresenter::queueModel() noexcept { return &queue_model_; }
+#endif
 QAbstractItemModel* PlayerPresenter::queueModelObject() noexcept {
-    return uses_frozen_fixture_ ? static_cast<QAbstractItemModel*>(&queue_model_)
-                                : static_cast<QAbstractItemModel*>(&local_queue_model_);
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        return static_cast<QAbstractItemModel*>(&queue_model_);
+#endif
+    return static_cast<QAbstractItemModel*>(&local_queue_model_);
 }
 PlayerPresenter::SourceImportState PlayerPresenter::sourceImportState() const noexcept { return source_import_state_; }
 bool PlayerPresenter::sourceImportActive() const noexcept {
@@ -1439,9 +1580,11 @@ bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fi
 bool PlayerPresenter::openAudio() {
     if (exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() || file_location_request_.has_value())
         return false;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_) {
         return loadFrozenQueue();
     }
+#endif
 
     if (audio_files_picker_ != nullptr)
         return beginAudioFileSelection(false);
@@ -2306,8 +2449,11 @@ std::optional<std::int64_t> PlayerPresenter::localDurationMs() const noexcept {
         return metadata->audio.duration_ms;
     return std::nullopt;
 }
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 DeterministicPlaybackBackend* PlayerPresenter::fixtureBackend() noexcept { return owned_backend_.get(); }
 const DeterministicPlaybackBackend* PlayerPresenter::fixtureBackend() const noexcept { return owned_backend_.get(); }
+#endif
+
 void PlayerPresenter::reportTrayUnavailable() {
     if (exiting_ || window_notice_ == WindowNotice::TrayUnavailableNotice)
         return;
@@ -2620,8 +2766,10 @@ bool PlayerPresenter::play() {
         return false;
     if (!controller_.play())
         return false;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         controller_.applyBackendSnapshot(backend_.snapshot());
+#endif
     cancelRestoredPositionForExplicitTransport();
     const bool changed = before != controller_.confirmedSnapshot();
     if (changed) {
@@ -2636,8 +2784,10 @@ bool PlayerPresenter::pause() {
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (!controller_.pause())
         return false;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         controller_.applyBackendSnapshot(backend_.snapshot());
+#endif
     cancelRestoredPositionForExplicitTransport();
     const bool changed = before != controller_.confirmedSnapshot();
     if (changed) {
@@ -2655,8 +2805,10 @@ bool PlayerPresenter::togglePlayback() {
         return false;
     if (!controller_.togglePlayback())
         return false;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         controller_.applyBackendSnapshot(backend_.snapshot());
+#endif
     cancelRestoredPositionForExplicitTransport();
     const bool changed = before != controller_.confirmedSnapshot();
     if (changed) {
@@ -2716,43 +2868,46 @@ bool PlayerPresenter::loadLocalOccurrence(const std::size_t index, const LocalTr
     return loadLocalOccurrenceWithResult(index, start_intent) == PlaybackCommandResult::Accepted;
 }
 bool PlayerPresenter::navigate(const QueueDirection direction) {
+
     const auto target = navigationTarget(direction);
     if (!target.has_value())
         return false;
     if (*target == static_cast<std::size_t>(currentQueueIndex()))
         return beginSeekPreview(0) && commitSeekPreview();
 
-    if (!uses_frozen_fixture_) {
-        const bool recovering_terminal_source =
-            controller_.confirmedSnapshot().status == PlaybackStatus::Error &&
-            !navigation_items_[static_cast<std::size_t>(currentQueueIndex())].available;
-        const auto start_intent =
-            recovering_terminal_source
-                ? local_recovery_intent_.value_or(local_track_session_->startIntent())
-                : (controller_.effectivePlaybackStatus() == PlaybackStatus::Playing ? LocalTrackStartIntent::Autoplay
-                                                                                    : LocalTrackStartIntent::StayReady);
-        if (!loadLocalOccurrence(*target, start_intent)) {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_) {
+
+        const QueueItem& track = fixture_bundle_->queue.at(static_cast<qsizetype>(*target));
+        auto* const fixture_backend = fixtureBackend();
+        if (fixture_backend == nullptr || !track.duration_ms.has_value() ||
+            !fixture_backend->selectTrack(*track.duration_ms, controller_.effectivePlaybackStatus()))
             return false;
-        }
         controller_.applyBackendSnapshot(backend_.snapshot());
-        sessionStructureDidChange();
+        state_ = stateById(*fixture_bundle_, QStringLiteral("playing"));
+        state_.current_occurrence_id = track.occurrence_id;
+        state_.position_ms = backend_.snapshot().position_ms;
+        state_.duration_ms = backend_.snapshot().duration_ms;
+        state_.seekable = backend_.snapshot().seekable;
         reconcileTimer();
         emit stateChanged();
         emit playbackChanged();
         return true;
     }
+#endif
 
-    const QueueItem& track = fixture_bundle_->queue.at(static_cast<qsizetype>(*target));
-    auto* const fixture_backend = fixtureBackend();
-    if (fixture_backend == nullptr || !track.duration_ms.has_value() ||
-        !fixture_backend->selectTrack(*track.duration_ms, controller_.effectivePlaybackStatus()))
+    const bool recovering_terminal_source = controller_.confirmedSnapshot().status == PlaybackStatus::Error &&
+                                            !navigation_items_[static_cast<std::size_t>(currentQueueIndex())].available;
+    const auto start_intent =
+        recovering_terminal_source
+            ? local_recovery_intent_.value_or(local_track_session_->startIntent())
+            : (controller_.effectivePlaybackStatus() == PlaybackStatus::Playing ? LocalTrackStartIntent::Autoplay
+                                                                                : LocalTrackStartIntent::StayReady);
+    if (!loadLocalOccurrence(*target, start_intent)) {
         return false;
+    }
     controller_.applyBackendSnapshot(backend_.snapshot());
-    state_ = stateById(*fixture_bundle_, QStringLiteral("playing"));
-    state_.current_occurrence_id = track.occurrence_id;
-    state_.position_ms = backend_.snapshot().position_ms;
-    state_.duration_ms = backend_.snapshot().duration_ms;
-    state_.seekable = backend_.snapshot().seekable;
+    sessionStructureDidChange();
     reconcileTimer();
     emit stateChanged();
     emit playbackChanged();
@@ -3192,6 +3347,7 @@ bool PlayerPresenter::confirmPreferenceReplacement(const QString& expected_revis
     reconcileTimer();
     return true;
 }
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 bool PlayerPresenter::enterFrozenUnavailableScenario() {
     if (exiting_)
         return false;
@@ -3206,11 +3362,15 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
     emit playbackChanged();
     return true;
 }
+#endif
+
 bool PlayerPresenter::executeErrorAction() {
     if (!hasError() || exiting_)
         return false;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return errorActionId() == QStringLiteral("skip") && skipUnavailable();
+#endif
     if (errorActionId() == QStringLiteral("recover-audio-output"))
         return recoverAudioOutput();
     return errorActionId() == QStringLiteral("open-audio") && openAudio();
@@ -3243,6 +3403,7 @@ bool PlayerPresenter::recoverAudioOutput() {
     return true;
 }
 bool PlayerPresenter::skipUnavailable() {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (exiting_)
         return false;
     auto* const fixture_backend = fixtureBackend();
@@ -3258,8 +3419,12 @@ bool PlayerPresenter::skipUnavailable() {
     emit stateChanged();
     emit playbackChanged();
     return true;
+#else
+    return false;
+#endif
 }
 bool PlayerPresenter::advanceOneTick() {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     auto* const fixture_backend = fixtureBackend();
     if (fixture_backend == nullptr || !queueLoaded())
         return false;
@@ -3283,11 +3448,17 @@ bool PlayerPresenter::advanceOneTick() {
     if (result.seek_rejected)
         emit seekRejected();
     return changed;
+#else
+    return false;
+#endif
 }
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 void PlayerPresenter::rejectNextSeekForTest() noexcept {
     if (auto* const fixture_backend = fixtureBackend(); fixture_backend != nullptr)
         fixture_backend->rejectNextSeek();
 }
+#endif
+
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 bool PlayerPresenter::applicationPollingEnabled() const noexcept {
     return last_system_power_event_ != std::optional{SystemPowerEvent::Suspending};
@@ -3305,7 +3476,11 @@ void PlayerPresenter::reconcileTimer() {
     const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
     const bool session_needed = session_autosave_ != nullptr && session_autosave_->needsPolling();
     const bool needed = application_needed || preferences_needed || session_needed;
-    int interval_ms = uses_frozen_fixture_ ? static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms) : 25;
+    int interval_ms = 25;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    if (uses_frozen_fixture_)
+        interval_ms = static_cast<int>(fixture_bundle_->fake_backend.snapshots.interval_ms);
+#endif
     if (session_needed && !application_needed && !preferences_needed && !session_autosave_->writeActive()) {
         if (const auto wakeup = session_autosave_->nextWakeup(); wakeup.has_value()) {
             const auto now = session_now_();
@@ -3325,6 +3500,7 @@ void PlayerPresenter::reconcileTimer() {
         timer_.stop();
 }
 bool PlayerPresenter::loadFrozenQueue() {
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (exiting_ || !uses_frozen_fixture_ || queue_model_.loaded() || fixture_bundle_->queue.isEmpty())
         return false;
     controller_.applyBackendSnapshot(backend_.snapshot());
@@ -3338,6 +3514,9 @@ bool PlayerPresenter::loadFrozenQueue() {
     emit stateChanged();
     emit playbackChanged();
     return true;
+#else
+    return false;
+#endif
 }
 
 } // namespace music_player::m0

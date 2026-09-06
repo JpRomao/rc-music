@@ -1,7 +1,11 @@
 #pragma once
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "m0/adapters/DeterministicPlaybackBackend.hpp"
+#endif
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#endif
 #include "m0/application/LocalTrackSession.hpp"
 #include "m0/application/PlayerController.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
@@ -13,7 +17,9 @@
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/SystemPowerEvents.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "m0/presentation/QueueListModel.hpp"
+#endif
 
 #include <QAbstractItemModel>
 #include <QList>
@@ -36,9 +42,12 @@
 
 namespace music_player::m0 {
 class ArtworkImageCache;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 namespace experiment {
 class PlayerPresenterScenarioControl;
 }
+#endif
+
 namespace test {
 struct PlayerPresenterTestAccess;
 }
@@ -210,9 +219,12 @@ class PlayerPresenter final : public QObject {
     };
     Q_ENUM(PersistenceWarningScope)
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, QObject* parent = nullptr);
     PlayerPresenter(FixtureBundle bundle, PlatformIntegration& platform, PlayerPresenterPreferences preferences,
                     QObject* parent = nullptr);
+#endif
+
     PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
                     AudioFilePicker audio_file_picker, QObject* parent = nullptr);
     PlayerPresenter(PlatformIntegration& platform, PlaybackBackend& playback_backend, MetadataReader& metadata_reader,
@@ -315,7 +327,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString contextTitle() const;
     [[nodiscard]] QString contextArtist() const;
     [[nodiscard]] QString contextAlbum() const;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     [[nodiscard]] QueueListModel* queueModel() noexcept;
+#endif
     [[nodiscard]] QAbstractItemModel* queueModelObject() noexcept;
     [[nodiscard]] SourceImportState sourceImportState() const noexcept;
     [[nodiscard]] bool sourceImportActive() const noexcept;
@@ -415,12 +429,20 @@ class PlayerPresenter final : public QObject {
     void windowPlacementFlushRequested();
 
   private:
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     friend class experiment::PlayerPresenterScenarioControl;
+#endif
     friend struct test::PlayerPresenterTestAccess;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     void rejectNextSeekForTest() noexcept;
+#endif
     [[nodiscard]] std::size_t seekCommitAttemptCountForTest() const noexcept;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     [[nodiscard]] bool enterFrozenUnavailableScenario();
+#endif
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     void initializeDefaults();
+#endif
     void initializePersistedPreferences(const PlayerPresenterPreferences& preferences);
     void initializePersistedSession(const PlayerPresenterPreferences& preferences);
     [[nodiscard]] SessionSnapshot currentSessionSnapshot() const;
@@ -456,12 +478,16 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] static DiscoveryGeneration nextDiscoveryGeneration(DiscoveryGeneration current) noexcept;
     [[nodiscard]] bool applicationPollingEnabled() const noexcept;
     void reconcileTimer();
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     [[nodiscard]] DeterministicPlaybackBackend* fixtureBackend() noexcept;
     [[nodiscard]] const DeterministicPlaybackBackend* fixtureBackend() const noexcept;
+#endif
     [[nodiscard]] std::optional<std::int64_t> localDurationMs() const noexcept;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     [[nodiscard]] const QueueItem* currentTrack() const noexcept;
     [[nodiscard]] const QueueItem* contextTrack() const noexcept;
     [[nodiscard]] const FixtureTrackDetails* currentFixtureTrackDetails() const noexcept;
+#endif
     [[nodiscard]] const TrackMetadata* currentLocalTrackMetadata() const noexcept;
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(const QString& occurrence_id) const noexcept;
@@ -481,7 +507,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool navigate(QueueDirection direction);
     [[nodiscard]] bool skipByPreference(bool forward);
     [[nodiscard]] bool finishSeekCommand(bool accepted, std::uint64_t generation);
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     std::unique_ptr<FixtureBundle> fixture_bundle_;
+#endif
     std::vector<QueueNavigationItem> navigation_items_;
     PlatformIntegration& platform_;
     bool tray_available_;
@@ -489,7 +517,9 @@ class PlayerPresenter final : public QObject {
     bool default_apps_settings_available_;
     DefaultAppsSettingsState default_apps_settings_state_{DefaultAppsSettingsState::Idle};
     std::uint64_t default_apps_settings_generation_{0};
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     std::unique_ptr<DeterministicPlaybackBackend> owned_backend_;
+#endif
     PlaybackBackend& backend_;
     PlayerController controller_;
     LocalFileQueue local_queue_;
@@ -498,10 +528,14 @@ class PlayerPresenter final : public QObject {
         std::uint64_t generation;
     };
     std::optional<OccurrenceRetry> occurrence_retry_{};
-    QueueListModel queue_model_;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    QueueListModel queue_model_{this};
+#endif
     LocalQueueListModel local_queue_model_;
     QTimer timer_;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     FixtureState state_;
+#endif
     AudioFilePicker audio_file_picker_{};
     AudioFilesPicker* audio_files_picker_{nullptr};
     struct AudioFileSelectionRequest final {
@@ -540,7 +574,7 @@ class PlayerPresenter final : public QObject {
     bool source_import_autoplay_enabled_{false};
     bool source_import_needs_autoplay_{false};
     std::optional<LocalTrackStartIntent> local_recovery_intent_{};
-    bool uses_frozen_fixture_{true};
+    bool uses_frozen_fixture_{false};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
     bool exit_committed_{false};

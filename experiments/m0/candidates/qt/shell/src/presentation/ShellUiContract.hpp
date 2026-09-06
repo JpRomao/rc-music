@@ -12,7 +12,9 @@
 
 namespace music_player::m0 {
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 struct FixtureBundle;
+#endif
 
 class ShellUiContract final : public QObject {
     Q_OBJECT
@@ -84,7 +86,9 @@ class ShellUiContract final : public QObject {
 
   public:
     explicit ShellUiContract(QObject* parent);
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     explicit ShellUiContract(const FixtureBundle& bundle, QObject* parent = nullptr);
+#endif
     void updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
                           std::optional<HighContrastPalette> high_contrast = std::nullopt);
     [[nodiscard]] int clientWidth() const noexcept;

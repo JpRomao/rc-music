@@ -43,6 +43,33 @@ O comando pressupõe a árvore de build já configurada com os runners de proces
 
 ## Limites e próximo recorte
 
-A dependência dos JSONs em runtime foi removida, não toda a dependência compilada do experimento. `FixtureRepository.cpp` e `DeterministicPlaybackBackend.cpp` ainda aparecem no grafo OFF; presenter/contrato conservam construtores históricos, e o configure continua autenticando inputs M0. O próximo recorte retira esses componentes da compilação real e promove a unidade gráfica/adapters/QML para a raiz, preservando os testes históricos e uma implementação única.
+No fechamento do segundo recorte (`8fea81a`), a dependência dos JSONs em runtime havia sido removida, mas `FixtureRepository.cpp` e `DeterministicPlaybackBackend.cpp` ainda apareciam no grafo OFF. A atualização abaixo trata essa dependência compilada. O configure continua autenticando inputs M0 e a unidade gráfica/adapters/QML ainda deve ser promovida para a raiz, preservando os testes históricos e uma implementação única.
 
 Core, corpus, protocolo e harness autenticados não foram alterados. Não houve benchmark, A/B, Linux, interação nativa, instalação/registro no host, dependência nova ou rebuild de SDK. O instalador `a43faa1` permanece anterior a este incremento. Segurança/licenças, acessibilidade nativa, pacote e gates amplos de M1/M4/M5 continuam abertos.
+
+## Atualização — compilação de produção sem cenários históricos
+
+O terceiro recorte de M1.1 retira do executável combinado `BUILD_TESTING=OFF` os fontes de repositório de fixture, modelo de fila histórico e backend determinístico, suas bibliotecas/headers de suporte e os construtores/projeções exclusivas desses cenários. `LocalQueueListModel`, filas, navegação, persistência e adapters reais permanecem.
+
+`RC_MUSIC_ENABLE_FIXTURE_SCENARIOS` é uma capacidade interna derivada pelo CMake: habilitada nos builds com testes ou no shell histórico sem áudio, nunca na composição combinada OFF. A definição é pública nos alvos de suporte/apresentação para que consumidores, AUTOMOC e registro QML compartilhem o mesmo layout C++. Não misturar objetos/bibliotecas ON e OFF; cada configuração usa diretório próprio. Essa é exclusão de suporte de teste, não uma segunda implementação do player ou um novo serviço de cenários no domínio.
+
+A API QML permanece idêntica. Em produção, `usesFrozenFixture` é falso e as operações públicas históricas `loadFrozenQueue`, `skipUnavailable` e `advanceOneTick` ficam inertes. Os construtores e helpers C++ ligados ao backend de demonstração deixam de ser declarados/compilados. No ON, seus comportamentos, validações, defaults, ownership Qt e ordem de sinais são preservados; os getters reais usam as mesmas projeções existentes.
+
+O novo [check de fronteira de produção](../scripts/Test-ProductionBoundary.ps1) inspeciona o grafo transitivo Ninja, verifica fontes/link reais e recusa fontes, biblioteca, include de suporte e macro históricos. Exige explicitamente Release combinado OFF e falha fechado se o cache/grafo não puder ser lido; não usa ausência de objetos antigos como evidência. O Red confirmou as três fontes históricas, `rc_music_test_support` e o include de suporte no grafo anterior. Após a mudança, o Green inspecionou 249 comandos sem essas dependências e o build Release OFF foi aprovado.
+
+Checks de fechamento deste terceiro recorte:
+
+- Release combinado ON recompilado e CTest proporcional **12/12**, em 84,11 s: os dez alvos do recorte anterior mais os bindings de mídia e energia do sistema. Presenter **265/265**, contrato visual **29/29** e Quick **187/187**, sem falhas/skips nesses três alvos; nenhuma assertion foi removida ou flexibilizada. Não foi executada a suíte completa.
+- Release do shell histórico sem áudio recompilado; recuperação de erro e lifecycle de bandeja **2/2**, em 1,36 s, offscreen.
+- Produção OFF recompilada e CTest com **zero testes**. As dependências registradas pelo Ninja dos objetos de `PlayerPresenter.cpp`, `ShellUiContract.cpp` e `main.cpp` estão `VALID` e não contêm os três headers históricos; headers reais/modelo local permanecem presentes.
+- O executável OFF recompilado recusou `--m0-test-config-root` com exit 1, stdout/stderr vazios e raiz solicitada ausente, em probe GUID oculto/offscreen; terminou espontaneamente, sem processo residual ou configuração criada.
+- Catálogos QML gerados ON/OFF idênticos byte a byte: 54.947 bytes, SHA-256 `e8534f10016ff84190bfde8da909d3c692d96794328db1d05750cabdb20887df`. Isso comprova a superfície declarativa, não substitui testes de comportamento ou acessibilidade nativa.
+- `all_qmllint` ON/OFF aprovados; formato dos cinco C++ alterados e diffcheck aprovados. Nenhum QML foi alterado. Validação documental: **49 Markdown, 83 requisitos, 17 checks e 76 etapas**.
+- Revisão independente sem achados P0–P2 no escopo de inicialização, navegação, exclusão condicional e propagação de layout; núcleo, testes existentes e inputs autenticados permaneceram intactos.
+
+```powershell
+pwsh -NoProfile -File scripts/Test-ProductionBoundary.ps1 -BuildDirectory out/m0/builds/qt-audio/m43-production-release-20260901
+ctest --test-dir out/m0/builds/qt-audio/combined-shell-20260829-01 --output-on-failure -R '^m0\.qt\.(presenter\.initial-load|shell-ui-contract|quick\.shell-states|audio\.local-integration|diagnostics\.binding|shell-platform-binding|system-media-controls\.binding|system-power-events\.binding|shell-executable\.combined-startup|preferences\.restart|session\.restart|single-instance\.executable)$'
+```
+
+O próximo recorte é promover a composição gráfica/adapters/QML e separar seu configure dos caminhos/autenticação M0. O build ON continua contendo o suporte histórico de teste por intenção; não apresentá-lo como artefato de produção. Isso não fecha M1 nem gera instalador, distribuição ou prova de interação nativa.

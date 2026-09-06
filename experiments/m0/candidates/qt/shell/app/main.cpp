@@ -28,7 +28,9 @@
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/PlayerPresenter.hpp"
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "presentation/PlayerPresenterScenarioControl.hpp"
+#endif
 #include "presentation/ShellAppearanceBinding.hpp"
 #include "presentation/ShellPlatformBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
@@ -98,10 +100,14 @@ using music_player::m0::FixtureRepository;
 #endif
 using music_player::m0::PlayerPresenter;
 using music_player::m0::ShellUiContract;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 using music_player::m0::experiment::InitialShellScenario;
+#endif
 using music_player::m0::experiment::InitialWindowDisposition;
 using music_player::m0::experiment::parseShellLaunchOptions;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 using music_player::m0::experiment::PlayerPresenterScenarioControl;
+#endif
 using music_player::m0::experiment::resolveInitialWindowDisposition;
 using music_player::m0::experiment::resolveShellSourcePaths;
 using music_player::m0::experiment::validateShellLaunchOptions;
@@ -560,10 +566,12 @@ int main(int argc, char* argv[]) {
         }
 #endif
 #endif
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
         if (options.initial_scenario == InitialShellScenario::Unavailable &&
             (!presenter.loadFrozenQueue() || !PlayerPresenterScenarioControl::enterUnavailable(presenter))) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
         }
+#endif
         engine.setInitialProperties({{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                      {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                      {QStringLiteral("startupReady"), false}});

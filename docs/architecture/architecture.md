@@ -109,7 +109,9 @@ O [primeiro recorte implementado](../core-build.md) moveu headers para `include/
 
 O [segundo recorte](../bootstrap-separation.md) separa a construção real da apresentação dos dados congelados: `PlayerPresenter` recebe portas, preferências e serviços sem `FixtureBundle`; `ShellUiContract` possui defaults próprios, equivalentes ao contrato visual histórico. Os JSONs de demonstração ficam em um alvo de recursos exclusivo dos consumidores históricos/testes, ausente do executável combinado ON/OFF. Construtores históricos preservam os mesmos cenários e validações, sem duplicar regras de reprodução.
 
-A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário retirar tipos/fake/implementações históricos da compilação real e separar o configure da autenticação e dos caminhos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime empacotado foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
+O terceiro recorte exclui da compilação combinada OFF os tipos/fontes de fixture e o backend determinístico. A capacidade interna `RC_MUSIC_ENABLE_FIXTURE_SCENARIOS`, pública nos alvos Qt para manter layout/registro coerentes, só existe nos builds com testes ou no shell histórico sem áudio. A API QML permanece estável, com ações históricas inertes em produção e uma única implementação dos fluxos reais. O [check do grafo de produção](../../scripts/Test-ProductionBoundary.ps1) exige fontes reais presentes e dependências históricas ausentes.
+
+A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário promovê-la e separar seu configure da autenticação e dos caminhos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime empacotado foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
 
 ```text
 /

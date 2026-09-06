@@ -9,12 +9,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../../cmake/RcMusicCore.cmake")
 
-rc_music_add_test_support()
-add_library(m0_qt_core INTERFACE)
-target_link_libraries(m0_qt_core INTERFACE rc_music_core rc_music_workers rc_music_test_support)
-
 option(M0_QT_SHELL_SUPPORT "Build the Qt fixture repository and queue model" OFF)
 option(M0_QT_AUDIO_SUPPORT "Build the Qt Multimedia playback adapter" OFF)
+
+set(m0_fixture_scenarios_enabled OFF)
+if(BUILD_TESTING OR (M0_QT_SHELL_SUPPORT AND NOT M0_QT_AUDIO_SUPPORT))
+    set(m0_fixture_scenarios_enabled ON)
+endif()
+
+add_library(m0_qt_core INTERFACE)
+target_link_libraries(m0_qt_core INTERFACE rc_music_core rc_music_workers)
+if(m0_fixture_scenarios_enabled)
+    rc_music_add_test_support()
+    target_link_libraries(m0_qt_core INTERFACE rc_music_test_support)
+endif()
 
 set(M0_CATCH2_SOURCE_DIR "" CACHE PATH "Path to the authenticated Catch2 source tree")
 
@@ -263,21 +271,27 @@ if(M0_QT_SHELL_SUPPORT)
     endif()
 
     add_library(m0_qt_shell_support STATIC
-        include/m0/adapters/fixture/FixtureRepository.hpp
-        include/m0/presentation/QueueListModel.hpp
         include/m0/presentation/LocalQueueListModel.hpp
-        src/adapters/fixture/FixtureDecoder.hpp
-        src/adapters/fixture/FixtureRepository.cpp
         src/presentation/LocalQueueListModel.cpp
-        src/presentation/QueueListModel.cpp
     )
     target_include_directories(m0_qt_shell_support PUBLIC include PRIVATE src)
     target_link_libraries(m0_qt_shell_support PUBLIC m0_qt_core Qt6::Core)
     target_compile_features(m0_qt_shell_support PUBLIC cxx_std_20)
-    target_compile_definitions(m0_qt_shell_support PRIVATE
-        M0_FROZEN_FIXTURE_SHA256="${m0_expected_fixture_sha256}"
-        M0_FROZEN_QUEUE_SHA256="${m0_expected_queue_sha256}"
-    )
+    if(m0_fixture_scenarios_enabled)
+        target_sources(m0_qt_shell_support PRIVATE
+            include/m0/adapters/fixture/FixtureRepository.hpp
+            include/m0/presentation/QueueListModel.hpp
+            src/adapters/fixture/FixtureDecoder.hpp
+            src/adapters/fixture/FixtureRepository.cpp
+            src/presentation/QueueListModel.cpp
+        )
+        target_compile_definitions(m0_qt_shell_support
+            PUBLIC RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+            PRIVATE
+                M0_FROZEN_FIXTURE_SHA256="${m0_expected_fixture_sha256}"
+                M0_FROZEN_QUEUE_SHA256="${m0_expected_queue_sha256}"
+        )
+    endif()
     set_target_properties(m0_qt_shell_support PROPERTIES AUTOMOC ON)
     if(MSVC)
         target_compile_options(m0_qt_shell_support PRIVATE /W4 /WX /permissive-)
@@ -376,6 +390,9 @@ if(M0_QT_SHELL_SUPPORT)
         Qt6::QuickLayouts
     )
     target_compile_features(m0_qt_shell_ui PUBLIC cxx_std_20)
+    if(m0_fixture_scenarios_enabled)
+        target_compile_definitions(m0_qt_shell_ui PUBLIC RC_MUSIC_ENABLE_FIXTURE_SCENARIOS)
+    endif()
     set_source_files_properties("${M0_PLACEHOLDER_ASSET_FILE}" PROPERTIES
         QT_RESOURCE_ALIAS "assets/cover-placeholder.svg"
     )
@@ -388,7 +405,7 @@ if(M0_QT_SHELL_SUPPORT)
             "${M0_PLACEHOLDER_ASSET_FILE}"
             "${M0_TRACK_ASSET_FILE}"
     )
-    if(BUILD_TESTING OR NOT M0_QT_AUDIO_SUPPORT)
+    if(m0_fixture_scenarios_enabled)
         add_library(m0_qt_fixture_data STATIC EXCLUDE_FROM_ALL)
         target_link_libraries(m0_qt_fixture_data PRIVATE Qt6::Core)
         set_target_properties(m0_qt_fixture_data PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)

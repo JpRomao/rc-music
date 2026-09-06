@@ -1,5 +1,7 @@
 #include "presentation/ShellUiContract.hpp"
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#endif
 #include "presentation/ApplicationIdentity.hpp"
 
 #include <stdexcept>
@@ -8,6 +10,7 @@
 namespace music_player::m0 {
 namespace {
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 const FixtureAsset& assetById(const FixtureBundle& bundle, const QString& asset_id) {
     for (const FixtureAsset& asset : bundle.assets) {
         if (asset.asset_id == asset_id)
@@ -15,6 +18,7 @@ const FixtureAsset& assetById(const FixtureBundle& bundle, const QString& asset_
     }
     throw std::invalid_argument{"empty shell asset is missing"};
 }
+#endif
 
 void validateHighContrastPalette(const HighContrastPalette& palette) {
     for (const QColor& color :
@@ -28,6 +32,7 @@ void validateHighContrastPalette(const HighContrastPalette& palette) {
 
 ShellUiContract::ShellUiContract(QObject* parent) : QObject(parent) {}
 
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent) : ShellUiContract(parent) {
     const FixtureWindow& window = bundle.window;
     const FixtureLayoutTokens& layout = bundle.layout_tokens;
@@ -86,6 +91,7 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent) :
     normal_motion_ = {bundle.motion.normal.panel_transition_ms, bundle.motion.normal.feedback_transition_ms};
     reduced_motion_timings_ = {bundle.motion.reduced.panel_transition_ms, bundle.motion.reduced.feedback_transition_ms};
 }
+#endif
 
 void ShellUiContract::updateAppearance(ThemeMode theme, MotionMode motion, bool system_dark, bool system_reduced_motion,
                                        std::optional<HighContrastPalette> high_contrast) {
