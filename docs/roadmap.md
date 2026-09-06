@@ -398,13 +398,13 @@ Todos os critérios vigentes nos [requisitos](product/requirements.md), seção 
 
 ## 10. M6 — Organização 0.2
 
-**Estado:** Opcional; iniciar somente após uso real do 0.1.
+**Estado:** embaralhamento das próximas faixas e repetição da fila antecipados por pedido explícito de 2026-09-06, junto dos atalhos locais. Demais itens continuam opcionais após uso real do 0.1.
 
 Candidatos independentes:
 
 - playlists nomeadas e M3U8;
-- shuffle;
-- repeat;
+- modo aleatório ligado/desligado por F1, preservando a atual;
+- repetir fila por F2, movendo a ocorrência concluída ao fim;
 - velocidade de reprodução;
 - biblioteca opcional por pastas e busca;
 - mini-player;

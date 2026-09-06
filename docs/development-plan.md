@@ -581,6 +581,8 @@ M6 não é um pacote único. Cada item exige necessidade após uso real, requisi
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
 
+Em 2026-09-06, o mantenedor antecipou o recorte de M6.2/M6.3 e confirmou F1 como modo ligado/desligado: sorteio entre próximas ocorrências sem trocar a faixa atual, seguindo a ordem exibida ao desligar. F2 alterna repetição da fila com rotação da ocorrência concluída ao fim; ambos os modos são persistidos. A autorização não inclui velocidade, repeat-one ou as demais evoluções M6. O refinamento de `FR-037` reserva Espaço para reprodução, setas para seek/volume e Shift+setas para transporte; os contratos vigentes estão no [manual](user-guide.md) e nos [requisitos](product/requirements.md), substituindo as antigas regras de prioridade de Espaço/setas dos controles na janela principal.
+
 FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entra após pedido explícito, requisito, segurança de escrita e estratégia de backup.
 
 ## 14. R1 — Fontes remotas e YouTube
@@ -734,6 +736,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 ## 17. Próxima sequência segura
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
+
+Incremento funcional de 2026-09-06: [atalhos principais e modos de fila](ui-tests.md#atalhos-principais-e-modos-de-fila) implementam o pedido de Espaço/setas/Shift/M e a confirmação explícita de F1 como modo ligado/desligado, junto à repetição F2. Preferências persistem, a fila conserva IDs e remoções, e a repetição roda a concluída ao fim. O registro central reúne Reds/Greens, CTest geral 299/300 seguido do contrato corrigido 1/1, presenter 292/292, Quick 234/234 e build OFF/lint. A antecipação autorizada de FR-019 não inclui velocidade ou repetir uma faixa selecionada. Preservar esse incremento e gerar runtime local atualizado sem instalar; não retomar benchmarks, Computer Use ou gates amplos por inferência.
 
 Checkpoint de jornada Windows: o [isolamento manual do build ON](../experiments/m0/candidates/qt/README.md#isolated-native-journey) passou 101/101 testes e recusa real em produção. A janela nativa mostrou transporte, detalhes, volume e gravação da sessão com WAV sintética; seletor completo e restauração observada continuam sem validação. O usuário interrompeu Computer Use, portanto não retomá-lo sem confirmação. O instalador permanece inalterado e os gates amplos continuam abertos; não repetir suites verdes ou benchmarks sem mudança relevante. A decisão explícita de stack agora foi recebida; a promoção continua sujeita aos critérios próprios de M1 e à validação do código efetivamente promovido.
 

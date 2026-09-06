@@ -137,6 +137,8 @@ class RecordingPlatformIntegration final : public PlatformIntegration {
         .restore_last_session = false,
         .start_minimized = true,
         .queue_end_behavior = QueueEndBehavior::StopClearSelection,
+        .repeat_queue_enabled = true,
+        .shuffle_queue_enabled = true,
     };
 }
 
@@ -153,6 +155,47 @@ void checkUnchangedPreferences(const Preferences& actual, const Preferences& exp
     CHECK(actual.start_minimized == expected.start_minimized);
     CHECK(actual.queue_end_behavior == expected.queue_end_behavior);
     CHECK(actual.window_placement == expected.window_placement);
+    CHECK(actual.repeat_queue_enabled == expected.repeat_queue_enabled);
+    CHECK(actual.shuffle_queue_enabled == expected.shuffle_queue_enabled);
+}
+
+TEST_CASE("controller changes repeat queue without changing transport or other preferences",
+          "[m0][qt][core][preferences]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, playingSnapshot()};
+    const auto snapshot = controller.confirmedSnapshot();
+    auto expected = controller.preferences();
+    REQUIRE_FALSE(expected.repeat_queue_enabled);
+    controller.setRepeatQueueEnabled(true);
+    expected.repeat_queue_enabled = true;
+    CHECK(controller.preferences() == expected);
+    CHECK(controller.confirmedSnapshot() == snapshot);
+    controller.setRepeatQueueEnabled(false);
+    expected.repeat_queue_enabled = false;
+    CHECK(controller.preferences() == expected);
+    CHECK(backend.play_requests == 0);
+    CHECK(backend.pause_requests == 0);
+    CHECK(backend.seek_requests.empty());
+}
+
+TEST_CASE("controller changes shuffle without changing transport or repeat", "[core][preferences][shuffle]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform, playingSnapshot()};
+    const auto snapshot = controller.confirmedSnapshot();
+    auto expected = controller.preferences();
+    REQUIRE_FALSE(expected.shuffle_queue_enabled);
+    controller.setShuffleQueueEnabled(true);
+    expected.shuffle_queue_enabled = true;
+    CHECK(controller.preferences() == expected);
+    controller.setShuffleQueueEnabled(false);
+    expected.shuffle_queue_enabled = false;
+    CHECK(controller.preferences() == expected);
+    CHECK(controller.confirmedSnapshot() == snapshot);
+    CHECK(backend.play_requests == 0);
+    CHECK(backend.pause_requests == 0);
+    CHECK(backend.seek_requests.empty());
 }
 
 TEST_CASE("controller rejects an invalid initial preferences snapshot", "[m0][qt][core][preferences]") {

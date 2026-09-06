@@ -3,7 +3,7 @@
 **Estado:** baseline vigente; stack Windows aceita no ADR-0005
 
 **Versão alvo:** MVP 0.1  
-**Última revisão:** 2026-09-05
+**Última revisão:** 2026-09-06
 
 **Nome do produto:** RC Music, confirmado pelo mantenedor em 2026-09-05; [ADR-0004](../architecture/decisions/0004-rc-music-identity.md). A confirmação não altera os requisitos ou as prioridades abaixo.
 
@@ -49,7 +49,7 @@ O [recorte de seleção principal assíncrona](../../experiments/m0/candidates/q
 | FR-016 | P0 | Derivado | Manter uma fila ordenada com adicionar, tocar agora, reordenar, remover e limpar. Itens duplicados são permitidos e possuem IDs próprios. |
 | FR-017 | P1 | Derivado | “Anterior” reinicia a faixa quando a posição passou de 3 s; antes disso, navega para o item anterior. O limiar poderá virar preferência somente se houver necessidade real. |
 | FR-018 | P2 | Derivado | Em evolução futura, permitir escolher um dispositivo de saída quando o backend e a plataforma oferecerem essa capacidade. Mudanças e desconexões devem ser recuperáveis. |
-| FR-019 | P2 | Derivado | Shuffle, repeat e velocidade de reprodução são evoluções separadas; não fazem parte do núcleo inicial. |
+| FR-019 | P1 | Confirmado | Pedido de 2026-09-06: F1 liga/desliga modo aleatório das próximas ocorrências sem interromper a atual; F2 liga/desliga repetição da fila, movendo a ocorrência concluída ao fim sem ressuscitar itens removidos. IDs, duplicatas e metadados são preservados; ambos os modos são persistidos. Desligar aleatório conserva a ordem exibida. Velocidade e repetir somente uma faixa continuam evoluções futuras separadas. |
 
 ### 2.3 Metadados
 
@@ -79,6 +79,8 @@ A policy pura, o extrator TagLib e a apresentação possuem Red/Green confirmado
 | FR-036 | P0 | Derivado | No Linux, fornecer arquivo `.desktop`, ícones e MIME types para os formatos validados, respeitando XDG. |
 | FR-037 | P0 | Derivado | Suportar atalhos de teclado e controles de mídia do sistema. As ações provenientes de UI, bandeja, teclado e sistema usam os mesmos casos de uso. |
 | FR-038 | P0 | Derivado | Suspensão, retomada, reinício do Explorer e troca/desconexão do dispositivo não devem deixar processo zumbi ou estado impossível. |
+
+Refinamento confirmado de `FR-037` em 2026-09-06: na janela principal, `←`/`→` usam os saltos configurados, `↑`/`↓` aumentam/diminuem volume em um ponto percentual, `Shift+←`/`Shift+→` acionam anterior/próxima (`Ctrl` permanece alias), `M` alterna mudo e `Espaço` alterna reprodução sem ativar o último botão clicado. Esses comandos prevalecem sobre botões, sliders e lista; texto, menus e modais conservam interação própria. `F1`/`F2` acionam `FR-019` sem repetição por tecla mantida. Na fila, `Ctrl+↑`/`Ctrl+↓` selecionam linhas e `Enter` toca a selecionada. Os atalhos são locais, não registros globais do Windows.
 
 ### 2.5 Aparência, preferências e sessão
 
@@ -191,21 +193,25 @@ Limites iniciais, revisáveis somente com corpus e medição:
 | NFR-MAINT-004 | Todas as mudanças terminam em commit atômico após validação proporcional. |
 | NFR-MAINT-005 | Requisitos, testes e ADRs usam identificadores estáveis e links bidirecionais quando aplicável. |
 
-## 5. Atalhos padrão propostos
+## 5. Atalhos padrão
 
 | Ação | Atalho |
 |---|---|
 | Abrir arquivos | `Ctrl+O` |
-| Play/pause | `Space` quando o foco não estiver em editor/controle incompatível |
+| Play/pause | `Space`, inclusive com foco no último botão clicado |
 | Retroceder/avançar | `←` / `→`, usando valores configurados |
-| Faixa anterior/próxima | `Ctrl+←` / `Ctrl+→` |
-| Volume | `↑` / `↓` |
+| Faixa anterior/próxima | `Shift+←` / `Shift+→`, com aliases `Ctrl+←` / `Ctrl+→` |
+| Aumentar/diminuir volume | `↑` / `↓`, um ponto percentual |
 | Mudo | `M` |
+| Ligar/desligar aleatório | `F1` |
+| Ligar/desligar repetição da fila | `F2` |
+| Selecionar linha da fila | `Ctrl+↑` / `Ctrl+↓` |
+| Ativar controle ou tocar linha selecionada | `Enter` |
 | Preferências | `Ctrl+,` |
 | Mostrar/ocultar fila | `Ctrl+L` |
 | Sair de verdade | `Ctrl+Q` |
 
-Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração oficial do sistema quando disponíveis.
+Editores de texto, menus e painéis/diálogos ativos conservam suas teclas próprias; feche ou cancele o painel para voltar aos comandos da janela. Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração oficial do sistema quando disponíveis.
 
 ## 6. Critérios de aceitação do MVP
 

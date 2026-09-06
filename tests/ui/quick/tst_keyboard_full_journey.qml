@@ -79,7 +79,7 @@ TestCase {
             "skip-backward": "←",
             "play-pause": "Espaço",
             "skip-forward": "→",
-            "next": "Ctrl+→",
+            "next": "Shift+→ (ou Ctrl+→)",
             "mute": "M"
         };
         for (const objectName in expected) {
@@ -88,7 +88,7 @@ TestCase {
             compare(button.Accessible.description, expected[objectName]);
             compare(button.toolTipText, button.Accessible.name + " (" + expected[objectName] + ")");
         }
-        compare(progress.Accessible.description, "Setas: 1 segundo; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
+        compare(progress.Accessible.description, "←/→: saltos configurados; ↑/↓: volume; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
 
         driver.publishLocalUnseekablePlaying();
         tryCompare(presenter, "seekable", false);
@@ -111,8 +111,8 @@ TestCase {
         driver.publishLocalPlaying();
         tryCompare(presenter, "currentQueueIndex", 1);
         const previous = findChild(shell, "previous");
-        compare(previous.Accessible.description, "Ctrl+←");
-        compare(previous.toolTipText, "Faixa anterior (Ctrl+←)");
+        compare(previous.Accessible.description, "Shift+← (ou Ctrl+←)");
+        compare(previous.toolTipText, "Faixa anterior (Shift+← (ou Ctrl+←))");
 
         driver.publishLocalError();
         tryCompare(presenter, "playbackState", PlayerPresenter.Error);
@@ -132,7 +132,7 @@ TestCase {
             return queuePanel.visible && queueList.activeFocus && queueList.count === 3;
         });
 
-        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
         compare(queueList.currentIndex, 1);
         keyClick(Qt.Key_Return);
         tryCompare(presenter, "currentQueueIndex", 1);

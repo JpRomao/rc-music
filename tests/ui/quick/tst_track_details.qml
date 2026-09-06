@@ -167,7 +167,7 @@ TestCase {
 
         const opener = findChild(shell, "track-details-playing");
         opener.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         const panel = findChild(shell, "track-details-panel");
         tryVerify(function () {
             return panel.opened;

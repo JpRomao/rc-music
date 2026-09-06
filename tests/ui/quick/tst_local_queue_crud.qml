@@ -78,9 +78,9 @@ TestCase {
             verify(action.enabled);
         }
 
-        enqueue(["C:/Música/Adicionada pelo espaço.ogg"]);
+        enqueue(["C:/Música/Adicionada pelo Enter.ogg"]);
         queueAdd.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Enter);
         tryCompare(queueList, "count", 4);
         compare(testScenarioDriver.localLoadCount(), 1); // qmllint disable unqualified
         tryVerify(function () {
@@ -100,7 +100,7 @@ TestCase {
 
         const playedNowId = revealRow(queueList, 1).occurrenceId;
         queueList.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         tryCompare(testLocalPlayerPresenter, "currentOccurrenceId", playedNowId); // qmllint disable unqualified
         compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
         testScenarioDriver.publishLocalReady(); // qmllint disable unqualified
@@ -155,7 +155,7 @@ TestCase {
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeCurrentRemoval + 1); // qmllint disable unqualified
 
         queueList.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         tryCompare(testLocalPlayerPresenter, "currentOccurrenceId", queueList.currentItem.occurrenceId); // qmllint disable unqualified
         compare(testScenarioDriver.localLoadCount(), 5); // qmllint disable unqualified
         testScenarioDriver.publishLocalReady(); // qmllint disable unqualified

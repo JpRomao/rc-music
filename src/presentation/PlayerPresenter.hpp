@@ -38,6 +38,8 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <random>
+#include <unordered_set>
 #include <vector>
 
 namespace music_player::m0 {
@@ -169,6 +171,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(QueueEndPreference queueEndPreference READ queueEndPreference NOTIFY preferencesChanged)
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
     Q_PROPERTY(bool startMinimized READ startMinimized NOTIFY preferencesChanged)
+    Q_PROPERTY(bool repeatQueueEnabled READ repeatQueueEnabled NOTIFY preferencesChanged)
+    Q_PROPERTY(bool shuffleQueueEnabled READ shuffleQueueEnabled NOTIFY preferencesChanged)
     Q_PROPERTY(PreferenceWarning preferenceWarning READ preferenceWarning NOTIFY preferencePersistenceChanged)
     Q_PROPERTY(PersistenceWarningScope persistenceWarningScope READ persistenceWarningScope NOTIFY
                    preferencePersistenceChanged)
@@ -348,6 +352,11 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QueueEndPreference queueEndPreference() const;
     [[nodiscard]] bool restoreLastSession() const noexcept;
     [[nodiscard]] bool startMinimized() const noexcept;
+    [[nodiscard]] bool repeatQueueEnabled() const noexcept;
+    [[nodiscard]] bool shuffleQueueEnabled() const noexcept;
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+    void setQueueShuffleSeedForTest(std::uint32_t seed) noexcept;
+#endif
     [[nodiscard]] PreferenceWarning preferenceWarning() const noexcept;
     [[nodiscard]] PersistenceWarningScope persistenceWarningScope() const noexcept;
     [[nodiscard]] QString persistenceWarningRevision() const;
@@ -384,6 +393,9 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool moveQueueOccurrence(const QString& occurrence_id, int destination_index);
     Q_INVOKABLE bool removeQueueOccurrence(const QString& occurrence_id);
     Q_INVOKABLE bool clearQueue();
+    [[nodiscard]] bool shuffleQueue();
+    Q_INVOKABLE bool toggleShuffleQueue();
+    Q_INVOKABLE bool toggleRepeatQueue();
     Q_INVOKABLE bool loadFrozenQueue();
     Q_INVOKABLE bool play();
     Q_INVOKABLE bool pause();
@@ -492,6 +504,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] std::optional<std::size_t> navigationTarget(QueueDirection direction) const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(const QString& occurrence_id) const noexcept;
     [[nodiscard]] std::optional<std::size_t> nextAvailableLocalIndex() const noexcept;
+    enum class LocalAdvanceResult { Rejected, Accepted, Superseded };
+    [[nodiscard]] LocalAdvanceResult advanceLocalOccurrence(LocalTrackStartIntent start_intent, bool completed);
+    void initializeShuffleRound();
     [[nodiscard]] PlaybackCommandResult loadLocalOccurrenceWithResult(std::size_t index,
                                                                       LocalTrackStartIntent start_intent);
     [[nodiscard]] bool loadLocalOccurrence(std::size_t index, LocalTrackStartIntent start_intent);
@@ -523,6 +538,8 @@ class PlayerPresenter final : public QObject {
     PlaybackBackend& backend_;
     PlayerController controller_;
     LocalFileQueue local_queue_;
+    std::mt19937 queue_shuffle_random_;
+    std::unordered_set<std::uint64_t> shuffle_round_visited_;
     struct OccurrenceRetry final {
         LocalQueueOccurrenceId occurrence_id;
         std::uint64_t generation;

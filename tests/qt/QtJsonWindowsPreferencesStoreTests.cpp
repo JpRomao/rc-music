@@ -109,7 +109,9 @@ void QtJsonWindowsPreferencesStoreTests::roundTripsAllPreferencesInAUnicodeDirec
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = QDir{temporary.path()}.filePath(QStringLiteral("ação 日本 ☕"));
-    const Preferences expected = nonDefaultPreferences();
+    auto expected = nonDefaultPreferences();
+    expected.repeat_queue_enabled = true;
+    expected.shuffle_queue_enabled = true;
 
     QtJsonWindowsPreferencesStore writer{root};
     QCOMPARE(writer.save({.preferences = expected}), PreferencesSaveStatus::Saved);

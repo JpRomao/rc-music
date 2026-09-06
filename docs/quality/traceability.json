@@ -460,10 +460,31 @@
     {
       "id": "FR-019",
       "plan": "M6.2–M6.4",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "shuffleQueuePreservesCurrentPrefixAndMetadata"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "shuffleQueueModeVisitsEveryRemainingOccurrence"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "repeatQueueRotatesCompletedOccurrence"
+        },
+        {
+          "path": "tests/qt/PreferencesJsonCodecTests.cpp",
+          "marker": "repeatQueueRoundTripsAndDefaultsForLegacyVersions"
+        }
+      ],
       "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Atalhos principais e modos de fila"
+        },
         {
           "path": "docs/development-plan.md",
           "marker": "| M6.2 | Shuffle"
@@ -478,7 +499,7 @@
         }
       ],
       "remaining": [
-        "Implementar shuffle, repeat e velocidade como incrementos independentes após refinamento e autorização de M6; não fazem parte do núcleo inicial."
+        "Validar a interação nativa Windows dos modos autorizados aleatório e repetir fila. Velocidade e repetir somente uma faixa permanecem fora do recorte autorizado."
       ]
     },
     {
@@ -873,6 +894,10 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        {
+          "path": "tests/ui/quick/tst_primary_keyboard.qml",
+          "marker": "test_spaceNeverActivatesLastControl"
+        },
         {
           "path": "tests/ui/quick/tst_keyboard_full_journey.qml",
           "marker": "test_transportShortcutsAndDisabledSeekAreExplained"

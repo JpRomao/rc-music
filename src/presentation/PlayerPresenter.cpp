@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QMetaObject>
 #include <QPointer>
+#include <QRandomGenerator>
 #include <QScopeGuard>
 #include <QTimeZone>
 #include <QVariantMap>
@@ -479,6 +480,7 @@ PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend&
 }
 
 void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* preferences) {
+    queue_shuffle_random_.seed(QRandomGenerator::global()->generate());
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
     if (artwork_cache_ == nullptr)
@@ -499,6 +501,7 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
     });
     if (preferences != nullptr)
         initializePersistedSession(*preferences);
+    initializeShuffleRound();
     timer_.setInterval(25);
     timer_.setTimerType(Qt::PreciseTimer);
     connect(&timer_, &QTimer::timeout, this, [this] {
@@ -693,6 +696,10 @@ void PlayerPresenter::cancelRestoredPositionForExplicitTransport() {
 }
 
 void PlayerPresenter::sessionStructureDidChange() {
+    if (shuffleQueueEnabled() && !uses_frozen_fixture_) {
+        if (const auto current = local_queue_.currentOccurrenceId(); current.has_value())
+            shuffle_round_visited_.insert(current->value);
+    }
     discardStaleRestoredSessionState();
     if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_)
         return;
@@ -873,6 +880,12 @@ std::optional<std::size_t> PlayerPresenter::navigationTarget(const QueueDirectio
                 return index;
         }
         return std::nullopt;
+    }
+    if (!uses_frozen_fixture_ && direction == QueueDirection::Next && repeatQueueEnabled() &&
+        !controller_.seekPreviewActive() && !controller_.seekPending()) {
+        const auto status = controller_.confirmedSnapshot().status;
+        if (status == PlaybackStatus::Ready || status == PlaybackStatus::Paused || status == PlaybackStatus::Playing)
+            return nextAvailableLocalIndex();
     }
     return queueNavigationTarget(navigation_items_, static_cast<std::size_t>(current), direction,
                                  controller_.confirmedSnapshot(),
@@ -1566,6 +1579,91 @@ PlayerPresenter::QueueEndPreference PlayerPresenter::queueEndPreference() const 
 }
 bool PlayerPresenter::restoreLastSession() const noexcept { return preferences().restore_last_session; }
 bool PlayerPresenter::startMinimized() const noexcept { return preferences().start_minimized; }
+bool PlayerPresenter::repeatQueueEnabled() const noexcept { return preferences().repeat_queue_enabled; }
+bool PlayerPresenter::shuffleQueueEnabled() const noexcept { return preferences().shuffle_queue_enabled; }
+void PlayerPresenter::initializeShuffleRound() {
+    shuffle_round_visited_.clear();
+    if (!shuffleQueueEnabled() || uses_frozen_fixture_)
+        return;
+    if (const auto current = local_queue_.currentIndex(); current.has_value()) {
+        for (std::size_t index = 0; index <= *current; ++index)
+            shuffle_round_visited_.insert(local_queue_.items()[index].occurrence_id.value);
+    }
+}
+bool PlayerPresenter::toggleShuffleQueue() {
+    if (exiting_)
+        return false;
+    const bool enabled = !shuffleQueueEnabled();
+    controller_.setShuffleQueueEnabled(enabled);
+    initializeShuffleRound();
+    const QPointer<PlayerPresenter> guard{this};
+    const auto generation = backend_.snapshot().generation;
+    preferenceDidChange();
+    if (guard && !exiting_ && enabled && shuffleQueueEnabled() && backend_.snapshot().generation == generation)
+        static_cast<void>(shuffleQueue());
+    return true;
+}
+#ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
+void PlayerPresenter::setQueueShuffleSeedForTest(const std::uint32_t seed) noexcept {
+    queue_shuffle_random_.seed(seed);
+}
+#endif
+bool PlayerPresenter::shuffleQueue() {
+    if (uses_frozen_fixture_ || exiting_)
+        return false;
+    const auto current = local_queue_.currentIndex();
+    const std::size_t first = current.has_value() ? *current + 1 : 0;
+    if (local_queue_.size() - first < 2)
+        return false;
+    std::vector<LocalQueueOccurrenceId> order;
+    for (const auto& item : local_queue_.items().subspan(first))
+        order.push_back(item.occurrence_id);
+    const auto previous_order = order;
+    std::shuffle(order.begin(), order.end(), queue_shuffle_random_);
+    // A successful action must have an observable effect even if the random
+    // permutation happened to reproduce the original order.
+    if (order == previous_order)
+        std::rotate(order.begin(), std::next(order.begin()), order.end());
+
+    const QPointer<PlayerPresenter> guard{this};
+    const auto generation = backend_.snapshot().generation;
+    const bool shuffle_enabled = shuffleQueueEnabled();
+    for (std::size_t offset = 0; offset < order.size(); ++offset) {
+        const auto source = localOccurrenceIndex(order[offset]);
+        const std::size_t destination = first + offset;
+        if (!source.has_value())
+            throw std::logic_error{"shuffle lost a stable queue occurrence"};
+        if (*source == destination)
+            continue;
+        if (!local_queue_.move(order[offset], destination))
+            throw std::logic_error{"a shuffled local occurrence could not be moved"};
+        navigation_items_ = navigationItems(local_queue_);
+        sessionStructureDidChange();
+        const auto expected_queue = local_queue_.snapshot();
+        if (!local_queue_model_.move(*source, destination))
+            throw std::logic_error{"a shuffled local occurrence could not be projected"};
+        // Model observers may synchronously select/remove a track or exit. The
+        // remaining permutation no longer has authority over that newer state.
+        if (!guard || exiting_ || shuffleQueueEnabled() != shuffle_enabled ||
+            backend_.snapshot().generation != generation || local_queue_.snapshot() != expected_queue)
+            return true;
+    }
+    const auto expected_queue = local_queue_.snapshot();
+    emit stateChanged();
+    if (guard && !exiting_ && backend_.snapshot().generation == generation && local_queue_.snapshot() == expected_queue)
+        emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::toggleRepeatQueue() {
+    if (exiting_)
+        return false;
+    controller_.setRepeatQueueEnabled(!repeatQueueEnabled());
+    const QPointer<PlayerPresenter> guard{this};
+    preferenceDidChange();
+    if (guard && !exiting_)
+        emit playbackChanged();
+    return true;
+}
 bool PlayerPresenter::trayAvailable() const noexcept { return tray_available_; }
 bool PlayerPresenter::defaultAppsSettingsSupported() const noexcept { return default_apps_settings_supported_; }
 bool PlayerPresenter::defaultAppsSettingsAvailable() const noexcept { return default_apps_settings_available_; }
@@ -2054,6 +2152,7 @@ bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
     }
 
     local_queue_ = std::move(candidate);
+    shuffle_round_visited_.erase(removed_occurrence.value);
     if (!local_queue_model_.remove(*source_index))
         throw std::logic_error{"accepted local queue removal could not be projected"};
     navigation_items_ = navigationItems(local_queue_);
@@ -2077,6 +2176,7 @@ bool PlayerPresenter::clearQueue() {
     }
     if (!local_queue_.clear())
         throw std::logic_error{"a non-empty local queue could not be cleared"};
+    shuffle_round_visited_.clear();
     if (!local_queue_model_.clear())
         throw std::logic_error{"an accepted local queue clear could not be projected"};
     navigation_items_.clear();
@@ -2171,8 +2271,17 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         local_recovery_intent_ = start_intent;
         bool recovered = false;
         if (!restoring_session && !retry_event) {
-            if (const auto next = nextAvailableLocalIndex();
-                next.has_value() && loadLocalOccurrence(*next, start_intent)) {
+            const QPointer<PlayerPresenter> guard{this};
+            const auto import_generation = source_import_generation_;
+            const auto import_state = source_import_state_;
+            const auto advance = advanceLocalOccurrence(start_intent, false);
+            if (advance == LocalAdvanceResult::Superseded) {
+                if (source_import_changed && guard && !exiting_ && source_import_generation_ == import_generation &&
+                    source_import_state_ == import_state)
+                    emit sourceImportChanged();
+                return;
+            }
+            if (advance == LocalAdvanceResult::Accepted) {
                 state_projection_changed = true;
                 recovered = true;
                 automatically_skipped.emplace(failed_title, localPlaybackErrorCode(event.snapshot.error));
@@ -2182,10 +2291,13 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
             source_import_autoplay_enabled_ && !recovered)
             source_import_needs_autoplay_ = true;
     } else if (result == LocalTrackPlaybackEventResult::Ended && !restoring_session && !suppress_restored_end) {
-        if (const auto next = nextAvailableLocalIndex();
-            next.has_value() && loadLocalOccurrence(*next, LocalTrackStartIntent::Autoplay)) {
+        const bool has_next = nextAvailableLocalIndex().has_value();
+        const auto advance = advanceLocalOccurrence(LocalTrackStartIntent::Autoplay, true);
+        if (advance == LocalAdvanceResult::Superseded)
+            return;
+        if (advance == LocalAdvanceResult::Accepted) {
             state_projection_changed = true;
-        } else if (!next.has_value() && preferences().queue_end_behavior == QueueEndBehavior::StopClearSelection &&
+        } else if (!has_next && preferences().queue_end_behavior == QueueEndBehavior::StopClearSelection &&
                    local_track_session_->unload()) {
             if (!local_queue_.clearSelection())
                 throw std::logic_error{"an ended local queue could not clear its current occurrence"};
@@ -2844,11 +2956,83 @@ std::optional<std::size_t> PlayerPresenter::nextAvailableLocalIndex() const noex
     const auto current = local_queue_.currentIndex();
     if (!current.has_value())
         return std::nullopt;
-    for (std::size_t index = *current + 1; index < local_queue_.size(); ++index) {
+    const std::size_t candidates = repeatQueueEnabled() ? local_queue_.size() : local_queue_.size() - *current - 1;
+    for (std::size_t offset = 1; offset <= candidates; ++offset) {
+        const std::size_t index = (*current + offset) % local_queue_.size();
         if (local_queue_.items()[index].available)
             return index;
     }
     return std::nullopt;
+}
+PlayerPresenter::LocalAdvanceResult PlayerPresenter::advanceLocalOccurrence(const LocalTrackStartIntent start_intent,
+                                                                            const bool completed) {
+    const auto previous_index = local_queue_.currentIndex();
+    const auto previous_id = local_queue_.currentOccurrenceId();
+    auto next = nextAvailableLocalIndex();
+    if (!previous_index.has_value() || !previous_id.has_value() || !next.has_value())
+        return LocalAdvanceResult::Rejected;
+
+    bool starts_new_round = false;
+    if (shuffleQueueEnabled()) {
+        std::vector<std::size_t> candidates;
+        const auto collect = [&](const bool allow_visited) {
+            const auto first = repeatQueueEnabled() ? 0 : *previous_index + 1;
+            for (std::size_t index = first; index < local_queue_.size(); ++index) {
+                const auto& item = local_queue_.items()[index];
+                if (index != *previous_index && item.available &&
+                    (allow_visited || !shuffle_round_visited_.contains(item.occurrence_id.value)))
+                    candidates.push_back(index);
+            }
+        };
+        collect(!repeatQueueEnabled());
+        if (candidates.empty() && repeatQueueEnabled()) {
+            starts_new_round = true;
+            collect(true);
+            if (candidates.empty() && local_queue_.items()[*previous_index].available)
+                candidates.push_back(*previous_index);
+        }
+        if (candidates.empty())
+            return LocalAdvanceResult::Rejected;
+        next = candidates[std::uniform_int_distribution<std::size_t>{0, candidates.size() - 1}(queue_shuffle_random_)];
+    }
+    const auto selected_id = local_queue_.items()[*next].occurrence_id;
+    // The engine must accept before we consume eligibility or change the visible queue.
+    if (!loadLocalOccurrence(*next, start_intent))
+        return LocalAdvanceResult::Rejected;
+    if (shuffleQueueEnabled()) {
+        if (starts_new_round)
+            shuffle_round_visited_.clear();
+        shuffle_round_visited_.insert(selected_id.value);
+    }
+    const QPointer<PlayerPresenter> guard{this};
+    const auto generation = backend_.snapshot().generation;
+    const auto move = [&](const LocalQueueOccurrenceId id, const std::size_t destination) {
+        const auto source = localOccurrenceIndex(id);
+        if (!source.has_value())
+            throw std::logic_error{"an advancing occurrence disappeared before its projection"};
+        if (*source == destination)
+            return true;
+        if (!local_queue_.move(id, destination))
+            throw std::logic_error{"an advancing occurrence could not be moved"};
+        navigation_items_ = navigationItems(local_queue_);
+        controller_.applyBackendSnapshot(backend_.snapshot());
+        sessionStructureDidChange();
+        const auto expected_queue = local_queue_.snapshot();
+        if (!local_queue_model_.move(*source, destination))
+            throw std::logic_error{"an advancing occurrence could not be projected"};
+        return guard && !exiting_ && backend_.snapshot().generation == generation &&
+               local_queue_.snapshot() == expected_queue;
+    };
+    if (shuffleQueueEnabled() && selected_id != *previous_id) {
+        // Move the chosen occurrence next to the current one, keeping every unchosen
+        // occurrence pending. A circular selection from the prefix starts at index zero.
+        const auto destination = *next > *previous_index ? *previous_index + 1 : 0;
+        if (!move(selected_id, destination))
+            return LocalAdvanceResult::Superseded;
+    }
+    if (completed && repeatQueueEnabled() && !move(*previous_id, local_queue_.size() - 1))
+        return LocalAdvanceResult::Superseded;
+    return LocalAdvanceResult::Accepted;
 }
 PlaybackCommandResult PlayerPresenter::loadLocalOccurrenceWithResult(const std::size_t index,
                                                                      const LocalTrackStartIntent start_intent) {
@@ -2872,7 +3056,8 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
     const auto target = navigationTarget(direction);
     if (!target.has_value())
         return false;
-    if (*target == static_cast<std::size_t>(currentQueueIndex()))
+    if (*target == static_cast<std::size_t>(currentQueueIndex()) &&
+        (uses_frozen_fixture_ || direction == QueueDirection::Previous))
         return beginSeekPreview(0) && commitSeekPreview();
 
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -2903,14 +3088,21 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
             ? local_recovery_intent_.value_or(local_track_session_->startIntent())
             : (controller_.effectivePlaybackStatus() == PlaybackStatus::Playing ? LocalTrackStartIntent::Autoplay
                                                                                 : LocalTrackStartIntent::StayReady);
-    if (!loadLocalOccurrence(*target, start_intent)) {
+    if (direction == QueueDirection::Next) {
+        const auto advance = advanceLocalOccurrence(start_intent, false);
+        if (advance != LocalAdvanceResult::Accepted)
+            return advance == LocalAdvanceResult::Superseded;
+    } else if (!loadLocalOccurrence(*target, start_intent)) {
         return false;
     }
     controller_.applyBackendSnapshot(backend_.snapshot());
     sessionStructureDidChange();
     reconcileTimer();
+    const QPointer<PlayerPresenter> guard{this};
+    const auto generation = backend_.snapshot().generation;
     emit stateChanged();
-    emit playbackChanged();
+    if (guard && !exiting_ && backend_.snapshot().generation == generation)
+        emit playbackChanged();
     return true;
 }
 bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {

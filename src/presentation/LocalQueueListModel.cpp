@@ -1,6 +1,7 @@
 #include "m0/presentation/LocalQueueListModel.hpp"
 
 #include <QList>
+#include <QPointer>
 
 #include <algorithm>
 #include <limits>
@@ -92,8 +93,10 @@ bool LocalQueueListModel::move(const std::size_t source_index, const std::size_t
         return false;
     }
     items_.move(source_row, destination_row);
+    const QPointer<LocalQueueListModel> guard{this};
     endMoveRows();
-    reindex(std::min(source_index, destination_index));
+    if (guard)
+        reindex(std::min(source_index, destination_index));
     return true;
 }
 

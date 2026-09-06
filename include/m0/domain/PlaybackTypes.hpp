@@ -96,6 +96,8 @@ struct Preferences final {
     bool start_minimized{false};
     QueueEndBehavior queue_end_behavior{QueueEndBehavior::StopKeepSelection};
     std::optional<WindowPlacement> window_placement{std::nullopt};
+    bool repeat_queue_enabled{false};
+    bool shuffle_queue_enabled{false};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

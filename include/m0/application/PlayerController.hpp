@@ -44,6 +44,8 @@ class PlayerController final {
     void setRestoreLastSession(bool restore);
     [[nodiscard]] bool setStartMinimized(bool start_minimized);
     void setQueueEndBehavior(QueueEndBehavior behavior);
+    void setRepeatQueueEnabled(bool enabled);
+    void setShuffleQueueEnabled(bool enabled);
     [[nodiscard]] bool setWindowPlacement(WindowPlacement placement);
 
     [[nodiscard]] CloseDisposition requestClose();

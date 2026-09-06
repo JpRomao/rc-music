@@ -120,6 +120,24 @@ TEST_CASE("preferences autosave waits for the trailing debounce and writes the l
     CHECK(autosave.notice() == PreferencesAutosaveNotice::None);
 }
 
+TEST_CASE("each queue mode creates a revision and survives later preference changes", "[preferences][queue-modes]") {
+    RecordingWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    Preferences latest;
+    SECTION("repeat") { latest.repeat_queue_enabled = true; }
+    SECTION("shuffle") { latest.shuffle_queue_enabled = true; }
+    REQUIRE(autosave.schedule(latest));
+    CHECK(autosave.latestRevision() == 1);
+    latest.volume = 0.6;
+    REQUIRE(autosave.schedule(latest));
+    clock.advance(500ms);
+    autosave.poll();
+    REQUIRE(writer.starts.size() == 1);
+    CHECK(writer.starts.front().revision == 2);
+    CHECK(writer.starts.front().preferences == latest);
+}
+
 TEST_CASE("window placement creates a revision and survives later preference changes",
           "[preferences][window-placement]") {
     RecordingWriter writer;

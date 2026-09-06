@@ -173,29 +173,34 @@ TestCase {
         focusItem(findChild(shell, "mute"));
         verify(!presenter.muted);
         keyClick(Qt.Key_Space);
-        verify(presenter.muted);
-        compare(presenter.playbackState, PlayerPresenter.Paused);
+        verify(!presenter.muted);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
         keyClick(Qt.Key_Space);
         verify(!presenter.muted);
+        compare(presenter.playbackState, PlayerPresenter.Paused);
 
         const queueButton = findChild(shell, "queue");
         focusItem(queueButton);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         const queueList = findChild(shell, "queue-list");
         tryVerify(function () {
             return testCase.shell.queueOpen && queueList.activeFocus;
         });
         const queueIndex = queueList.currentIndex;
         const queuePosition = presenter.confirmedPositionMs;
-        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
         compare(queueList.currentIndex, queueIndex + 1);
         compare(presenter.volume, 0.8);
-        keyClick(Qt.Key_Up);
+        keyClick(Qt.Key_Up, Qt.ControlModifier);
         compare(queueList.currentIndex, queueIndex);
         keyClick(Qt.Key_Left);
+        verifySeek(queuePosition - 7000);
         keyClick(Qt.Key_Right);
+        verifySeek(queuePosition + 13000);
         keyClick(Qt.Key_Space);
-        compare(presenter.confirmedPositionMs, queuePosition);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        keyClick(Qt.Key_Space);
+        compare(presenter.confirmedPositionMs, queuePosition + 13000);
         compare(presenter.playbackState, PlayerPresenter.Paused);
         keyClick(Qt.Key_L, Qt.ControlModifier);
         tryVerify(function () {
@@ -207,17 +212,21 @@ TestCase {
         const progress = findChild(shell, "progress");
         focusItem(progress);
         const sliderPosition = presenter.confirmedPositionMs;
-        const seekCommits = driver.seekCommitAttemptCount();
         keyClick(Qt.Key_Right);
-        compare(driver.seekCommitAttemptCount(), seekCommits + 1);
-        verifySeek(sliderPosition + 1000);
+        verify(presenter.seekPending);
+        verifySeek(sliderPosition + 20000);
         keyClick(Qt.Key_Space);
-        compare(presenter.playbackState, PlayerPresenter.Paused);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        keyClick(Qt.Key_Space);
         const volume = findChild(shell, "volume");
         focusItem(volume);
         keyClick(Qt.Key_Left);
+        compare(presenter.volume, 0.8);
+        verifySeek(sliderPosition + 13000);
+        keyClick(Qt.Key_Down);
         compare(presenter.volume, 0.79);
-        compare(presenter.confirmedPositionMs, sliderPosition + 1000);
+        keyClick(Qt.Key_Space);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
         keyClick(Qt.Key_Space);
         compare(presenter.playbackState, PlayerPresenter.Paused);
 
@@ -241,7 +250,7 @@ TestCase {
         keyClick(Qt.Key_Up);
         keyClick(Qt.Key_Down);
         compare(presenter.volume, 0.79);
-        compare(presenter.confirmedPositionMs, sliderPosition + 1000);
+        compare(presenter.confirmedPositionMs, sliderPosition + 13000);
         compare(presenter.currentOccurrenceId, occurrenceBeforeSeek);
         editor.destroy();
 

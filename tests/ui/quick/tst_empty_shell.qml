@@ -118,17 +118,17 @@ TestCase {
             return actionProbe.activeFocus;
         }, 500);
         keyClick(Qt.Key_Space);
-        compare(actionProbeCount, 1);
+        compare(actionProbeCount, 0);
         keyClick(Qt.Key_Return);
-        compare(actionProbeCount, 2);
+        compare(actionProbeCount, 1);
         verify(actionProbe.background.border.width > 0);
         mousePress(actionProbe, actionProbe.width / 2, actionProbe.height / 2, Qt.LeftButton);
         verify(actionProbe.down);
         compare(actionProbe.contentItem.topPadding, 2);
         mouseRelease(actionProbe, actionProbe.width / 2, actionProbe.height / 2, Qt.LeftButton);
-        compare(actionProbeCount, 3);
+        compare(actionProbeCount, 2);
         actionProbe.Accessible.pressAction();
-        compare(actionProbeCount, 4);
+        compare(actionProbeCount, 3);
         actionProbe.destroy();
 
         const transport = findChild(shell.contentItem, "transport-bar");
@@ -173,7 +173,7 @@ TestCase {
         compare(button.Accessible.focusable, true);
         compare(button.Accessible.focused, true);
         compare(button.background.border.width, 3);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         compare(openSpy.count, 1);
         verify(testPlayerPresenter.queueLoaded); // qmllint disable unqualified
         verify(testPlayerPresenter.togglePlayback()); // qmllint disable unqualified
@@ -220,7 +220,7 @@ TestCase {
         verifyInsideWindow(openAnotherAudio);
         const playbackStateBeforeOpenAnother = testPlayerPresenter.playbackState; // qmllint disable unqualified
         openAnotherAudio.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Enter);
         compare(openSpy.count, 2);
         compare(testPlayerPresenter.playbackState, playbackStateBeforeOpenAnother); // qmllint disable unqualified
         keyClick(Qt.Key_Return);
@@ -231,7 +231,7 @@ TestCase {
         compare(testPlayerPresenter.playbackState, playbackStateBeforeOpenAnother); // qmllint disable unqualified
         verify(queueButton.enabled);
         queueButton.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         const queuePanel = findChild(shell, "queue-panel");
         const stateLayer = findChild(shell, "state-layer");
         const queueList = findChild(shell, "queue-list");
@@ -278,12 +278,12 @@ TestCase {
             });
         }
         queueList.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
         compare(queueList.currentIndex, 17);
         const decomposedQueueRow = queueList.itemAtIndex(17);
         compare(decomposedQueueRow.occurrenceId, "queue-0018");
         compare(decomposedQueueRow.Accessible.selected, true);
-        keyClick(Qt.Key_Up);
+        keyClick(Qt.Key_Up, Qt.ControlModifier);
         compare(queueList.currentIndex, 16);
         const markupQueueRow = revealQueueRow(queueList, 41);
         compare(markupQueueRow.occurrenceId, "queue-0042");
@@ -400,7 +400,7 @@ TestCase {
         }
         verify(progress.focusIndicatorVisible);
         volume.forceActiveFocus();
-        keyClick(Qt.Key_Left);
+        keyClick(Qt.Key_Down);
         compare(testPlayerPresenter.volume, 0.79); // qmllint disable unqualified
         verify(Math.abs(volume.value - testPlayerPresenter.volume * 100) < 0.01); // qmllint disable unqualified
         mouseClick(mute);
@@ -423,22 +423,20 @@ TestCase {
         playPause.Accessible.pressAction();
         compare(testPlayerPresenter.playbackState, PlayerPresenter.Playing); // qmllint disable unqualified
         progress.forceActiveFocus();
-        let seekCommitCount = testScenarioDriver.seekCommitAttemptCount(); // qmllint disable unqualified
         keyClick(Qt.Key_Right);
-        compare(testScenarioDriver.seekCommitAttemptCount(), seekCommitCount + 1); // qmllint disable unqualified
         verify(testPlayerPresenter.seekPending); // qmllint disable unqualified
         verify(!progress.enabled);
         verify(!skipBackward.enabled);
         verify(!skipForward.enabled);
-        compare(testPlayerPresenter.positionMs, 85000); // qmllint disable unqualified
+        compare(testPlayerPresenter.positionMs, 89000); // qmllint disable unqualified
         tryVerify(function () {
             return !testPlayerPresenter.seekPending;
         }, 500); // qmllint disable unqualified
         tryVerify(function () {
             return progress.enabled;
         }, 500);
-        compare(testPlayerPresenter.confirmedPositionMs, 85000); // qmllint disable unqualified
-        seekCommitCount = testScenarioDriver.seekCommitAttemptCount(); // qmllint disable unqualified
+        compare(testPlayerPresenter.confirmedPositionMs, 89000); // qmllint disable unqualified
+        let seekCommitCount = testScenarioDriver.seekCommitAttemptCount(); // qmllint disable unqualified
         mouseClick(progress, progress.width * 0.45, progress.height / 2, Qt.LeftButton);
         compare(testScenarioDriver.seekCommitAttemptCount(), seekCommitCount + 1); // qmllint disable unqualified
         verify(testPlayerPresenter.seekPending); // qmllint disable unqualified
@@ -496,7 +494,7 @@ TestCase {
         }
         verifyHorizontalNonOverlap(emptyTransportControls);
         queueButton.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         tryVerify(function () {
             return queuePanel.visible && queueList.activeFocus;
         });
@@ -544,7 +542,7 @@ TestCase {
         compare(queuePlaySpy.count, 1);
         compare(queuePlaySpy.signalArguments[0][0], "queue-0017");
         verify(queueList.activeFocus);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Enter);
         compare(queuePlaySpy.count, 2);
         compare(queuePlaySpy.signalArguments[1][0], "queue-0017");
         mouseDoubleClickSequence(playableQueueRow);
@@ -608,7 +606,7 @@ TestCase {
         previous.Accessible.pressAction();
         compare(testPlayerPresenter.currentOccurrenceId, "queue-0016"); // qmllint disable unqualified
         next.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         compare(testPlayerPresenter.currentOccurrenceId, "queue-0017"); // qmllint disable unqualified
         keyClick(Qt.Key_Left, Qt.ControlModifier);
         compare(testPlayerPresenter.currentOccurrenceId, "queue-0016"); // qmllint disable unqualified
@@ -622,7 +620,7 @@ TestCase {
             return queuePanel.visible && queueList.activeFocus;
         });
         next.forceActiveFocus(Qt.TabFocusReason);
-        keyClick(Qt.Key_Space);
+        keyClick(Qt.Key_Return);
         compare(testPlayerPresenter.currentOccurrenceId, "queue-0018"); // qmllint disable unqualified
         wait(0);
         verify(next.activeFocus, "Track changes must not steal transport focus for the queue");

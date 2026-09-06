@@ -85,7 +85,7 @@ class PrefixTranslator final : public QTranslator {
 
 [[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
     static const QRegularExpression technical_property{
-        QStringLiteral(R"(\b(?:objectName|controlId|Accessible\.id|sequence|property|color|source)\s*:)")};
+        QStringLiteral(R"(\b(?:objectName|controlId|Accessible\.id|sequences?|property|color|source)\s*:)")};
     static const QRegularExpression boolean_selector{
         QStringLiteral(R"(^\s*(?:readonly\s+)?property\s+bool\s+[A-Za-z_][A-Za-z0-9_]*\s*:)")};
     const QString trimmed = line.trimmed();
@@ -111,6 +111,8 @@ class ShellUiContractTests final : public QObject {
     void rejectsUnsupportedPreferenceStrings();
     void essentialQmlTextIsCentralizedAndExtractable();
     void distinguishesTechnicalBooleanSelectorsFromVisibleText();
+    void distinguishesShortcutSequencesFromVisibleText_data();
+    void distinguishesShortcutSequencesFromVisibleText();
     void classifiesSingleInstanceFailuresThroughTheTextCatalog();
     void invalidSourcePathsHaveActionableFeedbackWithoutExternalDetails();
     void shellTextCanBeTranslatedWithoutChangingTheFixture();
@@ -548,6 +550,25 @@ void ShellUiContractTests::distinguishesTechnicalBooleanSelectorsFromVisibleText
     QVERIFY(!isTechnicalQmlContext(QStringLiteral("property string titleText: \"Visible error\"")));
     QVERIFY(!isTechnicalQmlContext(QStringLiteral("text: \"Visible action\"")));
     QVERIFY(!isTechnicalQmlContext(QStringLiteral("Accessible.name: \"Visible description\"")));
+}
+
+void ShellUiContractTests::distinguishesShortcutSequencesFromVisibleText_data() {
+    QTest::addColumn<QString>("line");
+    QTest::addColumn<bool>("technical");
+    QTest::newRow("single-sequence") << QStringLiteral("sequence: \"Space\"") << true;
+    QTest::newRow("previous-aliases") << QStringLiteral("sequences: [\"Shift+Left\", \"Ctrl+Left\"]") << true;
+    QTest::newRow("next-aliases") << QStringLiteral("sequences: [\"Shift+Right\", \"Ctrl+Right\"]") << true;
+    QTest::newRow("visible-text") << QStringLiteral("text: \"Shift+Left\"") << false;
+    QTest::newRow("visible-accessible-description")
+        << QStringLiteral("Accessible.description: \"Shift+Right\"") << false;
+    QTest::newRow("visible-string-property")
+        << QStringLiteral("readonly property string sequenceText: \"Shift+Left\"") << false;
+}
+
+void ShellUiContractTests::distinguishesShortcutSequencesFromVisibleText() {
+    QFETCH(QString, line);
+    QFETCH(bool, technical);
+    QCOMPARE(isTechnicalQmlContext(line), technical);
 }
 
 void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {

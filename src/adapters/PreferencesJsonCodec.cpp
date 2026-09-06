@@ -173,6 +173,8 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     object.insert(QStringLiteral("startMinimized"), preferences.start_minimized);
     object.insert(QStringLiteral("queueEndBehavior"), encodeQueueEndBehavior(preferences.queue_end_behavior));
     object.insert(QStringLiteral("windowPlacement"), encodeWindowPlacement(preferences.window_placement));
+    object.insert(QStringLiteral("repeatQueueEnabled"), preferences.repeat_queue_enabled);
+    object.insert(QStringLiteral("shuffleQueueEnabled"), preferences.shuffle_queue_enabled);
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -212,11 +214,15 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
     WindowPlacementDecodeResult window_placement{.valid = true};
     if (version == schema_version)
         window_placement = decodeWindowPlacement(object.value(QStringLiteral("windowPlacement")));
+    const QJsonValue repeat_queue = object.value(QStringLiteral("repeatQueueEnabled"));
+    const QJsonValue shuffle_queue = object.value(QStringLiteral("shuffleQueueEnabled"));
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
         !skip_forward.has_value() || !close_behavior.has_value() || !restore_last_session_value.isBool() ||
-        !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid) {
+        !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid ||
+        (!repeat_queue.isUndefined() && !repeat_queue.isBool()) ||
+        (!shuffle_queue.isUndefined() && !shuffle_queue.isBool())) {
         return {};
     }
 
@@ -231,7 +237,9 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .restore_last_session = restore_last_session_value.toBool(),
                                        .start_minimized = start_minimized_value.toBool(),
                                        .queue_end_behavior = *queue_end_behavior,
-                                       .window_placement = window_placement.placement}};
+                                       .window_placement = window_placement.placement,
+                                       .repeat_queue_enabled = repeat_queue.toBool(false),
+                                       .shuffle_queue_enabled = shuffle_queue.toBool(false)}};
 }
 
 } // namespace music_player::m0

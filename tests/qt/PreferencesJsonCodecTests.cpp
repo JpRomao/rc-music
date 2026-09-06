@@ -85,7 +85,9 @@ namespace {
             {u"restoreLastSession"_s, preferences.restore_last_session},
             {u"startMinimized"_s, preferences.start_minimized},
             {u"queueEndBehavior"_s, queueEndBehaviorName(preferences.queue_end_behavior)},
-            {u"windowPlacement"_s, windowPlacementValue(preferences.window_placement)}};
+            {u"windowPlacement"_s, windowPlacementValue(preferences.window_placement)},
+            {u"repeatQueueEnabled"_s, preferences.repeat_queue_enabled},
+            {u"shuffleQueueEnabled"_s, preferences.shuffle_queue_enabled}};
 }
 
 void comparePreferences(const Preferences& actual, const Preferences& expected) {
@@ -100,6 +102,8 @@ void comparePreferences(const Preferences& actual, const Preferences& expected) 
     QCOMPARE(actual.start_minimized, expected.start_minimized);
     QCOMPARE(actual.queue_end_behavior, expected.queue_end_behavior);
     QVERIFY(actual.window_placement == expected.window_placement);
+    QCOMPARE(actual.repeat_queue_enabled, expected.repeat_queue_enabled);
+    QCOMPARE(actual.shuffle_queue_enabled, expected.shuffle_queue_enabled);
 }
 
 [[nodiscard]] QByteArray jsonWithVolumeToken(const QByteArrayView token) {
@@ -117,6 +121,61 @@ class PreferencesJsonCodecTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void repeatQueueRoundTripsAndDefaultsForLegacyVersions() {
+        for (const bool enabled : {false, true}) {
+            auto object = validObject();
+            object.insert(u"repeatQueueEnabled"_s, enabled);
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+            QVERIFY(decoded.preferences.has_value());
+            const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+            QCOMPARE(encoded.value(u"repeatQueueEnabled"_s), QJsonValue{enabled});
+        }
+        for (const auto& object : {validVersionOneObject(), validObject()}) {
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+            QVERIFY(decoded.preferences.has_value());
+            const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+            QCOMPARE(encoded.value(u"repeatQueueEnabled"_s), QJsonValue{false});
+        }
+    }
+
+    void shuffleQueueRoundTripsAndDefaultsForLegacyVersions() {
+        for (const bool enabled : {false, true}) {
+            auto object = validObject();
+            object.insert(u"shuffleQueueEnabled"_s, enabled);
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+            QVERIFY(decoded.preferences.has_value());
+            const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+            QCOMPARE(encoded.value(u"shuffleQueueEnabled"_s), QJsonValue{enabled});
+        }
+        for (const auto& object : {validVersionOneObject(), validObject()}) {
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+            QVERIFY(decoded.preferences.has_value());
+            const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+            QCOMPARE(encoded.value(u"shuffleQueueEnabled"_s), QJsonValue{false});
+        }
+    }
+
+    void rejectsInvalidRepeatQueueValues() {
+        for (const auto& value : {QJsonValue{QJsonValue::Null}, QJsonValue{1}, QJsonValue{u"true"_s},
+                                  QJsonValue{QJsonObject{}}, QJsonValue{QJsonArray{}}}) {
+            auto object = validObject();
+            object.insert(u"repeatQueueEnabled"_s, value);
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Invalid);
+            QVERIFY(!decoded.preferences.has_value());
+        }
+    }
+
+    void rejectsInvalidShuffleQueueValue() {
+        auto object = validObject();
+        object.insert(u"shuffleQueueEnabled"_s, u"true"_s);
+        QCOMPARE(PreferencesJsonCodec::decode(bytes(object)).status, PreferencesJsonDecodeStatus::Invalid);
+    }
+
     void encodesEveryFieldAndRoundTripsDeterministically_data() {
         QTest::addColumn<Preferences>("expected");
 
@@ -132,7 +191,9 @@ class PreferencesJsonCodecTests final : public QObject {
                            .restore_last_session = false,
                            .start_minimized = true,
                            .queue_end_behavior = QueueEndBehavior::StopClearSelection,
-                           .window_placement = WindowPlacement{-1'920, 40, 960, 640}};
+                           .window_placement = WindowPlacement{-1'920, 40, 960, 640},
+                           .repeat_queue_enabled = true,
+                           .shuffle_queue_enabled = true};
         QTest::newRow("numeric boundaries") << Preferences{
             .theme = ThemeMode::Light,
             .motion = MotionMode::System,
@@ -160,7 +221,7 @@ class PreferencesJsonCodecTests final : public QObject {
         QCOMPARE(parse_error.error, QJsonParseError::NoError);
         QVERIFY(document.isObject());
         const QJsonObject object = document.object();
-        QCOMPARE(object.size(), 12);
+        QCOMPARE(object.size(), 14);
         QSet<QString> actual_keys;
         for (auto iterator = object.constBegin(); iterator != object.constEnd(); ++iterator)
             actual_keys.insert(iterator.key());
@@ -177,6 +238,8 @@ class PreferencesJsonCodecTests final : public QObject {
             u"startMinimized"_s,
             u"queueEndBehavior"_s,
             u"windowPlacement"_s,
+            u"repeatQueueEnabled"_s,
+            u"shuffleQueueEnabled"_s,
         };
         QCOMPARE(actual_keys, expected_keys);
         QCOMPARE(object.value(u"schemaVersion"_s), QJsonValue{2});

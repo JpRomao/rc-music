@@ -324,6 +324,10 @@ void PlayerController::setQueueEndBehavior(const QueueEndBehavior behavior) {
     preferences_.queue_end_behavior = behavior;
 }
 
+void PlayerController::setRepeatQueueEnabled(const bool enabled) { preferences_.repeat_queue_enabled = enabled; }
+
+void PlayerController::setShuffleQueueEnabled(const bool enabled) { preferences_.shuffle_queue_enabled = enabled; }
+
 bool PlayerController::setWindowPlacement(const WindowPlacement placement) {
     if (placement.width <= 0 || placement.height <= 0)
         return false;

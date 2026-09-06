@@ -216,7 +216,7 @@ TestCase {
             return progress.activeFocus;
         });
         const focusedProgress = verifyControl(progress, Accessible.Slider, "Posição da faixa", true);
-        compare(focusedProgress.description, "Setas: 1 segundo; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
+        compare(focusedProgress.description, "←/→: saltos configurados; ↑/↓: volume; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
         verify(focusedProgress.focused);
         verify(!focusedProgress.disabled);
         verifyControl(findChild(shell, "volume"), Accessible.Slider, "Volume", true);

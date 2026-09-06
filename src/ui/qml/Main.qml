@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Templates as T
 import MusicPlayer.M0
 
 ApplicationWindow {
@@ -45,12 +44,13 @@ ApplicationWindow {
         presenter: window.presenter
         errorLabels: errorText
     }
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
-    readonly property bool spaceShortcutEnabled: transportShortcutsEnabled && !focusOwnsSpaceKey()
-    readonly property bool arrowShortcutsEnabled: transportShortcutsEnabled && !focusOwnsArrowKeys()
-    readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
+    readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
+    readonly property bool spaceShortcutEnabled: primaryKeysEnabled
+    readonly property bool arrowShortcutsEnabled: primaryKeysEnabled
+    readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && transportShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
     property int previousPlaybackState: -1
     property int playbackFocusRepairGeneration: 0
     property Item lastActiveFocusItem: null
@@ -183,31 +183,6 @@ ApplicationWindow {
         }
         return false;
     }
-    function focusOwnsSpaceKey() {
-        if (focusOwnsTextInput())
-            return true;
-        let item = activeFocusItem;
-        // Styled controls share the template base, not Controls.Control's QML type.
-        // Stop before ApplicationWindow's internal Control above its content item.
-        while (item && item !== contentItem) {
-            if (item instanceof T.Control || item instanceof Flickable)
-                return true;
-            item = item.parent;
-        }
-        return false;
-    }
-    function focusOwnsArrowKeys() {
-        if (focusOwnsTextInput())
-            return true;
-        let item = activeFocusItem;
-        while (item && item !== contentItem) {
-            if (item instanceof T.Slider || item instanceof T.ComboBox || item instanceof Flickable)
-                return true;
-            item = item.parent;
-        }
-        return false;
-    }
-
     onClosing: close => {
         close.accepted = presenter.exitCommitted;
         if (!close.accepted)
@@ -614,38 +589,57 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         autoRepeat: false
         enabled: window.spaceShortcutEnabled
-        onActivated: window.presenter.togglePlayback()
+        // Reserve Space even in Empty/Loading/Error: never click the last button.
+        onActivated: {
+            if (window.transportShortcutsEnabled)
+                window.presenter.togglePlayback();
+        }
     }
     Shortcut {
         sequence: "M"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: window.transportShortcutsEnabled && !window.focusOwnsTextInput()
-        onActivated: window.presenter.toggleMute()
+        enabled: window.primaryKeysEnabled
+        onActivated: {
+            if (window.transportShortcutsEnabled)
+                window.presenter.toggleMute();
+        }
     }
     Shortcut {
         sequence: "Left"
         context: Qt.WindowShortcut
-        enabled: window.seekShortcutsEnabled
-        onActivated: window.presenter.skipBackward()
+        enabled: window.arrowShortcutsEnabled
+        onActivated: {
+            if (window.seekShortcutsEnabled)
+                window.presenter.skipBackward();
+        }
     }
     Shortcut {
         sequence: "Right"
         context: Qt.WindowShortcut
-        enabled: window.seekShortcutsEnabled
-        onActivated: window.presenter.skipForward()
+        enabled: window.arrowShortcutsEnabled
+        onActivated: {
+            if (window.seekShortcutsEnabled)
+                window.presenter.skipForward();
+        }
     }
     Shortcut {
         sequence: "Up"
         context: Qt.WindowShortcut
         enabled: window.arrowShortcutsEnabled
-        onActivated: window.changeVolume(1)
+        onActivated: {
+            if (window.transportShortcutsEnabled)
+                window.changeVolume(1);
+        }
     }
     Shortcut {
         sequence: "Down"
         context: Qt.WindowShortcut
         enabled: window.arrowShortcutsEnabled
-        onActivated: window.changeVolume(-1)
+        onActivated: {
+            if (window.transportShortcutsEnabled)
+                window.changeVolume(-1);
+        }
     }
     Shortcut {
         sequence: "Ctrl+Q"
@@ -663,16 +657,36 @@ ApplicationWindow {
         onActivated: window.toggleQueue()
     }
     Shortcut {
-        sequence: "Ctrl+Left"
+        sequences: ["Shift+Left", "Ctrl+Left"]
         context: Qt.WindowShortcut
-        enabled: window.navigationShortcutsEnabled && window.presenter.canGoPrevious && !window.focusOwnsTextInput()
-        onActivated: window.presenter.previousTrack()
+        enabled: window.primaryKeysEnabled
+        onActivated: {
+            if (window.navigationShortcutsEnabled && window.presenter.canGoPrevious)
+                window.presenter.previousTrack();
+        }
     }
     Shortcut {
-        sequence: "Ctrl+Right"
+        sequences: ["Shift+Right", "Ctrl+Right"]
         context: Qt.WindowShortcut
-        enabled: window.navigationShortcutsEnabled && window.presenter.canGoNext && !window.focusOwnsTextInput()
-        onActivated: window.presenter.nextTrack()
+        enabled: window.primaryKeysEnabled
+        onActivated: {
+            if (window.navigationShortcutsEnabled && window.presenter.canGoNext)
+                window.presenter.nextTrack();
+        }
+    }
+    Shortcut {
+        sequence: "F1"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: window.primaryKeysEnabled
+        onActivated: queuePanel.toggleShuffle()
+    }
+    Shortcut {
+        sequence: "F2"
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: window.primaryKeysEnabled
+        onActivated: queuePanel.toggleRepeat()
     }
     Shortcut {
         sequence: "Esc"

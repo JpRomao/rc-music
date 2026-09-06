@@ -32,6 +32,8 @@ FocusScope {
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
+    readonly property bool contextMenuOpen: rowMenu.visible
+    readonly property bool queueModesAvailable: !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
@@ -163,6 +165,14 @@ FocusScope {
     function requestClear() {
         if (queueList.count > 0)
             clearConfirmation.open();
+    }
+    function toggleShuffle() {
+        if (queueModesAvailable)
+            presenter.toggleShuffleQueue();
+    }
+    function toggleRepeat() {
+        if (queueModesAvailable)
+            presenter.toggleRepeatQueue();
     }
     function confirmClear() {
         if (!root.presenter.clearQueue())
@@ -303,6 +313,41 @@ FocusScope {
             }
         }
 
+        RowLayout {
+            objectName: "queue-modes"
+            Layout.fillWidth: true
+            spacing: root.contract.spacingUnit
+
+            AccessibleTransportButton {
+                objectName: "queue-shuffle"
+                Layout.fillWidth: true
+                contract: root.contract
+                text: root.presenter.shuffleQueueEnabled ? queueText.shuffleOn : queueText.shuffleOff
+                accessibleName: queueText.shuffle
+                shortcutHint: queueText.shortcutShuffle
+                enabled: root.queueModesAvailable
+                checkable: true
+                checked: root.presenter.shuffleQueueEnabled
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.toggleShuffle()
+            }
+            AccessibleTransportButton {
+                objectName: "queue-repeat"
+                Layout.fillWidth: true
+                contract: root.contract
+                text: root.presenter.repeatQueueEnabled ? queueText.repeatOn : queueText.repeatOff
+                accessibleName: queueText.repeat
+                shortcutHint: queueText.shortcutRepeat
+                enabled: root.queueModesAvailable
+                checkable: true
+                checked: root.presenter.repeatQueueEnabled
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.toggleRepeat()
+            }
+        }
+
         ListView {
             id: queueList
             objectName: "queue-list"
@@ -322,10 +367,18 @@ FocusScope {
             Accessible.role: Accessible.List
             Accessible.id: "queue-list"
             Accessible.name: root.contract.queueTitle
+            Accessible.description: queueText.selectionShortcut
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             Keys.priority: Keys.BeforeItem
             Keys.onPressed: event => {
+                if (event.modifiers === Qt.ControlModifier && (event.key === Qt.Key_Up || event.key === Qt.Key_Down)) {
+                    const offset = event.key === Qt.Key_Up ? -1 : 1;
+                    queueList.currentIndex = Math.max(0, Math.min(queueList.count - 1, queueList.currentIndex + offset));
+                    queueList.positionViewAtIndex(queueList.currentIndex, ListView.Contain);
+                    event.accepted = true;
+                    return;
+                }
                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     root.playRow(queueList.currentItem, Qt.TabFocusReason);
                     event.accepted = true;
@@ -576,14 +629,6 @@ FocusScope {
         if (!root.presenter.selectingAudioFiles)
             root.closeRequested();
         event.accepted = true;
-    }
-
-    Shortcut {
-        sequence: "Space"
-        context: Qt.WindowShortcut
-        autoRepeat: false
-        enabled: root.visible && queueList.activeFocus && !root.presenter.exiting && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
-        onActivated: root.playRow(queueList.currentItem, Qt.TabFocusReason)
     }
 
     Connections {

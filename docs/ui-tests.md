@@ -3,6 +3,18 @@
 **Estado:** cobertura histórica promovida ao build raiz; M1 e release permanecem abertos.
 **Data:** 2026-09-06.
 
+## Atalhos principais e modos de fila
+
+Pedido funcional confirmado em 2026-09-06 (`FR-037`/`FR-019`): Espaço controla reprodução inclusive depois de clicar em Mudo ou outro botão; setas usam saltos configurados/volume e Shift+setas navega. F1 alterna modo aleatório persistido e F2 repetição da fila, com estado textual e acessível. Editor, menus e modais mantêm suas teclas; Enter ativa controles e Ctrl+↑/↓ seleciona linhas. O [manual](user-guide.md) contém o contrato completo, incluindo seguir a ordem exibida ao desligar aleatório.
+
+Os testes usam o presenter real com portas falsas, relógios controlados e IDs de ocorrências, sem arquivos pessoais ou dispositivo. Cobrem rodada aleatória sem reposição, Next/EOF, prefixo já percorrido, duplicatas, metadata/modelo preservados, rotação para o fim, faixa única, indisponíveis, remoções, carga recusada, autosave e eventos antigos. A regressão de destruição durante `rowsMoved` reproduziu acesso inválido no reindex posterior do modelo; a guarda local evita continuar após destruição. Desligar F1 num observador também invalida a permutação pendente.
+
+TDD observado: Red inicial do teclado com 18 falhas comportamentais; Red de presenter com 16 falhas nas ações ainda inertes, seguido de quatro no modo F1 confirmado; Red de desligamento reentrante com uma falha. Controller e codec tiveram Reds próprios para cada nova preferência. Green focado final: presenter **30/30**, teclado **29/29**; Quick integral **234/234**, sem falhas/skips. Os oráculos anteriores de Espaço/setas foram alinhados ao pedido explícito; a contagem de `commitSeekPreview` não é usada para a rota global de salto, que verifica comando/alvo/posição e mantém as regressões de mouse/arraste.
+
+Fechamento proporcional: `test -Diagnostics` compilou Release ON e executou **300 registros**, com **299 passagens/1 falha** no classificador técnico de textos (`sequences` confundido com texto visível). Incluiu presenter integral **292/292** e Quick **234/234**. A regressão específica do classificador teve Red **6 passagens/2 falhas**; após reconhecer `sequence` e `sequences` sem liberar textos visíveis, o único alvo reexecutado passou **1/1 CTest / 35/35 internos**. Não se declara uma segunda execução integral 300/300. O recibo original de falha permanece em `out/product/validation-runs/run-1ab776c434cd45e88fc722f0db3fe9d6`; os quatro skips internos de symlink por política do host permanecem explícitos.
+
+Build Release OFF e `all_qmllint` de produção passaram. Formato **172 C++/57 QML**, documentos **61 Markdown/83 requisitos/17 checks/76 etapas**, rastreabilidade **83 IDs** e diff foram validados. Essa prova offscreen não equivale a teclas físicas/SMTC, NVDA, pacote instalado ou Linux. Não houve benchmark, mudança de dependência, instalação, alteração de Registry ou acesso aos áudios pessoais.
+
 A raiz agora executa os testes de presenter, contrato visual, repositório/modelo de fixture e Qt Quick, sem habilitar cenários na aplicação real. As fontes de suporte e testes foram movidas para [tests/ui](../tests/ui), e o consumidor histórico aponta para os mesmos arquivos. As assertions foram preservadas; o bootstrap Quick seleciona somente o nome do recurso de tradução correspondente à variante compilada.
 
 ## Uma implementação, duas compilações isoladas

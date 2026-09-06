@@ -10,6 +10,8 @@
 
 **Lacunas de fechamento:** cobertura ainda não apurada; CI Windows sem provedor/runner definido; jornadas nativas e de instalação/upgrade/uninstall sem fechamento; segurança/licenças/notices/SBOM, CRT/máquina limpa e acessibilidade final ainda abertos. Linux e benchmarks seguem adiados. Esses gates não significam que reprodução, fila, preferências e sessão precisem ser reimplementadas, nem permitem declarar M1/M4/M5 concluídos.
 
+O incremento de 2026-09-06 refina os atalhos e antecipa o recorte autorizado de FR-019: Espaço controla reprodução sem clicar o botão focado, setas controlam saltos/volume, Shift+setas navega, F1 alterna aleatório e F2 repetição. Os dois modos têm estado visível e persistido; repetição roda a ocorrência concluída para o fim, e aleatório percorre a rodada sem perder pendentes. Consulte o [manual vigente](user-guide.md); as regras históricas de foco e de fila sem repetição abaixo descrevem os baselines anteriores, não substituem esse contrato.
+
 ## Histórico funcional anterior à aceitação
 
 Os marcos e pendências abaixo registram os respectivos recortes históricos, não uma auditoria atual de todas as funcionalidades. Referências a stack ainda proposta ou A/B suspenso descrevem aquela fase e foram substituídas pelo ADR-0005; a evidência por incremento e o próximo checkpoint vigente ficam no [registro Qt](../experiments/m0/candidates/qt/README.md) e no [plano](development-plan.md).

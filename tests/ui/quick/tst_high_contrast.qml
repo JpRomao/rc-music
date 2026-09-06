@@ -100,7 +100,7 @@ TestCase {
         keyClick(Qt.Key_Return);
         keyClick(Qt.Key_Enter);
         queueAction.Accessible.pressAction();
-        compare(queueActionClicks, 4);
+        compare(queueActionClicks, 3);
         mouseMove(queueAction, queueAction.width / 2, queueAction.height / 2);
         compare(queueAction.background.color.toString(), "#f8f800");
         compare(queueAction.contentItem.color.toString(), "#010101");
@@ -163,7 +163,7 @@ TestCase {
         compare(shell.color.toString(), "#fcfcfd");
         verifySelectedRow(queue.currentItem, "#1a217a", "#fcfcfd");
         verify(queue.activeFocus);
-        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
         verifySelectedRow(queue.currentItem, "#1a217a", "#fcfcfd");
         keyClick(Qt.Key_Comma, Qt.ControlModifier);
         const panel = findChild(shell, "preferences-panel");
