@@ -18,6 +18,11 @@
 *.opus binary
 *.wav binary
 LICENSE* text eol=lf
+docs/delivery/licenses/* -text
+# Preserve terminal blank lines present in these unmodified upstream documents.
+docs/delivery/licenses/Qtbase-freetype-LICENSE.txt whitespace=-blank-at-eof
+docs/delivery/licenses/Qtbase-zlib-LICENSE.txt whitespace=-blank-at-eof
+docs/delivery/licenses/TagLib-COPYING.MPL.txt whitespace=-blank-at-eof
 packaging/windows/*.nsi text eol=lf
 packaging/windows/*.nsh text eol=lf
 packaging/windows/LOCAL-DEVELOPMENT.txt text eol=lf

@@ -1985,12 +1985,16 @@
           "marker": "## Textos, obrigações e fonte ainda pendentes"
         },
         {
+          "path": "docs/delivery/runtime-3f22fda-notices.md",
+          "marker": "## Textos preservados"
+        },
+        {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
           "marker": "Distribuição permanece privada/experimental até seus próprios gates"
         }
       ],
       "remaining": [
-        "Concluir obrigações de redistribuição de Qt/FFmpeg/codecs/TagLib, fontes/notices e SBOM do artefato efetivamente distribuído.",
+        "Completar notices/fontes e SBOM do runtime: reconciliar divergências SPDX/binários/FFmpeg, atribuições transitivas restantes e pré-requisitos Microsoft; inventário e textos locais parciais não encerram redistribuição.",
         "Definir licença pública quando autorizada; licença/proveniência local das fixtures não equivale a autorização de publicação."
       ]
     },

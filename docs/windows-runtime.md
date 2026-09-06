@@ -3,6 +3,8 @@
 **Estado:** runtime local atualizado montado, com recusa OFF, startup instrumentado e jornadas de codecs verificados; uso nativo do app instalado, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-09-06.
 
+O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
+
 ## Implementação única
 
 [`packaging/windows`](../packaging/windows/New-RcMusicLocalRuntime.ps1) contém a receita local, o planejador de cópia, o parser PE, `qt.conf`, o aviso de uso privado e os testes. O produto não importa módulos, protocolos ou fixtures de `experiments`. Os caminhos antigos de runtime são encaminhadores; o builder comparativo também reutiliza o parser PE puro.

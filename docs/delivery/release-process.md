@@ -13,6 +13,8 @@ A autorização recebida foi **“Sim, gerar sem instalar”**. Nenhum desses se
 
 Antes de propor RC, ainda faltam evidências de cobertura/CI e dos gates de corpus, segurança/licenças/notices/SBOM, pré-requisitos externos, acessibilidade e lifecycle aplicáveis. Não usar resultados históricos de outro pacote para preencher esses gates. Adiamento de benchmarks/Linux não é waiver ou resultado de aprovação.
 
+O [inventário e rascunho de notices do runtime 3f22fda](runtime-3f22fda-notices.md) já vinculam os arquivos atuais aos componentes identificados e preservam textos locais de terceiros. São entregas parciais de M5.7, fora do payload existente: divergências de fornecedor e atribuições/fontes faltantes continuam explícitas, sem alegação de SBOM completo ou conformidade de distribuição.
+
 ## 1. Princípios
 
 - release é resultado reproduzível de um commit/tag verde;

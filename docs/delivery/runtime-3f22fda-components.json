@@ -1,0 +1,2184 @@
+{
+  "title": "Inventário técnico parcial dos componentes do runtime RC Music 3f22fda",
+  "recorded_date": "2026-09-06",
+  "status": "Inventário factual local; não é SBOM de release nem pacote de compliance completo.",
+  "legal_conclusion": false,
+  "security_gate_complete": false,
+  "redistribution_authorized": false,
+  "runtime": {
+    "manifest_path": "out/product/rc-music-local/rc-music-windows-dev-3f22fda/runtime-manifest.json",
+    "manifest_sha256": "c3f43d26601fdafd5d8ebe7e779f2c7f34827361681b729cecb182d83f1b742c",
+    "payload_path": "out/product/rc-music-local/rc-music-windows-dev-3f22fda/app",
+    "source_commit": "3f22fda7ae58e6ca2a2bf0587c8f0a620ad44cb9",
+    "file_count": 554,
+    "total_size_bytes": 96076407,
+    "distribution": "private-local-development-only"
+  },
+  "method": [
+    "Todos os 554 paths do manifesto foram lidos; tamanho e SHA-256 dos arquivos empacotados coincidiram com o manifesto. Nenhum binário foi executado.",
+    "Cada path ocorre exatamente uma vez nos nove componentes. Os hashes individuais e o source original permanecem no manifesto ancorado, sem duplicar 554 registros neste documento.",
+    "543 arquivos provenientes do SDK composto foram classificados pelo source-relative path no composite-inventory.tsv; tamanho e SHA-256 coincidiram com o proprietário declarado. Os onze source files restantes também tiveram SHA-256 conferido.",
+    "Somente três SPDX locais foram consultados para registros de arquivo e seleção de pacotes. O caminho do arquivo no SDK/stage foi comparado ao fileName do fornecedor, removendo somente o prefixo './'; correspondência de caminho não é identidade binária.",
+    "Os 54 file records encontrados oferecem SHA-1, não SHA-256. Todos divergem no checksum bruto; os valores esperado/observado estão preservados. Não houve transformação de assinatura, normalização de PE ou promoção de divergência para match.",
+    "Os 54 pacotes proprietários foram obtidos pela relação CONTAINS dos 54 file records. A seleção foi ampliada somente pelas dependências DEPENDS_ON alcançadas, resolvendo documentos locais por documentNamespace. Não foram incluídos todos os pacotes do SDK ou relações de build.",
+    "GENERATED_FROM identifica fontes do fornecedor, não uma ligação comprovada entre pacotes privados. Os documentos consultados só possuem BUILD_DEPENDENCY_OF, CONTAINS, DEPENDS_ON, DESCRIBES e GENERATED_FROM; não há STATIC_LINK.",
+    "Nomes, versões, expressões de licença e copyright_text dos registros selecionados são literais do fornecedor, inclusive unknown/NOASSERTION. license_concluded é o nome de um campo do fornecedor, não conclusão deste projeto.",
+    "Pacotes selecionados por caminho/dependência são declarações relevantes do fornecedor, não prova de que toda função alcançada sobreviveu à linkagem; 54 divergências de checksum e referências externas mantêm a aplicabilidade incompleta.",
+    "FFmpeg é componente diretamente presente no manifesto, mas seu registro de pacote no SPDX não contém os cinco arquivos: sua declaração é preservada separadamente. Signalsmith é candidato não alcançado, explicitamente separado.",
+    "Nenhum payload, setup ou fonte foi modificado; nenhuma consulta de rede, compilação, teste executável, instalação ou operação de Registry foi realizada para este inventário."
+  ],
+  "evidence_sources": [
+    {
+      "id": "qtdeclarative",
+      "path": "q/f75eb9bea8280844c6d1a2b3f4/sdk/sbom/qtdeclarative-6.11.2.spdx.json",
+      "sha256": "98211b566c8784781eb4c989f466b510baab3c6035cb6847f1f16e6bfa8dd6ad",
+      "document_namespace": "https://qt.io/spdxdocs/qtdeclarative-4e3399c2+HEAD-host-windows-amd64-target-windows-msvc-amd64-8e8f12a7-7fd6-5482-b6ab-1638b2643f6a",
+      "spdx_version": "SPDX-2.3",
+      "role": "supplier SPDX, not a runtime-specific complete SBOM"
+    },
+    {
+      "id": "qtsvg",
+      "path": "q/f75eb9bea8280844c6d1a2b3f4/sdk/sbom/qtsvg-6.11.2.spdx.json",
+      "sha256": "eabd595e394dfb7a9d2fd3735096fe5390377f2bee5349b02a4311ff9471e8c5",
+      "document_namespace": "https://qt.io/spdxdocs/qtsvg-17ca512+HEAD-host-windows-amd64-target-windows-msvc-amd64-82359220-768f-5835-a240-a62c1e11faa7",
+      "spdx_version": "SPDX-2.3",
+      "role": "supplier SPDX, not a runtime-specific complete SBOM"
+    },
+    {
+      "id": "qtmultimedia",
+      "path": "out/m0/qt-multimedia-archive-probe-20260829-01/stage/sbom/qtmultimedia-6.11.2.spdx.json",
+      "sha256": "16d6554b3c8a1d3a026e738c82d607a1a313082e03e52b7738db1fd1b8425534",
+      "document_namespace": "https://qt.io/spdxdocs/qtmultimedia-6.11.2-host-windows-amd64-target-windows-msvc-amd64-7ce6def1-28b8-524a-8549-58b93094b598",
+      "spdx_version": "SPDX-2.3",
+      "role": "supplier SPDX, not a runtime-specific complete SBOM"
+    },
+    {
+      "path": "q/f75eb9bea8280844c6d1a2b3f4/evidence/qt-shell-composite-manifest.v2.json",
+      "sha256": "221afa70d4077eeee6c3bf689f0a8992dc88427d4b0ba3479503d9a28ae5a213",
+      "role": "composite provenance"
+    },
+    {
+      "path": "q/f75eb9bea8280844c6d1a2b3f4/evidence/qt-shell-composite-receipt.v2.json",
+      "sha256": "30399b3099cf04bdd50d6f083d077e82a590afefeec0617fda89ef5266a1d63e",
+      "role": "composite provenance"
+    },
+    {
+      "path": "q/f75eb9bea8280844c6d1a2b3f4/evidence/composite-inventory.tsv",
+      "sha256": "4e90550253cb4e07a579bf7706d1b1d68736e4999ab454da7171a2c73d428933",
+      "role": "composite provenance"
+    },
+    {
+      "path": "out/m0/qt-multimedia-archive-probe-20260829-01/stage/config_qtmultimedia.opt",
+      "sha256": "ba1b61713b97d17eeb929a4cd3ca9d80aae0b9affa6354f347253eb8b7cd6a3b",
+      "role": "supplier build configuration"
+    },
+    {
+      "path": "out/m0/taglib-2.3.1-msvc144-probe-20260829-01/extract/taglib-2.3.1/COPYING.LGPL",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "role": "local source license text"
+    },
+    {
+      "path": "out/m0/taglib-2.3.1-msvc144-probe-20260829-01/extract/taglib-2.3.1/COPYING.MPL",
+      "sha256": "53692a2ed6c6a2c6ec9b32dd0b820dfae91e0a1fcdf625ca9ed0bdf8705fcc4f",
+      "role": "local source license text"
+    },
+    {
+      "path": "out/m0/taglib-2.3.1-msvc144-probe-20260829-01/extract/taglib-2.3.1/3rdparty/utfcpp/LICENSE",
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+      "role": "local source license text"
+    },
+    {
+      "path": "docs/m0/evidence/m0-2-third-party-attributions.v1.json",
+      "sha256": "eb9962b2aca315db8ef425fb8fde9e4d69070d7fbe0bcf2870410e7fdbf3592b",
+      "role": "historical attribution inventory, not current runtime proof"
+    },
+    {
+      "path": "docs/m0/evidence/m0-6-qt-audio-first-slices.md",
+      "sha256": "f0ad193b919068a517280a9f42e87041200252dec0ebf13ec6d6294c1d6d4cd6",
+      "role": "historical multimedia/TagLib build evidence"
+    }
+  ],
+  "components": [
+    {
+      "id": "app",
+      "name": "RC Music",
+      "origin_root": "out/product/m1-desktop-release-off-20260906",
+      "origin_basis": "source path from runtime manifest; source file SHA-256 checked",
+      "file_count": 1,
+      "total_size_bytes": 1842688,
+      "files": [
+        "RCMusic.exe"
+      ],
+      "gaps": [
+        "Licença do código próprio e condições finais de distribuição ainda não definidas neste inventário."
+      ],
+      "version_evidence": {
+        "value": "3f22fda7ae58e6ca2a2bf0587c8f0a620ad44cb9",
+        "meaning": "runtime manifest source_commit, not a release version"
+      }
+    },
+    {
+      "id": "qtbase-rebuilt",
+      "name": "Qtbase reconstruído com backport FreeType",
+      "origin_root": "q/f75eb9bea8280844c6d1a2b3f4/sdk",
+      "origin_basis": "source-relative path, size and SHA-256 agree with the composite owner inventory",
+      "file_count": 9,
+      "total_size_bytes": 31768576,
+      "files": [
+        "Qt6Core.dll",
+        "Qt6Gui.dll",
+        "Qt6Network.dll",
+        "Qt6OpenGL.dll",
+        "Qt6Widgets.dll",
+        "plugins/imageformats/qico.dll",
+        "plugins/imageformats/qjpeg.dll",
+        "plugins/platforms/qoffscreen.dll",
+        "plugins/platforms/qwindows.dll"
+      ],
+      "gaps": [
+        "O SDK composto não contém SPDX do Qtbase reconstruído. O SPDX oficial anterior não autentica esta variante nem suas dependências incorporadas.",
+        "Inventário técnico de nove folhas não é inventário de todo código de terceiros incorporado nesses binários; faltam SBOM correspondente, notices e fonte/patch/configuração destinados à distribuição."
+      ],
+      "version_evidence": {
+        "value": "Qt 6.11.2",
+        "source": "docs/m0/evidence/m0-2-qt-composite-sdk.md",
+        "meaning": "documented composite SDK version; rebuilt Qtbase variant, not the official unmodified binary"
+      }
+    },
+    {
+      "id": "qtdeclarative",
+      "name": "Qt Declarative",
+      "origin_root": "q/f75eb9bea8280844c6d1a2b3f4/sdk",
+      "origin_basis": "source-relative path, size and SHA-256 agree with the composite owner inventory",
+      "file_count": 530,
+      "total_size_bytes": 35715239,
+      "files": [
+        "Qt6Qml.dll",
+        "Qt6QmlMeta.dll",
+        "Qt6QmlModels.dll",
+        "Qt6QmlWorkerScript.dll",
+        "Qt6Quick.dll",
+        "Qt6QuickControls2.dll",
+        "Qt6QuickControls2Basic.dll",
+        "Qt6QuickControls2BasicStyleImpl.dll",
+        "Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+        "Qt6QuickControls2Fusion.dll",
+        "Qt6QuickControls2FusionStyleImpl.dll",
+        "Qt6QuickControls2Imagine.dll",
+        "Qt6QuickControls2ImagineStyleImpl.dll",
+        "Qt6QuickControls2Impl.dll",
+        "Qt6QuickControls2Material.dll",
+        "Qt6QuickControls2MaterialStyleImpl.dll",
+        "Qt6QuickControls2Universal.dll",
+        "Qt6QuickControls2UniversalStyleImpl.dll",
+        "Qt6QuickControls2WindowsStyleImpl.dll",
+        "Qt6QuickEffects.dll",
+        "Qt6QuickLayouts.dll",
+        "Qt6QuickShapes.dll",
+        "Qt6QuickTemplates2.dll",
+        "qml/QML/qmldir",
+        "qml/QtQml/Models/modelsplugin.dll",
+        "qml/QtQml/Models/qmldir",
+        "qml/QtQml/WorkerScript/qmldir",
+        "qml/QtQml/WorkerScript/workerscriptplugin.dll",
+        "qml/QtQml/qmldir",
+        "qml/QtQml/qmlplugin.dll",
+        "qml/QtQuick/Controls/Basic/AbstractButton.qml",
+        "qml/QtQuick/Controls/Basic/Action.qml",
+        "qml/QtQuick/Controls/Basic/ActionGroup.qml",
+        "qml/QtQuick/Controls/Basic/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Basic/BusyIndicator.qml",
+        "qml/QtQuick/Controls/Basic/Button.qml",
+        "qml/QtQuick/Controls/Basic/ButtonGroup.qml",
+        "qml/QtQuick/Controls/Basic/Calendar.qml",
+        "qml/QtQuick/Controls/Basic/CalendarModel.qml",
+        "qml/QtQuick/Controls/Basic/CheckBox.qml",
+        "qml/QtQuick/Controls/Basic/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Basic/ComboBox.qml",
+        "qml/QtQuick/Controls/Basic/Container.qml",
+        "qml/QtQuick/Controls/Basic/Control.qml",
+        "qml/QtQuick/Controls/Basic/DayOfWeekRow.qml",
+        "qml/QtQuick/Controls/Basic/DelayButton.qml",
+        "qml/QtQuick/Controls/Basic/Dial.qml",
+        "qml/QtQuick/Controls/Basic/Dialog.qml",
+        "qml/QtQuick/Controls/Basic/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/Basic/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Basic/Drawer.qml",
+        "qml/QtQuick/Controls/Basic/Frame.qml",
+        "qml/QtQuick/Controls/Basic/GroupBox.qml",
+        "qml/QtQuick/Controls/Basic/HorizontalHeaderView.qml",
+        "qml/QtQuick/Controls/Basic/HorizontalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Basic/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Basic/Label.qml",
+        "qml/QtQuick/Controls/Basic/Menu.qml",
+        "qml/QtQuick/Controls/Basic/MenuBar.qml",
+        "qml/QtQuick/Controls/Basic/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Basic/MenuItem.qml",
+        "qml/QtQuick/Controls/Basic/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Basic/MonthGrid.qml",
+        "qml/QtQuick/Controls/Basic/Page.qml",
+        "qml/QtQuick/Controls/Basic/PageIndicator.qml",
+        "qml/QtQuick/Controls/Basic/Pane.qml",
+        "qml/QtQuick/Controls/Basic/Popup.qml",
+        "qml/QtQuick/Controls/Basic/ProgressBar.qml",
+        "qml/QtQuick/Controls/Basic/RadioButton.qml",
+        "qml/QtQuick/Controls/Basic/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Basic/RangeSlider.qml",
+        "qml/QtQuick/Controls/Basic/RoundButton.qml",
+        "qml/QtQuick/Controls/Basic/ScrollBar.qml",
+        "qml/QtQuick/Controls/Basic/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Basic/ScrollView.qml",
+        "qml/QtQuick/Controls/Basic/SearchField.qml",
+        "qml/QtQuick/Controls/Basic/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Basic/Slider.qml",
+        "qml/QtQuick/Controls/Basic/SpinBox.qml",
+        "qml/QtQuick/Controls/Basic/SplitView.qml",
+        "qml/QtQuick/Controls/Basic/StackView.qml",
+        "qml/QtQuick/Controls/Basic/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/Basic/SwipeView.qml",
+        "qml/QtQuick/Controls/Basic/Switch.qml",
+        "qml/QtQuick/Controls/Basic/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Basic/TabBar.qml",
+        "qml/QtQuick/Controls/Basic/TabButton.qml",
+        "qml/QtQuick/Controls/Basic/TableViewDelegate.qml",
+        "qml/QtQuick/Controls/Basic/TextArea.qml",
+        "qml/QtQuick/Controls/Basic/TextField.qml",
+        "qml/QtQuick/Controls/Basic/ToolBar.qml",
+        "qml/QtQuick/Controls/Basic/ToolButton.qml",
+        "qml/QtQuick/Controls/Basic/ToolSeparator.qml",
+        "qml/QtQuick/Controls/Basic/ToolTip.qml",
+        "qml/QtQuick/Controls/Basic/TreeViewDelegate.qml",
+        "qml/QtQuick/Controls/Basic/Tumbler.qml",
+        "qml/QtQuick/Controls/Basic/VerticalHeaderView.qml",
+        "qml/QtQuick/Controls/Basic/VerticalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Basic/WeekNumberColumn.qml",
+        "qml/QtQuick/Controls/Basic/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Basic/impl/qmldir",
+        "qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+        "qml/QtQuick/Controls/Basic/qmldir",
+        "qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+        "qml/QtQuick/Controls/FluentWinUI3/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/BusyIndicator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Button.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/CheckBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/CheckDelegate.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ComboBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Config.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/DelayButton.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Dialog.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/FocusFrame.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Frame.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/GroupBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ItemDelegate.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Menu.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/MenuBar.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/MenuBarItem.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/MenuItem.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/MenuSeparator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/PageIndicator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Popup.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ProgressBar.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/RadioButton.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/RadioDelegate.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/RangeSlider.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/RoundButton.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/SearchField.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Slider.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/SpinBox.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/StyleImage.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/Switch.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/TabBar.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/TabButton.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/TextArea.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/TextField.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ToolBar.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ToolButton.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ToolSeparator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/ToolTip.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/ButtonBackground.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/CheckIndicator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/CopyAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/CutAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/DeleteAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/FocusFrame.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/PasteAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/RadioIndicator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/RedoAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/SelectAllAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/StyleImage.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/SwitchIndicator.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/UndoAction.qml",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/qmldir",
+        "qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+        "qml/QtQuick/Controls/FluentWinUI3/qmldir",
+        "qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+        "qml/QtQuick/Controls/Fusion/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Fusion/BusyIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/Button.qml",
+        "qml/QtQuick/Controls/Fusion/CheckBox.qml",
+        "qml/QtQuick/Controls/Fusion/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/ComboBox.qml",
+        "qml/QtQuick/Controls/Fusion/DelayButton.qml",
+        "qml/QtQuick/Controls/Fusion/Dial.qml",
+        "qml/QtQuick/Controls/Fusion/Dialog.qml",
+        "qml/QtQuick/Controls/Fusion/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/Fusion/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Fusion/Drawer.qml",
+        "qml/QtQuick/Controls/Fusion/Frame.qml",
+        "qml/QtQuick/Controls/Fusion/GroupBox.qml",
+        "qml/QtQuick/Controls/Fusion/HorizontalHeaderView.qml",
+        "qml/QtQuick/Controls/Fusion/HorizontalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/Label.qml",
+        "qml/QtQuick/Controls/Fusion/Menu.qml",
+        "qml/QtQuick/Controls/Fusion/MenuBar.qml",
+        "qml/QtQuick/Controls/Fusion/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Fusion/MenuItem.qml",
+        "qml/QtQuick/Controls/Fusion/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Fusion/Page.qml",
+        "qml/QtQuick/Controls/Fusion/PageIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/Pane.qml",
+        "qml/QtQuick/Controls/Fusion/Popup.qml",
+        "qml/QtQuick/Controls/Fusion/ProgressBar.qml",
+        "qml/QtQuick/Controls/Fusion/RadioButton.qml",
+        "qml/QtQuick/Controls/Fusion/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/RangeSlider.qml",
+        "qml/QtQuick/Controls/Fusion/RoundButton.qml",
+        "qml/QtQuick/Controls/Fusion/ScrollBar.qml",
+        "qml/QtQuick/Controls/Fusion/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/ScrollView.qml",
+        "qml/QtQuick/Controls/Fusion/SearchField.qml",
+        "qml/QtQuick/Controls/Fusion/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Fusion/Slider.qml",
+        "qml/QtQuick/Controls/Fusion/SpinBox.qml",
+        "qml/QtQuick/Controls/Fusion/SplitView.qml",
+        "qml/QtQuick/Controls/Fusion/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/Switch.qml",
+        "qml/QtQuick/Controls/Fusion/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/TabBar.qml",
+        "qml/QtQuick/Controls/Fusion/TabButton.qml",
+        "qml/QtQuick/Controls/Fusion/TextArea.qml",
+        "qml/QtQuick/Controls/Fusion/TextField.qml",
+        "qml/QtQuick/Controls/Fusion/ToolBar.qml",
+        "qml/QtQuick/Controls/Fusion/ToolButton.qml",
+        "qml/QtQuick/Controls/Fusion/ToolSeparator.qml",
+        "qml/QtQuick/Controls/Fusion/ToolTip.qml",
+        "qml/QtQuick/Controls/Fusion/TreeViewDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/Tumbler.qml",
+        "qml/QtQuick/Controls/Fusion/VerticalHeaderView.qml",
+        "qml/QtQuick/Controls/Fusion/VerticalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Fusion/impl/ButtonPanel.qml",
+        "qml/QtQuick/Controls/Fusion/impl/CheckIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/impl/CopyAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/CutAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/DeleteAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/PasteAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/RadioIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/impl/RedoAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/SelectAllAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/SliderGroove.qml",
+        "qml/QtQuick/Controls/Fusion/impl/SliderHandle.qml",
+        "qml/QtQuick/Controls/Fusion/impl/SwitchIndicator.qml",
+        "qml/QtQuick/Controls/Fusion/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Fusion/impl/TextFieldBackground.qml",
+        "qml/QtQuick/Controls/Fusion/impl/UndoAction.qml",
+        "qml/QtQuick/Controls/Fusion/impl/qmldir",
+        "qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+        "qml/QtQuick/Controls/Fusion/qmldir",
+        "qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+        "qml/QtQuick/Controls/Imagine/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Imagine/BusyIndicator.qml",
+        "qml/QtQuick/Controls/Imagine/Button.qml",
+        "qml/QtQuick/Controls/Imagine/CheckBox.qml",
+        "qml/QtQuick/Controls/Imagine/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/ComboBox.qml",
+        "qml/QtQuick/Controls/Imagine/DelayButton.qml",
+        "qml/QtQuick/Controls/Imagine/Dial.qml",
+        "qml/QtQuick/Controls/Imagine/Dialog.qml",
+        "qml/QtQuick/Controls/Imagine/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/Imagine/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Imagine/Drawer.qml",
+        "qml/QtQuick/Controls/Imagine/Frame.qml",
+        "qml/QtQuick/Controls/Imagine/GroupBox.qml",
+        "qml/QtQuick/Controls/Imagine/HorizontalHeaderView.qml",
+        "qml/QtQuick/Controls/Imagine/HorizontalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/Label.qml",
+        "qml/QtQuick/Controls/Imagine/Menu.qml",
+        "qml/QtQuick/Controls/Imagine/MenuBar.qml",
+        "qml/QtQuick/Controls/Imagine/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Imagine/MenuItem.qml",
+        "qml/QtQuick/Controls/Imagine/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Imagine/Page.qml",
+        "qml/QtQuick/Controls/Imagine/PageIndicator.qml",
+        "qml/QtQuick/Controls/Imagine/Pane.qml",
+        "qml/QtQuick/Controls/Imagine/Popup.qml",
+        "qml/QtQuick/Controls/Imagine/ProgressBar.qml",
+        "qml/QtQuick/Controls/Imagine/RadioButton.qml",
+        "qml/QtQuick/Controls/Imagine/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/RangeSlider.qml",
+        "qml/QtQuick/Controls/Imagine/RoundButton.qml",
+        "qml/QtQuick/Controls/Imagine/ScrollBar.qml",
+        "qml/QtQuick/Controls/Imagine/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Imagine/ScrollView.qml",
+        "qml/QtQuick/Controls/Imagine/SearchField.qml",
+        "qml/QtQuick/Controls/Imagine/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Imagine/Slider.qml",
+        "qml/QtQuick/Controls/Imagine/SpinBox.qml",
+        "qml/QtQuick/Controls/Imagine/SplitView.qml",
+        "qml/QtQuick/Controls/Imagine/StackView.qml",
+        "qml/QtQuick/Controls/Imagine/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/SwipeView.qml",
+        "qml/QtQuick/Controls/Imagine/Switch.qml",
+        "qml/QtQuick/Controls/Imagine/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/TabBar.qml",
+        "qml/QtQuick/Controls/Imagine/TabButton.qml",
+        "qml/QtQuick/Controls/Imagine/TextArea.qml",
+        "qml/QtQuick/Controls/Imagine/TextField.qml",
+        "qml/QtQuick/Controls/Imagine/ToolBar.qml",
+        "qml/QtQuick/Controls/Imagine/ToolButton.qml",
+        "qml/QtQuick/Controls/Imagine/ToolSeparator.qml",
+        "qml/QtQuick/Controls/Imagine/ToolTip.qml",
+        "qml/QtQuick/Controls/Imagine/Tumbler.qml",
+        "qml/QtQuick/Controls/Imagine/VerticalHeaderView.qml",
+        "qml/QtQuick/Controls/Imagine/VerticalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Imagine/impl/OpacityMask.qml",
+        "qml/QtQuick/Controls/Imagine/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Imagine/impl/qmldir",
+        "qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+        "qml/QtQuick/Controls/Imagine/qmldir",
+        "qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+        "qml/QtQuick/Controls/Material/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Material/BusyIndicator.qml",
+        "qml/QtQuick/Controls/Material/Button.qml",
+        "qml/QtQuick/Controls/Material/CheckBox.qml",
+        "qml/QtQuick/Controls/Material/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Material/ComboBox.qml",
+        "qml/QtQuick/Controls/Material/DelayButton.qml",
+        "qml/QtQuick/Controls/Material/Dial.qml",
+        "qml/QtQuick/Controls/Material/Dialog.qml",
+        "qml/QtQuick/Controls/Material/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/Material/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Material/Drawer.qml",
+        "qml/QtQuick/Controls/Material/Frame.qml",
+        "qml/QtQuick/Controls/Material/GroupBox.qml",
+        "qml/QtQuick/Controls/Material/HorizontalHeaderView.qml",
+        "qml/QtQuick/Controls/Material/HorizontalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Material/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Material/Label.qml",
+        "qml/QtQuick/Controls/Material/Menu.qml",
+        "qml/QtQuick/Controls/Material/MenuBar.qml",
+        "qml/QtQuick/Controls/Material/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Material/MenuItem.qml",
+        "qml/QtQuick/Controls/Material/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Material/Page.qml",
+        "qml/QtQuick/Controls/Material/PageIndicator.qml",
+        "qml/QtQuick/Controls/Material/Pane.qml",
+        "qml/QtQuick/Controls/Material/Popup.qml",
+        "qml/QtQuick/Controls/Material/ProgressBar.qml",
+        "qml/QtQuick/Controls/Material/RadioButton.qml",
+        "qml/QtQuick/Controls/Material/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Material/RangeSlider.qml",
+        "qml/QtQuick/Controls/Material/RoundButton.qml",
+        "qml/QtQuick/Controls/Material/ScrollBar.qml",
+        "qml/QtQuick/Controls/Material/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Material/ScrollView.qml",
+        "qml/QtQuick/Controls/Material/SearchField.qml",
+        "qml/QtQuick/Controls/Material/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Material/Slider.qml",
+        "qml/QtQuick/Controls/Material/SpinBox.qml",
+        "qml/QtQuick/Controls/Material/SplitView.qml",
+        "qml/QtQuick/Controls/Material/StackView.qml",
+        "qml/QtQuick/Controls/Material/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/Material/SwipeView.qml",
+        "qml/QtQuick/Controls/Material/Switch.qml",
+        "qml/QtQuick/Controls/Material/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Material/TabBar.qml",
+        "qml/QtQuick/Controls/Material/TabButton.qml",
+        "qml/QtQuick/Controls/Material/TextArea.qml",
+        "qml/QtQuick/Controls/Material/TextField.qml",
+        "qml/QtQuick/Controls/Material/ToolBar.qml",
+        "qml/QtQuick/Controls/Material/ToolButton.qml",
+        "qml/QtQuick/Controls/Material/ToolSeparator.qml",
+        "qml/QtQuick/Controls/Material/ToolTip.qml",
+        "qml/QtQuick/Controls/Material/TreeViewDelegate.qml",
+        "qml/QtQuick/Controls/Material/Tumbler.qml",
+        "qml/QtQuick/Controls/Material/VerticalHeaderView.qml",
+        "qml/QtQuick/Controls/Material/VerticalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Material/impl/BoxShadow.qml",
+        "qml/QtQuick/Controls/Material/impl/CheckIndicator.qml",
+        "qml/QtQuick/Controls/Material/impl/CursorDelegate.qml",
+        "qml/QtQuick/Controls/Material/impl/ElevationEffect.qml",
+        "qml/QtQuick/Controls/Material/impl/RadioIndicator.qml",
+        "qml/QtQuick/Controls/Material/impl/RectangularGlow.qml",
+        "qml/QtQuick/Controls/Material/impl/RoundedElevationEffect.qml",
+        "qml/QtQuick/Controls/Material/impl/SliderHandle.qml",
+        "qml/QtQuick/Controls/Material/impl/SwitchIndicator.qml",
+        "qml/QtQuick/Controls/Material/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Material/impl/qmldir",
+        "qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+        "qml/QtQuick/Controls/Material/qmldir",
+        "qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+        "qml/QtQuick/Controls/Universal/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Universal/BusyIndicator.qml",
+        "qml/QtQuick/Controls/Universal/Button.qml",
+        "qml/QtQuick/Controls/Universal/CheckBox.qml",
+        "qml/QtQuick/Controls/Universal/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Universal/ComboBox.qml",
+        "qml/QtQuick/Controls/Universal/DelayButton.qml",
+        "qml/QtQuick/Controls/Universal/Dial.qml",
+        "qml/QtQuick/Controls/Universal/Dialog.qml",
+        "qml/QtQuick/Controls/Universal/DialogButtonBox.qml",
+        "qml/QtQuick/Controls/Universal/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Universal/Drawer.qml",
+        "qml/QtQuick/Controls/Universal/Frame.qml",
+        "qml/QtQuick/Controls/Universal/GroupBox.qml",
+        "qml/QtQuick/Controls/Universal/HorizontalHeaderView.qml",
+        "qml/QtQuick/Controls/Universal/HorizontalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Universal/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Universal/Label.qml",
+        "qml/QtQuick/Controls/Universal/Menu.qml",
+        "qml/QtQuick/Controls/Universal/MenuBar.qml",
+        "qml/QtQuick/Controls/Universal/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Universal/MenuItem.qml",
+        "qml/QtQuick/Controls/Universal/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Universal/Page.qml",
+        "qml/QtQuick/Controls/Universal/PageIndicator.qml",
+        "qml/QtQuick/Controls/Universal/Pane.qml",
+        "qml/QtQuick/Controls/Universal/Popup.qml",
+        "qml/QtQuick/Controls/Universal/ProgressBar.qml",
+        "qml/QtQuick/Controls/Universal/RadioButton.qml",
+        "qml/QtQuick/Controls/Universal/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Universal/RangeSlider.qml",
+        "qml/QtQuick/Controls/Universal/RoundButton.qml",
+        "qml/QtQuick/Controls/Universal/ScrollBar.qml",
+        "qml/QtQuick/Controls/Universal/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Universal/ScrollView.qml",
+        "qml/QtQuick/Controls/Universal/SearchField.qml",
+        "qml/QtQuick/Controls/Universal/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Universal/Slider.qml",
+        "qml/QtQuick/Controls/Universal/SpinBox.qml",
+        "qml/QtQuick/Controls/Universal/SplitView.qml",
+        "qml/QtQuick/Controls/Universal/StackView.qml",
+        "qml/QtQuick/Controls/Universal/SwipeDelegate.qml",
+        "qml/QtQuick/Controls/Universal/Switch.qml",
+        "qml/QtQuick/Controls/Universal/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Universal/TabBar.qml",
+        "qml/QtQuick/Controls/Universal/TabButton.qml",
+        "qml/QtQuick/Controls/Universal/TextArea.qml",
+        "qml/QtQuick/Controls/Universal/TextField.qml",
+        "qml/QtQuick/Controls/Universal/ToolBar.qml",
+        "qml/QtQuick/Controls/Universal/ToolButton.qml",
+        "qml/QtQuick/Controls/Universal/ToolSeparator.qml",
+        "qml/QtQuick/Controls/Universal/ToolTip.qml",
+        "qml/QtQuick/Controls/Universal/Tumbler.qml",
+        "qml/QtQuick/Controls/Universal/VerticalHeaderView.qml",
+        "qml/QtQuick/Controls/Universal/VerticalHeaderViewDelegate.qml",
+        "qml/QtQuick/Controls/Universal/impl/CheckIndicator.qml",
+        "qml/QtQuick/Controls/Universal/impl/CopyAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/CutAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/DeleteAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/PasteAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/RadioIndicator.qml",
+        "qml/QtQuick/Controls/Universal/impl/RedoAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/SelectAllAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/SwitchIndicator.qml",
+        "qml/QtQuick/Controls/Universal/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Universal/impl/UndoAction.qml",
+        "qml/QtQuick/Controls/Universal/impl/qmldir",
+        "qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+        "qml/QtQuick/Controls/Universal/qmldir",
+        "qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+        "qml/QtQuick/Controls/Windows/ApplicationWindow.qml",
+        "qml/QtQuick/Controls/Windows/Button.qml",
+        "qml/QtQuick/Controls/Windows/CheckBox.qml",
+        "qml/QtQuick/Controls/Windows/CheckDelegate.qml",
+        "qml/QtQuick/Controls/Windows/ComboBox.qml",
+        "qml/QtQuick/Controls/Windows/DelayButton.qml",
+        "qml/QtQuick/Controls/Windows/DoubleSpinBox.qml",
+        "qml/QtQuick/Controls/Windows/Frame.qml",
+        "qml/QtQuick/Controls/Windows/GroupBox.qml",
+        "qml/QtQuick/Controls/Windows/ItemDelegate.qml",
+        "qml/QtQuick/Controls/Windows/Menu.qml",
+        "qml/QtQuick/Controls/Windows/MenuBar.qml",
+        "qml/QtQuick/Controls/Windows/MenuBarItem.qml",
+        "qml/QtQuick/Controls/Windows/MenuItem.qml",
+        "qml/QtQuick/Controls/Windows/MenuSeparator.qml",
+        "qml/QtQuick/Controls/Windows/ProgressBar.qml",
+        "qml/QtQuick/Controls/Windows/RadioButton.qml",
+        "qml/QtQuick/Controls/Windows/RadioDelegate.qml",
+        "qml/QtQuick/Controls/Windows/RangeSlider.qml",
+        "qml/QtQuick/Controls/Windows/ScrollBar.qml",
+        "qml/QtQuick/Controls/Windows/ScrollIndicator.qml",
+        "qml/QtQuick/Controls/Windows/ScrollView.qml",
+        "qml/QtQuick/Controls/Windows/SearchField.qml",
+        "qml/QtQuick/Controls/Windows/SelectionRectangle.qml",
+        "qml/QtQuick/Controls/Windows/Slider.qml",
+        "qml/QtQuick/Controls/Windows/SpinBox.qml",
+        "qml/QtQuick/Controls/Windows/Switch.qml",
+        "qml/QtQuick/Controls/Windows/SwitchDelegate.qml",
+        "qml/QtQuick/Controls/Windows/TextArea.qml",
+        "qml/QtQuick/Controls/Windows/TextField.qml",
+        "qml/QtQuick/Controls/Windows/impl/CheckIndicator.qml",
+        "qml/QtQuick/Controls/Windows/impl/CopyAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/CutAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/DeleteAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/PasteAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/RedoAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/SelectAllAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/SwitchIndicator.qml",
+        "qml/QtQuick/Controls/Windows/impl/TextEditingContextMenu.qml",
+        "qml/QtQuick/Controls/Windows/impl/UndoAction.qml",
+        "qml/QtQuick/Controls/Windows/impl/qmldir",
+        "qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+        "qml/QtQuick/Controls/Windows/qmldir",
+        "qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+        "qml/QtQuick/Controls/impl/CopyAction.qml",
+        "qml/QtQuick/Controls/impl/CutAction.qml",
+        "qml/QtQuick/Controls/impl/DeleteAction.qml",
+        "qml/QtQuick/Controls/impl/PasteAction.qml",
+        "qml/QtQuick/Controls/impl/RedoAction.qml",
+        "qml/QtQuick/Controls/impl/SelectAllAction.qml",
+        "qml/QtQuick/Controls/impl/UndoAction.qml",
+        "qml/QtQuick/Controls/impl/qmldir",
+        "qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+        "qml/QtQuick/Controls/qmldir",
+        "qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+        "qml/QtQuick/Effects/effectsplugin.dll",
+        "qml/QtQuick/Effects/qmldir",
+        "qml/QtQuick/Layouts/qmldir",
+        "qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+        "qml/QtQuick/NativeStyle/controls/DefaultButton.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultCheckBox.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultComboBox.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultDial.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultDoubleSpinBox.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultFrame.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultGroupBox.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultItemDelegate.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultItemDelegateIconLabel.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultProgressBar.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultRadioButton.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultRadioDelegate.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultScrollBar.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultSearchField.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultSlider.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultSpinBox.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultTextArea.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultTextField.qml",
+        "qml/QtQuick/NativeStyle/controls/DefaultTreeViewDelegate.qml",
+        "qml/QtQuick/NativeStyle/qmldir",
+        "qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+        "qml/QtQuick/NativeStyle/util/WindowsFocusFrame.qml",
+        "qml/QtQuick/Shapes/qmldir",
+        "qml/QtQuick/Shapes/qmlshapesplugin.dll",
+        "qml/QtQuick/Templates/qmldir",
+        "qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+        "qml/QtQuick/Window/qmldir",
+        "qml/QtQuick/Window/quickwindowplugin.dll",
+        "qml/QtQuick/qmldir",
+        "qml/QtQuick/qtquick2plugin.dll"
+      ],
+      "gaps": [
+        "49 registros SPDX encontrados por caminho têm SHA-1 bruto divergente; correspondência binária com esses registros não foi comprovada.",
+        "481 folhas empacotadas não possuem registro individual nesse SPDX. A origem é comprovada pelo inventário composto, não por uma atribuição SPDX individual.",
+        "MASM, sombras Material e Yoga estão na seleção de dependências; os copyrights abaixo não substituem textos de licença e avisos completos. Textos específicos não foram localizados no prefixo SDK consultado."
+      ],
+      "supplier_document_declaration": {
+        "document": "qtdeclarative",
+        "id": "SPDXRef-Package-qtdeclarative-dc825212e031",
+        "name": "qtdeclarative",
+        "version": "4e3399c2+HEAD",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "NOASSERTION",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors.",
+        "download_location": "git://code.qt.io/qt/qtdeclarative.git@4e3399c26ec57246c08de019cfcbda8d23604cfa"
+      }
+    },
+    {
+      "id": "qtsvg",
+      "name": "Qt SVG",
+      "origin_root": "q/f75eb9bea8280844c6d1a2b3f4/sdk",
+      "origin_basis": "source-relative path, size and SHA-256 agree with the composite owner inventory",
+      "file_count": 3,
+      "total_size_bytes": 721320,
+      "files": [
+        "Qt6Svg.dll",
+        "plugins/iconengines/qsvgicon.dll",
+        "plugins/imageformats/qsvg.dll"
+      ],
+      "gaps": [
+        "Três registros SPDX encontrados por caminho têm SHA-1 bruto divergente; correspondência binária não foi comprovada.",
+        "Atribuição XSVG alcançada; o texto HPND-sell-variant e os avisos pertinentes não constam do payload."
+      ],
+      "supplier_document_declaration": {
+        "document": "qtsvg",
+        "id": "SPDXRef-Package-qtsvg-d09caeca8d6a",
+        "name": "qtsvg",
+        "version": "17ca512+HEAD",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "NOASSERTION",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors.",
+        "download_location": "git://code.qt.io/qt/qtsvg.git@17ca512f903f935282ebeca496aac5d11ba4199a"
+      }
+    },
+    {
+      "id": "qtmultimedia",
+      "name": "Qt Multimedia",
+      "origin_root": "out/m0/qt-multimedia-archive-probe-20260829-01/stage",
+      "origin_basis": "source path from runtime manifest; source file SHA-256 checked",
+      "file_count": 2,
+      "total_size_bytes": 1987184,
+      "files": [
+        "Qt6Multimedia.dll",
+        "plugins/multimedia/ffmpegmediaplugin.dll"
+      ],
+      "gaps": [
+        "Dois registros SPDX encontrados por caminho têm SHA-1 bruto divergente; correspondência binária não foi comprovada.",
+        "O SPDX contém DEPENDS_ON de FFmpegMediaPluginImplPrivate para FFmpeg/Signalsmith, mas não contém uma aresta do pacote QFFmpegMediaPlugin para esse pacote privado. Signalsmith permanece declaração candidata separada, não dependência alcançada.",
+        "TLSF e dr_libs são alcançados. O archive/prefixo consultado não fornece seus textos completos de licença/notice."
+      ],
+      "supplier_document_declaration": {
+        "document": "qtmultimedia",
+        "id": "SPDXRef-Package-qtmultimedia-203c14163550",
+        "name": "qtmultimedia",
+        "version": "6.11.2",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "NOASSERTION",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors.",
+        "download_location": "git://code.qt.io/qt/qtmultimedia.git"
+      }
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "origin_root": "out/m0/qt-multimedia-archive-probe-20260829-01/stage",
+      "origin_basis": "source path from runtime manifest; source file SHA-256 checked",
+      "file_count": 5,
+      "total_size_bytes": 18889240,
+      "files": [
+        "avcodec-61.dll",
+        "avformat-61.dll",
+        "avutil-59.dll",
+        "swresample-5.dll",
+        "swscale-8.dll"
+      ],
+      "gaps": [
+        "Os cinco arquivos não possuem file record no SPDX Qt Multimedia. Origem e SHA-256 do stage conferidos, mas não há vínculo por checksum ao pacote FFmpeg declarado pelo fornecedor.",
+        "SPDX declara 7.1.3 e URL n7.1.3; config_qtmultimedia.opt aponta C:\\FFmpeg-n7.1.5\\build\\msvc\\installed. A evidência histórica registra também av_version_info() 7.1.5. A divergência permanece sem reconciliação.",
+        "Não foram encontrados textos completos de licença/notice no archive/prefixo consultado, nem fonte correspondente dessa configuração autenticada para distribuição."
+      ],
+      "supplier_package_declaration": {
+        "document": "qtmultimedia",
+        "id": "SPDXRef-Package-qtmultimedia-system-3rdparty-FFmpeg-203c14163550",
+        "name": "FFmpeg",
+        "version": "7.1.3",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "LGPL-2.1-or-later AND BSD-3-Clause AND BSD-2-Clause AND BSD-Source-Code AND ISC AND MIT AND MPL-2.0",
+        "copyright_text": "Copyright (c) 2000-2023 the FFmpeg developers",
+        "download_location": "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.3.tar.gz"
+      }
+    },
+    {
+      "id": "taglib",
+      "name": "TagLib",
+      "origin_root": "out/m0/taglib-2.3.1-msvc144-probe-20260829-01/install",
+      "origin_basis": "source path from runtime manifest; source file SHA-256 checked",
+      "file_count": 1,
+      "total_size_bytes": 977408,
+      "files": [
+        "tag.dll"
+      ],
+      "gaps": [
+        "Os textos LGPL/MPL e utf8cpp existem na fonte local, mas não no payload; sua presença não representa conclusão sobre obrigações ou escolha da alternativa de licença.",
+        "Versão/build provêm da evidência local de compilação; não foi encontrado SBOM do TagLib instalado."
+      ],
+      "version_and_license_evidence": {
+        "source": "docs/m0/evidence/m0-6-qt-audio-first-slices.md",
+        "version": "2.3.1",
+        "reported_license_expression": "LGPL-2.1-only OR MPL-1.1",
+        "reported_utf8cpp_license": "BSL-1.0",
+        "meaning": "literal historical build/licensing report, tied here to the installed tag.dll source by SHA-256; no licensing conclusion"
+      }
+    },
+    {
+      "id": "d3d",
+      "name": "Microsoft D3D Compiler",
+      "origin_root": "q/f75eb9bea8280844c6d1a2b3f4/sdk",
+      "origin_basis": "source-relative path, size and SHA-256 agree with the composite owner inventory",
+      "file_count": 1,
+      "total_size_bytes": 4173928,
+      "files": [
+        "d3dcompiler_47.dll"
+      ],
+      "gaps": [
+        "A origem técnica e o hash estão no inventário composto. Termos de redistribuição e servicing Microsoft não foram aprovados; este arquivo distribuído é distinto do CRT externo."
+      ]
+    },
+    {
+      "id": "project-config",
+      "name": "Configuração e aviso próprios",
+      "origin_root": "packaging/windows",
+      "origin_basis": "source path from runtime manifest; source file SHA-256 checked",
+      "file_count": 2,
+      "total_size_bytes": 824,
+      "files": [
+        "LOCAL-DEVELOPMENT.txt",
+        "qt.conf"
+      ],
+      "gaps": [
+        "O aviso privado declara explicitamente gates de licenças/notices/SBOM pendentes; não é um pacote de notices."
+      ]
+    }
+  ],
+  "spdx_review": {
+    "raw_checksum_algorithm": "SHA1",
+    "file_records_found_by_path": 54,
+    "raw_checksum_matches": 0,
+    "raw_checksum_mismatches": 54,
+    "files_without_record_in_consulted_component_spdx": 486,
+    "files_without_record_explanation": "481 Qt Declarative runtime/QML leaves and five FFmpeg DLLs. Other components do not have a current corresponding SPDX in this review.",
+    "supplier_packages_total_in_three_documents": 189,
+    "selected_owner_packages": 54,
+    "selected_additional_dependency_packages": 9,
+    "selected_packages_total": 63,
+    "file_mappings": [
+      {
+        "runtime_path": "plugins/iconengines/qsvgicon.dll",
+        "document": "qtsvg",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-QSvgIconPlugin-RelWithDebInfo-d09caeca8d6a",
+        "supplier_path": "./plugins/iconengines/qsvgicon.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "9a4c601dfdfc5525f094dad507c046cd55c8f1a5",
+        "runtime_checksum": "4bbaacbace1ffd86ffdc52cad80033960397e05a",
+        "owner_packages": [
+          "SPDXRef-Package-qtsvg-qt-plugin-QSvgIconPlugin-d09caeca8d6a"
+        ]
+      },
+      {
+        "runtime_path": "plugins/imageformats/qsvg.dll",
+        "document": "qtsvg",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-QSvgPlugin-RelWithDebInfo-d09caeca8d6a",
+        "supplier_path": "./plugins/imageformats/qsvg.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "3cf340f32dfeab4bffb66ee982d4ab929fcf71d4",
+        "runtime_checksum": "059da8a9ad585ec0f509cf84d04701c8450587be",
+        "owner_packages": [
+          "SPDXRef-Package-qtsvg-qt-plugin-QSvgPlugin-d09caeca8d6a"
+        ]
+      },
+      {
+        "runtime_path": "plugins/multimedia/ffmpegmediaplugin.dll",
+        "document": "qtmultimedia",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-QFFmpegMediaPlugin-RelWithDebInfo-203c14163550",
+        "supplier_path": "./plugins/multimedia/ffmpegmediaplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "23b32b8ef67c7b58ca85e3e08e7d03916bf5ed13",
+        "runtime_checksum": "b1398113d75a242e76f5cf09b1cb4c715d38e3d0",
+        "owner_packages": [
+          "SPDXRef-Package-qtmultimedia-qt-plugin-QFFmpegMediaPlugin-203c14163550"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQml/Models/modelsplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-modelsplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQml/Models/modelsplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "16c12e742a5facd2481786d7fcb1e5e0bf106708",
+        "runtime_checksum": "d2569ab2167b6c24ad9be125bbba0954fb11c572",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-modelsplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQml/qmlplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qmlplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQml/qmlplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "50e52599c3329f9ef2814fe32fec12745257fe1f",
+        "runtime_checksum": "659e9cfd22c1aa124d9e56d92783a850503f30b3",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qmlplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQml/WorkerScript/workerscriptplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-workerscriptplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQml/WorkerScript/workerscriptplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "e293e7ca8c9af9505453552a484bdfd07c207067",
+        "runtime_checksum": "d50e918cfe3666a7772e84630f52e51fafaf1fbf",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-workerscriptplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2basicstyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "44dc2ef59a4330bc078d73c85e503eef9c59cd1f",
+        "runtime_checksum": "fa19a75555c68b86b6ed88ef48bc60ff0397858e",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2basicstyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2basicstyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "4c87d75bf8ab339dd0f6dd10bff40a18ccaff64c",
+        "runtime_checksum": "342bd69cab781d54e154d143ccb8de2f7c6d2cfb",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2basicstyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2fluentwinui3styleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "94fa83ac84a8c4f2898f955b4c83ab5412324b54",
+        "runtime_checksum": "6093879831a34c6d8643ddb744d2320f009b61d0",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fluentwinui3styleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2fluentwinui3styleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2f5685fb2680e575f1f41671ee88d240c25eb86f",
+        "runtime_checksum": "9abc14f602338999131d2c22cfd3260b49c3cafe",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fluentwinui3styleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2fusionstyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "0b409b02c3be1bb744eb1a1621b362d84b5a1e45",
+        "runtime_checksum": "00ed4bd1f153accd7b57a56d64e3aaca8fdcfd2c",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fusionstyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2fusionstyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "55383e009fa261774402c2222232b5f9e8dbc3cd",
+        "runtime_checksum": "d6dd5d3a21dcef4d420baf990b2fb854c38c8fdf",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fusionstyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2imaginestyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "05f6a4a1f15408608ce06ab3e05946ee9ecae3af",
+        "runtime_checksum": "46ba9b3c1476d9c9b3c7c55aa18befbfb192f82e",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2imaginestyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2imaginestyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "30710a1df6e9c31841b636625ce5f95159deb6cf",
+        "runtime_checksum": "776bdb35c9a6777327902272440043eb39932ce3",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2imaginestyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2implplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2852c049e6fa06142b4b15f172e5f42edf08fe46",
+        "runtime_checksum": "25163d183e170cfd01ed9aa427f7cc98baea6727",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2implplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2materialstyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "a58e1559dcfcd131ff4800bf77a171e63a31018a",
+        "runtime_checksum": "60b9260eac9f01566f585f151594fb5576427e77",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2materialstyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2materialstyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "6a7959a19a624520ffa87bd7387ba99e487a2133",
+        "runtime_checksum": "b41d6c23c5e651fdb11cee795a9c241c9b58607a",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2materialstyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2plugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "fa3ecfe039795cb22eb6ed302dcaa0c47a98bd1c",
+        "runtime_checksum": "a4098dff68c5dead96441e9606fd985c10051696",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2plugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2universalstyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2ac900a9d3c20351e3fe6c7d41bd864b7ae08a64",
+        "runtime_checksum": "e4994c428492c75053c579d4329c7c975d88cfae",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2universalstyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2universalstyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "6015b3f125a9af95a28d5b3dc2527d08322e4afe",
+        "runtime_checksum": "d9b012dbf4d1d80f0ae6b24f4da3800f8c072d99",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2universalstyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2windowsstyleimplplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "0b8582ebaf74f568d45add174d36bfc190ff4323",
+        "runtime_checksum": "67576f082f97fa90cf97833927b907c62763242e",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2windowsstyleimplplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2windowsstyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "e65d961aa0d50114ce1f23cbb3198a96fc4affe8",
+        "runtime_checksum": "4f4a5c942dc8b52855203f9dc8ac8b348bf767e1",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2windowsstyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Effects/effectsplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-effectsplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Effects/effectsplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "ff914108bcc468dc06738e82791589e4b3e89d06",
+        "runtime_checksum": "bd5dffdf8c2dd4dd69536ded4e0b61d20027ceb9",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-effectsplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qquicklayoutsplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "702493c6ed56f971536b63eb4db951f5b8fa516b",
+        "runtime_checksum": "db8086161d451d3bcddfb5aa7b6435acfecad8b6",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qquicklayoutsplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquickcontrols2nativestyleplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "55d1470ccc69560a6dee075ba82bd1b982ed2e8d",
+        "runtime_checksum": "1d4b38a90803df8274eb750ca6b7db27dbca331f",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2nativestyleplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/qtquick2plugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquick2plugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/qtquick2plugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "e2cbc2f051af83c24b30eb43f064756d0b79f8e2",
+        "runtime_checksum": "5bc40e9f3a03a755cd2766c529cff32e56e3c1cd",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquick2plugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Shapes/qmlshapesplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qmlshapesplugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Shapes/qmlshapesplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "282993b84577e717fd45cac49267aceaf5e778e7",
+        "runtime_checksum": "0aae834fb86b5017504a4601a549e90c67672d3b",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qmlshapesplugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-qtquicktemplates2plugin-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2dbb7450bce323e656eed562799501abdad5853d",
+        "runtime_checksum": "fe06571a4360811083708d9c73e76f551715057b",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-qtquicktemplates2plugin-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "qml/QtQuick/Window/quickwindowplugin.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-plugin-quickwindow-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./qml/QtQuick/Window/quickwindowplugin.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "83c12b5435775fa9f529cc94e5b6d0fae2ac61e9",
+        "runtime_checksum": "f9f574002f17e1609789c19a73dc11a75bef861c",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-plugin-quickwindow-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6Multimedia.dll",
+        "document": "qtmultimedia",
+        "file_id": "SPDXRef-PackagedFile-qt-module-Multimedia-RelWithDebInfo-203c14163550",
+        "supplier_path": "./bin/Qt6Multimedia.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "5e15d9ac852482ad18a805344ac0ef03ad082ee2",
+        "runtime_checksum": "41071fb8a5fdee2635612e4c6cbd2d82aab3bdba",
+        "owner_packages": [
+          "SPDXRef-Package-qtmultimedia-qt-module-Multimedia-203c14163550"
+        ]
+      },
+      {
+        "runtime_path": "Qt6Qml.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-Qml-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6Qml.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "3b31ff455c74b377051b51711d7a659a6d07dc5a",
+        "runtime_checksum": "1446d3505e2f73d629b92a419592bf91ff8b0545",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-Qml-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QmlMeta.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QmlMeta-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QmlMeta.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "489cea1b905fd7eb9b1f376194bdfeea73327a3d",
+        "runtime_checksum": "0fb869d8005e17274d4db7647366c79d594fe421",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QmlMeta-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QmlModels.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QmlModels-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QmlModels.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "f21e28c48fc75f17fb071666c5bdc94ab899b5f3",
+        "runtime_checksum": "77adef3260e411918196e74b0f769ade4bdac662",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QmlModels-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QmlWorkerScript.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QmlWorkerScript-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QmlWorkerScript.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "e5feeea8d07a62c24b2dccaed3229ca3201f8209",
+        "runtime_checksum": "40627b04d30740807e2f81919adecd070e795c5b",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QmlWorkerScript-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6Quick.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-Quick-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6Quick.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "1832059c29adba7b4208539ce6fc429c564799c3",
+        "runtime_checksum": "292339b9920350b51a0ecda55c193cb1505f3d60",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-Quick-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "a819e55ac8a185c63e87386a9fff9fff73ff3a28",
+        "runtime_checksum": "60a1aba2ec018d6a549c194117c5e5ba7094b282",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Basic.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Basic-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Basic.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "75fdf6f2cb954a809f7ffa920a010414dcef055e",
+        "runtime_checksum": "72f47ff0643cc37a6bfce633bd194031cb3c2328",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Basic-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2BasicStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2BasicStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2BasicStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "91853de4e8c9504c2266b35c8c35cc13b4b3d01f",
+        "runtime_checksum": "2d1cb7113f8512db6a07b17ded0891f5bed98bee",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2BasicStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2FluentWinUI3StyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "a58b3dbfcd3023ccef3d4501e37b0aca1eedb856",
+        "runtime_checksum": "b0dd3cd035adf2ccfcbc8df2c27465059341b450",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2FluentWinUI3StyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Fusion.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Fusion-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Fusion.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "222b7767af854c589284ecf6b92495ce2269db6e",
+        "runtime_checksum": "35a367b0dc6d0ab5bc060030fa8dd13ca891b9dc",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Fusion-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2FusionStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2FusionStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2FusionStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2f1e2b6dc873dae67ed82b67c487cf7d9ba57034",
+        "runtime_checksum": "06bef7f9b9ce360ce097af9c6a9c83e4cac742ce",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2FusionStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Imagine.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Imagine-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Imagine.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "cf0479b32c49f6052cb2602dac3ce0c51f97f427",
+        "runtime_checksum": "e6baf5562650c2cf413ecb57ff1c9b85352a1dd4",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Imagine-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2ImagineStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2ImagineStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2ImagineStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "60ecacf18e1d5525a1f183cbb9bc7588fa8f8ed0",
+        "runtime_checksum": "403809c3e4cbaf27ef414f2a24d1c401648c9faa",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2ImagineStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Impl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Impl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Impl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2e32a09aad68950e621de33e1c773bc872aa894d",
+        "runtime_checksum": "a7878df17f848ded66afc3350fef3665d3560202",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Impl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Material.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Material-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Material.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "97747653fee56debbc730885f6d0bbcfa5852eb0",
+        "runtime_checksum": "c4c0ba4fc4a9598cdd5deba37f69c20023e638cc",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Material-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2MaterialStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2MaterialStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2MaterialStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "f57459ba6f4cb3279c4ca96e539851e07994a824",
+        "runtime_checksum": "708e1cda34ec4ae47ea868fd7215cc48aeed9810",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2MaterialStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2Universal.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2Universal-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2Universal.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "2b626eccba2919089561edf89c7c52d7f5c03c40",
+        "runtime_checksum": "e1ab08cc685088464fb70dcd408e7dda2adc6e99",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Universal-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2UniversalStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2UniversalStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2UniversalStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "478ed986ed94baf8e2c45c7f2d43c69742a3ea75",
+        "runtime_checksum": "3f543512f016211781252c0a2ae87b926c7e9e9f",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2UniversalStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickControls2WindowsStyleImpl.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickControls2WindowsStyleImpl-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickControls2WindowsStyleImpl.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "364b738de5546afa4c85adb8a686fd3cbce718bc",
+        "runtime_checksum": "804f546541b68eae9f8d5b8d600919238413bff4",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickControls2WindowsStyleImpl-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickEffects.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickEffects-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickEffects.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "44f2ea75048478b062b21f73bdd44dbc17acec6a",
+        "runtime_checksum": "415b445cb116ba2e4fbf02711df1fb02c381e998",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickEffects-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickLayouts.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickLayouts-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickLayouts.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "42290f40d4da5f026c37e5dc1daf15351f780570",
+        "runtime_checksum": "dd3d90d469461454ba16a657481f70459f73ac72",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickLayouts-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickShapes.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickShapes-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickShapes.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "858dc7bdfc299328ba34a841dc9da9960d107066",
+        "runtime_checksum": "72548b4a32639525931eb521c0bda93ede66c191",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickShapes-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6QuickTemplates2.dll",
+        "document": "qtdeclarative",
+        "file_id": "SPDXRef-PackagedFile-qt-module-QuickTemplates2-RelWithDebInfo-dc825212e031",
+        "supplier_path": "./bin/Qt6QuickTemplates2.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "8201112220a4f6c35a29d604c0a8f3957d6dc36f",
+        "runtime_checksum": "bd91b4be7e61cdf29fee99663b167f13a83e1c32",
+        "owner_packages": [
+          "SPDXRef-Package-qtdeclarative-qt-module-QuickTemplates2-dc825212e031"
+        ]
+      },
+      {
+        "runtime_path": "Qt6Svg.dll",
+        "document": "qtsvg",
+        "file_id": "SPDXRef-PackagedFile-qt-module-Svg-RelWithDebInfo-d09caeca8d6a",
+        "supplier_path": "./bin/Qt6Svg.dll",
+        "checksum_algorithm": "SHA1",
+        "raw_match": false,
+        "supplier_checksum": "e733fce6ad65dffa8030ccd63882b05c0395bcb0",
+        "runtime_checksum": "f37cc002292f68f4bf69f2f85c6a32ba2fe9502b",
+        "owner_packages": [
+          "SPDXRef-Package-qtsvg-qt-module-Svg-d09caeca8d6a"
+        ]
+      }
+    ],
+    "selected_packages": [
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-Qml-Attribution-masm-dc825212e031",
+        "role": "supplier-dependency",
+        "name": "Qml_Attribution_masm",
+        "version": "unknown",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "BSD-2-Clause",
+        "copyright_text": "Copyright (C) 2003-2018 Apple Inc. All rights reserved.\nCopyright (C) 2007 Justin Haygood (jhaygood@reaktix.com)\nCopyright (C) 2007-2009 Torch Mobile, Inc. All rights reserved. (http://www.torchmobile.com/)\nCopyright (C) 2009, 2010 University of Szeged\nCopyright (C) 2009-2011 STMicroelectronics. All rights reserved.\nCopyright (C) 2010 MIPS Technologies, Inc. All rights reserved.\nCopyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged\nCopyright (C) 2010 MIPS Technologies, Inc. All rights reserved.\nCopyright (C) 2010, 2011 Research In Motion Limited. All rights reserved.\nCopyright (C) 2011 Google Inc. All rights reserved.\nCopyright (C) 2013 Samsung Electronics. All rights reserved.\nCopyright (C) 2015 Cisco Systems, Inc. All rights reserved.\nCopyright (c) 2002-2009 Vivek Thampi",
+        "reached_from": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-Qml-dc825212e031",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-qtquickcontrols2materialstyleplugin-Attribution-shadow-angular-material-dc825212e031",
+        "role": "supplier-dependency",
+        "name": "qtquickcontrols2materialstyleplugin_Attribution_shadow_angular_material",
+        "version": "unknown",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "MIT",
+        "copyright_text": "Copyright (c) 2014-2016 Google, Inc",
+        "reached_from": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2materialstyleplugin-dc825212e031",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-QuickControls2Material-Attribution-shadow-angular-material-dc825212e031",
+        "role": "supplier-dependency",
+        "name": "QuickControls2Material_Attribution_shadow_angular_material",
+        "version": "unknown",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "MIT",
+        "copyright_text": "Copyright (c) 2014-2016 Google, Inc",
+        "reached_from": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Material-dc825212e031",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-3rdparty-sources-QuickLayouts-Attribution-yoga-dc825212e031",
+        "role": "supplier-dependency",
+        "name": "QuickLayouts_Attribution_yoga",
+        "version": "2.0.1",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "MIT",
+        "copyright_text": "Copyright (c) Facebook, Inc. and its affiliates.\nCopyright (c) Meta Platforms, Inc. and affiliates.",
+        "reached_from": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickLayouts-dc825212e031",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-Qml-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "Qml",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QmlIntegration-dc825212e031",
+        "role": "supplier-dependency",
+        "name": "QmlIntegration",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors.",
+        "reached_from": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-Qml-dc825212e031",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QmlMeta-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QmlMeta",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QmlModels-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QmlModels",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QmlWorkerScript-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QmlWorkerScript",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-Quick-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "Quick",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Basic-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Basic",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2BasicStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2BasicStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2FluentWinUI3StyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2FluentWinUI3StyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Fusion-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Fusion",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2FusionStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2FusionStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Imagine-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Imagine",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2ImagineStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2ImagineStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Impl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Impl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Material-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Material",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2MaterialStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2MaterialStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2Universal-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2Universal",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2UniversalStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2UniversalStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickControls2WindowsStyleImpl-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickControls2WindowsStyleImpl",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickEffects-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickEffects",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickLayouts-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickLayouts",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickShapes-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickShapes",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-module-QuickTemplates2-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "QuickTemplates2",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-effectsplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "effectsplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-modelsplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "modelsplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qmlplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qmlplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qmlshapesplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qmlshapesplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qquicklayoutsplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qquicklayoutsplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquick2plugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquick2plugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2basicstyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2basicstyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2basicstyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2basicstyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fluentwinui3styleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2fluentwinui3styleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fluentwinui3styleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2fluentwinui3styleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fusionstyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2fusionstyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2fusionstyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2fusionstyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2imaginestyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2imaginestyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2imaginestyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2imaginestyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2implplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2implplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2materialstyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2materialstyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2materialstyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2materialstyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2nativestyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2nativestyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2plugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2plugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2universalstyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2universalstyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2universalstyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2universalstyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2windowsstyleimplplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2windowsstyleimplplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquickcontrols2windowsstyleplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquickcontrols2windowsstyleplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-qtquicktemplates2plugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "qtquicktemplates2plugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-quickwindow-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "quickwindow",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtdeclarative::SPDXRef-Package-qtdeclarative-qt-plugin-workerscriptplugin-dc825212e031",
+        "role": "contains-packaged-file",
+        "name": "workerscriptplugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-3rdparty-sources-BundledTLSF-Attribution-tlfs-203c14163550",
+        "role": "supplier-dependency",
+        "name": "BundledTLSF_Attribution_tlfs",
+        "version": "v3.1",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "BSD-3-Clause",
+        "copyright_text": "Copyright (c) 2006-2016, Matthew Conte",
+        "reached_from": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-bundled-3rdparty-module-BundledTLSF-203c14163550",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-3rdparty-sources-Multimedia-Attribution-dr-libs-203c14163550",
+        "role": "supplier-dependency",
+        "name": "Multimedia_Attribution_dr_libs",
+        "version": "0.14.5",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "Unlicense OR MIT-0",
+        "copyright_text": "NOASSERTION",
+        "reached_from": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-module-Multimedia-203c14163550",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-bundled-3rdparty-module-BundledTLSF-203c14163550",
+        "role": "supplier-dependency",
+        "name": "BundledTLSF",
+        "version": "v3.1",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "BSD-3-Clause",
+        "copyright_text": "Copyright (c) 2006-2016, Matthew Conte",
+        "reached_from": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-module-Multimedia-203c14163550",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-module-Multimedia-203c14163550",
+        "role": "contains-packaged-file",
+        "name": "Multimedia",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtmultimedia::SPDXRef-Package-qtmultimedia-qt-plugin-QFFmpegMediaPlugin-203c14163550",
+        "role": "contains-packaged-file",
+        "name": "QFFmpegMediaPlugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtsvg::SPDXRef-Package-qtsvg-qt-3rdparty-sources-Svg-Attribution-xsvg-d09caeca8d6a",
+        "role": "supplier-dependency",
+        "name": "Svg_Attribution_xsvg",
+        "version": "unknown",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "HPND-sell-variant",
+        "copyright_text": "Copyright 2002 USC/Information Sciences Institute",
+        "reached_from": "qtsvg::SPDXRef-Package-qtsvg-qt-module-Svg-d09caeca8d6a",
+        "relationship": "DEPENDS_ON"
+      },
+      {
+        "id": "qtsvg::SPDXRef-Package-qtsvg-qt-module-Svg-d09caeca8d6a",
+        "role": "contains-packaged-file",
+        "name": "Svg",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtsvg::SPDXRef-Package-qtsvg-qt-plugin-QSvgIconPlugin-d09caeca8d6a",
+        "role": "contains-packaged-file",
+        "name": "QSvgIconPlugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      },
+      {
+        "id": "qtsvg::SPDXRef-Package-qtsvg-qt-plugin-QSvgPlugin-d09caeca8d6a",
+        "role": "contains-packaged-file",
+        "name": "QSvgPlugin",
+        "version": "6.11.2",
+        "license_declared": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "license_concluded": "LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+        "copyright_text": "Copyright (C) The Qt Company Ltd. and other contributors."
+      }
+    ],
+    "unresolved_external_dependencies": [
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Core-9ce86868aeba",
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Gui-9ce86868aeba",
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Network-9ce86868aeba",
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-OpenGL-9ce86868aeba",
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformModuleInternal-9ce86868aeba",
+      "qtdeclarative::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformPluginInternal-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Concurrent-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Core-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Gui-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Network-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformModuleInternal-9ce86868aeba",
+      "qtmultimedia::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformPluginInternal-9ce86868aeba",
+      "qtsvg::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Core-9ce86868aeba",
+      "qtsvg::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-Gui-9ce86868aeba",
+      "qtsvg::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformModuleInternal-9ce86868aeba",
+      "qtsvg::DocumentRef-qtbase-9ce86868aeba:SPDXRef-Package-qtbase-qt-module-PlatformPluginInternal-9ce86868aeba"
+    ],
+    "unresolved_external_reason": "All 16 document-qualified dependencies target the official Qtbase document; this runtime uses rebuilt Qtbase, and no corresponding rebuilt SPDX is available. They are not replaced by records from the historical official Qtbase SPDX.",
+    "candidate_not_reached": [
+      {
+        "document": "qtmultimedia",
+        "id": "SPDXRef-Package-qtmultimedia-qt-3rdparty-sources-FFmpegMediaPluginImplPrivate-Attribution-signalsmith-stretch-203c14163550",
+        "name": "FFmpegMediaPluginImplPrivate_Attribution_signalsmith-stretch",
+        "version": "1.0.0",
+        "license_declared": "NOASSERTION",
+        "license_concluded": "MIT",
+        "copyright_text": "Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.",
+        "download_location": "https://signalsmith-audio.co.uk/code/stretch.git",
+        "reason": "Declared as a dependency of FFmpegMediaPluginImplPrivate, but that private package is not reachable from the packaged QFFmpegMediaPlugin through the relationships in the supplied SPDX. Not counted among the 63 selected packages."
+      }
+    ]
+  },
+  "unresolved_runtime_paths": [],
+  "outstanding_gaps": [
+    "Produzir notices/textos completos aplicáveis e revisar a licença do código próprio, fonte correspondente, patches, condições de relink e informações de instalação. Este inventário não decide alternativas de licença.",
+    "Resolver a evidência do Qtbase reconstruído e seus terceiros incorporados; não transferir automaticamente o inventário oficial do pacote 200b983 para este runtime.",
+    "Reconciliar os checksums SPDX divergentes e a cobertura dos arquivos sem file record, sem atribuir causa de assinatura que não foi comprovada nesta leitura.",
+    "Reconciliar a identidade/configuração FFmpeg 7.1.3 versus 7.1.5 e a relação privada do plugin antes de tratar o SPDX como representação completa do áudio distribuído.",
+    "Preservar copyrights e condições especiais de MASM, Material, Yoga, XSVG, TLSF, dr_libs e possíveis outros recortes. Textos genéricos Qt não substituem esses avisos.",
+    "Revisar D3D distribuído e pré-requisitos Microsoft externos separadamente; external_prerequisites do manifesto é closure técnica, não autorização de redistribuição.",
+    "Advisories, segurança global e revisão de distribuição não foram executados aqui. CHK-SEC, NFR-REL-006 e M5.7 permanecem abertos."
+  ]
+}

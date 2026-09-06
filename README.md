@@ -18,6 +18,8 @@ A [receita do instalador](docs/windows-installer.md) também está na estrutura 
 
 Os [oito checks sintéticos das receitas Windows](docs/development-commands.md#checks-das-receitas-windows) integram `check` e `validate`, sem compilação de pacote, instalação, Registry ou retomada dos testes históricos/nativos. Uma falha interrompe o fluxo antes dos passos seguintes.
 
+O [inventário de terceiros e rascunho de notices](docs/delivery/runtime-3f22fda-notices.md) identifica os componentes do runtime atual e preserva textos locais de licença, sem modificar os setups. Divergências e atribuições/fontes faltantes permanecem abertas; não é aprovação de segurança ou distribuição.
+
 Check completo da unidade Windows promovida, com ferramentas locais já disponíveis e sem downloads:
 
 ```powershell
