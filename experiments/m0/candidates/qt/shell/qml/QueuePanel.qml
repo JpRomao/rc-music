@@ -16,6 +16,11 @@ FocusScope {
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
     property bool selectedAvailable: false
+    property string menuOccurrenceId: ""
+    readonly property bool menuTargetSelected: {
+        const row = queueList.currentItem as QueueOccurrenceDelegate;
+        return root.visible && root.enabled && !root.presenter.exiting && menuOccurrenceId.length > 0 && selectedOccurrenceId === menuOccurrenceId && row !== null && row.occurrenceId === menuOccurrenceId;
+    }
     readonly property bool selectedRetryAvailable: !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0 && presenter.playbackState !== PlayerPresenter.Loading
     readonly property bool selectedLocationAvailable: !presenter.usesFrozenFixture && presenter.fileLocationAvailable && !presenter.exiting && !presenter.selectingAudioFiles && selectedOccurrenceId.length > 0 && !selectedAvailable && presenter.retryingOccurrenceId.length === 0 && presenter.locatingOccurrenceId.length === 0
     property bool locationFocusRestoreAllowed: true
@@ -64,6 +69,9 @@ FocusScope {
         return parts.join(". ") + (parts[parts.length - 1].endsWith(".") ? "" : ".");
     }
     function syncCurrent() {
+        // The open menu owns its occurrence, not the changing playback cursor.
+        if (rowMenu.visible)
+            return;
         if (queueList.count === 0) {
             root.selectedOccurrenceId = "";
             root.selectedTitle = "";
@@ -76,6 +84,8 @@ FocusScope {
         queueList.forceLayout();
     }
     function focusCurrent() {
+        if (rowMenu.visible)
+            return;
         syncCurrent();
         queueList.forceActiveFocus(Qt.TabFocusReason);
     }
@@ -145,7 +155,9 @@ FocusScope {
     function openRowMenu(row) {
         if (!row)
             return;
+        ++root.queueFocusRevision;
         queueList.currentIndex = row.index;
+        root.menuOccurrenceId = row.occurrenceId;
         rowMenu.popup(row, 0, row.height);
     }
     function requestClear() {
@@ -204,6 +216,10 @@ FocusScope {
             ++queueFocusRevision;
     }
     onPresenterChanged: ++queueFocusRevision
+    onMenuTargetSelectedChanged: {
+        if (rowMenu.visible && !menuTargetSelected)
+            rowMenu.close();
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -491,52 +507,76 @@ FocusScope {
         MenuItem {
             objectName: "queue-menu-play-now"
             text: queueText.playNow
-            enabled: root.selectedOccurrenceId.length > 0 && root.selectedAvailable
-            onTriggered: root.playRow(queueList.currentItem, Qt.TabFocusReason)
+            enabled: root.menuTargetSelected && root.selectedAvailable
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.playRow(queueList.currentItem, Qt.TabFocusReason);
+            }
         }
         MenuItem {
             id: retryMenuItem
             objectName: "queue-menu-retry"
             text: queueText.retry
             visible: !root.presenter.usesFrozenFixture && root.selectedOccurrenceId.length > 0 && (!root.selectedAvailable || root.selectedOccurrenceId === root.presenter.retryingOccurrenceId)
-            enabled: root.selectedRetryAvailable
+            enabled: root.menuTargetSelected && root.selectedRetryAvailable
             Accessible.id: "queue-menu-retry"
             Accessible.role: Accessible.MenuItem
             Accessible.name: text
             Accessible.description: root.presenter.retryingOccurrenceId.length > 0 ? queueText.retrying : queueText.retryDescription
-            Accessible.onPressAction: root.retrySelected()
-            onTriggered: root.retrySelected()
+            Accessible.onPressAction: {
+                if (root.menuTargetSelected)
+                    root.retrySelected();
+            }
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.retrySelected();
+            }
         }
         MenuItem {
             objectName: "queue-menu-locate"
             text: queueText.locate
             visible: !root.presenter.usesFrozenFixture && root.presenter.fileLocationAvailable && root.selectedOccurrenceId.length > 0 && !root.selectedAvailable
-            enabled: root.selectedLocationAvailable
+            enabled: root.menuTargetSelected && root.selectedLocationAvailable
             Accessible.id: "queue-menu-locate"
             Accessible.role: Accessible.MenuItem
             Accessible.name: text
             Accessible.description: root.presenter.locatingOccurrenceId.length > 0 ? queueText.locating : queueText.locateDescription
-            Accessible.onPressAction: root.locateSelected()
-            onTriggered: root.locateSelected()
+            Accessible.onPressAction: {
+                if (root.menuTargetSelected)
+                    root.locateSelected();
+            }
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.locateSelected();
+            }
         }
         MenuSeparator {}
         MenuItem {
             objectName: "queue-menu-move-up"
             text: queueText.moveUp
-            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
-            onTriggered: root.moveSelected(-1)
+            enabled: root.menuTargetSelected && !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.moveSelected(-1);
+            }
         }
         MenuItem {
             objectName: "queue-menu-move-down"
             text: queueText.moveDown
-            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
-            onTriggered: root.moveSelected(1)
+            enabled: root.menuTargetSelected && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.moveSelected(1);
+            }
         }
         MenuItem {
             objectName: "queue-menu-remove"
             text: queueText.remove
-            enabled: !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
-            onTriggered: root.removeSelected()
+            enabled: root.menuTargetSelected && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
+            onTriggered: {
+                if (root.menuTargetSelected)
+                    root.removeSelected();
+            }
         }
     }
 
@@ -615,7 +655,7 @@ FocusScope {
         }
         function onQueueFocusRequested(index) {
             const revision = ++root.queueFocusRevision;
-            if (root.presenter.selectingAudioFiles || root.addingFilesPending)
+            if (rowMenu.visible || root.presenter.selectingAudioFiles || root.addingFilesPending)
                 return;
             if (index < 0) {
                 root.closeRequested();

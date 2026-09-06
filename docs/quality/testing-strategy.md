@@ -36,6 +36,8 @@ O estado Red é observado na execução local/CI focada e seu teste + motivo de 
 
 ## 3. Pirâmide e responsabilidades
 
+A regressão do [menu contextual da fila](../../experiments/m0/candidates/qt/README.md#queue-menu-occurrence) combina abertura por teclado sobre C e erro/avanço automático A→B antes de acionar o menu. Verifica IDs/ordem, path carregado e contagem de comandos do backend falso, não apenas o destaque visual. Remoção do alvo, inserção/reordenação e nova abertura também devem preservar a autoridade da ocorrência; callbacks tardios de foco não podem tirar o teclado do menu aberto. É teste funcional da apresentação com presenter real, sem usar mídia pessoal ou medir performance.
+
 ```text
                   poucos testes manuais / release
                 smoke de pacote e integração do SO
