@@ -155,96 +155,10 @@ if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
     rc_music_configure_cpp(m0_qt_shell_support)
     set_target_properties(m0_qt_shell_support PROPERTIES AUTOMOC ON)
 
-    set(m0_qt_qml_files)
-    foreach(qml_file IN ITEMS
-            Main.qml
-            EmptyState.qml
-            AccessibleActionButton.qml
-            AccessibleTransportButton.qml
-            NowPlayingState.qml
-            ErrorState.qml
-            ErrorText.qml
-            PlaybackAccessibilityStatus.qml
-            PlaybackAccessibilityText.qml
-            TransportBar.qml
-            TransportText.qml
-            TransportSlider.qml
-            QueuePanel.qml
-            QueueText.qml
-            QueueActionButton.qml
-            QueueClearConfirmation.qml
-            SourceImportStatus.qml
-            SourceImportText.qml
-            PreferencesPanel.qml
-            PreferencePersistenceNotice.qml
-            WindowNotice.qml
-            PreferencesText.qml
-            PreferenceChoice.qml
-            PreferenceToggle.qml
-            PreferenceSecondsField.qml
-            TrackDetailsField.qml
-            TrackDetailsPanel.qml
-            TrackDetailsText.qml)
-        set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
-        set_source_files_properties("${qml_source}" PROPERTIES QT_RESOURCE_ALIAS "${qml_file}")
-        list(APPEND m0_qt_qml_files "${qml_source}")
-    endforeach()
-
-    qt_add_library(m0_qt_shell_ui STATIC)
-    qt_add_qml_module(m0_qt_shell_ui
-        URI MusicPlayer.M0
-        VERSION 1.0
-        OUTPUT_DIRECTORY "${QT_QML_OUTPUT_DIRECTORY}/MusicPlayer/M0"
-        SOURCES
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ShellUiContract.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ShellUiContract.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ArtworkImageProvider.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ArtworkImageProvider.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ApplicationText.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemPowerEventsBinding.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemPowerEventsBinding.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LifecycleText.hpp"
-        QML_FILES ${m0_qt_qml_files}
-    )
-    qt_add_translations(m0_qt_shell_ui
-        SOURCE_TARGETS m0_qt_shell_ui
-        TS_FILES "${RC_MUSIC_SOURCE_ROOT}/src/ui/translations/music-player_pt_BR.ts"
-        RESOURCE_PREFIX "/i18n"
-        LUPDATE_TARGET m0_qt_shell_ui_lupdate
-        LRELEASE_TARGET m0_qt_shell_ui_lrelease
-    )
-    target_include_directories(m0_qt_shell_ui
-        PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src"
-        PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/presentation"
-    )
-    target_link_libraries(m0_qt_shell_ui PRIVATE
-        m0_qt_shell_support
-        Qt6::Core
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::QuickLayouts
-    )
-    rc_music_configure_cpp(m0_qt_shell_ui)
-    rc_music_configure_cpp(m0_qt_shell_uiplugin)
-    if(MSVC)
-        target_compile_options(m0_qt_shell_ui PRIVATE /wd4702)
-    endif()
-
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicUi.cmake")
+    rc_music_add_ui(m0_qt_shell_ui m0_qt_shell_support "${QT_QML_OUTPUT_DIRECTORY}")
     set(RC_MUSIC_DESKTOP_PLACEHOLDER_ASSET_FILE "${RC_MUSIC_SOURCE_ROOT}/assets/cover-placeholder.svg")
     set(RC_MUSIC_DESKTOP_TRACK_ASSET_FILE "${RC_MUSIC_SOURCE_ROOT}/assets/cover-track.svg")
-    set_source_files_properties("${RC_MUSIC_DESKTOP_PLACEHOLDER_ASSET_FILE}" PROPERTIES
-        QT_RESOURCE_ALIAS "assets/cover-placeholder.svg")
-    set_source_files_properties("${RC_MUSIC_DESKTOP_TRACK_ASSET_FILE}" PROPERTIES
-        QT_RESOURCE_ALIAS "assets/cover-track.svg")
-    qt_add_resources(m0_qt_shell_ui m0_qt_shell_assets
-        PREFIX "/m0"
-        FILES "${RC_MUSIC_DESKTOP_PLACEHOLDER_ASSET_FILE}" "${RC_MUSIC_DESKTOP_TRACK_ASSET_FILE}"
-    )
 
     add_library(m0_qt_shell_bootstrap STATIC
         "${RC_MUSIC_SOURCE_ROOT}/src/app/OpenSourcesCommand.hpp"

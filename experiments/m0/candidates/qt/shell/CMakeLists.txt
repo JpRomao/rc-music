@@ -128,11 +128,11 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(m0_fixture_scenarios_enabled)
         target_sources(m0_qt_shell_support PRIVATE
-            include/m0/adapters/fixture/FixtureRepository.hpp
-            include/m0/presentation/QueueListModel.hpp
-            src/adapters/fixture/FixtureDecoder.hpp
-            src/adapters/fixture/FixtureRepository.cpp
-            src/presentation/QueueListModel.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/include/m0/adapters/fixture/FixtureRepository.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/include/m0/presentation/QueueListModel.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/adapters/fixture/FixtureDecoder.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/adapters/fixture/FixtureRepository.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/presentation/QueueListModel.cpp"
         )
         target_compile_definitions(m0_qt_shell_support
             PUBLIC RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -142,10 +142,13 @@ if(M0_QT_SHELL_SUPPORT)
         )
     endif()
     if(m0_fixture_scenarios_enabled)
-        target_include_directories(m0_qt_shell_support PUBLIC include)
+        target_include_directories(m0_qt_shell_support PUBLIC
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/include"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support")
         target_include_directories(m0_qt_shell_ui PRIVATE src src/presentation)
         target_compile_definitions(m0_qt_shell_ui PUBLIC RC_MUSIC_ENABLE_FIXTURE_SCENARIOS)
-        target_sources(m0_qt_shell_ui PRIVATE src/presentation/PlayerPresenterScenarioControl.hpp)
+        target_sources(m0_qt_shell_ui PRIVATE
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/support/presentation/PlayerPresenterScenarioControl.hpp")
     endif()
     if(m0_fixture_scenarios_enabled)
         add_library(m0_qt_fixture_data STATIC EXCLUDE_FROM_ALL)
@@ -531,7 +534,7 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
         add_dependencies(m0_qt_shell_executable_smoke_tests m0_qt_shell)
         add_executable(m0_qt_fixture_tests
-            tests/qtest/FixtureRepositoryTests.cpp
+            "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/FixtureRepositoryTests.cpp"
         )
         target_link_libraries(m0_qt_fixture_tests PRIVATE m0_qt_shell_support Qt6::Gui Qt6::Test)
         target_include_directories(m0_qt_fixture_tests PRIVATE src)
@@ -547,7 +550,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_fixture_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.fixture.repository-and-model COMMAND m0_qt_fixture_tests)
-        add_executable(m0_qt_presenter_tests tests/qtest/PlayerPresenterTests.cpp)
+        add_executable(m0_qt_presenter_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/PlayerPresenterTests.cpp")
         target_link_libraries(m0_qt_presenter_tests PRIVATE
             m0_qt_shell_support m0_qt_shell_ui Qt6::Gui Qt6::Quick Qt6::Test)
         target_include_directories(m0_qt_presenter_tests PRIVATE src)
@@ -563,7 +566,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_presenter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.presenter.initial-load COMMAND m0_qt_presenter_tests)
-        add_executable(m0_qt_shell_contract_tests tests/qtest/ShellUiContractTests.cpp)
+        add_executable(m0_qt_shell_contract_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/qtest/ShellUiContractTests.cpp")
         target_link_libraries(m0_qt_shell_contract_tests PRIVATE
             m0_qt_shell_support
             m0_qt_shell_ui
@@ -608,7 +611,7 @@ if(M0_QT_SHELL_SUPPORT)
                 ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
                 ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
         endif()
-        add_executable(m0_qt_quick_tests tests/quick/quick_main.cpp)
+        add_executable(m0_qt_quick_tests "${RC_MUSIC_SOURCE_ROOT}/tests/ui/quick/quick_main.cpp")
         target_link_libraries(m0_qt_quick_tests PRIVATE
             m0_qt_system_appearance
             m0_qt_shell_support
@@ -621,7 +624,7 @@ if(M0_QT_SHELL_SUPPORT)
         target_include_directories(m0_qt_quick_tests PRIVATE src)
         target_compile_features(m0_qt_quick_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_qt_quick_tests PRIVATE
-            QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/quick"
+            QUICK_TEST_SOURCE_DIR="${RC_MUSIC_SOURCE_ROOT}/tests/ui/quick"
         )
         set_target_properties(m0_qt_quick_tests PROPERTIES AUTOMOC ON)
         if(MSVC)
@@ -630,7 +633,7 @@ if(M0_QT_SHELL_SUPPORT)
             target_compile_options(m0_qt_quick_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         endif()
         add_test(NAME m0.qt.quick.shell-states COMMAND m0_qt_quick_tests
-            -input "${CMAKE_CURRENT_SOURCE_DIR}/tests/quick"
+            -input "${RC_MUSIC_SOURCE_ROOT}/tests/ui/quick"
             -import "${QT_QML_OUTPUT_DIRECTORY}"
         )
         get_target_property(m0_qt_core_runtime Qt6::Core IMPORTED_LOCATION_RELEASE)

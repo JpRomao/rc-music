@@ -58,7 +58,7 @@ $SourceRoot = (Get-Item -LiteralPath $SourceRoot).FullName
 $ClangFormat = Resolve-ToolFile $ClangFormat
 $QmlFormat = Resolve-ToolFile $QmlFormat
 $cppFiles = @(Get-SourceFiles @('include', 'src', 'tests', 'tools') @('.cpp', '.hpp'))
-$qmlFiles = @(Get-SourceFiles @('src/ui/qml') @('.qml'))
+$qmlFiles = @(Get-SourceFiles @('src/ui/qml', 'tests/ui/quick') @('.qml'))
 if ($cppFiles.Count -eq 0) { throw 'C++ source inventory is empty' }
 if ($qmlFiles.Count -eq 0) { throw 'QML source inventory is empty' }
 

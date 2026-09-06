@@ -52,4 +52,4 @@ Os [comandos de desenvolvimento](development-commands.md) mantêm o fluxo de con
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.
 
-A promoção de presenter/UI ainda exige uma variante exclusiva de testes que preserve os cenários históricos sem habilitá-los na aplicação raiz ON/OFF. CI Windows permanece um incremento separado, sem execução remota declarada. A transferência destas suites não encerra M1 nem os gates de acessibilidade, segurança, licenças e release.
+A promoção posterior de [presenter/UI](ui-tests.md) introduz uma variante exclusiva de testes, preservando os cenários históricos sem habilitá-los na aplicação raiz ON/OFF. CI Windows permanece um incremento separado, sem execução remota declarada. A transferência destas suites não encerra M1 nem os gates de acessibilidade, segurança, licenças e release.

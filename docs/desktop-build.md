@@ -14,7 +14,7 @@ O build raiz agora compila o RC Music real, com Qt Quick, Qt Multimedia/FFmpeg e
 - O nome técnico do alvo/executável continua `m0_qt_shell`/`m0_qt_shell.exe`. A marca visível é RC Music; namespace QML `MusicPlayer.M0`, recursos, tradução, IDs de dados e locks permanecem compatíveis. Isto não altera propriedades de distribuição ou migra dados.
 - Oito arquivos de testes Qt foram movidos, sem cópias ou mudança de assertions, para `tests/qt`: abertura/argumentos, comandos e despacho IPC, coordenação de instância, codecs de preferências/sessão e seletores de áudio. Os testes históricos de presenter, UI, bindings e áudio ainda são consumidores do mesmo código promovido.
 
-Incremento posterior: as [três suites de áudio](audio-tests.md) também foram promovidas, byte-idênticas, e passaram a integrar o CTest da raiz com corpus sintético próprio autenticado. O consumidor histórico reutiliza essas mesmas fontes. Presenter, UI e bindings ainda exigem a promoção de sua composição exclusiva de testes; isso não ativa cenários no executável de produto.
+Incrementos posteriores: as [três suites de áudio](audio-tests.md) e a [cobertura de presenter/UI](ui-tests.md) passaram a integrar o CTest da raiz com entradas sintéticas próprias autenticadas. O consumidor histórico reutiliza essas mesmas fontes. A UI de produção e sua variante de teste usam uma única lista de fontes em `cmake/RcMusicUi.cmake`, mas plugins, objetos C++, registros QML e diretórios de recursos distintos. A macro que altera o layout C++ do presenter fica exclusivamente na variante de testes; não entra no executável real em ON/OFF. A raiz passou **276/276**; os registros abaixo preservam a evidência original da promoção desktop.
 
 ## Configure, build e testes
 
@@ -78,6 +78,6 @@ Movimentações mecânicas não mudam regras de negócio; os runners alterados t
 
 ## Próximos gates
 
-Consolidar os scripts raiz de M1.2 e CI Windows de M1.3; promover a cobertura restante de apresentação/UI/áudio conforme os próximos incrementos. M1.1 não encerra automaticamente preflight, arquitetura, segurança/licenças e fechamento global de M1. Preservar os gates funcionais, recuperação, acessibilidade nativa e distribuição ainda abertos no [plano](development-plan.md).
+Os [scripts raiz de M1.2](development-commands.md) estão consolidados, assim como a cobertura básica de UI/áudio. Prosseguir com cobertura restante de bindings/plataforma e processos, rastreabilidade e CI Windows de M1.3. M1.1 não encerra automaticamente preflight, arquitetura, segurança/licenças e fechamento global de M1. Preservar os gates funcionais, recuperação, acessibilidade nativa e distribuição ainda abertos no [plano](development-plan.md).
 
 Não houve benchmark, A/B, Linux, instalação/associação no host, uso de áudios pessoais, Computer Use ou atualização do instalador a43faa1. A promoção não aprova release pública.

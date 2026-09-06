@@ -63,7 +63,7 @@ pwsh -NoProfile -File scripts/develop.ps1 validate
 
 ## Formato sem alteração implícita
 
-[Format-Source.ps1](../scripts/Format-Source.ps1) enumera `.cpp` e `.hpp` em `include`, `src`, `tests` e `tools`, e `.qml` somente em `src/ui/qml`. Exclui segmentos `experiments` e `out`, inclusive se estiverem dentro dessas raízes. Usa `rg` primeiro e enumeração PowerShell quando `rg` não está disponível. Um inventário C++ ou QML vazio é erro, não sucesso.
+[Format-Source.ps1](../scripts/Format-Source.ps1) enumera `.cpp` e `.hpp` em `include`, `src`, `tests` e `tools`, e `.qml` em `src/ui/qml` e `tests/ui/quick`. Exclui segmentos `experiments` e `out`, inclusive se estiverem dentro dessas raízes. Usa `rg` primeiro e enumeração PowerShell quando `rg` não está disponível. Um inventário C++ ou QML vazio é erro, não sucesso.
 
 O check C++ chama clang-format com `--dry-run --Werror`. O qmlformat **não oferece `--check`** nessa versão: o runner chama `--newline unix` e compara o stdout com a fonte, normalizando finais de linha para LF sem escrever no arquivo original. Uma diferença, inclusive a ausência de newline final, faz o check falhar. `-Apply` usa `-i` explicitamente nas duas ferramentas. Argumentos são passados em arrays, preservando espaços e Unicode nos caminhos.
 
@@ -96,4 +96,4 @@ Os comandos usam dependências locais já provisionadas, mesmo quando seus diret
 
 O build produz o executável real, não um instalador nem um runtime redistribuível. `validate` cobre a suite raiz atualmente promovida; não executa automaticamente toda a cobertura histórica de UI/áudio ou substitui os gates nativos, de acessibilidade, licenças, segurança e release. CI Windows de M1.3 e os demais itens de M1 permanecem separados no [plano](development-plan.md).
 
-Incremento posterior: o mesmo `validate` passou a incluir as [suites de áudio e metadata](audio-tests.md), com corpus sintético autenticado somente em ON. A raiz passou 271/271 testes; as contagens da seção de evidência acima descrevem o incremento original do runner. A composição instrumentada de UI/bindings e reinício de processo ainda não foi promovida.
+Incrementos posteriores: o mesmo `validate` passou a incluir as [suites de áudio e metadata](audio-tests.md) e a [variante exclusiva de testes de UI](ui-tests.md), com entradas sintéticas autenticadas somente em ON. A raiz passou **276/276 testes**, com formato **154 C++/52 QML**, runner **33/33** e formatter **18/18**. A inclusão dos QML de testes teve Red pela ausência no inventário e Green sem alterar os arquivos durante o check. As contagens da seção de evidência acima descrevem o incremento original do runner. Cobertura restante de bindings/plataforma e instrumentação de reinício de processo ainda não foram promovidas; a aplicação real permanece sem cenários em ON/OFF.

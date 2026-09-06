@@ -166,6 +166,22 @@ try {
         $arguments = @(Get-Calls $fixture | ForEach-Object { $_.arguments })
         Assert-True (-not ($arguments | Where-Object { $_ -match '[\\/](?:out|experiments)[\\/](?:generated|demo|cache|Bad)\.' })) 'Excluded file reached a formatter'
     }
+    Test-Case 'promoted Quick QML is checked without changing bytes or expanding its source boundary' {
+        $fixture = New-Fixture
+        $quickFile = Join-Path $fixture.Source 'tests/ui/quick/tst_queue 日本.qml'
+        Set-File $quickFile "import QtQuick`r`nItem {}`r`n"
+        foreach ($relative in @('tests/ui/quick/out/Excluded.qml',
+                'tests/ui/quick/experiments/Excluded.qml', 'tests/ui/other/Excluded.qml')) {
+            Set-File (Join-Path $fixture.Source $relative) "BAD`n"
+        }
+        $before = (Get-FileHash -LiteralPath $quickFile -Algorithm SHA256).Hash
+        $result = @(Invoke-Formatter $fixture)
+        Assert-True (($result -join ' ') -match '2 C\+\+.*2 QML') 'Promoted Quick QML is missing from the inventory'
+        $arguments = @(Get-Calls $fixture | ForEach-Object { $_.arguments })
+        Assert-True ($arguments -contains $quickFile) 'Promoted Quick QML did not reach the formatter'
+        Assert-True (-not ($arguments | Where-Object { $_ -match 'Excluded\.' })) 'Quick source boundary expanded'
+        Assert-True ((Get-FileHash -LiteralPath $quickFile -Algorithm SHA256).Hash -ceq $before) 'Quick check changed source bytes'
+    }
     Test-Case 'inventory fallback without rg keeps the same source boundaries' {
         $fixture = New-Fixture
         Set-File (Join-Path $fixture.Source 'tools/Generator.cpp') "int generate() {}`n"

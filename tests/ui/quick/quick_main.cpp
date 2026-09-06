@@ -857,7 +857,11 @@ class EmptyShellQuickTestSetup final : public QObject {
         previous_accessibility_update_handler = QAccessible::installUpdateHandler(recordAccessibilityUpdate);
         Q_INIT_RESOURCE(m0_qt_shell_assets);
         Q_INIT_RESOURCE(m0_qt_fixture_data);
+#ifdef RC_MUSIC_TEST_UI_VARIANT
+        Q_INIT_RESOURCE(rc_music_test_ui_translations);
+#else
         Q_INIT_RESOURCE(m0_qt_shell_ui_translations);
+#endif
         QQuickStyle::setStyle(QStringLiteral("Basic"));
         translation_installed_ = pt_br_translation_.load(QStringLiteral(":/i18n/music-player_pt_BR.qm")) &&
                                  QCoreApplication::installTranslator(&pt_br_translation_);
