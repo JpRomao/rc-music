@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "scope": "windows-x64-product-local-development",
+  "validation_status": "passed-local",
+  "backend": "QtMultimedia/FFmpeg",
+  "runtime_manifest_sha256": "c3f43d26601fdafd5d8ebe7e779f2c7f34827361681b729cecb182d83f1b742c",
+  "fixture_catalog_sha256": "b2b6846239154e238bd09bdc352d2b98345d0f8b2936bb87557246adbfc7fb21",
+  "test_source_sha256": "bac3aaa4191861932cdd98c9ec48af3853de70d3a41713c2ad761bf11d3d1132",
+  "result_sha256": "c8bfcb96ae72f2636bbef2b558d097e1d2bc02d862aebc91b25045ef96f8f299",
+  "formats": [
+    {
+      "extension": "flac",
+      "description": "Áudio FLAC (16-bit)",
+      "fixture_ids": ["flac-16-stereo"]
+    },
+    {
+      "extension": "m4a",
+      "description": "Áudio M4A (AAC LC)",
+      "fixture_ids": ["m4a-aac-lc"]
+    },
+    {
+      "extension": "mp3",
+      "description": "Áudio MP3 (CBR e VBR)",
+      "fixture_ids": ["mp3-cbr-stereo", "mp3-unicode-tags", "mp3-vbr-stereo"]
+    },
+    {
+      "extension": "mp4",
+      "description": "Áudio MP4 (AAC LC)",
+      "fixture_ids": ["m4a-aac-lc"]
+    },
+    {
+      "extension": "oga",
+      "description": "Áudio OGA (Vorbis)",
+      "fixture_ids": ["ogg-vorbis"]
+    },
+    {
+      "extension": "ogg",
+      "description": "Áudio Ogg (Vorbis)",
+      "fixture_ids": ["ogg-vorbis"]
+    },
+    {
+      "extension": "wav",
+      "description": "Áudio WAV (PCM 16-bit)",
+      "fixture_ids": ["wav-pcm-mono"]
+    }
+  ]
+}

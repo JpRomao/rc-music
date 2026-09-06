@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado montado e inventário verificado; execução do payload, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtime local atualizado montado, com recusa OFF, startup instrumentado e jornadas de codecs verificados; uso nativo do app instalado, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-09-06.
 
 ## Implementação única
@@ -69,7 +69,37 @@ O gate terminou com exit 0 após build incremental, scanner QML, leitura de impo
 
 O payload está em `out/product/rc-music-local/rc-music-windows-dev-3f22fda/app`; manifesto e `qml-imports.json` ficam no diretório pai, ignorados pelo Git. Esse runtime alimentou a [compilação do setup privado](windows-installer.md#instalador-local-gerado-em-2026-09-06). O identificador de versão do executável ainda é `M0 experimental`; não foi inventada versão de release.
 
-Não houve execução do player, `LocalRuntime.Smoke.ps1`, probes, setup ou nova declaração de formatos. A conferência de bytes/headers/imports não demonstra carregabilidade, playback no pacote, máquina limpa ou lifecycle. CRT/pré-requisitos externos, segurança, licenças/notices/SBOM, assinatura e gates nativos continuam pendentes. Nenhum pacote histórico foi substituído.
+Na montagem original não houve execução do player, `LocalRuntime.Smoke.ps1`, probes, setup ou nova declaração de formatos. A conferência de bytes/headers/imports isoladamente não demonstra carregabilidade, playback no pacote, máquina limpa ou lifecycle. O smoke posterior está registrado abaixo; CRT/pré-requisitos externos, segurança, licenças/notices/SBOM, assinatura e gates nativos continuam pendentes. Nenhum pacote histórico foi substituído.
+
+## Smoke automatizado do runtime
+
+Em 2026-09-06, com HEAD limpo `89cd08c`, foi executado o smoke promovido sobre o runtime `3f22fda` já gerado. Antes de lançar processos, os 554 arquivos e o manifesto foram reconferidos; o cache ON foi validado contra a toolchain selecionada e o build dos dois probes retornou `ninja: no work to do`.
+
+```powershell
+pwsh -NoProfile -File packaging/windows/tests/LocalRuntime.Smoke.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-3f22fda/app -InstrumentedBuildDirectory out/product/m1-desktop-release-on-20260906
+```
+
+Resultado observado, exit 0 do runner:
+
+- **Produção OFF:** `RCMusic.exe` recusou os hooks antes de abrir configuração/IPC/stores; exit 1, stdout/stderr 0 B e raiz solicitada ausente. QApplication já é inicializada; isso não comprova a jornada normal do executável instalado;
+- **Startup ON:** cópia do shell exclusivo de teste, fora do payload, carregou a UI vazia e concluiu `requestExit`/shutdown; exit 0 e stdout/stderr 0 B, com configuração GUID própria;
+- **Codecs:** **16/16 linhas e 18/18 testes Qt**, zero falhas/skips. Cobrem sete fixtures básicas, aliases `.mp4`/`.oga` e sete cópias com extensão neutra; cada jornada verifica load, pause, seek até a metade, metadata, retorno a zero e reprodução completa até EOF. Volume zero e mute são verificados antes do load;
+- os três processos próprios terminaram; inventário/tamanhos/hashes dos 554 arquivos e ausência de extras foram reconferidos após o smoke. Setup e runtime original não foram modificados.
+
+Evidência local ignorada pelo Git: `out/product/test-runs/rc-music-runtime-smoke/278db7a6503d4b0fa3a31297015f062a/smoke-result.json`, SHA-256 **`c8bfcb96ae72f2636bbef2b558d097e1d2bc02d862aebc91b25045ef96f8f299`**. As 16 linhas PASS foram conferidas individualmente, além do agregado. O resultado preserva diagnósticos FFmpeg em stderr; o contrato dessa jornada não exige streams vazios, ao contrário dos dois processos de shell.
+
+Proveniência dos probes usados:
+
+| Input | SHA-256 |
+|---|---|
+| Script de smoke | `c5f6137e1774ce7e6bd37edea8ed18ea67181a86de6aa47704cd212da8dab7ee` |
+| Shell instrumentado | `8b3d7ab523f0f5b5efb7ffcdc134b0b6ab5bfa4aa8ee51c77ad8d3d18eeba3d9` |
+| Teste de áudio | `868d4b37139c935bb279e3c1b38c810f53f0c16dfb193fc70e0ef0f5f3ad848d` |
+| Qt6Test, somente no probe | `8cee7db0c3e75e8f32da032c31893638207caa25f81f28083baa9afa0dcd0612` |
+
+O ambiente foi reconstruído com `offscreen/software`, PATH de runtime/Windows e configuração explícita. Isso isola os dados próprios do teste, não todas as APIs Known Folder ou efeitos do Qt/Windows: o ON tenta SMTC/eventos de energia, e o áudio real pode abrir sessão de dispositivo, embora silenciado. Não houve Computer Use, janela nativa interativa, instalação, registro de associações ou alteração de volume mestre. Não se mediu desempenho nem se repetiu CTest global.
+
+A prova de codecs é do adapter/presenter instrumentado usando as bibliotecas declaradas do runtime, não da abertura via Explorer ou do setup instalado. O resultado sustenta somente a [declaração local v2 dos perfis básicos](windows-installer.md#declaracao-local-v2-validada); não aprova outros perfis, Opus/ALAC, audibilidade, máquina limpa, acessibilidade nativa ou release.
 
 ## Evidência e limites da promoção original
 

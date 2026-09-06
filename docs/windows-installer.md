@@ -27,7 +27,15 @@ Uma declaração de produto é **schema 2**, scope `windows-x64-product-local-de
 
 O leitor exige `validation_status=passed-local`, mas esse texto e `result_sha256` são referências de evidência revisada, não assinatura ou prova automática de aprovação. Conferir o resultado real continua obrigatório. O leitor rejeita tipos inválidos, hashes divergentes, candidatos, aliases indevidos, duplicatas e nomes inseguros; revalida também os bytes das fixtures referenciadas. Catálogo e declaração são reconferidos ao terminar o planejamento.
 
-**Nenhuma declaração de produto aprovada foi criada neste incremento.** Os testes constroem declarações fictícias exclusivamente em diretórios GUID. A matriz v1 histórica permanece inalterada, vinculada ao seu corpus/runtime. Só o entrypoint antigo ou `-LegacyBaseline` explícito escolhe essa baseline; a entrada padrão recusa v1 antes de consultar o histórico. Não basta trocar o número de schema ou recalcular hashes para aprovar outro runtime.
+Na promoção original, nenhuma declaração de produto aprovada foi criada; os testes constroem declarações fictícias exclusivamente em diretórios GUID. A declaração real posterior está registrada abaixo. A matriz v1 histórica permanece inalterada, vinculada ao seu corpus/runtime. Só o entrypoint antigo ou `-LegacyBaseline` explícito escolhe essa baseline; a entrada padrão recusa v1 antes de consultar o histórico. Não basta trocar o número de schema ou recalcular hashes para aprovar outro runtime.
+
+### Declaração local v2 validada
+
+A [declaração `rc-music-windows-dev-3f22fda.v2.json`](../packaging/windows/formats/rc-music-windows-dev-3f22fda.v2.json) registra o resultado revisado do [smoke de codecs do runtime](windows-runtime.md#smoke-automatizado-do-runtime): 16 linhas/18 testes sem falhas ou skips. Seu SHA-256 é **`d066ac79e1f21d2d0769d1cad3ad64ef9c910e579c193197cb31d0a042a8a851`**. Ela vincula o manifesto do runtime `3f22fda`, catálogo factual, fonte do teste e `smoke-result.json` pelos quatro hashes reais, sem transferir aprovação da matriz v1.
+
+Declara somente os perfis básicos das sete fixtures: MP3 CBR/VBR e tags Unicode, AAC LC em M4A/MP4, FLAC 16-bit, WAV PCM 16-bit e Vorbis em Ogg/OGA. As sete extensões são `flac`, `m4a`, `mp3`, `mp4`, `oga`, `ogg`, `wav`; `.audio` foi usada apenas nas cópias de teste, não declarada como associação. Isso não promete todos os codecs/perfis desses contêineres.
+
+Leitura e planejamento reais passaram sem escrita: sete formatos/callbacks exatos, associações ON somente com argumento explícito, assinatura **`10e0c7a4087c3a1fab787b0a91d071234bf19c26d43dea71a75100d01070d6ef`** e payload ID **`15343435b378183f2ecd1fb5c46c4af61d285034cefb7dfc6c4c15d3a6104fae`**. Uma chamada com hash de outro runtime foi recusada antes de saída. Esses valores descrevem dados/configuração revisados, não execução de instalação ou alteração do Windows; o setup OFF já entregue permanece inalterado.
 
 ## Checks sem compilação ou instalação
 
