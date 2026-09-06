@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "purpose": "synthetic-validation-inputs-not-runtime-approval",
+  "license": "LicenseRef-MusicPlayer-M0-Private",
+  "fixtures": [
+    {
+      "id": "flac-16-stereo",
+      "relative_path": "fixtures/valid/flac-16-stereo.flac",
+      "size_bytes": 60531,
+      "sha256": "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c",
+      "container": "FLAC",
+      "codec_and_profile": "FLAC 16-bit compression level 5",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "m4a-aac-lc",
+      "relative_path": "fixtures/valid/m4a-aac-lc.m4a",
+      "size_bytes": 33400,
+      "sha256": "aefe894a1a9277bf4795d421c97d4780fa342eef300819a459ca45329a614558",
+      "container": "ISO MP4/M4A",
+      "codec_and_profile": "AAC Low Complexity 128 kb/s in ISO BMFF/M4A",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "mp3-cbr-stereo",
+      "relative_path": "fixtures/valid/mp3-cbr-stereo.mp3",
+      "size_bytes": 33318,
+      "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "mp3-unicode-tags",
+      "relative_path": "fixtures/valid/mp3-unicode-tags.mp3",
+      "size_bytes": 24966,
+      "sha256": "65e66cf43d999e98cf37cb64003d29b374a1238e454eca138c0dc5be2b18c000",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 96 kb/s with ID3v2.4 Unicode tags",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "mp3-vbr-stereo",
+      "relative_path": "fixtures/valid/mp3-vbr-stereo.mp3",
+      "size_bytes": 14406,
+      "sha256": "74a5c55e50a8a73198525878f1a0463de918b0490910a5f7681bb933c31b29c9",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III VBR quality 4",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "ogg-vorbis",
+      "relative_path": "fixtures/valid/ogg-vorbis.ogg",
+      "size_bytes": 12605,
+      "sha256": "abab4db40eb8380974e1c6ea69eb4c24bfd8eb2803b67b79e2a1a49523a7096f",
+      "container": "Ogg",
+      "codec_and_profile": "Vorbis quality 4 in Ogg",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    },
+    {
+      "id": "wav-pcm-mono",
+      "relative_path": "fixtures/valid/wav-pcm-mono.wav",
+      "size_bytes": 96044,
+      "sha256": "03338fdac9010c786b2e1849b27565545208254d51bd6ae611f1936ff0fab04f",
+      "container": "WAV",
+      "codec_and_profile": "PCM signed 16-bit little-endian",
+      "classification": "baseline",
+      "required_capabilities": {
+        "decodable": true,
+        "duration_known": true,
+        "seekable": true,
+        "play_to_end": true
+      }
+    }
+  ]
+}

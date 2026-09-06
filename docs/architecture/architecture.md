@@ -142,7 +142,8 @@ As [jornadas de processo promovidas](../process-tests.md), com gates de build/te
 │   ├── ui/                      # variante de cenários, bindings, Quick e fixtures
 │   ├── cmake/                   # integridade, registro e fronteiras do build
 │   └── support/                 # fake determinístico exclusivo de testes
-└── tools/                       # gerador do ícone Windows
+├── tools/                       # gerador do ícone Windows
+└── packaging/windows/           # runtime, instalador e testes de planejamento
 ```
 
 Como registro da alternativa não adotada, o mapeamento Tauri previsto era (não implementar no produto):

@@ -265,7 +265,7 @@ function New-TestInstaller([string] $Directory, [string] $InstallRoot, [string] 
                 Hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
     }
-    $template = if ($LegacyTemplate) { $LegacyTemplate } else { Join-Path $PSScriptRoot '../RcMusicInstaller.nsi' }
+    $template = if ($LegacyTemplate) { $LegacyTemplate } else { Join-Path $repository 'packaging/windows/RcMusicInstaller.nsi' }
     if ($LegacyTemplate) { Assert-TestPath $LegacyTemplate }
     # Production identity includes recipe hashes. Include the selected template
     # here too so installer-only upgrades do not reuse a legacy uninstaller ID.

@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** staging e helpers promovidos; instalador e gates de distribuição ainda abertos.
+**Estado:** staging e helpers promovidos; os gates de validação do pacote/distribuição continuam abertos.
 **Data:** 2026-09-06.
 
 ## Implementação única
@@ -60,4 +60,4 @@ O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/pro
 
 Não foi gerado runtime/instalador nem executado `LocalRuntime.Tests.ps1` ou `LocalRuntime.Smoke.ps1`. Áudio/UI/CTest global, builds, benchmarks, instalação, Registry e Computer Use não foram repetidos. A seleção de probes tem teste de contrato; o smoke promovido permanece sem nova execução.
 
-O [instalador e sua declaração de formatos](../experiments/m0/candidates/qt/windows-installer/README.md) ainda estão no recorte histórico: a matriz está vinculada ao corpus M0 e ao runtime que a originou. Não transferir essa aprovação para artefato novo. Sua promoção, segurança, licenças/notices/SBOM, CRT, assinatura, máquina limpa e jornadas nativas permanecem pendentes. M1, M4.6/M4.8 e release não estão concluídos.
+Incremento posterior: a [receita do instalador e o leitor de formatos](windows-installer.md) também foram promovidos, com catálogo factual e declaração de produto v2. A matriz v1 continua vinculada ao corpus M0 e ao runtime que a originou, acessível somente pela compatibilidade explícita. Não transferir essa aprovação para artefato novo. Compilação/lifecycle da receita promovida, segurança, licenças/notices/SBOM, CRT, assinatura, máquina limpa e jornadas nativas permanecem pendentes. M1, M4.6/M4.8 e release não estão concluídos.

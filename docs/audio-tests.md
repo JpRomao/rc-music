@@ -21,6 +21,8 @@ A [licença preservada](../tests/audio/corpus/LICENSE.assets.txt), `LicenseRef-M
 
 ## Composição e autenticação
 
+Incremento posterior: o [catálogo factual](../tests/audio/corpus/catalog.v1.json) descreve somente sete fixtures básicas elegíveis para a [declaração de formatos do instalador](windows-installer.md). Seus tamanhos/hashes são conferidos contra os pins abaixo; não substitui o corpus, a licença ou um resultado de execução e não promove Opus/ALAC/entradas edge a suporte aprovado.
+
 [RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
 
 [RcMusicAudioTests.cmake](../cmake/RcMusicAudioTests.cmake) fornece `rc_music_add_audio_tests(corpus_root)`. A integração raiz autentica e registra o corpus somente com desktop e `BUILD_TESTING=ON`; produção OFF não lê esse módulo de fixtures, não compila essas suites nem adquire uma dependência do corpus. Os nomes técnicos `M0_TEST_AUDIO_*` permanecem para preservar as fontes dos testes, sem tornar o experimento um pré-requisito.

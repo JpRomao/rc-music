@@ -782,6 +782,10 @@
         {
           "path": "experiments/m0/candidates/qt/windows-installer/tests/Installer.Tests.ps1",
           "marker": "format evolution: mp3 wav to wav flac keeps B entries and removes only retired A entries"
+        },
+        {
+          "path": "packaging/windows/tests/FormatMatrix.Tests.ps1",
+          "marker": "product declaration returns only requested format and exact provenance without output"
         }
       ],
       "evidence": [
@@ -792,6 +796,10 @@
         {
           "path": "experiments/m0/candidates/qt/windows-installer/README.md",
           "marker": "## Atualização da entrega local — a43faa1"
+        },
+        {
+          "path": "docs/windows-installer.md",
+          "marker": "## Catálogo factual e declaração por runtime"
         }
       ],
       "remaining": [
@@ -1708,6 +1716,10 @@
         {
           "path": "packaging/windows/tests/RuntimeRecipe.Tests.ps1",
           "marker": "Get-RuntimeRecipeFiles"
+        },
+        {
+          "path": "packaging/windows/tests/WindowsInstallerPlan.Tests.ps1",
+          "marker": "the exported ON planner preserves the explicit matrix and its existing runtime evidence"
         }
       ],
       "evidence": [
@@ -1722,10 +1734,14 @@
         {
           "path": "docs/windows-runtime.md",
           "marker": "## Implementação única"
+        },
+        {
+          "path": "docs/windows-installer.md",
+          "marker": "## Fonte única e proveniência"
         }
       ],
       "remaining": [
-        "App, suites e receita de runtime estão promovidos; instalador e sua matriz de formatos ainda dependem do recorte histórico e exigem promoção própria.",
+        "App, suites e receitas de runtime/instalador estão promovidos; verificar compilação e lifecycle desta composição e a declaração revisada para um runtime novo, sem transferir evidências históricas.",
         "Concluir M1.1–M1.2 sem reintroduzir fixtures comparativas ou toolchains não escolhidas como dependências do produto."
       ]
     },
@@ -2228,10 +2244,14 @@
         {
           "path": "docs/windows-runtime.md",
           "marker": "## Implementação única"
+        },
+        {
+          "path": "docs/windows-installer.md",
+          "marker": "## Fonte única e proveniência"
         }
       ],
       "remaining": [
-        "A receita de runtime já tem fonte única na raiz; concluir a unidade de distribuição, promovendo instalador e declaração de formatos sem reaproveitar aprovação de corpus/runtime histórico.",
+        "As receitas de runtime/instalador têm fonte única na raiz; concluir a validação da unidade de distribuição e dos seus gates, sem reaproveitar aprovação de corpus/runtime histórico.",
         "Preservar módulos internos e fonte única sem introduzir pacotes independentes sem benefício demonstrado; M1.1 continua aberto."
       ]
     },

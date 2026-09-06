@@ -8,6 +8,8 @@ A [rastreabilidade executável](docs/quality/traceability.md) integra `check` e 
 
 A [receita de runtime Windows](docs/windows-runtime.md) foi promovida para `packaging/windows`, com implementação única e sem imports do experimento no produto. Seus checks sintéticos são separados da montagem real; este incremento não atualiza o instalador local nem aprova distribuição.
 
+A [receita do instalador](docs/windows-installer.md) também está na estrutura do produto. Um catálogo factual das fixtures e uma declaração v2 por runtime substituem o vínculo implícito ao corpus experimental; a v1 fica em compatibilidade explícita. Não foi gerado setup nem criada declaração aprovada para um runtime novo.
+
 Check completo da unidade Windows promovida, com ferramentas locais já disponíveis e sem downloads:
 
 ```powershell
