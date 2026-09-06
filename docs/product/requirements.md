@@ -237,6 +237,8 @@ Atalhos globais não fazem parte do MVP. Teclas de mídia usam a integração of
 
 ## 8. Rastreabilidade resumida
 
+O [manifesto executável](../quality/traceability.json) mantém uma entrada por ID com destino, testes, evidências e lacunas; o [guia CHK-TRACE](../quality/traceability.md) descreve validação e consulta bidirecional. Estados são revisados por requisito completo, sem confundir implementação funcional com aprovação nativa ou de release.
+
 | Pedido original | Requisitos |
 |---|---|
 | Windows e Linux, com prioridade para Windows | FR-030–038, plataforma e NFRs |

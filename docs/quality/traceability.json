@@ -1,0 +1,2247 @@
+{
+  "schemaVersion": 1,
+  "requirementsFile": "docs/product/requirements.md",
+  "planFile": "docs/development-plan.md",
+  "records": [
+    {
+      "id": "FR-001",
+      "plan": "M2.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtAudioFilesPickerTests.cpp",
+          "marker": "opensOneAsynchronousMultipleLocalFileDialogAndKeepsTimersRunning"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "asynchronousOpenKeepsPlaybackEventsLiveAndAppendsToTheLatestQueue"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "asynchronousAddPreservesTheCurrentTrackOrStartsAnEmptyQueue"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada com seletor nativo Windows real para um e vários arquivos; os testes do diálogo usam factory/offscreen e não comprovam a interação do sistema."
+      ]
+    },
+    {
+      "id": "FR-002",
+      "plan": "M0.5–M0.8, M2.1–M2.2, M5.2",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "loadsAuthenticatedBasicCodecAndPublishesReadyWithinTwoSeconds"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "opensUnicodeLocalAudioAndDrivesTheRealJourney"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-001 and MR-018 read the authenticated basic codec matrix"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Matriz local e evolução dos formatos"
+        }
+      ],
+      "remaining": [
+        "Consolidar a matriz final do produto/pacote por plataforma, backend e commit; a evidência local básica não reclassifica Opus/ALAC nem comprova dispositivos ou distribuição."
+      ]
+    },
+    {
+      "id": "FR-003",
+      "plan": "M3.2",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/SingleWorkerLocalSourceDiscoveryTests.cpp",
+          "marker": "directory discovery keeps valid Unicode files while reporting invalid roots and entries"
+        },
+        {
+          "path": "tests/core/SingleWorkerLocalSourceDiscoveryTests.cpp",
+          "marker": "discovery publishes bounded batches with one-slot backpressure"
+        },
+        {
+          "path": "tests/ui/quick/tst_local_source_drop.qml",
+          "marker": "test_partialFailureKeepsValidFilesAndAnnouncesCompletionOnce"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "gate externo de responsividade e volume lento pendentes"
+        }
+      ],
+      "remaining": [
+        "Concluir o gate externo de arrastar/soltar no Windows e responsividade durante enumeração em volume lento; erro parcial e batches já possuem cobertura automatizada."
+      ]
+    },
+    {
+      "id": "FR-004",
+      "plan": "M0.9, M4.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/OpenSourcesCommandTests.cpp",
+          "marker": "roundTripsFullyQualifiedWindowsFilesystemPaths"
+        },
+        {
+          "path": "tests/qt/QtSingleInstanceCoordinatorTests.cpp",
+          "marker": "forwardsUnicodePathsAndReturnsOnlyAfterThePrimaryAcknowledgesThem"
+        },
+        {
+          "path": "tests/process/qtest/SingleInstanceExecutableTests.cpp",
+          "marker": "rejectsInvalidSourcePathsWithSafeFeedbackBeforeStartingIpcOrAudio"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Atualização da entrega local — a43faa1"
+        }
+      ],
+      "remaining": [
+        "Concluir a matriz CLI/shell do executável empacotado atual com Unicode, espaços, aspas, caminhos longos, metacaracteres e lote; processos instrumentados não substituem a associação real."
+      ]
+    },
+    {
+      "id": "FR-005",
+      "plan": "M0.5–M0.8, M2.1, M5.2",
+      "status": "em andamento",
+      "verification": "automated",
+      "tests": [
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "detectsPlayableWavContentBehindMp3Extension"
+        },
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "hostileInputFailsSafelyAndDoesNotContaminateNextLoad"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-103 rejects structurally recognizable truncated codec fixtures safely"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M5.2 | Corpus/matriz final e regressões de cada crash/bug encontrado"
+        }
+      ],
+      "remaining": [
+        "Completar a revalidação do corpus hostil canônico no runtime final; fixtures pequenas de extensão enganosa e truncamento não estabelecem ausência geral de crash em entradas malformadas."
+      ]
+    },
+    {
+      "id": "FR-006",
+      "plan": "M2.1, M3.2",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/LocalAudioFilePolicyTests.cpp",
+          "marker": "local audio candidates use the validated extension matrix case-insensitively"
+        },
+        {
+          "path": "tests/qt/QtAudioFilesPickerTests.cpp",
+          "marker": "opensOneAsynchronousMultipleLocalFileDialogAndKeepsTimersRunning"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Matriz local e evolução dos formatos"
+        }
+      ],
+      "remaining": [
+        "Conferir os filtros e Todos os arquivos no seletor nativo do pacote final contra a matriz correspondente; a coerência lexical e o repasse ao diálogo já estão testados."
+      ]
+    },
+    {
+      "id": "FR-010",
+      "plan": "M1.5, M2.2, M2.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "playPauseAndSeekAreIdempotentForAuthenticatedWav"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "volume and mute update state and the playback port"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "opensUnicodeLocalAudioAndDrivesTheRealJourney"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada nativa/empacotada de play e pause com áudio audível, mantendo posição e volume; o backend real automatizado usa saída mutada."
+      ]
+    },
+    {
+      "id": "FR-011",
+      "plan": "M1.6, M2.5, M3.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/QueueNavigationTests.cpp",
+          "marker": "queue next selects the nearest following available occurrence"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "realEndedSkipsInvalidBetweenValidTracksAndStopsAtTail"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "unmute restores the last nonzero logical volume"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada de navegação, volume/mudo e fim de fila no produto empacotado; manter a evidência do corpus de sucessores válidos/indisponíveis separada da entrada nativa."
+      ]
+    },
+    {
+      "id": "FR-012",
+      "plan": "M0.2–M0.8, M1.8, M2.3–M2.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_accessible_interface_tree.qml",
+          "marker": "test_accessibleProgressActionCommitsWithoutPointerRelease"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "seek preview owns the displayed position until backend acknowledgement"
+        },
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "canonicalSeekConfirmsItsDestination"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir o clique/arraste e a interação acessível nativos no produto final; snapshots offscreen e ações acessíveis programáticas não comprovam NVDA ou ponteiro real."
+      ]
+    },
+    {
+      "id": "FR-013",
+      "plan": "M1.4, M2.4, M3.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "skip actions use confirmed position preferences and publish one pending seek"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "preference commands update the frozen theme and skip ranges"
+        },
+        {
+          "path": "tests/process/qtest/PreferencesRestartTests.cpp",
+          "marker": "writesAllPreferencesAndLoadsTheInitialThemeInASecondProcess"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "7 s/20 s persistem"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada empacotada que altera os dois saltos para 7 s/20 s, reinicia e verifica seus efeitos; defaults, limites e persistência já têm cobertura local."
+      ]
+    },
+    {
+      "id": "FR-014",
+      "plan": "M1.4–M1.5, M2.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "skip clamps without overflow"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "seek acknowledgement preserves paused playback"
+        },
+        {
+          "path": "tests/ui/quick/tst_keyboard_full_journey.qml",
+          "marker": "test_transportShortcutsAndDisabledSeekAreExplained"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada integrada final com fonte não seekable e limites 0/duração, incluindo explicação visível e pausa preservada; a cobertura atual combina contratos e UI offscreen."
+      ]
+    },
+    {
+      "id": "FR-015",
+      "plan": "M1.5, M2.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "seek preview owns the displayed position until backend acknowledgement"
+        },
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "seek release clamps to duration and sends exactly one backend command"
+        },
+        {
+          "path": "tests/ui/quick/tst_local_transport_recovery.qml",
+          "marker": "test_rejectedDragRestoresPausedProgressAndAnnouncesOnce"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a prova de arraste nativo mantendo preview contra ticks e emitindo um único seek no release; o teste de gesto automatizado permanece offscreen."
+      ]
+    },
+    {
+      "id": "FR-016",
+      "plan": "M1.6, M1.8, M3.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/LocalFileQueueTests.cpp",
+          "marker": "local file queue preserves order and gives duplicate paths distinct occurrence ids"
+        },
+        {
+          "path": "tests/core/LocalFileQueueTests.cpp",
+          "marker": "local file queue moves occurrences while preserving the current id"
+        },
+        {
+          "path": "tests/ui/quick/tst_local_queue_crud.qml",
+          "marker": "test_realLocalQueueCrudAndFocus"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada visual empacotada de adicionar/tocar/reordenar/remover/limpar, incluindo duplicatas e foco; a semântica por IDs já está coberta no core e Quick."
+      ]
+    },
+    {
+      "id": "FR-017",
+      "plan": "M1.6, M3.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/QueueNavigationTests.cpp",
+          "marker": "queue previous restarts only after three confirmed seconds"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "previousUsesConfirmedThresholdAndPreservesPause"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "limites `≤3 s`/`>3 s`"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada nativa do botão/atalho Anterior em torno de 3 s no runtime final; os limites e a preservação de pausa estão comprovados por testes determinísticos."
+      ]
+    },
+    {
+      "id": "FR-018",
+      "plan": "M6.1",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M6.1 | Escolha de dispositivo e recuperação de troca"
+        },
+        {
+          "path": "docs/product/requirements.md",
+          "marker": "Em evolução futura, permitir escolher um dispositivo de saída"
+        }
+      ],
+      "remaining": [
+        "Refinar e autorizar M6.1; implementar escolha explícita de dispositivo/capabilities e sua UX. Recuperar a saída padrão atual não implementa o seletor futuro."
+      ]
+    },
+    {
+      "id": "FR-019",
+      "plan": "M6.2–M6.4",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M6.2 | Shuffle"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M6.3 | Repeat"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M6.4 | Velocidade de reprodução"
+        }
+      ],
+      "remaining": [
+        "Implementar shuffle, repeat e velocidade como incrementos independentes após refinamento e autorização de M6; não fazem parte do núcleo inicial."
+      ]
+    },
+    {
+      "id": "FR-020",
+      "plan": "M0.5–M0.8, M1.7, M2.6, M3.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-101 reads WAV PCM properties, absent tags, and title fallback"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "projectsExactDecimalByteCountsBeyondJavascriptSafeInteger"
+        },
+        {
+          "path": "tests/ui/quick/tst_track_details.qml",
+          "marker": "test_localPartialDetailsUpdateCopyAndRemainActionableOnError"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir a conferência do painel com tamanho e duração no produto empacotado/corpus final; os valores exatos e sua projeção já têm cobertura automatizada."
+      ]
+    },
+    {
+      "id": "FR-021",
+      "plan": "M0.5–M0.8, M1.7, M2.6, M3.4",
+      "status": "em andamento",
+      "verification": "automated",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-001 and MR-018 read the authenticated basic codec matrix"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-021 extracts embedded artwork across the authenticated local codec matrix"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-003 MR-018 and MR-019 recognize tagless MP3 content and use the Unicode stem fallback"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Consolidar tags, faixa/ano, capas e fallbacks no corpus/matriz final do produto; a promoção dos testes preserva o corpus pequeno privado e não amplia perfis declarados."
+      ]
+    },
+    {
+      "id": "FR-022",
+      "plan": "M0.5–M0.8, M2.6, M3.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "Unknown audio properties are absent instead of false zero values"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-022 reports the source modification time without inventing a timestamp"
+        },
+        {
+          "path": "tests/ui/quick/tst_track_details.qml",
+          "marker": "test_localPartialDetailsUpdateCopyAndRemainActionableOnError"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada do painel técnico no produto empacotado com o corpus final, preservando ausências explícitas; extração e apresentação local já estão cobertas."
+      ]
+    },
+    {
+      "id": "FR-023",
+      "plan": "M0.5–M0.8, M2.6, M3.4",
+      "status": "em andamento",
+      "verification": "automated",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-023 sanitizes display text while preserving Unicode and multi-value joins"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-005 discards corrupt embedded MP3 artwork without failing metadata or audio properties"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "invalidTagsAreSanitizedWithoutInterruptingRealDecodedPlayback"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        },
+        {
+          "path": "docs/product/requirements.md",
+          "marker": "O recorte não fecha `FR-023`, `CHK-SEC` ou o corpus hostil canônico"
+        }
+      ],
+      "remaining": [
+        "Completar o corpus hostil canônico e o gate de segurança/limites do parser; sanitização, placeholder e reprodução real com tags inválidas não fecham esses limites internos."
+      ]
+    },
+    {
+      "id": "FR-024",
+      "plan": "M0.5–M0.8, M1.5, M2.6",
+      "status": "em andamento",
+      "verification": "automated",
+      "tests": [
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "MR-016 cancellation makes the active result unobservable"
+        },
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "MR-017 keeps only the newest pending generation and never overlaps extraction"
+        },
+        {
+          "path": "tests/core/LocalTrackSessionTests.cpp",
+          "marker": "stale metadata completion leaves the current track pending"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir a validação do pipeline no corpus final sob I/O/parser lento; a invalidação por geração está testada, mas cancelar logicamente não demonstra interromper toda leitura interna do extrator."
+      ]
+    },
+    {
+      "id": "FR-025",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "FR-025, edição de tags/capa, permanece backlog intencional sem marco."
+        },
+        {
+          "path": "docs/product/requirements.md",
+          "marker": "Editar tags e capa fica fora do MVP."
+        }
+      ],
+      "remaining": [
+        "Excluído intencionalmente do MVP, sem descarte definitivo do requisito. Exige pedido explícito, requisito de escrita segura e estratégia de backup antes da implementação."
+      ]
+    },
+    {
+      "id": "FR-030",
+      "plan": "M0.2–M0.4, M0.9, M4.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/PlayerControllerTests.cpp",
+          "marker": "close hides to an available tray without exiting"
+        },
+        {
+          "path": "tests/ui/qtest/ShellPlatformBindingTests.cpp",
+          "marker": "trayHostRestartRecoversTheHiddenWindowWithoutChangingLocalPlayback"
+        },
+        {
+          "path": "tests/ui/quick/tst_lifecycle.qml",
+          "marker": "test_closeNoticeFallbackAndExitJourney"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "pacote/tray/desktop nativos, Linux real e gates amplos pendentes"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada de bandeja nativa do executável empacotado, ocultação sem interromper áudio e preferência de fechar; disponibilidade injetada/offscreen não prova a shell real."
+      ]
+    },
+    {
+      "id": "FR-031",
+      "plan": "M0.9, M4.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtShellPlatformTests.cpp",
+          "marker": "menuTracksTransportStateAndOnlyEmitsIntents"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "exitWaitsForBothPreferenceAndSessionPersistence"
+        },
+        {
+          "path": "tests/process/qtest/ShellExecutableSmokeTests.cpp",
+          "marker": "runsWithAnIsolatedTemporaryConfigRoot"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Concluir o menu da bandeja real e Sair no pacote final, conferindo estado salvo, áudio encerrado e ausência de processo residual; smokes instrumentados não cobrem toda a shell nativa."
+      ]
+    },
+    {
+      "id": "FR-032",
+      "plan": "M0.9, M4.4",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Linux e medições de desempenho ficam para etapas posteriores, sem excluir seus requisitos"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "tray/fallback Linux nunca invisível"
+        }
+      ],
+      "remaining": [
+        "Implementar/validar a integração Linux e o fallback sem bandeja em ambiente de referência; o adiamento autorizado não dispensa este P0 nem comprova Linux com testes Windows."
+      ]
+    },
+    {
+      "id": "FR-033",
+      "plan": "M0.9, M4.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtSingleInstanceCoordinatorTests.cpp",
+          "marker": "electsExactlyOnePrimaryAndForwardsEveryCommandAcrossProcesses"
+        },
+        {
+          "path": "tests/qt/QtSingleInstanceCoordinatorTests.cpp",
+          "marker": "doesNotRetransmitAfterTheRequestWasWrittenButTheAckWasLost"
+        },
+        {
+          "path": "tests/process/qtest/SingleInstanceExecutableTests.cpp",
+          "marker": "drainsTwoAcknowledgedSourcesBeforeExitAndRejectsNewCommands"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Concluir o encaminhamento pela associação/shell do pacote final e confirmar a ausência de disputa de áudio nessa composição; eleição, ACK e drenagem já são exercitados entre processos de teste."
+      ]
+    },
+    {
+      "id": "FR-034",
+      "plan": "M0.9, M4.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/tests/Associations.Tests.ps1",
+          "marker": "registers the explicit formats and quoted executable without claiming defaults"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/tests/Installer.Tests.ps1",
+          "marker": "format evolution: mp3 wav to wav flac keeps B entries and removes only retired A entries"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Matriz local e evolução dos formatos"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Atualização da entrega local — a43faa1"
+        }
+      ],
+      "remaining": [
+        "Revalidar tipos declarados e escolha de padrão no pacote do produto promovido; os testes atuais de instalação/Registry usam namespaces isolados e a entrega registrada é histórica/experimental."
+      ]
+    },
+    {
+      "id": "FR-035",
+      "plan": "M0.9, M4.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/tests/Associations.Tests.ps1",
+          "marker": "does not change existing defaults, user choice, or third-party entries"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/tests/Associations.Tests.ps1",
+          "marker": "uninstall removes its unchanged values but preserves edits and unknown values"
+        },
+        {
+          "path": "tests/qt/QtShellPlatformTests.cpp",
+          "marker": "opensOnlyTheOfficialDefaultAppsSettingsUriWithTypedResults"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "experiments/m0/candidates/qt/windows-installer/README.md",
+          "marker": "## Contrato do Registry"
+        },
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada autorizada do pacote final em Aplicativos Padrão, com diff do Registry por usuário; o abridor de URI e os prefixos HKCU isolados não comprovam a interação real."
+      ]
+    },
+    {
+      "id": "FR-036",
+      "plan": "M0.9, M4.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Linux e medições de desempenho ficam para etapas posteriores, sem excluir seus requisitos"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "`.desktop`, MIME e ícones no Linux de referência"
+        }
+      ],
+      "remaining": [
+        "Implementar e validar .desktop, MIME e ícones XDG no Linux de referência com sua matriz de formatos; prioridade Windows não elimina este requisito."
+      ]
+    },
+    {
+      "id": "FR-037",
+      "plan": "M1.8, M3.7, M4.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_keyboard_full_journey.qml",
+          "marker": "test_transportShortcutsAndDisabledSeekAreExplained"
+        },
+        {
+          "path": "tests/ui/qtest/SystemMediaControlsBindingTests.cpp",
+          "marker": "routesDistinctCommandsThroughCommonIdempotentUseCases"
+        },
+        {
+          "path": "tests/ui/qtest/SystemMediaControlsBindingTests.cpp",
+          "marker": "exitPublishesClosedAndMakesLateCommandsInert"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Concluir os controles SMTC/teclas físicas no Windows e MPRIS no Linux; portas falsas provam o roteamento comum, não a entrega nativa dos comandos."
+      ]
+    },
+    {
+      "id": "FR-038",
+      "plan": "M0.9, M4.7",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/qtest/SystemPowerEventsBindingTests.cpp",
+          "marker": "routesTransitionsAndDisarmsThePortBeforeShutdown"
+        },
+        {
+          "path": "tests/qt/QtShellPlatformTests.cpp",
+          "marker": "taskbarRestartRecoversOnlyAnExplicitlyTrayHiddenWindow"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "outputReconnectRestoresRealDecodedAudioPausedAtTheSamePosition"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Evidência e checks"
+        }
+      ],
+      "remaining": [
+        "Concluir suspensão/retomada, reinício real do Explorer e troca/desconexão física de saída no produto final, verificando janela alcançável e nenhum processo zumbi; eventos sintéticos não substituem esses gates."
+      ]
+    },
+    {
+      "id": "FR-040",
+      "plan": "M0.2–M0.4, M3.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_preferences.qml",
+          "marker": "test_initialSystemDarkIsAppliedBeforeCreatingTheWindow"
+        },
+        {
+          "path": "tests/qt/QtSystemAppearanceTests.cpp",
+          "marker": "publishesEachChangedSnapshotBeforeNotifyingExactlyOnce"
+        },
+        {
+          "path": "tests/process/qtest/PreferencesRestartTests.cpp",
+          "marker": "writesAllPreferencesAndLoadsTheInitialThemeInASecondProcess"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "primeiro frame nativo, E2E empacotado e `CHK-SEC` amplo seguem abertos"
+        }
+      ],
+      "remaining": [
+        "Verificar primeiro frame e transições sistema/claro/escuro no renderizador nativo do pacote, sem flash perceptível; snapshots e renderização offscreen não comprovam essa percepção."
+      ]
+    },
+    {
+      "id": "FR-041",
+      "plan": "M6.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| M6.5 | Editor de tema limitado a tokens"
+        },
+        {
+          "path": "docs/product/requirements.md",
+          "marker": "Uma evolução poderá expor somente tokens seguros e preservar contraste."
+        }
+      ],
+      "remaining": [
+        "Refinar e autorizar o editor de tokens de tema de M6.5, com contraste e recuperação; os temas fixos atuais não implementam edição."
+      ]
+    },
+    {
+      "id": "FR-042",
+      "plan": "M1.7–M1.9, M3.3, M3.5, M3.7, M4.1, M4.4",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtJsonWindowsPreferencesStoreTests.cpp",
+          "marker": "roundTripsAllPreferencesInAUnicodeDirectory"
+        },
+        {
+          "path": "tests/process/qtest/PreferencesRestartTests.cpp",
+          "marker": "writesAllPreferencesAndLoadsTheInitialThemeInASecondProcess"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "coalescesPreferenceChangesAndSavesTheFullSnapshotBeforeExit"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Concluir os efeitos integrados de todo o inventário no executável empacotado, sobretudo primeiro frame e início/fechamento na bandeja; store e round-trip instrumentado já estão cobertos."
+      ]
+    },
+    {
+      "id": "FR-043",
+      "plan": "M1.7–M1.9, M4.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "restoresAUnicodeSessionPausedAtItsConfirmedPosition"
+        },
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "restoresThePreviousSessionAfterForcedTerminationBeforePrimaryCommit"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "restoreDisabledIgnoresAProvidedPersistedSession"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "jornada empacotada/nativa pendente"
+        }
+      ],
+      "remaining": [
+        "Repetir as jornadas de restauração ligada/desligada e encerramento forçado no produto empacotado/nativo, preservando pausa; crash no checkpoint instrumentado não comprova perda física de energia."
+      ]
+    },
+    {
+      "id": "FR-044",
+      "plan": "M1.7–M1.9, M3.5, M4.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtJsonWindowsPreferencesStoreTests.cpp",
+          "marker": "loadsVersionOneWithoutRewritingIt"
+        },
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "repairsARecoveredSessionAfterARealReplaceFailure"
+        },
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "usesDefaultsWhenBothSessionDocumentsAreInvalid"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada empacotada de corrupção, backup/defaults, migração e aviso/reparo acionável; os stores reais e processos instrumentados não fecham os gates nativos/segurança amplos."
+      ]
+    },
+    {
+      "id": "FR-045",
+      "plan": "M4.2",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/WindowPlacementTests.cpp",
+          "marker": "window placement rejects a removed monitor and a work area reduced by DPI"
+        },
+        {
+          "path": "tests/qt/QtShellPlatformTests.cpp",
+          "marker": "normalGeometryChangesAreCoalescedIntoOnePlacement"
+        },
+        {
+          "path": "tests/process/qtest/PreferencesRestartTests.cpp",
+          "marker": "writesAllPreferencesAndLoadsTheInitialThemeInASecondProcess"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/windows-integration-tests.md",
+          "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "pacote/nativo, `CHK-WIN`, `CHK-E2E` e `CHK-CLOSE` pendentes"
+        }
+      ],
+      "remaining": [
+        "Concluir monitor removido/DPI alterado na janela nativa do pacote final; a política geométrica, captura coalescida e round-trip já têm cobertura local."
+      ]
+    },
+    {
+      "id": "FR-050",
+      "plan": "R1.3–R1.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "## 14. R1 — Fontes remotas e YouTube"
+        },
+        {
+          "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
+          "marker": "YouTube exige ADR próprio e revisão de termos antes de código/distribuição;"
+        }
+      ],
+      "remaining": [
+        "Após release local estável ou autorização explícita de pesquisa isolada, investigar viabilidade técnica/jurídica/operacional e registrar decisão; não há reprodução remota implementada ou prometida."
+      ]
+    },
+    {
+      "id": "FR-051",
+      "plan": "R1.1–R1.2, R1.4–R1.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
+          "marker": "## Decisão proposta"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "Falha remota nunca altera a disponibilidade de arquivos locais."
+        }
+      ],
+      "remaining": [
+        "Autorizar R1, definir e implementar o adaptador remoto separado e seus testes de falha/expiração sem alterar a disponibilidade local; ADR-0003 permanece proposto."
+      ]
+    },
+    {
+      "id": "FR-052",
+      "plan": "R1.2–R1.4, R1.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
+          "marker": "**Estado:** Proposto"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| R1.3 | Revisão jurídica/políticas do provedor"
+        }
+      ],
+      "remaining": [
+        "Antes de qualquer implementação remota, registrar ADR aprovado com termos, licenças, distribuição e atualização das ferramentas escolhidas, apoiado em fontes oficiais atuais."
+      ]
+    },
+    {
+      "id": "FR-053",
+      "plan": "R1.2, R1.4–R1.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
+        },
+        {
+          "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
+          "marker": "## Regras para uma implementação remota futura"
+        }
+      ],
+      "remaining": [
+        "Após autorização de R1, implementar os cenários remotos de cancelamento, timeout, expiração, live/restrições, headers e ausência de seek; provar execução sem concatenação de shell."
+      ]
+    },
+    {
+      "id": "UX-001",
+      "plan": "M0.2–M0.4, M1.10, M2.7, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_empty_shell.qml",
+          "marker": "function test_emptyPlayingErrorJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_error_microcopy.qml",
+          "marker": "function test_expandedEmptyCopyFitsTheMinimumWindowWithoutLosingTheAccessibleAction()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/EmptyState.qml",
+          "marker": "controlId: \"open-audio\""
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "### 3.1 Vazio"
+        }
+      ],
+      "remaining": [
+        "Concluir a avaliação de primeiro uso no executável Windows: localizar Abrir áudio sem instrução e alcançar a abertura em uma interação; a prova atual de ação, foco e encaixe é automatizada/offscreen."
+      ]
+    },
+    {
+      "id": "UX-002",
+      "plan": "M0.2–M0.4, M1.10, M2.7, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_empty_shell.qml",
+          "marker": "function test_emptyPlayingErrorJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_keyboard_full_journey.qml",
+          "marker": "function test_transportShortcutsAndDisabledSeekAreExplained()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/Main.qml",
+          "marker": "objectName: \"transport-bar\""
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "Os testes UI usam `offscreen`, renderização software e estilo Basic"
+        }
+      ],
+      "remaining": [
+        "Concluir a inspeção visual dos controles de transporte no executável Windows empacotado, durante reprodução e nas escalas de 100% a 200%; encaixe offscreen não comprova ausência de recortes nativos."
+      ]
+    },
+    {
+      "id": "UX-003",
+      "plan": "M0.2–M0.4, M1.10, M2.7, M3.4, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_track_details.qml",
+          "marker": "function test_fixtureDetailsAreModalCompleteAndFocusSafe()"
+        },
+        {
+          "path": "tests/ui/quick/tst_track_details.qml",
+          "marker": "function test_localPartialDetailsUpdateCopyAndRemainActionableOnError()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/NowPlayingState.qml",
+          "marker": "signal detailsRequested(Item opener)"
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "## 6. Detalhes da faixa"
+        }
+      ],
+      "remaining": [
+        "Concluir a revisão de hierarquia visual da tela principal e da descoberta do painel sob demanda no produto Windows; os testes comprovam conteúdo, modalidade e foco, não a avaliação de minimalismo/usabilidade."
+      ]
+    },
+    {
+      "id": "UX-004",
+      "plan": "M0.2–M0.4, M1.10, M3.7–M3.8, M5.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_keyboard_full_journey.qml",
+          "marker": "function test_openNavigateAndClearQueueWithoutLeavingKeyboardOrDialog()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessible_interface_tree.qml",
+          "marker": "function test_publicControlsExistInTheNativeAccessibleTree()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessibility_state_focus.qml",
+          "marker": "function test_stateChangesNeverStealFocusFromOutsideTheDisappearingState()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "## 10. Atalhos e foco"
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "mas não comprova NVDA, DPI/alto contraste nativos, diálogo do sistema ou dispositivos físicos."
+        }
+      ],
+      "remaining": [
+        "Completar a jornada principal somente por teclado no Windows, incluindo diálogo nativo, ordem de foco e retorno de modais; a inspeção QAccessibleInterface em offscreen não substitui essa jornada externa."
+      ]
+    },
+    {
+      "id": "UX-005",
+      "plan": "M0.2–M0.4, M1.10, M3.7–M3.8, M5.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_accessibility_announcements.qml",
+          "marker": "function test_loadingAndCurrentTrackAreAnnouncedOnceWithoutPlaybackTickSpam()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessibility_announcements.qml",
+          "marker": "function test_terminalErrorIsAssertiveSafeAndActionable()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessibility_announcements.qml",
+          "marker": "function test_automaticallySkippedFileIsAnnouncedBeforeTheNextTrack(data)"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/PlaybackAccessibilityStatus.qml",
+          "marker": "root.Accessible.announce(message, politeness);"
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "testar nomes, papéis, estados e anúncios com NVDA no Windows;"
+        }
+      ],
+      "remaining": [
+        "Ouvir os anúncios com NVDA no Windows durante troca de faixa, erro, recuperação e importação, confirmando ordem e ausência de spam de cronômetro; sinais Qt capturados não comprovam entrega pelo leitor externo."
+      ]
+    },
+    {
+      "id": "UX-006",
+      "plan": "M0.2–M0.4, M1.10, M3.7–M3.8, M5.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_accessibility_visual_motion.qml",
+          "marker": "function test_primaryButtonFocusRingUsesStrongSemanticContrastInBothThemes()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessibility_visual_motion.qml",
+          "marker": "function test_reducedMotionStopsBusyAnimationButKeepsLoadingStatusVisible()"
+        },
+        {
+          "path": "tests/ui/quick/tst_high_contrast.qml",
+          "marker": "function test_highContrastJourney()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "Todo par publicado deve satisfazer contraste aplicável."
+        },
+        {
+          "path": "docs/ui-tests.md",
+          "marker": "mas não comprova NVDA, DPI/alto contraste nativos, diálogo do sistema ou dispositivos físicos."
+        }
+      ],
+      "remaining": [
+        "Concluir a verificação WCAG 2.2 AA dos pares e estados publicados; o contraste de pelo menos 3:1 do aro primário não comprova sozinho contraste de todos os textos e controles.",
+        "Validar escala nativa de 100%, 150% e 200%, alto contraste do Windows e movimento reduzido no produto; snapshots injetados e QT_SCALE_FACTOR offscreen permanecem evidência parcial."
+      ]
+    },
+    {
+      "id": "UX-007",
+      "plan": "M0.2–M0.4, M1.10, M3.7–M3.8, M5.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_empty_shell.qml",
+          "marker": "function test_emptyPlayingErrorJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_high_contrast.qml",
+          "marker": "function test_highContrastJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_accessible_interface_tree.qml",
+          "marker": "function test_publicControlsExistInTheNativeAccessibleTree()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/AccessibleTransportButton.qml",
+          "marker": "topPadding: control.down ? 2 : 0"
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "área clicável mínima de 40 × 40 px, ideal de 44 × 44 px;"
+        }
+      ],
+      "remaining": [
+        "Inspecionar os estados hover, pressed, focus e disabled e a identificação além de cor em todos os controles do produto Windows; assertions de alvos/semântica e snapshots offscreen não encerram a validação visual nativa."
+      ]
+    },
+    {
+      "id": "UX-008",
+      "plan": "M0.2–M0.4, M1.10, M2.7, M3.6, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_error_microcopy.qml",
+          "marker": "function test_realInvalidMediaKeepsContextAndOffersAnExecutableLocalizedAction()"
+        },
+        {
+          "path": "tests/ui/quick/tst_file_location.qml",
+          "marker": "function test_cancelAndFailureKeepContextAndRestoreTheActionFocus()"
+        },
+        {
+          "path": "tests/ui/quick/tst_local_transport_recovery.qml",
+          "marker": "function test_navigationRecoversFromError(data)"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/ErrorState.qml",
+          "marker": "objectName: \"error-context-title\""
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "### 3.4 Erro recuperável"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada de recuperação no executável Windows com o seletor nativo, verificando contexto, ocorrência e foco ao localizar/tentar novamente; as regressões atuais dirigem o picker e as falhas de forma controlada."
+      ]
+    },
+    {
+      "id": "UX-009",
+      "plan": "M0.2–M0.4, M2.7, M3.6, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_empty_shell.qml",
+          "marker": "function test_emptyPlayingErrorJourney()"
+        },
+        {
+          "path": "tests/ui/quick/tst_error_microcopy.qml",
+          "marker": "function test_expandedLocalizedCopyFitsTheMinimumWindow()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/ui/qml/NowPlayingState.qml",
+          "marker": "implicitHeight: 192"
+        },
+        {
+          "path": "docs/product/ux-specification.md",
+          "marker": "geometria da capa e dos textos permanece estável;"
+        }
+      ],
+      "remaining": [
+        "Obter prova específica de geometria antes/depois de Loading para Playing e durante troca de faixa com metadata/capa assíncronas; encaixe na janela mínima e textos longos não medem por si só deslocamentos entre estados.",
+        "Concluir a inspeção visual dessas transições no produto Windows, sem apresentar placeholder de tamanho fixo como aprovação integral da estabilidade do layout."
+      ]
+    },
+    {
+      "id": "UX-010",
+      "plan": "M0.2–M0.4, M1.10, M3.6, M3.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/qtest/ShellUiContractTests.cpp",
+          "marker": "void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable()"
+        },
+        {
+          "path": "tests/ui/qtest/ShellUiContractTests.cpp",
+          "marker": "void ShellUiContractTests::shellTextCanBeTranslatedWithoutChangingTheFixture()"
+        },
+        {
+          "path": "tests/ui/qtest/ShellUiContractTests.cpp",
+          "marker": "void ShellUiContractTests::productTextRetainsTheHistoricalTranslationContract()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "src/presentation/ApplicationText.hpp",
+          "marker": "Q_DECLARE_TR_FUNCTIONS(ApplicationText)"
+        },
+        {
+          "path": "experiments/m0/candidates/qt/README.md",
+          "marker": "### Strings e microcopy M3.6 — funcional no candidato"
+        }
+      ],
+      "remaining": [
+        "Concluir a revisão dos textos essenciais em pt-BR e da expansão de tradução no executável Windows empacotado; os contratos atuais comprovam centralização/tradução e layout offscreen, não o gate visual final de M3.6/M3.8."
+      ]
+    },
+    {
+      "id": "NFR-PERF-001",
+      "plan": "M0.1–M0.4, M0.10, M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "cold start P50/P95 em build Release"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Medir janela interativa no P95 em cold start do aplicativo completo, com máquina/protocolo identificados e limite de 800 ms.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-PERF-002",
+      "plan": "M0.5–M0.8, M2.2, M5.4–M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "open-to-audible com app aberto"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Medir abertura até áudio audível no P95 do aplicativo aberto, por corpus, contra o limite de 750 ms; Ready do decoder não é audibilidade.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-PERF-003",
+      "plan": "M0.8, M0.10, M2.3–M2.4, M5.4–M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "seek-to-audible em MP3 VBR e M4A"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Medir resposta visual até 100 ms e seek audível até 250 ms no produto combinado; registrar eventual limite de codec conforme o contrato.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-PERF-004",
+      "plan": "M0.1–M0.4, M2.3, M3.8, M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "working set/CPU vazio, pausado e tocando"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Medir CPU média pausada abaixo de 0,5% no produto e verificar a cadência do progresso; timer funcional não comprova consumo.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-PERF-005",
+      "plan": "M0.1–M0.4, M0.10, M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "working set/CPU vazio, pausado e tocando"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Medir a árvore completa contra 80 MiB ocioso/120 MiB em reprodução, separando private working set, compartilhado e commit.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-PERF-006",
+      "plan": "M0.1–M0.4, M3.2, M3.8, M5.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/SingleWorkerLocalSourceDiscoveryTests.cpp",
+          "marker": "discovery publishes bounded batches with one-slot backpressure"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "cancellingSourceImportKeepsConsumedBatchesAndDiscardsLateOnes"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "adicionar diretório com 1.000 itens"
+        }
+      ],
+      "remaining": [
+        "A descoberta incremental e o cancelamento têm regressões; falta medir o bloqueio máximo da UI ao adicionar 1.000 itens no produto real.",
+        "O orçamento de 100 ms permanece adiado e não comprovado."
+      ]
+    },
+    {
+      "id": "NFR-PERF-007",
+      "plan": "M0.8, M0.10, M5.4",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "reprodução contínua por oito horas"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "NFR-PERF-001–007"
+        }
+      ],
+      "remaining": [
+        "Executar futuramente o soak de oito horas e analisar crescimento sustentado da memória da árvore de processos.",
+        "Benchmarks do produto estão adiados; não há aprovação do orçamento por testes funcionais."
+      ]
+    },
+    {
+      "id": "NFR-STACK-001",
+      "plan": "M0.10",
+      "status": "comprovado",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "**Estado:** Aceito"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Essa é uma decisão de produto e manutenção, não o resultado de uma vitória comparativa medida."
+        }
+      ],
+      "remaining": []
+    },
+    {
+      "id": "NFR-STACK-002",
+      "plan": "M1.1–M1.2",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/cmake/ProcessBuildBoundaryTests.cmake",
+          "marker": "function(require_product_graph graph graph_build_root)"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/desktop-build.md",
+          "marker": "## Fonte única e fronteiras"
+        },
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Isolamento, ABI e recursos"
+        }
+      ],
+      "remaining": [
+        "A unidade gráfica e suas suites estão promovidas, mas a promoção da unidade de distribuição e dos scripts ainda vinculados ao diretório experimental não está encerrada.",
+        "Concluir M1.1–M1.2 sem reintroduzir fixtures comparativas ou toolchains não escolhidas como dependências do produto."
+      ]
+    },
+    {
+      "id": "NFR-STACK-003",
+      "plan": "M5.4–M5.5",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "Não executar benchmark confiável junto de jobs concorrentes ou build debug."
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "os ensaios não executados continuam sem resultado"
+        }
+      ],
+      "remaining": [
+        "Registrar protocolo, cenários, métricas, tolerâncias, ambiente e commit antes das medições futuras Release.",
+        "Medir árvore completa e separar shell/áudio, pacote/pré-requisitos e RAM; benchmarks estão adiados, não aprovados."
+      ]
+    },
+    {
+      "id": "NFR-STACK-004",
+      "plan": "M3.7, M4.4–M4.5, M5.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/ui/quick/tst_accessible_interface_tree.qml",
+          "marker": "function test_publicControlsExistInTheNativeAccessibleTree()"
+        },
+        {
+          "path": "tests/qt/QtShellPlatformTests.cpp",
+          "marker": "void hideFallsBackToMinimizeWhenTheReaderOrIconIsUnavailable()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Completar jornadas nativas Windows/NVDA, foco, contraste, escalas e bandeja; árvores acessíveis e adapters de teste não aprovam release.",
+        "Linux conserva build/smoke e integrações próprios para etapa posterior, sem comprovação antecipada."
+      ]
+    },
+    {
+      "id": "NFR-STACK-005",
+      "plan": "M1.1, M1.7, M4.8, M5.7",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "void opensUnicodeLocalAudioAndDrivesTheRealJourney()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/core-build.md",
+          "marker": "## Fronteiras e fonte única"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Distribuição permanece privada/experimental até seus próprios gates"
+        }
+      ],
+      "remaining": [
+        "Concluir revisão de versões/configuração do engine distribuído, segurança, Qt LGPL, FFmpeg/codecs, TagLib e notices/SBOM antes de distribuição.",
+        "Build e integração funcional não encerram licença pública, máquina limpa ou gates de release."
+      ]
+    },
+    {
+      "id": "NFR-STACK-006",
+      "plan": "M0.10, M5.1, M5.4–M5.9",
+      "status": "comprovado",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "A parte decisória de M0.10 é atendida por este ADR commitado"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Qualquer troca de toolkit, engine, identificadores de dados ou relaxamento de requisito exige decisão explícita e evidência"
+        }
+      ],
+      "remaining": []
+    },
+    {
+      "id": "NFR-REL-001",
+      "plan": "M0.5–M0.8, M1.4–M1.7, M2.1–M2.6, M5.2–M5.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "void truncatedBasicCodecFailsSafelyAndDoesNotContaminateNextLoad()"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-103 returns typed errors for empty and truncated input without crashing"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Limites"
+        }
+      ],
+      "remaining": [
+        "Completar corpus hostil canônico e fuzz/property dos parsers e adapters nos limites publicados; derivados temporários não cobrem todo o corpus.",
+        "Revalidar zero crash reproduzível conhecido antes da release; os testes não demonstram isolamento contra OOM/falha arbitrária do decoder."
+      ]
+    },
+    {
+      "id": "NFR-REL-002",
+      "plan": "M0.6–M0.8, M2.2, M5.4",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/product/requirements.md",
+          "marker": "Código próprio executado no callback de saída não realiza logging, lock longo, chamada de UI nem I/O adicional."
+        },
+        {
+          "path": "docs/m0/evidence/m0-6-qt-audio-first-slices.md",
+          "marker": "## Limites e próximo slice"
+        }
+      ],
+      "remaining": [
+        "Auditar o caminho real de saída do backend para logging, locks, UI e leitura/decode bloqueantes; callbacks de sinais Qt não são prova do callback de áudio.",
+        "Medir underruns e impacto de tempo real posteriormente; decidir prefetch/buffer limitado somente se a evidência demonstrar necessidade."
+      ]
+    },
+    {
+      "id": "NFR-REL-003",
+      "plan": "M1.9, M3.5, M4.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtJsonWindowsPreferencesStoreTests.cpp",
+          "marker": "void QtJsonWindowsPreferencesStoreTests::injectedFaultBeforeCommitPreservesThePrimary()"
+        },
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "void restoresThePreviousSessionAfterForcedTerminationBeforePrimaryCommit()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/process-tests.md",
+          "marker": "## Evidência e limites"
+        }
+      ],
+      "remaining": [
+        "Concluir a jornada de persistência/recuperação no produto empacotado e os gates M4.1; as provas atuais usam raízes temporárias e executável instrumentado.",
+        "O checkpoint de término forçado não representa perda física de energia nem transação conjunta entre preferências e sessão."
+      ]
+    },
+    {
+      "id": "NFR-REL-004",
+      "plan": "M4.3, R1.5",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/OpenSourcesCommandTests.cpp",
+          "marker": "void roundTripsZeroOneAndOneThousandPaths()"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "typedSourceImportPreservesOrderDuplicatesAndNativeMetacharacters"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "Associação/double-click, quoting produzido pelo shell"
+        }
+      ],
+      "remaining": [
+        "Completar a ativação pelo shell/Explorer do pacote real com paths hostis/Unicode; serialização e despacho tipado não substituem essa jornada.",
+        "Preservar argumentos como dados também em R1.5 quando houver adapter remoto autorizado; nenhuma concatenação shell futura está aprovada."
+      ]
+    },
+    {
+      "id": "NFR-REL-005",
+      "plan": "M4.7",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "void renamedSourceRestoresThePersistedOccurrencePausedThroughTheRealDecoder()"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "void outputReconnectRestoresRealDecodedAudioPausedAtTheSamePosition()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Localização de arquivo M4.7"
+        }
+      ],
+      "remaining": [
+        "Validar drive removido e perda/reconexão física de USB/Bluetooth/HDMI com erro acionável; topologia injetada não prova hardware.",
+        "Concluir seletor nativo, áudio audível e recuperação do pacote Windows; M4.7 permanece parcial."
+      ]
+    },
+    {
+      "id": "NFR-REL-006",
+      "plan": "M0.5–M0.9, M4.8, M5.7",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Corpus sintético e proveniência"
+        },
+        {
+          "path": "docs/m0/evidence/m0-2-third-party-attributions.md",
+          "marker": "## Textos, obrigações e fonte ainda pendentes"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "Distribuição permanece privada/experimental até seus próprios gates"
+        }
+      ],
+      "remaining": [
+        "Concluir obrigações de redistribuição de Qt/FFmpeg/codecs/TagLib, fontes/notices e SBOM do artefato efetivamente distribuído.",
+        "Definir licença pública quando autorizada; licença/proveniência local das fixtures não equivale a autorização de publicação."
+      ]
+    },
+    {
+      "id": "NFR-LIMIT-001",
+      "plan": "M0.5–M0.8, M2.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "NFR-LIMIT-001 scales embedded MP3 artwork down while preserving its aspect ratio"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-011 rejects real embedded MP3 artwork beyond dimension and pixel boundaries"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "`MR-006`/`MR-007`/`MR-009`/`MR-010` ainda têm somente policy aritmética"
+        }
+      ],
+      "remaining": [
+        "Adicionar bordas reais abaixo/exatamente nos limites de bytes/dimensões e fixtures canônicas de arte; a policy aritmética não substitui todas as imagens reais.",
+        "Completar a validação integrada de placeholder sem impedir playback para o corpus declarado."
+      ]
+    },
+    {
+      "id": "NFR-LIMIT-002",
+      "plan": "M0.5–M0.8, M2.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-014 and MR-015 enforce the retained metadata aggregate boundary without overflow"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-013 discards one metadata field above the retained byte limit without failing the read"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "O limite agregado de metadata está provado na policy"
+        }
+      ],
+      "remaining": [
+        "Completar corpus canônico de metadata de limite e comprovação integrada dos diagnósticos nos campos/perfis declarados.",
+        "O adapter atual retém no máximo 48 KiB + 8 bytes; a policy de 256 KiB não demonstra um caminho integrado que alcance esse total nem limita alocações internas do parser."
+      ]
+    },
+    {
+      "id": "NFR-LIMIT-003",
+      "plan": "M0.5–M0.8, M2.6",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "poll expires an active blocked extraction without waiting for release"
+        },
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "MR-020 expires queued work without accumulation and remains usable"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "experiments/m0/candidates/qt/README.md",
+          "marker": "uma chamada TagLib já iniciada não é fisicamente interrompida."
+        }
+      ],
+      "remaining": [
+        "Completar a comprovação do budget interativo no corpus real; os testes determinísticos demonstram descarte/limite de jobs, não prazo de execução interna do TagLib.",
+        "Registrar o efeito de uma extração síncrona bloqueada sobre os pedidos seguintes e a saída sem alegar cancelamento físico do parser."
+      ]
+    },
+    {
+      "id": "NFR-LIMIT-004",
+      "plan": "M1.8, M4.3",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/OpenSourcesCommandTests.cpp",
+          "marker": "void rejectsOneThousandAndOnePathsBeforeSerialization()"
+        },
+        {
+          "path": "tests/qt/OpenSourcesCommandTests.cpp",
+          "marker": "void enforcesTheInclusiveOneMebibyteSerializedLimit()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### M4.3 — instância única, shell e IPC limitado"
+        }
+      ],
+      "remaining": [
+        "Revalidar os limites e o feedback no ingresso do pacote/Explorer real, incluindo 0/1/1.000/1.001 paths e fronteiras serializadas.",
+        "Comprovar ausência de bloqueio da UI no lote máximo; bounds de serialização não são medição de responsividade."
+      ]
+    },
+    {
+      "id": "NFR-PRIV-001",
+      "plan": "M0.9, M4.8",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/security/threat-model.md",
+          "marker": "Não persistir conteúdo de áudio, credencial, cookie, identificador publicitário ou telemetria."
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "fontes remotas, telemetria, contas e serviços não entram no MVP local."
+        }
+      ],
+      "remaining": [
+        "Executar smoke offline e deny/captura de egress do pacote de produto com inspeção das dependências.",
+        "Ausência de funcionalidades remotas planejadas não substitui a comprovação de operação integral offline e ausência de coleta no artefato."
+      ]
+    },
+    {
+      "id": "NFR-PRIV-002",
+      "plan": "M1.9, M4.1, M4.8",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "void restoresAUnicodeSessionPausedAtItsConfirmedPosition()"
+        },
+        {
+          "path": "tests/qt/QtJsonWindowsPreferencesStoreTests.cpp",
+          "marker": "void QtJsonWindowsPreferencesStoreTests::roundTripsAllPreferencesInAUnicodeDirectory()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/security/threat-model.md",
+          "marker": "## 8. Persistência e privacidade"
+        }
+      ],
+      "remaining": [
+        "Inspecionar o pacote final e seus acessos/egress para comprovar que fila, paths e eventual histórico permanecem somente no dispositivo.",
+        "Preservar dados pessoais em instalação/remoção e validar o artefato de distribuição, sem extrapolar os stores temporários."
+      ]
+    },
+    {
+      "id": "NFR-PRIV-003",
+      "plan": "M1.9, M4.8, M5.7",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/process/qtest/DiagnosticExecutableTests.cpp",
+          "marker": "void protectsRealDecoderOutputAndOnlyCreatesLogsAfterOptIn()"
+        },
+        {
+          "path": "tests/qt/QtWindowsDiagnosticLogStoreTests.cpp",
+          "marker": "void rotatesOnlyOldestSlotAndBoundsFileCount()"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "experiments/m0/candidates/qt/README.md",
+          "marker": "### Diagnóstico local Windows — opt-in e retenção"
+        }
+      ],
+      "remaining": [
+        "Executar os quatro cenários de symlink ainda pulados pela política do host e concluir inspeção de privacidade/retenção do pacote.",
+        "O handler Qt e stderr protegido não constituem interceptação universal de stdout arbitrário, OutputDebugString, handlers substituídos ou dumps do sistema."
+      ]
+    },
+    {
+      "id": "NFR-PRIV-004",
+      "plan": "R1.1–R1.6",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/security/threat-model.md",
+          "marker": "## 10. Fontes remotas futuras"
+        },
+        {
+          "path": "docs/architecture/decisions/0005-windows-product-stack.md",
+          "marker": "[ADR-0003](0003-local-first-and-remote-sources.md) permanece `Proposto`"
+        }
+      ],
+      "remaining": [
+        "Antes de habilitar rede, definir hosts/esquemas, redirects, limites, timeout/cancelamento, política de logs e isolamento do adapter.",
+        "Implementar e testar R1.1–R1.6 somente no escopo autorizado; rede não faz parte do MVP local atual."
+      ]
+    },
+    {
+      "id": "NFR-MAINT-001",
+      "plan": "M1.2 e todo comportamento posterior",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-workflow.md",
+          "marker": "## 3. Ciclo padrão"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Preservação do log CTest"
+        }
+      ],
+      "remaining": [
+        "Registrar Red causal, Green e suíte proporcional após refactor em cada nova mudança de comportamento.",
+        "Os incrementos documentados não dispensam a revisão contínua de CHK-TDD nem provam antecipadamente mudanças futuras."
+      ]
+    },
+    {
+      "id": "NFR-MAINT-002",
+      "plan": "M1.4–M1.10 e revisões M2–M5",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/core-build.md",
+          "marker": "Independência OFF: uma exportação contendo somente"
+        },
+        {
+          "path": "docs/core-build.md",
+          "marker": "Onze fontes em `src/domain` e `src/application`; somente contratos puros"
+        }
+      ],
+      "remaining": [
+        "Consolidar CHK-ARCH como guarda contínua de dependências do core nas revisões M1.4–M1.10/M2–M5.",
+        "A exportação independente já prova o recorte atual sem Qt, mas não encerra todas as revisões arquiteturais dos casos de uso futuros."
+      ]
+    },
+    {
+      "id": "NFR-MAINT-003",
+      "plan": "M1.1",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/desktop-build.md",
+          "marker": "## Fonte única e fronteiras"
+        },
+        {
+          "path": "docs/core-build.md",
+          "marker": "Não é ainda o build/distribuição completo do aplicativo"
+        }
+      ],
+      "remaining": [
+        "Concluir a unidade de distribuição de produto e a promoção dos scripts de runtime/instalador ainda sob o experimento.",
+        "Preservar módulos internos e fonte única sem introduzir pacotes independentes sem benefício demonstrado; M1.1 continua aberto."
+      ]
+    },
+    {
+      "id": "NFR-MAINT-004",
+      "plan": "D0.1–D0.9 e `CHK-CLOSE` de toda etapa",
+      "status": "em andamento",
+      "verification": "documentary",
+      "tests": [],
+      "evidence": [
+        {
+          "path": "docs/development-workflow.md",
+          "marker": "### Commitar"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "commit, `git show --check --stat`, status limpo e riscos"
+        }
+      ],
+      "remaining": [
+        "Aplicar CHK-CLOSE em cada etapa: diff revisto, validações proporcionais, commit atômico, status e riscos registrados.",
+        "A rastreabilidade documental não constitui auditoria completa de todos os commits nem dispensa o fechamento do incremento atual."
+      ]
+    },
+    {
+      "id": "NFR-MAINT-005",
+      "plan": "D0.8, M1.2, M5.1",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "scripts/tests/Traceability.Tests.ps1",
+          "marker": "valid mapping reports fulfillment separately and provides reverse references"
+        }
+      ],
+      "evidence": [
+        {
+          "path": "docs/development-plan.md",
+          "marker": "### 15.1 Destino individual dos 83 requisitos"
+        },
+        {
+          "path": "docs/quality/traceability.md",
+          "marker": "## Evidência do incremento"
+        }
+      ],
+      "remaining": [
+        "Revisar a suficiência das evidências por critério na auditoria de M5.1; o manifesto e a consulta inversa já estão integrados ao runner local, mas validade estrutural não comprova o conteúdo de cada referência.",
+        "Manter links bidirecionais e evidências atualizadas por incremento; a matriz de destinos não significa 83 requisitos cumpridos."
+      ]
+    }
+  ]
+}

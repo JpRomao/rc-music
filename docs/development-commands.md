@@ -39,13 +39,15 @@ if (-not (Test-Path -LiteralPath .tools/windows.psd1)) {
 | `Task` | Operações, na ordem | Configuração de build |
 |---|---|---|
 | `format` | Verifica C++ e QML; só escreve com `-Apply` | Não configura nem compila |
-| `check` | Formato, documentos, testes do runner, testes do formatter, `git diff --check` | Não configura nem compila |
+| `check` | Formato, documentos, testes de rastreabilidade, manifesto CHK-TRACE, testes do runner, testes do formatter, `git diff --check` | Não configura nem compila |
 | `build` | Configure e build do alvo real `m0_qt_shell` | Release, desktop ON, `BUILD_TESTING=OFF` |
 | `test` | Configure, build e CTest | Release, desktop ON, `BUILD_TESTING=ON` |
 | `lint` | Configure, build e alvo `all_qmllint` | Release, desktop ON, `BUILD_TESTING=ON`; não executa CTest |
 | `validate` | Todos os passos de `check`, depois configure, build, lint e CTest | Release, desktop ON, `BUILD_TESTING=ON` |
 
 `validate` é a ação padrão quando `Task` é omitido. `-Apply` só é aceito com `format`; não modifica implicitamente arquivos durante `check` ou `validate`.
+
+A [rastreabilidade executável](quality/traceability.md) confere os 83 IDs, destinos, referências literais e estados, e oferece consulta inversa em JSON. Vínculos válidos não significam requisitos integralmente comprovados ou nova execução dos testes citados.
 
 `-BuildDirectory` é opcional. O padrão de `build` é `out/product/desktop-release`; `test`, `lint` e `validate` usam `out/product/desktop-tests`. Caminhos relativos partem da raiz. As ações sem CMake não criam esses diretórios. `-Jobs` controla o paralelismo do build, com padrão 4 e intervalo de 1 a 16.
 

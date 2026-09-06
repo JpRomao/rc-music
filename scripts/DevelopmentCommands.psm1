@@ -136,6 +136,8 @@ function Get-RcMusicDevelopmentPlan {
     }
     if ($Task -in @('check', 'validate')) {
         Add-Step 'docs' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/validate-docs.ps1'))
+        Add-Step 'traceability-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/Traceability.Tests.ps1'))
+        Add-Step 'traceability' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/validate-traceability.ps1'))
         Add-Step 'runner-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentCommands.Tests.ps1'))
         Add-Step 'format-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/FormatSource.Tests.ps1'))
         Add-Step 'diff' 'git' @('diff', '--check')

@@ -4,6 +4,8 @@ Player de áudio desktop pessoal, local-first, Windows-first e planejado para Li
 
 **Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos explicitamente no [ADR-0005](docs/architecture/decisions/0005-windows-product-stack.md). O [build Windows da raiz](docs/desktop-build.md) compila a aplicação real sem configure, fixtures ou corpus do experimento; o [core independente](docs/core-build.md) continua disponível sem Qt. Fontes e testes promovidos têm uma única implementação, também consumida pelo histórico. O checkpoint da promoção de processos passou **296/296 testes**, incluindo [áudio](docs/audio-tests.md), [UI isolada](docs/ui-tests.md), [integrações Windows](docs/windows-integration-tests.md) e os [cinco drivers de processo promovidos](docs/process-tests.md), em sete jornadas e dois executáveis exclusivos de teste; quatro casos de symlink continuam sem execução pela política do host. Build OFF, lint e formato passaram como gates separados, sem uma nova execução do wrapper `validate`. Ligar testes não ativa cenários ou hooks na aplicação real. Os [comandos locais consolidados](docs/development-commands.md) oferecem `format`, `check`, `build`, `test`, `lint` e `validate`. M1 não está concluído. Benchmarks e Linux continuam adiados, sem aprovação de release ou retomada da interação nativa interrompida.
 
+A [rastreabilidade executável](docs/quality/traceability.md) integra `check` e `validate`: os 83 requisitos têm destinos, evidências e lacunas explícitas, consultáveis também por teste. Ela não substitui a execução dos testes nem transforma gates pendentes em funcionalidades ausentes.
+
 Check completo da unidade Windows promovida, com ferramentas locais já disponíveis e sem downloads:
 
 ```powershell

@@ -47,12 +47,12 @@ Test-Case 'test configures ON and builds before running all tests with empty sui
 }
 Test-Case 'validate includes docs formatter runner tests build lint and test once' {
     $plan = Plan validate
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|runner-tests|format-tests|diff|configure|build|lint|test') 'Incomplete or repeated validate'
+    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|format-tests|diff|configure|build|lint|test') 'Incomplete or repeated validate'
     Assert-True (-not ($plan[0].Arguments -contains '-Apply')) 'Validate must not format in place'
 }
 Test-Case 'check does not compile or modify source files' {
     $plan = Plan check
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|runner-tests|format-tests|diff') 'Wrong check steps'
+    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|format-tests|diff') 'Wrong check steps'
     Assert-True (-not ($plan.Arguments -contains '-Apply')) 'Check mutates sources'
 }
 Test-Case 'only explicit format apply permits source formatting' {
