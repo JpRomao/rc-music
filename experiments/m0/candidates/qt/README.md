@@ -624,7 +624,7 @@ if (-not (Test-Path -LiteralPath $clangFormat -PathType Leaf) -or
     throw 'Execute o preflight: ferramentas de formato ausentes.'
 }
 
-$cppFiles = @(rg --files $formatSource -g '*.cpp' -g '*.hpp')
+$cppFiles = @(rg --files $formatSource (Join-Path $formatRepo 'include') (Join-Path $formatRepo 'src') (Join-Path $formatRepo 'tests') -g '*.cpp' -g '*.hpp')
 if ($LASTEXITCODE -ne 0 -or $cppFiles.Count -eq 0) { throw 'Falha ao enumerar C++.' }
 & $clangFormat --dry-run --Werror @cppFiles
 if ($LASTEXITCODE -ne 0) { throw 'Formato C++ divergente.' }
@@ -661,7 +661,7 @@ A receita autentica CMake, Ninja, `windeployqt` e `qtpaths`, além das ferrament
 
 ## Build e testes do core
 
-Na sessão preparada acima, use um diretório próprio do novo compilador:
+O core foi promovido para a raiz e possui [build independente e evidência próprios](../../../../docs/core-build.md). O shell consome essa implementação única; os comandos abaixo validam a compatibilidade do consumidor histórico, não substituem o build de produto. Na sessão preparada acima, use um diretório próprio do novo compilador:
 
 ```powershell
 $repo = (Resolve-Path .).Path

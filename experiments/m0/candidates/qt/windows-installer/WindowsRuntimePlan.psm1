@@ -151,7 +151,12 @@ function Get-RcMusicSourceSnapshot {
     $inputPaths = @(
         'experiments/m0/candidates/qt/shell',
         'experiments/m0/protocol',
-        'experiments/m0/shared/shell-fixture'
+        'experiments/m0/shared/shell-fixture',
+        'CMakeLists.txt',
+        'cmake',
+        'include',
+        'src',
+        'tests'
     )
     $topLevel = @(& git --no-optional-locks -C $root rev-parse --show-toplevel 2>&1)
     if ($LASTEXITCODE -ne 0 -or $topLevel.Count -ne 1 -or

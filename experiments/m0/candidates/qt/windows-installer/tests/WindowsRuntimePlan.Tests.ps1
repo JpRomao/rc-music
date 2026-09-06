@@ -65,24 +65,34 @@ function Invoke-FixtureGit([string] $Directory, [string[]] $Arguments) {
     if ($LASTEXITCODE -ne 0) { throw ('Fixture git failed: ' + ($result -join ' ')) }
     return $result
 }
-function New-SourceRepository {
+function New-SourceRepository([switch] $WithProductSources) {
     $s = New-Scenario
     $directory = Join-Path $s.Base 'source-repository'
     $inputPaths = @('experiments/m0/candidates/qt/shell', 'experiments/m0/protocol', 'experiments/m0/shared/shell-fixture')
+    $productInputPaths = @('CMakeLists.txt', 'cmake', 'include', 'src', 'tests')
     foreach ($path in $inputPaths) {
         $parent = Join-Path $directory $path
         $null = New-Item -ItemType Directory -Path $parent
         [IO.File]::WriteAllText((Join-Path $parent 'input.txt'), 'committed synthetic source')
     }
+    if ($WithProductSources) {
+        foreach ($file in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp')) {
+            $target = Join-Path $directory $file
+            $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force
+            [IO.File]::WriteAllText($target, 'committed synthetic product source')
+        }
+    }
     [IO.File]::WriteAllText((Join-Path $directory 'README.md'), 'committed synthetic docs')
     Invoke-FixtureGit $directory @('init', '--initial-branch=main') | Out-Null
-    Invoke-FixtureGit $directory (@('add', '--', 'README.md') + $inputPaths) | Out-Null
+    $trackedPaths = $inputPaths
+    if ($WithProductSources) { $trackedPaths += $productInputPaths }
+    Invoke-FixtureGit $directory (@('add', '--', 'README.md') + $trackedPaths) | Out-Null
     Invoke-FixtureGit $directory @('-c', 'user.name=RC Music Tests', '-c', 'user.email=rc-music-tests@example.invalid',
         '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Create synthetic source fixture') | Out-Null
     return [pscustomobject]@{
         Directory = $directory
         Commit = [string](Invoke-FixtureGit $directory @('rev-parse', 'HEAD'))
-        InputPaths = $inputPaths
+        InputPaths = $inputPaths + $productInputPaths
     }
 }
 
@@ -252,6 +262,32 @@ try {
         [IO.File]::WriteAllText((Join-Path $source.Directory $path), 'staged shell change')
         Invoke-FixtureGit $source.Directory @('add', '--', $path) | Out-Null
         Assert-Rejected { Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory } 'dirty|changed|clean|input'
+    }
+    Test-Case 'source snapshot records the clean HEAD and all promoted product input paths' {
+        $source = New-SourceRepository -WithProductSources
+        $snapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory
+        Assert-Equal $snapshot.commit $source.Commit
+        Assert-Equal ($snapshot.input_paths -join '|') ($source.InputPaths -join '|')
+    }
+    foreach ($path in @('CMakeLists.txt', 'cmake/Core.cmake', 'include/core.hpp', 'src/core.cpp', 'tests/core.cpp')) {
+        Test-Case "source snapshot rejects an unstaged promoted input: $path" {
+            $source = New-SourceRepository -WithProductSources
+            [IO.File]::WriteAllText((Join-Path $source.Directory $path), 'changed product source')
+            Assert-Rejected { Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory } 'dirty|changed|clean|input'
+        }
+        Test-Case "source snapshot rejects a staged promoted input: $path" {
+            $source = New-SourceRepository -WithProductSources
+            [IO.File]::WriteAllText((Join-Path $source.Directory $path), 'staged product source')
+            Invoke-FixtureGit $source.Directory @('add', '--', $path) | Out-Null
+            Assert-Rejected { Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory } 'dirty|changed|clean|input'
+        }
+        Test-Case "source snapshot rejects an untracked promoted input: $path" {
+            $source = New-SourceRepository
+            $target = Join-Path $source.Directory $path
+            $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force
+            [IO.File]::WriteAllText($target, 'untracked product source')
+            Assert-Rejected { Get-RcMusicSourceSnapshot -RepositoryRoot $source.Directory } 'dirty|changed|clean|input'
+        }
     }
 } finally {
     foreach ($junction in $junctions) {

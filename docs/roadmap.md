@@ -1,6 +1,6 @@
 # Roadmap
 
-**Decisão vigente:** C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib aceitos pelo mantenedor em 2026-09-05 no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B não é mais pré-requisito do produto. A próxima frente é a promoção incremental em M1, ainda por implementar e validar; não há aprovação retroativa dos benchmarks ou gates experimentais.
+**Decisão vigente:** C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib aceitos pelo mantenedor em 2026-09-05 no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B não é mais pré-requisito do produto. M1 está em promoção incremental: o [núcleo independente](core-build.md) já compila/testa na raiz e alimenta o shell existente; apresentação/bootstrap e a unidade completa do aplicativo ainda precisam ser separados do experimento. Não há aprovação retroativa dos benchmarks ou gates experimentais.
 
 Benchmarks e Linux permanecem adiados. Tauri/Rust e seus checks ficam fora das dependências do produto; os registros comparativos são preservados como histórico. A confirmação de stack não reautoriza Computer Use interrompido, instalação no host ou distribuição pública.
 

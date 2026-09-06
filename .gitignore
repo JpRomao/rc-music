@@ -1,5 +1,6 @@
 /.tools/
 /out/m0/
+/out/product/
 /q/*
 !/q/.gitkeep
 /experiments/m0/candidates/*/shell/node_modules/

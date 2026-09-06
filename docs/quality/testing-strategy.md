@@ -70,6 +70,8 @@ O [ADR-0005](../architecture/decisions/0005-windows-product-stack.md) aceita a s
 
 ### C++20 + Qt 6 Quick/QML — produto
 
+O [primeiro recorte de promoção do núcleo](../core-build.md) reutiliza os 224 casos em `tests/core`, com Catch2 3.15.3 explícito e prefixo CTest `rc_music.core.`. O consumidor histórico conserva `m0.qt.core.` sobre as mesmas fontes. O build raiz OFF deve funcionar com apenas CMake/headers/fontes, sem Qt, Catch2 ou arquivos de teste; workers e backend determinístico não pertencem ao alvo de domínio puro.
+
 - usar Catch2 como runner único para domínio, application e contratos C++ puros; não adicionar uma segunda suite equivalente;
 - registrar os executáveis no CTest e manter testes independentes de `QCoreApplication` quando o código exercitado pertence ao núcleo;
 - usar Qt Test para presenters, adapters Qt e integrações de sinais/slots; usar Qt Quick Test somente onde renderização/comportamento QML for necessário;

@@ -1,6 +1,6 @@
 # Arquitetura do sistema
 
-**Estado:** arquitetura vigente da stack aceita; promoção técnica do código pendente
+**Estado:** arquitetura vigente da stack aceita; núcleo promovido, composição gráfica ainda pendente
 **Stack do produto:** C++20 + Qt 6 Quick/QML, Qt Multimedia/FFmpeg e TagLib
 **Última revisão:** 2026-09-05
 
@@ -103,7 +103,11 @@ Application C++ puro → Domain/Ports C++ puro ← Adapters
 
 ## 4. Estrutura do produto após a decisão
 
-Os spikes e seus inputs autenticados continuam preservados pelo [layout M0-L1](../m0/layout.md). O ADR-0005 satisfaz a decisão de M0.10 e permite iniciar M1 com uma única unidade C++ de build/distribuição. A árvore abaixo é o destino, não uma alegação de migração já executada. Promover módulos e testes existentes sem duplicar implementação; primeiro extrair o núcleo puro, depois separar apresentação/bootstrap de `FixtureBundle`, autenticação e recursos comparativos M0. Preservar IDs de dados, nomes técnicos compatíveis e atualizar a proveniência dos builders antes de gerar novos runtimes com fontes movidas.
+Os spikes e seus inputs autenticados continuam preservados pelo [layout M0-L1](../m0/layout.md), cujo check pré-M0.10 permanece histórico e não governa os novos diretórios de produto. O ADR-0005 satisfaz a decisão de M0.10 e permite M1 com uma única unidade C++ de build/distribuição.
+
+O [primeiro recorte implementado](../core-build.md) moveu headers para `include/m0/{domain,application,ports}`, regras para `src/{domain,application}`, workers para `src/adapters` e testes para `tests/core`. `rc_music_core` depende somente de contratos C++ puros; `rc_music_workers` contém concorrência/filesystem e o adapter Windows, enquanto `rc_music_test_support` isola o backend determinístico. O shell legado consome esses alvos sem cópia das regras. O core raiz OFF compila inclusive numa exportação sem `experiments` e `tests`; os namespaces `m0` foram mantidos para evitar alteração incidental de APIs.
+
+A árvore abaixo continua sendo o destino da composição gráfica, não uma alegação de migração completa. Ainda é necessário separar apresentação/bootstrap de `FixtureBundle`, autenticação e recursos comparativos M0. A proveniência do builder já cobre as fontes promovidas, mas nenhum novo runtime foi gerado. Preservar IDs de dados e nomes técnicos compatíveis.
 
 ```text
 /

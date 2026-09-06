@@ -7,15 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
-find_package(Threads REQUIRED)
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../../cmake/RcMusicCore.cmake")
+
+rc_music_add_test_support()
+add_library(m0_qt_core INTERFACE)
+target_link_libraries(m0_qt_core INTERFACE rc_music_core rc_music_workers rc_music_test_support)
 
 option(M0_QT_SHELL_SUPPORT "Build the Qt fixture repository and queue model" OFF)
 option(M0_QT_AUDIO_SUPPORT "Build the Qt Multimedia playback adapter" OFF)
 
 set(M0_CATCH2_SOURCE_DIR "" CACHE PATH "Path to the authenticated Catch2 source tree")
-if(NOT IS_ABSOLUTE "${M0_CATCH2_SOURCE_DIR}")
-    message(FATAL_ERROR "M0_CATCH2_SOURCE_DIR must be an absolute path")
-endif()
 
 if(M0_QT_SHELL_SUPPORT)
     set(M0_PROTOCOL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../../protocol/protocol.v1.json")
@@ -114,8 +115,8 @@ if(M0_QT_SHELL_SUPPORT)
     set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 
     add_library(m0_qt_audio_file_locator STATIC
-        include/m0/ports/AudioFileLocator.hpp
-        include/m0/ports/AudioFilesPicker.hpp
+        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/AudioFileLocator.hpp"
+        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/AudioFilesPicker.hpp"
         src/adapters/QtAudioFileDialog.hpp
         src/adapters/QtAudioFileDialog.cpp
         src/adapters/QtAudioFileLocator.hpp
@@ -124,7 +125,7 @@ if(M0_QT_SHELL_SUPPORT)
         src/adapters/QtAudioFilesPicker.cpp
     )
     target_include_directories(m0_qt_audio_file_locator PUBLIC include src)
-    target_link_libraries(m0_qt_audio_file_locator PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
+    target_link_libraries(m0_qt_audio_file_locator PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
     target_compile_features(m0_qt_audio_file_locator PUBLIC cxx_std_20)
     set_target_properties(m0_qt_audio_file_locator PROPERTIES AUTOMOC ON)
     if(MSVC)
@@ -138,7 +139,7 @@ if(M0_QT_SHELL_SUPPORT)
         src/adapters/QtShellPlatform.cpp
     )
     target_include_directories(m0_qt_shell_platform PUBLIC include src)
-    target_link_libraries(m0_qt_shell_platform PUBLIC Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
+    target_link_libraries(m0_qt_shell_platform PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
     if(WIN32)
         target_sources(m0_qt_shell_platform PRIVATE
             src/adapters/WindowsTaskbarEvents.hpp
@@ -156,13 +157,13 @@ if(M0_QT_SHELL_SUPPORT)
 
     if(WIN32)
         add_library(m0_qt_windows_smtc STATIC
-            include/m0/ports/SystemMediaControls.hpp
+            "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/SystemMediaControls.hpp"
             src/adapters/WindowsSmtcAdapter.hpp
             src/adapters/WindowsSmtcAdapter.cpp
             src/adapters/WinRtSmtcNativeBoundary.cpp
         )
         target_include_directories(m0_qt_windows_smtc PUBLIC include src)
-        target_link_libraries(m0_qt_windows_smtc PUBLIC Qt6::Core Qt6::Gui PRIVATE windowsapp)
+        target_link_libraries(m0_qt_windows_smtc PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE windowsapp)
         target_compile_features(m0_qt_windows_smtc PUBLIC cxx_std_20)
         set_target_properties(m0_qt_windows_smtc PROPERTIES AUTOMOC ON)
         if(MSVC)
@@ -172,13 +173,13 @@ if(M0_QT_SHELL_SUPPORT)
         endif()
 
         add_library(m0_qt_windows_power_events STATIC
-            include/m0/ports/SystemPowerEvents.hpp
+            "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/SystemPowerEvents.hpp"
             src/adapters/WindowsPowerEvents.hpp
             src/adapters/WindowsPowerEvents.cpp
             src/adapters/Win32SuspendResumeNativeBoundary.cpp
         )
         target_include_directories(m0_qt_windows_power_events PUBLIC include src)
-        target_link_libraries(m0_qt_windows_power_events PUBLIC Qt6::Core Qt6::Gui PRIVATE user32)
+        target_link_libraries(m0_qt_windows_power_events PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE user32)
         target_compile_features(m0_qt_windows_power_events PUBLIC cxx_std_20)
         set_target_properties(m0_qt_windows_power_events PROPERTIES AUTOMOC ON)
         if(MSVC)
@@ -1287,12 +1288,12 @@ if(M0_QT_AUDIO_SUPPORT)
 
     add_library(m0_taglib_metadata_extractor STATIC
         include/m0/adapters/TagLibMetadataExtractor.hpp
-        include/m0/domain/ArtworkLimits.hpp
-        include/m0/ports/MetadataExtractor.hpp
+        "${RC_MUSIC_SOURCE_ROOT}/include/m0/domain/ArtworkLimits.hpp"
+        "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/MetadataExtractor.hpp"
         src/adapters/TagLibMetadataExtractor.cpp
     )
     target_include_directories(m0_taglib_metadata_extractor PUBLIC include)
-    target_link_libraries(m0_taglib_metadata_extractor PRIVATE m0_qt_core TagLib::TagLib Qt6::Gui)
+    target_link_libraries(m0_taglib_metadata_extractor PUBLIC rc_music_contracts PRIVATE m0_qt_core TagLib::TagLib Qt6::Gui)
     target_compile_features(m0_taglib_metadata_extractor PUBLIC cxx_std_20)
     if(MSVC)
         target_compile_options(m0_taglib_metadata_extractor PRIVATE /W4 /WX /permissive-)
@@ -1485,84 +1486,10 @@ if(M0_QT_AUDIO_SUPPORT)
         endif()
     endif()
 endif()
-if(NOT EXISTS "${M0_CATCH2_SOURCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "M0_CATCH2_SOURCE_DIR does not contain Catch2")
-endif()
-
-set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(CATCH_DEVELOPMENT_BUILD OFF CACHE BOOL "" FORCE)
-set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
-set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
-add_subdirectory(
-    "${M0_CATCH2_SOURCE_DIR}"
-    "${CMAKE_BINARY_DIR}/_deps/catch2-build"
-    EXCLUDE_FROM_ALL
-)
-
-add_library(m0_qt_core STATIC
-    src/adapters/DeterministicPlaybackBackend.cpp
-    src/adapters/SingleWorkerLocalSourceDiscovery.cpp
-    src/adapters/SingleWorkerMetadataReader.cpp
-    src/adapters/SingleWorkerPreferencesWriter.cpp
-    src/adapters/SingleWorkerSessionWriter.cpp
-    src/application/LocalTrackSession.cpp
-    src/application/PlayerController.cpp
-    src/application/PreferencesAutosave.cpp
-    src/application/SessionAutosave.cpp
-    src/domain/LocalAudioFilePolicy.cpp
-    src/domain/LocalFileQueue.cpp
-    src/domain/MetadataSanitization.cpp
-    src/domain/DiagnosticRecord.cpp
-    src/adapters/SingleWorkerDiagnosticWriter.cpp
-    src/domain/QueueNavigation.cpp
-    src/domain/SessionSnapshot.cpp
-    src/domain/WindowPlacement.cpp
-)
-target_include_directories(m0_qt_core PUBLIC include)
-target_link_libraries(m0_qt_core PUBLIC Threads::Threads)
-target_compile_features(m0_qt_core PUBLIC cxx_std_20)
-
-if(MSVC)
-    target_compile_options(m0_qt_core PRIVATE /W4 /WX /permissive-)
-else()
-    target_compile_options(m0_qt_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
-
 if(BUILD_TESTING)
-    add_executable(m0_qt_core_tests
-        tests/catch2/ArtworkLimitsTests.cpp
-        tests/catch2/DeterministicPlaybackBackendTests.cpp
-        tests/catch2/LocalAudioFilePolicyTests.cpp
-        tests/catch2/LocalFileQueueTests.cpp
-        tests/catch2/MetadataSanitizationTests.cpp
-        tests/catch2/DiagnosticLogTests.cpp
-        tests/catch2/SingleWorkerLocalSourceDiscoveryTests.cpp
-        tests/catch2/LocalTrackSessionTests.cpp
-        tests/catch2/PlayerControllerTests.cpp
-        tests/catch2/PreferencesAutosaveTests.cpp
-        tests/catch2/QueueNavigationTests.cpp
-        tests/catch2/SessionAutosaveTests.cpp
-        tests/catch2/SessionStorePortTests.cpp
-        tests/catch2/SessionSnapshotTests.cpp
-        tests/catch2/SingleWorkerMetadataReaderTests.cpp
-        tests/catch2/SingleWorkerPreferencesWriterTests.cpp
-        tests/catch2/SingleWorkerSessionWriterTests.cpp
-        tests/catch2/WindowPlacementTests.cpp
-    )
-    target_link_libraries(m0_qt_core_tests PRIVATE m0_qt_core Catch2::Catch2WithMain)
-    target_compile_features(m0_qt_core_tests PRIVATE cxx_std_20)
-    if(MSVC)
-        target_compile_options(m0_qt_core_tests PRIVATE /W4 /WX /permissive-)
-    else()
-        target_compile_options(m0_qt_core_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
-    endif()
-
-    include("${M0_CATCH2_SOURCE_DIR}/extras/Catch.cmake")
-    catch_discover_tests(
-        m0_qt_core_tests
-        TEST_PREFIX "m0.qt.core."
-        PROPERTIES LABELS "m0;qt;core" TIMEOUT 15
-    )
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicTests.cmake")
+    rc_music_prepare_catch2("${M0_CATCH2_SOURCE_DIR}")
+    rc_music_add_core_tests(m0_qt_core_tests "m0.qt.core." "m0;qt;core")
 
     if(M0_QT_AUDIO_SUPPORT)
         add_executable(m0_taglib_metadata_extractor_tests
