@@ -2213,6 +2213,10 @@
         {
           "path": "docs/development-plan.md",
           "marker": "commit, `git show --check --stat`, status limpo e riscos"
+        },
+        {
+          "path": "docs/development-commands.md",
+          "marker": "### Evidência do diagnóstico"
         }
       ],
       "remaining": [
@@ -2239,6 +2243,10 @@
         {
           "path": "docs/quality/traceability.md",
           "marker": "## Evidência do incremento"
+        },
+        {
+          "path": "docs/development-commands.md",
+          "marker": "### Evidência do diagnóstico"
         }
       ],
       "remaining": [

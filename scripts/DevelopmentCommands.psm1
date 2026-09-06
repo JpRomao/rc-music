@@ -120,7 +120,8 @@ function Get-RcMusicDevelopmentPlan {
         [Parameter(Mandatory)][string] $BuildDirectory,
         [Parameter(Mandatory)][Collections.IDictionary] $Tools,
         [ValidateRange(1, 16)][int] $Jobs = 4,
-        [switch] $Apply
+        [switch] $Apply,
+        [string] $DiagnosticsDirectory
     )
     if ($Apply -and $Task -ne 'format') { throw 'Apply is only valid for format' }
     $steps = [Collections.Generic.List[object]]::new()
@@ -139,6 +140,7 @@ function Get-RcMusicDevelopmentPlan {
         Add-Step 'traceability-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/Traceability.Tests.ps1'))
         Add-Step 'traceability' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/validate-traceability.ps1'))
         Add-Step 'runner-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentCommands.Tests.ps1'))
+        Add-Step 'diagnostics-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentDiagnostics.Tests.ps1'))
         Add-Step 'format-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/FormatSource.Tests.ps1'))
         Add-Step 'diff' 'git' @('diff', '--check')
     }
@@ -158,14 +160,16 @@ function Get-RcMusicDevelopmentPlan {
             Add-Step 'lint' $Tools.CMake @('--build', $BuildDirectory, '--target', 'all_qmllint')
         }
         if ($Task -in @('test', 'validate')) {
-            Add-Step 'test' $Tools.CTest @('--test-dir', $BuildDirectory, '--output-on-failure', '--no-tests=error')
+            $arguments = @('--test-dir', $BuildDirectory, '--output-on-failure', '--no-tests=error')
+            if ($DiagnosticsDirectory) { $arguments += @('--output-junit', (Join-Path $DiagnosticsDirectory 'ctest.xml')) }
+            Add-Step 'test' $Tools.CTest $arguments
         }
     }
     return $steps.ToArray()
 }
 
 function Invoke-RcMusicDevelopmentPlan {
-    param([Parameter(Mandatory)][object[]] $Plan, [scriptblock] $Invoker)
+    param([Parameter(Mandatory)][object[]] $Plan, [scriptblock] $Invoker, $DiagnosticsContext)
     if ($Plan.Count -eq 0) { throw 'Development plan must not be empty' }
     if (-not $Invoker) {
         $Invoker = {
@@ -177,13 +181,39 @@ function Invoke-RcMusicDevelopmentPlan {
     }
     foreach ($step in $Plan) {
         Write-Host "[$($step.Name)] $([IO.Path]::GetFileName($step.File))"
-        Push-Location -LiteralPath $step.WorkingDirectory
-        try { $result = & $Invoker $step } finally { Pop-Location }
-        if ($null -eq $result -or $result -is [array] -or
-            $null -eq $result.PSObject.Properties['ExitCode'] -or $result.ExitCode -isnot [int] -or
-            $null -eq $result.PSObject.Properties['Output']) { throw "Invalid process result for $($step.Name)" }
-        foreach ($line in $result.Output) { Write-Host ([string]$line) }
-        if ($result.ExitCode -ne 0) { throw "Development step $($step.Name) failed with exit code $($result.ExitCode)" }
+        $record = if ($DiagnosticsContext) { Start-RcMusicDiagnosticStep -Context $DiagnosticsContext -Name $step.Name } else { $null }
+        $result = $null
+        try {
+            $junit = $DiagnosticsContext -and $step.Name -ceq 'test' -and $step.Arguments -contains '--output-junit'
+            if ($junit) {
+                $index = [array]::IndexOf([string[]]$step.Arguments, '--output-junit')
+                if ($index + 1 -ge $step.Arguments.Count -or
+                    $step.Arguments[$index + 1] -cne (Join-Path $DiagnosticsContext.Directory 'ctest.xml')) { throw 'JUnit must belong to the diagnostic run' }
+                Assert-RcMusicDiagnosticJUnit -Context $DiagnosticsContext -Before
+            }
+            Push-Location -LiteralPath $step.WorkingDirectory
+            try { $result = & $Invoker $step } finally { Pop-Location }
+            if ($null -eq $result -or $result -is [array] -or
+                $null -eq $result.PSObject.Properties['ExitCode'] -or $result.ExitCode -isnot [int] -or
+                $null -eq $result.PSObject.Properties['Output']) { throw "Invalid process result for $($step.Name)" }
+            foreach ($line in $result.Output) { Write-Host ([string]$line) }
+            if ($result.ExitCode -ne 0) { throw "Development step $($step.Name) failed with exit code $($result.ExitCode)" }
+            if ($junit) { Assert-RcMusicDiagnosticJUnit -Context $DiagnosticsContext }
+        } catch {
+            $originalFailure = $_
+            if ($record) {
+                try {
+                    $validResult = $null -ne $result -and $result -isnot [array] -and
+                        $null -ne $result.PSObject.Properties['ExitCode'] -and $result.ExitCode -is [int] -and
+                        $null -ne $result.PSObject.Properties['Output']
+                    $code = if ($validResult) { $result.ExitCode } else { $null }
+                    $output = if ($validResult) { @($result.Output) } else { @() }
+                    Complete-RcMusicDiagnosticStep -Context $DiagnosticsContext -Step $record -ExitCode $code -Output $output -Failure $originalFailure.Exception.Message
+                } catch { Write-Warning "Could not preserve diagnostic step: $($_.Exception.Message)" -WarningAction Continue }
+            }
+            throw $originalFailure
+        }
+        if ($record) { Complete-RcMusicDiagnosticStep -Context $DiagnosticsContext -Step $record -ExitCode $result.ExitCode -Output @($result.Output) }
     }
 }
 

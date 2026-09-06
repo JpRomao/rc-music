@@ -1,6 +1,6 @@
 # Comandos locais de desenvolvimento Windows
 
-**Escopo:** runner de produto de M1.2; não encerra M1, CI ou release.
+**Escopo:** runner de produto de M1.2 e diagnóstico local opt-in de M1.3; não encerra M1, CI remota ou release.
 **Data:** 2026-09-06.
 
 O entrypoint [scripts/develop.ps1](../scripts/develop.ps1) executa os checks da unidade de produto promovida, conforme o [ADR-0005](architecture/decisions/0005-windows-product-stack.md). O configure usa o CMake da raiz, não o shell experimental. Para as fronteiras de fontes, dependências e testes já promovidos, consulte o [build desktop](desktop-build.md).
@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath .tools/windows.psd1)) {
 | `Task` | Operações, na ordem | Configuração de build |
 |---|---|---|
 | `format` | Verifica C++ e QML; só escreve com `-Apply` | Não configura nem compila |
-| `check` | Formato, documentos, testes de rastreabilidade, manifesto CHK-TRACE, testes do runner, testes do formatter, `git diff --check` | Não configura nem compila |
+| `check` | Formato, documentos, testes de rastreabilidade, manifesto CHK-TRACE, testes do runner, testes de diagnóstico, testes do formatter, `git diff --check` | Não configura nem compila |
 | `build` | Configure e build do alvo real `m0_qt_shell` | Release, desktop ON, `BUILD_TESTING=OFF` |
 | `test` | Configure, build e CTest | Release, desktop ON, `BUILD_TESTING=ON` |
 | `lint` | Configure, build e alvo `all_qmllint` | Release, desktop ON, `BUILD_TESTING=ON`; não executa CTest |
@@ -78,6 +78,51 @@ O cache também precisa corresponder às ferramentas selecionadas: CMake, compil
 Cada processo precisa terminar com código zero. Falhas interrompem os passos seguintes e a mensagem final de sucesso não é emitida. O build sempre precede a execução dos testes; CTest recebe `--output-on-failure --no-tests=error`, portanto ausência de testes também é falha. O runner preserva os ambientes configurados por alvo no CTest, sem impor globalmente logging ou `QT_FATAL_WARNINGS`.
 
 `lint` significa o `all_qmllint` real, além dos diagnósticos de compilação já configurados. Não representa clang-tidy, análise estática genérica, cobertura ou sanitizers ainda não integrados.
+
+## Diagnóstico local opt-in
+
+`-Diagnostics` preserva evidências da mesma execução, sem outro wrapper ou alteração dos checks escolhidos:
+
+```powershell
+pwsh -NoProfile -File scripts/develop.ps1 check -ToolchainFile tools/windows.example.psd1 -Diagnostics
+pwsh -NoProfile -File scripts/develop.ps1 validate -Diagnostics
+```
+
+Somente com essa opção o runner cria `out/product/validation-runs/run-<GUID>`. O destino e seus ancestrais são conferidos contra reparse points antes das operações; cada execução cria um diretório exclusivo, sem sobrescrever execuções anteriores. A opção exige uma raiz Git real com commit identificável. Recusa de parâmetros, destino inseguro ou impossibilidade de identificar/criar a execução pode ocorrer antes de existir um relatório. O comportamento padrão não cria esses artefatos; os testes do runner continuam usando e removendo suas próprias fixtures temporárias.
+
+O [módulo de diagnóstico](../scripts/DevelopmentDiagnostics.psm1) grava:
+
+- `run.json`, com versão do esquema, tarefa, diretório de build selecionado, commit e indicador dirty observados no início/fim, timestamps, resultado da execução e resultado/código de saída de cada etapa. Após leitura válida da configuração, inclui seu path/SHA-256 e o mapa das ferramentas resolvidas; o arquivo `.psd1` não é copiado e mudança de hash durante sua leitura é recusada;
+- um log UTF-8 numerado por etapa, com stdout/stderr combinados, preservando inclusive a saída de um processo que termina com erro;
+- `ctest.xml`, via `--output-junit`, somente quando a etapa CTest realmente executar. O path pertence à nova execução e precisa estar livre antes do comando; exit 0 exige um arquivo não vazio e sem reparse. Essa guarda verifica a entrega do artefato, não interpreta XML nem reavalia resultados. Não há cópia de `LastTest.log`, consulta aninhada do inventário ou reaproveitamento de relatório de uma execução anterior.
+
+O preflight registra falhas de configuração de ferramentas/cache e preparação do ambiente antes de qualquer build. Falha de lançamento/preflight não inventa código de um filho: `exitCode` fica `null`; etapas que executam um processo conservam seu código real. O erro continua encerrando o runner com status não zero e impede etapas posteriores. Falha ao persistir o diagnóstico também não produz aprovação; quando já existe erro da ferramenta, ele permanece como causa principal e a falha de registro é avisada separadamente.
+
+Os logs são gravados ao término de cada etapa, como a saída atualmente reunida pelo executor; não são um journal resistente a crash nem transmissão contínua. Encerramento externo pode deixar uma etapa `running`, relatório incompleto ou log vazio. Apenas um resultado final completo é evidência de término. Commit/dirty no início e no fim identificam o contexto observado, não uma captura imutável do working tree nem autenticação integral dos SDKs. `passed` registra o resultado dos comandos escolhidos, não aprovação de todos os requisitos ou da CI.
+
+Não há coleta de ambiente, cópia da configuração pessoal, mídia, cookies, upload, compactação ou limpeza automática dos artefatos. Saídas das ferramentas podem conter caminhos locais, nomes de arquivos e mensagens de erro; os artefatos ficam ignorados pelo Git e devem ser revisados antes de compartilhar. A configuração de provedor/runner remoto e o provisioning de suas ferramentas permanecem pendentes; nenhum resultado de CI remota é inferido desta capacidade local.
+
+### Evidência do diagnóstico
+
+Em 2026-09-06, antes da implementação, o runner teve Red **31 passagens/3 falhas** pela ausência do novo passo em `check`/`validate` e do destino JUnit; a nova suíte teve Red **0/10** pelo módulo/API ausentes. Green inicial: runner **34/34** e diagnóstico **10/10**, com repositório Git sintético, diretórios Unicode/espaços, processos PowerShell próprios, código 23, stdout/stderr, fail-fast, erro de lançamento, preflight, dirty, isolamento de execuções, reparse e conflito real de gravação. O Git sintético desabilita hooks/templates externos e assinatura de commit somente nas próprias invocações, sem modificar a configuração do repositório real.
+
+A revisão acrescentou Red **10 passagens/4 falhas**: dois casos de JUnit ausente/vazio aceitos após exit 0, configuração selecionada sem registro e aviso de gravação que mascarava o erro original sob `-WarningAction Stop`. Os avisos de recuperação agora usam `Continue` explicitamente; não alteram a política das ferramentas. Green final dos scripts: [diagnóstico **14/14**](../scripts/tests/DevelopmentDiagnostics.Tests.ps1) e runner **34/34**, incluindo uma invocação completa de `format -Diagnostics` com formatters PowerShell falsos, sem formatar fontes reais.
+
+Um ensaio intermediário revelou um handle retido pelo próprio teste de conflito de gravação; o holder passou a usar referência compartilhada com cleanup em `finally`, preservando as assertions. O Green final removeu sua fixture. Esses testes dos scripts não executaram builds C++/Qt, formatters reais, CI remota, downloads, instalação, entrada nativa ou benchmarks; JUnit foi verificado pelo plano de argumentos e invoker falso, não por uma nova execução de CTest.
+
+Na consolidação real do mesmo incremento, em 2026-09-06, foram executados separadamente:
+
+```powershell
+pwsh -NoProfile -File scripts/develop.ps1 test -ToolchainFile tools/windows.example.psd1 -BuildDirectory out/product/m1-desktop-release-on-20260906 -Diagnostics
+pwsh -NoProfile -File scripts/develop.ps1 check -ToolchainFile tools/windows.example.psd1 -Diagnostics
+```
+
+- `test`: preflight, configure, build e CTest passaram. O JUnit foi lido independentemente: **297 elementos testcase, 297 testes, zero falhas e zero skips no nível CTest**, em 112,25 s no console. O log Qt preservado registra **quatro skips internos** de symlink por política do host, que o agregado CTest não representa. Quick passou **193/193**, incluindo a geometria com metadata/capa. Não se trata de nova execução de `validate`, lint ou produção OFF;
+- `check`: formato real **172 C++/53 QML**, documentação **56 Markdown/83 requisitos/17 checks/76 etapas**, rastreabilidade **43/43** e manifesto com **83 vínculos válidos**, runner **34/34**, diagnóstico **14/14**, formatter **18/18** e diff passaram;
+- os recibos ficaram em `out/product/validation-runs/run-873dbff09e164c47bdddbcbe48a4de07` (`test`) e `out/product/validation-runs/run-967701763d7748db8e48d9b60c0b8a19` (`check`). Ambos registraram `passed`, passos na ordem com exit 0, HEAD `3e81f93ff3780d288ffaf60853adbedd85a821ac` e dirty verdadeiro no início/fim: são evidências do incremento ainda não commitado naquele momento, não de checkout limpo. Configuração identificada pelo SHA-256 `c6a514241317414813313a01ee331fd1abd28d1a24d28caeab2c36de44347460`;
+- logs de etapas sem saída, como preflight e diff aprovado, ficaram legitimamente vazios; configure/build/test e os checks com saída tiveram logs não vazios. Somente a execução `test` produziu JUnit. Os artefatos estão ignorados pelo Git; não foram incluídos no commit, publicados ou enviados a CI.
+
+Revisão independente final sem achados P1/P2 remanescentes. O resíduo sintético de um ensaio intermediário, `out/product/diagnostics-contract-33761021fde343bf8e132a7ccc3f05c2`, permaneceu ignorado após uma tentativa de limpeza recusada; não houve contorno da recusa. Isso não é um artefato de validação aprovado nem impede os testes finais, que removeram suas próprias fixtures.
 
 ## Evidência do incremento
 

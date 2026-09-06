@@ -47,12 +47,12 @@ Test-Case 'test configures ON and builds before running all tests with empty sui
 }
 Test-Case 'validate includes docs formatter runner tests build lint and test once' {
     $plan = Plan validate
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|format-tests|diff|configure|build|lint|test') 'Incomplete or repeated validate'
+    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|diagnostics-tests|format-tests|diff|configure|build|lint|test') 'Incomplete or repeated validate'
     Assert-True (-not ($plan[0].Arguments -contains '-Apply')) 'Validate must not format in place'
 }
 Test-Case 'check does not compile or modify source files' {
     $plan = Plan check
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|format-tests|diff') 'Wrong check steps'
+    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|diagnostics-tests|format-tests|diff') 'Wrong check steps'
     Assert-True (-not ($plan.Arguments -contains '-Apply')) 'Check mutates sources'
 }
 Test-Case 'only explicit format apply permits source formatting' {
@@ -64,6 +64,14 @@ Test-Case 'lint checks compiler diagnostics and QML on the same build' {
     $plan = Plan lint
     Assert-True (($plan.Name -join '|') -ceq 'configure|build|lint') 'Lint must build first'
     Assert-True ($plan[2].Arguments -contains 'all_qmllint') 'QML lint missing'
+}
+Test-Case 'CTest JUnit belongs only to an explicitly selected diagnostic run' {
+    $run = Join-Path $repository 'out/product/validation-runs/run-0123456789abcdef0123456789abcdef'
+    $plan = @(Get-RcMusicDevelopmentPlan -Task test -RepositoryRoot $repository -BuildDirectory $build -Tools $tools -DiagnosticsDirectory $run)
+    Assert-True ($plan[2].Arguments -contains '--output-junit') 'Missing per-run JUnit'
+    Assert-True ($plan[2].Arguments -contains (Join-Path $run 'ctest.xml')) 'JUnit uses another run'
+    Assert-True (-not ((Plan test)[2].Arguments -contains '--output-junit')) 'Default invocation writes new diagnostic output'
+    Assert-True (-not (($plan | ConvertTo-Json -Depth 5) -match 'LastTest\.log|--show-only')) 'Stale log or nested inventory query used'
 }
 Test-Case 'toolchain paths with spaces Unicode and metacharacters remain single arguments' {
     $plan = Plan build
