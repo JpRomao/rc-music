@@ -2,6 +2,16 @@
 
 O candidato possui módulo NSIS de associações, receita do runtime real e integração local de instalação/atualização/remoção. A [matriz local explícita](#matriz-local-e-evolucao-dos-formatos) habilita somente os formatos básicos caracterizados com o runtime indicado; sem esse argumento, associações permanecem OFF. As seções abaixo preservam a evidência de cada incremento. Não é uma release distribuível: suporte público e jornada Explorer/Aplicativos Padrão permanecem pendentes. Os testes de associação/lifecycle usam `RCMusic.exe` sintético e inerte; o teste opcional de instalação real usa o runtime indicado, sem iniciar o player.
 
+<a id="local-delivery-refresh"></a>
+
+## Atualização da entrega local — a43faa1
+
+O runtime `out/m0/rc-music-local/rc-music-windows-dev-a43faa1/app` reúne menu da fila vinculado à ocorrência, aviso de caminhos inválidos e ícone/propriedades do executável. Foi montado do commit `a43faa173fe65e5c9e826ef66d48b7de1415f775`, com receita limpa, **554 arquivos/96.282.231 bytes** e manifesto SHA-256 `2dd54f18aa9c0f24ff2e737c57d66efea1f4361fd231ae7636397013d481bc55`. A montagem incremental mantém SDK/receita anteriores, sem incluir o gerador do ícone ou executáveis de teste no payload.
+
+O smoke `out/m0/test-runs/rc-music-runtime-smoke/e0e62723d611466b84df51744afedeaa/smoke-result.json` passou OFF/ON com streams vazios e áudio **18/18**, sem skips, usando somente o runtime declarado. Seu SHA-256 é `f644c45847d7bb0b38c27f146c9801f301a9c497f10722730e2501be8c5c9682`. A matriz foi vinculada a esses novos hashes; corpus, fonte do teste, sete extensões e limites dos perfis permanecem iguais. A atualização não é benchmark ou ampliação de formatos. Os arquivos históricos e o instalador `d793563` foram preservados.
+
+O runtime mantém o commit de produção acima mesmo após o commit da matriz: gerar novamente o manifesto apenas para mudar HEAD invalidaria esse vínculo. O próximo passo é compilar o instalador a partir da matriz commitada, registrando separadamente o commit da receita e conferindo `recipe_dirty=false`. Inspeção visual, registro real, máquina limpa e aprovação de distribuição continuam fora deste check local.
+
 ## Integração
 
 O instalador futuro deve usar NSIS Unicode, `RequestExecutionLevel user`, `SetShellVarContext current` e uma única execução por vez. Incluir `RcMusicAssociationSections.nsh` depois de definir:
@@ -128,12 +138,12 @@ O caso real passou **1/1** com a receita de atalhos: **554 arquivos** íntegros,
 
 As sete fixtures duram 1–2 s e usam 48 kHz; não representam todos os perfis desses contêineres. As 16 linhas abrangem as sete originais, dois aliases e sete cópias temporárias com extensão neutra `.audio`. Cada jornada pausa, busca 50% com erro máximo de 500 ms observado no presenter e backend, volta a zero e reproduz até um único `Ended`, sem nova carga, mudança de geração/ocorrência ou erro. Duração e metadata continuam verificadas. Extensão neutra não vira associação: demonstra que os bytes, e não apenas o sufixo, foram decodificados. Não classifica Opus/ALAC, capa canônica, arquivos longos/hostis ou audibilidade física.
 
-Na execução `out/m0/test-runs/rc-music-runtime-smoke/34cf17dc7c64497f9ad3ac04804199c7/smoke-result.json`, Qt 6.11.2/FFmpeg 7.1.5/Windows 11 x64 passaram **18/18**, zero skips, em 31.723 ms. Os hashes do corpus/fonte/runtime e desse resultado constam na declaração. Somente o alvo C++ de integração foi recompilado; não houve mudança no player entregue, no corpus congelado ou na aceitação da stack. OFF/ON do smoke conservaram streams vazios; os diagnósticos do probe de áudio foram preservados.
+Na execução histórica `out/m0/test-runs/rc-music-runtime-smoke/34cf17dc7c64497f9ad3ac04804199c7/smoke-result.json`, Qt 6.11.2/FFmpeg 7.1.5/Windows 11 x64 passaram **18/18**, zero skips, em 31.723 ms. Esses hashes estavam na primeira declaração; a [atualização da entrega local](#local-delivery-refresh) registra o vínculo atual e sua nova execução. No incremento histórico, somente o alvo C++ de integração foi recompilado; não houve mudança no player entregue, no corpus congelado ou na aceitação da stack. OFF/ON do smoke conservaram streams vazios; os diagnósticos do probe de áudio foram preservados.
 
 Para compilar o instalador com essa lista, execute na raiz:
 
 ```powershell
-./experiments/m0/candidates/qt/windows-installer/tests/InstallerBuild.Tests.ps1 -RuntimeDirectory ./out/m0/rc-music-local/rc-music-windows-dev-717c88a/app -FormatMatrix ./experiments/m0/candidates/qt/windows-installer/formats.windows.local.json
+./experiments/m0/candidates/qt/windows-installer/tests/InstallerBuild.Tests.ps1 -RuntimeDirectory ./out/m0/rc-music-local/rc-music-windows-dev-a43faa1/app -FormatMatrix ./experiments/m0/candidates/qt/windows-installer/formats.windows.local.json
 ```
 
 O builder também aceita `-FormatMatrix` diretamente e revalida seus bytes após compilar. Sem o argumento não infere lista nem abre a declaração padrão. O receipt inclui flag, assinatura da lista ordenada, extensões, contêineres/perfis/fixtures e declaração/hash/proveniência; matriz e assinatura participam do ID do pacote. A saída continua privada; compilar não executa o instalador nem altera associações reais.

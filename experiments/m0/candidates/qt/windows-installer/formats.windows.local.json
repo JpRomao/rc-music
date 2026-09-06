@@ -3,10 +3,10 @@
   "scope": "windows-x64-local-development",
   "validation_status": "passed-local",
   "backend": "QtMultimedia/FFmpeg",
-  "runtime_manifest_sha256": "7703d6a4ed87fd327fc75b14d01f0e789935abf01fd69fcb6ab435f305299676",
+  "runtime_manifest_sha256": "2dd54f18aa9c0f24ff2e737c57d66efea1f4361fd231ae7636397013d481bc55",
   "corpus_manifest_sha256": "de5491e6688b7cdad739c3b0e6beda21d15c73dffa02a8c9f1cfddf92255ba1e",
   "test_source_sha256": "5b8dceadd5d252da2ed644a1207b0e63533b2aaed87de520640d9e074fc1449b",
-  "result_sha256": "5c5695c3fcf4fae0f790b64a32fcc5244d0a05ae0ed6667883ab183334717800",
+  "result_sha256": "f644c45847d7bb0b38c27f146c9801f301a9c497f10722730e2501be8c5c9682",
   "formats": [
     { "extension": "flac", "description": "Áudio FLAC", "fixture_ids": ["flac-16-stereo"] },
     { "extension": "m4a", "description": "Áudio M4A (AAC)", "fixture_ids": ["m4a-aac-lc"] },
