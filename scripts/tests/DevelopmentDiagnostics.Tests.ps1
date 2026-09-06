@@ -36,8 +36,20 @@ function Invoke-FixtureGit([string[]] $Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Fixture Git failed: $output" }
     return $output
 }
-function New-Run { New-RcMusicDevelopmentDiagnostics -RepositoryRoot $source -Task test -BuildDirectory (Join-Path $source 'out/product/tests') }
+function New-Run([string] $Task = 'test') { New-RcMusicDevelopmentDiagnostics -RepositoryRoot $source -Task $Task -BuildDirectory (Join-Path $source 'out/product/tests') }
 function Report($Run) { Get-Content -LiteralPath (Join-Path $Run.Directory 'run.json') -Raw | ConvertFrom-Json }
+function Planned-Steps($Run, [string] $Task) {
+    $tools = @{
+        ClangFormat = 'C:/unused/clang-format.exe'; QmlFormat = 'C:/unused/qmlformat.exe'
+        CMake = 'C:/unused/cmake.exe'; CTest = 'C:/unused/ctest.exe'; Ninja = 'C:/unused/ninja.exe'
+        Compiler = 'C:/unused/cl.exe'; QtPrefix = 'C:/unused/qt'; TagLibPrefix = 'C:/unused/taglib'
+        QtMultimediaPackage = 'C:/unused/multimedia'; QtHost = 'C:/unused/qt-host'; Catch2Source = 'C:/unused/catch2'
+    }
+    return @(Get-RcMusicDevelopmentPlan -Task $Task -RepositoryRoot $source -BuildDirectory $Run.Report.buildDirectory `
+        -Tools $tools -DiagnosticsDirectory $Run.Directory)
+}
+$promotedSteps = @('runtime-plan-tests', 'pe-dependency-tests', 'runtime-recipe-tests', 'production-boundary-tests',
+    'format-matrix-tests', 'installer-plan-tests', 'installer-sources-tests', 'installer-recipe-tests')
 function Step([string] $Name, [string] $Command) {
     [pscustomobject]@{ Name = $Name; File = (Get-Process -Id $PID).Path
         Arguments = @('-NoProfile', '-Command', $Command); WorkingDirectory = $source }
@@ -93,6 +105,65 @@ try {
         foreach ($step in $report.steps) {
             Assert-True ($step.exitCode -eq 0 -and $step.status -ceq 'passed' -and $step.finishedUtc) 'Step result absent'
             Assert-True (Test-Path -LiteralPath (Join-Path $run.Directory $step.log) -PathType Leaf) 'Step log absent'
+        }
+    }
+    Test-Case 'check records every promoted check and its output exactly once without JUnit' {
+        $run = New-Run check
+        $plan = Planned-Steps $run check
+        $selected = @($plan | Where-Object { $_.Name -in $promotedSteps })
+        Assert-True ($selected.Count -eq $promotedSteps.Count -and ($selected.Name -join '|') -ceq ($promotedSteps -join '|')) 'Promoted check inventory is absent duplicated or reordered'
+        $calls = [Collections.Generic.List[string]]::new()
+        $invoke = {
+            param($step)
+            $calls.Add($step.Name)
+            [pscustomobject]@{ ExitCode = 0; Output = @(('stdout 日本: ' + $step.Name), ('stderr Ω: ' + $step.Name)) }
+        }.GetNewClosure()
+        Invoke-RcMusicDevelopmentPlan -Plan $plan -Invoker $invoke -DiagnosticsContext $run
+        Complete-RcMusicDevelopmentDiagnostics -Context $run
+        $report = Report $run
+        Assert-True ($report.task -ceq 'check' -and $report.status -ceq 'passed') 'Check result was not recorded'
+        Assert-True (($calls -join '|') -ceq ($plan.Name -join '|') -and
+            ($report.steps.name -join '|') -ceq ($plan.Name -join '|')) 'Execution or diagnostic steps were repeated or lost'
+        Assert-True (@(Get-ChildItem -LiteralPath $run.Directory -Filter '*.log' -File).Count -eq $plan.Count) 'Step logs were duplicated or omitted'
+        foreach ($name in $promotedSteps) {
+            $record = @($report.steps | Where-Object { $_.name -ceq $name })
+            Assert-True ($record.Count -eq 1 -and $record[0].exitCode -eq 0 -and $record[0].status -ceq 'passed') ('Missing successful result: ' + $name)
+            $log = Get-Content -LiteralPath (Join-Path $run.Directory $record[0].log) -Raw
+            Assert-True ($log.Contains('stdout 日本: ' + $name) -and $log.Contains('stderr Ω: ' + $name)) ('Output lost: ' + $name)
+        }
+        Assert-True (-not ($plan.Arguments -contains '--output-junit') -and
+            -not (Test-Path -LiteralPath (Join-Path $run.Directory 'ctest.xml'))) 'Check fabricated JUnit'
+        Assert-True (-not (Test-Path -LiteralPath $run.Report.buildDirectory)) 'Fake check created a build directory'
+    }
+    foreach ($failureName in $promotedSteps) {
+        Test-Case "validate preserves promoted check failure and never reaches configure: $failureName" {
+            $run = New-Run validate
+            $plan = Planned-Steps $run validate
+            $selected = @($plan | Where-Object { $_.Name -in $promotedSteps })
+            Assert-True ($selected.Count -eq $promotedSteps.Count -and ($selected.Name -join '|') -ceq ($promotedSteps -join '|')) 'Promoted validate inventory is absent duplicated or reordered'
+            $failureIndex = [array]::IndexOf([string[]]$plan.Name, $failureName)
+            $exitCode = 23 + [array]::IndexOf($promotedSteps, $failureName)
+            $calls = [Collections.Generic.List[string]]::new()
+            $invoke = {
+                param($step)
+                $calls.Add($step.Name)
+                [pscustomobject]@{ ExitCode = $(if ($step.Name -ceq $failureName) { $exitCode } else { 0 })
+                    Output = @(('stdout 日本: ' + $step.Name), ('stderr Ω: ' + $step.Name)) }
+            }.GetNewClosure()
+            Assert-Rejected { Invoke-RcMusicDevelopmentPlan -Plan $plan -Invoker $invoke -DiagnosticsContext $run } ($failureName + '.*' + $exitCode)
+            Complete-RcMusicDevelopmentDiagnostics -Context $run -Failed
+            $report = Report $run
+            $expected = $plan[0..$failureIndex].Name -join '|'
+            Assert-True (($calls -join '|') -ceq $expected -and ($report.steps.name -join '|') -ceq $expected) 'Execution or diagnostics continued beyond the failed check'
+            Assert-True ($report.task -ceq 'validate' -and $report.status -ceq 'failed') 'Failure was reported as success'
+            $record = $report.steps[-1]
+            Assert-True ($record.name -ceq $failureName -and $record.exitCode -eq $exitCode -and $record.status -ceq 'failed') 'Original failed-step result changed'
+            $log = Get-Content -LiteralPath (Join-Path $run.Directory $record.log) -Raw
+            Assert-True ($log.Contains('stdout 日本: ' + $failureName) -and $log.Contains('stderr Ω: ' + $failureName)) 'Original failed-step output was lost'
+            Assert-True (@($report.steps | Where-Object { $_.name -in @('configure', 'build', 'lint', 'test') }).Count -eq 0) 'A build or test step ran after check failure'
+            Assert-True (@(Get-ChildItem -LiteralPath $run.Directory -Filter '*.log' -File).Count -eq $failureIndex + 1) 'Later or duplicate logs were created'
+            Assert-True (-not (Test-Path -LiteralPath (Join-Path $run.Directory 'ctest.xml'))) 'Stopped validate fabricated JUnit'
+            Assert-True (-not (Test-Path -LiteralPath $run.Report.buildDirectory)) 'Fake validation created a build directory'
         }
     }
     Test-Case 'launch failure is recorded without fabricating a process exit' {

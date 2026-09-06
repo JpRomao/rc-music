@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath .tools/windows.psd1)) {
 | `Task` | Operações, na ordem | Configuração de build |
 |---|---|---|
 | `format` | Verifica C++ e QML; só escreve com `-Apply` | Não configura nem compila |
-| `check` | Formato, documentos, testes de rastreabilidade, manifesto CHK-TRACE, testes do runner, testes de diagnóstico, testes do formatter, `git diff --check` | Não configura nem compila |
+| `check` | Formato, documentos, testes de rastreabilidade, manifesto CHK-TRACE, testes do runner, testes de diagnóstico, testes do formatter, oito checks sintéticos das receitas Windows, `git diff --check` | Não configura nem compila |
 | `build` | Configure e build do alvo real `m0_qt_shell` | Release, desktop ON, `BUILD_TESTING=OFF` |
 | `test` | Configure, build e CTest | Release, desktop ON, `BUILD_TESTING=ON` |
 | `lint` | Configure, build e alvo `all_qmllint` | Release, desktop ON, `BUILD_TESTING=ON`; não executa CTest |
@@ -62,6 +62,36 @@ pwsh -NoProfile -File scripts/develop.ps1 test
 pwsh -NoProfile -File scripts/develop.ps1 lint
 pwsh -NoProfile -File scripts/develop.ps1 validate
 ```
+
+## Checks das receitas Windows
+
+`check` e `validate` executam os oito checks abaixo uma vez, sequencialmente, após `format-tests` e antes de `diff`:
+
+| Etapa no runner/diagnóstico | Script |
+|---|---|
+| `runtime-plan-tests` | [WindowsRuntimePlan.Tests.ps1](../packaging/windows/tests/WindowsRuntimePlan.Tests.ps1) |
+| `pe-dependency-tests` | [PeDependencyReport.Tests.ps1](../packaging/windows/tests/PeDependencyReport.Tests.ps1) |
+| `runtime-recipe-tests` | [RuntimeRecipe.Tests.ps1](../packaging/windows/tests/RuntimeRecipe.Tests.ps1) |
+| `production-boundary-tests` | [ProductionBoundary.Tests.ps1](../scripts/tests/ProductionBoundary.Tests.ps1) |
+| `format-matrix-tests` | [FormatMatrix.Tests.ps1](../packaging/windows/tests/FormatMatrix.Tests.ps1) |
+| `installer-plan-tests` | [WindowsInstallerPlan.Tests.ps1](../packaging/windows/tests/WindowsInstallerPlan.Tests.ps1) |
+| `installer-sources-tests` | [InstallerSources.Tests.ps1](../packaging/windows/tests/InstallerSources.Tests.ps1) |
+| `installer-recipe-tests` | [InstallerRecipe.Tests.ps1](../packaging/windows/tests/InstallerRecipe.Tests.ps1) |
+
+O runner usa somente as entradas padrão, sem `-IncludeLegacy`. São testes de contratos com arquivos, Git e subprocessos PowerShell sintéticos; não executam player, NSIS, instalação, Registry ou compilação C++. `ProductionBoundary.Tests.ps1` usa Ninja falso, não inspeciona um novo build real. A compatibilidade histórica e os comandos de montagem/smoke/lifecycle continuam separados, conforme os guias de [runtime](windows-runtime.md) e [instalador](windows-installer.md).
+
+As ações isoladas `format`, `build`, `test` e `lint` não acrescentam esses checks. `check` tem 16 etapas; `validate`, 20. Com `-Diagnostics`, o preflight é uma etapa adicional, e cada check executado recebe seu próprio log/resultado. Falha em qualquer um deles interrompe os seguintes, inclusive configure/build em `validate`; `check` não cria JUnit.
+
+### Evidência da integração
+
+Em 2026-09-06:
+
+- runner: baseline **34/34**, Red **33 passes/4 falhas** pela ausência dos oito passos, Green **37/37**; ordem, paths absolutos/Unicode, entradas padrão e ações isoladas preservadas;
+- diagnóstico: baseline **14/14**, Red **14 passes/9 falhas**, Green **23/23**. Invokers falsos comprovaram logs únicos, ausência de JUnit em `check` e falha em cada etapa nova de `validate`, preservando saída/códigos 23–30 e impedindo configure/build;
+- a revisão encontrou cópia de caminhos do catálogo antes da validação em dois harnesses. Regressões inteiramente em GUIDs próprios produziram Red **14 passes/10 falhas** em `FormatMatrix` e **25 passes/10 falhas** no planner do instalador. Helpers locais agora planejam todo o inventário pelo módulo existente antes de criar/copiar, preservam tipos antes de concatenar caminhos e revalidam contenção, reparse e hashes. Green **24/24** e **35/35**; produto, catálogo e fontes NSIS não mudaram;
+- `check -Diagnostics` real passou com **271/271 casos dos scripts**, incluindo **149/149** nos oito checks incorporados; formato **172 C++/56 QML**, documentação **58 Markdown/83 requisitos/17 checks/76 etapas**, 83 vínculos válidos e diff também passaram. Sintaxe dos cinco PowerShell alterados aprovada; revisão independente sem P0–P2 remanescente.
+
+O recibo `out/product/validation-runs/run-d6a077deddec4ec88d982a552db91a3c/run.json` foi conferido independentemente: 17 etapas com exit 0 e logs presentes, sem JUnit; HEAD `3ef75902e66375668a689e9ac1a5908c1f76ae68` e dirty verdadeiro no início/fim, antes do commit deste incremento. O resultado identifica esse working tree, não um checkout limpo. Não houve novo `validate`, build C++/SDK, CTest, NSIS, runtime, instalação, Registry, Computer Use ou benchmark para integrar os checks.
 
 ## Formato sem alteração implícita
 

@@ -3,9 +3,27 @@
 param([switch] $IncludeLegacy)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$exportRuntime = Import-Module (Join-Path $PSScriptRoot '../RcMusicRuntimePlan.psm1') -Force -PassThru
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $testRoot = Join-Path $repository ('out/product/format-matrix-' + [guid]::NewGuid().ToString('N'))
 $state = @{ Passed = 0; Failed = 0; Next = 0 }
+function Copy-TestExport([string] $SourceRoot, [string] $Destination,
+        [object[]] $RelativePaths, [object[]] $CatalogEntries = @()) {
+    $paths = @($RelativePaths)
+    foreach ($entry in $CatalogEntries) {
+        if ($entry.relative_path -isnot [string]) { throw 'Unsafe catalog relative path type' }
+        $paths += 'tests/audio/corpus/' + $entry.relative_path
+    }
+    $files = @($paths | ForEach-Object {
+        [pscustomobject]@{ source = (Join-Path $SourceRoot $_); relative_path = $_ }
+    })
+    # Plan the entire inventory before mkdir/copy, then revalidate paths, reparse points and hashes.
+    & $exportRuntime {
+        param($Files, $SourceRoot, $Destination)
+        $plan = New-RcMusicRuntimePlan -Files $Files -AllowedSourceRoots @($SourceRoot) -Destination $Destination
+        Copy-RcMusicRuntimePlan -Plan $plan | Out-Null
+    } $files $SourceRoot $Destination
+}
 function Test-Case([string] $Name, [scriptblock] $Body) {
     try { & $Body; $state.Passed++; Write-Host "[PASS] $Name" }
     catch { $state.Failed++; Write-Host "[FAIL] $Name :: $($_.Exception.Message)" }
@@ -63,23 +81,80 @@ if (Test-Path -LiteralPath $testRoot) { throw 'Test root must be fresh.' }
 $null = New-Item -ItemType Directory -Path $testRoot
 $reader = $null
 $module = $null
+$exportJunctions = [Collections.Generic.List[string]]::new()
 try {
+    foreach ($change in @('null', 'number', 'array', 'traversal', 'absolute', 'ads', 'missing', 'duplicate')) {
+        Test-Case "export validates the whole catalog before copying: $change" {
+            $caseRoot = Join-Path $testRoot ([Guid]::NewGuid().ToString('N') + ' export-safety')
+            $source = Join-Path $caseRoot 'source'
+            $corpus = Join-Path $source 'tests/audio/corpus'
+            $destination = Join-Path $caseRoot 'export'
+            $null = [IO.Directory]::CreateDirectory($corpus)
+            [IO.File]::WriteAllText((Join-Path $source 'first.txt'), 'first valid entry')
+            [IO.File]::WriteAllText((Join-Path $corpus 'valid.txt'), 'valid catalog entry')
+            [IO.File]::WriteAllText((Join-Path $corpus '7'), 'numeric name must not coerce a JSON number')
+            $sentinel = Join-Path $caseRoot 'sentinel.txt'
+            [IO.File]::WriteAllText($sentinel, 'owned sentinel outside both export and source')
+            $before = (Get-FileHash -LiteralPath $sentinel).Hash
+            $bad = $null
+            switch ($change) {
+                'number' { $bad = 7 }
+                'array' { $bad = @('valid.txt') }
+                'traversal' { $bad = '../../../../sentinel.txt' }
+                'absolute' { $bad = $sentinel }
+                'ads' { $bad = 'valid.txt:stream' }
+                'missing' { $bad = 'missing.txt' }
+                'duplicate' { $bad = 'valid.txt' }
+            }
+            $entries = [object[]]::new(2)
+            $entries[0] = [pscustomobject]@{ relative_path = 'valid.txt' }
+            $entries[1] = [pscustomobject]@{ relative_path = $bad }
+            $rejected = $false
+            try { Copy-TestExport $source $destination @('first.txt') $entries }
+            catch { $rejected = $true }
+            Assert-True $rejected 'Unsafe catalog export was accepted'
+            Assert-True (-not (Test-Path -LiteralPath $destination)) 'Invalid late entry caused a partial export'
+            Assert-True ((Get-FileHash -LiteralPath $sentinel).Hash -ceq $before) 'Export changed the owned sentinel'
+        }
+    }
+    foreach ($side in @('source', 'destination')) {
+        Test-Case "export rejects a $side reparse ancestor before copying" {
+            $caseRoot = Join-Path $testRoot ([Guid]::NewGuid().ToString('N') + ' reparse-safety')
+            $source = Join-Path $caseRoot 'source'
+            $foreign = Join-Path $caseRoot 'owned-junction-target'
+            $link = Join-Path $caseRoot 'link'
+            $null = [IO.Directory]::CreateDirectory($source)
+            $null = [IO.Directory]::CreateDirectory($foreign)
+            [IO.File]::WriteAllText((Join-Path $source 'valid.txt'), 'synthetic source')
+            [IO.File]::WriteAllText((Join-Path $foreign 'valid.txt'), 'owned junction sentinel')
+            $before = (Get-FileHash -LiteralPath (Join-Path $foreign 'valid.txt')).Hash
+            foreach ($path in @($link, $foreign)) {
+                Assert-True ([IO.Path]::GetFullPath($path).StartsWith(
+                    [IO.Path]::GetFullPath($testRoot) + [IO.Path]::DirectorySeparatorChar,
+                    [StringComparison]::OrdinalIgnoreCase)) 'Unsafe test junction target'
+            }
+            $null = New-Item -ItemType Junction -Path $link -Target $foreign
+            $exportJunctions.Add($link)
+            $destination = Join-Path $caseRoot 'export'
+            if ($side -eq 'source') { $source = $link }
+            else { $destination = Join-Path $link 'export' }
+            $rejected = $false
+            try { Copy-TestExport $source $destination @('valid.txt') }
+            catch { $rejected = $true }
+            Assert-True $rejected 'Reparse export was accepted'
+            Assert-True (-not (Test-Path -LiteralPath $destination)) 'Reparse export wrote payload files'
+            Assert-True ((Get-FileHash -LiteralPath (Join-Path $foreign 'valid.txt')).Hash -ceq $before) 'Junction sentinel changed'
+        }
+    }
     $exportRoot = Join-Path $testRoot 'source sem histórico 日本'
     $exportPackaging = Join-Path $exportRoot 'packaging/windows'
     $exportCorpus = Join-Path $exportRoot 'tests/audio/corpus'
     $exportCatalog = Join-Path $exportCorpus 'catalog.v1.json'
     $exportTest = Join-Path $exportRoot 'tests/qt/LocalAudioIntegrationTests.cpp'
-    $null = New-Item -ItemType Directory -Path $exportPackaging, $exportCorpus, ([IO.Path]::GetDirectoryName($exportTest))
     $catalogPath = Join-Path $repository 'tests/audio/corpus/catalog.v1.json'
     $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
-    Copy-Item -LiteralPath $catalogPath -Destination $exportCatalog
-    Copy-Item -LiteralPath (Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp') -Destination $exportTest
-    Copy-Item -LiteralPath (Join-Path $repository 'packaging/windows/RcMusicRuntimePlan.psm1') -Destination $exportPackaging
-    foreach ($fixture in $catalog.fixtures) {
-        $target = Join-Path $exportCorpus $fixture.relative_path
-        $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force
-        Copy-Item -LiteralPath (Join-Path $repository ('tests/audio/corpus/' + $fixture.relative_path)) -Destination $target
-    }
+    Copy-TestExport $repository $exportRoot @('tests/audio/corpus/catalog.v1.json',
+        'tests/qt/LocalAudioIntegrationTests.cpp', 'packaging/windows/RcMusicRuntimePlan.psm1') @($catalog.fixtures)
     Test-Case 'catalog contains seven factual baseline inputs without runtime approval' {
         Assert-Equal $catalog.schema_version 1
         Assert-Equal $catalog.purpose 'synthetic-validation-inputs-not-runtime-approval'
@@ -283,6 +358,7 @@ try {
 } finally {
     if ($null -ne $module) { Remove-Module $module -Force }
     Assert-SafeRoot
+    foreach ($junction in $exportJunctions) { [IO.Directory]::Delete($junction) }
     Remove-Item -LiteralPath ([IO.Path]::GetFullPath($testRoot)) -Recurse -Force
 }
 Write-Host "Format matrix: $($state.Passed) passed, $($state.Failed) failed."

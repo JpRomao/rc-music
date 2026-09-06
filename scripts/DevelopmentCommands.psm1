@@ -142,6 +142,14 @@ function Get-RcMusicDevelopmentPlan {
         Add-Step 'runner-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentCommands.Tests.ps1'))
         Add-Step 'diagnostics-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/DevelopmentDiagnostics.Tests.ps1'))
         Add-Step 'format-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/FormatSource.Tests.ps1'))
+        Add-Step 'runtime-plan-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/WindowsRuntimePlan.Tests.ps1'))
+        Add-Step 'pe-dependency-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/PeDependencyReport.Tests.ps1'))
+        Add-Step 'runtime-recipe-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/RuntimeRecipe.Tests.ps1'))
+        Add-Step 'production-boundary-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'scripts/tests/ProductionBoundary.Tests.ps1'))
+        Add-Step 'format-matrix-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/FormatMatrix.Tests.ps1'))
+        Add-Step 'installer-plan-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/WindowsInstallerPlan.Tests.ps1'))
+        Add-Step 'installer-sources-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/InstallerSources.Tests.ps1'))
+        Add-Step 'installer-recipe-tests' $pwsh @('-NoProfile', '-File', (Join-Path $RepositoryRoot 'packaging/windows/tests/InstallerRecipe.Tests.ps1'))
         Add-Step 'diff' 'git' @('diff', '--check')
     }
     if ($Task -in @('build', 'test', 'lint', 'validate')) {

@@ -29,6 +29,18 @@ $build = Join-Path $repository 'out/product/runner-fixture'
 function Plan([string] $Task, [switch] $Apply) {
     @(Get-RcMusicDevelopmentPlan -Task $Task -RepositoryRoot $repository -BuildDirectory $build -Tools $tools -Apply:$Apply)
 }
+$packagingChecks = [ordered]@{
+    'runtime-plan-tests' = 'packaging/windows/tests/WindowsRuntimePlan.Tests.ps1'
+    'pe-dependency-tests' = 'packaging/windows/tests/PeDependencyReport.Tests.ps1'
+    'runtime-recipe-tests' = 'packaging/windows/tests/RuntimeRecipe.Tests.ps1'
+    'production-boundary-tests' = 'scripts/tests/ProductionBoundary.Tests.ps1'
+    'format-matrix-tests' = 'packaging/windows/tests/FormatMatrix.Tests.ps1'
+    'installer-plan-tests' = 'packaging/windows/tests/WindowsInstallerPlan.Tests.ps1'
+    'installer-sources-tests' = 'packaging/windows/tests/InstallerSources.Tests.ps1'
+    'installer-recipe-tests' = 'packaging/windows/tests/InstallerRecipe.Tests.ps1'
+}
+$checkOrder = @('format', 'docs', 'traceability-tests', 'traceability', 'runner-tests',
+    'diagnostics-tests', 'format-tests') + @($packagingChecks.Keys) + @('diff')
 Test-Case 'build configures root Release production then builds only the application' {
     $plan = Plan build
     Assert-True ($plan.Count -eq 2) 'Unexpected production steps'
@@ -45,15 +57,37 @@ Test-Case 'test configures ON and builds before running all tests with empty sui
     Assert-True ($plan[2].Arguments -contains '--output-on-failure') 'Missing diagnostics'
     Assert-True (-not ($plan[2].Arguments -contains '-R')) 'Default test suite must not be filtered'
 }
-Test-Case 'validate includes docs formatter runner tests build lint and test once' {
+Test-Case 'validate runs every source check before build lint and test once' {
     $plan = Plan validate
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|diagnostics-tests|format-tests|diff|configure|build|lint|test') 'Incomplete or repeated validate'
+    Assert-True (($plan.Name -join '|') -ceq (($checkOrder + @('configure', 'build', 'lint', 'test')) -join '|')) 'Incomplete or repeated validate'
     Assert-True (-not ($plan[0].Arguments -contains '-Apply')) 'Validate must not format in place'
 }
 Test-Case 'check does not compile or modify source files' {
     $plan = Plan check
-    Assert-True (($plan.Name -join '|') -ceq 'format|docs|traceability-tests|traceability|runner-tests|diagnostics-tests|format-tests|diff') 'Wrong check steps'
+    Assert-True (($plan.Name -join '|') -ceq ($checkOrder -join '|')) 'Wrong check steps'
     Assert-True (-not ($plan.Arguments -contains '-Apply')) 'Check mutates sources'
+}
+foreach ($task in @('check', 'validate')) {
+    Test-Case "$task invokes each safe packaging check once with literal absolute paths and no legacy switch" {
+        $source = Join-Path $repository 'out/product/source 日本 & spaces'
+        $plan = @(Get-RcMusicDevelopmentPlan -Task $task -RepositoryRoot $source -BuildDirectory $build -Tools $tools)
+        foreach ($entry in $packagingChecks.GetEnumerator()) {
+            $selected = @($plan | Where-Object Name -CEQ $entry.Key)
+            Assert-True ($selected.Count -eq 1) "Missing or repeated $($entry.Key)"
+            $step = $selected[0]
+            $script = Join-Path $source $entry.Value
+            Assert-True ($step.File -ceq (Get-Process -Id $PID).Path) 'Check must run in PowerShell'
+            Assert-True (($step.Arguments -join '|') -ceq (@('-NoProfile', '-File', $script) -join '|')) "Unexpected entrypoint or options: $($entry.Key)"
+            Assert-True ([IO.Path]::IsPathFullyQualified($step.Arguments[2]) -and $step.WorkingDirectory -ceq $source) 'Lost absolute path or working directory'
+        }
+    }
+}
+Test-Case 'standalone format build test and lint do not run packaging checks' {
+    foreach ($task in @('format', 'build', 'test', 'lint')) {
+        $plan = Plan $task
+        Assert-True (@($plan | Where-Object Name -In @($packagingChecks.Keys)).Count -eq 0) 'Unexpected packaging checks'
+        if ($task -ceq 'format') { Assert-True (($plan.Name -join '|') -ceq 'format') 'Standalone format changed' }
+    }
 }
 Test-Case 'only explicit format apply permits source formatting' {
     $plan = Plan format -Apply
@@ -78,10 +112,11 @@ Test-Case 'toolchain paths with spaces Unicode and metacharacters remain single 
     Assert-True ($plan[0].Arguments -contains '-DCMAKE_PREFIX_PATH=C:/SDK 日本 & tools/qt;C:/SDK/taglib') 'Path was split or reinterpreted'
     Assert-True ($plan[0].File -ceq $tools.CMake) 'Wrong executable'
 }
-Test-Case 'development plans never invoke experiments installers benchmarks or downloads' {
+Test-Case 'development plans never invoke experiments native packaging builders smokes benchmarks or downloads' {
     foreach ($task in @('build', 'test', 'lint', 'check', 'validate', 'format')) {
         $text = (Plan $task | ConvertTo-Json -Depth 5)
-        Assert-True ($text -notmatch 'experiments[/\\]|benchmark|https://|install|cargo|pnpm') 'Out-of-scope dependency'
+        Assert-True ($text -notmatch 'experiments[/\\]|benchmark|https://|cargo|pnpm|makensis|IncludeLegacy|LegacyBaseline') 'Out-of-scope dependency'
+        Assert-True ($text -notmatch 'New-RcMusic|[/\\](LocalRuntime|InstallerBuild|InstallerFiles|Installer|Associations)(\.Tests|\.Smoke)?\.ps1') 'Real packaging operation included'
     }
 }
 Test-Case 'execution stops immediately on a failing command and propagates its status' {

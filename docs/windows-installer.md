@@ -42,7 +42,7 @@ pwsh -NoProfile -File packaging/windows/tests/InstallerRecipe.Tests.ps1
 
 `-IncludeLegacy` nos três primeiros acrescenta compatibilidade histórica. Esses checks não compilam nem executam NSIS. Usam arquivos sintéticos, cópias próprias das fixtures licenciadas e exportações sem `experiments`, a partir de diretório corrente alheio. OFF não precisa de catálogo/corpus/fonte de teste. O preflight do builder recebe um arquivo de texto como compilador e deve rejeitá-lo pelo hash antes de tentar executá-lo ou criar saída.
 
-Esses comandos permanecem separados de `develop.ps1 validate`. Os harnesses nativos históricos de arquivos, associações e lifecycle continuam separados e não foram executados nesta promoção.
+As quatro entradas padrão integram agora `develop.ps1 check` e `validate`, junto aos quatro checks puros do runtime. Ordem, isolamento e evidência ficam no [guia do runner](development-commands.md#checks-das-receitas-windows). `-IncludeLegacy` e os harnesses nativos históricos de arquivos, associações e lifecycle continuam separados; esta integração não executa esses gates nativos.
 
 ## Montagem real, somente quando necessária
 

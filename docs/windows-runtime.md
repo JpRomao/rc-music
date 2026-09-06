@@ -26,6 +26,8 @@ pwsh -NoProfile -File scripts/tests/ProductionBoundary.Tests.ps1
 
 Esses checks usam arquivos de texto, relatórios PE e repositórios Git sintéticos. Não executam os `.exe`/`.dll` fictícios. Exportações sem `experiments` verificam independência a partir de diretório corrente alheio. Cobrem confinamento, nomes Windows, reparse points, colisões, destinos novos, hashes, snapshots e seleção de probes. As raízes GUID são verificadas antes de criar/limpar; Git sintético não usa hooks/templates/assinatura pessoais.
 
+Esses quatro checks padrão integram agora `develop.ps1 check` e `validate`, junto aos quatro checks puros do instalador. Ordem, isolamento e evidência ficam no [guia do runner](development-commands.md#checks-das-receitas-windows); também podem ser executados individualmente quando houver mudança relevante na receita.
+
 Compatibilidade histórica separada, sem NSIS/Registry:
 
 ```powershell
@@ -34,7 +36,7 @@ pwsh -NoProfile -File packaging/windows/tests/WindowsRuntimePlan.Tests.ps1 -Incl
 pwsh -NoProfile -File experiments/m0/candidates/qt/windows-installer/tests/WindowsInstallerPlan.Tests.ps1
 ```
 
-Esses checks não integram automaticamente `develop.ps1 validate` neste recorte. Execute-os quando houver mudança relevante na receita; não confundir com os comandos reais abaixo.
+Somente os comandos de compatibilidade acima permanecem fora do runner diário. Não confundir os checks sintéticos com os comandos reais abaixo.
 
 ## Montagem e smoke reais, separados
 
