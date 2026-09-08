@@ -1,0 +1,453 @@
+#include "m0/application/DownloadService.hpp"
+
+#include <algorithm>
+#include <limits>
+#include <utility>
+
+namespace music_player::m0 {
+namespace {
+
+constexpr std::size_t max_batch_items = 20;
+constexpr std::size_t max_url_bytes = 8192;
+constexpr std::size_t max_title_bytes = 800;
+
+char asciiLower(const char value) {
+    return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
+}
+
+bool validUuid(const std::string_view id) {
+    if (id.size() != 36 || id[14] != '4')
+        return false;
+    const auto variant = asciiLower(id[19]);
+    if (variant != '8' && variant != '9' && variant != 'a' && variant != 'b')
+        return false;
+    for (std::size_t index = 0; index < id.size(); ++index) {
+        if (index == 8 || index == 13 || index == 18 || index == 23) {
+            if (id[index] != '-')
+                return false;
+        } else {
+            const auto digit = asciiLower(id[index]);
+            if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f')))
+                return false;
+        }
+    }
+    return true;
+}
+
+bool validPrefix(const std::string_view prefix) {
+    return !prefix.empty() && prefix.size() <= 40 && std::all_of(prefix.begin(), prefix.end(), [](const char value) {
+        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') ||
+               value == '_' || value == '-';
+    });
+}
+
+bool validText(const std::string& text, const std::size_t max_bytes) {
+    return !text.empty() && text.size() <= max_bytes && text.find('\0') == std::string::npos;
+}
+
+bool validRequest(const DownloadRequest& request) {
+    return validUuid(request.request_id) && !request.items.empty() && request.items.size() <= max_batch_items &&
+           std::all_of(request.items.begin(), request.items.end(), [](const DownloadItem& item) {
+               return validText(item.url, max_url_bytes) && validText(item.title, max_title_bytes) &&
+                      (item.kind == DownloadMediaKind::Audio || item.kind == DownloadMediaKind::Video);
+           });
+}
+
+bool validPhase(const DownloadPhase phase) {
+    switch (phase) {
+    case DownloadPhase::Downloading:
+    case DownloadPhase::Converting:
+    case DownloadPhase::Publishing:
+        return true;
+    }
+    return false;
+}
+
+bool terminalState(const DownloadExecutionState state) {
+    switch (state) {
+    case DownloadExecutionState::Published:
+    case DownloadExecutionState::Failed:
+    case DownloadExecutionState::Cancelled:
+        return true;
+    case DownloadExecutionState::Running:
+        return false;
+    }
+    return false;
+}
+
+bool validFailure(const DownloadFailure error) {
+    switch (error) {
+    case DownloadFailure::None:
+    case DownloadFailure::Unavailable:
+    case DownloadFailure::Network:
+    case DownloadFailure::Expired:
+    case DownloadFailure::Restricted:
+    case DownloadFailure::UnsupportedMedia:
+    case DownloadFailure::NoAudio:
+    case DownloadFailure::LimitExceeded:
+    case DownloadFailure::Conversion:
+    case DownloadFailure::Publication:
+    case DownloadFailure::Import:
+    case DownloadFailure::Timeout:
+    case DownloadFailure::InvalidResult:
+        return true;
+    }
+    return false;
+}
+
+bool validPublishedPath(const std::filesystem::path& path) {
+    if (path.empty() || !path.is_absolute() || path != path.lexically_normal())
+        return false;
+    const auto& native = path.native();
+    if (std::any_of(native.begin(), native.end(), [](const auto value) { return value == 0; }))
+        return false;
+    auto extension = path.extension().native();
+    for (auto& value : extension) {
+        if (value >= 'A' && value <= 'Z')
+            value = static_cast<std::filesystem::path::value_type>(value - 'A' + 'a');
+    }
+    return extension == std::filesystem::path(".mp3").native();
+}
+
+DownloadJobState jobState(const DownloadPhase phase) {
+    switch (phase) {
+    case DownloadPhase::Downloading:
+        return DownloadJobState::Downloading;
+    case DownloadPhase::Converting:
+        return DownloadJobState::Converting;
+    case DownloadPhase::Publishing:
+        return DownloadJobState::Publishing;
+    }
+    return DownloadJobState::Failed;
+}
+
+// Only outward calls set this guard. Read-only snapshots remain available, while a callback
+// cannot mutate vectors, admit jobs, or recursively invoke an adapter while it is in use.
+class PortCall final {
+  public:
+    explicit PortCall(bool& flag) : flag_(flag) { flag_ = true; }
+    ~PortCall() { flag_ = false; }
+    PortCall(const PortCall&) = delete;
+    PortCall& operator=(const PortCall&) = delete;
+
+  private:
+    bool& flag_;
+};
+
+} // namespace
+
+struct DownloadService::Impl {
+    struct Receipt {
+        DownloadRequest request;
+        std::vector<std::string> job_ids;
+    };
+
+    struct Job {
+        DownloadJobSnapshot view;
+        std::size_t receipt_index{0};
+        std::size_t item_index{0};
+        DownloadPhase phase{DownloadPhase::Downloading};
+        std::int64_t started_at{0};
+        std::int64_t last_observed_at{0};
+    };
+
+    DownloadExecution& execution;
+    DownloadImport& importer;
+    const std::string prefix;
+    const DownloadServiceLimits limits;
+    std::vector<Receipt> receipts;
+    std::vector<Job> jobs;
+    std::optional<std::size_t> active;
+    std::size_t retained_request_bytes{0};
+    std::uint64_t next_id{1};
+    bool valid_configuration;
+    bool closed{false};
+    bool calling_port{false};
+
+    Impl(DownloadExecution& worker, DownloadImport& local_import, std::string id_prefix, DownloadServiceLimits caps)
+        : execution(worker), importer(local_import), prefix(std::move(id_prefix)), limits(caps),
+          valid_configuration(validPrefix(prefix) && limits.max_jobs > 0 && limits.max_requests > 0 &&
+                              limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0) {}
+
+    Job* find(const std::string_view id) {
+        const auto found =
+            std::find_if(jobs.begin(), jobs.end(), [id](const Job& job) { return job.view.job_id == id; });
+        return found == jobs.end() ? nullptr : &*found;
+    }
+
+    void requestCancellation(Job& job, const DownloadFailure error) {
+        if (job.view.state == DownloadJobState::Cancelling)
+            return;
+        job.view.state = DownloadJobState::Cancelling;
+        job.view.error = error;
+        // Set Cancelling before calling the adapter: even a throwing cancellation is not
+        // proof that I/O has stopped. Never issue a successor until a terminal poll arrives.
+        try {
+            const PortCall guard(calling_port);
+            execution.cancel(job.view.job_id);
+        } catch (...) {
+        }
+    }
+
+    bool import(Job& job) {
+        bool accepted = false;
+        try {
+            const PortCall guard(calling_port);
+            accepted = importer.accept(job.view.job_id, job.view.completed_mp3);
+        } catch (...) {
+        }
+        job.view.state = accepted ? DownloadJobState::Completed : DownloadJobState::ImportFailed;
+        job.view.error = accepted ? DownloadFailure::None : DownloadFailure::Import;
+        return accepted;
+    }
+
+    bool validProgress(const Job& job, const DownloadExecutionUpdate& update) const {
+        return validPhase(update.phase) && update.phase >= job.phase &&
+               (update.phase != job.phase || update.completed_units >= job.view.completed_units) &&
+               (!update.total_units.has_value() || update.completed_units <= *update.total_units);
+    }
+
+    void applyProgress(Job& job, const DownloadExecutionUpdate& update) {
+        job.phase = update.phase;
+        job.view.completed_units = update.completed_units;
+        job.view.total_units = update.total_units;
+    }
+
+    void failTerminal(Job& job, const DownloadFailure error) {
+        job.view.state = DownloadJobState::Failed;
+        job.view.error = error;
+        job.view.completed_mp3.clear();
+        active.reset();
+    }
+
+    void observe(Job& job, const DownloadExecutionUpdate& update) {
+        if (update.job_id != job.view.job_id)
+            return;
+        if (job.view.state == DownloadJobState::Cancelling) {
+            if (terminalState(update.state)) {
+                job.view.state =
+                    job.view.error == DownloadFailure::None ? DownloadJobState::Cancelled : DownloadJobState::Failed;
+                active.reset();
+            }
+            return;
+        }
+
+        const bool terminal = terminalState(update.state);
+        const bool progress_valid = validProgress(job, update);
+        bool valid = progress_valid && validFailure(update.error);
+        switch (update.state) {
+        case DownloadExecutionState::Running:
+            valid = valid && update.error == DownloadFailure::None && update.published_mp3.empty();
+            break;
+        case DownloadExecutionState::Published:
+            valid = valid && update.error == DownloadFailure::None && update.phase == DownloadPhase::Publishing &&
+                    (!update.total_units.has_value() || update.completed_units == *update.total_units) &&
+                    validPublishedPath(update.published_mp3);
+            break;
+        case DownloadExecutionState::Failed:
+            valid = valid && update.error != DownloadFailure::None && update.published_mp3.empty();
+            break;
+        case DownloadExecutionState::Cancelled:
+            valid = valid && update.error == DownloadFailure::None && update.published_mp3.empty();
+            break;
+        default:
+            valid = false;
+            break;
+        }
+        if (!valid) {
+            if (terminal)
+                failTerminal(job, DownloadFailure::InvalidResult);
+            else
+                requestCancellation(job, DownloadFailure::InvalidResult);
+            return;
+        }
+
+        applyProgress(job, update);
+        switch (update.state) {
+        case DownloadExecutionState::Running:
+            job.view.state = jobState(update.phase);
+            break;
+        case DownloadExecutionState::Published:
+            job.view.state = DownloadJobState::Publishing;
+            job.view.completed_mp3 = update.published_mp3;
+            (void)import(job);
+            active.reset();
+            break;
+        case DownloadExecutionState::Failed:
+            failTerminal(job, update.error);
+            break;
+        case DownloadExecutionState::Cancelled:
+            job.view.state = DownloadJobState::Cancelled;
+            active.reset();
+            break;
+        }
+    }
+};
+
+DownloadService::DownloadService(DownloadExecution& execution, DownloadImport& importer, std::string prefix,
+                                 DownloadServiceLimits limits)
+    : impl_(std::make_unique<Impl>(execution, importer, std::move(prefix), limits)) {}
+DownloadService::~DownloadService() = default;
+
+DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request) {
+    auto& state = *impl_;
+    if (state.calling_port)
+        return {.error = DownloadSubmissionError::Busy};
+    if (state.closed || !state.valid_configuration)
+        return {.error = DownloadSubmissionError::NotAvailable};
+    if (!validRequest(request))
+        return {.error = DownloadSubmissionError::InvalidRequest};
+
+    auto canonical_id = request.request_id;
+    std::transform(canonical_id.begin(), canonical_id.end(), canonical_id.begin(), asciiLower);
+    const auto previous =
+        std::find_if(state.receipts.begin(), state.receipts.end(), [&canonical_id](const Impl::Receipt& receipt) {
+            return receipt.request.request_id == canonical_id;
+        });
+    if (previous != state.receipts.end()) {
+        if (previous->request.items != request.items)
+            return {.error = DownloadSubmissionError::InvalidRequest};
+        return {.error = DownloadSubmissionError::None, .job_ids = previous->job_ids};
+    }
+
+    const auto count = request.items.size();
+    if (state.receipts.size() >= state.limits.max_requests || count > state.limits.max_jobs - state.jobs.size() ||
+        count > std::numeric_limits<std::uint64_t>::max() - state.next_id)
+        return {.error = DownloadSubmissionError::LimitExceeded};
+
+    // Strings were bounded before counting. Subtraction keeps configured SIZE_MAX budgets
+    // safe; this counts retained request strings, not physical allocator/container overhead.
+    std::size_t bytes = request.request_id.size();
+    for (const auto& item : request.items)
+        bytes += item.url.size() + item.title.size();
+    if (bytes > state.limits.max_retained_request_bytes - state.retained_request_bytes)
+        return {.error = DownloadSubmissionError::LimitExceeded};
+
+    Impl::Receipt receipt{.request = request};
+    receipt.request.request_id = std::move(canonical_id);
+    receipt.job_ids.reserve(count);
+    std::vector<Impl::Job> new_jobs;
+    new_jobs.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        auto id = state.prefix + "-" + std::to_string(state.next_id + index);
+        receipt.job_ids.push_back(id);
+        new_jobs.push_back({.view = {.job_id = std::move(id), .title = request.items[index].title},
+                            .receipt_index = state.receipts.size(),
+                            .item_index = index});
+    }
+    DownloadSubmissionResult result{.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids};
+    // All potentially allocating copies/reservations happen before admission is committed.
+    // Stored receipt indices keep jobs independent of vector relocation and browser lifetime.
+    state.receipts.reserve(state.receipts.size() + 1);
+    state.jobs.reserve(state.jobs.size() + count);
+    state.receipts.push_back(std::move(receipt));
+    for (auto& job : new_jobs)
+        state.jobs.push_back(std::move(job));
+    state.next_id += count;
+    state.retained_request_bytes += bytes;
+    return result;
+}
+
+std::vector<DownloadJobSnapshot> DownloadService::snapshot() const {
+    std::vector<DownloadJobSnapshot> result;
+    result.reserve(impl_->jobs.size());
+    for (const auto& job : impl_->jobs)
+        result.push_back(job.view);
+    return result;
+}
+
+void DownloadService::tick(const std::int64_t now_ms) {
+    auto& state = *impl_;
+    if (state.calling_port || !state.valid_configuration)
+        return;
+    if (!state.active.has_value()) {
+        if (state.closed)
+            return;
+        const auto next = std::find_if(state.jobs.begin(), state.jobs.end(),
+                                       [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
+        if (next == state.jobs.end())
+            return;
+        state.active = static_cast<std::size_t>(next - state.jobs.begin());
+        auto& job = *next;
+        job.view.state = DownloadJobState::Downloading;
+        job.started_at = job.last_observed_at = now_ms;
+        try {
+            bool accepted = false;
+            {
+                const PortCall guard(state.calling_port);
+                accepted = state.execution.start(job.view.job_id,
+                                                 state.receipts[job.receipt_index].request.items[job.item_index]);
+            }
+            if (!accepted)
+                state.failTerminal(job, DownloadFailure::Unavailable);
+        } catch (...) {
+            state.requestCancellation(job, DownloadFailure::InvalidResult);
+        }
+        return;
+    }
+
+    auto& job = state.jobs[*state.active];
+    if (now_ms < job.last_observed_at) {
+        state.requestCancellation(job, DownloadFailure::InvalidResult);
+    } else {
+        job.last_observed_at = now_ms;
+        const auto elapsed = static_cast<std::uint64_t>(now_ms) - static_cast<std::uint64_t>(job.started_at);
+        if (elapsed >= static_cast<std::uint64_t>(state.limits.job_timeout_ms))
+            state.requestCancellation(job, DownloadFailure::Timeout);
+    }
+    try {
+        DownloadExecutionUpdate update;
+        {
+            const PortCall guard(state.calling_port);
+            update = state.execution.poll(job.view.job_id);
+        }
+        state.observe(job, update);
+    } catch (...) {
+        state.requestCancellation(job, DownloadFailure::InvalidResult);
+    }
+}
+
+bool DownloadService::cancel(const std::string_view job_id) {
+    auto& state = *impl_;
+    if (state.calling_port)
+        return false;
+    auto* job = state.find(job_id);
+    if (job == nullptr)
+        return false;
+    if (job->view.state == DownloadJobState::Queued) {
+        job->view.state = DownloadJobState::Cancelled;
+        return true;
+    }
+    if (job->view.state != DownloadJobState::Downloading && job->view.state != DownloadJobState::Converting &&
+        job->view.state != DownloadJobState::Publishing)
+        return false;
+    state.requestCancellation(*job, DownloadFailure::None);
+    return true;
+}
+
+bool DownloadService::retryImport(const std::string_view job_id) {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed)
+        return false;
+    auto* job = state.find(job_id);
+    if (job == nullptr || job->view.state != DownloadJobState::ImportFailed)
+        return false;
+    return state.import(*job);
+}
+
+void DownloadService::shutdown() {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed)
+        return;
+    state.closed = true;
+    for (auto& job : state.jobs) {
+        if (job.view.state == DownloadJobState::Queued)
+            job.view.state = DownloadJobState::Cancelled;
+    }
+    if (state.active.has_value())
+        state.requestCancellation(state.jobs[*state.active], DownloadFailure::None);
+}
+
+bool DownloadService::stopped() const { return impl_->closed && !impl_->active.has_value(); }
+
+} // namespace music_player::m0

@@ -20,6 +20,8 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0005](0005-windows-product-stack.md) | Aceito | C++20/Qt Quick, Qt Multimedia/FFmpeg e TagLib; A/B deixa de bloquear o produto Windows |
 | [0006](0006-browser-editions-and-extensions.md) | Aceito | Escopo Lite/Completa, Brave/Chromium e extensões principal/YouTube independentes; ferramentas e implementação pendentes |
 | [0007](0007-main-extension-boundary.md) | Aceito | Cliente MV3 adotado com detecção temporária, seleção explícita e fronteira nativa; host/download ainda separados |
+| [0008](0008-download-job-service.md) | Aceito | Coordenação pura e apresentação de jobs, separadas do backend de execução |
+| [0009](0009-download-execution-backends.md) | Proposto | Avaliação de Qt Network/FFmpeg, segurança e distribuição; sem habilitar downloads reais |
 
 ## Processo
 

@@ -1188,6 +1188,14 @@
         {
           "path": "tests/qt/NativeDownloadCodecTests.cpp",
           "marker": "agreesWithSharedBrowserProtocolVectors"
+        },
+        {
+          "path": "tests/qt/NativeDownloadServiceTests.cpp",
+          "marker": "acceptedBatchSurvivesBrowserConnectionAndIsNotStartedByAcknowledgement"
+        },
+        {
+          "path": "tests/core/DownloadServiceTests.cpp",
+          "marker": "Download receipts deduplicate UUID casing and survive completion at capacity"
         }
       ],
       "evidence": [
@@ -1205,7 +1213,7 @@
         }
       ],
       "remaining": [
-        "Cliente e biblioteca nativa opcional de recepção testados com fakes; completar executável de host/serviço idempotente, download/conversão/importação, descoberta ampliada, Brave real, integração compartilhada Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; admissão isolada não atende o fluxo completo."
+        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; execução/importação ainda falsas. Completar backend real, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; coordenação isolada não atende o fluxo completo."
       ]
     },
     {
@@ -1235,10 +1243,14 @@
         {
           "path": "docs/architecture/decisions/0007-main-extension-boundary.md",
           "marker": "## Segurança, licenças e distribuição"
+        },
+        {
+          "path": "docs/architecture/decisions/0009-download-execution-backends.md",
+          "marker": "**Estado:** Proposto"
         }
       ],
       "remaining": [
-        "ADR-0007 adota APIs Chromium/código próprio do cliente e biblioteca opcional Qt Core da toolchain existente, sem novo downloader. Escolher/revisar executável de host, downloader/conversor e engine, versões/hashes/licenças/termos/distribuição/atualização por artefato; validar registro Brave e upgrade/ownership. Não há aprovação de publicação ou ferramentas por associação."
+        "ADR-0007/0008 adotam cliente/coordenação sem novo backend. ADR-0009 propõe Qt Network/FFmpeg com gates explícitos de segurança/atualização do CLI, proveniência/licenças/distribuição; ainda não aceito para mídia remota. Escolher/revisar host/engine, validar registro Brave e upgrade/ownership; nenhuma aprovação de publicação por associação."
       ]
     },
     {
@@ -1262,6 +1274,14 @@
         {
           "path": "tests/qt/NativeDownloadSessionTests.cpp",
           "marker": "totalDeadlineAndEofAreTerminalWithoutDispatch"
+        },
+        {
+          "path": "tests/core/DownloadServiceTests.cpp",
+          "marker": "Active cancellation waits for an acknowledgement and never imports a late file"
+        },
+        {
+          "path": "tests/qt/DownloadJobsModelTests.cpp",
+          "marker": "failedImportExposesOnlyFinalFileAndExplicitRetryDoesNotRedownload"
         }
       ],
       "evidence": [
@@ -1279,7 +1299,7 @@
         }
       ],
       "remaining": [
-        "Cliente e fronteira nativa cobrem limites/schema estrito, framing/deadline, origem configurada, recusa de destinos identificados e ACK sem retry; ainda faltam executável/identidade/capacidades do host, deduplicação entre sessões, cancelamento real, DNS/redirects/SSRF, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros e fakes não provam segurança da rede nem do decoder de mídia."
+        "Cliente, fronteira e serviço cobrem schema/framing/origem, idempotência entre conexões, coordenação de cancelamento/timeout e resultados obsoletos com fakes. Faltam host, persistência entre execuções, I/O/cancelamento reais, DNS/redirects/SSRF, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros e fakes não provam segurança de rede/decoder."
       ]
     },
     {

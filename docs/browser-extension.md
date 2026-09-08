@@ -52,7 +52,7 @@ O runner de extensão é separado dos comandos C++: Node é ferramenta de desenv
 
 ### Biblioteca nativa Windows
 
-O alvo opcional `rc_music_browser_integration` compila [codec](../src/adapters/NativeDownloadCodec.cpp), [framing](../src/adapters/NativeMessageFrame.cpp) e [sessão](../src/adapters/NativeDownloadSession.cpp) com Qt Core 6.11.2 já provisionado. A [porta DownloadSubmission](../include/m0/ports/DownloadSubmission.hpp) é C++ puro: aceita ou recusa o lote inteiro e devolve IDs, sem baixar/converter sincronicamente. Somente fakes implementam essa porta por enquanto; não há ACK de serviço real.
+O alvo opcional `rc_music_browser_integration` compila [codec](../src/adapters/NativeDownloadCodec.cpp), [framing](../src/adapters/NativeMessageFrame.cpp), [sessão](../src/adapters/NativeDownloadSession.cpp) e o model de jobs com Qt Core 6.11.2 já provisionado. A [coordenação de downloads](download-jobs.md) implementa a porta pura `DownloadSubmission`: aceita ou recusa o lote inteiro e devolve IDs, sem baixar/converter sincronicamente. A integração de sessão usa esse serviço real nos testes, mas execução/importação ainda são falsas e não há conexão instalada.
 
 `RC_MUSIC_BUILD_BROWSER_INTEGRATION` é OFF por padrão e não depende da opção desktop. O alvo não está ligado ao player, não distribui engine, não registra host e não instala arquivos. Com testes OFF não exige Qt Test; o core com ambas opções OFF continua sem Qt. Isso preserva a composição leve, mas ainda não prova os futuros pacotes Lite/Completa.
 
@@ -65,13 +65,13 @@ $rcCatch2 = Join-Path $rcSource 'out/m0/toolchains/Catch2-3.15.3'
 $rcNinja = 'C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
 cmake -S . -B out/product/browser-integration-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DRC_MUSIC_BUILD_BROWSER_INTEGRATION=ON -DRC_MUSIC_BUILD_DESKTOP=OFF -DBUILD_TESTING=ON "-DCMAKE_PREFIX_PATH=$rcQt" "-DRC_MUSIC_CATCH2_SOURCE_DIR=$rcCatch2" "-DCMAKE_MAKE_PROGRAM=$rcNinja"
 if ($LASTEXITCODE -ne 0) { throw 'Configure da ponte falhou' }
-cmake --build out/product/browser-integration-tests --target rc_music_NativeDownloadCodec_tests rc_music_NativeMessageFrame_tests rc_music_NativeDownloadSession_tests --parallel 4
+cmake --build out/product/browser-integration-tests --target rc_music_NativeDownloadCodec_tests rc_music_NativeMessageFrame_tests rc_music_NativeDownloadSession_tests rc_music_NativeDownloadService_tests rc_music_DownloadJobsModel_tests --parallel 4
 if ($LASTEXITCODE -ne 0) { throw 'Build da ponte falhou' }
 ctest --test-dir out/product/browser-integration-tests -R '^rc_music.browser.' --output-on-failure
 if ($LASTEXITCODE -ne 0) { throw 'Testes da ponte falharam' }
 ```
 
-O CTest configura PATH e saída Qt dos três executáveis; não precisa de janela/áudio/rede. O filtro é obrigatório se só esses alvos foram compilados, pois o configure também registra os testes do core. O build independente sem testes usa outro diretório, `-DBUILD_TESTING=OFF`, e alvo `rc_music_browser_integration`.
+O CTest configura PATH e saída Qt dos cinco executáveis; não precisa de janela/áudio/rede. O filtro é obrigatório se só esses alvos foram compilados, pois o configure também registra os testes do core e do serviço puro. O build independente sem testes usa outro diretório, `-DBUILD_TESTING=OFF`, e alvo `rc_music_browser_integration`. Para incluir a suite Catch2 de coordenação, usar os [checks de jobs](download-jobs.md#checks-locais-windows).
 
 ### Contrato de recepção
 
@@ -79,7 +79,7 @@ O CTest configura PATH e saída Qt dos três executáveis; não precisa de janel
 - Origem deve coincidir exatamente com uma extensão configurada (`chrome-extension://` + 32 letras `a`–`p` + `/`). A configuração é entrada confiável do futuro host, não do JSON nem derivada do próprio chamador. Isso não autentica processos maliciosos do mesmo usuário.
 - JSON UTF-8 estrito, profundidade limitada, chaves duplicadas inclusive escapadas recusadas antes do parser Qt, schema/campos/tipos exatos e lote atômico. URLs já normalizadas pelo cliente preservam escapes/query; não reserializar via QUrl e alterar assinaturas. Títulos usam até 200 unidades UTF-16, sem controles/bidi ou surrogates isolados; domínios têm rótulos até 63 e nome até 253 caracteres sem ponto final.
 - A sessão fecha a admissão antes de chamar a porta, inclusive em reentrância. Exceção/receipt contraditório não geram ACK falso. O deadline de montagem não preempta uma implementação bloqueante de `submit`; a porta exige enfileiramento rápido e não faz downloads.
-- Idempotência entre conexões, jobs duráveis, cancelamento/progresso, transporte stdin/stdout binário, identidade instalada e composição das duas edições ainda pertencem ao serviço/host futuro. Nenhuma URL é aberta por essa biblioteca.
+- O serviço comum mantém idempotência entre conexões durante sua própria execução e coordena progresso/cancelamento via portas. Jobs duráveis, I/O/cancelamento reais, transporte stdin/stdout binário, identidade instalada e composição das duas edições continuam pendentes. Nenhuma URL é aberta por essa biblioteca.
 
 ## Evidência do incremento
 
@@ -102,7 +102,7 @@ Nenhum requisito foi promovido a comprovado: 15 planejados, 66 em andamento, 2 c
 ## Pendências e próxima integração
 
 1. Gate real isolado do Brave/Chromium, incluindo popup/teclado, permissão temporária, navegação, iframe e ativação/remoção; não executar em perfil pessoal sem autorização.
-2. Integrar a biblioteca de recepção a um executável Native Messaging com stdin/stdout binário, origem/identidade estáveis, serviço idempotente e ponte para as duas edições; registro/ownership/upgrade permanecem em R1.10.
-3. Serviço limitado/cancelável de download, validação DNS/redirects/TLS contra SSRF, fila/progresso, ferramentas de conversão revisadas e importação de MP3 finalizado. Sem essa revisão não habilitar downloads reais.
+2. Integrar a biblioteca de recepção a um executável Native Messaging com stdin/stdout binário, origem/identidade estáveis e transporte para o serviço comum no app; acrescentar persistência/recuperação dos recibos. Registro/ownership/upgrade permanecem em R1.10.
+3. Executor limitado/cancelável de download, validação DNS/redirects/TLS contra SSRF, ferramentas de conversão revisadas, importador e tela QML sobre a [coordenação já implementada](download-jobs.md). Sem essa revisão não habilitar downloads reais.
 4. Evoluir descoberta para casos não cobertos: iframes, Shadow DOM aberto/fechado, mídia em tráfego anterior ao clique ou sem URL direta. Blob/MSE, manifestos HLS/DASH, live e DRM não são tratados como MP4 baixável nem contornados.
 5. Navegação interna da Completa, opcionais no instalador e extensão YouTube têm implementação/gates separados. Este cliente não conclui R1.2/R1.7/R1.8, FR-051–053 ou release.
