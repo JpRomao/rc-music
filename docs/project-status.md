@@ -1,6 +1,6 @@
 # Estado e decisões do projeto
 
-**Atualizado em:** 2026-09-06
+**Atualizado em:** 2026-09-08
 
 **Estado vigente:** C++20 + Qt Quick/QML, Qt Multimedia/FFmpeg e TagLib foram aceitos pelo mantenedor no [ADR-0005](architecture/decisions/0005-windows-product-stack.md). A/B e checks Rust/Tauri deixam de ser pré-requisitos para desenvolver o produto Windows. A decisão não é uma vitória comparativa medida; Linux e benchmarks ficam adiados, com requisitos e budgets preservados.
 
@@ -12,7 +12,7 @@
 
 O incremento de 2026-09-06 refina os atalhos e antecipa o recorte autorizado de FR-019: Espaço controla reprodução sem clicar o botão focado, setas controlam saltos/volume, Shift+setas navega, F1 alterna aleatório e F2 repetição. Os dois modos têm estado visível e persistido; repetição roda a ocorrência concluída para o fim, e aleatório percorre a rodada sem perder pendentes. Consulte o [manual vigente](user-guide.md); as regras históricas de foco e de fila sem repetição abaixo descrevem os baselines anteriores, não substituem esse contrato.
 
-**Próximo escopo aceito, parcialmente iniciado:** o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) registra Brave/Chromium, Lite/Completa e extensões principal/YouTube independentes. A Lite preserva o player sem navegador interno; a Completa acrescentará navegação isolada. O [cliente da principal](browser-extension.md) já implementa detecção/lista/seleção múltipla e canal tipado com testes falsos; host/download/conversão, navegação interna e instaladores continuam ausentes. Nada foi instalado no Brave ou registrado no Windows. YouTube não bloqueia a principal e conserva revisão própria.
+**Próximo escopo aceito, parcialmente iniciado:** o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) registra Brave/Chromium, Lite/Completa e extensões principal/YouTube independentes. A Lite preserva o player sem navegador interno; a Completa acrescentará navegação isolada. O [cliente da principal e biblioteca de recepção C++](browser-extension.md) implementam detecção/lista/seleção múltipla, canal tipado, framing limitado e validação de origem/schema com testes falsos. Executável de host, serviço de download/conversão, navegação interna e novos instaladores continuam ausentes. Nada foi instalado no Brave ou registrado no Windows. YouTube não bloqueia a principal e conserva revisão própria.
 
 ## Histórico funcional anterior à aceitação
 

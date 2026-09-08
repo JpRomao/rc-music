@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizeSnapshot, buildDownloadRequest, validateDownloadRequest } from '../../extensions/chromium/main/policy.mjs';
 
 const requestId = '01234567-89ab-4cde-8fab-0123456789ab';
@@ -8,6 +9,13 @@ const audio = { url: 'https://media.example.test/song.mp3?token=secret#time', ti
 const video = { url: 'https://media.example.test/video.mp4', title: 'Vídeo', kind: 'video' };
 const snapshot = (candidates = [audio, video]) => ({ type: 'snapshot', pageUrl, candidates, truncated: false });
 const throwsCode = (fn, code) => assert.throws(fn, error => error.code === code);
+
+for (const vector of JSON.parse(readFileSync(new URL('./native-protocol-vectors.json', import.meta.url), 'utf8')).cases) {
+  test(`shared native protocol: ${vector.name}`, () => {
+    if (vector.accepted) assert.deepEqual(validateDownloadRequest(vector.request), vector.request);
+    else throwsCode(() => validateDownloadRequest(vector.request), 'invalid_request');
+  });
+}
 
 test('normalizes media URLs without fragment, keeps signed query and document identity, deduplicates', () => {
   const result = normalizeSnapshot(snapshot([audio, { ...audio, url: audio.url.replace('#time', '#other') }, video]));
@@ -103,4 +111,30 @@ test('sparse native item arrays are rejected before serialization can turn holes
   for (const items of [new Array(1), [video, ,]]) {
     throwsCode(() => validateDownloadRequest({ schemaVersion: 1, type: 'download.request', requestId, items }), 'invalid_request');
   }
+});
+
+test('rejects malformed percent escapes and lone surrogates before URL parsing repairs them', () => {
+  for (const suffix of ['%', '%0', '%zz', '\uD800', '\uDC00']) {
+    const item = { ...video, url: `https://media.example.test/a${suffix}.mp4` };
+    assert.equal(normalizeSnapshot(snapshot([item])).candidates.length, 0, suffix);
+    throwsCode(() => validateDownloadRequest({ schemaVersion: 1, type: 'download.request', requestId, items: [item] }), 'invalid_request');
+  }
+});
+
+test('preserves legal percent encodings and signed URL punctuation exactly', () => {
+  const url = 'https://media.example.test./%7E%41%2f.mp3?q=[x]&sig=%2b';
+  const clean = normalizeSnapshot(snapshot([{ ...audio, url }]));
+  assert.equal(clean.candidates[0].url, url);
+  assert.equal(buildDownloadRequest(clean, [url], requestId).items[0].url, url);
+});
+
+test('title sanitization repairs lone surrogates and never truncates half an emoji', () => {
+  for (const [title, expected] of [['x\uD800y\uDC00', 'x\uFFFDy\uFFFD'], ['a'.repeat(199) + '🎵', 'a'.repeat(199)],
+    ['a'.repeat(198) + '🎵x', 'a'.repeat(198) + '🎵']]) {
+    const clean = normalizeSnapshot(snapshot([{ ...video, title }]));
+    assert.equal(clean.candidates[0].title, expected);
+    assert.equal(buildDownloadRequest(clean, [video.url], requestId).items[0].title, expected);
+  }
+  throwsCode(() => validateDownloadRequest({ schemaVersion: 1, type: 'download.request', requestId,
+    items: [{ ...video, title: 'bad\uD800' }] }), 'invalid_request');
 });

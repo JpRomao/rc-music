@@ -11,6 +11,16 @@ const controls = /[\u0000-\u0020\u007f-\u009f\\]/u;
 const titleControls = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function wellFormedText(value) {
+  // Iteration preserves surrogate pairs; older supported Chromium lacks String.toWellFormed.
+  let result = '';
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    result += character.length === 1 && code >= 0xd800 && code <= 0xdfff ? '\uFFFD' : character;
+  }
+  return result;
+}
+
 export function protocolError(code) {
   return Object.assign(new Error(code), { code });
 }
@@ -29,13 +39,14 @@ function withinBytes(value, maxBytes) {
 }
 
 function mediaUrl(raw, preserveFragment = false) {
-  if (typeof raw !== 'string' || raw.length > MAX_URL || controls.test(raw) || !/^https?:\/\//i.test(raw)) return null;
+  if (typeof raw !== 'string' || raw.length > MAX_URL || controls.test(raw) || !/^https?:\/\//i.test(raw)
+    || /%(?![0-9a-f]{2})/i.test(raw) || wellFormedText(raw) !== raw) return null;
   try {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase().replace(/\.$/, '');
     if (url.username || url.password || url.port || host.startsWith('[')
-      || /^\d+\.\d+\.\d+\.\d+$/.test(host) || !host.includes('.')
-      || !host.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))
+      || /^\d+\.\d+\.\d+\.\d+$/.test(host) || !host.includes('.') || host.length > 253
+      || !host.split('.').every(label => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))
       || blockedDomains.some(domain => host === domain || host.endsWith(`.${domain}`))) return null;
     if (!preserveFragment) url.hash = '';
     return url.href.length <= MAX_URL ? url : null;
@@ -45,7 +56,8 @@ function mediaUrl(raw, preserveFragment = false) {
 }
 
 function cleanTitle(title, kind) {
-  return title.replace(titleControls, '').trim().slice(0, MAX_TITLE) || (kind === 'audio' ? 'Áudio' : 'Vídeo');
+  return wellFormedText(title).replace(titleControls, '').trim().slice(0, MAX_TITLE).replace(/[\uD800-\uDBFF]$/u, '')
+    || (kind === 'audio' ? 'Áudio' : 'Vídeo');
 }
 
 export function normalizeSnapshot(raw) {

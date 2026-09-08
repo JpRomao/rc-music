@@ -9,6 +9,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 include(cmake/RcMusicCore.cmake)
 
+option(RC_MUSIC_BUILD_BROWSER_INTEGRATION "Build the optional browser request boundary (no installed host)" OFF)
+if(RC_MUSIC_BUILD_BROWSER_INTEGRATION)
+    include(cmake/RcMusicBrowserIntegration.cmake)
+endif()
+
 option(RC_MUSIC_BUILD_DESKTOP "Build the Windows RC Music desktop application" OFF)
 if(RC_MUSIC_BUILD_DESKTOP)
     if(NOT WIN32)

@@ -1,0 +1,585 @@
+{
+  "cases": [
+    {
+      "name": "basic unicode title",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "signed percent punctuation",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test./%7E%41%2f.mp3?q=[x]&sig=%2b",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "punycode and unicode path encoding",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://xn--msica-7ua.example.test/%E6%97%A5%E6%9C%AC.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "video and literal hostile title",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "<script>' &; $() \\ {\"url\":1}",
+            "kind": "video"
+          }
+        ]
+      }
+    },
+    {
+      "name": "upper case request identifier",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89AB-4CDE-8FAB-0123456789AB",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title utf16 boundary",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ordered batch",
+      "accepted": true,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          },
+          {
+            "url": "http://notyoutube.com/video.mp4",
+            "title": "Vídeo",
+            "kind": "video"
+          }
+        ]
+      }
+    },
+    {
+      "name": "youtube",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://m.youtube.com./watch.mp4",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "youtube media",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://r1.googlevideo.com/video",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loopback",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "http://127.0.0.1/a.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric shorthand",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "http://2130706433/a.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "local suffix",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "http://music.home.arpa/a.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "credentialed",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://u:p@media.example.test/a",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "port",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test:8443/a",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fragment",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/a#x",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "malformed percent",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/%zz",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "incomplete percent",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/%",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "URL lone surrogate",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/\ud800",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "URL backslash",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/a\\b",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title lone high surrogate",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "bad\ud800",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title lone low surrogate",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "bad\udfff",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title padding",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": " Audio ",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title BOM",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+          "title": "\ufeffAudio",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title bidi",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "bad‮",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "title oversized",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown item field",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio",
+            "command": "run"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate URL",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          },
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown schema",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 2,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/audio.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty batch",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": []
+      }
+    },
+    {
+      "name": "wire raw unicode",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/á.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wire upper case host",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://MEDIA.example.test/a.mp3",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wire missing slash",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wire dot segments",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/a/../b",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wire escaped dot segments",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://media.example.test/%2e%2e/b",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "oversized DNS label",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.test/a",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    },
+    {
+      "name": "oversized DNS host",
+      "accepted": false,
+      "request": {
+        "schemaVersion": 1,
+        "type": "download.request",
+        "requestId": "01234567-89ab-4cde-8fab-0123456789ab",
+        "items": [
+          {
+            "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/a",
+            "title": "Áudio 🎵",
+            "kind": "audio"
+          }
+        ]
+      }
+    }
+  ]
+}

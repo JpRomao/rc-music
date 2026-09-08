@@ -96,7 +96,7 @@ As convenções abaixo permanecem documentadas somente para eventual experimento
 
 ### Convenções comuns
 
-O [cliente de extensão opcional](../browser-extension.md#checks-locais) usa `node:test`/assert/VM com DOM, Chrome e relógio falsos, sem runtime npm no produto. Exercitar scripts de produção, validação/schema, escolha explícita, navegação/SPA, coalescência sem starvation e rejeição/timeout sem retry; teste estático de manifesto/CSP não substitui carregamento no Brave. O runner é separado do C++/Qt e não adiciona Node à compilação/execução da Lite. Host/downloads exigirão seus próprios contratos e testes, sem fixtures de sites ou perfis pessoais.
+O [cliente de extensão opcional](../browser-extension.md#checks-locais) usa `node:test`/assert/VM com DOM, Chrome e relógio falsos, sem runtime npm no produto. Exercitar scripts de produção, validação/schema, escolha explícita, navegação/SPA, coalescência sem starvation e rejeição/timeout sem retry; teste estático de manifesto/CSP não substitui carregamento no Brave. O runner é separado do C++/Qt e não adiciona Node à compilação/execução da Lite. A biblioteca nativa opcional tem Qt Test para codec estrito, framing parcial/limites/deadline e sessão com admissão falsa: nenhuma URL é aberta. Vetores JSON compartilhados conferem o contrato JavaScript/C++; entradas byte-level cobrem tolerâncias do parser que reserialização esconderia. Executável de host, serviço/downloads e integração instalada exigirão testes próprios, sem fixtures de sites ou perfis pessoais.
 
 - fixtures são compartilhadas por helper explícito e pelo mesmo manifesto versionado;
 - nomes em inglês descrevem resultado, por exemplo `skip_forward_clamps_at_track_end`;

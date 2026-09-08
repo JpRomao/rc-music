@@ -4,7 +4,7 @@
 
 **Data:** 2026-09-08
 
-**Escopo:** implementação incremental de R1.7/FR-051–053; não escolhe downloader, conversor, engine embarcada ou distribuição.
+**Escopo:** implementação incremental de R1.7/FR-051–053, incluindo cliente MV3 e biblioteca opcional de admissão C++; não escolhe downloader, conversor, engine embarcada ou distribuição.
 
 ## Contexto
 
@@ -22,11 +22,21 @@ Detecção inicial cobre `audio`, `video`, seus `source` e links diretos MP3/MP4
 
 O pedido `download.request` v1 contém ID e de 1 a 20 itens com URL HTTP(S), título e tipo de candidato. Não aceita comando, destino no disco, headers, cookies ou opções de executável. Só seleção explícita e confirmação de uso autorizado o produzem. Resposta correlacionada significa aceitação do lote pelo host, nunca download/conversão concluídos. Não retransmitir automaticamente após timeout/desconexão; resultado incerto exige conferir a fila no app antes de repetir.
 
-O nome de protocolo local de desenvolvimento será `com.rcmusic.media`, sem registrar host no Windows neste incremento. O receptor nativo ainda não existe: a extensão precisa mostrar ausência/erro da ponte em vez de fingir sucesso. O host final deverá autenticar origens de extensão explícitas, tratar o framing nativo de 32 bits em ordem do host e manter logs fora de stdout; esse protocolo não é `OpenSources`. [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
+O nome de protocolo local de desenvolvimento será `com.rcmusic.media`, sem registrar host no Windows neste incremento. Ainda não há executável de host nem adapter de stdin/stdout: a extensão precisa mostrar ausência/erro da ponte em vez de fingir sucesso. O protocolo oficial usa JSON UTF-8, prefixo de comprimento de 32 bits em ordem nativa e origem do chamador no primeiro argumento; o adapter Windows futuro deve usar I/O binário e manter logs fora de stdout. Isso não é `OpenSources`, cujo contrato continua estritamente local. [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
+
+### Biblioteca nativa opcional de admissão
+
+A [composição CMake própria](../../../cmake/RcMusicBrowserIntegration.cmake), ativada explicitamente por `RC_MUSIC_BUILD_BROWSER_INTEGRATION` e desligada por padrão, separa codec, framing e sessão em uma biblioteca C++/Qt Core. Não conecta essa biblioteca ao player, não acrescenta navegador à Lite e não cria transporte ou download. O [registro do componente](../../browser-extension.md) distingue evidência automatizada de integração ainda pendente.
+
+- `NativeMessageFrame` monta uma única mensagem por sessão com prefixo little-endian do Windows e corpo de 1 byte a 256 KiB. Tamanho e bytes excedentes são verificados antes de copiar/reservar o corpo; prefixos fragmentados, overflow e duas mensagens coalescidas não podem contornar o limite. Um resultado completo entrega o corpo uma só vez.
+- O prazo de montagem é total, de 5 s, inclusive na fronteira, medido pelo relógio monotônico fornecido pelo chamador. Novos fragmentos não renovam o prazo; relógio regressivo, entrada posterior ao estado terminal ou EOF incompleto encerram a sessão. Esse prazo não mede download/conversão nem substitui um watchdog do futuro processo de I/O.
+- `NativeDownloadCodec` exige UTF-8 e strings JSON bem formados, escapes válidos, pares de surrogates válidos, chaves únicas após decodificação e profundidade limitada, antes de aplicar schema exato. URLs/títulos e respostas conservam os limites do cliente; validação sintática de hostname não comprova segurança de DNS/redirects.
+- `NativeDownloadSession` aceita somente a origem configurada exata no formato `chrome-extension://` + 32 letras `a`–`p` + `/`, sem wildcard, path adicional ou query. A origem permitida vem da composição confiável, nunca do JSON da página; identidade final e instalação ainda não foram definidas. Essa comparação não autentica um processo local capaz de invocar um futuro executável com argumentos próprios.
+- A porta pura [DownloadSubmission](../../../include/m0/ports/DownloadSubmission.hpp) recebe apenas o lote tipado e faz admissão, não download/conversão síncronos. Lote inválido não chega à porta; ACK exige recibo válido com um ID de job distinto por item. Falha/incerteza não gera ACK fictício nem retry. O futuro serviço precisa assumir o lote independentemente da conexão e deduplicar request IDs entre sessões; essa garantia ainda não está implementada por esta biblioteca.
 
 ## Segurança, licenças e distribuição
 
-Somente código próprio, sem copiar exemplos ou empacotar bibliotecas novas; licença pública do projeto e publicação continuam pendentes. Não instalar extensão, registrar host, mudar políticas do navegador ou baixar ferramentas neste incremento. Atualizações de código serão explícitas, sem mecanismo próprio de auto-update ou execução remota. O app permanece offline e sem nova dependência.
+Somente código próprio, sem copiar exemplos ou empacotar bibliotecas novas; licença pública do projeto e publicação continuam pendentes. A biblioteca de admissão reutiliza Qt Core da mesma toolchain aceita pelo ADR-0005, mantendo seus gates de licença/notices/distribuição; não aprova outra biblioteca, downloader ou conversor. Não instalar extensão, registrar host, mudar políticas do navegador ou baixar ferramentas neste incremento. Atualizações de código serão explícitas, sem mecanismo próprio de auto-update ou execução remota. O app permanece offline e sem nova dependência obrigatória.
 
 Dados de página ficam efêmeros no popup/detector; apenas mídia selecionada vai ao host local. Sem logs de URLs, query strings visíveis, persistência de navegação ou cookies. A política de uso limitado exige uso necessário à função declarada; submissão futura exige divulgação/privacidade próprias e revisão, não aprovação implícita desta decisão. [Limited Use](https://developer.chrome.com/docs/webstore/program-policies/limited-use).
 
@@ -44,5 +54,7 @@ Fechar o popup encerra detecção e pode impedir observar uma resposta nativa; n
 ## Critérios de aceitação e revisão
 
 TDD cobre descoberta/deduplicação/limites, limpeza de listeners, remetentes falsos, navegação, múltipla seleção e envio exclusivo de selecionados, contratos estritos/ACK, timeout/desconexão sem retry e texto hostil sem HTML. Checks devem executar código de produção com DOM/Chrome/relógio falsos, sem rede ou perfis pessoais. Testes fake não provam APIs carregadas pelo Brave, CSP real ou usabilidade visual nativa; esses smokes permanecem separados.
+
+A biblioteca nativa exige Qt Test sem UI/rede com bytes hostis, todas as divisões do prefixo/corpo, prazo/clock determinísticos, origem configurada, schema/UTF-8/escapes/chaves duplicadas e porta de admissão falsa. Testar que mensagens inválidas não despacham e que exceções/recibos incorretos não fabricam aceitação. Checks verdes de biblioteca não provam executável, I/O binário, registro, identidade instalada, idempotência entre conexões, download ou release.
 
 Revisar por lacunas de detecção que exijam permissões maiores, risco de origem/SSRF, mudanças de API, distribuição, identidade final das extensões/host ou necessidade de fila persistente no navegador. Não aceitar ferramentas de download/conversão ou a engine da Completa por associação.

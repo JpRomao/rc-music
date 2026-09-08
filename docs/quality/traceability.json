@@ -1180,6 +1180,14 @@
         {
           "path": "tests/extensions/popup.test.mjs",
           "marker": "explicit authorized submit sends exactly the selection and reports accepted, not completed"
+        },
+        {
+          "path": "tests/qt/NativeDownloadSessionTests.cpp",
+          "marker": "acceptsOnlyAfterAuthorizedCompleteRequestAndReturnsCorrelatedReceipt"
+        },
+        {
+          "path": "tests/qt/NativeDownloadCodecTests.cpp",
+          "marker": "agreesWithSharedBrowserProtocolVectors"
         }
       ],
       "evidence": [
@@ -1197,7 +1205,7 @@
         }
       ],
       "remaining": [
-        "Cliente principal com detecção DOM temporária, popup e canal tipado implementado/testado com fakes; completar host nativo, download/conversão/importação, descoberta ampliada, Brave real, integração compartilhada Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; o cliente isolado não atende o fluxo completo."
+        "Cliente e biblioteca nativa opcional de recepção testados com fakes; completar executável de host/serviço idempotente, download/conversão/importação, descoberta ampliada, Brave real, integração compartilhada Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; admissão isolada não atende o fluxo completo."
       ]
     },
     {
@@ -1230,7 +1238,7 @@
         }
       ],
       "remaining": [
-        "ADR-0007 e revisão de fontes oficiais adotam somente APIs Chromium/código próprio do cliente, sem novas dependências de runtime. Escolher/revisar host, downloader/conversor e engine, versões/hashes/licenças/termos/distribuição/atualização por artefato; validar registro Brave e upgrade/ownership. Não há aprovação de publicação ou ferramentas por associação."
+        "ADR-0007 adota APIs Chromium/código próprio do cliente e biblioteca opcional Qt Core da toolchain existente, sem novo downloader. Escolher/revisar executável de host, downloader/conversor e engine, versões/hashes/licenças/termos/distribuição/atualização por artefato; validar registro Brave e upgrade/ownership. Não há aprovação de publicação ou ferramentas por associação."
       ]
     },
     {
@@ -1246,6 +1254,14 @@
         {
           "path": "tests/extensions/policy.test.mjs",
           "marker": "rejects dangerous, local, opaque, credentialed and nonstandard-port candidates without rejecting valid media"
+        },
+        {
+          "path": "tests/qt/NativeDownloadCodecTests.cpp",
+          "marker": "rejectsDuplicateMembersEvenEscapedAliases"
+        },
+        {
+          "path": "tests/qt/NativeDownloadSessionTests.cpp",
+          "marker": "totalDeadlineAndEofAreTerminalWithoutDispatch"
         }
       ],
       "evidence": [
@@ -1263,7 +1279,7 @@
         }
       ],
       "remaining": [
-        "Cliente cobre limites/schema, navegação, recusa de destinos identificados e ACK/timeout sem retry; ainda faltam cancelamento real, DNS/redirects/SSRF, expiração/live/restrições/headers/seek, parciais/conversão/publicação segura e autenticação/capacidades do host. Filtro de URL no cliente não prova segurança da rede nem do decoder."
+        "Cliente e fronteira nativa cobrem limites/schema estrito, framing/deadline, origem configurada, recusa de destinos identificados e ACK sem retry; ainda faltam executável/identidade/capacidades do host, deduplicação entre sessões, cancelamento real, DNS/redirects/SSRF, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros e fakes não provam segurança da rede nem do decoder de mídia."
       ]
     },
     {
