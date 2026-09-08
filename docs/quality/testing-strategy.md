@@ -107,6 +107,8 @@ A [coordenação de jobs](../download-jobs.md) acrescenta Catch2 puro para reten
 
 ### E2E e plataforma
 
+O [transporte opcional](../download-network.md) separa testes de policy/HTTP/session com I/O falso de testes reais de socket contra loopback, certificado sintético não secreto e confiança TLS por instância. Exercitar bytes assinados, DNS misto/redirects, fronteiras/quota, EOF/TLS, corpo segmentado, cancelamento reentrante e backpressure, sem benchmarks. Não abrir exceção localhost na policy de produção. O teste de socket não prova DNS real, worker integrado, temporários/conversão, instalação ou mídia da internet.
+
 - poucos cenários centrados em requisitos P0;
 - fixture e estado de configuração isolados por execução;
 - nunca usar arquivos da biblioteca pessoal do usuário;

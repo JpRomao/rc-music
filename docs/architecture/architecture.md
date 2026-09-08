@@ -293,6 +293,8 @@ O [cliente externo e fronteira de recepção](../browser-extension.md), regidos 
 
 ### `MediaSourceResolver`
 
+O [transporte opcional de downloads](../download-network.md) acrescenta `rc_music_download_network`, com Qt Network atrás de `DirectDownloadIo`. `DirectDownloadSession` valida cada destino/redirect e escreve bytes em sink do job; não é `DownloadExecution` completo nem publica MP3. `QtDownloadIo` fornece DNS assíncrono e `PinnedDownloadStream` conecta ao IP aprovado. O parser HTTP próprio é estreito, incremental e limitado para preservar o request-target; não há cliente genérico exposto à UI. Composição em worker, filesystem seguro e conversor continuam separados. O alvo fica OFF por padrão e fora do grafo da aplicação atual.
+
 - converter origem solicitada em descriptor reproduzível;
 - MVP aceita somente arquivo local canônico;
 - implementação remota futura retorna URL, headers, validade e capabilities;

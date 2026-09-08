@@ -41,7 +41,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build puro falhou' }
 ctest --test-dir out/product/download-service-release -N
 ```
 
-Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de dependências ou Registry para estes testes. Os três opcionais da raiz ficam OFF por padrão; a composição atual do player permanece sem serviços de rede/engine.
+Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de dependências ou Registry para estes testes. Os opcionais da raiz ficam OFF por padrão; a composição atual do player permanece sem os novos serviços de rede/engine. O [transporte HTTP/TLS posterior](download-network.md) tem alvo e testes próprios, ainda não conectado à porta de execução desta fila.
 
 ## Evidência do incremento de 2026-09-08
 

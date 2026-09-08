@@ -320,6 +320,8 @@ bool validJobId(const std::string& id) {
 
 } // namespace
 
+bool isAllowedDirectMediaUrl(const QString& raw) { return raw.size() <= max_url_units && allowedMediaUrl(raw); }
+
 NativeDownloadDecodingResult decodeNativeDownloadRequest(const QByteArray& payload) {
     NativeDownloadDecodingResult result;
     if (payload.size() > max_payload_bytes) {
@@ -370,7 +372,7 @@ NativeDownloadDecodingResult decodeNativeDownloadRequest(const QByteArray& paylo
         if (!validTitle(title) || (kind != QStringLiteral("audio") && kind != QStringLiteral("video")) ||
             seen.contains(url))
             return result;
-        if (!allowedMediaUrl(url)) {
+        if (!isAllowedDirectMediaUrl(url)) {
             result.error = DownloadSubmissionError::UnsupportedSource;
             return result;
         }

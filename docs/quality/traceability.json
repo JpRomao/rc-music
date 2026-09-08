@@ -1196,6 +1196,14 @@
         {
           "path": "tests/core/DownloadServiceTests.cpp",
           "marker": "Download receipts deduplicate UUID casing and survive completion at capacity"
+        },
+        {
+          "path": "tests/qt/DirectDownloadSessionTests.cpp",
+          "marker": "approvedDnsIsPinnedAndSuccessfulBytesAreOnlyATransferNotAnImport"
+        },
+        {
+          "path": "tests/qt/PinnedDownloadStreamTests.cpp",
+          "marker": "sendsExactSignedTargetAndLogicalHostToPinnedLoopback"
         }
       ],
       "evidence": [
@@ -1213,7 +1221,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; execução/importação ainda falsas. Completar backend real, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; coordenação isolada não atende o fluxo completo."
+        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; transporte limitado tem policy/session com fakes e socket real em loopback, ainda sem composição no serviço. Completar backend/worker, gate Schannel, conversão/importação, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; componentes isolados não atendem o fluxo completo."
       ]
     },
     {
@@ -1250,7 +1258,7 @@
         }
       ],
       "remaining": [
-        "ADR-0007/0008 adotam cliente/coordenação sem novo backend. ADR-0009 propõe Qt Network/FFmpeg com gates explícitos de segurança/atualização do CLI, proveniência/licenças/distribuição; ainda não aceito para mídia remota. Escolher/revisar host/engine, validar registro Brave e upgrade/ownership; nenhuma aprovação de publicação por associação."
+        "ADR-0007/0008 adotam cliente/coordenação; transporte Qt Network opcional possui ensaio isolado. ADR-0009 mantém gates de egress/cancelamento da validação Schannel, segurança/atualização do CLI, proveniência/licenças/distribuição; ainda não aceito para mídia remota. Escolher/revisar host/engine, validar registro Brave e upgrade/ownership; nenhuma aprovação de publicação por associação."
       ]
     },
     {
@@ -1282,6 +1290,22 @@
         {
           "path": "tests/qt/DownloadJobsModelTests.cpp",
           "marker": "failedImportExposesOnlyFinalFileAndExplicitRetryDoesNotRedownload"
+        },
+        {
+          "path": "tests/qt/DownloadNetworkPolicyTests.cpp",
+          "marker": "entireDnsAnswerSetMustPassBeforeAnyAddressIsUsable"
+        },
+        {
+          "path": "tests/qt/DownloadHttpResponseTests.cpp",
+          "marker": "errorsDistinguishAbsoluteQuotasFromMalformedMedia"
+        },
+        {
+          "path": "tests/qt/DirectDownloadSessionTests.cpp",
+          "marker": "reentrantCancelDuringReadCannotPublishACompletedTransfer"
+        },
+        {
+          "path": "tests/qt/PinnedDownloadStreamTests.cpp",
+          "marker": "certificateFailuresCannotBeRelaxedBySuppliedConfiguration"
         }
       ],
       "evidence": [
@@ -1299,7 +1323,7 @@
         }
       ],
       "remaining": [
-        "Cliente, fronteira e serviço cobrem schema/framing/origem, idempotência entre conexões, coordenação de cancelamento/timeout e resultados obsoletos com fakes. Faltam host, persistência entre execuções, I/O/cancelamento reais, DNS/redirects/SSRF, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros e fakes não provam segurança de rede/decoder."
+        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Faltam composição real DNS/worker/transporte, gate de egress/cancelamento Schannel, host, persistência, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros, fakes e socket isolado não provam o backend completo nem aprovação de mídia remota."
       ]
     },
     {

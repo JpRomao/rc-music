@@ -16,6 +16,8 @@ O incremento de 2026-09-06 refina os atalhos e antecipa o recorte autorizado de 
 
 **Incremento R1.8 de 2026-09-08:** a [fila comum de jobs](download-jobs.md) agora possui serviço C++ puro e model Qt, com admissão idempotente entre canais durante a mesma execução, progresso, cancelamento/timeout confirmado e retry de importação sem novo download. Os testes ligam a sessão nativa ao serviço real; somente execução/importação são falsas. Persistência, rede/conversor reais, host e composição no player continuam pendentes. O [ADR-0008](architecture/decisions/0008-download-job-service.md) aceita esta coordenação; o [ADR-0009](architecture/decisions/0009-download-execution-backends.md) apenas propõe ferramentas e seus gates, sem instalação/publicação.
 
+**Transporte incremental posterior:** [HTTP/TLS e sessão de transferência](download-network.md) implementam destino numérico, política comum de URLs/DNS/redirects e leitura limitada/cancelável. Testes de socket usam loopback sintético, não mídias da internet. Ainda não há composição completa com worker/temporários, porta de execução, conversor/importador, host e UI. A proposta de backend e os gates de segurança/distribuição permanecem abertos.
+
 ## Histórico funcional anterior à aceitação
 
 Os marcos e pendências abaixo registram os respectivos recortes históricos, não uma auditoria atual de todas as funcionalidades. Referências a stack ainda proposta ou A/B suspenso descrevem aquela fase e foram substituídas pelo ADR-0005; a evidência por incremento e o próximo checkpoint vigente ficam no [registro Qt](../experiments/m0/candidates/qt/README.md) e no [plano](development-plan.md).
