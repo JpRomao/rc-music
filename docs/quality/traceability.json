@@ -1170,9 +1170,18 @@
     {
       "id": "FR-051",
       "plan": "R1.1–R1.2, R1.4–R1.10",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/extensions/detector.test.mjs",
+          "marker": "discovers media sources and direct links with absolute deduplicated URLs"
+        },
+        {
+          "path": "tests/extensions/popup.test.mjs",
+          "marker": "explicit authorized submit sends exactly the selection and reports accepted, not completed"
+        }
+      ],
       "evidence": [
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1188,15 +1197,20 @@
         }
       ],
       "remaining": [
-        "Implementar e validar a extensão principal Brave/Chromium com lista e seleção múltipla, protocolo tipado e download/conversão isolados, compartilhados por Lite e Completa; decidir e implementar navegação interna somente na Completa e integração externa opcional nos instaladores. O escopo de produto está aceito; resolução/streaming remoto do ADR-0003 permanece proposto."
+        "Cliente principal com detecção DOM temporária, popup e canal tipado implementado/testado com fakes; completar host nativo, download/conversão/importação, descoberta ampliada, Brave real, integração compartilhada Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; o cliente isolado não atende o fluxo completo."
       ]
     },
     {
       "id": "FR-052",
       "plan": "R1.2–R1.4, R1.6, R1.9–R1.10",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/extensions/manifest.test.mjs",
+          "marker": "MV3 main extension requests only temporary detection and explicit native messaging"
+        }
+      ],
       "evidence": [
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1209,18 +1223,31 @@
         {
           "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
           "marker": "## Desenho técnico a validar antes da implementação"
+        },
+        {
+          "path": "docs/architecture/decisions/0007-main-extension-boundary.md",
+          "marker": "## Segurança, licenças e distribuição"
         }
       ],
       "remaining": [
-        "O ADR-0006 aceita somente a organização do produto. Antes de adicionar dependências remotas, decidir e registrar engine/ferramentas, versões, hashes, termos, licenças, distribuição e atualização por artefato com fontes oficiais atuais; validar registro no Brave e upgrade/ownership entre edições."
+        "ADR-0007 e revisão de fontes oficiais adotam somente APIs Chromium/código próprio do cliente, sem novas dependências de runtime. Escolher/revisar host, downloader/conversor e engine, versões/hashes/licenças/termos/distribuição/atualização por artefato; validar registro Brave e upgrade/ownership. Não há aprovação de publicação ou ferramentas por associação."
       ]
     },
     {
       "id": "FR-053",
       "plan": "R1.2, R1.4–R1.10",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/extensions/native-client.test.mjs",
+          "marker": "timeout cleans channel and ignores late replies without retry"
+        },
+        {
+          "path": "tests/extensions/policy.test.mjs",
+          "marker": "rejects dangerous, local, opaque, credentialed and nonstandard-port candidates without rejecting valid media"
+        }
+      ],
       "evidence": [
         {
           "path": "docs/development-plan.md",
@@ -1236,7 +1263,7 @@
         }
       ],
       "remaining": [
-        "Implementar cenários determinísticos de cancelamento, timeout, expiração, live/restrições, headers e ausência de seek, mais limites/redirects/SSRF, arquivos parciais e finalização segura do download/conversão. Provar ausência de shell concatenado e isolamento de páginas remotas, clientes principal/YouTube e ponte privilegiada; gates ainda abertos."
+        "Cliente cobre limites/schema, navegação, recusa de destinos identificados e ACK/timeout sem retry; ainda faltam cancelamento real, DNS/redirects/SSRF, expiração/live/restrições/headers/seek, parciais/conversão/publicação segura e autenticação/capacidades do host. Filtro de URL no cliente não prova segurança da rede nem do decoder."
       ]
     },
     {

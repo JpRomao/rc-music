@@ -10,6 +10,8 @@
 *.svg text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+extensions/chromium/main/* text eol=lf
+tests/extensions/*.mjs text eol=lf
 *.bin binary
 *.flac binary
 *.m4a binary

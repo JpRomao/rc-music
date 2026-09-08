@@ -96,6 +96,8 @@ As convenções abaixo permanecem documentadas somente para eventual experimento
 
 ### Convenções comuns
 
+O [cliente de extensão opcional](../browser-extension.md#checks-locais) usa `node:test`/assert/VM com DOM, Chrome e relógio falsos, sem runtime npm no produto. Exercitar scripts de produção, validação/schema, escolha explícita, navegação/SPA, coalescência sem starvation e rejeição/timeout sem retry; teste estático de manifesto/CSP não substitui carregamento no Brave. O runner é separado do C++/Qt e não adiciona Node à compilação/execução da Lite. Host/downloads exigirão seus próprios contratos e testes, sem fixtures de sites ou perfis pessoais.
+
 - fixtures são compartilhadas por helper explícito e pelo mesmo manifesto versionado;
 - nomes em inglês descrevem resultado, por exemplo `skip_forward_clamps_at_track_end`;
 - usar Arrange–Act–Assert ou Given–When–Then, sem comentários redundantes;

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RC Music — mídia da página</title>
+    <link rel="stylesheet" href="popup.css">
+    <script type="module" src="popup.mjs"></script>
+  </head>
+  <body>
+    <header class="heading">
+      <span class="brand-mark" aria-hidden="true">RC</span>
+      <div>
+        <p class="eyebrow">RC Music</p>
+        <h1>Mídia da página</h1>
+      </div>
+      <span class="preview-badge">Prévia</span>
+    </header>
+    <main>
+      <div class="page-context">
+        <span id="page-origin">Apenas a página aberta</span>
+        <button id="refresh" type="button">Atualizar</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Preparando a lista de mídia…</p>
+      <ul id="media-list" aria-label="Áudios e vídeos encontrados" hidden></ul>
+      <p id="truncated" class="notice" hidden>A lista atingiu o limite de inspeção. Outros itens podem não aparecer.</p>
+      <div class="selection-summary">
+        <span id="selection-count" aria-live="polite">0 de 20 selecionados</span>
+        <span>Destino: MP3 no player</span>
+      </div>
+      <label class="authorization">
+        <input id="authorize" type="checkbox" disabled>
+        <span>Confirmo que tenho autorização para baixar os itens selecionados.</span>
+      </label>
+      <button id="send" class="primary" type="button" disabled>Baixar selecionados</button>
+      <p class="help">A detecção não baixa arquivos. Vídeos precisam ter áudio compatível para conversão. Conteúdo protegido não é suportado.</p>
+    </main>
+    <footer>
+      <strong>Integração em desenvolvimento</strong>
+      <p>A ponte local ainda não é distribuída neste recorte. Um pedido aceito não significa download concluído. YouTube terá uma extensão separada.</p>
+    </footer>
+  </body>
+</html>

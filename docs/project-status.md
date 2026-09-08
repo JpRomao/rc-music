@@ -12,7 +12,7 @@
 
 O incremento de 2026-09-06 refina os atalhos e antecipa o recorte autorizado de FR-019: Espaço controla reprodução sem clicar o botão focado, setas controlam saltos/volume, Shift+setas navega, F1 alterna aleatório e F2 repetição. Os dois modos têm estado visível e persistido; repetição roda a ocorrência concluída para o fim, e aleatório percorre a rodada sem perder pendentes. Consulte o [manual vigente](user-guide.md); as regras históricas de foco e de fila sem repetição abaixo descrevem os baselines anteriores, não substituem esse contrato.
 
-**Próximo escopo aceito, não implementado:** o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) registra Brave/Chromium, Lite/Completa e extensões principal/YouTube independentes. A Lite preserva o player sem navegador interno; a Completa acrescenta navegação isolada. Ambas integrarão a extensão externa opcional, com lista/seleção múltipla e download/conversão MP3. Não há engine/downloader aprovados ou extensões disponíveis ainda; YouTube não bloqueia a principal e conserva revisão própria.
+**Próximo escopo aceito, parcialmente iniciado:** o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) registra Brave/Chromium, Lite/Completa e extensões principal/YouTube independentes. A Lite preserva o player sem navegador interno; a Completa acrescentará navegação isolada. O [cliente da principal](browser-extension.md) já implementa detecção/lista/seleção múltipla e canal tipado com testes falsos; host/download/conversão, navegação interna e instaladores continuam ausentes. Nada foi instalado no Brave ou registrado no Windows. YouTube não bloqueia a principal e conserva revisão própria.
 
 ## Histórico funcional anterior à aceitação
 

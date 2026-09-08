@@ -1,6 +1,6 @@
 # Fronteira de segurança da extensão principal
 
-**Data:** 2026-09-08. **Estado:** desenho inicial R1.2/R1.7; controles não comprovados até implementação/testes. Download/conversão e receptor nativo ainda exigem revisão própria.
+**Data:** 2026-09-08. **Estado:** desenho inicial R1.2/R1.7; controles do cliente implementados com [testes determinísticos](../browser-extension.md#evidência-do-incremento), sem prova no Brave real. Download/conversão e receptor nativo ainda exigem revisão própria.
 
 Contrato: [ADR-0007](../architecture/decisions/0007-main-extension-boundary.md), [escopo aceito](../architecture/decisions/0006-browser-editions-and-extensions.md), FR-050–053 e NFR-PRIV-001–004.
 
@@ -26,7 +26,7 @@ O filtro de host no navegador é defesa adicional, não prova de endereço públ
 - Lote de 1–20 URLs únicas, até 256 KiB UTF-8; IDs UUID; nenhuma chave desconhecida.
 - URLs absolutas normalizadas sem fragmento, query preservada para funcionamento mas não exibida/logada.
 - Sem userinfo, NUL/controles, IP literal, host de um rótulo/local, porta não padrão ou esquema diferente de HTTP(S).
-- Detector debounced e efêmero durante popup aberto; navegação/desconexão desfaz timers/observadores. Reabrir não acumula observadores.
+- Detector efêmero com coalescência de 200 ms durante popup aberto, sem adiar indefinidamente por mutações contínuas; navegação/desconexão desfaz timers/observadores. Reabrir não acumula observadores.
 - Timeout da resposta nativa de 5 s, cancelamento de observação e resultado incerto sem reenvio.
 
 Esses são limites de segurança/UX, não benchmarks nem garantia de consumo da engine. Ajustes precisam de testes de fronteira, sem usar páginas pessoais.

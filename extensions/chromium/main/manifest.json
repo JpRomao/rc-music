@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "RC Music — Mídia da página",
+  "version": "0.1.0",
+  "description": "Selecione áudio e vídeo da página para enviar ao RC Music. Requer integração local; não inclui YouTube.",
+  "minimum_chrome_version": "106",
+  "permissions": ["activeTab", "scripting", "nativeMessaging"],
+  "action": {
+    "default_title": "Selecionar mídia para o RC Music",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  }
+}

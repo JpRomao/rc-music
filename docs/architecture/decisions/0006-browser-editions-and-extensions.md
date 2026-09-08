@@ -10,6 +10,8 @@
 
 ## Contexto
 
+Atualização de implementação em 2026-09-08: o [ADR-0007](0007-main-extension-boundary.md) especifica o primeiro cliente da extensão principal. O estado abaixo descreve o momento desta decisão; host/download, edições completas e instalação continuam pendentes.
+
 O mantenedor pediu uma extensão que detecte mídia nas páginas, apresente uma lista com seleção individual/múltipla e envie downloads MP4/MP3 ao RC Music, convertendo o áudio de MP4 em MP3. Confirmou Brave como alvo primário, com compatibilidade Chromium em geral; retirou YouTube da lista obrigatória da principal, destinando-o a outra extensão; e pediu uma edição Lite como o player atual e outra com navegação interna, ambas integradas à extensão.
 
 Hoje existe somente o player local, sem extensão, download remoto ou navegador embarcado. O [ADR-0005](0005-windows-product-stack.md) mantém a stack C++/Qt aceita. O [ADR-0003](0003-local-first-and-remote-sources.md) permanece proposto para resolução/reprodução remota: baixar um arquivo e depois importá-lo não exige aprovar streaming remoto no backend local.

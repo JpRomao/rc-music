@@ -289,6 +289,8 @@ O [ADR-0006](decisions/0006-browser-editions-and-extensions.md) aceita o escopo 
 
 Pedidos de download terão fronteira própria: seleção explícita → execução cancelável/limitada → MP3 local validado e finalizado → importação local existente. `OpenSources` continua aceitando paths locais; rede não entra no backend de reprodução por conveniência. A principal não recebe capacidade de YouTube por encaminhamento, mesmo se o componente independente estiver presente. O ADR registra os critérios de isolamento, permissões, instalação e testes; nenhum desses módulos é anunciado como já disponível.
 
+O [primeiro cliente externo](../browser-extension.md), regido pelo [ADR-0007](decisions/0007-main-extension-boundary.md), fica em `extensions/chromium/main` e não entra no grafo C++/Qt. Detector isolado só relata; popup próprio valida documento/seleção e chama Native Messaging, sem service worker com comandos genéricos. Ainda não há receptor nativo ou serviço de download/conversão. As [ameaças de rede e do host](../security/browser-extension-threat-model.md) precisam ser verificadas antes de ativar downloads reais; os testes do cliente não as substituem.
+
 ### `MediaSourceResolver`
 
 - converter origem solicitada em descriptor reproduzível;

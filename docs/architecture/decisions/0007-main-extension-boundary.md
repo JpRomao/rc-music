@@ -1,6 +1,6 @@
 # ADR-0007: fronteira da extensão principal Chromium
 
-**Estado:** Proposto
+**Estado:** Aceito
 
 **Data:** 2026-09-08
 
@@ -8,9 +8,9 @@
 
 ## Contexto
 
-O [ADR-0006](0006-browser-editions-and-extensions.md) aceita a extensão principal independente de YouTube e compartilhada pelas edições Lite/Completa. Precisamos implementar a seleção de mídia sem transformar conteúdo de páginas em comandos privilegiados nem adicionar acesso permanente ao histórico. A revisão abaixo precede código; aceitação técnica depende de adoção e testes no incremento correspondente.
+O [ADR-0006](0006-browser-editions-and-extensions.md) aceita a extensão principal independente de YouTube e compartilhada pelas edições Lite/Completa. Precisamos implementar a seleção de mídia sem transformar conteúdo de páginas em comandos privilegiados nem adicionar acesso permanente ao histórico. A revisão foi registrada como proposta no commit `a42a470`, antes do código; a aceitação técnica ocorre pela adoção no [cliente testado](../../browser-extension.md), não por aprovação de host, ferramentas ou distribuição.
 
-## Decisão proposta
+## Decisão
 
 Usar Manifest V3, JavaScript/HTML/CSS próprios sem dependências de runtime ou código remoto, e APIs Chromium 106+ (`documentId`). Brave é o alvo primário; a compatibilidade real continua exigindo smoke isolado autorizado. Node.js já disponível serve somente ao runner `node:test` local; não é empacotado, instalado nem exigido pelo player.
 
@@ -18,7 +18,7 @@ A extensão usa `activeTab`, `scripting` e `nativeMessaging`. O clique abre o po
 
 O detector somente produz candidatos. A página privilegiada do popup valida snapshots, apresenta seleção explícita e chama Native Messaging diretamente. Não há listener genérico de comandos de páginas/service worker; o detector não tem caminho para iniciar downloads. O canal detector aceita apenas a identidade e URL exatas do popup próprio e para ao desconectar. O popup fixa aba/documento/URL, invalida mudanças de navegação/SPA e revalida antes do envio. O [modelo de ameaças](../../security/browser-extension-threat-model.md) define limites e responsabilidades que o host futuro também deverá impor.
 
-Detecção inicial cobre `audio`, `video`, seus `source` e links diretos MP3/MP4/M4A na página principal, com atualização enquanto o popup estiver aberto. Não confundir candidatos com arquivos decodificados ou autorização do titular. Iframes sem autorização, shadow roots fechados, tráfego anterior ao clique, blob/MSE, playlists adaptativas e conteúdo protegido continuam lacunas explícitas, não suporte universal. Evoluir cobertura depois, sem reduzir o requisito a este primeiro recorte.
+Detecção inicial cobre `audio`, `video`, seus `source` e links diretos MP3/MP4/M4A na página principal, com atualização enquanto o popup estiver aberto. Não confundir candidatos com arquivos decodificados ou autorização do titular. Iframes, Shadow DOM aberto/fechado, tráfego anterior ao clique, blob/MSE, playlists adaptativas e conteúdo protegido continuam lacunas explícitas, não suporte universal. Evoluir cobertura depois, sem reduzir o requisito a este primeiro recorte.
 
 O pedido `download.request` v1 contém ID e de 1 a 20 itens com URL HTTP(S), título e tipo de candidato. Não aceita comando, destino no disco, headers, cookies ou opções de executável. Só seleção explícita e confirmação de uso autorizado o produzem. Resposta correlacionada significa aceitação do lote pelo host, nunca download/conversão concluídos. Não retransmitir automaticamente após timeout/desconexão; resultado incerto exige conferir a fila no app antes de repetir.
 
