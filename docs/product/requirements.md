@@ -106,6 +106,8 @@ Refinamento confirmado de FR-050–053 em 2026-09-06, detalhado no [ADR-0006](..
 
 Incrementos de 2026-09-08: o [cliente MV3 e recepção C++](../browser-extension.md) implementam detecção temporária/lista/seleção e protocolo; a [coordenação de jobs](../download-jobs.md) trata admissão, progresso/cancelamento e importação via portas falsas nos testes. O [transporte opcional](../download-network.md) acrescenta policy DNS/redirects, HTTP/TLS limitado e sessão de transferência, com socket testado em loopback e ainda fora do player. Isso atualiza o estado de implementação do refinamento acima, não reduz seu escopo: executável de host, composição real do downloader, gate de TLS, conversão/importação, persistência dos jobs, descoberta ampliada, Brave real, Completa e instaladores continuam pendentes; FR-051–053 não estão concluídos.
 
+Incremento de 2026-10-01: a [sessão comum de worker](../download-conversion.md#composição-do-job-no-controlador) compõe transferência falsa e filesystem/conversor/decodificação/publicação reais, com cancelamento e erros tipados. Não é o executor rápido do app nem confirmação de DNS/TLS encerrado. A Lite/Completa continuam compartilhando esta implementação sem navegador obrigatório; importação, host, rede isolada, recuperação e distribuição ainda precisam de seus gates.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |

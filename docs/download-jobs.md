@@ -10,7 +10,7 @@ Contratos: [requisitos FR-051–053](product/requirements.md#26-extensões-naveg
 
 Admissão copia o lote inteiro e não inicia I/O. O serviço conserva recibos, sem expulsão, até ser destruído; limita inicialmente 128 jobs, 64 pedidos e 1 MiB de strings de pedidos (ID/URLs/títulos, não o overhead de containers/snapshots). Ao atingir um teto, recusa novas admissões sem perder as anteriores. Esses limites são ajustáveis por composição confiável, não por mensagem da página. Ainda falta a persistência/limpeza limitada de histórico para recuperação após restart; não anunciar deduplicação entre processos independentes.
 
-[DownloadExecution e DownloadImport](../include/m0/ports/DownloadExecution.hpp) separam execução e importação. O executor real ainda não existe. Testes usam fakes de I/O, não downloads simulados apresentados como concluídos ao usuário.
+[DownloadExecution e DownloadImport](../include/m0/ports/DownloadExecution.hpp) separam execução e importação. A porta concreta do serviço ainda não existe. A [sessão worker-only](download-conversion.md#composição-do-job-no-controlador) já compõe transferência falsa, filesystem/conversor/validação/publicação reais em testes, sem ser ligada à fila. Não confundir esse resultado com DNS/TLS isolado ou downloads disponíveis ao usuário.
 
 - Uma execução ativa, fila FIFO. Fases de download, conversão e publicação têm progresso próprio; total desconhecido mantém indicador indeterminado.
 - Cancelamento de item na fila é imediato; em execução aguarda confirmação terminal. Timeout total inicial de 30 minutos também pede cancelamento, sem presumir que o worker parou. Nenhum próximo trabalho começa antes de confirmar a saída do ativo.

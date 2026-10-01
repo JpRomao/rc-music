@@ -59,6 +59,12 @@ Executável fixo por caminho confiável, vetor de argumentos, janela oculta e ne
 
 Validar o MP3 final por conteúdo/áudio, publicar atomicamente sem sobrescrever arquivos existentes e somente então chamar a importação local. Cancelamento/falha remove apenas parciais pertencentes ao job, nunca arquivos pessoais ou diretórios amplos.
 
+### Composição worker-only e ownership
+
+A sessão [WindowsDownloadJobSession](../../../src/adapters/WindowsDownloadJobSession.hpp) compõe transporte, workspace e conversor no controlador, ainda fora da porta/UI. Testes usam `DirectDownloadIo` falso e fixtures autenticadas, com arquivos/processos/validação/publicação reais. Isso não aceita TLS, CLI ou distribuição: os gates anteriores continuam abertos e este ADR permanece proposto.
+
+O controlador deve conservar ownership de disco mesmo ao encerrar a rede. A direção de implementação é DNS/TLS em subprocesso diskless, com pedido privado por stdin e saída limitada; conversor é outro subprocesso de uma ferramenta por vez. Não colocar o workspace inteiro em filho que pode ser morto e então tentar limpar somente por UUID/path recebido em JSON. Supervisor mantém Job de um processo; tentativa de worker integral/descendentes exige handles/ack próprios, não prova por accounting vazio. A sessão reconhece conversor antes de cleanup, mas não confirma que resolver Qt emprestado parou; não conectá-la diretamente como `DownloadExecution`.
+
 ## Alternativas, consequências e critérios de revisão
 
 O [incremento local Windows de 2026-10-01](../../download-conversion.md) implementa workspace privado/limitado, supervisor com pipes limitados/Job Object e conversão seguida de inspeção MP3/decodificação integral. Os testes usam apenas fixtures sintéticas autenticadas e ferramentas existentes; não mudam a restrição do CLI 8.1.1 para mídia remota. Publicação por handle sem overwrite, quota agregada e cancelamento reconhecido têm evidência própria, mas composição em worker, sandbox de rede/filesystem, importação, atualização/licenças e distribuição continuam abertas. O ADR não se torna aceito por esses componentes isolados.
