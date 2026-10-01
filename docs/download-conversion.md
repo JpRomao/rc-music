@@ -11,7 +11,7 @@ O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permane
 | Componente | Contrato deste incremento |
 | --- | --- |
 | [WindowsDownloadWorkspace](../src/adapters/WindowsDownloadWorkspace.hpp) | `create()` abre uma área nova privada; `inputSink()`/`outputSink()` compartilham a cota; `sealInput()`/`sealOutput()` fecham escrita e tornam os paths internos disponíveis. `validateAndPublish()` exige validação confiável e publica sem sobrescrever. `cleanup()` remove somente identidades pertencentes ao job. |
-| [WindowsDownloadProcess](../src/adapters/WindowsDownloadProcess.hpp) | `start()` recebe executável, argumentos e diretório locais confiáveis; `poll()` retorna dados limitados e estados; `cancel()` solicita parada do processo próprio. O estado terminal reconhece término do processo **e** conclusão dos pipes. |
+| [WindowsDownloadProcess](../src/adapters/WindowsDownloadProcess.hpp) | `start()` recebe executável, argumentos, diretório e payload stdin limitado da composição confiável; `poll()` retorna dados limitados e estados; `cancel()` solicita parada do processo próprio. O estado terminal reconhece término do processo e conclusão dos pipes. |
 | [FfmpegDownloadCodec](../src/adapters/FfmpegDownloadCodec.hpp) | Constrói vetores de argumentos locais, decodifica JSON de inspeção com campos limitados e interpreta progresso incremental. Não lança processos nem aceita URLs. |
 | [WindowsLocalMediaConverter](../src/adapters/WindowsLocalMediaConverter.hpp) | `start(workspace, now_ms)` exige entrada selada e saída vazia; `poll(now_ms)` coordena inspeção, conversão, inspeção de saída e decodificação integral; `cancel()` aguarda parada reconhecida. `Validated` não publica nem importa. |
 
@@ -38,6 +38,10 @@ Os ancestrais e staging negam compartilhamento de escrita/remoção. A folha de 
 Não há concatenação de shell ou busca implícita de executáveis em `PATH`. A composição fornece caminhos absolutos existentes e argumentos separados. O processo usa `CREATE_NO_WINDOW`, sem abrir terminal, herda apenas os handles de stdin/stdout/stderr previstos e pertence a Job Object próprio. O fechamento do Job encerra seus filhos; não são encerrados processos alheios.
 
 O Job limita a memória de processo/job a **512 MiB por padrão** e restringe descendentes. Esse limite nativo não limita a memória do player/worker proprietário e **não restringe permissões de rede ou sistema de arquivos**. Não constitui sandbox de conteúdo hostil. O deadline padrão é **30 minutos**, compartilhado entre todas as etapas do conversor, sem renovar o total a cada processo.
+
+O Job permanece limitado a **um processo**, sem breakaway. Não usar este supervisor para um worker integral que depois lança FFmpeg: o limite ancestral impediria a criação da ferramenta. O controlador deve manter o workspace e supervisionar separadamente rede e conversão; ampliar a árvore exige ownership/handles e reconhecimento próprios, não apenas observar `ActiveProcesses == 0`. Esta ampliação não faz parte do incremento.
+
+`standard_input` permite uma única mensagem opaca de até **256 KiB**, enviada por pipe nativo com buffer fixo e backpressure, seguida de EOF. Entrada vazia conserva stdin em NUL. O supervisor não interpreta JSON/framing, não coloca esse payload em argumentos ou ambiente e não constitui um host Native Messaging. O proprietário futuro ainda precisa limitar e validar seu protocolo e fornecer ambiente/artefatos revisados para o worker TLS; o ambiente herdado atual não é uma allowlist de segurança.
 
 Pipes nativos têm buffers fixos/backpressure; `poll()` entrega no máximo **64 KiB somando ambos os canais**. A conversão limita stdout a 512 MiB e stderr a 4 MiB, além da cota agregada do workspace. As inspeções limitam JSON a 16 KiB; a validação final não espera stdout útil. Limite/deadline/cancelamento solicitam encerramento do Job e continuam em `Stopping` até reconhecer processo encerrado e pipes concluídos.
 
@@ -99,6 +103,12 @@ TDD de 2026-10-01: codec começou com oito falhas e chegou a 12 passagens; a reg
 Fechamento Release MSVC 19.44/Qt 6.11.2 com `/W4 /WX`: codec **13/13**, workspace **27 passagens/zero falhas/dois skips** de symlink pela política do host, processo **21/21** e conversor **13/13**. O teste de junction durante validação passou sem privilégio. Conversão real M4A-AAC/MP3 com Unicode, derivado sem áudio, quota, cancelamento e clocks passaram. Helper exclusivo de teste confirma falha após produzir MP3 válido quando o decoder final retorna erro, e deadline total após encerrar o primeiro probe.
 
 A seleção `^rc_music\.(download-network\.|downloads\.|browser\.)` passou **41/41 CTest** em 10,36 s, incluindo suites anteriores efetivamente reexecutadas. `BUILD_TESTING=OFF` recompilou a biblioteca, listou zero testes e seu grafo excluiu Qt Test, Catch2, helpers, fixtures, paths do CLI, Multimedia e WebEngine. Formato, documentos/rastreabilidade e diff foram verificados separadamente. O core independente e JavaScript não foram reexecutados neste incremento C++ sem alteração dessas camadas; evidências anteriores não são execução atual. Nenhum benchmark, mídia pessoal, download de mídia da internet, instalação ou runtime/instalador novo foi executado.
+
+### Incremento de stdin privado
+
+Em 2026-10-01, o teste com stdin ainda conectado a NUL reproduziu perda do payload, e o teste acima de 256 KiB reproduziu admissão indevida. O supervisor com envio assíncrono passou **27/27 casos Qt, zero falhas/skips**, incluindo os 21 anteriores: bytes binários/Unicode, limite exato, EOF, rejeição acima do teto, cancelamento com escrita pendente e reuso. Build Release MSVC 19.44/Qt 6.11.2, CTest focado **1/1** em 2,84 s, formato e revisão do diff passaram.
+
+A avaliação de um worker com descendentes foi retirada deste incremento: accounting vazio não é prova suficiente de todos os handles encerrados. O contrato original de um processo foi preservado, não se alegou validação multiprocesso e nenhum teste preexistente foi removido. Rede diskless e conversão separadas, com workspace no controlador, permanecem a direção de composição; não há host/worker de rede executável neste checkpoint.
 
 ## Gates que continuam abertos
 

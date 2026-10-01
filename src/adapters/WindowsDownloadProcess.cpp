@@ -201,6 +201,147 @@ class NativePipe final {
     bool failed_{false};
 };
 
+class NativeInput final {
+  public:
+    ~NativeInput() { close(); }
+
+    [[nodiscard]] bool create(PSECURITY_DESCRIPTOR descriptor, const QByteArray& payload) {
+        const auto name =
+            QStringLiteral("\\\\.\\pipe\\RCMusic-download-input-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto native_name = name.toStdWString();
+        SECURITY_ATTRIBUTES server_attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+        writer_.reset(::CreateNamedPipeW(native_name.c_str(),
+                                         PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                                         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                         1, pipe_bytes, 0, 0, &server_attributes));
+        if (!writer_.valid())
+            return false;
+        SECURITY_ATTRIBUTES client_attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, TRUE};
+        reader_.reset(::CreateFileW(native_name.c_str(), GENERIC_READ, 0, &client_attributes, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (!reader_.valid())
+            return false;
+        OVERLAPPED connection{};
+        if (!::ConnectNamedPipe(writer_.get(), &connection) && ::GetLastError() != ERROR_PIPE_CONNECTED)
+            return false;
+        event_.reset(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
+        if (!event_.valid())
+            return false;
+        payload_ = payload;
+        offset_ = 0;
+        ended_ = false;
+        failed_ = false;
+        cancelled_ = false;
+        return true;
+    }
+
+    [[nodiscard]] HANDLE reader() const { return reader_.get(); }
+    void releaseReader() { reader_.reset(); }
+    [[nodiscard]] bool ended() const { return ended_; }
+    [[nodiscard]] bool failed() const { return failed_; }
+
+    void poll() {
+        if (ended_)
+            return;
+        if (pending_) {
+            DWORD count = 0;
+            if (::GetOverlappedResult(writer_.get(), &operation_, &count, FALSE)) {
+                pending_ = false;
+                complete(count);
+            } else {
+                const auto error = ::GetLastError();
+                if (error == ERROR_IO_INCOMPLETE)
+                    return;
+                pending_ = false;
+                failed_ = !cancelled_;
+                finish();
+                return;
+            }
+        }
+        if (cancelled_ || offset_ == payload_.size()) {
+            finish();
+            return;
+        }
+        if (failed_) {
+            finish();
+            return;
+        }
+        const auto count = static_cast<DWORD>(std::min<qsizetype>(pipe_bytes, payload_.size() - offset_));
+        std::copy_n(payload_.constData() + offset_, count, buffer_.data());
+        requested_ = count;
+        operation_ = {};
+        operation_.hEvent = event_.get();
+        ::ResetEvent(event_.get());
+        DWORD written = 0;
+        if (::WriteFile(writer_.get(), buffer_.data(), count, &written, &operation_)) {
+            complete(written);
+            if (!failed_ && offset_ == payload_.size())
+                finish();
+        } else if (::GetLastError() == ERROR_IO_PENDING) {
+            pending_ = true;
+        } else {
+            failed_ = true;
+            finish();
+        }
+    }
+
+    void cancel() {
+        if (ended_)
+            return;
+        cancelled_ = true;
+        if (pending_)
+            ::CancelIoEx(writer_.get(), &operation_);
+        else
+            finish();
+    }
+
+    void close() {
+        reader_.reset();
+        if (pending_ && writer_.valid()) {
+            ::CancelIoEx(writer_.get(), &operation_);
+            DWORD ignored = 0;
+            // The same worker-only lifetime safeguard as the output pipes.
+            ::GetOverlappedResult(writer_.get(), &operation_, &ignored, TRUE);
+        }
+        pending_ = false;
+        finish();
+        operation_ = {};
+        failed_ = false;
+        cancelled_ = false;
+        requested_ = 0;
+    }
+
+  private:
+    void complete(DWORD count) {
+        if (count == 0 || count > requested_)
+            failed_ = true;
+        else
+            offset_ += static_cast<qsizetype>(count);
+    }
+
+    void finish() {
+        writer_.reset();
+        event_.reset();
+        payload_.clear();
+        ::SecureZeroMemory(buffer_.data(), buffer_.size());
+        offset_ = 0;
+        ended_ = true;
+    }
+
+    Handle reader_{};
+    Handle writer_{};
+    Handle event_{};
+    OVERLAPPED operation_{};
+    std::array<char, pipe_bytes> buffer_{};
+    QByteArray payload_{};
+    qsizetype offset_{0};
+    DWORD requested_{0};
+    bool pending_{false};
+    bool ended_{true};
+    bool failed_{false};
+    bool cancelled_{false};
+};
+
 [[nodiscard]] bool validText(const QString& value) {
     if (value.contains(QChar::Null))
         return false;
@@ -226,7 +367,7 @@ class NativePipe final {
         !localAbsolute(config.working_directory) || !QFileInfo(config.working_directory).isDir() ||
         config.max_stdout_bytes == 0 || config.max_stderr_bytes == 0 || config.max_memory_bytes == 0 ||
         config.max_memory_bytes > std::numeric_limits<SIZE_T>::max() || config.total_timeout_ms <= 0 ||
-        config.arguments.size() > 128)
+        config.arguments.size() > 128 || config.standard_input.size() > download_process_max_input_bytes)
         return false;
     qsizetype units = config.executable.size();
     for (const auto& argument : config.arguments) {
@@ -252,6 +393,7 @@ struct WindowsDownloadProcess::Impl final {
     Handle process_handle{};
     NativePipe stdout_pipe{};
     NativePipe stderr_pipe{};
+    NativeInput stdin_pipe{};
     STARTUPINFOEXW startup{};
     std::array<HANDLE, 1> assigned_jobs{};
     std::array<HANDLE, 3> inherited{};
@@ -277,6 +419,7 @@ struct WindowsDownloadProcess::Impl final {
     void release() {
         if (job.valid())
             ::TerminateJobObject(job.get(), 91);
+        stdin_pipe.close();
         stdout_pipe.close();
         stderr_pipe.close();
         if (process && process->state() != QProcess::NotRunning) {
@@ -288,6 +431,7 @@ struct WindowsDownloadProcess::Impl final {
         job.reset();
         releaseAttributes();
         created_information = nullptr;
+        config.standard_input.clear();
     }
 
     [[nodiscard]] bool prepare() {
@@ -304,7 +448,8 @@ struct WindowsDownloadProcess::Impl final {
             return false;
         LocalAllocation descriptor;
         if (!userPipeSecurity(descriptor) || !stdout_pipe.create(descriptor.value) ||
-            !stderr_pipe.create(descriptor.value))
+            !stderr_pipe.create(descriptor.value) ||
+            (!config.standard_input.isEmpty() && !stdin_pipe.create(descriptor.value, config.standard_input)))
             return false;
         SIZE_T bytes = 0;
         ::InitializeProcThreadAttributeList(nullptr, 2, 0, &bytes);
@@ -328,6 +473,7 @@ struct WindowsDownloadProcess::Impl final {
         stopped_state = state;
         update.error = error;
         update.state = WindowsDownloadProcessState::Stopping;
+        stdin_pipe.cancel();
         if (job.valid())
             ::TerminateJobObject(job.get(), 92);
     }
@@ -416,6 +562,8 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
         value.startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
         value.startup.StartupInfo.wShowWindow = SW_HIDE;
+        if (!value.config.standard_input.isEmpty())
+            value.startup.StartupInfo.hStdInput = value.stdin_pipe.reader();
         value.startup.StartupInfo.hStdOutput = value.stdout_pipe.writer();
         value.startup.StartupInfo.hStdError = value.stderr_pipe.writer();
         value.inherited = {value.startup.StartupInfo.hStdInput, value.stdout_pipe.writer(), value.stderr_pipe.writer()};
@@ -450,6 +598,8 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.releaseAttributes();
     value.stdout_pipe.releaseWriter();
     value.stderr_pipe.releaseWriter();
+    value.stdin_pipe.releaseReader();
+    value.config.standard_input.clear();
     value.update.state = WindowsDownloadProcessState::Running;
     if (!monitored)
         value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
@@ -472,15 +622,19 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
     } else if (value.job.valid()) {
         ::TerminateJobObject(value.job.get(), 92);
     }
+    value.stdin_pipe.poll();
+    if (value.stdin_pipe.failed())
+        value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
     value.update.stdout_chunk = value.take(value.stdout_pipe, value.stdout_count, value.config.max_stdout_bytes);
     value.update.stderr_chunk = value.take(value.stderr_pipe, value.stderr_count, value.config.max_stderr_bytes);
     const bool process_ended = value.processEnded();
-    if (process_ended && value.stdout_pipe.ended() && value.stderr_pipe.ended()) {
+    if (process_ended && value.stdin_pipe.ended() && value.stdout_pipe.ended() && value.stderr_pipe.ended()) {
         value.update.state = value.update.state == WindowsDownloadProcessState::Stopping
                                  ? value.stopped_state
                                  : WindowsDownloadProcessState::Exited;
         value.stdout_pipe.close();
         value.stderr_pipe.close();
+        value.stdin_pipe.close();
         value.process_handle.reset();
         value.job.reset();
     }

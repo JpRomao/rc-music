@@ -10,6 +10,7 @@
 namespace music_player::m0 {
 
 inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
+inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
 
 // Trusted composition only: these are never accepted from an extension/page.
 // The executable and working directory must be absolute local filesystem paths.
@@ -17,6 +18,9 @@ struct WindowsDownloadProcessConfig final {
     QString executable{};
     QStringList arguments{};
     QString working_directory{};
+    // One bounded private request, never a command-line/environment argument.
+    // Empty keeps stdin connected to NUL; nonempty is followed by EOF.
+    QByteArray standard_input{};
     quint64 max_stdout_bytes{512ULL * 1024 * 1024};
     quint64 max_stderr_bytes{4ULL * 1024 * 1024};
     quint64 max_memory_bytes{512ULL * 1024 * 1024};
@@ -37,7 +41,8 @@ struct WindowsDownloadProcessUpdate final {
 // Construct/use/destroy on the download worker with a Qt event loop. poll is
 // nonblocking and returns at most 64 KiB across both channels. Native pipes have
 // fixed read buffers and backpressure, without QProcess's unbounded buffers.
-// A terminal state acknowledges both process termination and pipe completion.
+// A terminal state acknowledges initial process termination and all input/output
+// pipe completion. The Job permits only this process, never running descendants.
 // Cancellation never means that unacknowledged I/O has already stopped.
 // Job Object restrictions bound resource use and lifecycle, not filesystem or
 // network permissions. The caller still owns trusted arguments/media policy.

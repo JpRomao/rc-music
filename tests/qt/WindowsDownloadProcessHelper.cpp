@@ -10,6 +10,7 @@
 #include <QStringList>
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <string>
 
@@ -75,6 +76,21 @@ int spawnProbe(const QString& executable) {
                : 75;
 }
 
+int readInput() {
+    std::array<char, 4093> block{};
+    for (;;) {
+        DWORD count = 0;
+        if (!::ReadFile(::GetStdHandle(STD_INPUT_HANDLE), block.data(), static_cast<DWORD>(block.size()), &count,
+                        nullptr))
+            return ::GetLastError() == ERROR_BROKEN_PIPE ? 0 : 86;
+        if (count == 0)
+            return 0;
+        if (!writeBytes(STD_OUTPUT_HANDLE, QByteArray(block.data(), static_cast<qsizetype>(count))))
+            return 87;
+        ::Sleep(1);
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -94,6 +110,8 @@ int main(int argc, char* argv[]) {
         return inspect();
     if (mode == QStringLiteral("spawn-probe"))
         return spawnProbe(application.applicationFilePath());
+    if (mode == QStringLiteral("read-stdin"))
+        return readInput();
     if (mode == QStringLiteral("fill") && arguments.size() == 4) {
         bool stdout_ok = false;
         bool stderr_ok = false;

@@ -177,6 +177,71 @@ class WindowsDownloadProcessTests final : public QObject {
         QCOMPARE(after.state, WindowsDownloadProcessState::Exited);
     }
 
+    void sendsPrivateBinaryInputInBoundedSegmentsAndThenEof_data() {
+        QTest::addColumn<int>("size");
+        QTest::newRow("empty NUL") << 0;
+        QTest::newRow("small binary UTF8") << 29;
+        QTest::newRow("several pipe buffers") << 131073;
+        QTest::newRow("exact input ceiling") << int{download_process_max_input_bytes};
+    }
+
+    void sendsPrivateBinaryInputInBoundedSegmentsAndThenEof() {
+        QFETCH(int, size);
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("read-stdin")});
+        const QByteArray pattern = QStringLiteral("PRIVATE_REQUEST_ação_日本").toUtf8() + QByteArray("\0\xff", 2);
+        while (config.standard_input.size() < size)
+            config.standard_input += pattern.left(size - config.standard_input.size());
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        QCOMPARE(result.output, config.standard_input);
+        QVERIFY(result.error_output.isEmpty());
+        QVERIFY(result.maximum_poll_bytes <= download_process_poll_bytes);
+    }
+
+    void rejectsExcessiveInputBeforeCreatingAChild() {
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("read-stdin")});
+        config.standard_input = QByteArray(download_process_max_input_bytes + 1, 'X');
+        WindowsDownloadProcess process;
+        QVERIFY(!process.start(config, 0));
+        QCOMPARE(process.poll(0).state, WindowsDownloadProcessState::Failed);
+        QCOMPARE(process.poll(0).error, WindowsDownloadProcessError::InvalidConfiguration);
+        config.standard_input = QByteArrayLiteral("a new request");
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.output, config.standard_input);
+    }
+
+    void cancelsWhileInputIsBackpressuredAndCanStartAgain() {
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("hang")});
+        config.standard_input = QByteArray(download_process_max_input_bytes, 'X');
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        QByteArray ready;
+        QVERIFY(waitForReady(process, ready));
+        NativeProcessGuard child{::OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, readyPid(ready))};
+        QVERIFY(child.handle != nullptr);
+        process.cancel();
+        Collected cancelled;
+        QVERIFY(collect(process, cancelled));
+        QCOMPARE(cancelled.update.state, WindowsDownloadProcessState::Cancelled);
+        QCOMPARE(::WaitForSingleObject(child.handle, 0), DWORD{WAIT_OBJECT_0});
+        config.arguments = {QStringLiteral("read-stdin")};
+        config.standard_input = QByteArrayLiteral("replacement private payload");
+        QVERIFY(process.start(config, 0));
+        Collected restarted;
+        QVERIFY(collect(process, restarted));
+        QCOMPARE(restarted.output, config.standard_input);
+        QCOMPARE(restarted.update.exit_code, std::optional<int>{0});
+    }
+
     void hidesConsoleAndAppliesJobLimitsBeforeHelperExecution() {
         QTemporaryDir directory;
         auto config = configuration(directory, {QStringLiteral("inspect")});
