@@ -8,9 +8,12 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLibraryInfo>
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QTest>
@@ -106,6 +109,25 @@ struct QtProcessGuard final {
     }
 };
 
+class TestEnvironmentValue final {
+  public:
+    TestEnvironmentValue(const char* name, const QByteArray& value)
+        : name_(name), present_(qEnvironmentVariableIsSet(name)), previous_(qgetenv(name)) {
+        qputenv(name_, value);
+    }
+    ~TestEnvironmentValue() {
+        if (present_)
+            qputenv(name_, previous_);
+        else
+            qunsetenv(name_);
+    }
+
+  private:
+    const char* name_;
+    bool present_;
+    QByteArray previous_;
+};
+
 int supervisorChild(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     QTemporaryDir directory;
@@ -175,6 +197,160 @@ class WindowsDownloadProcessTests final : public QObject {
         QVERIFY(after.stdout_chunk.isEmpty());
         QVERIFY(after.stderr_chunk.isEmpty());
         QCOMPARE(after.state, WindowsDownloadProcessState::Exited);
+    }
+
+    void suppliedEnvironmentDoesNotInheritParentSecretsOrPluginSearch() {
+        const TestEnvironmentValue secret("RC_MUSIC_PROCESS_TEST_SECRET", QByteArrayLiteral("synthetic-secret"));
+        const TestEnvironmentValue plugin_path("QT_PLUGIN_PATH", QByteArrayLiteral("synthetic-untrusted-plugins"));
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("environment")});
+        QProcessEnvironment isolated;
+        // Only runtime requirements and the deliberately allowed synthetic value.
+        isolated.insert(QStringLiteral("SystemRoot"), qEnvironmentVariable("SystemRoot"));
+        isolated.insert(QStringLiteral("PATH"), qEnvironmentVariable("PATH"));
+        isolated.insert(QStringLiteral("RC_MUSIC_PROCESS_TEST_ALLOWED"), QStringLiteral("ação 日本"));
+        isolated.insert(QStringLiteral("FFREPORT"), QStringLiteral("file=forbidden-report.log"));
+        config.environment = isolated;
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        const auto values = QJsonDocument::fromJson(result.output).object();
+        QCOMPARE(values.value(QStringLiteral("sentinel")).toString(), QString{});
+        QCOMPARE(values.value(QStringLiteral("qt_plugin_path")).toString(), QString{});
+        QCOMPARE(values.value(QStringLiteral("allowed")).toString(), QStringLiteral("ação 日本"));
+        QCOMPARE(values.value(QStringLiteral("ffreport")).toString(), QString{});
+        QVERIFY(!QFileInfo::exists(directory.filePath(QStringLiteral("forbidden-report.log"))));
+    }
+
+    void defaultEnvironmentRemainsFiltered() {
+        const TestEnvironmentValue secret("RC_MUSIC_PROCESS_TEST_SECRET", QByteArrayLiteral("synthetic-inherited"));
+        const TestEnvironmentValue report("FFREPORT", QByteArrayLiteral("file=forbidden-report.log"));
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("environment")});
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        const auto values = QJsonDocument::fromJson(result.output).object();
+        QCOMPARE(values.value(QStringLiteral("sentinel")).toString(), QStringLiteral("synthetic-inherited"));
+        QCOMPARE(values.value(QStringLiteral("ffreport")).toString(), QString{});
+    }
+
+    void rejectsMalformedOrImplicitlyInheritedEnvironment_data() {
+        QTest::addColumn<QString>("mutation");
+        for (const auto& mutation : {"empty", "missing path", "missing root", "empty root", "nul value", "nul key",
+                                     "equals key", "too many variables", "too many units"})
+            QTest::newRow(mutation) << QString::fromLatin1(mutation);
+    }
+
+    void rejectsMalformedOrImplicitlyInheritedEnvironment() {
+        QFETCH(QString, mutation);
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("environment")});
+        QProcessEnvironment environment;
+        environment.insert(QStringLiteral("PATH"), QString{});
+        environment.insert(QStringLiteral("SystemRoot"), QStringLiteral("C:/Windows"));
+        if (mutation == QStringLiteral("empty"))
+            environment.clear();
+        else if (mutation == QStringLiteral("missing path"))
+            environment.remove(QStringLiteral("PATH"));
+        else if (mutation == QStringLiteral("missing root"))
+            environment.remove(QStringLiteral("SystemRoot"));
+        else if (mutation == QStringLiteral("empty root"))
+            environment.insert(QStringLiteral("SystemRoot"), QString{});
+        else if (mutation == QStringLiteral("nul value"))
+            environment.insert(QStringLiteral("VALUE"), QString::fromUtf8("a\0b", 3));
+        else if (mutation == QStringLiteral("nul key"))
+            environment.insert(QString::fromUtf8("A\0B", 3), QStringLiteral("value"));
+        else if (mutation == QStringLiteral("equals key"))
+            environment.insert(QStringLiteral("A=B"), QStringLiteral("value"));
+        else if (mutation == QStringLiteral("too many variables")) {
+            for (int index = 0; index < 127; ++index)
+                environment.insert(QStringLiteral("VARIABLE_%1").arg(index), QStringLiteral("value"));
+        } else
+            environment.insert(QStringLiteral("VALUE"), QString(download_process_max_environment_units, 'X'));
+        config.environment = environment;
+        WindowsDownloadProcess process;
+        QVERIFY(!process.start(config, 0));
+        QCOMPARE(process.poll(0).state, WindowsDownloadProcessState::Failed);
+        QCOMPARE(process.poll(0).error, WindowsDownloadProcessError::InvalidConfiguration);
+    }
+
+    void acceptsBoundedExplicitEnvironmentAndResetsItOnReuse_data() {
+        QTest::addColumn<bool>("maximum_entries");
+        QTest::addColumn<bool>("exact_units");
+        QTest::newRow("exact entries") << true << false;
+        QTest::newRow("exact UTF16 units") << false << true;
+    }
+
+    void acceptsBoundedExplicitEnvironmentAndResetsItOnReuse() {
+        QFETCH(bool, maximum_entries);
+        QFETCH(bool, exact_units);
+        const TestEnvironmentValue secret("RC_MUSIC_PROCESS_TEST_SECRET", QByteArrayLiteral("synthetic-inherited"));
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("environment")});
+        QProcessEnvironment environment;
+        environment.insert(QStringLiteral("SystemRoot"), qEnvironmentVariable("SystemRoot"));
+        environment.insert(QStringLiteral("PATH"), qEnvironmentVariable("PATH"));
+        if (maximum_entries) {
+            for (int index = 0; index < 126; ++index)
+                environment.insert(QStringLiteral("VARIABLE_%1").arg(index), QStringLiteral("value"));
+        }
+        if (exact_units) {
+            environment.insert(QStringLiteral("VALUE"), QString{});
+            qsizetype overhead = 1;
+            for (const auto& entry : environment.toStringList())
+                overhead += entry.size() + 1;
+            QVERIFY(overhead < download_process_max_environment_units);
+            environment.insert(QStringLiteral("VALUE"),
+                               QString(download_process_max_environment_units - overhead, 'X'));
+        }
+        config.environment = environment;
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        Collected isolated;
+        QVERIFY(collect(process, isolated));
+        QCOMPARE(isolated.update.exit_code, std::optional<int>{0});
+        QCOMPARE(QJsonDocument::fromJson(isolated.output).object().value(QStringLiteral("sentinel")).toString(),
+                 QString{});
+        config.environment.reset();
+        QVERIFY(process.start(config, 0));
+        Collected inherited;
+        QVERIFY(collect(process, inherited));
+        QCOMPARE(inherited.update.exit_code, std::optional<int>{0});
+        QCOMPARE(QJsonDocument::fromJson(inherited.output).object().value(QStringLiteral("sentinel")).toString(),
+                 QStringLiteral("synthetic-inherited"));
+    }
+
+    void emptyPathIsExplicitAndDoesNotFallBackToParent_data() {
+        QTest::addColumn<bool>("lowercase");
+        QTest::newRow("canonical names") << false;
+        QTest::newRow("case insensitive names") << true;
+    }
+
+    void emptyPathIsExplicitAndDoesNotFallBackToParent() {
+        QFETCH(bool, lowercase);
+        QTemporaryDir directory;
+        const auto executable = directory.filePath(QStringLiteral("environment-helper.exe"));
+        QVERIFY(QFile::copy(helperPath(), executable));
+        QVERIFY(
+            QFile::copy(QDir(QLibraryInfo::path(QLibraryInfo::BinariesPath)).filePath(QStringLiteral("Qt6Core.dll")),
+                        directory.filePath(QStringLiteral("Qt6Core.dll"))));
+        auto config = configuration(directory, {QStringLiteral("environment")});
+        config.executable = executable;
+        QProcessEnvironment environment;
+        environment.insert(lowercase ? QStringLiteral("path") : QStringLiteral("PATH"), QString{});
+        environment.insert(lowercase ? QStringLiteral("systemroot") : QStringLiteral("SystemRoot"),
+                           qEnvironmentVariable("SystemRoot"));
+        config.environment = environment;
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        QCOMPARE(QJsonDocument::fromJson(result.output).object().value(QStringLiteral("path")).toString(), QString{});
     }
 
     void sendsPrivateBinaryInputInBoundedSegmentsAndThenEof_data() {

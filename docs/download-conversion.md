@@ -44,6 +44,8 @@ O Job permanece limitado a **um processo**, sem breakaway. Não usar este superv
 
 `standard_input` permite uma única mensagem opaca de até **256 KiB**, enviada por pipe nativo com buffer fixo e backpressure, seguida de EOF. Entrada vazia conserva stdin em NUL. O supervisor não interpreta JSON/framing, não coloca esse payload em argumentos ou ambiente e não constitui um host Native Messaging. O proprietário futuro ainda precisa limitar e validar seu protocolo e fornecer ambiente/artefatos revisados para o worker TLS; o ambiente herdado atual não é uma allowlist de segurança.
 
+`environment` opcional substitui a herança por valores de composição confiável. Exige `PATH` explícito (pode ser vazio) e `SystemRoot` não vazio: Qt/Windows herdaria essas chaves do pai se faltassem. Aceita até 128 entradas e 32.760 unidades UTF-16 no bloco lógico, incluindo separadores/terminadores; recusa NUL e `=` em nomes antes de criar recursos. Não é limite de todas as alocações Qt. `FFREPORT` e overrides de cor continuam removidos em ambos os modos. `nullopt` preserva a herança filtrada anterior. Valores, diretório de trabalho, DLLs e executável ainda precisam de composição autenticada; não há allowlist de produção aplicada ao player por existir esta opção.
+
 Pipes nativos têm buffers fixos/backpressure; `poll()` entrega no máximo **64 KiB somando ambos os canais**. A conversão limita stdout a 512 MiB e stderr a 4 MiB, além da cota agregada do workspace. As inspeções limitam JSON a 16 KiB; a validação final não espera stdout útil. Limite/deadline/cancelamento solicitam encerramento do Job e continuam em `Stopping` até reconhecer processo encerrado e pipes concluídos.
 
 Saídas raw de ferramentas não vão para UI/log. O CLI executa em modo quiet; a conversão usa stderr apenas para o protocolo limitado `-progress pipe:2`, sem transformar diagnósticos, tags, URLs ou paths em mensagens públicas. A projeção futura deve expor somente estados, contadores e erros tipados/redigidos; não há integração de UI/log neste recorte.
@@ -128,6 +130,10 @@ A avaliação de um worker com descendentes foi retirada deste incremento: accou
 Em 2026-10-01, teste/stub confirmou Red **16 passagens/13 falhas**; regressões adicionais de cleanup/cancelamento, estabilidade e exceção de I/O confirmaram **16 passagens/18 falhas**. Green após refactor passou **34/34 casos Qt, zero falhas/skips**, com MP4-AAC e MP3 sintéticos autenticados, conversor/decoder reais e publicação Windows. Revisão independente não deixou achados acionáveis neste escopo.
 
 O fechamento Release executou efetivamente **42/42 CTest** de admissão/jobs/transporte/conversão em **13,43 s**, incluindo o supervisor 27/27 e a sessão 34/34. O workspace conserva dois skips internos de symlink pela política do host; o teste de junction passou. Build `BUILD_TESTING=OFF` compilou a nova sessão, registrou zero testes e seu grafo excluiu helpers, fixtures, paths do CLI, Qt Test/Catch2, Multimedia e WebEngine. Core local foi recompilado, mas seus testes, JavaScript e UI não foram reexecutados por este incremento; não se trata de validação de release ou das duas edições instaladas.
+
+### Incremento de ambiente explícito
+
+Em 2026-10-01, Red **28 passagens/10 falhas** confirmou herança de sentinel sintético e admissão de ambientes inválidos. Green final **42/42 casos Qt, zero falhas/skips** inclui os 27 anteriores e 15 novos: ausência de herança de segredo/plugin-path, filtros, limites exatos, nomes case-insensitive, `PATH` vazio com DLL de teste adjacente e reuso explícito→legado. Seleção proporcional do serviço/admissão/supervisor passou **42/42 CTest** em 4,58 s. Build Release, formato, documentos/rastreabilidade e revisão independente passaram. Testes não alteram o ambiente persistente, SDK ou runtime do player; somente filhos e temporários próprios são usados.
 
 ## Gates que continuam abertos
 

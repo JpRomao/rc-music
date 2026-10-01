@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
 
@@ -11,6 +12,7 @@ namespace music_player::m0 {
 
 inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
 inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
+inline constexpr qsizetype download_process_max_environment_units = 32760;
 
 // Trusted composition only: these are never accepted from an extension/page.
 // The executable and working directory must be absolute local filesystem paths.
@@ -21,6 +23,11 @@ struct WindowsDownloadProcessConfig final {
     // One bounded private request, never a command-line/environment argument.
     // Empty keeps stdin connected to NUL; nonempty is followed by EOF.
     QByteArray standard_input{};
+    // nullopt retains the legacy filtered environment. A supplied environment
+    // must explicitly contain PATH (may be empty) and nonempty SystemRoot to
+    // prevent Qt's fallback to parent values. It is bounded and replaces other
+    // inheritance. Trusted composition owns values; FFREPORT/color are removed.
+    std::optional<QProcessEnvironment> environment{};
     quint64 max_stdout_bytes{512ULL * 1024 * 1024};
     quint64 max_stderr_bytes{4ULL * 1024 * 1024};
     quint64 max_memory_bytes{512ULL * 1024 * 1024};

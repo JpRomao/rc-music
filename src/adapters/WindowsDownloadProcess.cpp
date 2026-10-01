@@ -361,13 +361,39 @@ class NativeInput final {
            !value.startsWith(QStringLiteral("\\\\")) && !value.startsWith(QStringLiteral("//"));
 }
 
+[[nodiscard]] bool validEnvironment(const std::optional<QProcessEnvironment>& environment) {
+    if (!environment)
+        return true;
+    // Qt/Windows reintroduces PATH and SystemRoot from the parent when absent.
+    // Never let an explicit trusted environment silently become partial inheritance.
+    if (!environment->contains(QStringLiteral("PATH")) || !environment->contains(QStringLiteral("SystemRoot")) ||
+        environment->value(QStringLiteral("SystemRoot")).isEmpty())
+        return false;
+    const auto keys = environment->keys();
+    if (keys.size() > 128)
+        return false;
+    qsizetype units = 1; // Final environment-block terminator.
+    for (const auto& key : keys) {
+        const auto value = environment->value(key);
+        if (key.isEmpty() || key.contains(QChar::Null) || key.contains('=') || value.contains(QChar::Null) ||
+            key.size() > download_process_max_environment_units - units)
+            return false;
+        units += key.size();
+        if (value.size() > download_process_max_environment_units - units - 2)
+            return false;
+        units += value.size() + 2; // '=' and this entry's terminator.
+    }
+    return units <= download_process_max_environment_units;
+}
+
 [[nodiscard]] bool validConfig(const WindowsDownloadProcessConfig& config) {
     if (!localAbsolute(config.executable) || !QFileInfo(config.executable).isFile() ||
         QFileInfo(config.executable).suffix().compare(QStringLiteral("exe"), Qt::CaseInsensitive) != 0 ||
         !localAbsolute(config.working_directory) || !QFileInfo(config.working_directory).isDir() ||
         config.max_stdout_bytes == 0 || config.max_stderr_bytes == 0 || config.max_memory_bytes == 0 ||
         config.max_memory_bytes > std::numeric_limits<SIZE_T>::max() || config.total_timeout_ms <= 0 ||
-        config.arguments.size() > 128 || config.standard_input.size() > download_process_max_input_bytes)
+        config.arguments.size() > 128 || config.standard_input.size() > download_process_max_input_bytes ||
+        !validEnvironment(config.environment))
         return false;
     qsizetype units = config.executable.size();
     for (const auto& argument : config.arguments) {
@@ -549,7 +575,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.process->setStandardInputFile(QProcess::nullDevice());
     value.process->setStandardOutputFile(QProcess::nullDevice());
     value.process->setStandardErrorFile(QProcess::nullDevice());
-    auto environment = QProcessEnvironment::systemEnvironment();
+    auto environment = config.environment ? *config.environment : QProcessEnvironment::systemEnvironment();
     // FFREPORT can otherwise write a diagnostic file outside the owned job.
     environment.remove(QStringLiteral("FFREPORT"));
     environment.remove(QStringLiteral("AV_LOG_FORCE_COLOR"));

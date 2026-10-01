@@ -108,6 +108,14 @@ int main(int argc, char* argv[]) {
                    : 71;
     if (mode == QStringLiteral("inspect"))
         return inspect();
+    if (mode == QStringLiteral("environment")) {
+        const QJsonObject values{{QStringLiteral("sentinel"), qEnvironmentVariable("RC_MUSIC_PROCESS_TEST_SECRET")},
+                                 {QStringLiteral("allowed"), qEnvironmentVariable("RC_MUSIC_PROCESS_TEST_ALLOWED")},
+                                 {QStringLiteral("qt_plugin_path"), qEnvironmentVariable("QT_PLUGIN_PATH")},
+                                 {QStringLiteral("path"), qEnvironmentVariable("PATH")},
+                                 {QStringLiteral("ffreport"), qEnvironmentVariable("FFREPORT")}};
+        return writeBytes(STD_OUTPUT_HANDLE, QJsonDocument(values).toJson(QJsonDocument::Compact)) ? 0 : 88;
+    }
     if (mode == QStringLiteral("spawn-probe"))
         return spawnProbe(application.applicationFilePath());
     if (mode == QStringLiteral("read-stdin"))

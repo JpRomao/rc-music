@@ -1336,6 +1336,14 @@
           "marker": "acknowledgesCancellationOnlyAfterOwnChildHasTerminated"
         },
         {
+          "path": "tests/qt/WindowsDownloadProcessTests.cpp",
+          "marker": "suppliedEnvironmentDoesNotInheritParentSecretsOrPluginSearch"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadProcessTests.cpp",
+          "marker": "rejectsMalformedOrImplicitlyInheritedEnvironment"
+        },
+        {
           "path": "tests/qt/WindowsLocalMediaConverterTests.cpp",
           "marker": "validMp3AndSuccessfulConversionDoNotWaiveFullDecode"
         },
