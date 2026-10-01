@@ -14,6 +14,7 @@ Admissão copia o lote inteiro e não inicia I/O. O serviço conserva recibos, s
 
 - Uma execução ativa, fila FIFO. Fases de download, conversão e publicação têm progresso próprio; total desconhecido mantém indicador indeterminado.
 - Cancelamento de item na fila é imediato; em execução aguarda confirmação terminal. Timeout total inicial de 30 minutos também pede cancelamento, sem presumir que o worker parou. Nenhum próximo trabalho começa antes de confirmar a saída do ativo.
+- Cancelamento/shutdown não ocultam falha de cleanup: `Failed/Publication` permanece falha acionável. A primeira causa observada durante a drenagem (inclusive timeout, relógio regressivo ou exceção de polling) é preservada. ACK terminal não precisa repetir contadores anteriores; payload malformado falha como `InvalidResult`, estado desconhecido não libera o slot e publicação tardia nunca importa arquivo.
 - Resultado obsoleto, inválido ou contraditório não importa arquivo; exceção não implica sucesso. Shutdown recusa novos pedidos e cancela/drena os próprios jobs, sem tocar na reprodução local. A composição deve aguardar `stopped()` antes de destruir adapters emprestados; o destrutor não encerra processos externos por conta própria.
 - Apenas resultado publicado com path absoluto normalizado `.mp3` é encaminhado à importação. Essa checagem do core não valida bytes: o executor deve provar formato/áudio e publicação sem sobrescrita. Falha de importação preserva o arquivo e permite retry explícito pelo mesmo job, sem repetir download; o importador concreto deve ser idempotente e usar o pipeline local sem autoplay.
 
@@ -53,6 +54,10 @@ Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de d
 - Formato dos oito C++ novos, validação documental **68 Markdown, 83 requisitos, 17 checks e 80 etapas**, rastreabilidade e `git diff --check` aprovados. Revisão independente da implementação e dos contratos não deixou achados materiais neste escopo.
 
 Nenhum requisito amplo foi promovido: 15 planejados, 66 em andamento e 2 comprovados. A execução concreta, a integração com o player e as edições completas continuam os próximos incrementos, não funcionalidades entregues por estes fakes.
+
+## Regressão de cancelamento de 2026-10-01
+
+O teste reproduziu falha de cleanup tratada como cancelamento bem-sucedido: Red **28/34** casos Catch2, seguido de Green **34/34**. Duas regressões adicionais reproduziram exceção/deadline/clock ignorados durante a drenagem (Red **34/36**); Green **36/36**, zero skips. Os 28 casos anteriores foram preservados, corrigindo somente a expectativa antiga que também ocultava `Failed/Network` tardio. Build Release MSVC 19.44, formato e diff passaram; testes continuam com portas falsas, sem rede, filesystem ou mídia pessoal. Isso corrige a coordenação, não comprova término físico do futuro executor.
 
 ## Pendências funcionais
 

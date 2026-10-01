@@ -1,6 +1,7 @@
 #include "m0/application/DownloadService.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -446,18 +447,288 @@ TEST_CASE("Active cancellation waits for an acknowledgement and never imports a 
     h.service.tick(1);
     REQUIRE(h.execution.starts.size() == 1);
     REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[0]});
+    auto expected_state = DownloadJobState::Cancelled;
+    auto expected_error = DownloadFailure::None;
     SECTION("cancelled") { h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled}; }
     SECTION("late published") { published(h.execution, ids[0]); }
     SECTION("late failed") {
         h.execution.update = {
             .job_id = ids[0], .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        expected_state = DownloadJobState::Failed;
+        expected_error = DownloadFailure::Network;
     }
     h.service.tick(2);
-    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelled);
+    REQUIRE(h.service.snapshot()[0].state == expected_state);
+    REQUIRE(h.service.snapshot()[0].error == expected_error);
     REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
     REQUIRE(h.importer.imports.empty());
     h.service.tick(3);
     REQUIRE(h.execution.starts.size() == 2);
+}
+
+TEST_CASE("Cancellation and shutdown retain typed cleanup failures after acknowledgement", "[download][FR-053]") {
+    Harness h;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    bool shutdown = false;
+    SECTION("explicit cancellation") { REQUIRE(h.service.cancel(ids[0])); }
+    SECTION("shutdown") {
+        shutdown = true;
+        h.service.shutdown();
+    }
+    h.service.tick(1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE_FALSE(h.service.stopped());
+    h.execution.update = {
+        .job_id = ids[0], .state = DownloadExecutionState::Failed, .error = DownloadFailure::Publication};
+    h.service.tick(2);
+    const auto job = h.service.snapshot()[0];
+    REQUIRE(job.state == DownloadJobState::Failed);
+    REQUIRE(job.error == DownloadFailure::Publication);
+    REQUIRE(job.completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE_FALSE(h.service.retryImport(ids[0]));
+    REQUIRE(h.service.stopped() == shutdown);
+    h.service.tick(3);
+    REQUIRE(h.execution.starts.size() == (shutdown ? 1 : 2));
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Publication);
+}
+
+TEST_CASE("Cancellation acknowledgements do not need the last progress counters", "[download][FR-053]") {
+    Harness h;
+    const auto ids = h.admit();
+    h.service.tick(0);
+    h.execution.update.phase = DownloadPhase::Converting;
+    h.execution.update.completed_units = 10;
+    h.execution.update.total_units = 20;
+    h.service.tick(1);
+    REQUIRE(h.service.cancel(ids[0]));
+    auto expected_state = DownloadJobState::Cancelled;
+    auto expected_error = DownloadFailure::None;
+    SECTION("cancelled resets progress") {
+        h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled};
+    }
+    SECTION("cleanup failure resets progress") {
+        h.execution.update = {
+            .job_id = ids[0], .state = DownloadExecutionState::Failed, .error = DownloadFailure::Publication};
+        expected_state = DownloadJobState::Failed;
+        expected_error = DownloadFailure::Publication;
+    }
+    SECTION("cancelled drops an obsolete total") {
+        h.execution.update.state = DownloadExecutionState::Cancelled;
+        h.execution.update.completed_units = 5;
+        h.execution.update.total_units = 1;
+    }
+    h.service.tick(2);
+    const auto job = h.service.snapshot()[0];
+    REQUIRE(job.state == expected_state);
+    REQUIRE(job.error == expected_error);
+    REQUIRE(job.completed_units == 10);
+    REQUIRE(job.total_units == 20);
+    REQUIRE(job.completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+}
+
+TEST_CASE("Malformed cancellation terminals fail safely without exposing a file", "[download][FR-053]") {
+    Harness h;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    REQUIRE(h.service.cancel(ids[0]));
+    h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled};
+    SECTION("cancelled with error") { h.execution.update.error = DownloadFailure::Publication; }
+    SECTION("cancelled with file") { h.execution.update.published_mp3 = finalPath(); }
+    SECTION("unknown phase") { h.execution.update.phase = static_cast<DownloadPhase>(42); }
+    SECTION("unknown failure") { h.execution.update.error = static_cast<DownloadFailure>(42); }
+    SECTION("failed without error") { h.execution.update.state = DownloadExecutionState::Failed; }
+    SECTION("failed with file") {
+        h.execution.update.state = DownloadExecutionState::Failed;
+        h.execution.update.error = DownloadFailure::Publication;
+        h.execution.update.published_mp3 = finalPath();
+    }
+    SECTION("published without file") {
+        h.execution.update.state = DownloadExecutionState::Published;
+        h.execution.update.phase = DownloadPhase::Publishing;
+    }
+    SECTION("published relative file") {
+        published(h.execution, ids[0]);
+        h.execution.update.published_mp3 = "relative.mp3";
+    }
+    SECTION("published non MP3") {
+        published(h.execution, ids[0]);
+        h.execution.update.published_mp3.replace_extension(".mp4");
+    }
+    SECTION("published with error") {
+        published(h.execution, ids[0]);
+        h.execution.update.error = DownloadFailure::Publication;
+    }
+    SECTION("published wrong phase") {
+        published(h.execution, ids[0]);
+        h.execution.update.phase = DownloadPhase::Downloading;
+    }
+    h.service.tick(1);
+    const auto job = h.service.snapshot()[0];
+    REQUIRE(job.state == DownloadJobState::Failed);
+    REQUIRE(job.error == DownloadFailure::InvalidResult);
+    REQUIRE(job.completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+    h.service.tick(2);
+    REQUIRE(h.execution.starts.size() == 2);
+}
+
+TEST_CASE("An invalid cancellation update does not acknowledge stopped work", "[download][FR-053]") {
+    Harness h;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    REQUIRE(h.service.cancel(ids[0]));
+    SECTION("unknown state") { h.execution.update.state = static_cast<DownloadExecutionState>(42); }
+    SECTION("running with error") { h.execution.update.error = DownloadFailure::Publication; }
+    SECTION("running with file") { h.execution.update.published_mp3 = finalPath(); }
+    SECTION("running unknown phase") { h.execution.update.phase = static_cast<DownloadPhase>(42); }
+    h.service.tick(1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::InvalidResult);
+    h.service.tick(2);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[0]});
+    h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled};
+    h.service.tick(3);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::InvalidResult);
+    REQUIRE(h.importer.imports.empty());
+    h.service.tick(4);
+    REQUIRE(h.execution.starts.size() == 2);
+}
+
+TEST_CASE("Cancellation ignores stale cleanup failures and keeps the active drain", "[download][FR-053]") {
+    Harness h;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    REQUIRE(h.service.cancel(ids[0]));
+    h.execution.update = {
+        .job_id = ids[1], .state = DownloadExecutionState::Failed, .error = DownloadFailure::Publication};
+    h.service.tick(1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::None);
+    REQUIRE(h.execution.starts.size() == 1);
+    h.execution.update.job_id = ids[0];
+    h.service.tick(2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Publication);
+    REQUIRE(h.importer.imports.empty());
+}
+
+TEST_CASE("A primary service failure survives every cancellation terminal", "[download][FR-053]") {
+    const auto primary = GENERATE(DownloadFailure::Timeout, DownloadFailure::InvalidResult);
+    Harness h({.job_timeout_ms = 10});
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    if (primary == DownloadFailure::Timeout) {
+        h.service.tick(10);
+    } else {
+        h.execution.update.error = DownloadFailure::Network;
+        h.service.tick(1);
+    }
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == primary);
+    SECTION("cleanup failure") {
+        h.execution.update = {
+            .job_id = ids[0], .state = DownloadExecutionState::Failed, .error = DownloadFailure::Publication};
+    }
+    SECTION("cancelled") { h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled}; }
+    SECTION("late published") { published(h.execution, ids[0]); }
+    SECTION("malformed terminal") { h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Failed}; }
+    h.service.tick(11);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].error == primary);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+    h.service.tick(12);
+    REQUIRE(h.execution.starts.size() == 2);
+}
+
+TEST_CASE("Polling exceptions during cancellation record an error but do not acknowledge stopping",
+          "[download][FR-053]") {
+    const auto initial = GENERATE(DownloadFailure::None, DownloadFailure::Timeout, DownloadFailure::InvalidResult);
+    const auto shutdown = GENERATE(false, true);
+    Harness h({.job_timeout_ms = 10});
+    const auto ids = h.admit(2);
+    h.service.tick(100);
+    std::int64_t next_tick = 101;
+    if (initial == DownloadFailure::Timeout) {
+        h.service.tick(110);
+        next_tick = 111;
+    } else if (initial == DownloadFailure::InvalidResult) {
+        h.execution.update.error = DownloadFailure::Network;
+        h.service.tick(101);
+        next_tick = 102;
+    } else if (!shutdown) {
+        REQUIRE(h.service.cancel(ids[0]));
+    }
+    if (shutdown)
+        h.service.shutdown();
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == initial);
+    h.execution.throw_poll = true;
+    h.service.tick(next_tick);
+    const auto expected = initial == DownloadFailure::None ? DownloadFailure::InvalidResult : initial;
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == expected);
+    REQUIRE_FALSE(h.service.stopped());
+    h.service.tick(next_tick + 1);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[0]});
+    h.execution.throw_poll = false;
+    h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled};
+    h.service.tick(next_tick + 2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].error == expected);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.service.stopped() == shutdown);
+    h.service.tick(next_tick + 3);
+    REQUIRE(h.execution.starts.size() == (shutdown ? 1 : 2));
+}
+
+TEST_CASE("Cancellation preserves the first deadline or clock failure until stopped work is acknowledged",
+          "[download][FR-053]") {
+    const auto shutdown = GENERATE(false, true);
+    Harness h({.job_timeout_ms = 10});
+    const auto ids = h.admit(2);
+    h.service.tick(100);
+    if (shutdown)
+        h.service.shutdown();
+    else
+        REQUIRE(h.service.cancel(ids[0]));
+    h.service.tick(109);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::None);
+    auto expected = DownloadFailure::Timeout;
+    SECTION("inclusive deadline before backwards clock") {
+        h.service.tick(110);
+        REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Timeout);
+        h.service.tick(109);
+    }
+    SECTION("backwards clock before inclusive deadline") {
+        expected = DownloadFailure::InvalidResult;
+        h.service.tick(108);
+        REQUIRE(h.service.snapshot()[0].error == DownloadFailure::InvalidResult);
+        h.service.tick(110);
+    }
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelling);
+    REQUIRE(h.service.snapshot()[0].error == expected);
+    REQUIRE_FALSE(h.service.stopped());
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[0]});
+    h.execution.update = {.job_id = ids[0], .state = DownloadExecutionState::Cancelled};
+    h.service.tick(111);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].error == expected);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.service.stopped() == shutdown);
+    h.service.tick(112);
+    REQUIRE(h.execution.starts.size() == (shutdown ? 1 : 2));
 }
 
 TEST_CASE("Total timeout is inclusive does not reset on progress and waits for cancellation", "[download][FR-053]") {

@@ -43,6 +43,11 @@ struct DownloadExecutionUpdate final {
 // and publication without overwrite. Published means a validated final file, never a partial.
 // Terminal snapshots remain observable until the next successful start. cancel is a request,
 // not proof of stopped I/O; the owner must keep polling until a terminal acknowledgement.
+// Every terminal acknowledges stopped owned work; Failed must report a non-None typed error,
+// including Publication when temporary cleanup failed. Cancelled has no error or published path.
+// Exceptions from poll/cancel do not acknowledge stopping; a terminal snapshot is still required.
+// A cancellation acknowledgement need not repeat the last progress phase/counters; those
+// fields remain telemetry, not evidence of stopped work. Only a published result can import.
 // start false guarantees refusal with no active work/resources retained for that request;
 // an exception is uncertain and must support cancellation/draining by the supplied job ID.
 class DownloadExecution {

@@ -1296,6 +1296,18 @@
           "marker": "Active cancellation waits for an acknowledgement and never imports a late file"
         },
         {
+          "path": "tests/core/DownloadServiceTests.cpp",
+          "marker": "Cancellation and shutdown retain typed cleanup failures after acknowledgement"
+        },
+        {
+          "path": "tests/core/DownloadServiceTests.cpp",
+          "marker": "Malformed cancellation terminals fail safely without exposing a file"
+        },
+        {
+          "path": "tests/core/DownloadServiceTests.cpp",
+          "marker": "Polling exceptions during cancellation record an error but do not acknowledge stopping"
+        },
+        {
           "path": "tests/qt/DownloadJobsModelTests.cpp",
           "marker": "failedImportExposesOnlyFinalFileAndExplicitRetryDoesNotRedownload"
         },
@@ -1351,7 +1363,7 @@
         }
       ],
       "remaining": [
-        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Sessão Windows compõe transferência falsa e temporários/cotas/conversão/publicação reais, com terminal estável e falha de cleanup preservada; AIA restrito tem ensaio separado. Faltam DNS/TLS em subprocesso autenticado, porta rápida/ack real, propagação no serviço de falha de cleanup durante cancelamento, demais gates Schannel/CLI/sandbox, importação, recuperação/host/persistência e expiração/live/restrições/headers/seek. Não há backend completo nem aprovação de mídia remota."
+        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Sessão Windows compõe transferência falsa e temporários/cotas/conversão/publicação reais, com terminal estável e falha de cleanup preservada; serviço também conserva falha tipada durante cancelamento e primeira causa durante drenagem. AIA restrito tem ensaio separado. Faltam DNS/TLS em subprocesso autenticado, porta rápida/ack real, demais gates Schannel/CLI/sandbox, importação, recuperação/host/persistência e expiração/live/restrições/headers/seek. Não há backend completo nem aprovação de mídia remota."
       ]
     },
     {

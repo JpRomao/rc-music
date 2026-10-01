@@ -109,6 +109,22 @@ bool validPublishedPath(const std::filesystem::path& path) {
     return extension == std::filesystem::path(".mp3").native();
 }
 
+bool validPayload(const DownloadExecutionUpdate& update) {
+    if (!validPhase(update.phase) || !validFailure(update.error))
+        return false;
+    switch (update.state) {
+    case DownloadExecutionState::Running:
+    case DownloadExecutionState::Cancelled:
+        return update.error == DownloadFailure::None && update.published_mp3.empty();
+    case DownloadExecutionState::Published:
+        return update.error == DownloadFailure::None && update.phase == DownloadPhase::Publishing &&
+               validPublishedPath(update.published_mp3);
+    case DownloadExecutionState::Failed:
+        return update.error != DownloadFailure::None && update.published_mp3.empty();
+    }
+    return false;
+}
+
 DownloadJobState jobState(const DownloadPhase phase) {
     switch (phase) {
     case DownloadPhase::Downloading:
@@ -176,8 +192,13 @@ struct DownloadService::Impl {
     }
 
     void requestCancellation(Job& job, const DownloadFailure error) {
-        if (job.view.state == DownloadJobState::Cancelling)
+        if (job.view.state == DownloadJobState::Cancelling) {
+            // A new failure during draining must not disappear behind a human cancellation,
+            // replace an earlier cause, or repeat the adapter cancellation request.
+            if (job.view.error == DownloadFailure::None)
+                job.view.error = error;
             return;
+        }
         job.view.state = DownloadJobState::Cancelling;
         job.view.error = error;
         // Set Cancelling before calling the adapter: even a throwing cancellation is not
@@ -223,37 +244,34 @@ struct DownloadService::Impl {
     void observe(Job& job, const DownloadExecutionUpdate& update) {
         if (update.job_id != job.view.job_id)
             return;
+        const bool terminal = terminalState(update.state);
+        const bool payload_valid = validPayload(update);
         if (job.view.state == DownloadJobState::Cancelling) {
-            if (terminalState(update.state)) {
-                job.view.state =
-                    job.view.error == DownloadFailure::None ? DownloadJobState::Cancelled : DownloadJobState::Failed;
+            // A stop acknowledgement need not repeat progress. Keep the last observed
+            // counters, but never accept malformed payloads or unknown states as success.
+            if (!terminal) {
+                if (!payload_valid)
+                    requestCancellation(job, DownloadFailure::InvalidResult);
+                return;
+            }
+            if (job.view.error != DownloadFailure::None)
+                failTerminal(job, job.view.error);
+            else if (!payload_valid)
+                failTerminal(job, DownloadFailure::InvalidResult);
+            else if (update.state == DownloadExecutionState::Failed)
+                failTerminal(job, update.error);
+            else {
+                // Publication racing with cancellation is not a local-import handoff.
+                job.view.state = DownloadJobState::Cancelled;
+                job.view.completed_mp3.clear();
                 active.reset();
             }
             return;
         }
 
-        const bool terminal = terminalState(update.state);
-        const bool progress_valid = validProgress(job, update);
-        bool valid = progress_valid && validFailure(update.error);
-        switch (update.state) {
-        case DownloadExecutionState::Running:
-            valid = valid && update.error == DownloadFailure::None && update.published_mp3.empty();
-            break;
-        case DownloadExecutionState::Published:
-            valid = valid && update.error == DownloadFailure::None && update.phase == DownloadPhase::Publishing &&
-                    (!update.total_units.has_value() || update.completed_units == *update.total_units) &&
-                    validPublishedPath(update.published_mp3);
-            break;
-        case DownloadExecutionState::Failed:
-            valid = valid && update.error != DownloadFailure::None && update.published_mp3.empty();
-            break;
-        case DownloadExecutionState::Cancelled:
-            valid = valid && update.error == DownloadFailure::None && update.published_mp3.empty();
-            break;
-        default:
-            valid = false;
-            break;
-        }
+        const bool valid = payload_valid && validProgress(job, update) &&
+                           (update.state != DownloadExecutionState::Published || !update.total_units.has_value() ||
+                            update.completed_units == *update.total_units);
         if (!valid) {
             if (terminal)
                 failTerminal(job, DownloadFailure::InvalidResult);
