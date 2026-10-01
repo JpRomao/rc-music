@@ -15,6 +15,7 @@ O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permane
 | [FfmpegDownloadCodec](../src/adapters/FfmpegDownloadCodec.hpp) | Constrói vetores de argumentos locais, decodifica JSON de inspeção com campos limitados e interpreta progresso incremental. Não lança processos nem aceita URLs. |
 | [WindowsLocalMediaConverter](../src/adapters/WindowsLocalMediaConverter.hpp) | `start(workspace, now_ms)` exige entrada selada e saída vazia; `poll(now_ms)` coordena inspeção, conversão, inspeção de saída e decodificação integral; `cancel()` aguarda parada reconhecida. `Validated` não publica nem importa. |
 | [WindowsDownloadJobSession](../src/adapters/WindowsDownloadJobSession.hpp) | Sessão de um único job no controlador worker; compõe transferência, selagem, conversão, validação, publicação e cleanup. Projeta `DownloadExecutionUpdate`, mas não implementa a porta de UI nem confirma término de um resolver Qt emprestado. |
+| [WindowsDownloadTlsRuntime](../src/adapters/WindowsDownloadTlsRuntime.hpp) | Ativação one-shot, fail-closed, do backend TLS restrito em processo novo de rede; verifica artefatos/runtime e conserva pins somente leitura. Não troca TLS no player. |
 
 Construir, usar e destruir estes objetos em uma mesma thread worker com event loop Qt, nunca na thread visual. O workspace emprestado deve sobreviver ao conversor. Escritas, flush e operações nativas de arquivos podem bloquear; `poll()` não cria timer, worker ou event loop. O proprietário fornece relógio monotônico e mantém o lifecycle até o reconhecimento terminal. Relógio regressivo é erro, não reinício de deadline.
 
@@ -49,6 +50,14 @@ O Job permanece limitado a **um processo**, sem breakaway. Não usar este superv
 Pipes nativos têm buffers fixos/backpressure; `poll()` entrega no máximo **64 KiB somando ambos os canais**. A conversão limita stdout a 512 MiB e stderr a 4 MiB, além da cota agregada do workspace. As inspeções limitam JSON a 16 KiB; a validação final não espera stdout útil. Limite/deadline/cancelamento solicitam encerramento do Job e continuam em `Stopping` até reconhecer processo encerrado e pipes concluídos.
 
 Saídas raw de ferramentas não vão para UI/log. O CLI executa em modo quiet; a conversão usa stderr apenas para o protocolo limitado `-progress pipe:2`, sem transformar diagnósticos, tags, URLs ou paths em mensagens públicas. A projeção futura deve expor somente estados, contadores e erros tipados/redigidos; não há integração de UI/log neste recorte.
+
+## Runtime TLS no futuro processo de rede
+
+`WindowsDownloadTlsRuntime::activate(config)` deve ser chamado após criar `QCoreApplication`, antes de qualquer uso TLS e somente no novo processo de rede. A configuração é de composição confiável: paths locais absolutos de Core/Network/plugin e seus SHA-256, nunca campos da extensão, página ou ambiente. Recusa namespaces, UNC, ADS, componentes ambíguos, reparse/ancestrais reparse e artefatos vazios/acima de 128 MiB. Hash usa leitura limitada; handles somente leitura/share-read de arquivos e ancestrais permanecem retidos durante a vida do objeto.
+
+Depois de esvaziar `libraryPaths`, valida Qt 6.11.2 e relaciona endereços de código/metaObject dos módulos carregados aos arquivos pinados por volume/ID/tamanho/path final. Recusa backend já instanciado, carrega o plugin absoluto e exige exclusivamente `rcmusic-schannel-offline`, selecionado e com suporte TLS. Falha deve encerrar o worker, sem retry/fallback; o loader não altera confiança/CA padrão, não oferece opções de relaxamento e não recebe URLs.
+
+Import DLLs entram antes de `main`: verificar paths/arquivos após o carregamento **não prova sozinho os bytes originalmente mapeados**, nem previne um carregamento inicial indevido. O futuro launcher/runtime deve autenticar e conservar os artefatos antes de criar o processo, controlar DLL search, ambiente/WD e manter o loader vivo. Ainda não há esse executável de rede ou composição no player. Testes de ativação não reexecutam handshake, CRL/OCSP/CTL, sandbox ou gates de distribuição do [ADR-0009](architecture/decisions/0009-download-execution-backends.md).
 
 ## Inspeção, conversão e conclusão
 
@@ -134,6 +143,26 @@ O fechamento Release executou efetivamente **42/42 CTest** de admissão/jobs/tra
 ### Incremento de ambiente explícito
 
 Em 2026-10-01, Red **28 passagens/10 falhas** confirmou herança de sentinel sintético e admissão de ambientes inválidos. Green final **42/42 casos Qt, zero falhas/skips** inclui os 27 anteriores e 15 novos: ausência de herança de segredo/plugin-path, filtros, limites exatos, nomes case-insensitive, `PATH` vazio com DLL de teste adjacente e reuso explícito→legado. Seleção proporcional do serviço/admissão/supervisor passou **42/42 CTest** em 4,58 s. Build Release, formato, documentos/rastreabilidade e revisão independente passaram. Testes não alteram o ambiente persistente, SDK ou runtime do player; somente filhos e temporários próprios são usados.
+
+### Incremento de loader TLS
+
+Em 2026-10-01, o stub recusou corretamente as entradas inválidas, mas falhou nos contratos de pins/identidade/ativação: Red válido **23 passagens/17 falhas**; Green **40/40 casos Qt, zero falhas/skips**. Helper usa processo novo e JSON privado por stdin; plugin real é opt-in por `RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN`, com paths/hashes de fixtures de runtime somente nos testes. Sem essa fixture, os casos dependentes ficam explicitamente skipped, não comprovados. `BUILD_TESTING=OFF` não recebe esses paths/hashes/helper.
+
+Após o configure opcional descrito acima, para incluir a fixture restrita já construída localmente:
+
+```powershell
+$rcTlsPlugin = "$PWD/out/product/download-tls/rcmusic-schannel-offline-20261001-03/build/plugins/tls/qrcmusicschanneloffline.dll"
+cmake -S . -B out/product/browser-integration-tests "-DRC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN=$rcTlsPlugin"
+if ($LASTEXITCODE -ne 0) { throw 'Configure da fixture TLS falhou.' }
+cmake --build out/product/browser-integration-tests --target rc_music_WindowsDownloadTlsRuntime_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build do loader TLS falhou.' }
+ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.download-network\.WindowsDownloadTlsRuntime$' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'CTest do loader TLS falhou.' }
+```
+
+Fechamento Release MSVC 19.44/Qt 6.11.2: seleção `^rc_music\.(download-network\.|downloads\.|browser\.)` passou **51/51 CTest** em 20,80 s, incluindo 36 casos do serviço e 15 alvos Qt; os dois skips de symlink do workspace permanecem. Build OFF passou, registrou zero testes e seu grafo excluiu Qt Test/Catch2/helpers/fixtures/paths CLI/Multimedia/WebEngine. Formato, documentos/rastreabilidade e revisão independente foram checks separados. Core, JavaScript e UI não foram reexecutados; o core foi compilado no build ON, sem alegar teste atual. Nenhum novo runtime/instalador, benchmark, instalação ou mídia da internet.
+
+**Incidente e recuperação do fixture:** na tentativa inicial, um junction de teste apontou para `sdk/bin` e a limpeza Qt seguiu o link, removendo 191 arquivos desse SDK local. A execução foi interrompida; as cópias originais de cada proprietário foram verificadas e somente os arquivos ausentes foram restaurados, sem overwrite. Conferência integral confirmou **9.880/9.880 arquivos**, todos os SHA-256 originais, **2.400.301.667 bytes** e inventário `4e90550253cb4e07a579bf7706d1b1d68736e4999ab454da7171a2c73d428933`. O primeiro resultado parcial não serve como evidência TDD válida. O fixture corrigido só aponta para outro diretório temporário próprio, desabilita cleanup recursivo até unlink nativo reconhecido e verifica sobreviventes no alvo; nunca aponta SDK ou arquivos pessoais. Receipts/evidências históricos não foram reescritos.
 
 ## Gates que continuam abertos
 

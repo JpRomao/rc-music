@@ -52,3 +52,7 @@ Em 2026-10-01, o mesmo contrato com `RC_MUSIC_TLS_TEST_BACKEND=schannel` falhou 
 Ainda faltam CRL/OCSP/CTL com cenários próprios, handshake excessivo/stall, filas/alocações internas e cancelamento/deadline do subprocesso. Testes separados não provam o downloader composto, publicação MP3, distribuição ou a edição Completa.
 
 Fontes primárias: [flags de cadeia Windows](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certgetcertificatechain), [credenciais Schannel](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-sch_credentials) e [seleção de backend Qt](https://doc.qt.io/qt-6/qsslsocket.html#setActiveBackend).
+
+## Loader no componente opcional
+
+O [loader Windows da raiz](../../docs/download-conversion.md#runtime-tls-no-futuro-processo-de-rede) verifica arquivos/pins/runtime e seleciona exclusivamente esta DLL em processo novo de teste, sem fallback e sem trocar o backend do player. A fixture real é indicada somente com `RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN` no configure dos testes da raiz. Não instala o plugin nem altera a receita acima. Controle do carregamento inicial de DLLs, launcher diskless, reconhecimento de DNS/I/O e composição continuam pendentes; ativação validada não aprova internet, cadeia TLS ou distribuição.

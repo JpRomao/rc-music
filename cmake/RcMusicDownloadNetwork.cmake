@@ -18,6 +18,7 @@ if(WIN32)
     target_sources(rc_music_download_network PRIVATE
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
@@ -27,11 +28,30 @@ if(BUILD_TESTING)
     set(rc_music_download_network_test_units DownloadNetworkPolicy DownloadHttpResponse PinnedDownloadStream
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
-        list(APPEND rc_music_download_network_test_units WindowsDownloadWorkspace WindowsDownloadProcess)
+        list(APPEND rc_music_download_network_test_units
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime)
         add_executable(rc_music_download_process_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadProcessHelper.cpp")
         target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core)
         rc_music_configure_cpp(rc_music_download_process_helper)
+        add_executable(rc_music_download_tls_runtime_helper
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadTlsRuntimeHelper.cpp")
+        target_link_libraries(rc_music_download_tls_runtime_helper PRIVATE rc_music_download_network)
+        rc_music_configure_cpp(rc_music_download_tls_runtime_helper)
+        get_target_property(rc_music_test_tls_core Qt6::Core IMPORTED_LOCATION_RELEASE)
+        get_target_property(rc_music_test_tls_network Qt6::Network IMPORTED_LOCATION_RELEASE)
+        file(SHA256 "${rc_music_test_tls_core}" rc_music_test_tls_core_sha256)
+        file(SHA256 "${rc_music_test_tls_network}" rc_music_test_tls_network_sha256)
+        set(RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN "" CACHE FILEPATH
+            "Reviewed restricted TLS plugin for isolated synthetic tests only")
+        set(rc_music_test_tls_plugin_sha256 "")
+        if(RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
+            if(NOT IS_ABSOLUTE "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}" OR
+               NOT EXISTS "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}")
+                message(FATAL_ERROR "RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN requires an existing absolute DLL path")
+            endif()
+            file(SHA256 "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}" rc_music_test_tls_plugin_sha256)
+        endif()
         set(RC_MUSIC_DOWNLOAD_TEST_FFMPEG "" CACHE FILEPATH "Reviewed local FFmpeg for synthetic converter tests only")
         set(RC_MUSIC_DOWNLOAD_TEST_FFPROBE "" CACHE FILEPATH "Reviewed local ffprobe for synthetic converter tests only")
         if(RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)
@@ -60,6 +80,16 @@ if(BUILD_TESTING)
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
+        elseif(unit STREQUAL "WindowsDownloadTlsRuntime")
+            add_dependencies(${target} rc_music_download_tls_runtime_helper)
+            target_compile_definitions(${target} PRIVATE
+                RC_MUSIC_TEST_TLS_HELPER_PATH="$<TARGET_FILE:rc_music_download_tls_runtime_helper>"
+                RC_MUSIC_TEST_TLS_CORE_PATH="${rc_music_test_tls_core}"
+                RC_MUSIC_TEST_TLS_CORE_SHA256="${rc_music_test_tls_core_sha256}"
+                RC_MUSIC_TEST_TLS_NETWORK_PATH="${rc_music_test_tls_network}"
+                RC_MUSIC_TEST_TLS_NETWORK_SHA256="${rc_music_test_tls_network_sha256}"
+                RC_MUSIC_TEST_TLS_PLUGIN_PATH="${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
+                RC_MUSIC_TEST_TLS_PLUGIN_SHA256="${rc_music_test_tls_plugin_sha256}")
         elseif(unit STREQUAL "WindowsLocalMediaConverter" OR unit STREQUAL "WindowsDownloadJobSession")
             add_dependencies(${target} rc_music_download_converter_helper)
             target_compile_definitions(${target} PRIVATE

@@ -55,6 +55,8 @@ Essa evidência comprova o cenário AIA exercitado, sem captura exaustiva do tr�
 
 ## Conversão, isolamento e publicação
 
+O [loader worker-only](../../download-conversion.md#runtime-tls-no-futuro-processo-de-rede) implementa pins de artefatos e seleção exclusiva do plugin em processo novo de teste. Não controla imports antes de `main`; autenticação/ownership pré-launch e ambiente/runtime do executável de rede ainda precisam de implementação. Não há seleção TLS no player, relaxamento de confiança ou aprovação dos gates de cadeia/distribuição; este ADR permanece **Proposto**.
+
 Executável fixo por caminho confiável, vetor de argumentos, janela oculta e nenhuma shell. Entrada local privada e finalizada, demuxers/protocolos limitados, referências externas desabilitadas, seleção de áudio fixa e descarte de metadata/chapters não necessários. Progresso e stderr devem ser consumidos com limites, sem mensagens livres ou URLs nos logs. Processo separado não equivale a sandbox; decidir Job Object/restrições e provar término do filho em cancelamento/timeout.
 
 Validar o MP3 final por conteúdo/áudio, publicar atomicamente sem sobrescrever arquivos existentes e somente então chamar a importação local. Cancelamento/falha remove apenas parciais pertencentes ao job, nunca arquivos pessoais ou diretórios amplos.

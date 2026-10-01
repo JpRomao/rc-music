@@ -1344,6 +1344,18 @@
           "marker": "rejectsMalformedOrImplicitlyInheritedEnvironment"
         },
         {
+          "path": "tests/qt/WindowsDownloadTlsRuntimeTests.cpp",
+          "marker": "wrongHashesFailBeforeLoading"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadTlsRuntimeTests.cpp",
+          "marker": "sameBytesAtAnotherRuntimePathDoNotProveLoadedIdentity"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadTlsRuntimeTests.cpp",
+          "marker": "successfulActivationIsExclusiveAndHoldsReadOnlyPins"
+        },
+        {
           "path": "tests/qt/WindowsLocalMediaConverterTests.cpp",
           "marker": "validMp3AndSuccessfulConversionDoNotWaiveFullDecode"
         },
