@@ -293,6 +293,8 @@ O [cliente externo e fronteira de recepção](../browser-extension.md), regidos 
 
 ### `MediaSourceResolver`
 
+Os [componentes de conversão local Windows](../download-conversion.md) acrescentam temporários privados/limitados, supervisor de processo e pipeline de inspeção → conversão MP3 → inspeção/decodificação integral. São adapters do mesmo alvo opcional, não regras no domínio/QML nem ferramentas distribuídas automaticamente. O conversor recebe somente bytes locais selados; processo e escrita no disco pertencem ao worker. Nenhuma etapa altera playback ou importa parciais. A composição `DownloadExecution`, importador e tela continuam pendentes; Lite/Completa compartilharão esse serviço sem tornar a engine dependência da Lite.
+
 O [transporte opcional de downloads](../download-network.md) acrescenta `rc_music_download_network`, com Qt Network atrás de `DirectDownloadIo`. `DirectDownloadSession` valida cada destino/redirect e escreve bytes em sink do job; não é `DownloadExecution` completo nem publica MP3. `QtDownloadIo` fornece DNS assíncrono e `PinnedDownloadStream` conecta ao IP aprovado. O parser HTTP próprio é estreito, incremental e limitado para preservar o request-target; não há cliente genérico exposto à UI. Composição em worker, filesystem seguro e conversor continuam separados. O alvo fica OFF por padrão e fora do grafo da aplicação atual.
 
 - converter origem solicitada em descriptor reproduzível;

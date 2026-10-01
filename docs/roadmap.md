@@ -418,7 +418,7 @@ Biblioteca indexada é o primeiro caso que pode justificar SQLite. Cada candidat
 
 **Estado:** escopo de produto aceito no [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), implementação planejada; suporte a YouTube continua pesquisa independente sem promessa de release.
 
-R1.7 iniciado em 2026-09-08 com o [cliente principal MV3 e recepção C++](browser-extension.md); R1.8 possui [coordenação comum de jobs](download-jobs.md) e [transporte HTTP/TLS opcional](download-network.md). Execução completa/importação permanecem falsas nos testes da fila; o socket tem testes reais de loopback. Não há executável de host, workflow de download/conversão no player ou validação no Brave; os recortes não encerram o marco nem reduzem descoberta ampliada, ambas as edições ou opcionais do instalador.
+R1.7 iniciado em 2026-09-08 com o [cliente principal MV3 e recepção C++](browser-extension.md); R1.8 possui [coordenação comum de jobs](download-jobs.md), [transporte HTTP/TLS opcional](download-network.md) e [conversão/publicação local Windows](download-conversion.md). Execução completa/importação permanecem falsas nos testes da fila; socket usa loopback e conversor usa fixtures sintéticas autenticadas. Não há executável de host, workflow de download/conversão no player ou validação no Brave; os recortes não encerram o marco nem reduzem descoberta ampliada, ambas as edições ou opcionais do instalador.
 
 Ordem atual:
 

@@ -1204,6 +1204,10 @@
         {
           "path": "tests/qt/PinnedDownloadStreamTests.cpp",
           "marker": "sendsExactSignedTargetAndLogicalHostToPinnedLoopback"
+        },
+        {
+          "path": "tests/qt/WindowsLocalMediaConverterTests.cpp",
+          "marker": "convertsAndFullyValidatesSyntheticLocalAudio"
         }
       ],
       "evidence": [
@@ -1221,7 +1225,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; transporte limitado tem policy/session com fakes e socket real em loopback, ainda sem composição no serviço. Completar backend/worker, gate Schannel, conversão/importação, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; componentes isolados não atendem o fluxo completo."
+        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; transporte limitado tem policy/session com fakes e socket real em loopback. Adapters locais de conversão/publicação têm fixtures sintéticas e continuam fora do serviço/player. Completar backend/worker, gates TLS/CLI/isolamento, importação, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; componentes isolados não atendem o fluxo completo."
       ]
     },
     {
@@ -1306,6 +1310,22 @@
         {
           "path": "tests/qt/PinnedDownloadStreamTests.cpp",
           "marker": "certificateFailuresCannotBeRelaxedBySuppliedConfiguration"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadWorkspaceTests.cpp",
+          "marker": "collisionPreservesExistingFinalAndDeletesOnlyOwnedPartials"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadProcessTests.cpp",
+          "marker": "acknowledgesCancellationOnlyAfterOwnChildHasTerminated"
+        },
+        {
+          "path": "tests/qt/WindowsLocalMediaConverterTests.cpp",
+          "marker": "validMp3AndSuccessfulConversionDoNotWaiveFullDecode"
+        },
+        {
+          "path": "tools/download-tls/tests/RestrictedTlsTests.cpp",
+          "marker": "incompleteAiaChainCannotFetchTrapOrSendMediaGet"
         }
       ],
       "evidence": [
@@ -1323,7 +1343,7 @@
         }
       ],
       "remaining": [
-        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Faltam composição real DNS/worker/transporte, gate de egress/cancelamento Schannel, host, persistência, expiração/live/restrições/headers/seek e parciais/conversão/publicação segura. Filtros, fakes e socket isolado não provam o backend completo nem aprovação de mídia remota."
+        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Adapters Windows isolados cobrem temporários/cotas, supervisão, conversão/publicação e AIA restrito em ensaio. Faltam composição real DNS/worker/transporte/conversor/importador, demais gates de egress/cancelamento Schannel e CLI/isolamento, host, persistência, expiração/live/restrições/headers/seek. Filtros, fakes e componentes isolados não provam o backend completo nem aprovação de mídia remota."
       ]
     },
     {

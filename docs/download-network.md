@@ -32,7 +32,7 @@ ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.download-n
 if ($LASTEXITCODE -ne 0) { throw 'Testes de rede falharam' }
 ```
 
-O quarto opcional da raiz, `RC_MUSIC_BUILD_DOWNLOAD_NETWORK`, fica OFF por padrão e não liga o alvo ao app. Quando solicitado, inclui as bibliotecas de coordenação/admissão e acrescenta Qt Network; não inclui engine, Qt Multimedia, conversor, executável de host ou instalador. `BUILD_TESTING=OFF` exclui Qt Test, Catch2, servidor de teste e certificado sintético.
+O quarto opcional da raiz, `RC_MUSIC_BUILD_DOWNLOAD_NETWORK`, fica OFF por padrão e não liga o alvo ao app. Quando solicitado, inclui as bibliotecas de coordenação/admissão, Qt Network e os [adapters de conversão local Windows](download-conversion.md); não inclui engine, Qt Multimedia, binários FFmpeg/ffprobe, executável de host ou instalador. `BUILD_TESTING=OFF` exclui Qt Test, Catch2, helpers, fixtures, servidor de teste e certificado sintético.
 
 As suites de policy/decoder/session usam entradas sintéticas e I/O falso, sem consultar DNS público. A suite de socket usa servidores efêmeros em loopback, bytes sintéticos e [certificado/chave não secretos de teste](../tests/qt/network-fixtures/README.md), com confiança somente na instância Qt. Endpoints de baixo nível desses testes não são entradas autorizadas da policy: loopback continua recusado no downloader. Não instalar certificados, extensão, ferramentas ou host; não usar mídias, contas ou perfis pessoais.
 
@@ -55,6 +55,6 @@ O Schannel original constrói cadeia sem restringir ao cache as consultas auxili
 
 1. Compor execução completa em worker com área privada limitada, encerramento, persistência/recuperação de jobs e publicação atômica; conectar à porta `DownloadExecution`.
 2. Validar DNS/transport/session juntos em ambiente isolado controlado, inclusive respostas tardias, buffers internos TLS e afinidade/lifecycle Qt. Testes separados não provam o fluxo inteiro com DNS real, proxy/rede do host ou mídia da internet.
-3. Conversor corrigido/revisado, isolamento, MP4 sintético com/sem áudio, conteúdo final e importação real. O FFmpeg CLI 8.1.1 disponível continua sem aprovação para mídia remota.
+3. Os [adapters locais](download-conversion.md) ensaiam conversão/validação/publicação com fixtures sintéticas; compor o fluxo inteiro, provar isolamento, importação real e referências externas. O FFmpeg CLI 8.1.1 disponível continua sem aprovação para mídia remota e precisa de correções/revisão próprias.
 4. Host Native Messaging, importador, tela QML e composição no player; depois Lite/Completa, navegação interna e opcionais/ownership dos instaladores. YouTube segue separado.
 5. Revisão final de segurança, licenças/notices e distribuição dos artefatos exatos; componentes funcionais não aprovam release.

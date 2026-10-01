@@ -61,6 +61,8 @@ Validar o MP3 final por conteúdo/áudio, publicar atomicamente sem sobrescrever
 
 ## Alternativas, consequências e critérios de revisão
 
+O [incremento local Windows de 2026-10-01](../../download-conversion.md) implementa workspace privado/limitado, supervisor com pipes limitados/Job Object e conversão seguida de inspeção MP3/decodificação integral. Os testes usam apenas fixtures sintéticas autenticadas e ferramentas existentes; não mudam a restrição do CLI 8.1.1 para mídia remota. Publicação por handle sem overwrite, quota agregada e cancelamento reconhecido têm evidência própria, mas composição em worker, sandbox de rede/filesystem, importação, atualização/licenças e distribuição continuam abertas. O ADR não se torna aceito por esses componentes isolados.
+
 - Reutilizar DLLs do playback diretamente: exigiria dependências de desenvolvimento/ABI e amplia impacto de decoder hostil no processo principal.
 - Downloader genérico com cookies de navegador: fora do escopo privado da principal e desnecessário para mídia HTTP(S) direta.
 - FFmpeg acessando rede: perde a fronteira única de DNS/redirects/SSRF; rejeitado como desenho da principal.
