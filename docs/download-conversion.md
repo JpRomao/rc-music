@@ -1,6 +1,6 @@
 # Conversão local opcional de downloads
 
-**Estado:** componentes locais, worker de rede diskless e execução assíncrona de R1.2/R1.8 implementados no alvo opcional. Ensaios offline distinguem socket real de transferência falsa; continuam fora do player e sem workflow completo de downloads.
+**Estado:** componentes locais, worker de rede diskless, execução assíncrona e preparação autenticada pré-launch de R1.2/R1.8 implementados no alvo opcional. Ensaios offline distinguem socket real de transferência falsa; continuam fora do player e sem workflow completo de downloads.
 
 O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permanece **Proposto**. A sessão compõe [transferência](download-network.md), conversão e publicação; `WindowsDownloadExecution` a mantém em thread privada e já tem ensaio com a [coordenação de jobs](download-jobs.md), ainda com importador falso e fora do player. É uma implementação comum às futuras edições Lite/Completa, sem engine de navegação.
 
@@ -17,6 +17,7 @@ O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permane
 | [WindowsDownloadJobSession](../src/adapters/WindowsDownloadJobSession.hpp) | Sessão de um único job no controlador worker; exige reconhecimento nativo de parada do I/O antes de selagem, conversão, cleanup ou terminal. Projeta `DownloadExecutionUpdate`, mas não implementa a porta de UI. |
 | [WindowsDownloadExecution](../src/adapters/WindowsDownloadExecution.hpp) | Porta rápida com thread/event loop Qt privado; admissão/snapshot limitados e cancelamento/shutdown sem aguardar I/O. `stopped()` reconhece teardown; importação e journal são separados. |
 | [WindowsDownloadTlsRuntime](../src/adapters/WindowsDownloadTlsRuntime.hpp) | Ativação one-shot, fail-closed, do backend TLS restrito em processo novo de rede; verifica artefatos/runtime e conserva pins somente leitura. Não troca TLS no player. |
+| [WindowsDownloadNetworkLaunch](../src/adapters/WindowsDownloadNetworkLaunch.hpp) | Prepara nove artefatos autenticados numa pasta nova privada e conserva os pins pré-launch; capability retida pelo proxy até sua destruição após ACK nativo. Não é sandbox nem perfil de distribuição aprovado. |
 | [DownloadWorkerProtocol](../src/adapters/DownloadWorkerProtocol.hpp) | Pedido binário privado de uma operação e frames limitados; valida campos, versão, truncamento e EOF explícito. Não substitui policy de URLs/IP nem autenticação pré-launch. |
 | [WindowsProcessDownloadIo](../src/adapters/WindowsProcessDownloadIo.hpp) | Proxy no controlador worker; supervisiona um filho diskless por resolução/conexão, backpressure e parada reconhecida. Redirect aguarda o filho anterior antes de iniciar o sucessor. |
 | [Worker de rede](../src/adapters/WindowsDownloadNetworkWorkerMain.cpp) | Executável opcional real de DNS/socket, sem mídia no filesystem ou dados do pedido em argv/ambiente. Exige runtime TLS restrito inclusive para DNS/HTTP, sem fallback. |
@@ -61,7 +62,23 @@ Saídas raw de ferramentas não vão para UI/log. O CLI executa em modo quiet; a
 
 Depois de esvaziar `libraryPaths`, valida Qt 6.11.2 e relaciona endereços de código/metaObject dos módulos carregados aos arquivos pinados por volume/ID/tamanho/path final. Recusa backend já instanciado, carrega o plugin absoluto e exige exclusivamente `rcmusic-schannel-offline`, selecionado e com suporte TLS. Falha deve encerrar o worker, sem retry/fallback; o loader não altera confiança/CA padrão, não oferece opções de relaxamento e não recebe URLs.
 
-Import DLLs entram antes de `main`: verificar paths/arquivos após o carregamento **não prova sozinho os bytes originalmente mapeados**, nem previne um carregamento inicial indevido. O futuro launcher/runtime deve autenticar e conservar os artefatos antes de criar o processo, controlar DLL search, ambiente/WD e manter o loader vivo. O executável diskless abaixo existe no alvo opcional, mas não implementa essa autenticação pré-launch nem composição no player. Testes de ativação não reexecutam handshake, CRL/OCSP/CTL, sandbox ou gates de distribuição do [ADR-0009](architecture/decisions/0009-download-execution-backends.md).
+Import DLLs entram antes de `main`: verificar paths/arquivos após o carregamento **não prova sozinho os bytes originalmente mapeados**, nem previne um carregamento inicial indevido. A preparação e o bootstrap abaixo acrescentam autenticação anterior aos imports não-OS, sem substituir o loader TLS. O executável diretamente ligado ao Qt permanece somente seam histórico/de teste, excluído do build padrão; não usar esse EXE como entrada autenticada. Testes de ativação não reexecutam handshake, CRL/OCSP/CTL, sandbox ou gates de distribuição do [ADR-0009](architecture/decisions/0009-download-execution-backends.md).
+
+## Runtime privado autenticado antes do launch
+
+`WindowsDownloadNetworkLaunch::prepare(config)` só deve executar em worker. A composição confiável fornece um parent existente local e nove fontes/SHA-256 revisados, por papel fixo: bootstrap `RCMusicDownloadWorker.exe`, payload `rcmusic-download-network.dll`, Qt Core/Network, `msvcp140`, `msvcp140_1`, `vcruntime140`, `vcruntime140_1` e `qrcmusicschanneloffline.dll`. Não derivar esses pins/paths de mensagens, páginas ou ambiente. Autenticar bytes não revisa um PE arbitrário; um perfil de artefatos conhecido e a revisão de sua closure são precondições.
+
+Todos os sources são pinados/hashados antes de criar a pasta. Cópia de blocos de 64 KiB usa os handles autenticados e `CREATE_NEW`; não reabre sources por nome ou altera SDK/CRT originais. A folha UUID nova recebe DACL protegida somente para usuário atual/SYSTEM, sem mudar permissões do parent. Os destinos são reautenticados e mantêm handles somente leitura/share-read e ancestrais pinados. Teto é 128 MiB por artefato, nove arquivos fixos; isso não limita `SizeOfImage` ou toda memória mapeada. Paths derivados devem caber no limite de 8.192 unidades UTF-16 do supervisor antes de qualquer criação.
+
+O diretório deve conter exatamente os nove nomes planos e nenhum reparse/subdiretório: recusar também `qt.conf`, `qt6.conf`, `.local`, manifests externos e DLLs extras. A enumeração para no primeiro extra ou depois do décimo nome, sem lista ilimitada. `unchanged()` revalida identidades/tamanhos/path final e inventário antes de cada filho. Handles/ACL não protegem contra um host comprometido, mapeamentos de escrita preexistentes, injeção ativa do mesmo usuário/admin ou toda alteração de atributos.
+
+`WindowsProcessDownloadIoConfig::prepared_launch` conserva a capability junto do supervisor. Quando presente, `process` e `runtime` crus são ignorados; executable/CWD e pins enviados pelo stdin são os das cópias privadas. Ambiente contém somente `PATH` vazio e `SystemRoot` obtido pela API do Windows. Redirect/sucessor aguarda o ACK anterior, revalidando a mesma capability. Ela sobrevive ao processo/pipes e só é liberada na destruição do proxy, que exige ACK nativo já drenado; o fallback do destrutor não substitui essa precondição. Campos crus continuam um seam de testes sintéticos legado, não prova pré-launch.
+
+O bootstrap `/MT` não linka Qt e o PE inspecionado importa apenas `KERNEL32.dll`. Após entrar em código nativo, restringe DLL search a System32 e esvazia `SetDllDirectory`; só então carrega payload absoluto com `DLL_LOAD_DIR | SYSTEM32`. Não modifica a busca de DLLs do player. Export único `int WINAPI` one-shot/noexcept não transfere objetos, strings, ownership ou exceptions entre CRTs; HMODULE fica retido até saída do processo. Falha pré-payload retorna 17 sem inventar frame Qt. Payload `/MD` incorpora `:/qt/etc/qt.conf`, ligado diretamente como QRC, com prefix/bin/lib relativos fixos e nenhum environment expansion; o worker limpa `libraryPaths` imediatamente depois de criar `QCoreApplication` e mantém plugin absoluto/one-shot. [Regras Win32 de busca](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order), [LoadLibraryEx](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexw).
+
+Os nove arquivos não incluem DLLs do Windows: System32/ICU (`icuuc` → ICU do OS), UCRT, API sets, KnownDLLs, SxS/AppCompat e o host de execução são precondições confiáveis explícitas. Não copiar ICU do host para o bundle nem alegar todos os imports universalmente pinados. Manifests embutidos `asInvoker` existem nos PEs revisados; a recusa acima é de extras externos. Revisão/gate de [imports do perfil](../tools/download-runtime/README.md) não comprova todos os carregamentos dinâmicos ou mínimo Windows/publicação. [ICU no Windows](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-).
+
+Cleanup reabre apenas os nove nomes próprios e exige mesma identidade/path final regular antes de marcar remoção por handle. Remove a folha apenas se ainda for o diretório criado e estiver vazio; não há remoção recursiva, travessia de reparse ou exclusão de extras. Incerteza/falha de limpeza deixa o residual privado, não autoriza apagá-lo como árvore. Ownership/journal e recuperação duráveis de residuais ainda precisam de integração própria.
 
 ## Rede diskless e protocolo privado
 
@@ -75,7 +92,7 @@ Sucesso de DNS/EOF exige sequência válida, Terminal sem erro, exit zero e ence
 
 Cancelamento não apaga uma saída natural já ocorrida: supervisor observa o handle sem bloquear e conserva exit code/bytes pendentes; proxy valida Terminal/exit mesmo depois de descartar o slot legível. Antes de admitir o próximo destino, também avança e verifica a saída anterior, sem substituir essa prova ao iniciar outro filho. Um filho ainda vivo encerrado pelo cancelamento pode ter IPC truncado por essa ação própria; continua exigindo ACK nativo, mas não é falsamente classificado como uma saída natural inválida. Nenhuma dessas distinções permite liberar processo/pipes ainda ativos.
 
-São componentes worker-thread, não uma porta rápida ou um launcher autenticado de produção. O endpoint de baixo nível admite loopback apenas para testes controlados; `DirectDownloadSession` mantém a recusa de redes privadas em produção. Não há imports pré-main autenticados, sandbox completa, host ou downloads habilitados no app.
+São componentes worker-thread, não uma porta rápida ou um launcher distribuído aprovado. O endpoint de baixo nível admite loopback apenas para testes controlados; `DirectDownloadSession` mantém a recusa de redes privadas em produção. A capability/entrada nativa acima implementa autenticação pré-launch no alvo opcional; ainda não há sandbox completa, perfil de produção, host ou downloads habilitados no app.
 
 ## Inspeção, conversão e conclusão
 
@@ -228,10 +245,29 @@ if ($LASTEXITCODE -ne 0) { throw 'Build opcional OFF falhou' }
 ctest --test-dir out/product/download-network-release -N
 ```
 
+### Incremento de runtime autenticado pré-launch
+
+Em 2026-10-01, stub de preparação teve Red **3 passagens/2 falhas**; uso da capability pelo proxy **6/1**; headroom de path derivado **8/1**. Uma mutação controlada removendo a revalidação pré-launch reproduziu **17/4**: todos os quatro extras de loader iniciavam o filho indevidamente. A primeira tentativa dessa mutação não compilou por `/WX`, portanto não é Red comportamental. Check foi restaurado sem relaxar testes. Green final **21/21 casos Qt**, zero skips, cobre nove hashes errados, preparo/cleanup privados, DNS literal real, stream HTTP local com retenção/pins até cancelamento reconhecido e payload malformado sem frames/diagnósticos. Os testes copiam apenas para TEMP próprio e nunca criam aliases para SDK/fontes pessoais.
+
+Extração mecânica dos helpers de pins manteve API/erros TLS; baseline antes e suíte depois passaram **40/40**. Revisão de fontes e PEs é separada: bootstrap só KERNEL32, closure privada de nove arquivos/OS, nenhum delay-import nos nove PEs examinados, manifests embutidos `asInvoker` sem dependencies de SxS no bootstrap/payload inspecionados. Isso não autentica todo carregamento dinâmico, mínimo OS ou fontes/notices de distribuição. O [gate de imports](../tools/download-runtime/README.md) passou nos **nove PEs reais** e seu parser determinístico passou **29/29**; verifica o perfil conhecido por leitura, não executa os artefatos.
+
+Fechamento Release ON MSVC 19.44/Qt 6.11.2 passou **44/44 CTest em 29,90 s**: serviço 36 e oito alvos Qt (launcher 21, TLS 40, worker 19, supervisor 44, proxy 33, execução 32, sessão 60, composição 10), sem skips. Refactor posterior protege cleanup contra exceptions de inspeção/alocação sem fallback destrutivo; launcher permaneceu **21/21**, CTest **1/1 em 4,66 s**. OFF recompilou biblioteca/bootstrap/payload e listou zero testes; grafo sem Qt Test/Catch2/helpers/fixtures/paths CLI/Multimedia/WebEngine. EXE Qt legado não está no build padrão OFF. Formato dos 14 C++, docs/rastreabilidade e diff são checks separados. Core independente, JavaScript, UI e handshake TLS não foram reexecutados neste incremento. Não houve runtime/instalador do player novo, benchmark, instalação/Registry, perfil pessoal ou mídia pública.
+
+Após a configuração ON com a fixture TLS já documentada, indicar explicitamente o diretório **revisado e correspondente** dos quatro CRTs (somente testes); ausência de fixture TLS/CRT produz skips e não prova a jornada real:
+
+```powershell
+cmake -S . -B out/product/browser-integration-tests "-DRC_MUSIC_DOWNLOAD_TEST_CRT_DIR=$rcReviewedCrtDirectory"
+if ($LASTEXITCODE -ne 0) { throw 'Configure da fixture CRT falhou' }
+cmake --build out/product/browser-integration-tests --target rc_music_WindowsDownloadNetworkLaunch_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build do runtime pré-launch falhou' }
+ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.download-network\.WindowsDownloadNetworkLaunch$' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'CTest do runtime pré-launch falhou' }
+```
+
 ## Gates que continuam abertos
 
 1. CLI corrigido, artefato/proveniência/hashes e revisão dos avisos antes de aceitar mídia não confiável; licenças, notices, fontes correspondentes e distribuição do conjunto exato.
 2. Sandbox efetivo de rede/sistema de arquivos para parser/conversor; Job Object e `-protocol_whitelist file` não fecham esse gate. Avaliar todos os acessos indiretos e limites nativos, sem diminuir verificação.
-3. Autenticar e conservar artefatos antes de criar o worker e controlar busca de DLLs/ambiente/WD. Worker/proxy e porta rápida existem fora do app; ensaios separados não comprovam jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia.
+3. Perfil exato revisado de artefatos/imports/notices e composição da capability pré-launch na factory worker; preparação/cópia não podem bloquear UI. Worker/proxy/porta rápida e capability existem fora do app; ensaios separados não comprovam jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia. Ownership/journal durável de runtime residual não está implementado.
 4. Importador local, persistência/recuperação e projeção de jobs, host Native Messaging e UI do player. Não há abertura automática de MP3 parcial nem integração com playback.
 5. Fluxo Brave/Chromium, navegação interna opcional, edições Lite/Completa, extensão e instaladores/ownership; YouTube permanece separado. Sem instalação, Registry, perfis, mídia pública ou aprovação de release neste incremento.

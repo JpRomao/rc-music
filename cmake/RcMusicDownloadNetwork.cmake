@@ -21,14 +21,33 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
-    add_executable(rc_music_download_network_worker
+    # Legacy directly-linked executable is an explicit historical/test seam,
+    # never the authenticated runtime's entry point or a default OFF artifact.
+    add_executable(rc_music_download_network_worker EXCLUDE_FROM_ALL
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkWorkerMain.cpp")
     target_link_libraries(rc_music_download_network_worker PRIVATE rc_music_download_network)
     rc_music_configure_cpp(rc_music_download_network_worker)
+    add_executable(rc_music_download_network_bootstrap
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkBootstrapMain.cpp")
+    set_target_properties(rc_music_download_network_bootstrap PROPERTIES
+        OUTPUT_NAME "RCMusicDownloadWorker" MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    rc_music_configure_cpp(rc_music_download_network_bootstrap)
+    add_library(rc_music_download_network_payload SHARED
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkPayloadEntry.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkWorkerMain.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkPayload.qrc")
+    set_target_properties(rc_music_download_network_payload PROPERTIES
+        OUTPUT_NAME "rcmusic-download-network" PREFIX "" AUTORCC ON
+        MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    target_compile_definitions(rc_music_download_network_payload PRIVATE RC_MUSIC_DOWNLOAD_NETWORK_PAYLOAD)
+    target_link_libraries(rc_music_download_network_payload PRIVATE rc_music_download_network)
+    rc_music_configure_cpp(rc_music_download_network_payload)
 endif()
 
 if(BUILD_TESTING)
@@ -37,7 +56,7 @@ if(BUILD_TESTING)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
             WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
-            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution)
+            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadNetworkLaunch)
         add_executable(rc_music_download_io_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
         target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)
@@ -66,6 +85,20 @@ if(BUILD_TESTING)
                 message(FATAL_ERROR "RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN requires an existing absolute DLL path")
             endif()
             file(SHA256 "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}" rc_music_test_tls_plugin_sha256)
+        endif()
+        set(RC_MUSIC_DOWNLOAD_TEST_CRT_DIR "" CACHE PATH
+            "Reviewed matching MSVC CRT source directory for private network-launch tests only")
+        if(RC_MUSIC_DOWNLOAD_TEST_CRT_DIR)
+            if(NOT IS_ABSOLUTE "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}" OR
+               NOT IS_DIRECTORY "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}")
+                message(FATAL_ERROR "RC_MUSIC_DOWNLOAD_TEST_CRT_DIR requires an existing absolute directory")
+            endif()
+            foreach(dll IN ITEMS msvcp140.dll msvcp140_1.dll vcruntime140.dll vcruntime140_1.dll)
+                if(NOT EXISTS "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/${dll}" OR
+                   IS_DIRECTORY "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/${dll}")
+                    message(FATAL_ERROR "Reviewed launch CRT fixture is missing ${dll}")
+                endif()
+            endforeach()
         endif()
         set(RC_MUSIC_DOWNLOAD_TEST_FFMPEG "" CACHE FILEPATH "Reviewed local FFmpeg for synthetic converter tests only")
         set(RC_MUSIC_DOWNLOAD_TEST_FFPROBE "" CACHE FILEPATH "Reviewed local ffprobe for synthetic converter tests only")
@@ -96,6 +129,15 @@ if(BUILD_TESTING)
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
+        elseif(unit STREQUAL "WindowsDownloadNetworkLaunch")
+            add_dependencies(${target} rc_music_download_network_bootstrap rc_music_download_network_payload)
+            target_compile_definitions(${target} PRIVATE
+                RC_MUSIC_TEST_BOOTSTRAP_PATH="$<TARGET_FILE:rc_music_download_network_bootstrap>"
+                RC_MUSIC_TEST_PAYLOAD_PATH="$<TARGET_FILE:rc_music_download_network_payload>"
+                RC_MUSIC_TEST_CRT_DIR="${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}"
+                RC_MUSIC_TEST_TLS_CORE_PATH="${rc_music_test_tls_core}"
+                RC_MUSIC_TEST_TLS_NETWORK_PATH="${rc_music_test_tls_network}"
+                RC_MUSIC_TEST_TLS_PLUGIN_PATH="${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}")
         elseif(unit STREQUAL "WindowsDownloadTlsRuntime" OR unit STREQUAL "WindowsDownloadNetworkWorker" OR
                unit STREQUAL "WindowsProcessDownloadIo" OR unit STREQUAL "WindowsProcessDownloadJob")
             add_dependencies(${target} rc_music_download_tls_runtime_helper rc_music_download_network_worker)

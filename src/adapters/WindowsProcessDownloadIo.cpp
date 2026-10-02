@@ -1,4 +1,5 @@
 #include "WindowsProcessDownloadIo.hpp"
+#include "WindowsDownloadNetworkLaunch.hpp"
 
 #include <QElapsedTimer>
 
@@ -49,7 +50,13 @@ struct WindowsProcessDownloadIo::Impl final {
     bool terminal_seen{false};
     bool authenticated_eof{false};
 
-    explicit Impl(WindowsProcessDownloadIoConfig value) : config(std::move(value)) { clock.start(); }
+    explicit Impl(WindowsProcessDownloadIoConfig value) : config(std::move(value)) {
+        if (config.prepared_launch) {
+            config.process = config.prepared_launch->processConfig();
+            config.runtime = config.prepared_launch->tlsConfig();
+        }
+        clock.start();
+    }
     void fail(DownloadFailure cause) {
         if (error == DownloadFailure::None)
             error = cause;
@@ -65,6 +72,10 @@ struct WindowsProcessDownloadIo::Impl final {
                (cancelled || error != DownloadFailure::None || !decoder.incomplete());
     }
     bool begin(const DownloadWorkerRequest& request) {
+        if (config.prepared_launch && !config.prepared_launch->unchanged()) {
+            fail(DownloadFailure::Unavailable);
+            return false;
+        }
         const auto input = encodeDownloadWorkerRequest(request);
         if (!config.process.environment || !config.process.arguments.isEmpty() ||
             !config.process.standard_input.isEmpty() || config.max_wire_bytes == 0 ||

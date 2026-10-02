@@ -357,7 +357,7 @@ class NativeInput final {
 }
 
 [[nodiscard]] bool localAbsolute(const QString& value) {
-    return validText(value) && value.size() <= 8192 && QDir::isAbsolutePath(value) &&
+    return validText(value) && value.size() <= download_process_max_path_units && QDir::isAbsolutePath(value) &&
            !value.startsWith(QStringLiteral("\\\\")) && !value.startsWith(QStringLiteral("//"));
 }
 

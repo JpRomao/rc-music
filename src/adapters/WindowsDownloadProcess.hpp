@@ -13,6 +13,7 @@ namespace music_player::m0 {
 inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
 inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
 inline constexpr qsizetype download_process_max_environment_units = 32760;
+inline constexpr qsizetype download_process_max_path_units = 8192;
 
 // Trusted composition only: these are never accepted from an extension/page.
 // The executable and working directory must be absolute local filesystem paths.

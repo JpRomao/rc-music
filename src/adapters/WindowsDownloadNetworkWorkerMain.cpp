@@ -1,4 +1,5 @@
 #include "DownloadWorkerProtocol.hpp"
+#include "WindowsDownloadNetworkWorker.hpp"
 
 #include <QCoreApplication>
 #include <QHostInfo>
@@ -203,7 +204,7 @@ class NetworkWorker final : public QObject {
 };
 } // namespace
 
-int main(int argc, char* argv[]) {
+int music_player::m0::runWindowsDownloadNetworkWorker(int argc, char* argv[]) {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     qInstallMessageHandler(discardMessage);
@@ -211,6 +212,7 @@ int main(int argc, char* argv[]) {
         if (argc != 1)
             return terminalResult(DownloadWorkerError::InvalidRequest);
         QCoreApplication application(argc, argv);
+        QCoreApplication::setLibraryPaths({});
         const auto bytes = readRequest();
         const auto request = bytes ? decodeDownloadWorkerRequest(*bytes) : std::nullopt;
         if (!request)
@@ -227,3 +229,8 @@ int main(int argc, char* argv[]) {
         return terminalResult(DownloadWorkerError::InvalidRequest);
     }
 }
+
+#ifndef RC_MUSIC_DOWNLOAD_NETWORK_PAYLOAD
+// Historical worker/test executable, not the authenticated product bootstrap.
+int main(int argc, char* argv[]) { return music_player::m0::runWindowsDownloadNetworkWorker(argc, argv); }
+#endif

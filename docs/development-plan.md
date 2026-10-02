@@ -743,7 +743,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — execução assíncrona e próxima integração
+### Checkpoint atual — runtime autenticado pré-launch
+
+Incremento de runtime autenticado pré-launch de 2026-10-01: [capability privada e bootstrap nativo](download-conversion.md#runtime-privado-autenticado-antes-do-launch) autenticam nove artefatos antes de criar o filho. Cópia por handle/CREATE_NEW, DACL privada, reautenticação e pins são do controlador; o proxy retém a capability até destruir o supervisor depois de ACK nativo. Bootstrap `/MT` só importa KERNEL32 e restringe DLL search antes de carregar payload Qt `/MD` absoluto. QRC contém `qt.conf` fixo; extras/reparse são recusados. O EXE Qt direto permanece seam histórico/de teste, não entrada autenticada/default OFF. OS/System32/API sets/KnownDLL/SxS/ICU e ausência de host comprometido são precondições, não DLLs universalmente pinadas ou sandbox.
+
+TDD: stub **3 passagens/2 falhas**, capability no proxy **6/1**, headroom de paths **8/1**; mutação controlada sem check pré-launch reproduziu **17/4** para configs/`.local`/manifest extras. Green final **21/21** casos Qt. Resolve literal e stream HTTP loopback passam pelo bootstrap/payload e ACK reais; arquivos não podem ser escritos/renomeados/removidos enquanto a capability vive, inclusive após pedir cancelamento. Payload malformado falha sem frames/diagnósticos; desconhecidos sobrevivem ao cleanup. Sem mídia pessoal/internet ou SDK alterado.
+
+Release ON proporcional passou **44/44 CTest em 29,90 s**, incluindo serviço 36/36 e oito suites Qt (launcher 21, TLS 40, worker 19, supervisor 44, proxy 33, execução 32, sessão 60, composição 10 casos), sem skips. OFF compila biblioteca/bootstrap/payload, lista zero testes e não depende de helpers/fixtures/CLI/Qt Test/Catch2/engines. Revisão PE/imports é separada de testes funcionais; perfil exato/notices/distribuição e cenários TLS completos não estão aprovados. JavaScript, core independente e UI não foram reexecutados; evidências antigas não são checks atuais.
+
+Próxima sequência: compor o perfil privado na factory worker sem preparar/copiá-lo na UI; FFmpeg corrigido/proveniência/licenças/sandbox; importação append-only sem autoplay, journal/recuperação limitados de jobs/recibos/finais/residuais e lifecycle/host/model/UI no player. Depois engine isolada da Completa e instaladores/opcionais de ambas. ADR-0006 continua aceito: Lite sem engine interna, Completa com navegação isolada, ambas com integração externa opcional e YouTube separado. Nenhum download instalado/Registry, aprovação de mídia remota/release, benchmark ou Computer Use. Não marcar R1 amplo concluído ou substituir o plano completo por este recorte.
+
+### Checkpoint anterior — execução assíncrona e próxima integração
 
 Incremento de execução assíncrona de 2026-10-01: [porta rápida Windows e lifecycle](download-conversion.md#incremento-de-execução-assíncrona) passou Red **8 passagens/20 falhas**, Green **28/28**, regressão de falha tipada **28 passagens/3 falhas** e Green final **32/32** casos Qt. Factory/tarefa/I/O/destruição ficam na thread privada; caller retorna enquanto gates continuam bloqueados, sem benchmark. Um pedido/snapshot/wake são limitados; terminal correspondente libera novo start somente depois do ACK válido e destruição. `shutdown` fecha admissão prontamente; `stopped` reconhece também teardown. Destruir na UI requer observar parada previamente; join não é protocolo rápido.
 

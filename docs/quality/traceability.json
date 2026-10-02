@@ -1232,6 +1232,14 @@
         {
           "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
           "marker": "asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadNetworkLaunchTests.cpp",
+          "marker": "realBootstrapResolvesUsingOwnedCapability"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadNetworkLaunchTests.cpp",
+          "marker": "activeStreamRetainsPinsThroughCancelAcknowledgement"
         }
       ],
       "evidence": [
@@ -1253,7 +1261,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida mantém tarefa/I/O/destruição na thread privada, com mailbox limitado e shutdown/teardown reconhecidos. Composição MP3/MP4→serviço usa transferência/helper e importador falsos, com processos/filesystem/conversor/validação/publicação reais. Continua fora do player. Completar launcher/runtime pré-DLLs, FFmpeg corrigido/proveniência/licenças/sandbox, importação append-only sem autoplay, journal/persistência/recuperação de jobs/recibos/finais, host/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos, sem workflow completo no app ou aprovação de mídia remota/distribuição."
+        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida mantém tarefa/I/O/destruição na thread privada, com mailbox limitado e shutdown/teardown reconhecidos. Runtime pré-launch autentica nove cópias privadas e bootstrap OS-only, com capability retida pelo proxy até teardown após ACK; perfil/factory ainda precisam de composição. Composição MP3/MP4→serviço usa transferência/helper e importador falsos, com processos/filesystem/conversor/validação/publicação reais. Continua fora do player. Completar perfil/runtime na factory worker, FFmpeg corrigido/proveniência/licenças/sandbox, importação append-only sem autoplay, journal/persistência/recuperação de jobs/recibos/finais/residuais, host/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos, sem workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {
