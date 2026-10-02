@@ -1212,6 +1212,18 @@
         {
           "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
           "marker": "authenticatedSyntheticTransferConvertsThenPublishesOnlyInSeparatePhase"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadNetworkWorkerTests.cpp",
+          "marker": "httpStreamsExactRawBytesInBoundedFramesBeforeAuthenticatedEof"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "realWorkerNumericDnsTraversesSupervisorCodecAndAcknowledgement"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
+          "marker": "framedChildBytesAreConvertedValidatedAndPublishedOnlyAfterNativeStop"
         }
       ],
       "evidence": [
@@ -1224,12 +1236,16 @@
           "marker": "Falha remota nunca altera a disponibilidade de arquivos locais."
         },
         {
+          "path": "docs/development-plan.md",
+          "marker": "Incremento de rede diskless de 2026-10-01"
+        },
+        {
           "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
           "marker": "## Decisão de produto"
         }
       ],
       "remaining": [
-        "Cliente, recepção e serviço idempotente entre conexões na mesma execução testados; transporte limitado tem policy/session com fakes e socket real em loopback. Sessão worker-only compõe transferência falsa e filesystem/conversor/validação/publicação reais, ainda fora da porta/serviço/player. Completar subprocesso DNS/TLS diskless e ack real, gates CLI/isolamento, importação, persistência de jobs/recibos, host, UI/importador no player, descoberta ampliada, Brave real, Lite/Completa e opcionais dos instaladores. Streaming do ADR-0003 permanece proposto; este ensaio parcial não atende o fluxo completo."
+        "Cliente, recepção e serviço idempotente entre conexões testados; worker DNS/HTTP/TLS diskless e proxy supervisionado implementados, exercitados com HTTP loopback e DNS literal. Composição MP3/MP4 usa transferência falsa em helper e processo/supervisor/filesystem/conversor/validação/publicação reais, aguardando parada nativa antes de converter/limpar/emitir terminal. Continua fora da porta/serviço/player. Completar launcher/runtime autenticados antes do carregamento de DLLs, FFmpeg corrigido/proveniência/licenças/sandbox, porta rápida/importação, persistência/recuperação de jobs/recibos, host/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de Lite/Completa; ambas integram a extensão externa opcional e YouTube permanece separado. Streaming do ADR-0003 e backend do ADR-0009 permanecem propostos; não há workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {
@@ -1364,6 +1380,58 @@
           "marker": "anUnknownFilePreventsCleanCancellationWithoutDeletingIt"
         },
         {
+          "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
+          "marker": "completedTransferCannotConvertOrCleanBeforeNativeIoStops"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
+          "marker": "unknownStopErrorsAreNormalizedWithoutErasingTheFirstFailure"
+        },
+        {
+          "path": "tests/qt/DirectDownloadSessionTests.cpp",
+          "marker": "typedIoFailuresAreCapturedBeforeCancelCanEraseThem"
+        },
+        {
+          "path": "tests/qt/DownloadWorkerProtocolTests.cpp",
+          "marker": "frameDecoderSupportsEveryPartialBoundaryAndRejectsMalformedBody"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadNetworkWorkerTests.cpp",
+          "marker": "runtimeIsRequiredEvenForNumericDns"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "successfulDnsWaitsForNativeExitNotJustTerminalFrame"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "malformedOrUnacknowledgedStreamNeverReportsFinished"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "timeoutRemainsTypedUntilNativeAcknowledgement"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "consumptionThenCancelCannotHideANaturalExitFailure"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadIoTests.cpp",
+          "marker": "successorCannotEraseAnUnvalidatedNaturalExit"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadProcessTests.cpp",
+          "marker": "preservesNaturalExitAndPendingPipesWhenCancelledAfterNativeExit"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
+          "marker": "typedIoFailuresSurviveSessionCompositionAndNativeDraining"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
+          "marker": "childFailureOrCancellationNeverPublishes"
+        },
+        {
           "path": "tools/download-tls/tests/RestrictedTlsTests.cpp",
           "marker": "incompleteAiaChainCannotFetchTrapOrSendMediaGet"
         }
@@ -1372,6 +1440,10 @@
         {
           "path": "docs/development-plan.md",
           "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "Incremento de rede diskless de 2026-10-01"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1383,7 +1455,7 @@
         }
       ],
       "remaining": [
-        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF, framing limitado e TLS loopback. Sessão Windows compõe transferência falsa e temporários/cotas/conversão/publicação reais, com terminal estável e falha de cleanup preservada; serviço também conserva falha tipada durante cancelamento e primeira causa durante drenagem. AIA restrito tem ensaio separado. Faltam DNS/TLS em subprocesso autenticado, porta rápida/ack real, demais gates Schannel/CLI/sandbox, importação, recuperação/host/persistência e expiração/live/restrições/headers/seek. Não há backend completo nem aprovação de mídia remota."
+        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF e TLS loopback. Worker diskless/proxy têm frames limitados, EOF explícito e ACK de saída nativa/pipes, que antecede selagem/conversão/cleanup/terminal; erro tipado de timeout/protocolo e primeira causa sobrevivem ao cancelamento e drenagem. Cancelamento tardio/redirect não apaga saída natural inválida ou descarta pipes pendentes. Sessão Windows e integração MP3/MP4 usam transferência falsa com temporários/cotas/processos/conversão/validação/publicação reais, terminal estável e falha de cleanup preservada. RAII e QtDownloadIo in-process não qualificam o ACK; AIA restrito tem ensaio separado. Faltam launcher/runtime autenticados antes de carregar DLLs, porta rápida/importação, demais gates Schannel/FFmpeg corrigido/proveniência/licenças/sandbox, recuperação/host/persistência/UI, edições/instaladores e cobertura de expiração/live/restrições/headers/seek. Não há backend completo no app nem aprovação de mídia remota/distribuição."
       ]
     },
     {

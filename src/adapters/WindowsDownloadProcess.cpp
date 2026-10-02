@@ -671,6 +671,9 @@ void WindowsDownloadProcess::cancel() {
     auto& value = *impl_;
     if (value.update.state == WindowsDownloadProcessState::Idle)
         value.update.state = WindowsDownloadProcessState::Cancelled;
+    else if (value.update.state == WindowsDownloadProcessState::Running && value.processEnded())
+        // Preserve a witnessed natural exit while pending pipes drain under their normal limits.
+        return;
     else
         value.stop(WindowsDownloadProcessState::Cancelled, WindowsDownloadProcessError::None);
 }

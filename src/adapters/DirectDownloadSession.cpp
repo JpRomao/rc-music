@@ -46,7 +46,7 @@ bool DirectDownloadSession::beginHop(qint64 now_ms) {
             return true;
     } catch (...) {
     }
-    fail(DownloadFailure::Network);
+    fail(ioFailure());
     return false;
 }
 void DirectDownloadSession::tick(qint64 now_ms) {
@@ -72,7 +72,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             if (resolution.state == DownloadResolutionState::Pending)
                 return;
             if (resolution.state != DownloadResolutionState::Resolved) {
-                fail(DownloadFailure::Network);
+                fail(ioFailure());
                 return;
             }
             const auto addresses = approveDownloadAddresses(resolution.addresses);
@@ -92,7 +92,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             if (!active(snapshot_.state))
                 return;
             if (!accepted)
-                fail(DownloadFailure::Network);
+                fail(ioFailure());
             return;
         }
         const auto stream = io_.poll();
@@ -100,7 +100,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             return;
         if (stream.state == PinnedDownloadStreamState::Failed || stream.state == PinnedDownloadStreamState::Cancelled ||
             stream.state == PinnedDownloadStreamState::Idle) {
-            fail(DownloadFailure::Network);
+            fail(ioFailure());
             return;
         }
         if (stream.state == PinnedDownloadStreamState::Connecting)
@@ -183,7 +183,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             io_.cancel();
         }
     } catch (...) {
-        fail(DownloadFailure::Network);
+        fail(ioFailure());
     }
 }
 void DirectDownloadSession::cancel() {
@@ -196,6 +196,35 @@ void DirectDownloadSession::cancel() {
     }
 }
 DirectDownloadSnapshot DirectDownloadSession::snapshot() const { return snapshot_; }
+DownloadFailure DirectDownloadSession::ioFailure() const noexcept {
+    // Capture the adapter's already observed error before fail() cancels it.
+    // Missing reports keep the conservative Network fallback; unknown values
+    // cannot escape the closed public failure contract.
+    try {
+        const auto error = io_.failure();
+        switch (error) {
+        case DownloadFailure::None:
+            return DownloadFailure::Network;
+        case DownloadFailure::Unavailable:
+        case DownloadFailure::Network:
+        case DownloadFailure::Expired:
+        case DownloadFailure::Restricted:
+        case DownloadFailure::UnsupportedMedia:
+        case DownloadFailure::NoAudio:
+        case DownloadFailure::LimitExceeded:
+        case DownloadFailure::Conversion:
+        case DownloadFailure::Publication:
+        case DownloadFailure::Import:
+        case DownloadFailure::Timeout:
+        case DownloadFailure::InvalidResult:
+            return error;
+        default:
+            return DownloadFailure::InvalidResult;
+        }
+    } catch (...) {
+        return DownloadFailure::Network;
+    }
+}
 void DirectDownloadSession::fail(DownloadFailure error) {
     if (snapshot_.state == DirectDownloadState::Cancelled)
         return;

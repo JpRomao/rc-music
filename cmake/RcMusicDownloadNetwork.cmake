@@ -16,12 +16,18 @@ rc_music_configure_cpp(rc_music_download_network)
 
 if(WIN32)
     target_sources(rc_music_download_network PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadWorkerProtocol.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsProcessDownloadIo.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
+    add_executable(rc_music_download_network_worker
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkWorkerMain.cpp")
+    target_link_libraries(rc_music_download_network_worker PRIVATE rc_music_download_network)
+    rc_music_configure_cpp(rc_music_download_network_worker)
 endif()
 
 if(BUILD_TESTING)
@@ -29,7 +35,15 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime)
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadNetworkWorker WindowsProcessDownloadIo)
+        add_executable(rc_music_download_io_helper
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
+        target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)
+        target_compile_definitions(rc_music_download_io_helper PRIVATE
+            RC_MUSIC_TEST_MP3_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-unicode-tags.mp3"
+            RC_MUSIC_TEST_MP4_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/m4a-aac-lc.m4a")
+        rc_music_configure_cpp(rc_music_download_io_helper)
         add_executable(rc_music_download_process_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadProcessHelper.cpp")
         target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core)
@@ -60,7 +74,8 @@ if(BUILD_TESTING)
                     message(FATAL_ERROR "${tool} requires an existing absolute executable path")
                 endif()
             endforeach()
-            list(APPEND rc_music_download_network_test_units WindowsLocalMediaConverter WindowsDownloadJobSession)
+            list(APPEND rc_music_download_network_test_units WindowsLocalMediaConverter WindowsDownloadJobSession
+                WindowsProcessDownloadJob)
             add_executable(rc_music_download_converter_helper
                 "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsLocalMediaConverterHelper.cpp")
             target_link_libraries(rc_music_download_converter_helper PRIVATE Qt6::Core)
@@ -80,9 +95,21 @@ if(BUILD_TESTING)
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
-        elseif(unit STREQUAL "WindowsDownloadTlsRuntime")
-            add_dependencies(${target} rc_music_download_tls_runtime_helper)
+        elseif(unit STREQUAL "WindowsDownloadTlsRuntime" OR unit STREQUAL "WindowsDownloadNetworkWorker" OR
+               unit STREQUAL "WindowsProcessDownloadIo" OR unit STREQUAL "WindowsProcessDownloadJob")
+            add_dependencies(${target} rc_music_download_tls_runtime_helper rc_music_download_network_worker)
+            if(unit STREQUAL "WindowsProcessDownloadIo" OR unit STREQUAL "WindowsProcessDownloadJob")
+                add_dependencies(${target} rc_music_download_io_helper)
+                target_compile_definitions(${target} PRIVATE
+                    RC_MUSIC_TEST_IO_HELPER_PATH="$<TARGET_FILE:rc_music_download_io_helper>")
+                if(unit STREQUAL "WindowsProcessDownloadJob")
+                    target_compile_definitions(${target} PRIVATE
+                        RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"
+                        RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}")
+                endif()
+            endif()
             target_compile_definitions(${target} PRIVATE
+                RC_MUSIC_TEST_NETWORK_WORKER_PATH="$<TARGET_FILE:rc_music_download_network_worker>"
                 RC_MUSIC_TEST_TLS_HELPER_PATH="$<TARGET_FILE:rc_music_download_tls_runtime_helper>"
                 RC_MUSIC_TEST_TLS_CORE_PATH="${rc_music_test_tls_core}"
                 RC_MUSIC_TEST_TLS_CORE_SHA256="${rc_music_test_tls_core_sha256}"

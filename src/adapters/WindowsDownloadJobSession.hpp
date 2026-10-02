@@ -17,9 +17,12 @@ struct WindowsDownloadJobSessionConfig final {
 // One-shot composition owned by a worker with a Qt event loop, NOT the prompt
 // DownloadExecution UI port. File writes/flush/rename may block. The observed
 // clock is checked between steps, not a hard deadline inside native calls.
-// The borrowed IO and trusted parents/tools must outlive this object. Qt DNS
-// cancellation alone does not acknowledge termination of native resolver work;
-// a future subprocess owner must establish that before exposing a terminal DTO.
+// The borrowed IO and trusted parents/tools must outlive this object. Every
+// completion/stop drains IO's explicit native acknowledgement before sealing,
+// conversion, cleanup or terminal results. QtDownloadIo alone cannot prove this;
+// use an IO adapter owning the separate diskless network process and its pipes.
+// The owner MUST poll to terminal before destruction. RAII best-effort cleanup
+// is not a stopping acknowledgement and cannot substitute for that lifecycle.
 class WindowsDownloadJobSession final {
   public:
     WindowsDownloadJobSession(DirectDownloadIo& io, WindowsDownloadJobSessionConfig config);

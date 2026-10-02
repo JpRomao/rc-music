@@ -22,6 +22,13 @@ class FakeIo final : public DirectDownloadIo {
     QList<QByteArray> chunks{};
     std::function<void()> on_resolve{};
     std::function<void()> on_read{};
+    std::function<void()> on_stop{};
+    DirectDownloadIoStopUpdate stop_update{true, DownloadFailure::None};
+    PinnedDownloadStreamUpdate stream_update{PinnedDownloadStreamState::Receiving};
+    DownloadFailure failure_value{DownloadFailure::None};
+    bool clear_failure_on_cancel{false};
+    int stop_polls{0};
+    int premature_stop_polls{0};
     int cancels{0};
     bool resolve(const QString& host) override {
         hosts.push_back(host);
@@ -34,7 +41,7 @@ class FakeIo final : public DirectDownloadIo {
         endpoints.push_back(endpoint);
         return true;
     }
-    PinnedDownloadStreamUpdate poll() const override { return {PinnedDownloadStreamState::Receiving}; }
+    PinnedDownloadStreamUpdate poll() const override { return stream_update; }
     QByteArray read(qint64 maximum) override {
         if (on_read)
             on_read();
@@ -46,7 +53,22 @@ class FakeIo final : public DirectDownloadIo {
             chunks.removeFirst();
         return bytes;
     }
-    void cancel() override { ++cancels; }
+    DownloadFailure failure() const override { return failure_value; }
+    void cancel() override {
+        ++cancels;
+        if (clear_failure_on_cancel)
+            failure_value = DownloadFailure::None;
+    }
+    DirectDownloadIoStopUpdate pollStop() override {
+        ++stop_polls;
+        if (cancels == 0) {
+            ++premature_stop_polls;
+            return {false, DownloadFailure::InvalidResult};
+        }
+        if (on_stop)
+            on_stop();
+        return stop_update;
+    }
     void respond(const QByteArray& body) {
         chunks = {"HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(body.size()) +
                   "\r\nContent-Type: application/octet-stream\r\n\r\n" + body};
@@ -127,6 +149,287 @@ bool publishingOrTerminal(const DownloadExecutionUpdate& update) {
 class WindowsDownloadJobSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void typedIoFailuresSurviveSessionCompositionAndNativeDraining_data() {
+        QTest::addColumn<bool>("dns");
+        QTest::addColumn<int>("error");
+        for (const bool dns : {true, false}) {
+            for (const auto error : {DownloadFailure::Timeout, DownloadFailure::LimitExceeded,
+                                     DownloadFailure::InvalidResult, DownloadFailure::Unavailable}) {
+                const auto label = QByteArray(dns ? "DNS-" : "stream-") + QByteArray::number(static_cast<int>(error));
+                QTest::newRow(label.constData()) << dns << static_cast<int>(error);
+            }
+        }
+    }
+    void typedIoFailuresSurviveSessionCompositionAndNativeDraining() {
+        QFETCH(bool, dns);
+        QFETCH(int, error);
+        const auto expected = static_cast<DownloadFailure>(error);
+        Harness h;
+        h.io.failure_value = expected;
+        h.io.clear_failure_on_cancel = true;
+        h.io.stop_update = {false, expected};
+        if (dns)
+            h.io.dns.state = DownloadResolutionState::Failed;
+        else
+            h.io.stream_update.state = PinnedDownloadStreamState::Failed;
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        for (int index = 0; index != 3; ++index) {
+            const auto waiting = session.poll(0);
+            QCOMPARE(waiting.state, DownloadExecutionState::Running);
+            QCOMPARE(waiting.error, DownloadFailure::None);
+            QVERIFY(waiting.published_mp3.empty());
+            QCOMPARE(h.jobs().size(), 1);
+            QVERIFY(h.published().isEmpty());
+        }
+        QCOMPARE(h.io.failure_value, DownloadFailure::None);
+        h.io.stop_update = {true, DownloadFailure::None};
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, expected);
+        QVERIFY(stopped.published_mp3.empty());
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+        QCOMPARE(session.poll(-1).error, expected);
+    }
+    void completedTransferCannotConvertOrCleanBeforeNativeIoStops() {
+        const auto bytes = fixture("m4a-aac-lc.m4a");
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        h.io.stop_update = {};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        static_cast<void>(session.poll(0));
+        for (int index = 0; index != 5; ++index) {
+            const auto waiting = session.poll(0);
+            QCOMPARE(waiting.state, DownloadExecutionState::Running);
+            QCOMPARE(waiting.phase, DownloadPhase::Downloading);
+            QCOMPARE(waiting.error, DownloadFailure::None);
+            QCOMPARE(waiting.completed_units, static_cast<std::uint64_t>(bytes.size()));
+            QVERIFY(waiting.published_mp3.empty());
+            QCOMPARE(h.jobs().size(), 1);
+            QCOMPARE(QFileInfo(h.staging + '/' + h.jobs().front() + "/input.bin").size(), bytes.size());
+            QCOMPARE(QFileInfo(h.staging + '/' + h.jobs().front() + "/converted.part").size(), qint64{0});
+            QVERIFY(h.published().isEmpty());
+        }
+        QVERIFY(h.io.stop_polls >= 5);
+        QCOMPARE(h.io.premature_stop_polls, 0);
+        h.io.stop_update.stopped = true;
+        const auto final = drainAt(session, 0);
+        QCOMPARE(final.state, DownloadExecutionState::Published);
+        QCOMPARE(final.error, DownloadFailure::None);
+        QVERIFY(h.jobs().isEmpty());
+        QCOMPARE(h.published().size(), 1);
+    }
+    void everyStopCauseWaitsForNativeAcknowledgement_data() {
+        QTest::addColumn<QString>("cause");
+        QTest::addColumn<int>("failure");
+        QTest::newRow("cancel during DNS") << QStringLiteral("cancel") << static_cast<int>(DownloadFailure::None);
+        QTest::newRow("network rejected")
+            << QStringLiteral("restricted") << static_cast<int>(DownloadFailure::Restricted);
+        QTest::newRow("source expired") << QStringLiteral("expired") << static_cast<int>(DownloadFailure::Expired);
+        QTest::newRow("deadline") << QStringLiteral("deadline") << static_cast<int>(DownloadFailure::Timeout);
+        QTest::newRow("backward clock") << QStringLiteral("clock") << static_cast<int>(DownloadFailure::InvalidResult);
+        QTest::newRow("quota") << QStringLiteral("quota") << static_cast<int>(DownloadFailure::LimitExceeded);
+        QTest::newRow("reentrant resolve cancel")
+            << QStringLiteral("resolve") << static_cast<int>(DownloadFailure::None);
+        QTest::newRow("reentrant read cancel") << QStringLiteral("read") << static_cast<int>(DownloadFailure::None);
+    }
+    void everyStopCauseWaitsForNativeAcknowledgement() {
+        QFETCH(QString, cause);
+        QFETCH(int, failure);
+        Harness h;
+        h.io.stop_update = {};
+        auto config = h.configuration(cause == QStringLiteral("quota") ? 16 : 512 * 1024 * 1024);
+        config.total_timeout_ms = 10;
+        WindowsDownloadJobSession session(h.io, config);
+        if (cause == QStringLiteral("resolve"))
+            h.io.on_resolve = [&] { session.cancel(); };
+        if (cause == QStringLiteral("read"))
+            h.io.on_read = [&] { session.cancel(); };
+        if (cause == QStringLiteral("restricted"))
+            h.io.dns.addresses = {QHostAddress{"127.0.0.1"}};
+        if (cause == QStringLiteral("expired"))
+            h.io.chunks = {"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"};
+        if (cause == QStringLiteral("quota") || cause == QStringLiteral("read"))
+            h.io.respond("synthetic body exceeds this job's small quota");
+        static_cast<void>(session.start("job-1", item(), 1));
+        if (cause == QStringLiteral("cancel"))
+            session.cancel();
+        const auto now = cause == QStringLiteral("deadline") ? qint64{11}
+                         : cause == QStringLiteral("clock")  ? qint64{0}
+                                                             : qint64{1};
+        for (int index = 0; index != 4; ++index) {
+            const auto waiting = session.poll(now);
+            QCOMPARE(waiting.state, DownloadExecutionState::Running);
+            QCOMPARE(waiting.error, DownloadFailure::None);
+            QVERIFY(waiting.published_mp3.empty());
+            QCOMPARE(h.jobs().size(), 1);
+            QVERIFY(h.published().isEmpty());
+        }
+        QVERIFY(h.io.stop_polls != 0);
+        QCOMPARE(h.io.premature_stop_polls, 0);
+        h.io.stop_update.stopped = true;
+        const auto stopped = drainAt(session, now);
+        QCOMPARE(stopped.state, failure == 0 ? DownloadExecutionState::Cancelled : DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, static_cast<DownloadFailure>(failure));
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+    }
+    void stopErrorsRemainPrivateUntilAcknowledgementAndCannotBeClearedByCancel() {
+        const auto bytes = fixture("m4a-aac-lc.m4a");
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        h.io.stop_update = {false, DownloadFailure::Network};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        static_cast<void>(session.poll(0));
+        const auto first = session.poll(0);
+        QCOMPARE(first.state, DownloadExecutionState::Running);
+        QCOMPARE(first.phase, DownloadPhase::Downloading);
+        QCOMPARE(first.error, DownloadFailure::None);
+        QCOMPARE(h.jobs().size(), 1);
+        session.cancel();
+        h.io.stop_update = {};
+        QCOMPARE(session.poll(0).state, DownloadExecutionState::Running);
+        QCOMPARE(h.jobs().size(), 1);
+        h.io.stop_update.stopped = true;
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, DownloadFailure::Network);
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+    }
+    void unknownStopErrorsAreNormalizedWithoutErasingTheFirstFailure_data() {
+        QTest::addColumn<bool>("prior_failure");
+        QTest::newRow("unknown first error") << false;
+        QTest::newRow("earlier expired cause survives") << true;
+    }
+    void unknownStopErrorsAreNormalizedWithoutErasingTheFirstFailure() {
+        QFETCH(bool, prior_failure);
+        Harness h;
+        h.io.stop_update = {false, static_cast<DownloadFailure>(42)};
+        if (prior_failure)
+            h.io.chunks = {"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        if (!prior_failure)
+            session.cancel();
+        for (int index = 0; index != 3; ++index) {
+            const auto waiting = session.poll(0);
+            QCOMPARE(waiting.state, DownloadExecutionState::Running);
+            QCOMPARE(waiting.error, DownloadFailure::None);
+            QVERIFY(waiting.published_mp3.empty());
+            QCOMPARE(h.jobs().size(), 1);
+            QVERIFY(h.published().isEmpty());
+        }
+        h.io.stop_update = {true, DownloadFailure::None};
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, prior_failure ? DownloadFailure::Expired : DownloadFailure::InvalidResult);
+        QVERIFY(stopped.published_mp3.empty());
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+        QCOMPARE(session.poll(-1).error, stopped.error);
+    }
+    void clockFailureDuringCancellationDrainIsNotLost_data() {
+        QTest::addColumn<bool>("backwards");
+        QTest::newRow("clock regresses") << true;
+        QTest::newRow("total deadline expires") << false;
+    }
+    void clockFailureDuringCancellationDrainIsNotLost() {
+        QFETCH(bool, backwards);
+        Harness h;
+        h.io.stop_update = {};
+        auto config = h.configuration();
+        config.total_timeout_ms = 10;
+        WindowsDownloadJobSession session(h.io, config);
+        QVERIFY(session.start("job-1", item(), 10));
+        session.cancel();
+        QCOMPARE(session.poll(10).state, DownloadExecutionState::Running);
+        const auto now = backwards ? qint64{9} : qint64{20};
+        const auto waiting = session.poll(now);
+        QCOMPARE(waiting.state, DownloadExecutionState::Running);
+        QCOMPARE(waiting.error, DownloadFailure::None);
+        QCOMPARE(h.jobs().size(), 1);
+        h.io.stop_update.stopped = true;
+        const auto stopped = drainAt(session, now);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, backwards ? DownloadFailure::InvalidResult : DownloadFailure::Timeout);
+        QVERIFY(h.jobs().isEmpty());
+    }
+    void firstFailureSurvivesLaterClockAckErrorsAndCancellation() {
+        Harness h;
+        h.io.stop_update = {};
+        h.io.chunks = {"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 10));
+        static_cast<void>(session.poll(10));
+        QCOMPARE(session.poll(10).state, DownloadExecutionState::Running);
+        session.cancel();
+        h.io.stop_update.error = DownloadFailure::Network;
+        QCOMPARE(session.poll(9).state, DownloadExecutionState::Running);
+        h.io.stop_update = {true, DownloadFailure::None};
+        const auto stopped = drainAt(session, 9);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, DownloadFailure::Expired);
+        QVERIFY(h.jobs().isEmpty());
+    }
+    void reentrantCancellationWhileStopIsAcknowledgedCannotBeginConversion() {
+        const auto bytes = fixture("m4a-aac-lc.m4a");
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        h.io.on_stop = [&] { session.cancel(); };
+        QVERIFY(session.start("job-1", item(), 0));
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Cancelled);
+        QCOMPARE(stopped.error, DownloadFailure::None);
+        QCOMPARE(stopped.phase, DownloadPhase::Downloading);
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+    }
+    void stopPollExceptionDoesNotAcknowledgeCleanupOrEraseItsFailure() {
+        Harness h;
+        h.io.stop_update = {};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        session.cancel();
+        h.io.on_stop = [] { throw std::runtime_error("synthetic stop poll failure"); };
+        QCOMPARE(session.poll(0).state, DownloadExecutionState::Running);
+        QCOMPARE(h.jobs().size(), 1);
+        h.io.on_stop = {};
+        QCOMPARE(session.poll(0).state, DownloadExecutionState::Running);
+        h.io.stop_update.stopped = true;
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, DownloadFailure::Network);
+        QVERIFY(h.jobs().isEmpty());
+    }
+    void cleanupFailureAfterDelayedStopStillPreventsCleanCancellation() {
+        Harness h;
+        h.io.stop_update = {};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.start("job-1", item(), 0));
+        const auto unknown_path = h.staging + '/' + h.jobs().front() + "/unknown.txt";
+        QFile unknown(unknown_path);
+        QVERIFY(unknown.open(QIODevice::WriteOnly | QIODevice::NewOnly));
+        QCOMPARE(unknown.write("not owned"), qint64{9});
+        unknown.close();
+        session.cancel();
+        QCOMPARE(session.poll(0).state, DownloadExecutionState::Running);
+        QVERIFY(QFileInfo::exists(unknown_path));
+        h.io.stop_update.stopped = true;
+        const auto stopped = drainAt(session, 0);
+        QCOMPARE(stopped.state, DownloadExecutionState::Failed);
+        QCOMPARE(stopped.error, DownloadFailure::Publication);
+        QVERIFY(QFileInfo::exists(unknown_path));
+        QVERIFY(stopped.published_mp3.empty());
+        QVERIFY(QFile::remove(unknown_path));
+    }
     void constructorDoesNotCreateFilesOrStartIo() {
         Harness h;
         WindowsDownloadJobSession session(h.io, h.configuration());

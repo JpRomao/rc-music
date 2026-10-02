@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
+#include <QUuid>
 
 #include <algorithm>
 #include <memory>
@@ -99,6 +100,14 @@ struct NativeProcessGuard final {
     }
 };
 
+struct NativeEventGuard final {
+    HANDLE handle{nullptr};
+    ~NativeEventGuard() {
+        if (handle)
+            ::CloseHandle(handle);
+    }
+};
+
 struct QtProcessGuard final {
     QProcess& process;
     ~QtProcessGuard() {
@@ -145,6 +154,29 @@ int supervisorChild(int argc, char* argv[]) {
     // The parent test deliberately terminates this supervisor, not its child.
     ::Sleep(INFINITE);
     return 85;
+}
+
+int naturalExitChild(int argc, char* argv[]) {
+    QCoreApplication application(argc, argv);
+    const auto arguments = application.arguments();
+    const auto event_name = arguments.at(2).toStdWString();
+    NativeEventGuard gate{::OpenEventW(SYNCHRONIZE, FALSE, event_name.c_str())};
+    if (!gate.handle)
+        return 86;
+    const auto ready = QJsonDocument(QJsonObject{{QStringLiteral("pid"), qint64{::GetCurrentProcessId()}}})
+                           .toJson(QJsonDocument::Compact) +
+                       '\n';
+    DWORD written = 0;
+    if (!::WriteFile(::GetStdHandle(STD_OUTPUT_HANDLE), ready.constData(), static_cast<DWORD>(ready.size()), &written,
+                     nullptr) ||
+        static_cast<qsizetype>(written) != ready.size())
+        return 87;
+    if (::WaitForSingleObject(gate.handle, 5000) != WAIT_OBJECT_0)
+        return 88;
+    if (!::WriteFile(::GetStdHandle(STD_OUTPUT_HANDLE), "OUT", 3, &written, nullptr) || written != 3 ||
+        !::WriteFile(::GetStdHandle(STD_ERROR_HANDLE), "ERR", 3, &written, nullptr) || written != 3)
+        return 89;
+    return arguments.at(3).toInt();
 }
 
 } // namespace
@@ -492,6 +524,55 @@ class WindowsDownloadProcessTests final : public QObject {
         QCOMPARE(process.poll(0).state, WindowsDownloadProcessState::Cancelled);
     }
 
+    void preservesNaturalExitAndPendingPipesWhenCancelledAfterNativeExit_data() {
+        QTest::addColumn<int>("exit_code");
+        QTest::newRow("zero") << 0;
+        QTest::newRow("nonzero") << 17;
+    }
+
+    void preservesNaturalExitAndPendingPipesWhenCancelledAfterNativeExit() {
+        QFETCH(int, exit_code);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto event_name =
+            QStringLiteral("Local\\RCMusic-process-natural-exit-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        const auto native_event_name = event_name.toStdWString();
+        NativeEventGuard gate{::CreateEventW(nullptr, TRUE, FALSE, native_event_name.c_str())};
+        QVERIFY(gate.handle != nullptr);
+        QVERIFY(::GetLastError() != ERROR_ALREADY_EXISTS);
+        auto config =
+            configuration(directory, {QStringLiteral("--natural-exit-test"), event_name, QString::number(exit_code)});
+        config.executable = QCoreApplication::applicationFilePath();
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        QByteArray ready;
+        QVERIFY(waitForReady(process, ready));
+        NativeProcessGuard child{
+            ::OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE, readyPid(ready))};
+        QVERIFY(child.handle != nullptr);
+        QVERIFY(::SetEvent(gate.handle));
+        // Witness natural exit without polling the supervisor or draining its final bytes.
+        QCOMPARE(::WaitForSingleObject(child.handle, 5000), DWORD{WAIT_OBJECT_0});
+        DWORD observed_exit_code = 0;
+        QVERIFY(::GetExitCodeProcess(child.handle, &observed_exit_code));
+        QCOMPARE(observed_exit_code, static_cast<DWORD>(exit_code));
+        process.cancel();
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(result.update.error, WindowsDownloadProcessError::None);
+        QCOMPARE(result.update.exit_code, std::optional<int>{exit_code});
+        QCOMPARE(result.output, QByteArrayLiteral("OUT"));
+        QCOMPARE(result.error_output, QByteArrayLiteral("ERR"));
+        QVERIFY(result.maximum_poll_bytes <= download_process_poll_bytes);
+        process.cancel();
+        const auto stable = process.poll(0);
+        QCOMPARE(stable.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(stable.exit_code, std::optional<int>{exit_code});
+        QVERIFY(stable.stdout_chunk.isEmpty());
+        QVERIFY(stable.stderr_chunk.isEmpty());
+    }
+
     void expiresAtInclusiveDeadlineAndRejectsBackwardClock() {
         QTemporaryDir directory;
         auto config = configuration(directory, {QStringLiteral("hang")});
@@ -606,6 +687,8 @@ class WindowsDownloadProcessTests final : public QObject {
 int main(int argc, char* argv[]) {
     if (argc == 2 && QByteArray(argv[1]) == QByteArrayLiteral("--supervise-test"))
         return supervisorChild(argc, argv);
+    if (argc == 4 && QByteArray(argv[1]) == QByteArrayLiteral("--natural-exit-test"))
+        return naturalExitChild(argc, argv);
     QCoreApplication application(argc, argv);
     WindowsDownloadProcessTests tests;
     return QTest::qExec(&tests, argc, argv);

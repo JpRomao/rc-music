@@ -16,6 +16,11 @@ struct DownloadResolution final {
     QList<QHostAddress> addresses{};
 };
 
+struct DirectDownloadIoStopUpdate final {
+    bool stopped{false};
+    DownloadFailure error{DownloadFailure::None};
+};
+
 // Trusted adapter seam. Neither endpoints nor resolver answers come directly from a page.
 // Methods return promptly; the owning event loop advances DNS and socket I/O between ticks.
 class DirectDownloadIo {
@@ -26,7 +31,15 @@ class DirectDownloadIo {
     virtual bool open(const PinnedDownloadEndpoint& endpoint) = 0;
     virtual PinnedDownloadStreamUpdate poll() const = 0;
     virtual QByteArray read(qint64 maximum) = 0;
+    // Last typed failure already observed by resolve/open/resolution/poll/read.
+    // This getter must not advance IO. Read it before cancel may reset state.
+    virtual DownloadFailure failure() const = 0;
     virtual void cancel() = 0;
+    // Poll only after cancel(). stopped acknowledges all owned native work,
+    // including resolver/process termination and completion of every pipe.
+    // An error or exception alone does not acknowledge stopping. No default
+    // success: callback invalidation/abortHostLookup is not native DNS proof.
+    virtual DirectDownloadIoStopUpdate pollStop() = 0;
 };
 
 enum class DirectDownloadState { Idle, Resolving, Receiving, Completed, Failed, Cancelled };
@@ -58,6 +71,7 @@ class DirectDownloadSession final {
     DirectDownloadSnapshot snapshot() const;
 
   private:
+    DownloadFailure ioFailure() const noexcept;
     void fail(DownloadFailure error);
     bool beginHop(qint64 now_ms);
     DirectDownloadIo& io_;

@@ -33,6 +33,7 @@ DownloadResolution QtDownloadIo::resolution() const { return resolution_; }
 bool QtDownloadIo::open(const PinnedDownloadEndpoint& endpoint) { return stream_.open(endpoint); }
 PinnedDownloadStreamUpdate QtDownloadIo::poll() const { return stream_.poll(); }
 QByteArray QtDownloadIo::read(qint64 maximum) { return stream_.read(maximum); }
+DownloadFailure QtDownloadIo::failure() const { return DownloadFailure::None; }
 void QtDownloadIo::cancel() {
     ++generation_;
     if (lookup_id_ >= 0) {
@@ -41,5 +42,10 @@ void QtDownloadIo::cancel() {
     }
     resolution_ = {DownloadResolutionState::Failed, {}};
     stream_.cancel();
+}
+DirectDownloadIoStopUpdate QtDownloadIo::pollStop() {
+    // abortHostLookup invalidates delivery, not the native resolver thread.
+    // Even an empty callback/socket state is not a process-owner stop proof.
+    return {false, DownloadFailure::Unavailable};
 }
 } // namespace music_player::m0

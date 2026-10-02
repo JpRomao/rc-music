@@ -25,10 +25,30 @@ bool conversionTerminal(LocalMediaConversionState state) {
     return state == LocalMediaConversionState::Idle || state == LocalMediaConversionState::Validated ||
            state == LocalMediaConversionState::Failed || state == LocalMediaConversionState::Cancelled;
 }
+DownloadFailure normalizedFailure(DownloadFailure error) {
+    switch (error) {
+    case DownloadFailure::None:
+    case DownloadFailure::Unavailable:
+    case DownloadFailure::Network:
+    case DownloadFailure::Expired:
+    case DownloadFailure::Restricted:
+    case DownloadFailure::UnsupportedMedia:
+    case DownloadFailure::NoAudio:
+    case DownloadFailure::LimitExceeded:
+    case DownloadFailure::Conversion:
+    case DownloadFailure::Publication:
+    case DownloadFailure::Import:
+    case DownloadFailure::Timeout:
+    case DownloadFailure::InvalidResult:
+        return error;
+    default:
+        return DownloadFailure::InvalidResult;
+    }
+}
 } // namespace
 
 struct WindowsDownloadJobSession::Impl {
-    enum class Stage { Idle, Downloading, Converting, Publishing, Stopping, Terminal };
+    enum class Stage { Idle, Downloading, NetworkDraining, Converting, Publishing, Stopping, Terminal };
     DirectDownloadIo& io;
     WindowsDownloadJobSessionConfig config;
     WindowsDownloadWorkspace workspace;
@@ -43,6 +63,8 @@ struct WindowsDownloadJobSession::Impl {
     DownloadFailure stop_error{DownloadFailure::None};
     bool stop_cancelled{false};
     bool cancel_requested{false};
+    bool network_stop_requested{false};
+    bool network_stopped{false};
     bool operating{false};
 
     Impl(DirectDownloadIo& source_io, WindowsDownloadJobSessionConfig configuration)
@@ -56,22 +78,73 @@ struct WindowsDownloadJobSession::Impl {
         static_cast<void>(workspace.cleanup());
     }
 
-    void stop(DownloadFailure error, bool cancelled = false) {
-        if (stage == Stage::Stopping || stage == Stage::Terminal)
+    void rememberFailure(DownloadFailure error) {
+        error = normalizedFailure(error);
+        if (error != DownloadFailure::None && stop_error == DownloadFailure::None) {
+            stop_error = error;
+            stop_cancelled = false;
+        }
+    }
+    void requestNetworkStop() {
+        if (!download || network_stop_requested)
             return;
-        stop_error = error;
-        stop_cancelled = cancelled;
+        network_stop_requested = true;
+        try {
+            // DirectDownloadSession may already have cancelled on framing EOF,
+            // failure or redirect. Explicit idempotent cancel establishes the
+            // stop-seam precondition even when start failed before resolve.
+            io.cancel();
+        } catch (...) {
+            rememberFailure(DownloadFailure::Network);
+        }
+    }
+    void stop(DownloadFailure error, bool cancelled = false) {
+        if (stage == Stage::Terminal)
+            return;
+        rememberFailure(error);
+        if (cancelled && stop_error == DownloadFailure::None)
+            stop_cancelled = true;
+        if (stage == Stage::Stopping)
+            return;
         stage = Stage::Stopping;
         if (download)
             download->cancel();
+        requestNetworkStop();
         if (converter)
             converter->cancel();
     }
+    bool pollNetworkStop() {
+        if (!download || network_stopped)
+            return true;
+        requestNetworkStop();
+        try {
+            const auto result = io.pollStop();
+            rememberFailure(result.error);
+            // Error alone is never a release of ownership, even when fatal.
+            network_stopped = result.stopped;
+        } catch (...) {
+            rememberFailure(DownloadFailure::Network);
+        }
+        if (stop_error != DownloadFailure::None || cancel_requested)
+            stop(stop_error, cancel_requested && stop_error == DownloadFailure::None);
+        return network_stopped;
+    }
     void finishStop(qint64 now_ms) {
-        if (converter && !conversionTerminal(converter->poll(now_ms).state))
+        if (!pollNetworkStop())
             return;
-        // IO cancellation belongs to the borrowed adapter. This is a worker
-        // result, not proof that Qt's native resolver thread has terminated.
+        if (converter) {
+            try {
+                const auto result = converter->poll(now_ms);
+                if (!conversionTerminal(result.state))
+                    return;
+                if (result.state == LocalMediaConversionState::Failed)
+                    rememberFailure(result.error);
+            } catch (...) {
+                // An exception is not proof that the decoder has stopped.
+                rememberFailure(DownloadFailure::Conversion);
+                return;
+            }
+        }
         const bool cleaned = workspace.cleanup();
         update.published_mp3.clear();
         if (!cleaned) {
@@ -130,6 +203,10 @@ struct WindowsDownloadJobSession::Impl {
             const auto result = converter->poll(now_ms);
             stop(result.error == DownloadFailure::None ? DownloadFailure::Unavailable : result.error);
         }
+    }
+    void beginNetworkDrain() {
+        stage = Stage::NetworkDraining;
+        requestNetworkStop();
     }
     void publish(qint64 now_ms) {
         // Publishing was visible during the preceding poll. The observed
@@ -231,8 +308,9 @@ DownloadExecutionUpdate WindowsDownloadJobSession::poll(qint64 now_ms) {
     const QScopedValueRollback operation(value.operating, true);
     if (value.cancel_requested)
         value.stop(DownloadFailure::None, true);
-    if (value.stage != Impl::Stage::Stopping)
-        static_cast<void>(value.checkObservedClock(now_ms));
+    // Draining is still active work. A prior cancellation has no error to
+    // preserve; observed deadline/regression during its drain becomes Failed.
+    static_cast<void>(value.checkObservedClock(now_ms));
     try {
         if (value.stage == Impl::Stage::Downloading) {
             value.download->tick(now_ms);
@@ -243,7 +321,7 @@ DownloadExecutionUpdate WindowsDownloadJobSession::poll(qint64 now_ms) {
             else if (result.state == DirectDownloadState::Failed)
                 value.stop(value.workspace.error() == DownloadFailure::None ? result.error : value.workspace.error());
             else if (result.state == DirectDownloadState::Completed)
-                value.beginConversion(now_ms);
+                value.beginNetworkDrain();
         } else if (value.stage == Impl::Stage::Converting) {
             const auto result = value.converter->poll(now_ms);
             value.update.completed_units = std::max<std::uint64_t>(value.update.completed_units, result.processed_us);
@@ -261,6 +339,14 @@ DownloadExecutionUpdate WindowsDownloadJobSession::poll(qint64 now_ms) {
             }
         } else if (value.stage == Impl::Stage::Publishing)
             value.publish(now_ms);
+        if (value.stage == Impl::Stage::NetworkDraining) {
+            // Hold Downloading telemetry and private sinks until native work
+            // and every pipe have stopped. Never read/tick the transfer again.
+            if (!value.pollNetworkStop())
+                return value.update;
+            if (value.stage == Impl::Stage::NetworkDraining)
+                value.beginConversion(now_ms);
+        }
     } catch (...) {
         value.stop(value.committed_output.isEmpty() ? DownloadFailure::Conversion : DownloadFailure::Publication);
     }

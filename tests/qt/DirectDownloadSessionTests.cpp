@@ -5,6 +5,7 @@
 #include <QTest>
 #include <functional>
 #include <limits>
+#include <stdexcept>
 
 using namespace music_player::m0;
 
@@ -18,18 +19,37 @@ class Io final : public DirectDownloadIo {
     QList<QByteArray> chunks{};
     bool resolve_ok{true};
     bool open_ok{true};
+    bool resolve_throws{false};
+    bool open_throws{false};
+    bool resolution_throws{false};
+    bool poll_throws{false};
+    bool failure_throws{false};
+    bool clear_failure_on_cancel{false};
+    DownloadFailure failure_value{DownloadFailure::None};
     int cancels{0};
     std::function<void()> on_read{};
     bool resolve(const QString& host) override {
         hosts.push_back(host);
+        if (resolve_throws)
+            throw std::runtime_error("synthetic resolve failure");
         return resolve_ok;
     }
-    DownloadResolution resolution() const override { return dns; }
+    DownloadResolution resolution() const override {
+        if (resolution_throws)
+            throw std::runtime_error("synthetic resolution failure");
+        return dns;
+    }
     bool open(const PinnedDownloadEndpoint& endpoint) override {
         endpoints.push_back(endpoint);
+        if (open_throws)
+            throw std::runtime_error("synthetic open failure");
         return open_ok;
     }
-    PinnedDownloadStreamUpdate poll() const override { return update; }
+    PinnedDownloadStreamUpdate poll() const override {
+        if (poll_throws)
+            throw std::runtime_error("synthetic poll failure");
+        return update;
+    }
     QByteArray read(qint64 maximum) override {
         if (on_read)
             on_read();
@@ -41,7 +61,17 @@ class Io final : public DirectDownloadIo {
             chunks.removeFirst();
         return result;
     }
-    void cancel() override { ++cancels; }
+    DownloadFailure failure() const override {
+        if (failure_throws)
+            throw std::runtime_error("synthetic failure getter exception");
+        return failure_value;
+    }
+    void cancel() override {
+        ++cancels;
+        if (clear_failure_on_cancel)
+            failure_value = DownloadFailure::None;
+    }
+    DirectDownloadIoStopUpdate pollStop() override { return {true, DownloadFailure::None}; }
 };
 
 struct Harness final {
@@ -59,6 +89,77 @@ struct Harness final {
 class DirectDownloadSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void typedIoFailuresAreCapturedBeforeCancelCanEraseThem_data() {
+        QTest::addColumn<QString>("operation");
+        QTest::addColumn<int>("error");
+        const QStringList operations{"resolve refusal",   "open refusal",   "DNS failed",
+                                     "stream failed",     "resolve throws", "open throws",
+                                     "resolution throws", "poll throws",    "read throws"};
+        for (const auto& operation : operations) {
+            for (const auto error : {DownloadFailure::Timeout, DownloadFailure::LimitExceeded,
+                                     DownloadFailure::InvalidResult, DownloadFailure::Unavailable}) {
+                const auto label = operation.toUtf8() + '-' + QByteArray::number(static_cast<int>(error));
+                QTest::newRow(label.constData()) << operation << static_cast<int>(error);
+            }
+        }
+    }
+    void typedIoFailuresAreCapturedBeforeCancelCanEraseThem() {
+        QFETCH(QString, operation);
+        QFETCH(int, error);
+        Harness h;
+        h.io.failure_value = static_cast<DownloadFailure>(error);
+        h.io.clear_failure_on_cancel = true;
+        if (operation == QStringLiteral("resolve refusal"))
+            h.io.resolve_ok = false;
+        else if (operation == QStringLiteral("open refusal"))
+            h.io.open_ok = false;
+        else if (operation == QStringLiteral("DNS failed"))
+            h.io.dns.state = DownloadResolutionState::Failed;
+        else if (operation == QStringLiteral("stream failed"))
+            h.io.update.state = PinnedDownloadStreamState::Failed;
+        else if (operation == QStringLiteral("resolve throws"))
+            h.io.resolve_throws = true;
+        else if (operation == QStringLiteral("open throws"))
+            h.io.open_throws = true;
+        else if (operation == QStringLiteral("resolution throws"))
+            h.io.resolution_throws = true;
+        else if (operation == QStringLiteral("poll throws"))
+            h.io.poll_throws = true;
+        else
+            h.io.on_read = [] { throw std::runtime_error("synthetic read failure"); };
+        static_cast<void>(h.session.start("https://media.example.test/a", 0));
+        h.session.tick(1);
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, static_cast<DownloadFailure>(error));
+        QCOMPARE(h.io.failure_value, DownloadFailure::None);
+        QVERIFY(h.sink.data().isEmpty());
+    }
+    void missingUnknownAndThrowingFailureReportsFailClosed_data() {
+        QTest::addColumn<int>("reported");
+        QTest::addColumn<bool>("throws");
+        QTest::addColumn<int>("expected");
+        QTest::newRow("missing typed error")
+            << static_cast<int>(DownloadFailure::None) << false << static_cast<int>(DownloadFailure::Network);
+        QTest::newRow("unknown typed error") << 42 << false << static_cast<int>(DownloadFailure::InvalidResult);
+        QTest::newRow("getter throws") << static_cast<int>(DownloadFailure::Timeout) << true
+                                       << static_cast<int>(DownloadFailure::Network);
+    }
+    void missingUnknownAndThrowingFailureReportsFailClosed() {
+        QFETCH(int, reported);
+        QFETCH(bool, throws);
+        QFETCH(int, expected);
+        Harness h;
+        h.io.dns.state = DownloadResolutionState::Failed;
+        h.io.failure_value = static_cast<DownloadFailure>(reported);
+        h.io.failure_throws = throws;
+        h.io.clear_failure_on_cancel = true;
+        QVERIFY(h.session.start("https://media.example.test/a", 0));
+        h.session.tick(1);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, static_cast<DownloadFailure>(expected));
+        QVERIFY(h.sink.data().isEmpty());
+    }
     void approvedDnsIsPinnedAndSuccessfulBytesAreOnlyATransferNotAnImport() {
         Harness h;
         h.connect();
@@ -300,6 +401,15 @@ class DirectDownloadSessionTests final : public QObject {
         io.cancel();
         QCOMPARE(io.poll().state, PinnedDownloadStreamState::Cancelled);
         QVERIFY(!io.resolve("host\r\nInjected"));
+    }
+    void concreteIoCannotClaimNativeResolverTerminationAfterCancel() {
+        QtDownloadIo io;
+        io.cancel();
+        const auto stopped = io.pollStop();
+        QVERIFY(!stopped.stopped);
+        QCOMPARE(stopped.error, DownloadFailure::Unavailable);
+        io.cancel();
+        QVERIFY(!io.pollStop().stopped);
     }
 };
 

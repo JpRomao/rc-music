@@ -7,6 +7,8 @@
 namespace music_player::m0 {
 
 // Construct/use/destroy in one worker event-loop thread. Aborts only its own DNS lookup/socket.
+// In-process Qt cancellation cannot prove termination of native resolver work;
+// this adapter never acknowledges the JobSession/process-owner stop requirement.
 class QtDownloadIo final : public QObject, public DirectDownloadIo {
   public:
     explicit QtDownloadIo(QObject* parent = nullptr);
@@ -16,7 +18,9 @@ class QtDownloadIo final : public QObject, public DirectDownloadIo {
     bool open(const PinnedDownloadEndpoint& endpoint) override;
     PinnedDownloadStreamUpdate poll() const override;
     QByteArray read(qint64 maximum) override;
+    DownloadFailure failure() const override;
     void cancel() override;
+    DirectDownloadIoStopUpdate pollStop() override;
 
   private:
     PinnedDownloadStream stream_{};
