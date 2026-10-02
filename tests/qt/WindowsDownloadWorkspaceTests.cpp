@@ -1,13 +1,18 @@
+#include "adapters/WindowsDownloadOwnershipRecovery.hpp"
+#include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadWorkspace.hpp"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <functional>
 #include <stdexcept>
 #include <vector>
 
@@ -18,6 +23,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Aclapi.h>
+#include <Sddl.h>
 #include <Windows.h>
 #include <winioctl.h>
 
@@ -96,12 +102,410 @@ bool fillAndSeal(WindowsDownloadWorkspace& workspace, const QByteArray& input = 
            output_sink->write(output) == output.size() && workspace.sealOutput();
 }
 
+class OwnershipStore final : public DownloadOwnershipStore {
+  public:
+    std::vector<DownloadOwnershipRecord> attempts{};
+    std::function<DownloadCheckpointSaveStatus(const DownloadOwnershipRecord&)> on_record{};
+    int loads{0};
+    int depth{0};
+    int maximum_depth{0};
+    DownloadOwnershipLoadResult load() override {
+        ++loads;
+        return {};
+    }
+    DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& value) override {
+        attempts.push_back(value);
+        ++depth;
+        maximum_depth = std::max(maximum_depth, depth);
+        try {
+            const auto result = on_record ? on_record(value) : DownloadCheckpointSaveStatus::Saved;
+            --depth;
+            return result;
+        } catch (...) {
+            --depth;
+            throw;
+        }
+    }
+};
+
+std::optional<DownloadFileIdentity> fileIdentity(const QString& path, const bool directory = false) {
+    const auto handle = CreateFileW(
+        nativePath(path).c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return std::nullopt;
+    FILE_ID_INFO identity{};
+    const bool obtained = GetFileInformationByHandleEx(handle, FileIdInfo, &identity, sizeof(identity)) != FALSE;
+    CloseHandle(handle);
+    if (!obtained)
+        return std::nullopt;
+    DownloadFileIdentity result{.volume_serial = identity.VolumeSerialNumber};
+    std::memcpy(result.file_id.data(), identity.FileId.Identifier, result.file_id.size());
+    return result;
+}
+
+QStringList jobs(const Fixture& fixture) { return QDir(fixture.staging).entryList(QDir::Dirs | QDir::NoDotAndDotDot); }
+
+bool createPrivateJournalDirectory(const QString& path) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+        return false;
+    DWORD required = 0;
+    static_cast<void>(GetTokenInformation(token, TokenUser, nullptr, 0, &required));
+    std::vector<unsigned char> bytes(required);
+    const bool obtained = !bytes.empty() && GetTokenInformation(token, TokenUser, bytes.data(), required, &required);
+    CloseHandle(token);
+    if (!obtained)
+        return false;
+    LPWSTR sid = nullptr;
+    if (!ConvertSidToStringSidW(reinterpret_cast<const TOKEN_USER*>(bytes.data())->User.Sid, &sid))
+        return false;
+    const auto sddl = QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;") + QString::fromWCharArray(sid) + QLatin1Char(')');
+    LocalFree(sid);
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
+                                                              nullptr))
+        return false;
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    const bool created = CreateDirectoryW(nativePath(path).c_str(), &attributes) != FALSE;
+    LocalFree(descriptor);
+    return created;
+}
+
+class FaultedRealStore final : public DownloadOwnershipStore {
+  public:
+    FaultedRealStore(const QString& directory, const int fault)
+        : store(directory, {.inject_fault = [this, fault](const WindowsDownloadOwnershipFaultPoint point) {
+                    return saving_publication &&
+                           ((fault == 1 && point == WindowsDownloadOwnershipFaultPoint::BeforeCommit) ||
+                            (fault == 2 && point == WindowsDownloadOwnershipFaultPoint::AfterCommit));
+                }}) {}
+    DownloadOwnershipLoadResult load() override { return store.load(); }
+    DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& value) override {
+        saving_publication = value.stage == DownloadOwnershipStage::Published && !value.cleanup_complete;
+        const auto status = store.record(value);
+        saving_publication = false;
+        return status;
+    }
+
+  private:
+    bool saving_publication{false};
+    WindowsDownloadOwnershipStore store;
+};
+
 } // namespace
 
 class WindowsDownloadWorkspaceTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void createGuardCleanupReturningTrueCannotResumeCreation_data() {
+        QTest::addColumn<int>("guard_index");
+        QTest::addColumn<bool>("real_store");
+        QTest::newRow("Planned-fake") << 1 << false;
+        QTest::newRow("Ready-fake") << 2 << false;
+        QTest::newRow("Planned-real-store") << 1 << true;
+    }
+    void createGuardCleanupReturningTrueCannotResumeCreation() {
+        QFETCH(int, guard_index);
+        QFETCH(bool, real_store);
+        Fixture fixture;
+        OwnershipStore fake;
+        const auto journal_directory = fixture.root.filePath(QStringLiteral("private guard journal"));
+        std::unique_ptr<WindowsDownloadOwnershipStore> real;
+        if (real_store) {
+            QVERIFY(createPrivateJournalDirectory(journal_directory));
+            real = std::make_unique<WindowsDownloadOwnershipStore>(journal_directory);
+        }
+        DownloadOwnershipStore& store =
+            real_store ? static_cast<DownloadOwnershipStore&>(*real) : static_cast<DownloadOwnershipStore&>(fake);
+        {
+            WindowsDownloadWorkspace workspace(fixture.config(), "job-reentrant-guard", store);
+            int calls = 0;
+            QVERIFY(!workspace.create([&] {
+                ++calls;
+                if (calls == guard_index)
+                    static_cast<void>(workspace.cleanup());
+                return true;
+            }));
+            QCOMPARE(calls, guard_index);
+            QVERIFY(workspace.inputSink() == nullptr);
+            QVERIFY(workspace.outputSink() == nullptr);
+            QVERIFY(workspace.inputPath().isEmpty());
+            QVERIFY(workspace.outputPath().isEmpty());
+            QVERIFY(workspace.retainedPublicationPath().isEmpty());
+            QVERIFY(jobs(fixture).isEmpty());
+            QVERIFY(QDir(fixture.publication).entryList(QDir::Files).isEmpty());
+        }
+        QVERIFY(jobs(fixture).isEmpty());
+        if (real_store) {
+            WindowsDownloadOwnershipStore reader(journal_directory);
+            const auto loaded = reader.load();
+            QCOMPARE(loaded.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(loaded.journal);
+            QCOMPARE(loaded.journal->records.size(), std::size_t{1});
+            QCOMPARE(loaded.journal->records.front().stage, DownloadOwnershipStage::Planned);
+            QVERIFY(loaded.journal->records.front().cleanup_complete);
+        } else if (guard_index == 1) {
+            QVERIFY(std::none_of(fake.attempts.begin(), fake.attempts.end(), [](const DownloadOwnershipRecord& value) {
+                return value.stage == DownloadOwnershipStage::WorkspaceReady;
+            }));
+        }
+    }
+
+    void durableRealJournalSurvivesFreshReaderAndAssessesOnlyAFileCandidate_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("saved") << 0;
+        QTest::newRow("failed-before-published-commit") << 1;
+        QTest::newRow("failed-after-published-commit") << 2;
+    }
+    void durableRealJournalSurvivesFreshReaderAndAssessesOnlyAFileCandidate() {
+        QFETCH(int, fault);
+        Fixture fixture;
+        const auto journal_directory = fixture.root.filePath(QStringLiteral("private journal 音"));
+        QVERIFY(createPrivateJournalDirectory(journal_directory));
+        FaultedRealStore store(journal_directory, fault);
+        QString planned;
+        {
+            WindowsDownloadWorkspace workspace(fixture.config(), "job-real-journal", store);
+            QVERIFY(workspace.create());
+            QVERIFY(fillAndSeal(workspace));
+            planned = workspace.plannedPublicationPath();
+            // This trusted synthetic validator does not prove MP3 content.
+            const auto final = workspace.validateAndPublish([](const QString&) { return true; });
+            if (fault == 0) {
+                QCOMPARE(final, planned);
+                QVERIFY(workspace.cleanup());
+            } else {
+                QVERIFY(final.isEmpty());
+                QCOMPARE(workspace.error(), DownloadFailure::Publication);
+                QCOMPARE(workspace.retainedPublicationPath(), planned);
+            }
+        }
+        QVERIFY(jobs(fixture).isEmpty());
+        QCOMPARE(readFile(planned), QByteArray{"synthetic-mp3"});
+        WindowsDownloadOwnershipStore reader(journal_directory);
+        const auto loaded = reader.load();
+        QCOMPARE(loaded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), std::size_t{1});
+        const auto record = loaded.journal->records.front();
+        QCOMPARE(record.stage,
+                 fault == 1 ? DownloadOwnershipStage::PublicationPrepared : DownloadOwnershipStage::Published);
+        QCOMPARE(record.output, fileIdentity(planned));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::assess(fixture.config(), record),
+                 DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QCOMPARE(readFile(planned), QByteArray{"synthetic-mp3"});
+    }
+
+    void durableGatesCaptureActualIdentityBeforeSinksRenameAndImportableReturn() {
+        Fixture fixture;
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(fixture.config(), "job-1", store);
+        bool planned_before_creation = false;
+        bool ready_before_sinks = false;
+        bool prepared_after_validation = false;
+        bool published_before_return = false;
+        bool cleanup_after_elimination = false;
+        bool validated = false;
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (value.cleanup_complete) {
+                cleanup_after_elimination = jobs(fixture).isEmpty();
+            } else if (value.stage == DownloadOwnershipStage::Planned) {
+                planned_before_creation = jobs(fixture).isEmpty() && workspace.inputSink() == nullptr &&
+                                          workspace.outputSink() == nullptr && !value.job_directory && !value.input &&
+                                          !value.output;
+            } else if (value.stage == DownloadOwnershipStage::WorkspaceReady) {
+                const auto job = fixture.staging + "/rc-music-job-" + QString::fromStdString(value.workspace_id);
+                ready_before_sinks = workspace.inputSink() == nullptr && workspace.outputSink() == nullptr &&
+                                     value.job_directory == fileIdentity(job, true) &&
+                                     value.input == fileIdentity(job + "/input.bin") &&
+                                     value.output == fileIdentity(job + "/converted.part");
+            } else if (value.stage == DownloadOwnershipStage::PublicationPrepared) {
+                prepared_after_validation = validated && QFile::exists(workspace.outputPath()) &&
+                                            !QFile::exists(workspace.plannedPublicationPath());
+            } else if (value.stage == DownloadOwnershipStage::Published) {
+                published_before_return = QFile::exists(workspace.plannedPublicationPath()) &&
+                                          value.output == fileIdentity(workspace.plannedPublicationPath());
+            }
+            return DownloadCheckpointSaveStatus::Saved;
+        };
+        QVERIFY(store.attempts.empty());
+        QVERIFY(workspace.create());
+        QVERIFY(planned_before_creation);
+        QVERIFY(ready_before_sinks);
+        QCOMPARE(store.attempts.size(), std::size_t{2});
+        const auto ready = store.attempts.back();
+        QCOMPARE(ready.job_id, std::string{"job-1"});
+        const auto staging_identity = fileIdentity(fixture.staging, true);
+        const auto publish_identity = fileIdentity(fixture.publication, true);
+        QVERIFY(staging_identity);
+        QVERIFY(publish_identity);
+        QCOMPARE(ready.staging_parent, *staging_identity);
+        QCOMPARE(ready.publish_parent, *publish_identity);
+        QVERIFY(fillAndSeal(workspace));
+        const auto output_identity = ready.output;
+        const auto final = workspace.validateAndPublish([&](const QString&) {
+            validated = true;
+            return true;
+        });
+        QCOMPARE(final, workspace.plannedPublicationPath());
+        QVERIFY(!final.isEmpty());
+        QVERIFY(prepared_after_validation);
+        QVERIFY(published_before_return);
+        QCOMPARE(store.attempts.size(), std::size_t{4});
+        const auto prepared = store.attempts[2];
+        QCOMPARE(prepared.stage, DownloadOwnershipStage::PublicationPrepared);
+        QCOMPARE(prepared.input_bytes, std::uint64_t{5});
+        QCOMPARE(prepared.output_bytes, std::uint64_t{13});
+        QCOMPARE(prepared.output_sha256,
+                 QCryptographicHash::hash("synthetic-mp3", QCryptographicHash::Sha256).toHex().toStdString());
+        QCOMPARE(prepared.output, output_identity);
+        QCOMPARE(store.attempts[3].output, output_identity);
+        QCOMPARE(store.attempts[3].stage, DownloadOwnershipStage::Published);
+        QVERIFY(workspace.cleanup());
+        QVERIFY(cleanup_after_elimination);
+        QVERIFY(store.attempts.back().cleanup_complete);
+        QCOMPARE(store.attempts.back().stage, DownloadOwnershipStage::Published);
+        QCOMPARE(readFile(final), QByteArray{"synthetic-mp3"});
+        QCOMPARE(store.loads, 0);
+    }
+
+    void durableGateFailuresNeverYieldAnImportablePath_data() {
+        QTest::addColumn<int>("stage");
+        QTest::addColumn<int>("failure");
+        for (const auto stage : {DownloadOwnershipStage::Planned, DownloadOwnershipStage::WorkspaceReady,
+                                 DownloadOwnershipStage::PublicationPrepared, DownloadOwnershipStage::Published}) {
+            for (int failure = 0; failure != 4; ++failure) {
+                const auto name = QByteArray::number(static_cast<int>(stage)) + '-' + QByteArray::number(failure);
+                QTest::newRow(name.constData()) << static_cast<int>(stage) << failure;
+            }
+        }
+    }
+
+    void durableGateFailuresNeverYieldAnImportablePath() {
+        QFETCH(int, stage);
+        QFETCH(int, failure);
+        const auto failed_stage = static_cast<DownloadOwnershipStage>(stage);
+        Fixture fixture;
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(fixture.config(), "job-1", store);
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (value.stage != failed_stage || value.cleanup_complete)
+                return DownloadCheckpointSaveStatus::Saved;
+            if (failure == 3)
+                throw std::runtime_error("private synthetic store failure");
+            return failure == 0   ? DownloadCheckpointSaveStatus::Failed
+                   : failure == 1 ? DownloadCheckpointSaveStatus::BlockedByExistingData
+                                  : static_cast<DownloadCheckpointSaveStatus>(99);
+        };
+        const bool created = workspace.create();
+        if (failed_stage == DownloadOwnershipStage::Planned || failed_stage == DownloadOwnershipStage::WorkspaceReady) {
+            QVERIFY(!created);
+            QVERIFY(workspace.inputSink() == nullptr);
+            QVERIFY(workspace.outputSink() == nullptr);
+        } else {
+            QVERIFY(created);
+            QVERIFY(fillAndSeal(workspace));
+            QVERIFY(workspace.validateAndPublish([](const QString&) { return true; }).isEmpty());
+        }
+        QCOMPARE(workspace.error(), DownloadFailure::Publication);
+        const auto planned = workspace.plannedPublicationPath();
+        const auto retained = workspace.retainedPublicationPath();
+        if (failed_stage == DownloadOwnershipStage::Published) {
+            QCOMPARE(retained, planned);
+            QVERIFY(!retained.isEmpty());
+            QCOMPARE(readFile(retained), QByteArray{"synthetic-mp3"});
+        } else {
+            QVERIFY(retained.isEmpty());
+            QVERIFY(planned.isEmpty() || !QFile::exists(planned));
+        }
+        static_cast<void>(workspace.cleanup());
+        QVERIFY(jobs(fixture).isEmpty());
+        if (!retained.isEmpty()) {
+            QCOMPARE(workspace.retainedPublicationPath(), retained);
+            QCOMPARE(readFile(retained), QByteArray{"synthetic-mp3"});
+        }
+        QCOMPARE(store.loads, 0);
+    }
+
+    void durableInvalidJobIdsNeverTouchStoreOrFilesystem_data() {
+        QTest::addColumn<QByteArray>("id");
+        QTest::newRow("empty") << QByteArray{};
+        QTest::newRow("path") << QByteArray{"../other"};
+        QTest::newRow("control") << QByteArray{"job\n"};
+        QTest::newRow("long") << QByteArray(65, 'a');
+    }
+    void durableInvalidJobIdsNeverTouchStoreOrFilesystem() {
+        QFETCH(QByteArray, id);
+        Fixture fixture;
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(fixture.config(), id.toStdString(), store);
+        QVERIFY(!workspace.create());
+        QCOMPARE(workspace.error(), DownloadFailure::InvalidResult);
+        QVERIFY(store.attempts.empty());
+        QVERIFY(jobs(fixture).isEmpty());
+    }
+
+    void durableReentrantCleanupCannotExposeSinksOrPublish_data() {
+        QTest::addColumn<int>("stage");
+        for (const auto stage : {DownloadOwnershipStage::Planned, DownloadOwnershipStage::WorkspaceReady,
+                                 DownloadOwnershipStage::PublicationPrepared, DownloadOwnershipStage::Published})
+            QTest::newRow(QByteArray::number(static_cast<int>(stage)).constData()) << static_cast<int>(stage);
+    }
+    void durableReentrantCleanupCannotExposeSinksOrPublish() {
+        QFETCH(int, stage);
+        Fixture fixture;
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(fixture.config(), "job-1", store);
+        bool interrupted = false;
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (!interrupted && static_cast<int>(value.stage) == stage && !value.cleanup_complete) {
+                interrupted = true;
+                static_cast<void>(workspace.cleanup());
+            }
+            return DownloadCheckpointSaveStatus::Saved;
+        };
+        const auto created = workspace.create();
+        if (stage <= static_cast<int>(DownloadOwnershipStage::WorkspaceReady)) {
+            QVERIFY(!created);
+            QVERIFY(workspace.inputSink() == nullptr);
+            QVERIFY(workspace.outputSink() == nullptr);
+        } else {
+            QVERIFY(created);
+            QVERIFY(fillAndSeal(workspace));
+            QVERIFY(workspace.validateAndPublish([](const QString&) { return true; }).isEmpty());
+        }
+        QVERIFY(interrupted);
+        static_cast<void>(workspace.cleanup());
+        QCOMPARE(store.maximum_depth, 1);
+        QVERIFY(jobs(fixture).isEmpty());
+        if (stage == static_cast<int>(DownloadOwnershipStage::Published))
+            QCOMPARE(readFile(workspace.retainedPublicationPath()), QByteArray{"synthetic-mp3"});
+        else
+            QVERIFY(QDir(fixture.publication).entryList(QDir::Files).isEmpty());
+    }
+
+    void durableCommitGuardIsRecheckedAfterPreparedRecord() {
+        Fixture fixture;
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(fixture.config(), "job-1", store);
+        QVERIFY(workspace.create());
+        QVERIFY(fillAndSeal(workspace));
+        bool allowed = true;
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (value.stage == DownloadOwnershipStage::PublicationPrepared)
+                allowed = false;
+            return DownloadCheckpointSaveStatus::Saved;
+        };
+        QVERIFY(workspace.validateAndPublish([](const QString&) { return true; }, [&] { return allowed; }).isEmpty());
+        QVERIFY(!QFile::exists(workspace.plannedPublicationPath()));
+        QVERIFY(workspace.retainedPublicationPath().isEmpty());
+        QCOMPARE(store.attempts.back().stage, DownloadOwnershipStage::PublicationPrepared);
+        QVERIFY(workspace.cleanup());
+        QVERIFY(store.attempts.back().cleanup_complete);
+    }
+
     void constructorDoesNotCreateOrPublishFiles() {
         Fixture fixture;
         QVERIFY(fixture.root.isValid());

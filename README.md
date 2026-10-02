@@ -1,5 +1,7 @@
 # RC Music
 
+O [journal privado de arquivos de download](docs/download-ownership.md) adiciona gates duráveis ao workspace e verificação conservadora após interrupções, ainda fora do player. Não importa/apaga candidatos automaticamente nem resolve persistência conjunta da fila. Lite/Completa continuam compartilhando esse serviço; engine/host/UI/instaladores ainda precisam da composição própria.
+
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
 Para usar a versão local, consulte o [manual de uso e solução de problemas](docs/user-guide.md). Ele explica abertura, fila, atalhos, preferências e recuperação; não pressupõe instalação nem aprovação de release.

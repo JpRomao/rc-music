@@ -12,6 +12,8 @@ O serviço do [ADR-0008](0008-download-job-service.md) precisa de execução con
 
 ## Proposta e evidência local
 
+Incremento worker-only de 2026-10-02: [journal de ownership](../../download-ownership.md) separado dos recibos registra intenção/provas/publicação/cleanup e classifica candidatos no restart sem executar/importar/remover. O store nativo é reutilizado com checkpoint, limite fechado e upsert sob lock; o workspace durável preserva final físico em falha pósrename sem ACK. Isso não fecha resíduos do runtime, reconciliação fila+recibo, ferramenta corrigida/proveniência/licenças/sandbox ou perfil de distribuição. A adoção desse componente não muda o estado Proposto desta decisão de backend.
+
 Investigar downloader Qt Network opcional e conversor FFmpeg em processo separado, recebendo somente arquivo temporário local. Não encaminhar URLs remotas ao FFmpeg nem usar concatenação de shell.
 
 - O SDK aceito em `q/f75eb9bea8280844c6d1a2b3f4/sdk` contém Qt6Network, pacote CMake e plugin TLS Schannel. O [transporte opcional](../../download-network.md) passa a utilizá-los em seu alvo próprio, ainda fora do player.

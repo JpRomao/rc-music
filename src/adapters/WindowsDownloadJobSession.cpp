@@ -51,7 +51,7 @@ struct WindowsDownloadJobSession::Impl {
     enum class Stage { Idle, Downloading, NetworkDraining, Converting, Publishing, Stopping, Terminal };
     DirectDownloadIo& io;
     WindowsDownloadJobSessionConfig config;
-    WindowsDownloadWorkspace workspace;
+    std::unique_ptr<WindowsDownloadWorkspace> workspace{};
     std::unique_ptr<WindowsLocalMediaConverter> converter{};
     std::unique_ptr<DirectDownloadSession> download{};
     DownloadExecutionUpdate update{};
@@ -68,14 +68,15 @@ struct WindowsDownloadJobSession::Impl {
     bool operating{false};
 
     Impl(DirectDownloadIo& source_io, WindowsDownloadJobSessionConfig configuration)
-        : io(source_io), config(std::move(configuration)), workspace(config.workspace) {}
+        : io(source_io), config(std::move(configuration)) {}
     ~Impl() {
         // Best effort only. The owner must poll to terminal before destruction;
         // process teardown precedes any attempted deletion of its local inputs.
         stage = Stage::Terminal;
         download.reset();
         converter.reset();
-        static_cast<void>(workspace.cleanup());
+        if (workspace)
+            static_cast<void>(workspace->cleanup());
     }
 
     void rememberFailure(DownloadFailure error) {
@@ -145,7 +146,7 @@ struct WindowsDownloadJobSession::Impl {
                 return;
             }
         }
-        const bool cleaned = workspace.cleanup();
+        const bool cleaned = !workspace || workspace->cleanup();
         update.published_mp3.clear();
         if (!cleaned) {
             update.state = DownloadExecutionState::Failed;
@@ -180,8 +181,8 @@ struct WindowsDownloadJobSession::Impl {
             stop(DownloadFailure::None, true);
             return;
         }
-        if (!workspace.sealInput()) {
-            stop(workspace.error() == DownloadFailure::None ? DownloadFailure::Publication : workspace.error());
+        if (!workspace->sealInput()) {
+            stop(workspace->error() == DownloadFailure::None ? DownloadFailure::Publication : workspace->error());
             return;
         }
         if (cancel_requested) {
@@ -196,7 +197,7 @@ struct WindowsDownloadJobSession::Impl {
         update.phase = DownloadPhase::Converting;
         update.completed_units = 0;
         update.total_units.reset();
-        const bool accepted = converter->start(workspace, now_ms);
+        const bool accepted = converter->start(*workspace, now_ms);
         if (cancel_requested)
             stop(DownloadFailure::None, true);
         else if (!accepted) {
@@ -211,26 +212,33 @@ struct WindowsDownloadJobSession::Impl {
     void publish(qint64 now_ms) {
         // Publishing was visible during the preceding poll. The observed
         // clock/cancellation has been checked again before reaching here.
-        const auto planned = workspace.plannedPublicationPath();
+        const auto planned = workspace->plannedPublicationPath();
         // Allocate/normalize the DTO path before the commit point. Moving it
         // into the result later cannot fail and lose an already-published file.
         auto native_final = std::filesystem::path(planned.toStdWString()).lexically_normal();
-        const auto final = workspace.validateAndPublish([&](const QString& path) {
-            return !cancel_requested && !validated_output.isEmpty() && path == validated_output && converter &&
-                   converter->poll(now_ms).state == LocalMediaConversionState::Validated;
-        });
+        const auto final = workspace->validateAndPublish(
+            [&](const QString& path) {
+                return !cancel_requested && !validated_output.isEmpty() && path == validated_output && converter &&
+                       converter->poll(now_ms).state == LocalMediaConversionState::Validated;
+            },
+            [&] { return !cancel_requested; });
         if (final.isEmpty()) {
-            if (cancel_requested)
+            // A physically committed final remains private recovery evidence
+            // even when the durability acknowledgement failed.
+            committed_output = workspace->retainedPublicationPath();
+            if (workspace->error() != DownloadFailure::None)
+                stop(workspace->error());
+            else if (cancel_requested)
                 stop(DownloadFailure::None, true);
             else
-                stop(workspace.error() == DownloadFailure::None ? DownloadFailure::Publication : workspace.error());
+                stop(DownloadFailure::Publication);
             return;
         }
         // Rename is the commit point. A late clock/cancellation observation
         // cannot hide an already-created final. Keep its identity/path even
         // when subsequent cleanup fails; recovery remains caller-owned.
         committed_output = final;
-        const bool cleaned = workspace.cleanup();
+        const bool cleaned = workspace->cleanup();
         if (!cleaned || final != planned) {
             update.state = DownloadExecutionState::Failed;
             update.error = DownloadFailure::Publication;
@@ -266,15 +274,28 @@ bool WindowsDownloadJobSession::start(const std::string& job_id, const DownloadI
     value.started_ms = value.previous_ms = now_ms;
     value.stage = Impl::Stage::Downloading;
     try {
-        if (!value.workspace.create()) {
-            value.stop(value.workspace.error() == DownloadFailure::None ? DownloadFailure::Publication
-                                                                        : value.workspace.error());
+        value.workspace = value.config.ownership_store
+                              ? std::make_unique<WindowsDownloadWorkspace>(value.config.workspace, job_id,
+                                                                           *value.config.ownership_store)
+                              : std::make_unique<WindowsDownloadWorkspace>(value.config.workspace);
+        if (!value.workspace->create([&] { return !value.cancel_requested; })) {
+            if (value.workspace->error() != DownloadFailure::None)
+                value.stop(value.workspace->error());
+            else if (value.cancel_requested)
+                value.stop(DownloadFailure::None, true);
+            else
+                value.stop(DownloadFailure::Publication);
+            value.finishStop(now_ms);
+            return false;
+        }
+        if (value.cancel_requested) {
+            value.stop(DownloadFailure::None, true);
             value.finishStop(now_ms);
             return false;
         }
         auto limits = value.config.network;
         limits.total_timeout_ms = std::min(limits.total_timeout_ms, value.config.total_timeout_ms);
-        value.download = std::make_unique<DirectDownloadSession>(value.io, *value.workspace.inputSink(), limits);
+        value.download = std::make_unique<DirectDownloadSession>(value.io, *value.workspace->inputSink(), limits);
         const bool accepted = value.download->start(*url, now_ms);
         if (value.cancel_requested)
             value.stop(DownloadFailure::None, true);
@@ -319,7 +340,7 @@ DownloadExecutionUpdate WindowsDownloadJobSession::poll(qint64 now_ms) {
             if (value.cancel_requested || result.state == DirectDownloadState::Cancelled)
                 value.stop(DownloadFailure::None, true);
             else if (result.state == DirectDownloadState::Failed)
-                value.stop(value.workspace.error() == DownloadFailure::None ? result.error : value.workspace.error());
+                value.stop(value.workspace->error() == DownloadFailure::None ? result.error : value.workspace->error());
             else if (result.state == DirectDownloadState::Completed)
                 value.beginNetworkDrain();
         } else if (value.stage == Impl::Stage::Converting) {
@@ -331,7 +352,7 @@ DownloadExecutionUpdate WindowsDownloadJobSession::poll(qint64 now_ms) {
             else if (result.state == LocalMediaConversionState::Failed)
                 value.stop(result.error);
             else if (result.state == LocalMediaConversionState::Validated) {
-                value.validated_output = value.workspace.outputPath();
+                value.validated_output = value.workspace->outputPath();
                 value.stage = Impl::Stage::Publishing;
                 value.update.phase = DownloadPhase::Publishing;
                 value.update.completed_units = 0;

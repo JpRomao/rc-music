@@ -28,6 +28,8 @@ Os pais de staging/publicação e executáveis são configuração da composiç�
 
 ## Área privada, cota e publicação
 
+O [incremento durável de ownership](download-ownership.md) acrescenta overload opt-in do workspace/store emprestado pela sessão. Planned/Ready/Prepared/Published são gates antes de criação/sinks/rename/retorno importável. Após rename durável, final físico é preservado mesmo em falha de journal/verificação; somente legado volátil conserva o rollback por handle descrito abaixo. Assessment no restart é somente leitura, sem reimportação/cleanup automático. O app ainda não compõe esse serviço.
+
 `WindowsDownloadWorkspace` exige pais locais existentes e confiáveis; aplica DACL privada somente ao filho novo do job, sem alterar permissões dos pais. Nomes do job, parciais e MP3 final são gerados internamente. Pais e arquivos são inspecionados por handles/identidade; reparse points e substituições incompatíveis são recusados. A proteção não torna confiável outro processo do mesmo usuário, nem autoriza ignorar o gate de sandbox.
 
 O limite padrão e máximo é **512 MiB agregados de bytes lógicos da entrada mais saída**, não 512 MiB para cada arquivo. Uma entrada que consome a cota inteira não deixa espaço para converter. O orçamento controla bytes escritos nestes sinks; não promete medir clusters alocados, metadados NTFS, todos os arquivos do host ou memória total do processo proprietário.

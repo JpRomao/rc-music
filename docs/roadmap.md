@@ -416,6 +416,8 @@ Biblioteca indexada é o primeiro caso que pode justificar SQLite. Cada candidat
 
 ## 11. R1 — Fontes remotas e YouTube
 
+O [journal de arquivos worker-only](download-ownership.md) acrescenta gates de criação/publicação e assessment conservador sem ações automáticas, separado dos recibos e fora do player. Falha pósrename preserva final sem aprovar importação. Reconciliação durável da fila, resíduos do runtime, recovery/capacidade acionáveis e composição host/lifecycle/model/UI permanecem abertos, assim como engine da Completa e opcionais das edições. Não altera estado dos ADRs nem encerra R1.
+
 **Estado:** escopo de produto aceito no [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), implementação planejada; suporte a YouTube continua pesquisa independente sem promessa de release.
 
 R1.7 iniciado em 2026-09-08 com o [cliente principal MV3 e recepção C++](browser-extension.md); R1.8 possui [coordenação comum de jobs](download-jobs.md), [worker/proxy de rede diskless](download-network.md), [conversão/publicação local Windows](download-conversion.md) e a porta rápida opcional [WindowsDownloadExecution](../src/adapters/WindowsDownloadExecution.hpp), ainda fora do player. A porta mantém um pedido pendente, um snapshot coalescido e um wake enfileirado no máximo; factory, tarefa, I/O e destruição executam em event loop Qt privado. `start`/`cancel`/`poll`/`shutdown` não aguardam esse trabalho lento. Somente a observação de terminal pelo ID correspondente libera um novo start; `shutdown` fecha admissão, enquanto `stopped` reconhece também o teardown da thread. Destruição com join não substitui esse protocolo na UI.

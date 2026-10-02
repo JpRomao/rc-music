@@ -9,7 +9,7 @@ add_library(rc_music_download_network STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtDownloadIo.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/FfmpegDownloadCodec.cpp"
 )
-target_link_libraries(rc_music_download_network PUBLIC rc_music_browser_integration Qt6::Network)
+target_link_libraries(rc_music_download_network PUBLIC rc_music_browser_integration rc_music_download_documents Qt6::Network)
 target_include_directories(rc_music_download_network PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 set_target_properties(rc_music_download_network PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_download_network)
@@ -21,7 +21,6 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
-        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"

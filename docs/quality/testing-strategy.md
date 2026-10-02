@@ -119,6 +119,8 @@ A [admissão durável assíncrona](../download-jobs.md#admissão-durável-assín
 
 ### Execução rápida Windows e reconhecimento de parada
 
+O [journal de ownership](../download-ownership.md) exige Red→Green para codec/transições, upsert sob lock, workspace e sessão: Saved antes de sinks/rename/path público, Failed pósrename preservando final, cancel/reentrada e ACK nativo antes de cleanup. Recovery só classifica TEMP próprio: IDs/DACL/bytes trocados, hardlinks/reparse/unknown children, ausência versus sharing denial e quota agregada. Ensaio store+workspace+novo leitor+assessment reais usa bytes sintéticos/validator de teste sem afirmar mídia válida; sessão usa MP3/MP4 autenticados e transferência falsa. Injetar Before/AfterCommit, registrar symlink skips/setup RED incorreto, preservar testes anteriores do checkpoint e ambiguidade de Failed sem readback-promovido. Não cobre exactly-once/fila+recibo, runtime-residuais, host/app/UI ou sandbox.
+
 A porta opcional [WindowsDownloadExecution](../../src/adapters/WindowsDownloadExecution.hpp) implementa `DownloadExecution` com um pedido pendente, snapshot coalescido e no máximo um wake enfileirado. Factory, `WindowsDownloadTask`, I/O e destruição ficam no event loop Qt de uma thread privada; `start`/`cancel`/`poll`/`shutdown` apenas admitem comandos ou leem o estado limitado. Sua factory é de composição confiável e só cria objetos inertes: falha/null/exception não podem deixar processos, arquivos ou trabalho fora da tarefa retornada. Isso não autentica imports pré-main nem transforma o seam em entrada de página/extensão.
 
 Testes de contrato devem observar:

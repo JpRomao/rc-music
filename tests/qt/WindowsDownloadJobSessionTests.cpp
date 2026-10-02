@@ -14,6 +14,16 @@
 using namespace music_player::m0;
 
 namespace {
+class OwnershipStore final : public DownloadOwnershipStore {
+  public:
+    std::vector<DownloadOwnershipRecord> attempts{};
+    std::function<DownloadCheckpointSaveStatus(const DownloadOwnershipRecord&)> on_record{};
+    DownloadOwnershipLoadResult load() override { return {}; }
+    DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& value) override {
+        attempts.push_back(value);
+        return on_record ? on_record(value) : DownloadCheckpointSaveStatus::Saved;
+    }
+};
 class FakeIo final : public DirectDownloadIo {
   public:
     QStringList hosts{};
@@ -149,6 +159,192 @@ bool publishingOrTerminal(const DownloadExecutionUpdate& update) {
 class WindowsDownloadJobSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void durableCreationGateCancellationCannotStartNetwork_data() {
+        QTest::addColumn<int>("stage");
+        QTest::newRow("Planned") << static_cast<int>(DownloadOwnershipStage::Planned);
+        QTest::newRow("Ready") << static_cast<int>(DownloadOwnershipStage::WorkspaceReady);
+    }
+    void durableCreationGateCancellationCannotStartNetwork() {
+        QFETCH(int, stage);
+        Harness h;
+        OwnershipStore store;
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (static_cast<int>(value.stage) == stage && !value.cleanup_complete)
+                session.cancel();
+            return DownloadCheckpointSaveStatus::Saved;
+        };
+        QVERIFY(!session.start("job-durable", item(), 0));
+        QVERIFY(h.io.hosts.isEmpty());
+        QVERIFY(h.io.endpoints.isEmpty());
+        QCOMPARE(h.io.cancels, 0);
+        const auto final = session.poll(0);
+        QCOMPARE(final.state, DownloadExecutionState::Cancelled);
+        QCOMPARE(final.error, DownloadFailure::None);
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+        QCOMPARE(store.attempts.back().stage, static_cast<DownloadOwnershipStage>(stage));
+        QVERIFY(store.attempts.back().cleanup_complete);
+    }
+
+    void durableSessionPublishesOnlyAfterJournalAndCleanup_data() {
+        QTest::addColumn<QString>("media");
+        QTest::newRow("MP3") << QStringLiteral("mp3-unicode-tags.mp3");
+        QTest::newRow("MP4") << QStringLiteral("m4a-aac-lc.m4a");
+    }
+    void durableSessionPublishesOnlyAfterJournalAndCleanup() {
+        QFETCH(QString, media);
+        const auto bytes = fixture(media);
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        OwnershipStore store;
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        Clock clock;
+        QVERIFY(session.start("job-durable", item(), clock.now()));
+        QCOMPARE(store.attempts.size(), std::size_t{2});
+        const auto final = await(session, clock);
+        QCOMPARE(final.state, DownloadExecutionState::Published);
+        QCOMPARE(final.error, DownloadFailure::None);
+        QVERIFY(!final.published_mp3.empty());
+        QVERIFY(h.jobs().isEmpty());
+        QCOMPARE(h.published().size(), 1);
+        QCOMPARE(store.attempts.size(), std::size_t{5});
+        QCOMPARE(store.attempts[2].stage, DownloadOwnershipStage::PublicationPrepared);
+        QCOMPARE(store.attempts[3].stage, DownloadOwnershipStage::Published);
+        QVERIFY(store.attempts.back().cleanup_complete);
+        QCOMPARE(store.attempts.back().job_id, std::string{"job-durable"});
+        QVERIFY(store.attempts.back().output_bytes > 0);
+        QCOMPARE(store.attempts.back().output_sha256.size(), std::size_t{64});
+    }
+
+    void durablePublicationSaveFailurePreservesFinalWithoutPublishedAcknowledgement() {
+        const auto bytes = fixture("mp3-unicode-tags.mp3");
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        OwnershipStore store;
+        store.on_record = [](const DownloadOwnershipRecord& value) {
+            return value.stage == DownloadOwnershipStage::Published && !value.cleanup_complete
+                       ? DownloadCheckpointSaveStatus::Failed
+                       : DownloadCheckpointSaveStatus::Saved;
+        };
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        Clock clock;
+        QVERIFY(session.start("job-durable", item(), clock.now()));
+        const auto final = await(session, clock);
+        QCOMPARE(final.state, DownloadExecutionState::Failed);
+        QCOMPARE(final.error, DownloadFailure::Publication);
+        QVERIFY(final.published_mp3.empty());
+        const auto retained = session.retainedPublicationPath();
+        QVERIFY(!retained.isEmpty());
+        QVERIFY(QFile::exists(retained));
+        QVERIFY(h.jobs().isEmpty());
+        QCOMPARE(h.published().size(), 1);
+        QCOMPARE(session.poll(-1).state, DownloadExecutionState::Failed);
+        QCOMPARE(session.retainedPublicationPath(), retained);
+    }
+
+    void durablePreparedCallbackCancellationCannotCommitAFile() {
+        const auto bytes = fixture("mp3-unicode-tags.mp3");
+        QVERIFY(!bytes.isEmpty());
+        Harness h;
+        h.io.respond(bytes);
+        OwnershipStore store;
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        bool cancelled = false;
+        store.on_record = [&](const DownloadOwnershipRecord& value) {
+            if (value.stage == DownloadOwnershipStage::PublicationPrepared && !value.cleanup_complete) {
+                cancelled = true;
+                session.cancel();
+            }
+            return DownloadCheckpointSaveStatus::Saved;
+        };
+        Clock clock;
+        QVERIFY(session.start("job-durable", item(), clock.now()));
+        const auto final = await(session, clock);
+        QVERIFY(cancelled);
+        QCOMPARE(final.state, DownloadExecutionState::Cancelled);
+        QCOMPARE(final.error, DownloadFailure::None);
+        QVERIFY(final.published_mp3.empty());
+        QVERIFY(h.published().isEmpty());
+        QVERIFY(h.jobs().isEmpty());
+        QCOMPARE(store.attempts.back().stage, DownloadOwnershipStage::PublicationPrepared);
+        QVERIFY(store.attempts.back().cleanup_complete);
+    }
+
+    void durableReadyFailureDoesNotBeginNetwork() {
+        Harness h;
+        OwnershipStore store;
+        store.on_record = [](const DownloadOwnershipRecord& value) {
+            return value.stage == DownloadOwnershipStage::WorkspaceReady && !value.cleanup_complete
+                       ? DownloadCheckpointSaveStatus::BlockedByExistingData
+                       : DownloadCheckpointSaveStatus::Saved;
+        };
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        QVERIFY(!session.start("job-durable", item(), 0));
+        const auto final = session.poll(0);
+        QCOMPARE(final.state, DownloadExecutionState::Failed);
+        QCOMPARE(final.error, DownloadFailure::Publication);
+        QVERIFY(final.published_mp3.empty());
+        QVERIFY(h.io.hosts.isEmpty());
+        QVERIFY(h.io.endpoints.isEmpty());
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+        QVERIFY(store.attempts.size() >= 2);
+    }
+
+    void durableCancellationCannotJournalCleanupBeforeNativeStop() {
+        Harness h;
+        h.io.stop_update = {};
+        OwnershipStore store;
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        QVERIFY(session.start("job-durable", item(), 0));
+        session.cancel();
+        for (int index = 0; index != 3; ++index) {
+            QCOMPARE(session.poll(0).state, DownloadExecutionState::Running);
+            QCOMPARE(store.attempts.size(), std::size_t{2});
+            QVERIFY(!store.attempts.back().cleanup_complete);
+            QCOMPARE(h.jobs().size(), 1);
+        }
+        h.io.stop_update.stopped = true;
+        const auto final = drainAt(session, 0);
+        QCOMPARE(final.state, DownloadExecutionState::Cancelled);
+        QVERIFY(store.attempts.back().cleanup_complete);
+        QVERIFY(h.jobs().isEmpty());
+    }
+
+    void durableCleanupRecordFailureCannotReportCleanCancellation() {
+        Harness h;
+        OwnershipStore store;
+        store.on_record = [](const DownloadOwnershipRecord& value) {
+            return value.cleanup_complete ? DownloadCheckpointSaveStatus::Failed : DownloadCheckpointSaveStatus::Saved;
+        };
+        auto config = h.configuration();
+        config.ownership_store = &store;
+        WindowsDownloadJobSession session(h.io, config);
+        QVERIFY(session.start("job-durable", item(), 0));
+        session.cancel();
+        const auto final = drainAt(session, 0);
+        QCOMPARE(final.state, DownloadExecutionState::Failed);
+        QCOMPARE(final.error, DownloadFailure::Publication);
+        QVERIFY(final.published_mp3.empty());
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+    }
+
     void typedIoFailuresSurviveSessionCompositionAndNativeDraining_data() {
         QTest::addColumn<bool>("dns");
         QTest::addColumn<int>("error");

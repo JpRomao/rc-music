@@ -12,12 +12,13 @@ struct WindowsDownloadJobSessionConfig final {
     WindowsLocalMediaConverterConfig converter{};
     DirectDownloadLimits network{};
     qint64 total_timeout_ms{30 * 60 * 1000};
+    DownloadOwnershipStore* ownership_store{nullptr}; // Borrowed, trusted, worker-only; nullptr is volatile legacy.
 };
 
 // One-shot composition owned by a worker with a Qt event loop, NOT the prompt
 // DownloadExecution UI port. File writes/flush/rename may block. The observed
 // clock is checked between steps, not a hard deadline inside native calls.
-// The borrowed IO and trusted parents/tools must outlive this object. Every
+// Borrowed IO/store and trusted parents/tools must outlive this object. Every
 // completion/stop drains IO's explicit native acknowledgement before sealing,
 // conversion, cleanup or terminal results. QtDownloadIo alone cannot prove this;
 // use an IO adapter owning the separate diskless network process and its pipes.
@@ -34,7 +35,7 @@ class WindowsDownloadJobSession final {
     void cancel();
     [[nodiscard]] DownloadExecutionUpdate poll(qint64 now_ms);
 
-    // Trusted recovery only: a committed final whose subsequent cleanup failed.
+    // Trusted recovery only: a proven final despite later journal/cleanup failure.
     // Not a Published acknowledgement and never an automatic import input.
     [[nodiscard]] QString retainedPublicationPath() const;
 

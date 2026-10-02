@@ -337,11 +337,17 @@ QByteArray DownloadCheckpointJson::encode(const DownloadCheckpoint& checkpoint) 
     return encoded.size() <= max_document_bytes ? encoded : QByteArray{};
 }
 
+bool strictDownloadJsonPreflight(const QByteArrayView bytes) {
+    return !bytes.isEmpty() && bytes.size() <= DownloadCheckpointJson::max_document_bytes &&
+           QString::fromUtf8(bytes.data(), bytes.size()).toUtf8() == QByteArray{bytes.data(), bytes.size()} &&
+           JsonPreflight{bytes}.valid();
+}
+
 DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView bytes) {
     if (bytes.isEmpty() || bytes.size() > max_document_bytes)
         return {};
     const QByteArray document_bytes{bytes.data(), bytes.size()};
-    if (QString::fromUtf8(document_bytes).toUtf8() != document_bytes || !JsonPreflight{bytes}.valid())
+    if (!strictDownloadJsonPreflight(bytes))
         return {};
     QJsonParseError parse_error;
     const auto document = QJsonDocument::fromJson(document_bytes, &parse_error);

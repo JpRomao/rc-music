@@ -1,5 +1,6 @@
 #include "adapters/WindowsDownloadWorkspace.hpp"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QScopedValueRollback>
 #include <QUuid>
@@ -82,6 +83,26 @@ bool safeParentSyntax(const QString& path) {
 bool sameIdentity(const BY_HANDLE_FILE_INFORMATION& left, const BY_HANDLE_FILE_INFORMATION& right) noexcept {
     return left.dwVolumeSerialNumber == right.dwVolumeSerialNumber && left.nFileIndexHigh == right.nFileIndexHigh &&
            left.nFileIndexLow == right.nFileIndexLow;
+}
+
+bool validJobId(const std::string& value) noexcept {
+    return !value.empty() && value.size() <= 64 && std::all_of(value.begin(), value.end(), [](const char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    });
+}
+
+std::optional<DownloadFileIdentity> physicalIdentity(const HANDLE handle, const bool directory) noexcept {
+    BY_HANDLE_FILE_INFORMATION basic{};
+    FILE_ID_INFO information{};
+    if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &basic) ||
+        (basic.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+        ((basic.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory ||
+        (!directory && basic.nNumberOfLinks != 1) ||
+        !GetFileInformationByHandleEx(handle, FileIdInfo, &information, sizeof(information)))
+        return std::nullopt;
+    DownloadFileIdentity result{.volume_serial = information.VolumeSerialNumber};
+    std::memcpy(result.file_id.data(), information.FileId.Identifier, result.file_id.size());
+    return result;
 }
 
 QString finalPath(HANDLE handle) {
@@ -232,6 +253,26 @@ bool acquireDeleteHandle(OwnedFile& file) {
     return inspectFile(file);
 }
 
+std::string sealedHash(const OwnedFile& file) {
+    if (!file.sealed || !inspectFile(file) || file.bytes == 0 || file.bytes > maximumWorkspaceBytes)
+        return {};
+    LARGE_INTEGER begin{};
+    if (!SetFilePointerEx(file.handle.get(), begin, nullptr, FILE_BEGIN))
+        return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    std::array<char, 64 * 1024> block{};
+    std::uint64_t consumed = 0;
+    while (consumed < file.bytes) {
+        DWORD count = 0;
+        const auto wanted = static_cast<DWORD>(std::min<std::uint64_t>(block.size(), file.bytes - consumed));
+        if (!ReadFile(file.handle.get(), block.data(), wanted, &count, nullptr) || count == 0 || count > wanted)
+            return {};
+        hash.addData(QByteArrayView{block.data(), static_cast<qsizetype>(count)});
+        consumed += count;
+    }
+    return inspectFile(file) ? hash.result().toHex().toStdString() : std::string{};
+}
+
 class FileSink final : public QIODevice {
   public:
     FileSink(OwnedFile& file, std::uint64_t& total, const std::uint64_t limit, DownloadFailure& error)
@@ -310,12 +351,55 @@ struct WindowsDownloadWorkspace::Impl final {
     bool created{false};
     bool cleanup_requested{false};
     bool operating{false};
+    DownloadOwnershipStore* ownership{nullptr};
+    std::string job_id{};
+    std::optional<DownloadOwnershipRecord> last_confirmed{};
+    QString retained_publication{};
+    bool recording{false};
+    bool physically_cleaned{false};
+    bool cleanup_record_attempted{false};
+    bool cleanup_record_saved{false};
 
     bool fail(DownloadFailure value) noexcept {
         if (failure == DownloadFailure::None) {
             failure = value;
         }
         return false;
+    }
+
+    bool persist(DownloadOwnershipRecord record) noexcept {
+        if (!ownership)
+            return true;
+        if (recording || !validDownloadOwnershipRecord(record))
+            return fail(DownloadFailure::Publication);
+        const QScopedValueRollback guard(recording, true);
+        try {
+            if (ownership->record(record) != DownloadCheckpointSaveStatus::Saved)
+                return fail(DownloadFailure::Publication);
+            // No readback and no upgrade of a Failed-after-commit result.
+            last_confirmed = std::move(record);
+            return true;
+        } catch (...) {
+            return fail(DownloadFailure::Publication);
+        }
+    }
+
+    bool confirmCleanup() noexcept {
+        if (!ownership || !last_confirmed)
+            return true;
+        if (cleanup_record_attempted)
+            return cleanup_record_saved;
+        if (recording)
+            return false; // Defer the store call until its current callback returns.
+        cleanup_record_attempted = true;
+        try {
+            auto record = *last_confirmed;
+            record.cleanup_complete = true;
+            cleanup_record_saved = persist(std::move(record));
+            return cleanup_record_saved;
+        } catch (...) {
+            return fail(DownloadFailure::Publication);
+        }
     }
 
     bool publicationDirectoryValid() const {
@@ -368,9 +452,15 @@ struct WindowsDownloadWorkspace::Impl final {
 
 WindowsDownloadWorkspace::WindowsDownloadWorkspace(WindowsDownloadWorkspaceConfig config)
     : impl_(std::make_unique<Impl>(std::move(config))) {}
+WindowsDownloadWorkspace::WindowsDownloadWorkspace(WindowsDownloadWorkspaceConfig config, std::string job_id,
+                                                   DownloadOwnershipStore& ownership)
+    : WindowsDownloadWorkspace(std::move(config)) {
+    impl_->ownership = &ownership;
+    impl_->job_id = std::move(job_id);
+}
 WindowsDownloadWorkspace::~WindowsDownloadWorkspace() { static_cast<void>(cleanup()); }
 
-bool WindowsDownloadWorkspace::create() {
+bool WindowsDownloadWorkspace::create(const std::function<bool()>& continue_allowed) {
     if (impl_->created || impl_->cleanup_requested || impl_->operating || impl_->failure != DownloadFailure::None) {
         return false;
     }
@@ -378,7 +468,8 @@ bool WindowsDownloadWorkspace::create() {
     try {
         impl_->config.staging_parent = QDir::fromNativeSeparators(impl_->config.staging_parent);
         impl_->config.publish_parent = QDir::fromNativeSeparators(impl_->config.publish_parent);
-        if (impl_->config.max_workspace_bytes == 0 || impl_->config.max_workspace_bytes > maximumWorkspaceBytes ||
+        if ((impl_->ownership && !validJobId(impl_->job_id)) || impl_->config.max_workspace_bytes == 0 ||
+            impl_->config.max_workspace_bytes > maximumWorkspaceBytes ||
             !safeParentSyntax(impl_->config.staging_parent) || !safeParentSyntax(impl_->config.publish_parent)) {
             return impl_->fail(DownloadFailure::InvalidResult);
         }
@@ -403,15 +494,43 @@ bool WindowsDownloadWorkspace::create() {
             static_cast<void>(cleanup());
             return false;
         }
+        std::optional<DownloadOwnershipRecord> ready_record;
+        if (impl_->ownership) {
+            const auto staging = physicalIdentity(impl_->staging_pins.back().get(), true);
+            const auto publication = physicalIdentity(impl_->publication_pins.back().get(), true);
+            if (!staging || !publication) {
+                impl_->fail(DownloadFailure::Publication);
+                static_cast<void>(cleanup());
+                return false;
+            }
+            ready_record = DownloadOwnershipRecord{.job_id = impl_->job_id,
+                                                   .staging_parent = *staging,
+                                                   .publish_parent = *publication,
+                                                   .maximum_workspace_bytes = impl_->config.max_workspace_bytes};
+        }
         for (int attempt = 0; attempt < 16; ++attempt) {
             const auto uuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
             const auto path = impl_->config.staging_parent + QStringLiteral("/rc-music-job-") + uuid;
+            impl_->publication_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
+            impl_->planned_publication = impl_->config.publish_parent + QLatin1Char('/') + impl_->publication_leaf;
+            if (ready_record) {
+                ready_record->workspace_id = uuid.toStdString();
+                if (!impl_->persist(*ready_record) || impl_->cleanup_requested) {
+                    impl_->fail(DownloadFailure::Publication);
+                    static_cast<void>(cleanup());
+                    return false;
+                }
+            }
+            if ((continue_allowed && !continue_allowed()) || impl_->cleanup_requested || impl_->physically_cleaned ||
+                impl_->failure != DownloadFailure::None) {
+                static_cast<void>(cleanup());
+                return false;
+            }
             if (CreateDirectoryW(nativePath(path).c_str(), security.attributes())) {
                 impl_->job_path = path;
-                impl_->publication_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
                 break;
             }
-            if (GetLastError() != ERROR_ALREADY_EXISTS) {
+            if (ready_record || GetLastError() != ERROR_ALREADY_EXISTS) {
                 break;
             }
         }
@@ -437,11 +556,26 @@ bool WindowsDownloadWorkspace::create() {
             static_cast<void>(cleanup());
             return false;
         }
+        if (ready_record) {
+            ready_record->stage = DownloadOwnershipStage::WorkspaceReady;
+            ready_record->job_directory = physicalIdentity(impl_->job_directory.get(), true);
+            ready_record->input = physicalIdentity(impl_->input.handle.get(), false);
+            ready_record->output = physicalIdentity(impl_->output.handle.get(), false);
+            if (!impl_->persist(std::move(*ready_record)) || impl_->cleanup_requested) {
+                impl_->fail(DownloadFailure::Publication);
+                static_cast<void>(cleanup());
+                return false;
+            }
+        }
+        if ((continue_allowed && !continue_allowed()) || impl_->cleanup_requested || impl_->physically_cleaned ||
+            impl_->failure != DownloadFailure::None) {
+            static_cast<void>(cleanup());
+            return false;
+        }
         impl_->input_sink = std::make_unique<FileSink>(impl_->input, impl_->total_bytes,
                                                        impl_->config.max_workspace_bytes, impl_->failure);
         impl_->output_sink = std::make_unique<FileSink>(impl_->output, impl_->total_bytes,
                                                         impl_->config.max_workspace_bytes, impl_->failure);
-        impl_->planned_publication = impl_->config.publish_parent + QLatin1Char('/') + impl_->publication_leaf;
         impl_->created = true;
         return true;
     } catch (...) {
@@ -468,7 +602,8 @@ QString WindowsDownloadWorkspace::outputPath() const {
 }
 QString WindowsDownloadWorkspace::plannedPublicationPath() const { return impl_->planned_publication; }
 
-QString WindowsDownloadWorkspace::validateAndPublish(const std::function<bool(const QString&)>& validate_mp3) {
+QString WindowsDownloadWorkspace::validateAndPublish(const std::function<bool(const QString&)>& validate_mp3,
+                                                     const std::function<bool()>& commit_allowed) {
     if (impl_->operating) {
         return {};
     }
@@ -493,6 +628,34 @@ QString WindowsDownloadWorkspace::validateAndPublish(const std::function<bool(co
             impl_->fail(DownloadFailure::Publication);
             return {};
         }
+        std::optional<DownloadOwnershipRecord> published_record;
+        if (impl_->ownership) {
+            if (!impl_->last_confirmed) {
+                impl_->fail(DownloadFailure::Publication);
+                return {};
+            }
+            auto prepared = *impl_->last_confirmed;
+            prepared.stage = DownloadOwnershipStage::PublicationPrepared;
+            prepared.input_bytes = impl_->input.bytes;
+            prepared.output_bytes = impl_->output.bytes;
+            prepared.output_sha256 = sealedHash(impl_->output);
+            if (prepared.input != physicalIdentity(impl_->input.handle.get(), false) ||
+                prepared.output != physicalIdentity(impl_->output.handle.get(), false)) {
+                impl_->fail(DownloadFailure::Publication);
+                return {};
+            }
+            if (!impl_->persist(std::move(prepared)))
+                return {};
+            // Reserve/copy the next DTO before the physical commit point.
+            published_record = *impl_->last_confirmed;
+            published_record->stage = DownloadOwnershipStage::Published;
+        }
+        if (impl_->cleanup_requested || (commit_allowed && !commit_allowed()))
+            return {};
+        if (!inspectFile(impl_->input) || !inspectFile(impl_->output) || !impl_->publicationDirectoryValid()) {
+            impl_->fail(DownloadFailure::Publication);
+            return {};
+        }
         // The Win32 wrapper rejects relative RootDirectory here. Ancestors and
         // directory identity stay pinned; prove the actual normalized GUID path
         // from the renamed file handle before acknowledging its public path.
@@ -509,25 +672,47 @@ QString WindowsDownloadWorkspace::validateAndPublish(const std::function<bool(co
             impl_->fail(DownloadFailure::Publication);
             return {};
         }
+        if (impl_->ownership) {
+            // From this syscall onward the artifact is preserved, even if its
+            // destination proof or journal acknowledgement is uncertain.
+            impl_->output.published = true;
+            impl_->output.path = impl_->planned_publication;
+        }
         const auto expected_path = impl_->publication_canonical + QLatin1Char('\\') + impl_->publication_leaf;
         if (!impl_->publicationDirectoryValid() || !inspectFile(impl_->output) ||
-            finalPath(impl_->output.handle.get()) != expected_path) {
+            finalPath(impl_->output.handle.get()) != expected_path ||
+            (published_record && published_record->output != physicalIdentity(impl_->output.handle.get(), false))) {
             // The handle owns the renamed file even when directory metadata
             // changes during the syscall. Do not acknowledge an uncertain final.
-            static_cast<void>(impl_->erase(impl_->output));
+            if (!impl_->ownership)
+                static_cast<void>(impl_->erase(impl_->output));
+            else
+                impl_->output.handle.close();
             impl_->fail(DownloadFailure::Publication);
             return {};
         }
         impl_->output.path = impl_->planned_publication;
         impl_->output.published = true;
+        impl_->retained_publication = impl_->planned_publication;
+        if (published_record && !impl_->persist(std::move(*published_record))) {
+            impl_->output.handle.close();
+            return {};
+        }
+        if (impl_->cleanup_requested) {
+            impl_->output.handle.close();
+            impl_->fail(DownloadFailure::Publication);
+            return {};
+        }
         // Release DELETE access before the local importer reads by path.
         impl_->output.handle.close();
         return impl_->planned_publication;
     } catch (...) {
-        impl_->fail(DownloadFailure::InvalidResult);
+        impl_->fail(impl_->ownership ? DownloadFailure::Publication : DownloadFailure::InvalidResult);
         return {};
     }
 }
+
+QString WindowsDownloadWorkspace::retainedPublicationPath() const { return impl_->retained_publication; }
 
 bool WindowsDownloadWorkspace::cleanup() noexcept {
     impl_->cleanup_requested = true;
@@ -538,6 +723,8 @@ bool WindowsDownloadWorkspace::cleanup() noexcept {
     if (impl_->output_sink) {
         impl_->output_sink->close();
     }
+    if (impl_->physically_cleaned)
+        return impl_->confirmCleanup();
     try {
         const bool input_erased = impl_->erase(impl_->input);
         const bool output_erased = impl_->erase(impl_->output);
@@ -559,7 +746,8 @@ bool WindowsDownloadWorkspace::cleanup() noexcept {
         if (input_erased && output_erased && directory_erased) {
             impl_->staging_pins.clear();
             impl_->publication_pins.clear();
-            return true;
+            impl_->physically_cleaned = true;
+            return impl_->confirmCleanup();
         }
     } catch (...) {
     }

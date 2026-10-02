@@ -114,6 +114,8 @@ Incremento de importação local de 2026-10-01: [PlayerDownloadImport](../downlo
 
 Incremento de checkpoint de 2026-10-02: [histórico privado limitado](../download-jobs.md#checkpoint-privado-e-recuperação-conservadora) conserva jobs/recibos sem campos URL/query e restaura trabalho interrompido de forma inerte, sem re-download/importação automática. Paths recuperados não viram autoridade para importação ou limpeza e Completed histórico não comprova persistência da fila. Codec/store Windows são opcionais separados, não serviço já composto no player. ACK durável, journal de ownership/residuais, reconciliação fila+recibos, writer/lifecycle/UI, segurança/ferramentas, Brave, Completa e instaladores continuam pendentes; FR-051–053 não estão concluídos.
 
+Incremento worker-only de ownership de 2026-10-02: [journal privado de arquivos](../download-ownership.md) adiciona gates antes de sinks/rename/retorno importável e assessment somente leitura. Falha pósrename preserva final como candidato sem importar; registros não contêm paths arbitrários/URLs e não autorizam ações. Ainda faltam reconciliação durável fila+recibos, recovery/capacidade acionáveis, resíduos do runtime e composição app/host/UI; não encerra FR-051–053, Lite/Completa ou opcionais de instalação.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |

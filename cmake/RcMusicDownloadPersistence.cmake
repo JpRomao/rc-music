@@ -1,22 +1,18 @@
 include_guard(GLOBAL)
 
-find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core)
-add_library(rc_music_download_persistence STATIC
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadCheckpointJson.cpp")
-target_include_directories(rc_music_download_persistence PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
-target_link_libraries(rc_music_download_persistence PUBLIC rc_music_downloads Qt6::Core)
-rc_music_configure_cpp(rc_music_download_persistence)
-
 if(WIN32)
-    target_sources(rc_music_download_persistence PRIVATE
-        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadCheckpointStore.cpp"
-        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp")
-    target_link_libraries(rc_music_download_persistence PRIVATE advapi32)
+    add_library(rc_music_download_persistence STATIC
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadCheckpointStore.cpp")
+    target_link_libraries(rc_music_download_persistence PUBLIC rc_music_download_documents)
+    rc_music_configure_cpp(rc_music_download_persistence)
+else()
+    add_library(rc_music_download_persistence INTERFACE)
+    target_link_libraries(rc_music_download_persistence INTERFACE rc_music_download_documents)
 endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
-    set(rc_music_checkpoint_units DownloadCheckpointJson)
+    set(rc_music_checkpoint_units)
     if(WIN32)
         list(APPEND rc_music_checkpoint_units WindowsDownloadCheckpointStore)
     endif()

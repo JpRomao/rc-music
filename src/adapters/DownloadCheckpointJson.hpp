@@ -10,6 +10,10 @@
 
 namespace music_player::m0 {
 
+// Shared bounded lexical guard for private download documents, before Qt drops
+// duplicate keys. Syntax/shape and each document's byte budget remain separate.
+[[nodiscard]] bool strictDownloadJsonPreflight(QByteArrayView bytes);
+
 enum class DownloadCheckpointJsonStatus { Valid, Invalid, FutureVersion };
 
 struct DownloadCheckpointJsonResult final {
