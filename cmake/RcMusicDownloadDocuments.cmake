@@ -12,7 +12,8 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsPrivateDownloadDocument.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadOwnershipStore.cpp"
-        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadOwnershipRecovery.cpp")
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadOwnershipRecovery.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadRecoveryReview.cpp")
     target_link_libraries(rc_music_download_documents PRIVATE advapi32)
 endif()
 
@@ -20,7 +21,7 @@ if(BUILD_TESTING)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
     set(rc_music_document_units DownloadCheckpointJson DownloadOwnershipJson)
     if(WIN32)
-        list(APPEND rc_music_document_units WindowsDownloadOwnershipStore WindowsDownloadOwnershipRecovery)
+        list(APPEND rc_music_document_units WindowsDownloadOwnershipStore WindowsDownloadOwnershipRecovery WindowsDownloadRecoveryReview)
     endif()
     foreach(unit IN LISTS rc_music_document_units)
         set(target "rc_music_${unit}_tests")

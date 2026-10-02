@@ -12,6 +12,7 @@ namespace music_player::m0 {
 class PlayerPresenter;
 class DownloadAdmissionController;
 class DownloadService;
+class DownloadRecoveryReview;
 enum class ExitPreparationState;
 
 struct DownloadExecutionDrainCallbacks final {
@@ -24,6 +25,8 @@ struct DownloadApplicationBindingOptions final {
     // callback may perform I/O, wait, or mutate borrowed controller/service.
     std::function<std::int64_t()> now_ms{};
     bool automatic_polling{true};
+    // Borrowed prompt, worker-backed port; outlives this binding and its drain.
+    DownloadRecoveryReview* recovery_review{nullptr};
 };
 
 // Qt application-thread owner of projection/timer/exit coordination only. The
@@ -60,12 +63,19 @@ class DownloadApplicationBinding final : public QObject {
     Q_INVOKABLE bool retryAdmission();
     Q_INVOKABLE bool retryFinalSave();
     Q_INVOKABLE bool closeAfterFinalSaveFailure();
+    // Read-only assessment by exact Interrupted job ID. A typed read failure
+    // permits explicit recheck; an uncertain/broken port is retired until a new
+    // owner is composed, preserving its original operation for physical drain.
+    Q_INVOKABLE bool reviewFiles(const QString& job_id);
 
   signals:
     void stateChanged();
 
   private:
     void beginShutdown();
+    void shutdownReview();
+    void pollReview();
+    void failReview();
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     void refreshProjection();
     [[nodiscard]] bool performControl(const std::function<bool()>& action);

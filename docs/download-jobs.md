@@ -111,6 +111,16 @@ O presenter tem um gate C++ tipado `ExitPreparationCallbacks` separado da drenag
 
 O [ensaio de processo](process-tests.md#composição-instrumentada-dos-downloads) liga a mesma main/QML a serviço/controller/binding/importador e ambos os stores/workers reais em TEMP próprio; somente a publicação usa um executor sintético com MP3 autenticado. Prova handoff durável sem autoplay, reprodução local após seleção explícita, restart sem duplicação e saída drenada. Não é download/conversão real, teste do Brave, engine Completa ou workflow instalado. Produção continua sem ingressos/serviço ativados enquanto os gates de ferramenta, sandbox, ownership/namespace e distribuição estiverem abertos.
 
+### Revisão explícita dos arquivos interrompidos
+
+`DownloadApplicationBindingOptions::recovery_review` é uma porta opcional emprestada [DownloadRecoveryReview](../include/m0/ports/DownloadRecoveryReview.hpp). Sem ela, a UI não oferece revisão física. `reviewFiles(job_id)` exige controller Ready, job Interrupted conhecido, nenhuma revisão pendente e ausência de saída em curso; rejeição não inicia I/O nem muda a fila. QML fornece apenas o ID da linha, nunca path, URL, diretório ou operation ID.
+
+O binding atribui um ID de operação e o model projeta “Verificando arquivos” enquanto observa o worker. Somente completion correspondente ao pedido pode atualizar o resultado; a linha continua Interrupted e inerte. [A classificação de ownership](download-ownership.md#revisão-explícita-assíncrona) distingue parciais/final candidato, ausência, conflito, impossibilidade de verificação e saúde do histórico, sem expor dados privados. Mesmo um final correspondente não habilita reprodução, importação, exclusão, retry de download ou retomada. Reavaliar exige clique explícito; não há revisão automática no startup ou auto-retry.
+
+`Unreadable` é um resultado fechado normal do worker e permite nova revisão explícita. Exceção inesperada da porta ou completion fora do contrato deixa a operação incerta: o binding fecha **somente o componente de revisão**, conserva a correlação para drenagem e não oferece recheck até um novo owner/reinício. Sucesso tardio desse pedido não substitui a falha projetada. Não esquecer o operation ID e tentar novos pedidos contra um slot que ainda pode estar ocupado.
+
+Saída fecha também a porta de revisão e aguarda `stopped` observado, além dos drains de executor/controller/checkpoint. A porta e seus recursos emprestados sobrevivem ao binding e à drenagem. O painel real compartilha esse fluxo em Lite/Completa, ainda apenas na composição instrumentada; classificação somente leitura não promove downloads remotos para produção ou resolve os demais gates de recuperação.
+
 ### Admissão durável assíncrona
 
 [DownloadAdmissionController](../include/m0/application/DownloadAdmissionController.hpp) é o dono puro da admissão/restauração/checkpoints, na thread da aplicação. Recebe `DownloadService` e a porta rápida [DownloadCheckpointIo](../include/m0/ports/DownloadCheckpointIo.hpp). `start()` agenda Load, sem ler arquivos no caller. Missing estabelece histórico vazio prístino sem salvar defaults; Loaded válido restaura recibos e histórico inerte. Invalid/Unreadable/FutureVersion, payload incoerente ou restore recusado bloqueiam novos pedidos, sem apagar/substituir dados. `retryStartup()` só repete a leitura por ação explícita após reparo externo.
@@ -215,8 +225,8 @@ Composição real de UI/serviço/importador e dos dois stores/workers em TEMP pr
 
 ## Pendências funcionais
 
-1. Executável Native Messaging com transporte binário e encaminhamento para o serviço dono no app; composição/prefixo/identidade por instalação.
+1. Promover host/IPC Native Messaging e reserva cooperativa já implementados para composição/prefixo/identidade instalados e ownership de produção.
 2. Download real protegido contra SSRF/redirects e conversão isolada, com ferramentas corrigidas e verificadas conforme ADR-0009; fakes não provam esses controles.
-3. Promover a reconciliação estrita de jobs+recibos saudáveis do shell instrumentado para produção, completar a integração com ownership e oferecer recuperação/cancelamento e tratamento acionável de capacidade/divergências sem duplicação silenciosa.
+3. Promover a reconciliação estrita de jobs+recibos saudáveis e a revisão explícita somente leitura do shell instrumentado para produção; decisões seguras sobre candidatos e tratamento de capacidade/divergências continuam pendentes, sem duplicação silenciosa.
 4. Promover a composição instrumentada de serviço/importador/binding/painel e saída para execução protegida de produção; ainda faltam ownership/namespace, resíduos e ingresso/host. O ensaio com publicação sintética não valida mídia da internet ou conversão.
 5. Navegação interna da Completa, integração comum instalada nas duas edições, opcionais do setup e testes reais autorizados do Brave. YouTube continua separado.

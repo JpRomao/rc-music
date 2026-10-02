@@ -69,6 +69,16 @@ O schema v1 limita 128 jobs, 64 recibos, 20 IDs por lote, 1 MiB de strings/paths
 
 No primeiro incremento do checkpoint, o autosave da fila ainda não conservava recibos conjuntamente. O modo `Session` acima acrescenta esse snapshot atômico, mas não comprova ownership durável dos arquivos ou exactly-once universal após crash. Journal de arquivos/temporários/residuais, reconciliação acionável entre os documentos, composição instalada do lifecycle e recuperação na UI são gates separados. Ao atingir os limites, a UI final precisa oferecer tratamento acionável, não expulsão silenciosa de recibos. Não adicionar banco ou persistência de histórico de navegação por conveniência.
 
+### Revisão explícita sem autoridade sobre candidatos
+
+Adotar a porta pura opcional `DownloadRecoveryReview` e sua projeção pelo binding comum para jobs Interrupted conhecidos, por implementação do componente. Somente ação explícita com controller Ready agenda uma revisão; operation ID crescente correlaciona a completion e o slot inclui resultado não observado. Poll obsoleto não libera outro pedido. O binding não recebe paths/configuração de QML e mantém fila, execução e recibos inalterados.
+
+A implementação Windows lê journal limitado e classifica o registro por ID exato em worker privado com configuração atual confiável. Factory/I/O/destruição não pertencem à UI. Resultado é enum sem paths/handles: evidência física ou histórico ausente/inválido/futuro não dão permissão de importar, retomar, baixar ou remover, inclusive para final candidato. Recheck é outra ação explícita, sem retry automático. Shutdown fecha a porta prontamente; saída espera stopped físico e conserva recursos emprestados até a drenagem. A revisão é uma parte acionável da recuperação, não resolução completa de divergências/capacidade ou aprovação remota.
+
+Falha tipada normal `Unreadable` continua recuperável por ação explícita. Exceção ou completion fora do contrato exige fechar somente a capacidade de revisão, conservar a operação incerta para drain e aguardar owner novo para reativá-la; não esquecer um slot possivelmente ocupado nem apresentar sucesso tardio como resultado do pedido falho.
+
+Estado deste ADR permanece Aceito; ADR-0009 permanece Proposto. A integração instrumentada e seus testes não equivalem à ativação do workflow de produção, engine da Completa, host/Brave instalados ou release.
+
 ### Admissão durável assíncrona
 
 Adotar `DownloadAdmissionController` e `SingleWorkerDownloadCheckpointIo`, com portas puras de store/IO/submissão assíncrona, por implementação testada de 2026-10-02. O controller é o dono da admissão/restauração/checkpoints na thread da aplicação, enquanto controles confiáveis de job podem usar o serviço na mesma thread. Nenhum caller submete/restaura por fora desse dono. Factory/store/load/save/destruição ficam na thread C++ privada, sem Qt ou I/O síncrono na UI. Uma operação incluindo completion não observada ocupa o slot; IDs aceitos são positivos/crescentes e poll obsoleto não consome outra completion.

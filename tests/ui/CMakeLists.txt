@@ -80,6 +80,18 @@ if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         M0_TEST_QUEUE_FILE="${ui_fixtures}/queue.v1.json")
     set_tests_properties(rc_music.ui.download-binding PROPERTIES LABELS "ui;qt;downloads;lifecycle;FR-051;FR-053")
 endif()
+if(WIN32 AND TARGET rc_music_download_documents AND TARGET rc_music_download_persistence AND TARGET rc_music_browser_integration)
+    add_ui_test(rc_music_ui_download_recovery_review_tests rc_music.ui.download-recovery-review
+        qtest/DownloadRecoveryReviewCompositionTests.cpp rc_music_test_ui rc_music_test_uiplugin
+        rc_music_download_documents rc_music_download_persistence Qt6::Qml Qt6::Quick)
+    # Seed owned synthetic files through the real workspace, without making
+    # network/conversion execution a prerequisite of this read-only review.
+    target_sources(rc_music_ui_download_recovery_review_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp")
+    target_link_libraries(rc_music_ui_download_recovery_review_tests PRIVATE advapi32)
+    set_tests_properties(rc_music.ui.download-recovery-review PROPERTIES
+        LABELS "ui;qt;downloads;persistence;windows;FR-051;FR-053")
+endif()
 foreach(target IN ITEMS rc_music_ui_fixture_tests rc_music_ui_presenter_tests)
     target_compile_definitions(${target} PRIVATE
         M0_TEST_FIXTURE_FILE="${ui_fixtures}/fixture.v1.json"

@@ -27,6 +27,9 @@ TestCase {
             "errorText": "",
             "canCancel": canCancel,
             "canRetryImport": canRetryImport,
+            "canReviewFiles": false,
+            "reviewText": "",
+            "reviewBusy": false,
             "outputPath": "C:/private/never-show-me.mp3",
             "url": "https://private.invalid/never-show-me?token=secret"
         });
@@ -188,6 +191,36 @@ TestCase {
         verify(!visibleText(row).includes("never-show-me"));
         compare(jobs.cancelledIds.length, 0);
         compare(jobs.retriedIds.length, 0);
+    }
+    function test_interruptedFilesReviewUsesOnlyStableJobIdAndIsKeyboardAccessible() {
+        addJob("interrupted-a", "interrupted", "Interrompido; revisão necessária", false, false, false, 0.3);
+        jobs.setProperty(0, "canReviewFiles", true);
+        openDownloads();
+        const row = rowAt(0);
+        const review = findChild(row, "download-review-files");
+        verifyTarget(review);
+        compare(review.text, "Verificar arquivos");
+        review.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(downloads.reviewedIds.length, 1);
+        compare(downloads.reviewedIds[0], "interrupted-a");
+        jobs.setProperty(0, "reviewBusy", true);
+        jobs.setProperty(0, "canReviewFiles", false);
+        jobs.setProperty(0, "reviewText", "Verificando arquivos locais; nada será alterado.");
+        tryCompare(review, "enabled", false);
+        verify(visibleText(row).includes("Verificando arquivos locais"));
+        jobs.setProperty(0, "reviewBusy", false);
+        jobs.setProperty(0, "canReviewFiles", true);
+        jobs.setProperty(0, "reviewText", "Arquivo final reconhecido; conteúdo ainda não validado ou importado.");
+        tryCompare(review, "text", "Reverificar arquivos");
+        verify(!visibleText(row).includes("never-show-me"));
+        compare(jobs.cancelledIds.length, 0);
+        compare(jobs.retriedIds.length, 0);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return findChild(shell, "downloads-close").activeFocus;
+        });
     }
     function test_jobActionsUseCurrentStableIdsAndCapabilities() {
         addJob("cancel-a", "queued", "Na fila", true, false, true, 0);
@@ -434,6 +467,7 @@ TestCase {
             property int exitCallsObservedDuringAbandonment: -1
             property var jobsModel: jobs
             property int startupRetries: 0
+            property var reviewedIds: []
             property string statusText: "Downloads disponíveis"
             property int unsafeCloses: 0
             property string warningText: ""
@@ -452,6 +486,10 @@ TestCase {
             }
             function retryStartup() {
                 ++startupRetries;
+            }
+            function reviewFiles(jobId) {
+                reviewedIds = reviewedIds.concat([jobId]);
+                return true;
             }
         }
     }

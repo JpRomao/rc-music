@@ -1242,6 +1242,10 @@
           "marker": "importedQueueAndCheckpointSurviveRestartWithoutAutoplayOrDuplication"
         },
         {
+          "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
+          "marker": "realMainReviewsOwnedFinalAndRechecksChangedBytesWithoutImporting"
+        },
+        {
           "path": "tests/ui/quick/tst_downloads.qml",
           "marker": "test_absentBindingPreservesLocalPlayer"
         },
@@ -1546,6 +1550,42 @@
         {
           "path": "tests/qt/DownloadJobsModelTests.cpp",
           "marker": "recoveredJobsExposeReviewStateWithoutExecutableActionsOrCandidatePath"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadRecoveryReviewTests.cpp",
+          "marker": "review_is_private_bounded_and_completion_is_not_consumed_by_stale_poll"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadRecoveryReviewTests.cpp",
+          "marker": "shutdown_does_not_wait_or_acknowledge_while_read_is_active"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "explicitReviewProjectsMatchedOutcomeWithoutChangingTheJobOrPlayback"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "exitWaitsForReviewPhysicalDrainEvenWithoutAnActiveReview"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "uncertainReviewPortKeepsTheSlotQuarantinedUntilPhysicalDrain"
+        },
+        {
+          "path": "tests/qt/DownloadJobsModelTests.cpp",
+          "marker": "interruptedReviewProjectionIsExplicitBoundedAndDoesNotExposeFileAuthority"
+        },
+        {
+          "path": "tests/ui/quick/tst_downloads.qml",
+          "marker": "test_interruptedFilesReviewUsesOnlyStableJobIdAndIsKeyboardAccessible"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
+          "marker": "realMainReviewsOwnedFinalAndRechecksChangedBytesWithoutImporting"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
+          "marker": "realWorkerPreservesMissingInvalidFutureAndUnrecordedHistory"
         },
         {
           "path": "tests/qt/WindowsDownloadCheckpointStoreTests.cpp",

@@ -35,6 +35,8 @@ Popup {
             return row.cancelControl;
         if (row && row.retryControl.visible && row.retryControl.enabled)
             return row.retryControl;
+        if (row && row.reviewControl.visible && row.reviewControl.enabled)
+            return row.reviewControl;
         return closeButton;
     }
     function invalidateCloseConsent() {
@@ -45,6 +47,8 @@ Popup {
     }
     function lastRowControl() {
         const row = jobsList.currentItem;
+        if (row && row.reviewControl.visible && row.reviewControl.enabled)
+            return row.reviewControl;
         if (row && row.retryControl.visible && row.retryControl.enabled)
             return row.retryControl;
         if (row && row.cancelControl.visible && row.cancelControl.enabled)
@@ -240,6 +244,7 @@ Popup {
 
                 required property bool canCancel
                 required property bool canRetryImport
+                required property bool canReviewFiles
                 property alias cancelControl: cancelButton
                 required property string errorText
                 required property bool indeterminate
@@ -247,6 +252,9 @@ Popup {
                 required property string jobId
                 required property real progressRatio
                 property alias retryControl: retryButton
+                property alias reviewControl: reviewButton
+                required property bool reviewBusy
+                required property string reviewText
                 required property string statusText
                 required property string title
 
@@ -343,15 +351,26 @@ Popup {
                         visible: text.length > 0
                         wrapMode: Text.Wrap
                     }
+                    Text {
+                        Accessible.name: text
+                        Accessible.role: Accessible.StaticText
+                        Layout.fillWidth: true
+                        color: root.contract.textSecondaryColor
+                        objectName: "download-review-status"
+                        text: row.reviewText
+                        textFormat: Text.PlainText
+                        visible: text.length > 0
+                        wrapMode: Text.Wrap
+                    }
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: row.canCancel || row.canRetryImport
+                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy
 
                         AccessibleTransportButton {
                             id: cancelButton
 
                             KeyNavigation.backtab: jobsList
-                            KeyNavigation.tab: retryButton.visible && retryButton.enabled ? retryButton : closeButton
+                            KeyNavigation.tab: retryButton.visible && retryButton.enabled ? retryButton : reviewButton.visible && reviewButton.enabled ? reviewButton : closeButton
                             contract: root.contract
                             enabled: row.canCancel
                             objectName: "download-cancel"
@@ -371,7 +390,7 @@ Popup {
                             id: retryButton
 
                             KeyNavigation.backtab: cancelButton.visible && cancelButton.enabled ? cancelButton : jobsList
-                            KeyNavigation.tab: closeButton
+                            KeyNavigation.tab: reviewButton.visible && reviewButton.enabled ? reviewButton : closeButton
                             contract: root.contract
                             enabled: row.canRetryImport
                             objectName: "download-retry-import"
@@ -385,6 +404,26 @@ Popup {
                             onClicked: {
                                 if (row.canRetryImport && root.downloads !== null)
                                     root.downloads.jobsModel.retryImport(row.jobId);
+                            }
+                        }
+                        AccessibleTransportButton {
+                            id: reviewButton
+
+                            KeyNavigation.backtab: retryButton.visible && retryButton.enabled ? retryButton : cancelButton.visible && cancelButton.enabled ? cancelButton : jobsList
+                            KeyNavigation.tab: closeButton
+                            contract: root.contract
+                            enabled: row.canReviewFiles && !row.reviewBusy
+                            objectName: "download-review-files"
+                            text: row.reviewBusy ? labels.reviewingFiles : row.reviewText.length > 0 ? labels.reviewFilesAgain : labels.reviewFiles
+                            visible: row.canReviewFiles || row.reviewBusy
+
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (row.canReviewFiles && !row.reviewBusy && root.downloads !== null)
+                                    root.downloads.reviewFiles(row.jobId);
                             }
                         }
                         Item {

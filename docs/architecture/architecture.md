@@ -575,6 +575,16 @@ Servidor `UserAccessOption` limita backlog/sessões a oito, impõe buffers/prazo
 
 O host curto tem stdin/stdout Win32 binários de pipe, snapshot limitado antes de alocar e writer com buffer próprio/prazo de 2 s/cancelamento repetido até parada física. O relógio da sessão é consultado imediatamente depois de `readAvailable`, antes de validar/admitir, sem reutilizar instante anterior à leitura para avaliar o deadline. Um watchdog independente de 15 s cobre leitura/teardown não cooperantes e termina somente o próprio host, nunca o dono persistente ou outro processo. O [modelo de ameaças](../security/browser-extension-threat-model.md#host-binário-e-canal-privado-do-dono) explicita que origem/pipe do mesmo usuário não autenticam o browser e que primeira instância/colisão do pipe Windows, identidade instalada, HWND/Brave e registro permanecem gates. A produção segue sem ingresso/serviço remoto ativo; Lite/Completa compartilham a futura composição, sem engine na Lite ou YouTube na extensão principal.
 
+### Revisão física explícita de downloads interrompidos
+
+[DownloadRecoveryReview](../../include/m0/ports/DownloadRecoveryReview.hpp) é uma porta pura e rápida separada de execução/admissão/importação. A composição entrega um job ID limitado e operation ID crescente; start/poll/shutdown/stopped não fazem I/O no caller. O slot único inclui completion não observada, e poll obsoleto não a consome. Resultado contém apenas correlação e enum, nunca path, handle ou autoridade sobre arquivos.
+
+[WindowsDownloadRecoveryReview](../../src/adapters/WindowsDownloadRecoveryReview.hpp) possui configuração confiável copiada e uma thread privada para factory, leitura limitada do journal, procura por ID exato, assessment somente leitura e destruição. Sem gravação, reparo de permissões, cleanup, download ou decoder. A ausência/invalidade/versão futura do histórico é distinta da classificação física do registro. A observação não autoriza importação ou retomada, mesmo para OwnedFinalCandidate.
+
+O binding opcional empresta essa porta ao painel comum, aceita revisão explícita somente de Interrupted conhecido com controller Ready e projeta checking/resultado/recheck sem alterar a fila ou expor candidato. Saída fecha revisão e espera parada física, preservando lifetimes junto aos demais workers. A composição instrumentada testa essa boundary; produção continua com opcionais remotos OFF. Lite não ganha engine, Completa mantém navegação isolada futura e YouTube permanece separado.
+
+Resultado normal `Unreadable` admite recheck explícito. Exceção da porta ou completion fora do contrato fecha apenas a revisão, conserva a correlação incerta até drenagem e mantém essa capacidade desativada até owner novo, sem promover resultado tardio ou interferir nos jobs/reprodução locais.
+
 ## 14. Integração com plataforma
 
 O [ADR-0004](decisions/0004-rc-music-identity.md) fixa **RC Music** como nome visível. O candidato mantém `MusicPlayer` nos identificadores internos do Qt para conservar a mesma raiz de configuração e o mesmo lock; a apresentação e a futura identidade de associação não devem impor uma migração implícita dos dados.

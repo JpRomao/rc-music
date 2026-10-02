@@ -77,6 +77,10 @@ DownloadRequest request(std::string id = request_id, std::string title = "Audio"
                        .title = std::move(title),
                        .kind = DownloadMediaKind::Audio}}};
 }
+class ReviewIdentity final : public DownloadRequestIdentity {
+  public:
+    std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+};
 
 QVariant value(const DownloadJobsModel& model, int role, int row = 0) { return model.data(model.index(row, 0), role); }
 
@@ -88,6 +92,90 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void interruptedReviewProjectionIsExplicitBoundedAndDoesNotExposeFileAuthority() {
+        ReviewIdentity identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        const DownloadCheckpoint checkpoint{
+            .receipts = {{.request_id = request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"previous-1", "previous-2"},
+                          .retained_request_bytes = 128}},
+            .jobs = {{.job_id = "previous-1", .title = "First"}, {.job_id = "previous-2", .title = "Second"}}};
+        QVERIFY(service.restore(checkpoint));
+        DownloadJobsModel model(service);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+        QSignalSpy reset(&model, &QAbstractItemModel::modelReset);
+        const QPersistentModelIndex selected(model.index(0, 0));
+        QVERIFY(!value(model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!model.beginReview(QStringLiteral("previous-1")));
+        model.setReviewAvailable(true);
+        QVERIFY(value(model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!model.beginReview(QStringLiteral("PREVIOUS-1")));
+        QVERIFY(model.beginReview(QStringLiteral("previous-1")));
+        QVERIFY(value(model, DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+        QVERIFY(!model.beginReview(QStringLiteral("previous-2")));
+        QVERIFY(!model.finishReview(QStringLiteral("previous-2"), DownloadRecoveryReviewOutcome::OwnedPartial));
+        QVERIFY(model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("Arquivo final reconhecido")));
+        QVERIFY(value(model, DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(service.snapshot()[0].state, DownloadJobState::Interrupted);
+        model.refresh();
+        QVERIFY(!value(model, DownloadJobsModel::ReviewTextRole).toString().isEmpty());
+        model.setReviewAvailable(false);
+        QVERIFY(!value(model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::ReviewTextRole).toString().isEmpty());
+        QVERIFY(changed.size() > 0);
+        QCOMPARE(reset.size(), 0);
+        QVERIFY(selected.isValid());
+        QCOMPARE(selected.row(), 0);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.calls, 0);
+    }
+    void reviewOutcomesGiveConservativeSafeGuidance_data() {
+        QTest::addColumn<int>("outcome");
+        for (auto outcome :
+             {DownloadRecoveryReviewOutcome::Unverified, DownloadRecoveryReviewOutcome::OwnedPartial,
+              DownloadRecoveryReviewOutcome::OwnedFinalCandidate, DownloadRecoveryReviewOutcome::Missing,
+              DownloadRecoveryReviewOutcome::Conflict, DownloadRecoveryReviewOutcome::Unreadable,
+              DownloadRecoveryReviewOutcome::HistoryMissing, DownloadRecoveryReviewOutcome::HistoryInvalid,
+              DownloadRecoveryReviewOutcome::HistoryFuture})
+            QTest::newRow(qPrintable(QString::number(static_cast<int>(outcome)))) << static_cast<int>(outcome);
+        QTest::newRow("unknown") << 999;
+    }
+    void reviewOutcomesGiveConservativeSafeGuidance() {
+        QFETCH(int, outcome);
+        ReviewIdentity identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        QVERIFY(service.restore({.receipts = {{.request_id = request_id,
+                                               .fingerprint = std::string(64, 'a'),
+                                               .job_ids = {"previous-1"},
+                                               .retained_request_bytes = 128}},
+                                 .jobs = {{.job_id = "previous-1", .title = "First"}}}));
+        DownloadJobsModel model(service);
+        model.setReviewAvailable(true);
+        QVERIFY(model.beginReview(QStringLiteral("previous-1")));
+        QVERIFY(model.finishReview(QStringLiteral("previous-1"), static_cast<DownloadRecoveryReviewOutcome>(outcome)));
+        const auto text = value(model, DownloadJobsModel::ReviewTextRole).toString();
+        QVERIFY(!text.isEmpty());
+        QVERIFY(!text.contains(QStringLiteral("C:/")));
+        QVERIFY(!text.contains(QStringLiteral("https:")));
+        QVERIFY(!value(model, DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanCancelRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(execution.polls, 0);
+        QCOMPARE(importer.calls, 0);
+    }
     void reconciledImportProjectsDurableCompletionWithoutInventingTransferMetrics_data() {
         QTest::addColumn<bool>("known_total");
         QTest::newRow("partial transfer metrics") << true;
@@ -274,7 +362,8 @@ class DownloadJobsModelTests final : public QObject {
         const auto roles = model.roleNames();
         const QList<QByteArray> expected{"jobId",          "title",      "state",         "statusText",
                                          "completedUnits", "totalUnits", "indeterminate", "progressRatio",
-                                         "outputPath",     "errorText",  "canCancel",     "canRetryImport"};
+                                         "outputPath",     "errorText",  "canCancel",     "canRetryImport",
+                                         "canReviewFiles", "reviewText", "reviewBusy"};
         QCOMPARE(roles.size(), expected.size());
         for (const auto& role : expected)
             QVERIFY(roles.values().contains(role));

@@ -1,6 +1,6 @@
 # Ownership privado dos arquivos de download
 
-**Estado:** componente worker-only de R1.8, ainda fora do player, comum a Lite/Completa. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host ou engine.
+**Estado:** journal/assessment worker-only e revisão explícita no painel instrumentado de R1.8, comuns a Lite/Completa; workflow remoto de produção permanece desligado. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host instalado ou engine.
 
 ## Registro e store
 
@@ -41,9 +41,19 @@ Overload durável de [WindowsDownloadWorkspace](../src/adapters/WindowsDownloadW
 
 Ready permite parciais vazios/incompletos dentro da cota; counters iniciais não prometem progresso durável. Prepared/Published exigem tamanho/hash da saída. Hash matching não substitui validação de mídia ou reconciliação da fila. Prepared admite source ou destino, nunca ambos. Published não admite source sobrevivente; cleanupComplete contradito por temporários/diretório gera Conflict. Pais trocados, hardlinks, reparse e filhos desconhecidos não são próprios.
 
+## Revisão explícita assíncrona
+
+A porta pura [DownloadRecoveryReview](../include/m0/ports/DownloadRecoveryReview.hpp) recebe apenas operation ID e job ID limitado da composição confiável. `startReview` é rápido; `poll` observa uma completion correlacionada. IDs aceitos são positivos/crescentes, e um único slot inclui o resultado ainda não observado: poll de outro ID não o consome nem libera capacidade. Não recebe path, nome de arquivo, URL ou configuração da página/QML.
+
+[WindowsDownloadRecoveryReview](../src/adapters/WindowsDownloadRecoveryReview.hpp) copia o diretório confiável do journal e a configuração atual do workspace. Somente após pedido explícito, uma thread privada carrega o journal limitado e procura o **ID exato**; havendo registro válido, chama o assessment somente leitura acima. Factory, leitura, verificação por handles/hash e destruição dos recursos ficam nessa thread, não na UI. Não cria diretórios, corrige DACLs, salva/repara documentos ou limpa arquivos. O seam de factory é confiável e serve aos testes, não às páginas.
+
+O resultado limitado contém operation ID, job ID e classificação, nunca paths/handles/capabilities. Além dos seis resultados físicos acima, `HistoryMissing`, `HistoryInvalid` e `HistoryFuture` distinguem journal ausente, histórico inválido e versão futura; journal válido sem registro do ID exato retorna `Unverified`, sem assessment físico. Não transformam falta de evidência em arquivo ausente ou próprio. Qualquer classificação continua sendo uma observação, sem autoridade para importar, apagar, retomar execução ou iniciar download. Uma nova revisão exige outra ação explícita.
+
+`shutdown` fecha admissões prontamente e drena o trabalho já aceito; `stopped` só reconhece a parada dos recursos privados. Owner e configuração sobrevivem até essa confirmação. Join no destructor é fallback, não o protocolo de saída da UI. O [binding/painel comum](download-jobs.md#revisão-explícita-dos-arquivos-interrompidos) oferece a ação somente para um job Interrupted conhecido e com controller Ready; a composição de produção continua inativa.
+
 ## Limites e checks
 
-Crash entre criação e captura/save de IDs pode deixar órfão não verificado; Planned não o reivindica pelo nome. Journal cobre input/output/jobdir/final, não as nove cópias do runtime, todos os temporários de replacement ou arquivos externos. Cleanup ativo permanece por handles; assessment não autoriza remoção futura por path. Faltam ações explícitas de recovery/capacidade/falhas, reconciliação durável fila+recibos, runtime-residuais e host/lifecycle/model/UI. Não há exactly-once após crash. Depois seguem descoberta ampliada, engine isolada Completa e opcionais/upgrade das edições.
+Crash entre criação e captura/save de IDs pode deixar órfão não verificado; Planned não o reivindica pelo nome. Journal cobre input/output/jobdir/final, não as nove cópias do runtime, todos os temporários de replacement ou arquivos externos. Cleanup ativo permanece por handles; assessment/revisão não autorizam remoção futura por path. A revisão explícita apenas apresenta evidência: faltam decisões seguras de importação/retomada/cleanup, tratamento de capacidade/divergências, runtime-residuais e promoção protegida do lifecycle/host/UI para produção. Não há exactly-once após crash. Depois seguem descoberta ampliada, engine isolada Completa e opcionais/upgrade das edições.
 
 TDD e fechamento constam no [checkpoint do plano](development-plan.md#17-próxima-sequência-segura): codec 50/50, store 29/29, recovery 40/0/2 skips, workspace 59/0/2 skips e sessão 69/69. Seleção final 124/124 CTest e build Release passaram; player 407/407 anterior à realocação do assessment e documentos 5/5 finais são evidências distintas, não uma execução global de 408. Os skips não são casos comprovados. Ensaios usam TEMP próprio e fixtures sintéticas, sem mídia pessoal/pública, instalação/Registry, perfil Brave ou benchmark.
 

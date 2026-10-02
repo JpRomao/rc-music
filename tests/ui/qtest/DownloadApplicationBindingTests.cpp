@@ -121,6 +121,55 @@ class Io final : public DownloadCheckpointIo {
     int shutdowns{0};
     bool physical_stopped{false};
 };
+class Review final : public DownloadRecoveryReview {
+  public:
+    DownloadRecoveryReviewCommand startReview(std::uint64_t operation_id, std::string_view job_id) override {
+        requests.emplace_back(operation_id, std::string{job_id});
+        if (enforce_slot && active_operation)
+            return DownloadRecoveryReviewCommand::Busy;
+        if (enforce_slot && command == DownloadRecoveryReviewCommand::Accepted)
+            active_operation = operation_id;
+        if (on_start)
+            on_start();
+        if (throw_start)
+            throw std::runtime_error{"private review start error"};
+        return command;
+    }
+    std::optional<DownloadRecoveryReviewResult> poll(std::uint64_t operation_id) override {
+        polled_ids.push_back(operation_id);
+        if (on_poll)
+            on_poll();
+        if (throw_poll)
+            throw std::runtime_error{"private review poll error"};
+        auto result = std::exchange(completion, std::nullopt);
+        if (result && result->operation_id == operation_id)
+            active_operation.reset();
+        return result;
+    }
+    void shutdown() override { ++shutdowns; }
+    bool stopped() const override {
+        if (throw_probe)
+            throw std::runtime_error{"private review probe error"};
+        return shutdowns != 0 && physical_stopped;
+    }
+    std::vector<std::pair<std::uint64_t, std::string>> requests;
+    std::vector<std::uint64_t> polled_ids;
+    std::optional<DownloadRecoveryReviewResult> completion;
+    DownloadRecoveryReviewCommand command{DownloadRecoveryReviewCommand::Accepted};
+    std::function<void()> on_start;
+    std::function<void()> on_poll;
+    bool throw_start{false};
+    bool throw_poll{false};
+    bool throw_probe{false};
+    bool enforce_slot{false};
+    std::optional<std::uint64_t> active_operation;
+    bool physical_stopped{false};
+    int shutdowns{0};
+    void complete(DownloadRecoveryReviewOutcome outcome) {
+        completion = DownloadRecoveryReviewResult{
+            .operation_id = requests.back().first, .job_id = requests.back().second, .outcome = outcome};
+    }
+};
 struct Harness final {
     Platform platform;
     PlayerPresenter presenter;
@@ -130,11 +179,12 @@ struct Harness final {
     Io io;
     DownloadService service;
     DownloadAdmissionController controller;
+    Review review;
     std::int64_t now{0};
     int clock_reads{0};
     bool throw_clock{false};
     DownloadApplicationBinding binding;
-    explicit Harness(SessionLoadResult session = {})
+    explicit Harness(SessionLoadResult session = {}, bool with_review = false)
         : presenter(
               FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE)),
               platform),
@@ -149,7 +199,8 @@ struct Harness final {
                                throw std::runtime_error{"private clock error"};
                            return now;
                        },
-                   .automatic_polling = false}) {}
+                   .automatic_polling = false,
+                   .recovery_review = with_review ? &review : nullptr}) {}
     bool ready() {
         if (!binding.start() || io.loads.size() != 1)
             return false;
@@ -158,12 +209,242 @@ struct Harness final {
         return controller.state() == DownloadAdmissionControllerState::Ready;
     }
     void playerPoll() { PlayerPresenterTestAccess::pollPersistence(presenter); }
+    bool interrupted() {
+        if (!binding.start())
+            return false;
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {"old-1", "old-2"},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = "old-1", .title = "Interrupted first"},
+                                                     {.job_id = "old-2", .title = "Interrupted second"}}};
+        io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        binding.poll();
+        return controller.state() == DownloadAdmissionControllerState::Ready;
+    }
+    QVariant reviewValue(int role, int row = 0) {
+        auto* model = binding.jobsModel();
+        return model->data(model->index(row, 0), role);
+    }
 };
 } // namespace
 
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void explicitReviewProjectsMatchedOutcomeWithoutChangingTheJobOrPlayback() {
+        Harness h({}, true);
+        QVERIFY(h.interrupted());
+        QCOMPARE(h.review.requests.size(), std::size_t{0});
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+        QCOMPARE(h.review.requests[0].second, std::string{"old-1"});
+        QVERIFY(h.review.requests[0].first > 0);
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("Arquivo final reconhecido")));
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QVERIFY(h.reviewValue(DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(h.review.requests[1].first > h.review.requests[0].first);
+        h.review.complete(DownloadRecoveryReviewOutcome::Missing);
+        h.binding.poll();
+        QVERIFY(
+            h.reviewValue(DownloadJobsModel::ReviewTextRole, 1).toString().contains(QStringLiteral("Nenhum arquivo")));
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::Unreadable);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("Não foi possível verificar")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("Reinicie")));
+        QCOMPARE(h.review.shutdowns, 0);
+    }
+    void reviewIsUnavailableWithoutPortOrOutsideExactReadyInterruptedIdentity() {
+        Harness absent;
+        QVERIFY(absent.interrupted());
+        QVERIFY(!absent.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!absent.binding.reviewFiles(QStringLiteral("old-1")));
+        Harness h({}, true);
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-1")));
+        QVERIFY(h.binding.start());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.io.loaded();
+        h.binding.poll();
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-1")));
+        QVERIFY(h.controller.begin(input()).state == DownloadAdmissionState::Pending);
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("fresh-1")));
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("fresh-1")));
+        QCOMPARE(h.review.requests.size(), std::size_t{0});
+        Harness restored({}, true);
+        QVERIFY(restored.interrupted());
+        QVERIFY(!restored.binding.reviewFiles(QStringLiteral("OLD-1")));
+        QVERIFY(!restored.binding.reviewFiles(QStringLiteral("old-1\0suffix")));
+        QVERIFY(!restored.binding.reviewFiles(QStringLiteral("C:/private/file.mp3")));
+        QVERIFY(!restored.binding.reviewFiles(QString{}));
+        bool wrong_thread = true;
+        std::thread worker([&] { wrong_thread = restored.binding.reviewFiles(QStringLiteral("old-1")); });
+        worker.join();
+        QVERIFY(!wrong_thread);
+        QCOMPARE(restored.review.requests.size(), std::size_t{0});
+    }
+    void malformedReviewRepliesAndExceptionsFailClosedWithExplicitRecovery_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("wrong operation") << 0;
+        QTest::newRow("wrong job") << 1;
+        QTest::newRow("unknown outcome") << 2;
+        QTest::newRow("poll exception") << 3;
+        QTest::newRow("refused start") << 4;
+        QTest::newRow("start exception") << 5;
+        QTest::newRow("closed start") << 6;
+        QTest::newRow("invalid request for known job") << 7;
+        QTest::newRow("unknown start result") << 8;
+    }
+    void malformedReviewRepliesAndExceptionsFailClosedWithExplicitRecovery() {
+        QFETCH(int, fault);
+        Harness h({}, true);
+        QVERIFY(h.interrupted());
+        h.review.command = fault == 4   ? DownloadRecoveryReviewCommand::Busy
+                           : fault == 6 ? DownloadRecoveryReviewCommand::Closed
+                           : fault == 7 ? DownloadRecoveryReviewCommand::InvalidRequest
+                           : fault == 8 ? static_cast<DownloadRecoveryReviewCommand>(999)
+                                        : DownloadRecoveryReviewCommand::Accepted;
+        h.review.throw_start = fault == 5;
+        QCOMPARE(h.binding.reviewFiles(QStringLiteral("old-1")), fault < 4);
+        if (fault < 4) {
+            h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+            if (fault == 0)
+                ++h.review.completion->operation_id;
+            if (fault == 1)
+                h.review.completion->job_id = "old-2";
+            if (fault == 2)
+                h.review.completion->outcome = static_cast<DownloadRecoveryReviewOutcome>(999);
+            h.review.throw_poll = fault == 3;
+            h.binding.poll();
+        }
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("Não foi possível verificar")));
+        QCOMPARE(h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool(), fault == 4);
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole, 1).toString().isEmpty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        h.review.command = DownloadRecoveryReviewCommand::Accepted;
+        h.review.throw_start = false;
+        h.review.throw_poll = false;
+        QCOMPARE(h.binding.reviewFiles(QStringLiteral("old-1")), fault == 4);
+        QCOMPARE(h.review.requests.size(), fault == 4 ? std::size_t{2} : std::size_t{1});
+    }
+    void uncertainReviewPortKeepsTheSlotQuarantinedUntilPhysicalDrain_data() {
+        QTest::addColumn<bool>("start_fault");
+        QTest::newRow("accepted start then exception") << true;
+        QTest::newRow("poll exception retains completion") << false;
+    }
+    void uncertainReviewPortKeepsTheSlotQuarantinedUntilPhysicalDrain() {
+        QFETCH(bool, start_fault);
+        Harness h({}, true);
+        QVERIFY(h.interrupted());
+        h.review.enforce_slot = true;
+        h.review.throw_start = start_fault;
+        QCOMPARE(h.binding.reviewFiles(QStringLiteral("old-1")), !start_fault);
+        if (!start_fault) {
+            h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+            h.review.throw_poll = true;
+            h.binding.poll();
+        }
+        QVERIFY(h.review.active_operation.has_value());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+        QCOMPARE(h.review.shutdowns, 1);
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("Reinicie")));
+        h.review.throw_start = false;
+        h.review.throw_poll = false;
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("Reinicie")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ReviewTextRole)
+                     .toString()
+                     .contains(QStringLiteral("Arquivo final reconhecido")));
+        QCOMPARE(h.review.polled_ids.back(), h.review.requests[0].first);
+        QVERIFY(!h.review.active_operation.has_value());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-1")));
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QVERIFY(h.presenter.requestExit());
+        h.io.saved();
+        h.io.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 0);
+        h.review.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 1);
+    }
+    void reviewReentrancyCannotStartOrPollAnotherOperationAndNestedExitClosesReview() {
+        Harness h({}, true);
+        QVERIFY(h.interrupted());
+        h.review.on_start = [&] {
+            QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+            h.binding.poll();
+        };
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        QCOMPARE(h.review.polled_ids.size(), std::size_t{0});
+        h.review.on_poll = [&] {
+            h.binding.poll();
+            QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+            QVERIFY(h.presenter.requestExit());
+        };
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QCOMPARE(h.review.polled_ids.size(), std::size_t{1});
+        h.review.on_poll = {};
+        h.binding.poll();
+        QCOMPARE(h.review.shutdowns, 1);
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+    }
+    void exitWaitsForReviewPhysicalDrainEvenWithoutAnActiveReview() {
+        Harness h({}, true);
+        QVERIFY(h.ready());
+        QVERIFY(h.presenter.requestExit());
+        QCOMPARE(h.review.shutdowns, 1);
+        h.io.saved();
+        h.io.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 0);
+        h.review.throw_probe = true;
+        h.binding.poll();
+        QVERIFY(!h.binding.warningText().isEmpty());
+        h.review.throw_probe = false;
+        h.review.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 1);
+    }
     void startsAndProjectsReconciledHistoryWithoutExecutionOrImport() {
         const SessionLoadResult session{
             .snapshot = {.download_import_receipts = {{.job_id = "old-1", .source_path = path()}}},

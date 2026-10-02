@@ -63,3 +63,7 @@ O manifesto mantém **83 IDs: 66 em andamento, 15 planejados e 2 comprovados doc
 ## Reserva cooperativa do dono de downloads
 
 FR-051/FR-053 também vinculam recusa do segundo servidor/processo, aliases de caixa/origem, DACL protegida do marcador, colisões preexistentes e recuperação após destruição ou término do dono. [O ensaio de processos](../process-tests.md#exclusividade-cooperativa-do-dono-native-messaging) conserva contendores recusados vivos e distingue ingresso STOPPED do objeto RELEASED. A reserva não autentica navegador/processo, não protege o pipe contra cliente local hostil e não resolve identidade instalada ou disponibilidade entre usuários. Os estados e gates dos requisitos permanecem inalterados.
+
+## Revisão explícita dos arquivos interrompidos
+
+FR-051/FR-053 acrescentam vínculos para revisão correlacionada por ID, slot incluindo completion não observada, worker/parada física, projeção segura e ação explícita por teclado. A composição QML usa painel/binding/model/controller/service reais e worker Windows sobre TEMP próprio; um resultado de ownership não autoriza importação/exclusão/retomada nem muda o histórico Interrupted. [O contrato de revisão](../download-ownership.md#revisão-explícita-assíncrona) mantém produção remota OFF e separa presença de testes dos resultados executados no checkpoint. Nenhum estado de requisito ou gate amplo foi promovido.

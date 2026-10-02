@@ -16,6 +16,8 @@ Incremento worker-only de 2026-10-02: [journal de ownership](../../download-owne
 
 Investigar downloader Qt Network opcional e conversor FFmpeg em processo separado, recebendo somente arquivo temporário local. Não encaminhar URLs remotas ao FFmpeg nem usar concatenação de shell.
 
+O incremento de [revisão explícita](../../download-ownership.md#revisão-explícita-assíncrona) acrescenta worker somente leitura do journal/assessment e projeção no painel comum. Resultado correlacionado sem path/handle não autoriza conversão, retomada, importação ou cleanup; um final candidato não se torna mídia aprovada. Saída espera stopped físico do worker. Isso não seleciona backend nem fecha ferramenta corrigida, sandbox, resíduos, licenças/distribuição ou ativação de produção; o ADR permanece Proposto.
+
 - O SDK aceito em `q/f75eb9bea8280844c6d1a2b3f4/sdk` contém Qt6Network, pacote CMake e plugin TLS Schannel. O [transporte opcional](../../download-network.md) passa a utilizá-los em seu alvo próprio, ainda fora do player.
 - O FFmpeg/ffprobe disponível via WinGet é Gyan 8.1.1 full-build, com `libmp3lame`, `--enable-gpl` e `--enable-version3`; é distinto das DLLs de playback referenciadas como FFmpeg 7.1.5. O gate existente de proveniência/notices dessas DLLs não aprova o CLI.
 - **Bloqueio de mídia não confiável:** a lista oficial de segurança já registra correções em 8.1.2 para CVE-2026-8461 e CVE-2026-30999. O CLI 8.1.1 não fica aprovado para processar downloads; revisar atualização, proveniência e alcance dos avisos antes de habilitar esse uso. Testes futuros de processo podem usar apenas fixtures sintéticas confiáveis enquanto isso. [Segurança FFmpeg](https://ffmpeg.org/security.html).
