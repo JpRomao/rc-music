@@ -93,6 +93,9 @@ struct AdmissionIo final : DownloadCheckpointIo {
     DownloadCheckpointIoCommand save_command{DownloadCheckpointIoCommand::Accepted};
     bool throw_load{false};
     bool throw_save{false};
+    bool throw_poll{false};
+    bool throw_poll_after_take{false};
+    bool throw_save_after_accept{false};
     bool allow_stopped{false};
     bool deliver_malformed{false};
     unsigned int shutdowns{0};
@@ -124,17 +127,23 @@ struct AdmissionIo final : DownloadCheckpointIo {
         if (active)
             return DownloadCheckpointIoCommand::Busy;
         active = id;
+        if (throw_save_after_accept)
+            throw std::runtime_error{"uncertain private save"};
         return DownloadCheckpointIoCommand::Accepted;
     }
     std::optional<DownloadCheckpointIoResult> poll(const std::uint64_t id) override {
         polls.push_back(id);
         if (on_poll)
             on_poll();
+        if (throw_poll)
+            throw std::runtime_error{"uncertain private poll"};
         if (!completion || (!deliver_malformed && completion->operation_id != id))
             return std::nullopt;
         auto result = std::move(completion);
         completion.reset();
         active.reset();
+        if (throw_poll_after_take)
+            throw std::runtime_error{"uncertain consumed poll"};
         return result;
     }
     void shutdown() override { ++shutdowns; }
@@ -158,8 +167,9 @@ struct AdmissionHarness {
     AdmissionIo io{};
     DownloadService service;
     DownloadAdmissionController controller;
-    explicit AdmissionHarness(DownloadServiceLimits limits = {})
-        : service(execution, importer, "owner", limits, &identity), controller(service, io) {}
+    explicit AdmissionHarness(DownloadServiceLimits limits = {},
+                              DownloadFinalSavePolicy policy = DownloadFinalSavePolicy::CloseAfterAttempt)
+        : service(execution, importer, "owner", limits, &identity), controller(service, io, policy) {}
     void ready() {
         REQUIRE(controller.start());
         REQUIRE(io.loads.size() == 1);
@@ -221,8 +231,9 @@ struct RecoveryAdmissionHarness {
     AdmissionIo io{};
     DownloadService service;
     DownloadAdmissionController controller;
-    explicit RecoveryAdmissionHarness(const SessionLoadResult& session, std::string prefix = "owner")
-        : service(execution, importer, std::move(prefix), {}, &identity), controller(service, io, session) {}
+    explicit RecoveryAdmissionHarness(const SessionLoadResult& session, std::string prefix = "owner",
+                                      DownloadFinalSavePolicy policy = DownloadFinalSavePolicy::CloseAfterAttempt)
+        : service(execution, importer, std::move(prefix), {}, &identity), controller(service, io, session, policy) {}
     void load(DownloadCheckpointLoadResult result) {
         REQUIRE(controller.start());
         io.loaded(std::move(result));
@@ -847,6 +858,371 @@ TEST_CASE("A failed final checkpoint remains visible after physical download-own
     REQUIRE(h.controller.stopped());
     REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
     REQUIRE(h.io.saves.size() == 1);
+}
+
+TEST_CASE("Held download exit retains final save failures until an explicit successful retry",
+          "[download][final-save-policy]") {
+    const auto status =
+        GENERATE(DownloadCheckpointSaveStatus::Failed, DownloadCheckpointSaveStatus::BlockedByExistingData,
+                 static_cast<DownloadCheckpointSaveStatus>(999));
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    h.controller.shutdown();
+    h.controller.tick(1);
+    REQUIRE(h.io.saves.size() == 1);
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    h.io.saved(status);
+    h.controller.tick(2);
+    const auto expected =
+        status == DownloadCheckpointSaveStatus::BlockedByExistingData ? status : DownloadCheckpointSaveStatus::Failed;
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.controller.saveStatus() == expected);
+    REQUIRE(h.service.stopped());
+    REQUIRE_FALSE(h.controller.stopped());
+    REQUIRE(h.io.shutdowns == 0);
+    h.controller.shutdown();
+    h.controller.tick(3);
+    h.controller.tick(4);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.io.saves.size() == 1);
+    REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::NotAvailable);
+    REQUIRE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.io.saves[1].id > h.io.saves[0].id);
+    REQUIRE(h.io.saves[1].checkpoint == h.io.saves[0].checkpoint);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopping);
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    h.io.saved();
+    h.controller.tick(5);
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Saved);
+    REQUIRE(h.io.shutdowns == 1);
+    REQUIRE_FALSE(h.controller.stopped());
+    h.io.allow_stopped = true;
+    h.controller.tick(6);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Held download exit handles refused or uncertain enqueue without automatic persistence retry",
+          "[download][final-save-policy]") {
+    const auto failure = GENERATE(0, 1, 2, 3, 4);
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    if (failure < 3)
+        h.io.save_command = failure == 0   ? DownloadCheckpointIoCommand::Busy
+                            : failure == 1 ? DownloadCheckpointIoCommand::Closed
+                                           : DownloadCheckpointIoCommand::InvalidRequest;
+    else if (failure == 3)
+        h.io.throw_save = true;
+    else
+        h.io.throw_save_after_accept = true;
+    h.controller.shutdown();
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+    REQUIRE(h.io.shutdowns == 0);
+    h.controller.tick(2);
+    REQUIRE(h.io.saves.size() == 1);
+    h.io.throw_save = false;
+    h.io.throw_save_after_accept = false;
+    h.io.save_command = DownloadCheckpointIoCommand::Accepted;
+    if (failure == 4) {
+        const auto uncertain_id = h.io.saves[0].id;
+        REQUIRE_FALSE(h.controller.retryFinalSave());
+        REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+        h.io.completion = DownloadCheckpointIoResult{.operation_id = uncertain_id,
+                                                     .operation = DownloadCheckpointOperation::Save,
+                                                     .save_status = DownloadCheckpointSaveStatus::Saved};
+        h.controller.tick(3);
+        REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+        REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    }
+    REQUIRE(h.controller.retryFinalSave());
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(4);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Saved);
+}
+
+TEST_CASE("Held final persistence never promotes a malformed or previously uncertain completion",
+          "[download][final-save-policy]") {
+    const auto failure = GENERATE(0, 1, 2);
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    h.controller.shutdown();
+    h.controller.tick(1);
+    const auto original_id = h.io.saves[0].id;
+    if (failure == 0)
+        h.io.throw_poll = true;
+    else {
+        h.io.saved();
+        h.io.deliver_malformed = true;
+        if (failure == 1)
+            h.io.completion->operation_id += 50;
+        else
+            h.io.completion->operation = DownloadCheckpointOperation::Load;
+    }
+    h.controller.tick(2);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+    REQUIRE(h.io.shutdowns == 0);
+    h.io.throw_poll = false;
+    h.io.deliver_malformed = false;
+    if (failure == 0) {
+        REQUIRE_FALSE(h.controller.retryFinalSave());
+        h.io.completion = DownloadCheckpointIoResult{.operation_id = original_id,
+                                                     .operation = DownloadCheckpointOperation::Save,
+                                                     .save_status = DownloadCheckpointSaveStatus::Saved};
+        h.controller.tick(3);
+        REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+        REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    }
+    REQUIRE(h.controller.retryFinalSave());
+    const auto retry_id = h.io.saves.back().id;
+    REQUIRE(retry_id > original_id);
+    h.io.completion = DownloadCheckpointIoResult{.operation_id = original_id,
+                                                 .operation = DownloadCheckpointOperation::Save,
+                                                 .save_status = DownloadCheckpointSaveStatus::Saved};
+    h.controller.tick(4);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopping);
+    REQUIRE(h.io.shutdowns == 0);
+    h.io.completion = DownloadCheckpointIoResult{.operation_id = retry_id,
+                                                 .operation = DownloadCheckpointOperation::Save,
+                                                 .save_status = DownloadCheckpointSaveStatus::Saved};
+    h.io.allow_stopped = true;
+    h.controller.tick(5);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Saved);
+}
+
+TEST_CASE("Held download exit can explicitly close without claiming successful persistence",
+          "[download][final-save-policy]") {
+    const bool uncertain = GENERATE(false, true);
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    h.controller.shutdown();
+    h.controller.tick(1);
+    if (uncertain)
+        h.io.throw_poll = true;
+    else
+        h.io.saved(DownloadCheckpointSaveStatus::BlockedByExistingData);
+    h.controller.tick(2);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    const auto failure = h.controller.saveStatus();
+    REQUIRE(h.controller.closeAfterFinalSaveFailure());
+    REQUIRE(h.io.shutdowns == 1);
+    REQUIRE_FALSE(h.controller.stopped());
+    REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    h.io.throw_poll = false;
+    if (uncertain)
+        h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(3);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.saveStatus() == failure);
+    REQUIRE(h.io.saves.size() == 1);
+}
+
+TEST_CASE("Held shutdown of failed admission saves cancelled history only by final retry without an admission ACK",
+          "[download][final-save-policy]") {
+    const auto status =
+        GENERATE(DownloadCheckpointSaveStatus::Failed, DownloadCheckpointSaveStatus::BlockedByExistingData);
+    AdmissionHarness h({.max_jobs = 1, .max_requests = 1}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    const auto request = admissionInput();
+    pendingWithoutAck(h.controller.begin(request));
+    h.io.saved(status);
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::AdmissionFailed);
+    h.controller.shutdown();
+    h.controller.tick(2);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.io.saves.size() == 1);
+    REQUIRE(h.io.shutdowns == 0);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Cancelled);
+    notAccepted(h.controller.poll(request.request_id));
+    REQUIRE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.io.saves[1].checkpoint.jobs[0].job_id == "owner-1");
+    REQUIRE(h.io.saves[1].checkpoint.jobs[0].state == DownloadJobState::Cancelled);
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(3);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Saved);
+    notAccepted(h.controller.poll(request.request_id));
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Hold policy preserves a healthy matching admission acknowledgement during shutdown",
+          "[download][final-save-policy]") {
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    const auto request = admissionInput();
+    pendingWithoutAck(h.controller.begin(request));
+    h.controller.shutdown();
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopping);
+    REQUIRE(h.io.saves.size() == 1);
+    h.io.saved();
+    h.controller.tick(2);
+    const auto receipt = h.controller.poll(request.request_id);
+    REQUIRE(receipt);
+    REQUIRE(receipt->error == DownloadSubmissionError::None);
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.io.saves.back().checkpoint.jobs[0].state == DownloadJobState::Cancelled);
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(3);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Held final retry waits for native and durable import drain and never reexecutes a job",
+          "[download][final-save-policy]") {
+    const bool handoff = GENERATE(false, true);
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    pendingWithoutAck(h.controller.begin(admissionInput()));
+    h.io.saved();
+    h.controller.tick(0);
+    REQUIRE(h.execution.starts.size() == 1);
+    if (handoff) {
+        h.importer.pending = true;
+        h.execution.update = {.job_id = "owner-1",
+                              .state = DownloadExecutionState::Published,
+                              .phase = DownloadPhase::Publishing,
+                              .published_mp3 = admissionFinalPath()};
+        h.controller.tick(1);
+    }
+    h.controller.shutdown();
+    h.controller.tick(2);
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    REQUIRE(h.io.saves.size() == 1);
+    if (handoff)
+        h.importer.polled = DownloadImportState::Committed;
+    else
+        h.execution.update = {.job_id = "owner-1", .state = DownloadExecutionState::Cancelled};
+    h.controller.tick(3);
+    REQUIRE(h.io.saves.size() == 2);
+    h.io.saved(DownloadCheckpointSaveStatus::Failed);
+    h.controller.tick(4);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    const auto final = h.io.saves.back().checkpoint;
+    REQUIRE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.back().checkpoint == final);
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(5);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.importer.calls == (handoff ? std::size_t{1} : std::size_t{0}));
+    REQUIRE(h.execution.cancellations.size() == (handoff ? std::size_t{0} : std::size_t{1}));
+}
+
+TEST_CASE("Held final decisions cannot reenter the checkpoint port or admit new jobs",
+          "[download][final-save-policy]") {
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    h.controller.shutdown();
+    h.controller.tick(1);
+    h.io.saved(DownloadCheckpointSaveStatus::Failed);
+    h.controller.tick(2);
+    h.io.on_save = [&] {
+        REQUIRE_FALSE(h.controller.retryFinalSave());
+        REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+        REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::Busy);
+        h.controller.shutdown();
+        h.controller.tick(99);
+        REQUIRE(h.io.shutdowns == 0);
+    };
+    REQUIRE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.size() == 2);
+    h.io.on_save = {};
+    h.io.saved();
+    h.io.on_poll = [&] {
+        REQUIRE_FALSE(h.controller.retryFinalSave());
+        REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    };
+    h.io.allow_stopped = true;
+    h.controller.tick(3);
+    REQUIRE(h.controller.stopped());
+}
+
+TEST_CASE("Held final retry bounds ambiguous offers and drains either uncertain operation without an ACK",
+          "[download][final-save-policy][uncertain-retry]") {
+    const auto uncertainty = GENERATE(0, 1, 2);
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    h.ready();
+    h.controller.shutdown();
+    h.controller.tick(1);
+    const auto first_id = h.io.saves[0].id;
+    if (uncertainty == 0) {
+        h.io.saved();
+        h.io.throw_poll_after_take = true;
+    } else
+        h.io.throw_poll = true;
+    h.controller.tick(2);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    h.io.throw_poll = false;
+    h.io.throw_poll_after_take = false;
+    if (uncertainty == 0)
+        h.io.throw_save_after_accept = true;
+    else
+        h.io.throw_save = true;
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.size() == 2);
+    const auto second_id = h.io.saves[1].id;
+    REQUIRE(second_id > first_id);
+    h.io.throw_save = false;
+    h.io.throw_save_after_accept = false;
+    // No unbounded list of possibly-owned native operations may accumulate.
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.size() == 2);
+    if (uncertainty == 2) {
+        REQUIRE(h.controller.closeAfterFinalSaveFailure());
+        h.io.allow_stopped = true;
+        h.controller.tick(3);
+        REQUIRE(h.controller.stopped());
+        REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+        return;
+    }
+    h.io.completion = DownloadCheckpointIoResult{.operation_id = uncertainty == 0 ? second_id : first_id,
+                                                 .operation = DownloadCheckpointOperation::Save,
+                                                 .save_status = DownloadCheckpointSaveStatus::Saved};
+    h.controller.tick(3);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
+    REQUIRE(h.io.shutdowns == 0);
+    REQUIRE(h.controller.retryFinalSave());
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(4);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Saved);
+}
+
+TEST_CASE("Hold policy cannot save defaults after blocked or interrupted startup", "[download][final-save-policy]") {
+    const auto status = GENERATE(SessionLoadStatus::RecoveredFromBackup, SessionLoadStatus::InvalidUsingDefaults,
+                                 SessionLoadStatus::FutureVersion);
+    RecoveryAdmissionHarness h({.status = status}, "owner", DownloadFinalSavePolicy::HoldForDecision);
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    h.controller.shutdown();
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE_FALSE(h.controller.retryFinalSave());
+    REQUIRE_FALSE(h.controller.closeAfterFinalSaveFailure());
+    REQUIRE(h.io.saves.empty());
 }
 
 TEST_CASE("Download owner destructor does not invoke borrowed IO or execution ports", "[download][admission]") {

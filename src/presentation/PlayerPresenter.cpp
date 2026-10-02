@@ -1546,6 +1546,16 @@ qulonglong PlayerPresenter::sourceImportInspectedCount() const noexcept { return
 void PlayerPresenter::setSourceExitDrainedProbe(std::function<bool()> probe) {
     source_exit_drained_probe_ = std::move(probe);
 }
+
+bool PlayerPresenter::setExitPreparationCallbacks(ExitPreparationCallbacks callbacks) {
+    if (QThread::currentThread() != thread() || exiting_ || exit_preparation_started_ ||
+        exit_preparation_call_in_progress_ || static_cast<bool>(callbacks.begin) != static_cast<bool>(callbacks.poll))
+        return false;
+    if (callbacks.begin && exit_preparation_callbacks_.begin)
+        return false;
+    exit_preparation_callbacks_ = std::move(callbacks);
+    return true;
+}
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
@@ -2748,6 +2758,8 @@ bool PlayerPresenter::requestRestore() {
     return true;
 }
 bool PlayerPresenter::requestExit() {
+    if (QThread::currentThread() != thread())
+        return false;
     if (download_append_in_progress_)
         return false;
     if (exiting_ || file_dialog_cancellation_active_)
@@ -2766,24 +2778,82 @@ bool PlayerPresenter::requestExit() {
         QMetaObject::invokeMethod(this, [this] { emit stateChanged(); }, Qt::QueuedConnection);
     }
 
-    if (!sourceExitDrained()) {
+    const bool needs_preparation = static_cast<bool>(exit_preparation_callbacks_.begin);
+    if (needs_preparation || !sourceExitDrained()) {
+        if (!guard)
+            return false;
+        PlayerPresenterPreferences::TimePoint deadline;
+        try {
+            deadline = preference_now_() + preference_exit_flush_timeout_;
+        } catch (...) {
+            return false;
+        }
         deferred_playback_event_.reset();
         exiting_ = true;
         exit_committed_ = false;
         source_exit_drain_active_ = true;
         window_notice_ = WindowNotice::NoNotice;
-        preference_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
+        preference_exit_deadline_ = deadline;
+        if (needs_preparation) {
+            exit_preparation_started_ = true;
+            exit_preparation_call_in_progress_ = true;
+        }
         emit lifecycleChanged();
+        if (!guard)
+            return false;
+        if (needs_preparation) {
+            try {
+                // The callback can delete its owner/presenter; retain its callable
+                // independently and never access this again without the guard.
+                const auto begin = exit_preparation_callbacks_.begin;
+                begin();
+            } catch (...) {
+                if (guard) {
+                    exit_preparation_call_in_progress_ = false;
+                    cancelPendingExit();
+                }
+                return false;
+            }
+            if (!guard)
+                return false;
+            exit_preparation_call_in_progress_ = false;
+        }
         reconcileTimer();
         pollPersistence();
         return true;
     }
 
-    return beginPersistenceExit();
+    return guard ? beginPersistenceExit() : false;
 }
 
 bool PlayerPresenter::sourceExitDrained() const {
-    return source_exit_drained_probe_ ? source_exit_drained_probe_() : !sourceImportActive();
+    try {
+        const auto probe = source_exit_drained_probe_;
+        return probe ? probe() : !sourceImportActive();
+    } catch (...) {
+        return false;
+    }
+}
+
+ExitPreparationState PlayerPresenter::pollExitPreparation() {
+    if (!exit_preparation_callbacks_.poll)
+        return ExitPreparationState::Ready;
+    if (exit_preparation_call_in_progress_)
+        return ExitPreparationState::Pending;
+    const QPointer<PlayerPresenter> guard{this};
+    exit_preparation_call_in_progress_ = true;
+    auto result = ExitPreparationState::Failed;
+    try {
+        const auto poll = exit_preparation_callbacks_.poll;
+        const auto reported = poll();
+        if (reported == ExitPreparationState::Pending || reported == ExitPreparationState::Ready ||
+            reported == ExitPreparationState::Failed)
+            result = reported;
+    } catch (...) {
+    }
+    if (guard)
+        exit_preparation_call_in_progress_ = false;
+    return guard ? result : ExitPreparationState::Failed;
 }
 
 bool PlayerPresenter::beginPersistenceExit() {
@@ -2837,6 +2907,19 @@ bool PlayerPresenter::beginPersistenceExit() {
 }
 
 void PlayerPresenter::completeExit() {
+    const QPointer<PlayerPresenter> guard{this};
+    const auto preparation = pollExitPreparation();
+    if (!guard)
+        return;
+    if (preparation != ExitPreparationState::Ready) {
+        if (preparation == ExitPreparationState::Failed)
+            cancelPendingExit();
+        else {
+            source_exit_drain_active_ = true;
+            reconcileTimer();
+        }
+        return;
+    }
     preference_exit_deadline_.reset();
     deferred_playback_event_.reset();
     source_exit_drain_active_ = false;
@@ -3474,7 +3557,7 @@ void PlayerPresenter::preferenceDidChange() {
 void PlayerPresenter::pollPreferencePersistence() { pollPersistence(); }
 
 void PlayerPresenter::pollPersistence() {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || exit_preparation_call_in_progress_)
         return;
     if (preferences_autosave_ != nullptr)
         preferences_autosave_->poll();
@@ -3483,7 +3566,18 @@ void PlayerPresenter::pollPersistence() {
     synchronizePreferenceWarning();
 
     if (source_exit_drain_active_) {
-        if (sourceExitDrained()) {
+        const QPointer<PlayerPresenter> guard{this};
+        const auto preparation = pollExitPreparation();
+        if (!guard)
+            return;
+        if (preparation == ExitPreparationState::Failed) {
+            cancelPendingExit();
+            return;
+        }
+        const bool sources_drained = sourceExitDrained();
+        if (!guard)
+            return;
+        if (preparation == ExitPreparationState::Ready && sources_drained) {
             static_cast<void>(beginPersistenceExit());
             return;
         }

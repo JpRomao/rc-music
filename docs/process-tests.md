@@ -55,6 +55,14 @@ As seis fontes movidas preservam os bytes das originais históricas:
 
 Os nomes de cenário e markers fechados continuam internos aos testes. A licença privada das fixtures não autoriza redistribuição pública; nenhum recurso sintético entra no produto para viabilizar esses checks.
 
+## Composição instrumentada dos downloads
+
+Com `RC_MUSIC_BUILD_BROWSER_INTEGRATION` e persistência de downloads ligados, `rc_music.process.downloads-composition` acrescenta dois boots do `rc_music_test_shell` com `--m0-smoke=downloads`. Só esse executável recebe `DownloadsShellSmoke` e a macro privada; produção e outras composições recusam o hook antes de criar configuração. O parser exige raiz absoluta, cenário vazio e nenhum path de abertura. Não há executor falso, arquivo de teste ou hook ativado no produto.
+
+O driver copia o MP3 CBR autenticado do corpus para TEMP Unicode próprio e cria um novo filho de checkpoint com DACL protegida usuário atual+SYSTEM, sem reparar ACL existente. A main preserva o `SessionLoadResult` antes de mover o snapshot para o presenter. Serviço, controller, binding/model, importador durável, worker/store de checkpoint e worker/store de sessão são reais; somente `Published` vem do executor sintético, sem transporte/conversão/ownership de mídia real. QML recebe o binding opcional verdadeiro. O primeiro boot comprova Saved de admissão antes da execução, fila durável sem load/autoplay e reprodução após seleção explícita; o segundo, com restauração desligada, reconhece Imported sem executar, hidratar ou duplicar.
+
+Saída normal exige `exitCommitted`, parada física do controller/IO/executor e `Saved` final antes de destruir os owners. Dois leitores novos após cada `NormalExit` verificam os documentos, IDs e fila/recibo; isso não é readback promovido a ACK nem transação global dos documentos. O driver tem watchdogs e guarda somente seus filhos, timeout CTest de 60 s e labels próprios. Não consulta sites/perfis/áudios pessoais, instala extensão ou altera Registry. Este ensaio não aprova release, sandbox, perda de energia, som físico, engine da Completa ou integração instalada.
+
 ## Comandos
 
 Os [comandos existentes](development-commands.md) incluem os novos alvos no build ON, sem downloads ou novo wrapper:

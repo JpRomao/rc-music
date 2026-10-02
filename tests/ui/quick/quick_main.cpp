@@ -403,6 +403,8 @@ class ScenarioDriver final : public QObject {
           local_presenter_(local_presenter), local_backend_(local_backend),
           local_metadata_reader_(local_metadata_reader), local_source_discovery_(local_source_discovery),
           local_file_locator_(local_file_locator), local_files_picker_(local_files_picker) {}
+    Q_INVOKABLE QObject* createDownloadsScenario();
+    Q_INVOKABLE bool releaseDownloadsScenario(QObject* scenario);
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
@@ -851,6 +853,65 @@ class ScenarioDriver final : public QObject {
     QuickTestAudioFilesPicker& local_files_picker_;
     std::unique_ptr<QMimeData> drag_mime_{};
 };
+
+// OptionalDownloads exercises real exit. Every case therefore owns a fresh
+// presenter plus all borrowed fakes; no production lifecycle state is reset.
+class DownloadsQuickScenario final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(music_player::m0::PlayerPresenter* presenter READ presenter CONSTANT)
+    Q_PROPERTY(QObject* driver READ driver CONSTANT)
+
+  public:
+    DownloadsQuickScenario(music_player::m0::PlayerPresenter& fixture_presenter, QuickTestPlatform& fixture_platform,
+                           music_player::m0::QtSystemAppearance& appearance,
+                           std::shared_ptr<music_player::m0::SystemAppearanceSnapshot> appearance_state,
+                           QObject* parent)
+        : QObject(parent) {
+        presenter_ = std::make_unique<music_player::m0::PlayerPresenter>(
+            platform_, backend_, metadata_reader_, [this] { return takeSelection(); }, source_discovery_);
+        files_picker_.selection_reader = [this] { return takeSelection(); };
+        presenter_->setAudioFileLocator(&file_locator_);
+        presenter_->setAudioFilesPicker(&files_picker_);
+        driver_ = std::make_unique<ScenarioDriver>(fixture_presenter, fixture_platform, appearance,
+                                                   std::move(appearance_state), selections_, *presenter_, backend_,
+                                                   metadata_reader_, source_discovery_, file_locator_, files_picker_);
+    }
+    [[nodiscard]] music_player::m0::PlayerPresenter* presenter() const noexcept { return presenter_.get(); }
+    [[nodiscard]] QObject* driver() const noexcept { return driver_.get(); }
+    Q_INVOKABLE int localExitCalls() const noexcept { return platform_.exit_calls; }
+
+  private:
+    [[nodiscard]] std::vector<std::filesystem::path> takeSelection() {
+        if (selections_.empty())
+            return {};
+        auto result = std::move(selections_.front());
+        selections_.pop_front();
+        return result;
+    }
+    QuickTestPlatform platform_{};
+    QuickTestPlaybackBackend backend_{};
+    QuickTestMetadataReader metadata_reader_{};
+    FakeLocalSourceDiscovery source_discovery_{};
+    QuickTestAudioFileLocator file_locator_{};
+    QuickTestAudioFilesPicker files_picker_{};
+    std::deque<std::vector<std::filesystem::path>> selections_{};
+    // Reverse destruction releases driver/presenter before their borrowed fakes.
+    std::unique_ptr<music_player::m0::PlayerPresenter> presenter_{};
+    std::unique_ptr<ScenarioDriver> driver_{};
+};
+
+QObject* ScenarioDriver::createDownloadsScenario() {
+    return new DownloadsQuickScenario(presenter_, platform_, appearance_, appearance_state_, this);
+}
+
+bool ScenarioDriver::releaseDownloadsScenario(QObject* scenario) {
+    auto* const owned = qobject_cast<DownloadsQuickScenario*>(scenario);
+    if (owned == nullptr || owned->parent() != this)
+        return false;
+    // The QML shell is destroyed first; defer the C++ owner until that teardown.
+    owned->deleteLater();
+    return true;
+}
 
 class EmptyShellQuickTestSetup final : public QObject {
     Q_OBJECT

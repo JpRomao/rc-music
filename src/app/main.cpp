@@ -60,6 +60,10 @@
 
 #ifdef M0_QT_SHELL_TEST_HOOKS
 #include "ShellLifecycleSmoke.hpp"
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+#include "DownloadsShellSmoke.hpp"
+#include "presentation/DownloadApplicationBinding.hpp"
+#endif
 
 #include <QAction>
 #include <QMenu>
@@ -303,6 +307,10 @@ int main(int argc, char* argv[]) {
                                    false
 #endif
         );
+#ifndef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        if (options.smoke_downloads)
+            throw std::invalid_argument{"download composition hooks are unavailable in this build"};
+#endif
 #ifndef Q_OS_WIN
         if (options.diagnostics_enabled)
             throw std::invalid_argument{"diagnostics is available only on Windows"};
@@ -394,6 +402,9 @@ int main(int argc, char* argv[]) {
             session_store, loaded_preferences.preferences.restore_last_session, true);
         music_player::m0::SingleWorkerSessionWriter session_writer(session_store);
         music_player::m0::SessionAutosave session_autosave(session_writer, loaded_session.snapshot);
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        const auto downloads_initial_session = loaded_session;
+#endif
         presenter_preferences.session = {
             .initial = std::move(loaded_session.snapshot),
             .load_status = loaded_session.status,
@@ -417,7 +428,7 @@ int main(int argc, char* argv[]) {
             options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
             options.smoke_session_defaults_read || options.smoke_session_receipts_without_restore ||
             options.smoke_single_instance_executable || options.smoke_start_minimized_no_tray ||
-            options.smoke_startup_source_precedence)
+            options.smoke_startup_source_precedence || options.smoke_downloads)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(music_player::m0::ApplicationIdentity::icon(), contract.appName(),
@@ -536,6 +547,12 @@ int main(int argc, char* argv[]) {
         if (diagnostics)
             diagnostic_binding = std::make_unique<music_player::m0::ShellDiagnosticBinding>(presenter, *diagnostics);
 #endif
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        std::unique_ptr<music_player::m0::DownloadsShellSmoke> downloads_smoke;
+        if (options.smoke_downloads)
+            downloads_smoke = std::make_unique<music_player::m0::DownloadsShellSmoke>(
+                presenter, backend, downloads_initial_session, config_root);
+#endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;
 #ifdef M0_QT_COMBINED_AUDIO
@@ -593,9 +610,14 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
         }
 #endif
-        engine.setInitialProperties({{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
-                                     {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
-                                     {QStringLiteral("startupReady"), false}});
+        QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
+                                       {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
+                                       {QStringLiteral("startupReady"), false}};
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        if (downloads_smoke)
+            initial_properties.insert(QStringLiteral("downloads"), QVariant::fromValue(downloads_smoke->binding()));
+#endif
+        engine.setInitialProperties(initial_properties);
         engine.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));
         if (engine.rootObjects().isEmpty())
             return 1;
@@ -629,6 +651,10 @@ int main(int argc, char* argv[]) {
         if (!window->setProperty("startupReady", true)) {
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
         }
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        if (downloads_smoke)
+            downloads_smoke->bindWindow(*window);
+#endif
         if (initial_window_disposition == InitialWindowDisposition::HideToTray && !presenter.requestHide())
             throw std::runtime_error{"the shell could not honor its start-minimized preference"};
         if (initial_window_disposition == InitialWindowDisposition::ShowWithTrayUnavailableNotice)
@@ -1108,6 +1134,10 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
         const int result = application.exec();
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        if (downloads_smoke && (result != 0 || !downloads_smoke->completed()))
+            return 2;
+#endif
 #ifdef Q_OS_WIN
         if (diagnostics)
             static_cast<void>(diagnostics->submit(

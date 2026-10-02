@@ -45,6 +45,16 @@ add_process_driver(rc_music_single_instance_executable_tests SingleInstanceExecu
     m0_qt_shell_bootstrap Qt6::Network)
 add_process_driver(rc_music_diagnostic_executable_tests DiagnosticExecutableTests m0_qt_preferences_persistence)
 add_process_driver(rc_music_shell_executable_smoke_tests ShellExecutableSmokeTests)
+if(TARGET rc_music_download_persistence AND TARGET rc_music_browser_integration)
+    target_sources(rc_music_test_shell PRIVATE support/DownloadsShellSmoke.cpp support/DownloadsShellSmoke.hpp)
+    target_link_libraries(rc_music_test_shell PRIVATE rc_music_download_persistence)
+    target_compile_definitions(rc_music_test_shell PRIVATE RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE)
+    add_process_driver(rc_music_downloads_composition_tests DownloadsCompositionTests
+        m0_qt_session_persistence rc_music_download_persistence)
+    add_test(NAME rc_music.process.downloads-composition COMMAND rc_music_downloads_composition_tests
+        "$<TARGET_FILE:rc_music_test_shell>"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3")
+endif()
 add_dependencies(rc_music_shell_executable_smoke_tests rc_music_fixture_test_shell)
 
 # The corpus was authenticated by RcMusicDesktopTests before this directory.
@@ -76,6 +86,9 @@ get_filename_component(process_audio_prefix "${process_audio_runtime_dir}" DIREC
 set(process_combined_tests
     rc_music.process.preferences-restart rc_music.process.session-restart
     rc_music.process.single-instance rc_music.process.diagnostics rc_music.process.combined-startup)
+if(TARGET rc_music_downloads_composition_tests)
+    list(APPEND process_combined_tests rc_music.process.downloads-composition)
+endif()
 set(process_fixture_tests rc_music.process.error-recovery rc_music.process.tray-lifecycle)
 set_tests_properties(${process_combined_tests} ${process_fixture_tests} PROPERTIES
     LABELS "windows;desktop;qt;process" TIMEOUT 25)
@@ -87,6 +100,10 @@ set_tests_properties(${process_fixture_tests} PROPERTIES
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 set_tests_properties(rc_music.process.preferences-restart PROPERTIES TIMEOUT 40)
 set_tests_properties(rc_music.process.session-restart PROPERTIES TIMEOUT 120)
+if(TARGET rc_music_downloads_composition_tests)
+    set_tests_properties(rc_music.process.downloads-composition PROPERTIES TIMEOUT 60)
+    set_property(TEST rc_music.process.downloads-composition APPEND PROPERTY LABELS "downloads;session;FR-051;FR-053")
+endif()
 set_tests_properties(rc_music.process.single-instance rc_music.process.diagnostics PROPERTIES TIMEOUT 45)
 set_property(TEST rc_music.process.preferences-restart APPEND PROPERTY LABELS "preferences;restart;FR-042")
 set_property(TEST rc_music.process.session-restart APPEND PROPERTY LABELS

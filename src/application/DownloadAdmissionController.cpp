@@ -34,12 +34,20 @@ struct DownloadAdmissionController::Impl {
     struct Operation {
         std::uint64_t id;
         Purpose purpose;
+        // An uncertain port call may still own native work. Observe only to
+        // release that slot; a later Saved cannot repair its failed protocol.
+        bool drain_only{false};
     };
     DownloadService& service;
     DownloadCheckpointIo& io;
+    const DownloadFinalSavePolicy final_save_policy;
     std::vector<Receipt> confirmed;
     std::optional<Receipt> pending;
     std::optional<Operation> operation;
+    // At most one explicit probe may follow an uncertain operation. If that
+    // probe also throws, either ID could own the single native slot. Retain both
+    // for drain-only polling and refuse further offers until consumption/exit.
+    std::optional<Operation> uncertain_offer;
     std::optional<DownloadCheckpointLoadStatus> load_status;
     std::optional<DownloadCheckpointSaveStatus> save_status;
     DownloadAdmissionControllerState state{DownloadAdmissionControllerState::NotStarted};
@@ -53,8 +61,13 @@ struct DownloadAdmissionController::Impl {
     bool import_history_healthy{false};
     std::vector<DownloadImportReceipt> import_receipts{};
 
-    Impl(DownloadService& owner, DownloadCheckpointIo& storage) : service(owner), io(storage) {
+    Impl(DownloadService& owner, DownloadCheckpointIo& storage, const DownloadFinalSavePolicy policy)
+        : service(owner), io(storage), final_save_policy(policy) {
         confirmed.reserve(download_checkpoint_max_receipts);
+    }
+    bool holdsFinalFailure() const {
+        return final_save_policy == DownloadFinalSavePolicy::HoldForDecision && closing && healthy_startup &&
+               !io_shutdown && service.stopped();
     }
     void closeIo() noexcept {
         if (io_shutdown)
@@ -69,7 +82,8 @@ struct DownloadAdmissionController::Impl {
     void applyShutdown() noexcept {
         if (!closing || state == DownloadAdmissionControllerState::Stopped)
             return;
-        state = DownloadAdmissionControllerState::Stopping;
+        if (state != DownloadAdmissionControllerState::FinalSaveFailed)
+            state = DownloadAdmissionControllerState::Stopping;
         // Trusted job control can request owner shutdown from inside a service
         // port callback. The service refuses that reentry; retry its idempotent
         // shutdown on the next outer tick rather than remembering a false commit.
@@ -113,20 +127,35 @@ struct DownloadAdmissionController::Impl {
     }
     void failedSave(DownloadCheckpointSaveStatus status) {
         save_status = validSaveStatus(status) ? status : DownloadCheckpointSaveStatus::Failed;
-        state =
-            closing ? DownloadAdmissionControllerState::Stopping : DownloadAdmissionControllerState::AdmissionFailed;
+        state = holdsFinalFailure() ? DownloadAdmissionControllerState::FinalSaveFailed
+                : closing           ? DownloadAdmissionControllerState::Stopping
+                                    : DownloadAdmissionControllerState::AdmissionFailed;
     }
     bool save(const Purpose purpose) {
+        std::optional<std::uint64_t> offered_id;
         try {
             const auto checkpoint = service.checkpoint();
             const auto id = newOperationId();
-            if (checkpoint && id && io.startSave(*id, *checkpoint) == DownloadCheckpointIoCommand::Accepted) {
-                operation = Operation{*id, purpose};
-                if (!closing)
-                    state = DownloadAdmissionControllerState::AdmissionPending;
-                return true;
+            if (checkpoint && id) {
+                offered_id = id;
+                if (io.startSave(*id, *checkpoint) == DownloadCheckpointIoCommand::Accepted) {
+                    // Accepted is the port's slot acknowledgement, not Saved.
+                    // It can supersede an uncertain prior call only because the
+                    // single-slot contract refuses outstanding native work.
+                    operation = Operation{*id, purpose};
+                    uncertain_offer.reset();
+                    state = closing ? DownloadAdmissionControllerState::Stopping
+                                    : DownloadAdmissionControllerState::AdmissionPending;
+                    return true;
+                }
             }
         } catch (...) {
+            if (final_save_policy == DownloadFinalSavePolicy::HoldForDecision && offered_id) {
+                if (!operation)
+                    operation = Operation{*offered_id, purpose, true};
+                else if (operation->drain_only)
+                    uncertain_offer = Operation{*offered_id, purpose, true};
+            }
         }
         failedSave(DownloadCheckpointSaveStatus::Failed);
         return false;
@@ -177,15 +206,15 @@ struct DownloadAdmissionController::Impl {
             state = DownloadAdmissionControllerState::Blocked;
         }
     }
-    void observeOperation() {
-        if (!operation)
-            return;
-        const auto expected = *operation;
+    void observeOperation(const Operation expected) {
         try {
             auto result = io.poll(expected.id);
             if (!result)
                 return;
             operation.reset();
+            uncertain_offer.reset();
+            if (expected.drain_only)
+                return;
             const auto kind = expected.purpose == Purpose::Load ? DownloadCheckpointOperation::Load
                                                                 : DownloadCheckpointOperation::Save;
             if (result->operation_id != expected.id || result->operation != kind) {
@@ -216,22 +245,44 @@ struct DownloadAdmissionController::Impl {
             save_status = DownloadCheckpointSaveStatus::Saved;
             state = closing ? DownloadAdmissionControllerState::Stopping : DownloadAdmissionControllerState::Ready;
         } catch (...) {
-            operation.reset();
+            // A drain-only query cannot restore protocol confidence, including
+            // after an explicit lossy close. Keep both possible IDs bounded.
+            if (expected.drain_only)
+                return;
+            if (expected.purpose != Purpose::Load && final_save_policy == DownloadFinalSavePolicy::HoldForDecision)
+                operation = Operation{expected.id, expected.purpose, true};
+            else
+                operation.reset();
             if (expected.purpose == Purpose::Load)
                 observeLoad({.status = DownloadCheckpointLoadStatus::Unreadable});
             else
                 failedSave(DownloadCheckpointSaveStatus::Failed);
         }
     }
+    void observeOperation() {
+        if (operation)
+            observeOperation(*operation);
+        if (uncertain_offer)
+            observeOperation(*uncertain_offer);
+    }
     void drain() {
         if (!closing || !service.stopped())
             return;
+        if (holdsFinalFailure() && save_status && *save_status != DownloadCheckpointSaveStatus::Saved &&
+            (!operation || operation->drain_only)) {
+            state = DownloadAdmissionControllerState::FinalSaveFailed;
+            return;
+        }
         if (!io_shutdown && !operation) {
             if (!final_attempted && healthy_startup && !pending &&
                 (!save_status || *save_status == DownloadCheckpointSaveStatus::Saved)) {
                 final_attempted = true;
                 if (save(Purpose::Final))
                     return;
+            }
+            if (holdsFinalFailure() && save_status && *save_status != DownloadCheckpointSaveStatus::Saved) {
+                state = DownloadAdmissionControllerState::FinalSaveFailed;
+                return;
             }
             closeIo();
         }
@@ -245,11 +296,13 @@ struct DownloadAdmissionController::Impl {
     }
 };
 
-DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io)
-    : impl_(std::make_unique<Impl>(service, io)) {}
 DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
-                                                         const SessionLoadResult& initial_session)
-    : DownloadAdmissionController(service, io) {
+                                                         DownloadFinalSavePolicy final_save_policy)
+    : impl_(std::make_unique<Impl>(service, io, final_save_policy)) {}
+DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
+                                                         const SessionLoadResult& initial_session,
+                                                         DownloadFinalSavePolicy final_save_policy)
+    : DownloadAdmissionController(service, io, final_save_policy) {
     auto& owner = *impl_;
     owner.reconcile_imports = true;
     try {
@@ -343,7 +396,8 @@ std::optional<DownloadSubmissionResult> DownloadAdmissionController::poll(const 
 }
 bool DownloadAdmissionController::retryAdmission() {
     auto& owner = *impl_;
-    if (owner.operating || owner.closing || !owner.pending || owner.operation ||
+    if (owner.operating || owner.closing || !owner.pending || owner.uncertain_offer ||
+        (owner.operation && !owner.operation->drain_only) ||
         owner.state != DownloadAdmissionControllerState::AdmissionFailed)
         return false;
     const Impl::Guard guard(owner);
@@ -364,6 +418,30 @@ void DownloadAdmissionController::shutdown() {
         const Impl::Guard guard(owner);
         owner.applyShutdown();
     }
+}
+bool DownloadAdmissionController::retryFinalSave() {
+    auto& owner = *impl_;
+    if (owner.operating || !owner.holdsFinalFailure() || owner.uncertain_offer ||
+        owner.state != DownloadAdmissionControllerState::FinalSaveFailed ||
+        (owner.operation && !owner.operation->drain_only))
+        return false;
+    const Impl::Guard guard(owner);
+    owner.final_attempted = true;
+    return owner.save(Impl::Purpose::Final);
+}
+bool DownloadAdmissionController::closeAfterFinalSaveFailure() {
+    auto& owner = *impl_;
+    if (owner.operating || !owner.holdsFinalFailure() ||
+        owner.state != DownloadAdmissionControllerState::FinalSaveFailed)
+        return false;
+    const Impl::Guard guard(owner);
+    const auto failure = owner.save_status;
+    owner.state = DownloadAdmissionControllerState::Stopping;
+    owner.closeIo();
+    // An explicit lossy exit acknowledges neither the final save nor a failed
+    // admission. Shutdown still has to prove physical native drain separately.
+    owner.save_status = failure;
+    return true;
 }
 bool DownloadAdmissionController::stopped() const { return impl_->state == DownloadAdmissionControllerState::Stopped; }
 DownloadAdmissionControllerState DownloadAdmissionController::state() const { return impl_->state; }

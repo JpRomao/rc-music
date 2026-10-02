@@ -35,6 +35,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -550,6 +551,14 @@ class PlayerPresenterTests final : public QObject {
     void exitDrainsActiveAndAcceptedSourceImportsBeforeCommit();
     void exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDrained();
     void sourceDrainTimeoutCancelsExitWithoutDiscardingAcceptedWork();
+    void exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady();
+    void exitPreparationDoesNotReplaceAcceptedSourceDrain();
+    void exitPreparationFailureIsReversibleWithoutDetachingTheGate_data();
+    void exitPreparationFailureIsReversibleWithoutDetachingTheGate();
+    void exitPreparationTimeoutAllowsANewIntentButKeepsTheGate();
+    void exitPreparationSetterRejectsIncompleteReplacementAndWrongThread();
+    void exitPreparationCanLoseItsPresenterDuringBeginOrPoll_data();
+    void exitPreparationCanLoseItsPresenterDuringBeginOrPoll();
     void rejectedQueuePlaybackTransitionsLeaveTheQueueAtomic();
     void transientNavigationRejectionKeepsTheTargetAvailable();
     void rejectedLocalOpenDoesNotStartMetadataOrPublishTrackState();
@@ -1993,6 +2002,174 @@ void PlayerPresenterTests::sourceDrainTimeoutCancelsExitWithoutDiscardingAccepte
     QVERIFY(presenter.requestExit());
     QVERIFY(presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    auto preparation = ExitPreparationState::Pending;
+    int begins = 0;
+    int polls = 0;
+    bool nested_exit = true;
+    connect(&presenter, &PlayerPresenter::lifecycleChanged, &presenter, [&] {
+        if (presenter.exiting() && !presenter.exitCommitted() && begins == 0) {
+            PlayerPresenterTestAccess::pollPersistence(presenter);
+            QCOMPARE(polls, 0);
+        }
+    });
+    QVERIFY(presenter.setExitPreparationCallbacks({.begin =
+                                                       [&] {
+                                                           ++begins;
+                                                           QVERIFY(presenter.exiting());
+                                                           QVERIFY(!presenter.exitCommitted());
+                                                           nested_exit = presenter.requestExit();
+                                                           QVERIFY(!presenter.setExitPreparationCallbacks({}));
+                                                           PlayerPresenterTestAccess::pollPersistence(presenter);
+                                                       },
+                                                   .poll =
+                                                       [&] {
+                                                           ++polls;
+                                                           return preparation;
+                                                       }}));
+
+    QVERIFY(presenter.requestExit());
+    QCOMPARE(begins, 1);
+    QVERIFY(!nested_exit);
+    QVERIFY(presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(polls > 0);
+    preparation = ExitPreparationState::Ready;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(begins, 1);
+}
+
+void PlayerPresenterTests::exitPreparationDoesNotReplaceAcceptedSourceDrain() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    bool sources_drained = false;
+    auto preparation = ExitPreparationState::Ready;
+    presenter.setSourceExitDrainedProbe([&] { return sources_drained; });
+    QVERIFY(presenter.setExitPreparationCallbacks({.begin = [] {}, .poll = [&] { return preparation; }}));
+    QVERIFY(presenter.requestExit());
+    QCOMPARE(platform.exit_calls, 0);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(platform.exit_calls, 0);
+    sources_drained = true;
+    preparation = ExitPreparationState::Pending;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(platform.exit_calls, 0);
+    preparation = ExitPreparationState::Ready;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::exitPreparationFailureIsReversibleWithoutDetachingTheGate_data() {
+    QTest::addColumn<QString>("failure");
+    for (const auto* failure : {"failed", "begin-exception", "poll-exception", "unknown", "lost-ready"})
+        QTest::newRow(failure) << QString::fromLatin1(failure);
+}
+
+void PlayerPresenterTests::exitPreparationFailureIsReversibleWithoutDetachingTheGate() {
+    QFETCH(QString, failure);
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    int polls = 0;
+    QVERIFY(presenter.setExitPreparationCallbacks({.begin =
+                                                       [&] {
+                                                           if (failure == QStringLiteral("begin-exception"))
+                                                               throw std::runtime_error{"begin failed"};
+                                                       },
+                                                   .poll =
+                                                       [&] {
+                                                           ++polls;
+                                                           if (failure == QStringLiteral("poll-exception"))
+                                                               throw std::runtime_error{"poll failed"};
+                                                           if (failure == QStringLiteral("unknown"))
+                                                               return static_cast<ExitPreparationState>(99);
+                                                           if (failure == QStringLiteral("lost-ready") && polls == 1)
+                                                               return ExitPreparationState::Ready;
+                                                           return ExitPreparationState::Failed;
+                                                       }}));
+    static_cast<void>(presenter.requestExit());
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QVERIFY(!presenter.setExitPreparationCallbacks({}));
+    QVERIFY(
+        !presenter.setExitPreparationCallbacks({.begin = [] {}, .poll = [] { return ExitPreparationState::Ready; }}));
+    QVERIFY(presenter.setVolume(0.35));
+    static_cast<void>(presenter.requestExit());
+    QCOMPARE(platform.exit_calls, 0);
+}
+
+void PlayerPresenterTests::exitPreparationTimeoutAllowsANewIntentButKeepsTheGate() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesWriter writer;
+    auto now = PlayerPresenterPreferences::TimePoint{};
+    PreferencesAutosave autosave(writer, {}, {.now = [&] { return now; }});
+    PlayerPresenter presenter(
+        frozenBundle(), platform,
+        {.autosave = &autosave, .exit_flush_timeout = std::chrono::milliseconds{100}, .now = [&] { return now; }});
+    auto preparation = ExitPreparationState::Pending;
+    int begins = 0;
+    QVERIFY(presenter.setExitPreparationCallbacks({.begin = [&] { ++begins; }, .poll = [&] { return preparation; }}));
+    QVERIFY(presenter.requestExit());
+    now += std::chrono::milliseconds{100};
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QVERIFY(!presenter.setExitPreparationCallbacks({}));
+    QCOMPARE(platform.exit_calls, 0);
+    preparation = ExitPreparationState::Ready;
+    QVERIFY(presenter.requestExit());
+    QCOMPARE(begins, 2);
+    QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::exitPreparationSetterRejectsIncompleteReplacementAndWrongThread() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    const ExitPreparationCallbacks callbacks{.begin = [] {}, .poll = [] { return ExitPreparationState::Pending; }};
+    QVERIFY(!presenter.setExitPreparationCallbacks({.begin = [] {}}));
+    QVERIFY(!presenter.setExitPreparationCallbacks({.poll = [] { return ExitPreparationState::Ready; }}));
+    bool cross_thread_result = true;
+    std::thread worker([&] { cross_thread_result = presenter.setExitPreparationCallbacks(callbacks); });
+    worker.join();
+    QVERIFY(!cross_thread_result);
+    QVERIFY(presenter.setExitPreparationCallbacks(callbacks));
+    QVERIFY(!presenter.setExitPreparationCallbacks(callbacks));
+    QVERIFY(presenter.setExitPreparationCallbacks({}));
+    QVERIFY(presenter.requestExit());
+    QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::exitPreparationCanLoseItsPresenterDuringBeginOrPoll_data() {
+    QTest::addColumn<bool>("destroy_in_begin");
+    QTest::newRow("begin") << true;
+    QTest::newRow("poll") << false;
+}
+
+void PlayerPresenterTests::exitPreparationCanLoseItsPresenterDuringBeginOrPoll() {
+    QFETCH(bool, destroy_in_begin);
+    AvailableTrayPlatform platform;
+    auto presenter = std::make_unique<PlayerPresenter>(frozenBundle(), platform);
+    QPointer<PlayerPresenter> guard{presenter.get()};
+    QVERIFY(presenter->setExitPreparationCallbacks({.begin =
+                                                        [&] {
+                                                            if (destroy_in_begin)
+                                                                presenter.reset();
+                                                        },
+                                                    .poll =
+                                                        [&] {
+                                                            presenter.reset();
+                                                            return ExitPreparationState::Ready;
+                                                        }}));
+    static_cast<void>(presenter->requestExit());
+    QVERIFY(guard.isNull());
+    QCOMPARE(platform.exit_calls, 0);
 }
 
 void PlayerPresenterTests::exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDrained() {

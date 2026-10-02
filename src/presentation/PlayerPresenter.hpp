@@ -73,6 +73,16 @@ struct PlayerPresenterPreferences final {
     PlayerPresenterSession session{};
 };
 
+enum class ExitPreparationState { Pending, Ready, Failed };
+
+// One optional application-thread participant. begin is irreversible for the
+// participant, while a failed/timed-out player exit remains locally reversible.
+// Polling Ready proves both durable preparation and physical worker drain.
+struct ExitPreparationCallbacks final {
+    std::function<void()> begin{};
+    std::function<ExitPreparationState()> poll{};
+};
+
 class PlayerPresenter final : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(PlayerPresenter)
@@ -342,6 +352,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] qulonglong sourceImportIssueCount() const noexcept;
     [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
     void setSourceExitDrainedProbe(std::function<bool()> probe);
+    // A complete pair or an empty pair is accepted before its first begin only.
+    // An active/used gate cannot be detached or replaced to bypass preparation.
+    [[nodiscard]] bool setExitPreparationCallbacks(ExitPreparationCallbacks callbacks);
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
@@ -479,6 +492,7 @@ class PlayerPresenter final : public QObject {
     void projectPersistenceWarning();
     void advancePersistenceWarningRevision() noexcept;
     [[nodiscard]] bool sourceExitDrained() const;
+    [[nodiscard]] ExitPreparationState pollExitPreparation();
     [[nodiscard]] bool beginPersistenceExit();
     void completeExit();
     void cancelPendingExit();
@@ -608,6 +622,9 @@ class PlayerPresenter final : public QObject {
     bool exiting_{false};
     bool exit_committed_{false};
     bool source_exit_drain_active_{false};
+    ExitPreparationCallbacks exit_preparation_callbacks_{};
+    bool exit_preparation_started_{false};
+    bool exit_preparation_call_in_progress_{false};
     std::optional<SystemPowerEvent> last_system_power_event_{};
     std::function<bool()> source_exit_drained_probe_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};

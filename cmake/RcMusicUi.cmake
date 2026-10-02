@@ -33,7 +33,9 @@ function(rc_music_add_ui target support qml_output)
             PreferenceSecondsField.qml
             TrackDetailsField.qml
             TrackDetailsPanel.qml
-            TrackDetailsText.qml)
+            TrackDetailsText.qml
+            DownloadsPanel.qml
+            DownloadText.qml)
         set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
         set_source_files_properties("${qml_source}" PROPERTIES QT_RESOURCE_ALIAS "${qml_file}")
         list(APPEND qml_files "${qml_source}")
@@ -80,6 +82,13 @@ function(rc_music_add_ui target support qml_output)
         Qt6::QuickControls2
         Qt6::QuickLayouts
     )
+    if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
+        target_sources(${target} PRIVATE
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadApplicationBinding.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadApplicationBinding.cpp")
+        target_link_libraries(${target} PRIVATE rc_music_browser_integration)
+        target_compile_definitions(${target} PUBLIC RC_MUSIC_DOWNLOAD_UI_AVAILABLE)
+    endif()
     rc_music_configure_cpp(${target})
     rc_music_configure_cpp(${target}plugin)
     if(MSVC)

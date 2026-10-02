@@ -8,6 +8,7 @@ ApplicationWindow {
     objectName: "mainWindow"
     required property ShellUiContract uiContract
     required property PlayerPresenter presenter
+    property var downloads: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -29,7 +30,7 @@ ApplicationWindow {
     palette.dark: uiContract.textPrimaryColor
     palette.light: uiContract.surfaceRaisedColor
     palette.placeholderText: uiContract.textSecondaryColor
-    contentItem.enabled: !presenter.exiting
+    contentItem.enabled: !presenter.exiting || downloadFinalSaveDecisionRequired
     visible: startupReady
     signal openAudioRequested
     property bool queueOpen: false
@@ -39,12 +40,16 @@ ApplicationWindow {
     SourceImportText {
         id: sourceImportText
     }
+    DownloadText {
+        id: downloadText
+    }
     PlaybackAccessibilityStatus {
         contract: window.uiContract
         presenter: window.presenter
         errorLabels: errorText
     }
-    readonly property bool windowShortcutsEnabled: !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
+    readonly property bool windowShortcutsEnabled: !downloadsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
@@ -59,7 +64,10 @@ ApplicationWindow {
     property bool audioSelectionTerminalObserved: false
     property int audioSelectionFocusRevision: 0
 
-    Component.onCompleted: previousPlaybackState = presenter.playbackState
+    Component.onCompleted: {
+        previousPlaybackState = presenter.playbackState;
+        revealDownloadFinalSaveFailure();
+    }
     onActiveFocusItemChanged: {
         if (activeFocusItem && !isPassiveFocusFallback(activeFocusItem))
             lastActiveFocusItem = activeFocusItem;
@@ -137,6 +145,7 @@ ApplicationWindow {
             window.repairPlaybackStateFocus();
         }
         function onStateChanged() {
+            window.revealDownloadFinalSaveFailure();
             if (!window.audioSelectionPending)
                 return;
             if (window.presenter.selectingAudioFiles) {
@@ -232,6 +241,8 @@ ApplicationWindow {
         presenter.setVolume(Math.max(0, Math.min(100, percent + percentagePoints)) / 100);
     }
     function openPreferences() {
+        if (downloadsPanel.visible || presenter.exiting)
+            return;
         queueOpen = false;
         if (preferencesPanel.opened)
             preferencesPanel.focusFirst();
@@ -239,9 +250,24 @@ ApplicationWindow {
             preferencesPanel.open();
     }
     function openTrackDetails(opener) {
+        if (downloadsPanel.visible || presenter.exiting)
+            return;
         queueOpen = false;
         trackDetailsPanel.openFrom(opener);
     }
+    function openDownloads() {
+        if (downloads === null || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+            return;
+        queueOpen = false;
+        preferencesPanel.close();
+        trackDetailsPanel.close();
+        downloadsPanel.openFrom(downloadsButton);
+    }
+    function revealDownloadFinalSaveFailure() {
+        if (downloadsPanel && presenter.exiting && downloadFinalSaveDecisionRequired && !downloadsPanel.visible)
+            openDownloads();
+    }
+    onDownloadFinalSaveDecisionRequiredChanged: revealDownloadFinalSaveFailure()
     function restoreFocusAfterSourceImport() {
         if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
             return;
@@ -271,7 +297,7 @@ ApplicationWindow {
                 contract: window.uiContract
                 text: window.uiContract.queueTitle
                 accessibleName: window.uiContract.queueTitle
-                enabled: window.presenter.queueLoaded
+                enabled: window.presenter.queueLoaded && !window.presenter.exiting
                 checkable: true
                 checked: window.queueOpen
                 Accessible.checkable: true
@@ -287,11 +313,26 @@ ApplicationWindow {
                 contract: window.uiContract
                 text: window.uiContract.preferencesTitle
                 accessibleName: window.uiContract.preferencesTitle
+                enabled: !window.presenter.exiting
                 onClicked: window.openPreferences()
+            }
+            AccessibleTransportButton {
+                id: downloadsButton
+                objectName: "downloads"
+                anchors.top: parent.top
+                anchors.right: queueButton.left
+                anchors.rightMargin: window.uiContract.spacingUnit * 2
+                z: 20
+                contract: window.uiContract
+                text: downloadText.title
+                visible: window.downloads !== null
+                enabled: visible && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
+                onClicked: window.openDownloads()
             }
             Item {
                 id: stateLayer
                 objectName: "state-layer"
+                enabled: !window.presenter.exiting
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
@@ -359,6 +400,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             contract: window.uiContract
             presenter: window.presenter
+            enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext)
         }
     }
 
@@ -402,7 +444,7 @@ ApplicationWindow {
         warningScope: window.presenter.persistenceWarningScope
         warningRevision: window.presenter.persistenceWarningRevision
         fallbackFocusItem: preferencesButton
-        interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onReviewRequested: window.openPreferences()
         onDismissRequested: window.presenter.dismissPreferenceWarning()
         onRetryRequested: window.presenter.retryPreferenceSave()
@@ -436,7 +478,7 @@ ApplicationWindow {
         contract: window.uiContract
         presenter: window.presenter
         fallbackFocusItem: preferencesButton
-        focusRestoreAllowed: window.active && !window.presenter.exiting && !preferencesPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        focusRestoreAllowed: window.active && !window.presenter.exiting && !downloadsPanel.visible && !preferencesPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
     }
     WindowNotice {
         id: windowNotice
@@ -448,6 +490,19 @@ ApplicationWindow {
         presenter: window.presenter
         fallbackFocusItem: preferencesButton
     }
+    DownloadsPanel {
+        id: downloadsPanel
+        parent: window.contentItem
+        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
+        height: Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
+        x: (window.width - width) / 2
+        y: (window.height - height) / 2
+        contract: window.uiContract
+        downloads: window.downloads
+        fallbackFocusItem: downloadsButton
+        focusRestoreAllowed: window.active && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
+        onExitRequested: window.presenter.requestExit()
+    }
 
     DropArea {
         id: sourceDropArea
@@ -455,7 +510,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction

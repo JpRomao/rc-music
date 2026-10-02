@@ -3,6 +3,12 @@
 **Estado:** cobertura histórica promovida ao build raiz; M1 e release permanecem abertos.
 **Data:** 2026-09-06.
 
+## Downloads opcionais compartilhados
+
+[DownloadsPanel](../src/ui/qml/DownloadsPanel.qml) e [DownloadApplicationBinding](../src/presentation/DownloadApplicationBinding.hpp) são comuns a Lite/Completa e não dependem de navegador. O default nullable de Main não ativa botão, serviço ou executor. Quick exercita o painel real com proxy/ListModel só no harness: progresso, capacidades/IDs, privacidade/PlainText, confirmação revogável, recusa sem saída, escolha aceita com nova intenção de saída, foco/Tab/Escape, atalhos e temas em 720×520. Cada caso possui cenário próprio para que uma saída efetiva não congele o presenter compartilhado dos testes seguintes; não existe reset de lifecycle no produto.
+
+Qt Test compõe binding/model/controller/serviço reais com IO/execução falsos e prova Saved separado de parada física, retry/abandono explícitos, exceções/clock/reentrada e gate que não aprova owner expirado. A [main instrumentada](process-tests.md#composição-instrumentada-dos-downloads) acrescenta stores/workers reais e áudio sintético autenticado com publicação falsa, sem ingresso remoto de produção ou engine. As evidências e lacunas ficam no [checkpoint central](development-plan.md); nenhuma suíte UI comprova extensão instalada, navegação da Completa, download/conversão/sandbox ou release.
+
 ## Atalhos principais e modos de fila
 
 Pedido funcional confirmado em 2026-09-06 (`FR-037`/`FR-019`): Espaço controla reprodução inclusive depois de clicar em Mudo ou outro botão; setas usam saltos configurados/volume e Shift+setas navega. F1 alterna modo aleatório persistido e F2 repetição da fila, com estado textual e acessível. Editor, menus e modais mantêm suas teclas; Enter ativa controles e Ctrl+↑/↓ seleciona linhas. O [manual](user-guide.md) contém o contrato completo, incluindo seguir a ordem exibida ao desligar aleatório.
@@ -19,7 +25,7 @@ A raiz agora executa os testes de presenter, contrato visual, repositório/model
 
 ## Uma implementação, duas compilações isoladas
 
-A fábrica [rc_music_add_ui](../cmake/RcMusicUi.cmake) recebe alvo, suporte e diretório QML. Ela compila as mesmas fontes de apresentação, os mesmos 28 componentes QML, tradução e assets da raiz para duas composições:
+A fábrica [rc_music_add_ui](../cmake/RcMusicUi.cmake) recebe alvo, suporte e diretório QML. Ela compila as mesmas fontes de apresentação, os mesmos componentes QML, tradução e assets da raiz para duas composições:
 
 | Composição | UI/plugin | Suporte e recursos de cenário |
 |---|---|---|

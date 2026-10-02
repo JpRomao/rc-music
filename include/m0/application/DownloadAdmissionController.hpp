@@ -15,8 +15,11 @@ enum class DownloadAdmissionControllerState {
     AdmissionFailed,
     Blocked,
     Stopping,
-    Stopped
+    Stopped,
+    FinalSaveFailed
 };
+
+enum class DownloadFinalSavePolicy { CloseAfterAttempt, HoldForDecision };
 
 // Single application-thread owner of admission, restoration and checkpoints.
 // Trusted job controls may use the service on that same thread, never submit or
@@ -26,13 +29,15 @@ enum class DownloadAdmissionControllerState {
 // ownership journal, queue+import transaction or automatic recovery/retry.
 class DownloadAdmissionController final : public AsyncDownloadSubmission {
   public:
-    DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io);
+    DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
+                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt);
     // Durable startup composition: copy only a bounded receipt ledger from a
     // valid Loaded primary or an exactly empty Missing session. Backup/defaults/
     // future history blocks ingress; retrying download I/O cannot upgrade it.
     // This is store evidence, never the current unsaved presenter snapshot.
     DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
-                                const SessionLoadResult& initial_session);
+                                const SessionLoadResult& initial_session,
+                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt);
     ~DownloadAdmissionController() override;
     DownloadAdmissionController(const DownloadAdmissionController&) = delete;
     DownloadAdmissionController& operator=(const DownloadAdmissionController&) = delete;
@@ -42,6 +47,10 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     [[nodiscard]] std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override;
     [[nodiscard]] bool retryAdmission();
     [[nodiscard]] bool retryStartup();
+    // HoldForDecision only, after physical service drain. Retry saves the final
+    // history, never confirms a failed admission or restarts/imports its jobs.
+    [[nodiscard]] bool retryFinalSave();
+    [[nodiscard]] bool closeAfterFinalSaveFailure();
     void shutdown();
     // Physical service/IO drain, NOT successful persistence. The application
     // checks saveStatus() separately before approving its own normal exit.

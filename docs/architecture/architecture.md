@@ -36,6 +36,8 @@ Não é objetivo criar framework de plugins, microserviços, servidor local púb
 
 O aplicativo é uma instância desktop única do ponto de vista do usuário. A quantidade de processos internos do shell é detalhe medido, não assumido. A camada visual somente apresenta estado e envia intenções; não hospeda regras de domínio nem abre conteúdo remoto.
 
+O módulo opcional [de apresentação dos downloads](../download-jobs.md#painel-compartilhado-e-preparação-de-saída) é compartilhado entre Lite e Completa: binding/timer/model e painel QML não dependem de engine de navegação. O presenter usa preparação de saída C++ tipada, separada de source-drain e da persistência local; aprovação exige parada física e Saved ou abandono explícito confirmado. A composição completa atual existe somente no shell instrumentado, com stores/workers reais e publicação sintética. O produto continua sem ingresso remoto/serviço ativados; isso não fecha ownership, namespace entre processos, ferramenta/sandbox, host ou distribuição.
+
 ## 3. Componentes do produto e alternativa histórica
 
 O fluxo invariante é:
