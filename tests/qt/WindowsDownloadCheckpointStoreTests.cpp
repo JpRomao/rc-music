@@ -1,6 +1,8 @@
 #include "adapters/DownloadCheckpointJson.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
+#include "m0/adapters/SingleWorkerDownloadCheckpointIo.hpp"
+#include "m0/application/DownloadAdmissionController.hpp"
 #include "m0/application/DownloadService.hpp"
 
 #include <QDir>
@@ -13,6 +15,11 @@
 #include <AclAPI.h>
 #include <Sddl.h>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -171,6 +178,23 @@ struct ObservedImport final : DownloadImport {
     }
 };
 
+struct CommitGate final {
+    std::atomic<bool> entered{false};
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool released{false};
+    bool wait() {
+        std::unique_lock lock(mutex);
+        entered.store(true);
+        return changed.wait_for(lock, std::chrono::seconds{5}, [&] { return released; });
+    }
+    void release() {
+        const std::lock_guard lock(mutex);
+        released = true;
+        changed.notify_all();
+    }
+};
+
 // Alias and target belong to the same fresh QTemporaryDir. Always unlink the
 // alias directly before Qt cleanup, including on a failing test assertion.
 class AliasGuard final {
@@ -202,6 +226,133 @@ class AliasGuard final {
 class WindowsDownloadCheckpointStoreTests final : public QObject {
     Q_OBJECT
   private slots:
+    void actualWorkerAndStoreGateAdmissionAndRecoverWithoutExecution() {
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        const DownloadRequest request{
+            .request_id = "abcdefab-cdef-4abc-8def-000000000001",
+            .items = {{.url = "https://media.example.test/audio.mp3?private-token=not-saved",
+                       .title = "Synthetic durable admission",
+                       .kind = DownloadMediaKind::Audio}},
+        };
+        QtDownloadRequestIdentity identity;
+        ObservedExecution execution;
+        ObservedImport importer;
+        DownloadService service(execution, importer, "original", {}, &identity);
+        CommitGate gate;
+        const auto caller = std::this_thread::get_id();
+        std::atomic<bool> save_on_worker{false};
+        std::atomic<int> saves{0};
+        SingleWorkerDownloadCheckpointIo io([&] {
+            return std::make_unique<WindowsDownloadCheckpointStore>(
+                fixture.directory, WindowsDownloadCheckpointStoreOptions{.inject_fault = [&](const auto point) {
+                    if (point != WindowsDownloadCheckpointFaultPoint::BeforeCommit)
+                        return false;
+                    save_on_worker.store(std::this_thread::get_id() != caller);
+                    if (saves.fetch_add(1) == 0)
+                        return !gate.wait();
+                    return false;
+                }});
+        });
+        const auto release = qScopeGuard([&] { gate.release(); });
+        DownloadAdmissionController owner(service, io);
+        QVERIFY(owner.start());
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.state() == DownloadAdmissionControllerState::Ready), 5000);
+        QCOMPARE(owner.loadStatus(), std::optional{DownloadCheckpointLoadStatus::Missing});
+        QCOMPARE(owner.begin(request).state, DownloadAdmissionState::Pending);
+        QTRY_VERIFY_WITH_TIMEOUT(gate.entered.load(), 5000);
+        QVERIFY(save_on_worker.load());
+        owner.tick(0);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.calls, 0);
+        QVERIFY(!owner.poll(request.request_id));
+        QVERIFY(!QFileInfo::exists(fixture.journal()));
+        gate.release();
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.state() == DownloadAdmissionControllerState::Ready), 5000);
+        const auto acknowledged = owner.poll(request.request_id);
+        QVERIFY(acknowledged && acknowledged->error == DownloadSubmissionError::None);
+        QCOMPARE(acknowledged->job_ids.size(), std::size_t{1});
+        const auto replay = owner.begin(request);
+        QCOMPARE(replay.state, DownloadAdmissionState::Completed);
+        QCOMPARE(replay.result.error, acknowledged->error);
+        QVERIFY(replay.result.job_ids == acknowledged->job_ids);
+        QCOMPARE(saves.load(), 1);
+        owner.tick(0);
+        QCOMPARE(execution.starts, 1);
+        QCOMPARE(importer.calls, 1);
+        QVERIFY(fixture.privateFile(fixture.journal()));
+        QVERIFY(!fixture.bytes().contains("media.example.test"));
+        QVERIFY(!fixture.bytes().contains("private-token"));
+        owner.shutdown();
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.stopped()), 5000);
+        QCOMPARE(owner.saveStatus(), std::optional{DownloadCheckpointSaveStatus::Saved});
+        QVERIFY(io.stopped());
+        QCOMPARE(saves.load(), 2);
+
+        ObservedExecution restored_execution;
+        ObservedImport restored_import;
+        DownloadService restored_service(restored_execution, restored_import, "fresh", {}, &identity);
+        SingleWorkerDownloadCheckpointIo restored_io(
+            [&] { return std::make_unique<WindowsDownloadCheckpointStore>(fixture.directory); });
+        DownloadAdmissionController restored(restored_service, restored_io);
+        QVERIFY(restored.start());
+        QTRY_VERIFY_WITH_TIMEOUT((restored.tick(0), restored.state() == DownloadAdmissionControllerState::Ready), 5000);
+        QCOMPARE(restored.loadStatus(), std::optional{DownloadCheckpointLoadStatus::Loaded});
+        QCOMPARE(restored_service.snapshot()[0].state, DownloadJobState::Completed);
+        QVERIFY(restored_service.snapshot()[0].completed_mp3.empty());
+        const auto recovered_replay = restored.begin(request);
+        QCOMPARE(recovered_replay.state, DownloadAdmissionState::Completed);
+        QCOMPARE(recovered_replay.result.error, acknowledged->error);
+        QVERIFY(recovered_replay.result.job_ids == acknowledged->job_ids);
+        restored.tick(0);
+        QCOMPARE(restored_execution.starts, 0);
+        QCOMPARE(restored_import.calls, 0);
+        restored.shutdown();
+        QTRY_VERIFY_WITH_TIMEOUT((restored.tick(0), restored.stopped()), 5000);
+    }
+    void actualWorkerNeverAcknowledgesFailedPostCommitByReadingItBack() {
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        const DownloadRequest request{
+            .request_id = "abcdefab-cdef-4abc-8def-000000000002",
+            .items = {{.url = "https://media.example.test/audio.mp3", .title = "Failed commit acknowledgement"}},
+        };
+        QtDownloadRequestIdentity identity;
+        ObservedExecution execution;
+        ObservedImport importer;
+        DownloadService service(execution, importer, "unacknowledged", {}, &identity);
+        std::atomic<int> saves{0};
+        SingleWorkerDownloadCheckpointIo io([&] {
+            return std::make_unique<WindowsDownloadCheckpointStore>(
+                fixture.directory, WindowsDownloadCheckpointStoreOptions{.inject_fault = [&](const auto point) {
+                    if (point == WindowsDownloadCheckpointFaultPoint::AfterCommit) {
+                        saves.fetch_add(1);
+                        return true;
+                    }
+                    return false;
+                }});
+        });
+        DownloadAdmissionController owner(service, io);
+        QVERIFY(owner.start());
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.state() == DownloadAdmissionControllerState::Ready), 5000);
+        QCOMPARE(owner.begin(request).state, DownloadAdmissionState::Pending);
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.state() == DownloadAdmissionControllerState::AdmissionFailed),
+                                 5000);
+        const auto failed = owner.poll(request.request_id);
+        QVERIFY(failed && failed->error == DownloadSubmissionError::NotAvailable && failed->job_ids.empty());
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.calls, 0);
+        QVERIFY(QFileInfo::exists(fixture.journal()));
+        WindowsDownloadCheckpointStore observer(fixture.directory);
+        QCOMPARE(observer.load().status, DownloadCheckpointLoadStatus::Loaded);
+        owner.tick(0);
+        QCOMPARE(owner.begin(request).result.error, DownloadSubmissionError::NotAvailable);
+        QCOMPARE(saves.load(), 1);
+        owner.shutdown();
+        QTRY_VERIFY_WITH_TIMEOUT((owner.tick(0), owner.stopped()), 5000);
+        QCOMPARE(owner.saveStatus(), std::optional{DownloadCheckpointSaveStatus::Failed});
+        QCOMPARE(saves.load(), 1);
+    }
     void missingJournalDoesNotCreateDirectoryOrDocument() {
         Fixture fixture;
         QVERIFY(fixture.created);

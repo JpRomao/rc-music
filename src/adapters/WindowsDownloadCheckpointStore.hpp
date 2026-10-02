@@ -1,6 +1,6 @@
 #pragma once
 
-#include "m0/application/DownloadCheckpoint.hpp"
+#include "m0/ports/DownloadCheckpointStore.hpp"
 
 #include <QString>
 #include <QtTypes>
@@ -10,14 +10,11 @@
 
 namespace music_player::m0 {
 
-enum class WindowsDownloadCheckpointLoadStatus { Missing, Loaded, Invalid, Unreadable, FutureVersion };
-enum class WindowsDownloadCheckpointSaveStatus { Saved, Failed, BlockedByExistingData };
+using WindowsDownloadCheckpointLoadStatus = DownloadCheckpointLoadStatus;
+using WindowsDownloadCheckpointSaveStatus = DownloadCheckpointSaveStatus;
 enum class WindowsDownloadCheckpointFaultPoint { BeforeCommit, AfterCommit };
 
-struct WindowsDownloadCheckpointLoadResult final {
-    std::optional<DownloadCheckpoint> checkpoint{};
-    WindowsDownloadCheckpointLoadStatus status{WindowsDownloadCheckpointLoadStatus::Missing};
-};
+using WindowsDownloadCheckpointLoadResult = DownloadCheckpointLoadResult;
 
 struct WindowsDownloadCheckpointStoreOptions final {
     std::function<bool(WindowsDownloadCheckpointFaultPoint)> inject_fault{};
@@ -32,14 +29,14 @@ struct WindowsDownloadCheckpointStoreOptions final {
 // revalidation is not protection against a concurrent malicious reparse race.
 // Failed after commit is deliberately ambiguous.
 // The document is recovery evidence only, never execute/import/delete authority.
-class WindowsDownloadCheckpointStore final {
+class WindowsDownloadCheckpointStore final : public DownloadCheckpointStore {
   public:
     static constexpr qsizetype maximum_file_size = 2 * 1024 * 1024;
 
     explicit WindowsDownloadCheckpointStore(QString config_directory,
                                             WindowsDownloadCheckpointStoreOptions options = {});
-    [[nodiscard]] WindowsDownloadCheckpointLoadResult load();
-    [[nodiscard]] WindowsDownloadCheckpointSaveStatus save(const DownloadCheckpoint& checkpoint);
+    [[nodiscard]] WindowsDownloadCheckpointLoadResult load() override;
+    [[nodiscard]] WindowsDownloadCheckpointSaveStatus save(const DownloadCheckpoint& checkpoint) override;
 
   private:
     QString config_directory_;

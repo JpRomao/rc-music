@@ -42,7 +42,10 @@ if(BUILD_TESTING)
     rc_music_prepare_catch2("${RC_MUSIC_CATCH2_SOURCE_DIR}")
     rc_music_add_core_tests(rc_music_core_tests "rc_music.core." "core")
     if(TARGET rc_music_downloads)
-        add_executable(rc_music_downloads_tests tests/core/DownloadServiceTests.cpp tests/core/DownloadCheckpointTests.cpp)
+        add_executable(rc_music_downloads_tests
+            tests/core/DownloadServiceTests.cpp tests/core/DownloadCheckpointTests.cpp
+            tests/core/DownloadStagedAdmissionTests.cpp tests/core/DownloadAdmissionControllerTests.cpp
+            tests/core/SingleWorkerDownloadCheckpointIoTests.cpp)
         target_link_libraries(rc_music_downloads_tests PRIVATE rc_music_downloads Catch2::Catch2WithMain)
         rc_music_configure_cpp(rc_music_downloads_tests)
         catch_discover_tests(rc_music_downloads_tests TEST_PREFIX "rc_music.downloads."

@@ -30,6 +30,10 @@ class DownloadService final : public DownloadSubmission {
     DownloadService& operator=(const DownloadService&) = delete;
 
     [[nodiscard]] DownloadSubmissionResult submit(const DownloadRequest& request) override;
+    // Trusted durable-admission owner only. New jobs remain FIFO-staged until
+    // confirmation of a matching Saved checkpoint; existing active work drains.
+    [[nodiscard]] DownloadSubmissionResult submitStaged(const DownloadRequest& request);
+    [[nodiscard]] bool confirmStaged(std::string_view request_id);
     [[nodiscard]] std::vector<DownloadJobSnapshot> snapshot() const;
     // These methods do not perform I/O. Restore is only for a pristine owner with
     // a fresh prefix and identity port. It never starts work or trusts stored paths.
@@ -42,6 +46,7 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] bool stopped() const;
 
   private:
+    [[nodiscard]] DownloadSubmissionResult submitImpl(const DownloadRequest& request, bool staged);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

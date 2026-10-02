@@ -176,6 +176,7 @@ struct DownloadService::Impl {
         DownloadPhase phase{DownloadPhase::Downloading};
         std::int64_t started_at{0};
         std::int64_t last_observed_at{0};
+        bool awaiting_confirmation{false};
     };
 
     DownloadExecution& execution;
@@ -425,11 +426,38 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
     }
 }
 
-DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request) {
+DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request) { return submitImpl(request, false); }
+
+DownloadSubmissionResult DownloadService::submitStaged(const DownloadRequest& request) {
+    return submitImpl(request, true);
+}
+
+bool DownloadService::confirmStaged(const std::string_view request_id) {
+    auto& state = *impl_;
+    if (state.calling_port || !validUuid(request_id))
+        return false;
+    auto canonical_id = std::string{request_id};
+    std::transform(canonical_id.begin(), canonical_id.end(), canonical_id.begin(), asciiLower);
+    const auto receipt = std::find_if(state.receipts.begin(), state.receipts.end(), [&](const Impl::Receipt& item) {
+        return item.request.request_id == canonical_id;
+    });
+    if (receipt == state.receipts.end())
+        return false;
+    const auto index = static_cast<std::size_t>(receipt - state.receipts.begin());
+    for (auto& job : state.jobs)
+        if (job.receipt_index == index)
+            job.awaiting_confirmation = false;
+    // Confirmation is not a state transition: cancelled and recovered jobs stay inert.
+    return true;
+}
+
+DownloadSubmissionResult DownloadService::submitImpl(const DownloadRequest& request, const bool staged) {
     auto& state = *impl_;
     if (state.calling_port)
         return {.error = DownloadSubmissionError::Busy};
     if (state.closed || !state.valid_configuration)
+        return {.error = DownloadSubmissionError::NotAvailable};
+    if (staged && state.identity == nullptr)
         return {.error = DownloadSubmissionError::NotAvailable};
     if (!validRequest(request))
         return {.error = DownloadSubmissionError::InvalidRequest};
@@ -456,6 +484,11 @@ DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request)
         } else if (previous->request.items != request.items) {
             return {.error = DownloadSubmissionError::InvalidRequest};
         }
+        const auto receipt_index = static_cast<std::size_t>(previous - state.receipts.begin());
+        if (!staged && std::any_of(state.jobs.begin(), state.jobs.end(), [&](const Impl::Job& job) {
+                return job.receipt_index == receipt_index && job.awaiting_confirmation;
+            }))
+            return {.error = DownloadSubmissionError::Busy};
         return {.error = DownloadSubmissionError::None, .job_ids = previous->job_ids};
     }
 
@@ -494,9 +527,26 @@ DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request)
         receipt.job_ids.push_back(id);
         new_jobs.push_back({.view = {.job_id = std::move(id), .title = request.items[index].title},
                             .receipt_index = state.receipts.size(),
-                            .item_index = index});
+                            .item_index = index,
+                            .awaiting_confirmation = staged});
     }
     DownloadSubmissionResult result{.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids};
+    if (staged) {
+        // Recovered candidate paths count towards the checkpoint's separate logical
+        // budget. Validate the complete prospective representation before consuming
+        // any IDs, request quota or ownership; configured service caps cannot relax it.
+        auto prospective = checkpoint();
+        if (!prospective)
+            return {.error = DownloadSubmissionError::NotAvailable};
+        prospective->receipts.push_back({.request_id = receipt.request.request_id,
+                                         .fingerprint = receipt.fingerprint,
+                                         .job_ids = receipt.job_ids,
+                                         .retained_request_bytes = receipt.retained_request_bytes});
+        for (const auto& job : new_jobs)
+            prospective->jobs.push_back(job.view);
+        if (!validDownloadCheckpoint(*prospective))
+            return {.error = DownloadSubmissionError::LimitExceeded};
+    }
     // All potentially allocating copies/reservations happen before admission is committed.
     // Stored receipt indices keep jobs independent of vector relocation and browser lifetime.
     state.receipts.reserve(state.receipts.size() + 1);
@@ -526,7 +576,7 @@ void DownloadService::tick(const std::int64_t now_ms) {
             return;
         const auto next = std::find_if(state.jobs.begin(), state.jobs.end(),
                                        [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
-        if (next == state.jobs.end())
+        if (next == state.jobs.end() || next->awaiting_confirmation)
             return;
         state.active = static_cast<std::size_t>(next - state.jobs.begin());
         auto& job = *next;
