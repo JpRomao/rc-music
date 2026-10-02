@@ -49,6 +49,9 @@ struct DownloadAdmissionController::Impl {
     bool closing{false};
     bool io_shutdown{false};
     bool final_attempted{false};
+    bool reconcile_imports{false};
+    bool import_history_healthy{false};
+    std::vector<DownloadImportReceipt> import_receipts{};
 
     Impl(DownloadService& owner, DownloadCheckpointIo& storage) : service(owner), io(storage) {
         confirmed.reserve(download_checkpoint_max_receipts);
@@ -150,13 +153,19 @@ struct DownloadAdmissionController::Impl {
                 state = DownloadAdmissionControllerState::Blocked;
                 return;
             }
+            if (reconcile_imports && !import_history_healthy) {
+                state = DownloadAdmissionControllerState::Blocked;
+                return;
+            }
             // Allocate the complete acknowledgement index before the atomic restore.
             std::vector<Receipt> receipts;
             receipts.reserve(download_checkpoint_max_receipts);
             for (const auto& receipt : checkpoint->receipts)
                 receipts.push_back(
                     {receipt.request_id, {.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids}});
-            if (!service.restore(*checkpoint)) {
+            const bool restored =
+                reconcile_imports ? service.restore(*checkpoint, import_receipts) : service.restore(*checkpoint);
+            if (!restored) {
                 state = DownloadAdmissionControllerState::Blocked;
                 return;
             }
@@ -238,6 +247,25 @@ struct DownloadAdmissionController::Impl {
 
 DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io)
     : impl_(std::make_unique<Impl>(service, io)) {}
+DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
+                                                         const SessionLoadResult& initial_session)
+    : DownloadAdmissionController(service, io) {
+    auto& owner = *impl_;
+    owner.reconcile_imports = true;
+    try {
+        const bool healthy =
+            initial_session.status == SessionLoadStatus::Loaded
+                ? isValidSessionSnapshot(initial_session.snapshot)
+                : initial_session.status == SessionLoadStatus::Missing && initial_session.snapshot == SessionSnapshot{};
+        if (healthy) {
+            auto receipts = initial_session.snapshot.download_import_receipts;
+            owner.import_receipts = std::move(receipts);
+            owner.import_history_healthy = true;
+        }
+    } catch (...) {
+        // Allocation/validation failure leaves no authoritative partial ledger.
+    }
+}
 DownloadAdmissionController::~DownloadAdmissionController() = default;
 bool DownloadAdmissionController::start() {
     auto& owner = *impl_;
@@ -344,5 +372,10 @@ std::optional<DownloadCheckpointLoadStatus> DownloadAdmissionController::loadSta
 }
 std::optional<DownloadCheckpointSaveStatus> DownloadAdmissionController::saveStatus() const {
     return impl_->save_status;
+}
+DownloadRecoveryReport DownloadAdmissionController::recoveryReport() const {
+    if (impl_->reconcile_imports && !impl_->import_history_healthy)
+        return {.status = DownloadRecoveryStatus::InvalidHistory};
+    return impl_->service.recoveryReport();
 }
 } // namespace music_player::m0

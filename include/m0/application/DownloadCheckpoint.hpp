@@ -17,7 +17,8 @@ enum class DownloadJobState {
     Failed,
     ImportFailed,
     Interrupted,
-    Importing
+    Importing,
+    Imported
 };
 
 struct DownloadJobSnapshot final {

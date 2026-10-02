@@ -186,6 +186,7 @@ struct DownloadService::Impl {
     const DownloadServiceLimits limits;
     std::vector<Receipt> receipts;
     std::vector<Job> jobs;
+    DownloadRecoveryReport recovery_report{};
     std::optional<std::size_t> active;
     std::size_t retained_request_bytes{0};
     std::uint64_t next_id{1};
@@ -381,52 +382,126 @@ std::optional<DownloadCheckpoint> DownloadService::checkpoint() {
     return result;
 }
 
-bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
+bool DownloadService::restore(const DownloadCheckpoint& checkpoint) { return restoreImpl(checkpoint, {}, false); }
+
+bool DownloadService::restore(const DownloadCheckpoint& checkpoint,
+                              const std::span<const DownloadImportReceipt> confirmed_imports) {
+    return restoreImpl(checkpoint, confirmed_imports, true);
+}
+
+DownloadRecoveryReport DownloadService::recoveryReport() const { return impl_->recovery_report; }
+
+bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
+                                  const std::span<const DownloadImportReceipt> confirmed_imports,
+                                  const bool reconcile) {
     auto& state = *impl_;
     if (state.calling_port || state.closed || !state.valid_configuration || state.identity == nullptr ||
         state.restoration_performed || state.active.has_value() || !state.receipts.empty() || !state.jobs.empty())
         return false;
 
+    const auto fail = [&](const DownloadRecoveryStatus status) {
+        if (reconcile)
+            state.recovery_report = {.status = status};
+        return false;
+    };
     // Validate and allocate a complete replacement before committing any ownership.
     // Stored paths are copied only as private evidence, never passed to a port.
     try {
         if (!validDownloadCheckpoint(checkpoint) || checkpoint.receipts.size() > state.limits.max_requests ||
-            checkpoint.jobs.size() > state.limits.max_jobs)
-            return false;
+            checkpoint.jobs.size() > state.limits.max_jobs ||
+            (reconcile && !isValidDownloadImportReceipts(confirmed_imports)))
+            return fail(DownloadRecoveryStatus::InvalidHistory);
         const auto namespace_prefix = state.prefix + '-';
+        if (std::ranges::any_of(
+                checkpoint.jobs,
+                [&](const DownloadJobSnapshot& job) { return job.job_id.starts_with(namespace_prefix); }) ||
+            std::ranges::any_of(confirmed_imports, [&](const DownloadImportReceipt& receipt) {
+                return receipt.job_id.starts_with(namespace_prefix);
+            }))
+            return fail(DownloadRecoveryStatus::NamespaceConflict);
         std::size_t retained_bytes = 0;
         for (const auto& receipt : checkpoint.receipts) {
             if (receipt.retained_request_bytes > state.limits.max_retained_request_bytes - retained_bytes)
-                return false;
+                return fail(DownloadRecoveryStatus::InvalidHistory);
             retained_bytes += receipt.retained_request_bytes;
         }
 
+        DownloadRecoveryReport report;
+        if (reconcile) {
+            report.status = DownloadRecoveryStatus::Ready;
+            report.items.reserve(checkpoint.jobs.size());
+            report.session_only_job_ids.reserve(confirmed_imports.size());
+            for (const auto& receipt : confirmed_imports)
+                if (std::ranges::none_of(checkpoint.jobs,
+                                         [&](const DownloadJobSnapshot& job) { return job.job_id == receipt.job_id; }))
+                    report.session_only_job_ids.push_back(receipt.job_id);
+        }
         std::vector<Impl::Job> jobs;
         jobs.reserve(checkpoint.jobs.size());
         for (const auto& original : checkpoint.jobs) {
-            if (original.job_id.starts_with(namespace_prefix))
-                return false;
             auto view = original;
             auto candidate = std::move(view.completed_mp3);
             view.completed_mp3.clear();
-            switch (view.state) {
-            case DownloadJobState::Queued:
-            case DownloadJobState::Downloading:
-            case DownloadJobState::Converting:
-            case DownloadJobState::Publishing:
-            case DownloadJobState::Cancelling:
-            case DownloadJobState::ImportFailed:
-            case DownloadJobState::Importing:
-                view.state = DownloadJobState::Interrupted;
-                view.error = DownloadFailure::Unavailable;
-                break;
-            case DownloadJobState::Completed:
-            case DownloadJobState::Cancelled:
-            case DownloadJobState::Failed:
-            case DownloadJobState::Interrupted:
-                break;
+            auto disposition = DownloadRecoveryDisposition::Unchanged;
+            const auto receipt = std::ranges::find(confirmed_imports, original.job_id, &DownloadImportReceipt::job_id);
+            if (reconcile && receipt != confirmed_imports.end()) {
+                if ((!candidate.empty() && candidate != receipt->source_path) ||
+                    view.state == DownloadJobState::Failed || view.state == DownloadJobState::Cancelled ||
+                    view.state == DownloadJobState::Cancelling)
+                    return fail(DownloadRecoveryStatus::ReceiptConflict);
+                // The confirmed receipt recognises the historical queue commit.
+                // It supplies missing path evidence, not file/action authority,
+                // and never invents progress absent from the older checkpoint.
+                if (candidate.empty())
+                    candidate = receipt->source_path;
+                view.state = DownloadJobState::Imported;
+                view.error = DownloadFailure::None;
+                disposition = DownloadRecoveryDisposition::Imported;
+            } else {
+                switch (view.state) {
+                case DownloadJobState::Queued:
+                case DownloadJobState::Downloading:
+                case DownloadJobState::Converting:
+                case DownloadJobState::Publishing:
+                case DownloadJobState::Cancelling:
+                case DownloadJobState::ImportFailed:
+                case DownloadJobState::Importing:
+                    view.state = DownloadJobState::Interrupted;
+                    view.error = DownloadFailure::Unavailable;
+                    disposition = original.state == DownloadJobState::ImportFailed ||
+                                          original.state == DownloadJobState::Importing
+                                      ? DownloadRecoveryDisposition::Unconfirmed
+                                      : DownloadRecoveryDisposition::Interrupted;
+                    break;
+                case DownloadJobState::Completed:
+                case DownloadJobState::Imported:
+                    if (reconcile) {
+                        view.state = DownloadJobState::Interrupted;
+                        view.error = DownloadFailure::Unavailable;
+                        disposition = DownloadRecoveryDisposition::Unconfirmed;
+                    }
+                    break;
+                case DownloadJobState::Cancelled:
+                case DownloadJobState::Failed:
+                case DownloadJobState::Interrupted:
+                    break;
+                }
             }
+            if (reconcile)
+                report.items.push_back({original.job_id, disposition});
             jobs.push_back({.view = std::move(view), .candidate_mp3 = std::move(candidate)});
+        }
+
+        // New receipt-supplied paths must fit the checkpoint's own stricter
+        // representation bounds too. This remains pure lexical validation.
+        if (reconcile) {
+            auto prospective = checkpoint;
+            for (std::size_t index = 0; index < jobs.size(); ++index) {
+                prospective.jobs[index] = jobs[index].view;
+                prospective.jobs[index].completed_mp3 = jobs[index].candidate_mp3;
+            }
+            if (!validDownloadCheckpoint(prospective))
+                return fail(DownloadRecoveryStatus::InvalidHistory);
         }
 
         std::vector<Impl::Receipt> receipts;
@@ -438,7 +513,7 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
                     return job.view.job_id == original.job_ids[item_index];
                 });
                 if (found == jobs.end())
-                    return false;
+                    return fail(DownloadRecoveryStatus::InvalidHistory);
                 found->receipt_index = receipt_index;
                 found->item_index = item_index;
             }
@@ -451,11 +526,12 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
 
         state.receipts.swap(receipts);
         state.jobs.swap(jobs);
+        state.recovery_report = std::move(report);
         state.retained_request_bytes = retained_bytes;
         state.restoration_performed = true;
         return true;
     } catch (...) {
-        return false;
+        return fail(DownloadRecoveryStatus::InvalidHistory);
     }
 }
 

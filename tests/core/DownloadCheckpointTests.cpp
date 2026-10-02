@@ -151,6 +151,213 @@ TEST_CASE("Download recovery retains completed history but no import authority",
     h.service.tick(0);
     REQUIRE(h.importer.calls == 0);
     REQUIRE(h.service.checkpoint() == checkpoint);
+    REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{});
+}
+
+TEST_CASE("Strict recovery recognises confirmed imports even before a candidate was checkpointed",
+          "[download][checkpoint][reconciliation]") {
+    const auto previous =
+        GENERATE(DownloadJobState::Queued, DownloadJobState::Downloading, DownloadJobState::Converting,
+                 DownloadJobState::Publishing, DownloadJobState::ImportFailed, DownloadJobState::Importing,
+                 DownloadJobState::Completed, DownloadJobState::Interrupted, DownloadJobState::Imported);
+    auto checkpoint = saved(previous);
+    auto& original = checkpoint.jobs[0];
+    original.completed_units = 2;
+    original.total_units = 7;
+    if (previous == DownloadJobState::Completed || previous == DownloadJobState::Importing ||
+        previous == DownloadJobState::ImportFailed || previous == DownloadJobState::Imported) {
+        original.completed_mp3 = candidate();
+        if (previous != DownloadJobState::Imported)
+            original.completed_units = 7;
+    }
+    if (previous == DownloadJobState::ImportFailed)
+        original.error = DownloadFailure::Import;
+    if (previous == DownloadJobState::Interrupted)
+        original.error = DownloadFailure::Unavailable;
+    const std::vector<DownloadImportReceipt> receipts{{"old-1", candidate()}};
+    Harness h;
+    REQUIRE(h.service.restore(checkpoint, receipts));
+    const auto restored = h.service.snapshot()[0];
+    REQUIRE(restored.state == DownloadJobState::Imported);
+    REQUIRE(restored.error == DownloadFailure::None);
+    REQUIRE(restored.completed_mp3.empty());
+    REQUIRE(restored.completed_units == original.completed_units);
+    REQUIRE(restored.total_units == original.total_units);
+    REQUIRE(h.service.recoveryReport() ==
+            DownloadRecoveryReport{.status = DownloadRecoveryStatus::Ready,
+                                   .items = {{"old-1", DownloadRecoveryDisposition::Imported}}});
+    const auto recovered = h.service.checkpoint();
+    REQUIRE(recovered);
+    REQUIRE(validDownloadCheckpoint(*recovered));
+    REQUIRE(recovered->jobs[0].completed_mp3 == candidate());
+    REQUIRE(recovered->receipts == checkpoint.receipts);
+    REQUIRE_FALSE(h.service.retryImport("old-1"));
+    REQUIRE_FALSE(h.service.cancel("old-1"));
+    h.service.tick(0);
+    h.service.shutdown();
+    h.service.tick(std::numeric_limits<std::int64_t>::max());
+    REQUIRE(h.service.stopped());
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.execution.polls == 0);
+    REQUIRE(h.execution.cancels == 0);
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.identity.calls == 0);
+}
+
+TEST_CASE("Strict recovery leaves unconfirmed import history interrupted without losing private evidence",
+          "[download][checkpoint][reconciliation]") {
+    const auto previous = GENERATE(DownloadJobState::Completed, DownloadJobState::Importing,
+                                   DownloadJobState::ImportFailed, DownloadJobState::Imported);
+    auto checkpoint = saved(previous);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    checkpoint.jobs[0].completed_units = 4;
+    checkpoint.jobs[0].total_units = previous == DownloadJobState::Imported ? 9 : 4;
+    if (previous == DownloadJobState::ImportFailed)
+        checkpoint.jobs[0].error = DownloadFailure::Import;
+    Harness h;
+    REQUIRE(h.service.restore(checkpoint, {}));
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Unavailable);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.service.recoveryReport() ==
+            DownloadRecoveryReport{.status = DownloadRecoveryStatus::Ready,
+                                   .items = {{"old-1", DownloadRecoveryDisposition::Unconfirmed}}});
+    REQUIRE(h.service.checkpoint()->jobs[0].completed_mp3 == candidate());
+    REQUIRE(h.service.snapshot()[0].completed_units == 4);
+    REQUIRE(h.service.snapshot()[0].total_units == checkpoint.jobs[0].total_units);
+    h.service.tick(0);
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.execution.starts == 0);
+}
+
+TEST_CASE("Strict recovery reports inert history and keeps terminal diagnostics",
+          "[download][checkpoint][reconciliation]") {
+    const auto previous =
+        GENERATE(DownloadJobState::Queued, DownloadJobState::Downloading, DownloadJobState::Converting,
+                 DownloadJobState::Publishing, DownloadJobState::Cancelling, DownloadJobState::Failed,
+                 DownloadJobState::Cancelled, DownloadJobState::Interrupted);
+    auto checkpoint = saved(previous);
+    const bool unchanged = previous == DownloadJobState::Failed || previous == DownloadJobState::Cancelled ||
+                           previous == DownloadJobState::Interrupted;
+    if (previous == DownloadJobState::Failed || previous == DownloadJobState::Interrupted)
+        checkpoint.jobs[0].error = DownloadFailure::Publication;
+    Harness h;
+    REQUIRE(h.service.restore(checkpoint, {}));
+    REQUIRE(h.service.snapshot()[0].state == (unchanged ? previous : DownloadJobState::Interrupted));
+    REQUIRE(h.service.snapshot()[0].error == (unchanged ? checkpoint.jobs[0].error : DownloadFailure::Unavailable));
+    REQUIRE(h.service.recoveryReport().items ==
+            std::vector<DownloadRecoveryItem>{{"old-1", unchanged ? DownloadRecoveryDisposition::Unchanged
+                                                                  : DownloadRecoveryDisposition::Interrupted}});
+}
+
+TEST_CASE("Strict recovery refuses receipt contradictions atomically and permits a pristine retry",
+          "[download][checkpoint][reconciliation]") {
+    auto checkpoint = saved(DownloadJobState::Completed);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    std::vector<DownloadImportReceipt> receipts{{"old-1", candidate()}};
+    SECTION("different path") { receipts[0].source_path = candidate().parent_path() / "other.mp3"; }
+    SECTION("lexical case mismatch") { receipts[0].source_path = candidate().parent_path() / "Final.mp3"; }
+    SECTION("cancelled with receipt") {
+        checkpoint.jobs[0].state = DownloadJobState::Cancelled;
+        checkpoint.jobs[0].completed_mp3.clear();
+    }
+    SECTION("failed with receipt") {
+        checkpoint.jobs[0].state = DownloadJobState::Failed;
+        checkpoint.jobs[0].completed_mp3.clear();
+        checkpoint.jobs[0].error = DownloadFailure::Publication;
+    }
+    SECTION("cancelling with receipt") {
+        checkpoint.jobs[0].state = DownloadJobState::Cancelling;
+        checkpoint.jobs[0].completed_mp3.clear();
+    }
+    Harness h;
+    REQUIRE_FALSE(h.service.restore(checkpoint, receipts));
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{DownloadCheckpoint{}});
+    REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{.status = DownloadRecoveryStatus::ReceiptConflict});
+    REQUIRE(h.service.restore(saved(), std::vector<DownloadImportReceipt>{{"old-1", candidate()}}));
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Imported);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Strict recovery validates the entire bounded history before taking ownership",
+          "[download][checkpoint][reconciliation]") {
+    auto checkpoint = saved();
+    std::vector<DownloadImportReceipt> receipts{{"old-1", candidate()}};
+    SECTION("invalid checkpoint") { checkpoint.receipts[0].fingerprint = "invalid"; }
+    SECTION("duplicate receipt IDs") { receipts.push_back(receipts[0]); }
+    SECTION("invalid receipt ID") { receipts[0].job_id = "bad/id"; }
+    SECTION("relative receipt path") { receipts[0].source_path = "relative.mp3"; }
+    SECTION("non-normal receipt path") { receipts[0].source_path = candidate().parent_path() / "x/../final.mp3"; }
+    SECTION("wrong receipt suffix") { receipts[0].source_path = candidate().parent_path() / "final.mp4"; }
+    SECTION("too many receipts") { receipts.resize(maximum_download_import_receipts + 1, receipts[0]); }
+    SECTION("invalid native receipt text") {
+        auto native = candidate().native();
+        native.insert(native.begin() + 3, 0);
+        receipts[0].source_path = std::filesystem::path{native};
+    }
+    SECTION("oversized receipt representation") {
+        receipts[0].source_path =
+            candidate().parent_path() / (std::string(maximum_download_import_receipt_bytes, 'x') + ".mp3");
+    }
+    SECTION("invalid prospective checkpoint candidate") {
+        receipts[0].source_path = candidate().parent_path() / (std::string(30'001, 'x') + ".mp3");
+    }
+    Harness h;
+    REQUIRE_FALSE(h.service.restore(checkpoint, receipts));
+    REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{.status = DownloadRecoveryStatus::InvalidHistory});
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.restore(saved(), {}));
+    REQUIRE(h.service.recoveryReport().status == DownloadRecoveryStatus::Ready);
+}
+
+TEST_CASE("Strict recovery reserves the fresh namespace against session-only IDs",
+          "[download][checkpoint][reconciliation]") {
+    const auto id = GENERATE(std::string{"new-1"}, std::string{"new-999"}, std::string{"new-extra"});
+    Harness h;
+    REQUIRE_FALSE(h.service.restore({}, std::vector<DownloadImportReceipt>{{id, candidate()}}));
+    REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{.status = DownloadRecoveryStatus::NamespaceConflict});
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.restore({}, std::vector<DownloadImportReceipt>{{"older-1", candidate()}}));
+    REQUIRE(h.service.submit(input()).job_ids == std::vector<std::string>{"new-1"});
+}
+
+TEST_CASE("Strict recovery reports session-only receipts without creating jobs or consuming download quotas",
+          "[download][checkpoint][reconciliation]") {
+    std::vector<DownloadImportReceipt> receipts;
+    std::vector<std::string> ids;
+    for (std::size_t index = 0; index < maximum_download_import_receipts; ++index) {
+        ids.push_back("orphan-" + std::to_string(index));
+        receipts.push_back({ids.back(), candidate()});
+    }
+    Harness h({.max_jobs = 1, .max_requests = 1});
+    REQUIRE(h.service.restore({}, receipts));
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{DownloadCheckpoint{}});
+    REQUIRE(h.service.recoveryReport() ==
+            DownloadRecoveryReport{.status = DownloadRecoveryStatus::Ready, .session_only_job_ids = ids});
+    auto detached_report = h.service.recoveryReport();
+    detached_report.session_only_job_ids.clear();
+    REQUIRE(h.service.recoveryReport().session_only_job_ids == ids);
+    REQUIRE(h.service.submit(input()).job_ids == std::vector<std::string>{"new-1"});
+    REQUIRE(h.service.submit(input(2)).error == DownloadSubmissionError::LimitExceeded);
+    const auto before = h.service.recoveryReport();
+    REQUIRE_FALSE(h.service.restore(saved(), {}));
+    REQUIRE(h.service.recoveryReport() == before);
+}
+
+TEST_CASE("Imported historical checkpoints preserve partial progress and require private final evidence",
+          "[download][checkpoint][reconciliation]") {
+    auto checkpoint = saved(DownloadJobState::Imported);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    checkpoint.jobs[0].completed_units = 2;
+    checkpoint.jobs[0].total_units = 7;
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    SECTION("no path") { checkpoint.jobs[0].completed_mp3.clear(); }
+    SECTION("error") { checkpoint.jobs[0].error = DownloadFailure::Import; }
+    SECTION("contradictory progress") { checkpoint.jobs[0].completed_units = 8; }
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
 }
 
 TEST_CASE("Pending download imports restore only as private interrupted candidates",

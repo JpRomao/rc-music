@@ -118,6 +118,8 @@ bool validJob(const DownloadJobSnapshot& job) {
                job.error ==
                    (job.state == DownloadJobState::ImportFailed ? DownloadFailure::Import : DownloadFailure::None) &&
                (!job.total_units || job.completed_units == *job.total_units);
+    case DownloadJobState::Imported:
+        return !job.completed_mp3.empty() && job.error == DownloadFailure::None;
     case DownloadJobState::Failed:
         return job.error != DownloadFailure::None && job.completed_mp3.empty();
     case DownloadJobState::Interrupted:

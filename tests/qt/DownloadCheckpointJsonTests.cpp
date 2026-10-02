@@ -161,6 +161,35 @@ class DownloadCheckpointJsonTests final : public QObject {
         QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
     }
 
+    void importedHistoryRoundTripsWithoutFabricatingCompletedProgress() {
+        auto checkpoint = sample();
+        auto& job = checkpoint.jobs[0];
+        job.state = DownloadJobState::Imported;
+        job.completed_units = 2;
+        job.total_units = 7;
+        const auto encoded = DownloadCheckpointJson::encode(checkpoint);
+        QVERIFY(encoded.contains("\"state\":\"imported\""));
+        const auto decoded = DownloadCheckpointJson::decode(encoded);
+        QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
+        QCOMPARE(decoded.checkpoint, std::optional<DownloadCheckpoint>{checkpoint});
+        auto root = QJsonDocument::fromJson(encoded).object();
+        auto invalid = root;
+        auto jobs = invalid.value(u"jobs"_s).toArray();
+        auto malformed = jobs[0].toObject();
+        malformed.insert(u"completedMp3"_s, QString{});
+        jobs[0] = malformed;
+        invalid.insert(u"jobs"_s, jobs);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(invalid)).status, DownloadCheckpointJsonStatus::Invalid);
+        checkpoint.jobs[0].completed_mp3.clear();
+        QVERIFY(DownloadCheckpointJson::encode(checkpoint).isEmpty());
+        job.completed_mp3 = nativePath(candidateText());
+        job.error = DownloadFailure::Import;
+        QVERIFY(DownloadCheckpointJson::encode(checkpoint).isEmpty());
+        job.error = DownloadFailure::None;
+        job.completed_units = 8;
+        QVERIFY(DownloadCheckpointJson::encode(checkpoint).isEmpty());
+    }
+
     void roundTripsAllClosedStatesAndErrors() {
         const DownloadJobState states[]{DownloadJobState::Queued,       DownloadJobState::Downloading,
                                         DownloadJobState::Converting,   DownloadJobState::Publishing,

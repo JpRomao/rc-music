@@ -16,7 +16,7 @@ bool active(const DownloadJobState state) {
 
 bool hasFinalFile(const DownloadJobState state) {
     return state == DownloadJobState::Completed || state == DownloadJobState::ImportFailed ||
-           state == DownloadJobState::Importing;
+           state == DownloadJobState::Importing || state == DownloadJobState::Imported;
 }
 
 QString stateName(const DownloadJobState state) {
@@ -43,6 +43,8 @@ QString stateName(const DownloadJobState state) {
         return QStringLiteral("interrupted");
     case DownloadJobState::Importing:
         return QStringLiteral("importing");
+    case DownloadJobState::Imported:
+        return QStringLiteral("imported");
     }
     return QStringLiteral("failed");
 }
@@ -71,6 +73,8 @@ QString statusText(const DownloadJobState state) {
         return DownloadJobsModel::tr("Interrompido; revisão necessária");
     case DownloadJobState::Importing:
         return DownloadJobsModel::tr("Confirmando importação na fila");
+    case DownloadJobState::Imported:
+        return DownloadJobsModel::tr("Já importado na fila");
     }
     return DownloadJobsModel::tr("Falhou");
 }
@@ -162,7 +166,8 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
             return 0.0;
         return std::clamp(static_cast<double>(item.completed_units) / static_cast<double>(*item.total_units), 0.0, 1.0);
     case OutputPathRole:
-        return hasFinalFile(item.state) ? pathText(item.completed_mp3) : QString{};
+        return item.state != DownloadJobState::Imported && hasFinalFile(item.state) ? pathText(item.completed_mp3)
+                                                                                    : QString{};
     case ErrorTextRole:
         return errorText(item.error);
     case CanCancelRole:
@@ -238,7 +243,7 @@ void DownloadJobsModel::refreshSnapshot() {
     for (const auto& item : items_) {
         if (active(item.state))
             ++next_active;
-        if (item.state == DownloadJobState::Completed)
+        if (item.state == DownloadJobState::Completed || item.state == DownloadJobState::Imported)
             ++next_completed;
     }
     if (active_count_ != next_active || completed_count_ != next_completed) {

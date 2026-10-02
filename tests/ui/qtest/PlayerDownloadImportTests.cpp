@@ -1,4 +1,5 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/DownloadAdmissionController.hpp"
 #include "m0/application/DownloadService.hpp"
 #ifdef Q_OS_WIN
 #include "adapters/QtJsonWindowsSessionStore.hpp"
@@ -351,6 +352,71 @@ DownloadRequest request() {
                        .title = "Published synthetic track",
                        .kind = DownloadMediaKind::Audio}}};
 }
+
+#ifdef Q_OS_WIN
+class RecoveredImportObserver final : public DownloadImport {
+  public:
+    explicit RecoveredImportObserver(DownloadImport& importer) : importer_(importer) {}
+    bool accept(const std::string& id, const std::filesystem::path& path) override {
+        ++calls;
+        return importer_.accept(id, path);
+    }
+    DownloadImportState begin(const std::string& id, const std::filesystem::path& path) override {
+        ++calls;
+        return importer_.begin(id, path);
+    }
+    DownloadImportState pollImport(std::string_view id) override {
+        ++calls;
+        return importer_.pollImport(id);
+    }
+    int calls{0};
+
+  private:
+    DownloadImport& importer_;
+};
+
+class RecoveredImportIdentity final : public DownloadRequestIdentity {
+  public:
+    std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+};
+
+// Only the session store/writer are real in this integration. The download
+// checkpoint stands in for the older admission document left by a crash.
+class RecoveredImportCheckpointIo final : public DownloadCheckpointIo {
+  public:
+    DownloadCheckpointIoCommand startLoad(std::uint64_t id) override {
+        if (closed)
+            return DownloadCheckpointIoCommand::Closed;
+        if (completion)
+            return DownloadCheckpointIoCommand::Busy;
+        completion = DownloadCheckpointIoResult{
+            .operation_id = id, .load = {.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded}};
+        return DownloadCheckpointIoCommand::Accepted;
+    }
+    DownloadCheckpointIoCommand startSave(std::uint64_t id, const DownloadCheckpoint& value) override {
+        if (closed)
+            return DownloadCheckpointIoCommand::Closed;
+        if (completion)
+            return DownloadCheckpointIoCommand::Busy;
+        saves.push_back(value);
+        completion = DownloadCheckpointIoResult{.operation_id = id,
+                                                .operation = DownloadCheckpointOperation::Save,
+                                                .save_status = DownloadCheckpointSaveStatus::Saved};
+        return DownloadCheckpointIoCommand::Accepted;
+    }
+    std::optional<DownloadCheckpointIoResult> poll(std::uint64_t id) override {
+        if (!completion || completion->operation_id != id)
+            return std::nullopt;
+        return std::exchange(completion, std::nullopt);
+    }
+    void shutdown() override { closed = true; }
+    bool stopped() const override { return closed && !completion; }
+    DownloadCheckpoint checkpoint{};
+    std::vector<DownloadCheckpoint> saves{};
+    std::optional<DownloadCheckpointIoResult> completion{};
+    bool closed{false};
+};
+#endif
 
 std::size_t receiptBytes(const std::string& id, const std::filesystem::path& path) {
     return id.size() + path.native().size() * sizeof(std::filesystem::path::value_type);
@@ -1397,8 +1463,53 @@ void PlayerDownloadImportTests::durableRealStoreKeepsQueueAndReceiptsTogether() 
         QCOMPARE(loaded.status, SessionLoadStatus::Loaded);
         QCOMPARE(loaded.snapshot.queue.items.size(), std::size_t{1});
         QCOMPARE(loaded.snapshot.download_import_receipts.size(), std::size_t{1});
-        DurableHarness restarted(loaded.snapshot, loaded.status, false);
-        PlayerDownloadImport importer(restarted.presenter, {}, PlayerDownloadImportPersistence::Session);
+    }
+    DurableHarness restarted(loaded.snapshot, loaded.status, false);
+    PlayerDownloadImport importer(restarted.presenter, {}, PlayerDownloadImportPersistence::Session);
+    RecoveredImportObserver observed(importer);
+    ImportExecution execution;
+    RecoveredImportIdentity identity;
+    RecoveredImportCheckpointIo io;
+    const auto input = request();
+    io.checkpoint = {.receipts = {{.request_id = input.request_id,
+                                   .fingerprint = identity.fingerprint(input),
+                                   .job_ids = {"real-store"},
+                                   .retained_request_bytes = input.request_id.size() + input.items[0].url.size() +
+                                                             input.items[0].title.size()}},
+                     .jobs = {{.job_id = "real-store", .title = input.items[0].title}}};
+    QVERIFY(validDownloadCheckpoint(io.checkpoint));
+    DownloadService service(execution, observed, "fresh-owner", {}, &identity);
+    DownloadAdmissionController owner(service, io, loaded);
+    QVERIFY(owner.start());
+    owner.tick(0);
+    QCOMPARE(owner.state(), DownloadAdmissionControllerState::Ready);
+    QCOMPARE(owner.recoveryReport().status, DownloadRecoveryStatus::Ready);
+    const bool saved_import = loaded.status == SessionLoadStatus::Loaded;
+    QCOMPARE(service.snapshot().size(), std::size_t{1});
+    QCOMPARE(service.snapshot()[0].state, saved_import ? DownloadJobState::Imported : DownloadJobState::Interrupted);
+    QVERIFY(service.snapshot()[0].completed_mp3.empty());
+    QCOMPARE(owner.recoveryReport().items.size(), std::size_t{1});
+    QCOMPARE(owner.recoveryReport().items[0].disposition,
+             saved_import ? DownloadRecoveryDisposition::Imported : DownloadRecoveryDisposition::Interrupted);
+    QCOMPARE(owner.begin(input).result.job_ids, std::vector<std::string>{"real-store"});
+    owner.tick(1);
+    QCOMPARE(observed.calls, 0);
+    QVERIFY(execution.starts.empty());
+    QVERIFY(io.saves.empty());
+    QCOMPARE(restarted.model()->rowCount(), 0);
+    QVERIFY(restarted.writer.starts.empty());
+    QVERIFY(restarted.backend.loads.empty());
+    QVERIFY(restarted.metadata.requests.empty());
+    owner.shutdown();
+    owner.tick(2);
+    owner.tick(3);
+    QVERIFY(owner.stopped());
+    QCOMPARE(owner.saveStatus(), std::optional{DownloadCheckpointSaveStatus::Saved});
+    QCOMPARE(io.saves.size(), std::size_t{1});
+    QCOMPARE(io.saves[0].jobs[0].state, saved_import ? DownloadJobState::Imported : DownloadJobState::Interrupted);
+    QCOMPARE(io.saves[0].jobs[0].completed_mp3, saved_import ? publishedPath() : std::filesystem::path{});
+    QCOMPARE(observed.calls, 0);
+    if (saved_import) {
         QCOMPARE(importer.begin("real-store", publishedPath()), DownloadImportState::Committed);
         QCOMPARE(restarted.model()->rowCount(), 0);
         QVERIFY(restarted.writer.starts.empty());

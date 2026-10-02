@@ -191,7 +191,208 @@ DownloadCheckpoint recoveredAdmission() {
             .jobs = {{.job_id = "old-1", .title = request.items[0].title}}};
 }
 
+SessionLoadResult healthyAdmissionSession(const std::string& id = "prior-1") {
+    return {.snapshot = {.download_import_receipts = {{.job_id = id, .source_path = admissionFinalPath()}}},
+            .status = SessionLoadStatus::Loaded};
+}
+DownloadCheckpoint recoveryAdmissionCheckpoint(const DownloadJobState state = DownloadJobState::Queued) {
+    const auto request = admissionInput();
+    DownloadCheckpoint result{
+        .receipts = {{.request_id = request.request_id,
+                      .fingerprint = std::string(64, 'a'),
+                      .job_ids = {"prior-1"},
+                      .retained_request_bytes =
+                          request.request_id.size() + request.items[0].url.size() + request.items[0].title.size()}},
+        .jobs = {{.job_id = "prior-1", .title = request.items[0].title, .state = state}}};
+    if (state == DownloadJobState::Completed || state == DownloadJobState::Importing ||
+        state == DownloadJobState::ImportFailed) {
+        result.jobs[0].completed_mp3 = admissionFinalPath();
+        result.jobs[0].error =
+            state == DownloadJobState::ImportFailed ? DownloadFailure::Import : DownloadFailure::None;
+    } else if (state == DownloadJobState::Failed) {
+        result.jobs[0].error = DownloadFailure::Network;
+    }
+    return result;
+}
+struct RecoveryAdmissionHarness {
+    AdmissionExecution execution{};
+    AdmissionImport importer{};
+    AdmissionIdentity identity{};
+    AdmissionIo io{};
+    DownloadService service;
+    DownloadAdmissionController controller;
+    explicit RecoveryAdmissionHarness(const SessionLoadResult& session, std::string prefix = "owner")
+        : service(execution, importer, std::move(prefix), {}, &identity), controller(service, io, session) {}
+    void load(DownloadCheckpointLoadResult result) {
+        REQUIRE(controller.start());
+        io.loaded(std::move(result));
+        controller.tick(0);
+    }
+};
+
 } // namespace
+
+TEST_CASE("Durable admission reconciles a saved session beyond a queued checkpoint without importing",
+          "[download][recovery-controller][FR-051]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession()};
+    h.load({.checkpoint = recoveryAdmissionCheckpoint(), .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.controller.loadStatus() == DownloadCheckpointLoadStatus::Loaded);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::Ready);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Imported);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    const auto replay = h.controller.begin(admissionInput());
+    REQUIRE(replay.state == DownloadAdmissionState::Completed);
+    REQUIRE(replay.result.error == DownloadSubmissionError::None);
+    REQUIRE(h.controller.poll(admissionInput().request_id)->job_ids == std::vector<std::string>{"prior-1"});
+    h.controller.tick(1000);
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.polls.empty());
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.controller.begin(admissionInput(2)).state == DownloadAdmissionState::Pending);
+    h.io.saved();
+    h.controller.tick(1001);
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Durable admission does not treat completed checkpoint history as an import receipt",
+          "[download][recovery-controller][FR-053]") {
+    const auto session_status = GENERATE(SessionLoadStatus::Missing, SessionLoadStatus::Loaded);
+    RecoveryAdmissionHarness h{{.status = session_status}};
+    h.load({.checkpoint = recoveryAdmissionCheckpoint(DownloadJobState::Completed),
+            .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    REQUIRE(h.controller.recoveryReport().items[0].disposition == DownloadRecoveryDisposition::Unconfirmed);
+    REQUIRE_FALSE(h.service.retryImport("prior-1"));
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.io.saves.empty());
+}
+
+TEST_CASE("Durable admission reserves orphan session IDs even when the download checkpoint is missing",
+          "[download][recovery-controller][FR-053]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession("owner-1")};
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.loadStatus() == DownloadCheckpointLoadStatus::Missing);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::NamespaceConflict);
+    REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::NotAvailable);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.io.saves.empty());
+    h.controller.shutdown();
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.saves.empty());
+}
+
+TEST_CASE("Durable admission retains session-only receipts without synthesizing jobs or requests",
+          "[download][recovery-controller][FR-051]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession("orphan-1")};
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.controller.recoveryReport().session_only_job_ids == std::vector<std::string>{"orphan-1"});
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.checkpoint()->receipts.empty());
+    REQUIRE(h.controller.poll(admissionInput().request_id) == std::nullopt);
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.io.saves.empty());
+}
+
+TEST_CASE("Durable admission blocks untrusted session history without repairing it by download retry",
+          "[download][recovery-controller][FR-053]") {
+    const auto status = GENERATE(SessionLoadStatus::RecoveredFromBackup, SessionLoadStatus::InvalidUsingDefaults,
+                                 SessionLoadStatus::FutureVersion, static_cast<SessionLoadStatus>(999));
+    auto session = healthyAdmissionSession();
+    session.status = status;
+    RecoveryAdmissionHarness h{session};
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.loadStatus() == DownloadCheckpointLoadStatus::Missing);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::InvalidHistory);
+    REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::NotAvailable);
+    REQUIRE(h.controller.retryStartup());
+    h.io.loaded({.status = DownloadCheckpointLoadStatus::Missing});
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.io.saves.empty());
+    h.controller.shutdown();
+    h.io.allow_stopped = true;
+    h.controller.tick(2);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Durable admission rejects contradictory missing and malformed loaded session snapshots",
+          "[download][recovery-controller][FR-053]") {
+    auto session = healthyAdmissionSession();
+    const auto missing = GENERATE(true, false);
+    if (missing)
+        session.status = SessionLoadStatus::Missing;
+    else
+        session.snapshot.download_import_receipts.push_back(session.snapshot.download_import_receipts[0]);
+    RecoveryAdmissionHarness h{session};
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::InvalidHistory);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.io.saves.empty());
+}
+
+TEST_CASE("Durable admission preserves path and terminal conflicts instead of saving reconciled defaults",
+          "[download][recovery-controller][FR-053]") {
+    const auto state = GENERATE(DownloadJobState::Completed, DownloadJobState::Failed, DownloadJobState::Cancelled);
+    auto checkpoint = recoveryAdmissionCheckpoint(state);
+    if (state == DownloadJobState::Completed)
+        checkpoint.jobs[0].completed_mp3 = admissionFinalPath().parent_path() / "conflict.mp3";
+    const auto original = checkpoint;
+    RecoveryAdmissionHarness h{healthyAdmissionSession()};
+    h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.loadStatus() == DownloadCheckpointLoadStatus::Loaded);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::ReceiptConflict);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(checkpoint == original);
+    h.controller.shutdown();
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Durable admission owns a bounded detached startup receipt snapshot",
+          "[download][recovery-controller][FR-051]") {
+    auto session = healthyAdmissionSession("orphan-1");
+    RecoveryAdmissionHarness h{session};
+    session.snapshot.download_import_receipts[0].job_id = "owner-1";
+    session.snapshot.download_import_receipts.clear();
+    session.status = SessionLoadStatus::FutureVersion;
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.controller.recoveryReport().session_only_job_ids == std::vector<std::string>{"orphan-1"});
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Shutdown during durable startup never restores or saves either history",
+          "[download][recovery-controller][FR-053]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession()};
+    h.io.on_poll = [&] { h.controller.shutdown(); };
+    h.load({.checkpoint = recoveryAdmissionCheckpoint(), .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopping);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::NotRequested);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+}
 
 TEST_CASE("Download owner starts with an asynchronous load and never writes missing defaults",
           "[download][admission][FR-051]") {

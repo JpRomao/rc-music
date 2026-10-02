@@ -17,9 +17,9 @@ namespace music_player::m0 {
 namespace {
 
 constexpr std::string_view owner = "rc-music-download-checkpoint";
-constexpr std::array<std::string_view, 11> state_names{"queued",        "downloading", "converting", "publishing",
+constexpr std::array<std::string_view, 12> state_names{"queued",        "downloading", "converting", "publishing",
                                                        "cancelling",    "completed",   "cancelled",  "failed",
-                                                       "import-failed", "interrupted", "importing"};
+                                                       "import-failed", "interrupted", "importing",  "imported"};
 constexpr std::array<std::string_view, 13> error_names{
     "none",           "unavailable", "network",     "expired", "restricted", "unsupported-media", "no-audio",
     "limit-exceeded", "conversion",  "publication", "import",  "timeout",    "invalid-result"};

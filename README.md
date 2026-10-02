@@ -4,6 +4,8 @@ O [journal privado de arquivos de download](docs/download-ownership.md) adiciona
 
 A [importação durável da fila](docs/download-jobs.md#importação-local-de-resultado-publicado) acrescenta o modo `Session`: fila e recibo por job/path compartilham `session.json` v2, e a conclusão espera a confirmação `Saved` da revisão correspondente. O bootstrap preserva esses recibos mesmo com restauração da fila e opcionais de downloads desligados, sem hidratar/tocar suas faixas. Falhas exigem retry explícito; backup/estado inválido/futuro bloqueiam novas importações duráveis. Isso ainda é um componente sem serviço/host de downloads instanciado no app, não promessa de exactly-once universal nem autoridade para agir em paths recuperados.
 
+A [reconciliação estrita dos históricos](docs/download-jobs.md) agora reconhece o ID exato de um recibo de sessão saudável como `Imported`, inclusive quando o checkpoint de admissão anterior ainda está Queued/parcial e sem path. Não executa/importa/abre arquivos ou inventa progresso. Conflitos bloqueiam novas admissões sem rewrite; recibos sem job apenas são relatados e protegem o namespace. O model mostra “Já importado na fila”, sem path/ações. Recuperação física/acionável e composição dos serviços no app continuam pendentes, com os mesmos gates Lite/Completa.
+
 Player de áudio desktop pessoal, local-first, Windows-first e planejado para Linux. O objetivo é combinar inicialização rápida e baixo consumo com uma interface moderna, minimalista e realmente agradável para uso diário.
 
 Para usar a versão local, consulte o [manual de uso e solução de problemas](docs/user-guide.md). Ele explica abertura, fila, atalhos, preferências e recuperação; não pressupõe instalação nem aprovação de release.

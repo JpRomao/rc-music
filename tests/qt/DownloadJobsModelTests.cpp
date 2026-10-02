@@ -1,4 +1,5 @@
 #include "adapters/DownloadJobsModel.hpp"
+#include "m0/domain/SessionSnapshot.hpp"
 
 #include <QAbstractItemModelTester>
 #include <QPersistentModelIndex>
@@ -6,6 +7,8 @@
 #include <QTest>
 
 #include <filesystem>
+#include <optional>
+#include <span>
 #include <vector>
 
 using namespace music_player::m0;
@@ -43,6 +46,7 @@ class Execution final : public DownloadExecution {
 class Importer final : public DownloadImport {
   public:
     int calls{0};
+    int polls{0};
     bool accepted{true};
     std::string last_id{};
     std::filesystem::path last_path{};
@@ -61,7 +65,10 @@ class Importer final : public DownloadImport {
         static_cast<void>(accept(job_id, path));
         return DownloadImportState::Pending;
     }
-    DownloadImportState pollImport(std::string_view) override { return polled; }
+    DownloadImportState pollImport(std::string_view) override {
+        ++polls;
+        return polled;
+    }
 };
 
 DownloadRequest request(std::string id = request_id, std::string title = "Audio") {
@@ -81,6 +88,111 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void reconciledImportProjectsDurableCompletionWithoutInventingTransferMetrics_data() {
+        QTest::addColumn<bool>("known_total");
+        QTest::newRow("partial transfer metrics") << true;
+        QTest::newRow("unknown transfer total") << false;
+    }
+
+    void reconciledImportProjectsDurableCompletionWithoutInventingTransferMetrics() {
+        QFETCH(bool, known_total);
+        class Identity final : public DownloadRequestIdentity {
+          public:
+            std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+        } identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        const std::string title = "<img src=x onerror=alert(1)> & música 日本";
+        const DownloadCheckpoint checkpoint{
+            .receipts = {{.request_id = request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"previous-1"},
+                          .retained_request_bytes = 128}},
+            .jobs = {{.job_id = "previous-1",
+                      .title = title,
+                      .state = DownloadJobState::Queued,
+                      .completed_units = 2,
+                      .total_units = known_total ? std::optional<std::uint64_t>{9} : std::nullopt}}};
+        const std::vector<DownloadImportReceipt> receipts{{.job_id = "previous-1", .source_path = finalPath()}};
+        QVERIFY(service.restore(checkpoint, receipts));
+        QVERIFY(service.snapshot()[0].state == DownloadJobState::Imported);
+        DownloadJobsModel model(service);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+        QSignalSpy summary(&model, &DownloadJobsModel::summaryChanged);
+        QCOMPARE(value(model, DownloadJobsModel::JobIdRole).toString(), QStringLiteral("previous-1"));
+        QCOMPARE(value(model, DownloadJobsModel::TitleRole).toString(), QString::fromStdString(title));
+        QCOMPARE(value(model, Qt::DisplayRole).toString(), QString::fromStdString(title));
+        QCOMPARE(value(model, DownloadJobsModel::StateRole).toString(), QStringLiteral("imported"));
+        QCOMPARE(value(model, DownloadJobsModel::StatusTextRole).toString(), QStringLiteral("Já importado na fila"));
+        QCOMPARE(value(model, DownloadJobsModel::CompletedUnitsRole).toULongLong(), qulonglong{2});
+        if (known_total)
+            QCOMPARE(value(model, DownloadJobsModel::TotalUnitsRole).toULongLong(), qulonglong{9});
+        else
+            QVERIFY(!value(model, DownloadJobsModel::TotalUnitsRole).isValid());
+        QCOMPARE(value(model, DownloadJobsModel::ProgressRatioRole).toDouble(), 1.0);
+        QVERIFY(!value(model, DownloadJobsModel::IndeterminateRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanCancelRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QVERIFY(value(model, DownloadJobsModel::ErrorTextRole).toString().isEmpty());
+        QCOMPARE(model.activeCount(), 0);
+        QCOMPARE(model.completedCount(), 1);
+        QVERIFY(!model.cancel(QStringLiteral("previous-1")));
+        QVERIFY(!model.retryImport(QStringLiteral("previous-1")));
+        service.tick(0);
+        model.refresh();
+        QCOMPARE(changed.size(), 0);
+        QCOMPARE(summary.size(), 0);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(execution.polls, 0);
+        QCOMPARE(execution.cancellations, 0);
+        QCOMPARE(importer.calls, 0);
+        QCOMPARE(importer.polls, 0);
+    }
+
+    void completedCheckpointWithoutSessionReceiptProjectsInterruptedReviewOnly() {
+        class Identity final : public DownloadRequestIdentity {
+          public:
+            std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+        } identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {"previous-1"},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = "previous-1",
+                                                      .title = "Synthetic title",
+                                                      .state = DownloadJobState::Completed,
+                                                      .completed_units = 9,
+                                                      .total_units = 9,
+                                                      .completed_mp3 = finalPath()}}};
+        QVERIFY(service.restore(checkpoint, std::span<const DownloadImportReceipt>{}));
+        QVERIFY(service.snapshot()[0].state == DownloadJobState::Interrupted);
+        DownloadJobsModel model(service);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QCOMPARE(value(model, DownloadJobsModel::StateRole).toString(), QStringLiteral("interrupted"));
+        QCOMPARE(value(model, DownloadJobsModel::StatusTextRole).toString(),
+                 QStringLiteral("Interrompido; revisão necessária"));
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QVERIFY(!value(model, DownloadJobsModel::CanCancelRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
+        QCOMPARE(model.activeCount(), 0);
+        QCOMPARE(model.completedCount(), 0);
+        QVERIFY(!model.cancel(QStringLiteral("previous-1")));
+        QVERIFY(!model.retryImport(QStringLiteral("previous-1")));
+        service.tick(0);
+        model.refresh();
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(execution.polls, 0);
+        QCOMPARE(execution.cancellations, 0);
+        QCOMPARE(importer.calls, 0);
+        QCOMPARE(importer.polls, 0);
+    }
+
     void pendingImportShowsPersistenceWaitWithoutCancelRetryOrFalseCompletion() {
         Execution execution;
         Importer importer;

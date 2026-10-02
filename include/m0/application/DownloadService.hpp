@@ -1,10 +1,12 @@
 #pragma once
 
 #include "m0/application/DownloadCheckpoint.hpp"
+#include "m0/domain/SessionSnapshot.hpp"
 #include "m0/ports/DownloadRequestIdentity.hpp"
 
 #include <functional>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace music_player::m0 {
@@ -14,6 +16,22 @@ struct DownloadServiceLimits final {
     std::size_t max_requests{64};
     std::size_t max_retained_request_bytes{1024 * 1024};
     std::int64_t job_timeout_ms{30 * 60 * 1000};
+};
+
+enum class DownloadRecoveryStatus { NotRequested, Ready, InvalidHistory, NamespaceConflict, ReceiptConflict };
+enum class DownloadRecoveryDisposition { Imported, Unconfirmed, Interrupted, Unchanged };
+
+struct DownloadRecoveryItem final {
+    std::string job_id{};
+    DownloadRecoveryDisposition disposition{DownloadRecoveryDisposition::Unchanged};
+    bool operator==(const DownloadRecoveryItem&) const = default;
+};
+
+struct DownloadRecoveryReport final {
+    DownloadRecoveryStatus status{DownloadRecoveryStatus::NotRequested};
+    std::vector<DownloadRecoveryItem> items{};
+    std::vector<std::string> session_only_job_ids{};
+    bool operator==(const DownloadRecoveryReport&) const = default;
 };
 
 // Single application-thread owner shared by all browser connections. Admission inputs must
@@ -41,6 +59,12 @@ class DownloadService final : public DownloadSubmission {
     // a fresh prefix and identity port. It never starts work or trusts stored paths.
     [[nodiscard]] std::optional<DownloadCheckpoint> checkpoint();
     [[nodiscard]] bool restore(const DownloadCheckpoint& checkpoint);
+    // Trusted composition supplies only receipts proven by Loaded or matching
+    // Saved session data. Reconciliation recognises history, never imports or
+    // validates files; recovered candidate paths remain private evidence.
+    [[nodiscard]] bool restore(const DownloadCheckpoint& checkpoint,
+                               std::span<const DownloadImportReceipt> confirmed_imports);
+    [[nodiscard]] DownloadRecoveryReport recoveryReport() const;
     // Trusted composition may suppress a new native start after a handoff
     // callback requests owner shutdown. Existing execution/import drains remain
     // observed. The optional predicate is bounded and cannot reenter mutations;
@@ -53,6 +77,8 @@ class DownloadService final : public DownloadSubmission {
 
   private:
     [[nodiscard]] DownloadSubmissionResult submitImpl(const DownloadRequest& request, bool staged);
+    [[nodiscard]] bool restoreImpl(const DownloadCheckpoint& checkpoint,
+                                   std::span<const DownloadImportReceipt> confirmed_imports, bool reconcile);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

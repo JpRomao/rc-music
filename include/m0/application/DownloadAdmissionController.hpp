@@ -3,6 +3,7 @@
 #include "m0/application/DownloadService.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
 #include "m0/ports/DownloadCheckpointIo.hpp"
+#include "m0/ports/SessionStore.hpp"
 
 namespace music_player::m0 {
 
@@ -26,6 +27,12 @@ enum class DownloadAdmissionControllerState {
 class DownloadAdmissionController final : public AsyncDownloadSubmission {
   public:
     DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io);
+    // Durable startup composition: copy only a bounded receipt ledger from a
+    // valid Loaded primary or an exactly empty Missing session. Backup/defaults/
+    // future history blocks ingress; retrying download I/O cannot upgrade it.
+    // This is store evidence, never the current unsaved presenter snapshot.
+    DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
+                                const SessionLoadResult& initial_session);
     ~DownloadAdmissionController() override;
     DownloadAdmissionController(const DownloadAdmissionController&) = delete;
     DownloadAdmissionController& operator=(const DownloadAdmissionController&) = delete;
@@ -42,6 +49,9 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     [[nodiscard]] DownloadAdmissionControllerState state() const;
     [[nodiscard]] std::optional<DownloadCheckpointLoadStatus> loadStatus() const;
     [[nodiscard]] std::optional<DownloadCheckpointSaveStatus> saveStatus() const;
+    // Separate from file loadStatus: valid documents may still conflict. No
+    // URLs/media paths or executable recovery actions are exposed in this report.
+    [[nodiscard]] DownloadRecoveryReport recoveryReport() const;
 
   private:
     struct Impl;
