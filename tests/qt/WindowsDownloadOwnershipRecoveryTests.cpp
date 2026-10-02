@@ -1,4 +1,5 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
+#include "adapters/WindowsDownloadOwnershipStore.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -8,6 +9,8 @@
 
 #include <array>
 #include <cstring>
+#include <functional>
+#include <stdexcept>
 #include <vector>
 
 #ifndef NOMINMAX
@@ -194,12 +197,412 @@ struct RemoveDirectoryAlias final {
             RemoveDirectoryW(native(path).c_str());
     }
 };
+
+class RecordingStore final : public DownloadOwnershipStore {
+  public:
+    DownloadCheckpointSaveStatus status{DownloadCheckpointSaveStatus::Saved};
+    bool throw_on_record{false};
+    bool commit_before_failure{false};
+    int load_calls{0};
+    std::vector<DownloadOwnershipRecord> attempts{};
+    std::optional<DownloadOwnershipRecord> committed{};
+    std::function<void()> before_record{};
+
+    DownloadOwnershipLoadResult load() override {
+        ++load_calls;
+        return committed ? DownloadOwnershipLoadResult{DownloadCheckpointLoadStatus::Loaded,
+                                                       DownloadOwnershipJournal{{*committed}}}
+                         : DownloadOwnershipLoadResult{};
+    }
+    DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& value) override {
+        attempts.push_back(value);
+        if (before_record)
+            before_record();
+        if (status == DownloadCheckpointSaveStatus::Saved || commit_before_failure)
+            committed = value;
+        if (throw_on_record)
+            throw std::runtime_error("synthetic save failure");
+        return status;
+    }
+};
+
+struct RestoreAttributes final {
+    QString path;
+    ~RestoreAttributes() { SetFileAttributesW(native(path).c_str(), FILE_ATTRIBUTE_NORMAL); }
+};
 } // namespace
 
 class WindowsDownloadOwnershipRecoveryTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void discardOwnedPartialsRemovesRealObjectsBeforeDurableConfirmation() {
+        Fixture f;
+        QVERIFY(f.ready());
+        const auto sentinel = f.staging + QStringLiteral("/keep-sibling.bin");
+        QVERIFY(createFile(sentinel, "keep-sibling", f.security));
+        RecordingStore store;
+        bool absent_at_save = false;
+        bool parent_still_pinned = false;
+        store.before_record = [&] {
+            absent_at_save = !QFile::exists(f.input) && !QFile::exists(f.output) && !QFile::exists(f.job);
+            Handle rename_attempt(CreateFileW(native(f.staging).c_str(), DELETE,
+                                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                              OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+            parent_still_pinned = !rename_attempt.valid();
+        };
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Discarded);
+        QVERIFY(absent_at_save);
+        QVERIFY(parent_still_pinned);
+        QVERIFY(!QFile::exists(f.job));
+        QVERIFY(QFile::exists(f.staging));
+        QVERIFY(QFile::exists(f.publication));
+        QCOMPARE(readFile(sentinel), QByteArray("keep-sibling"));
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+        auto cleaned = f.record;
+        cleaned.cleanup_complete = true;
+        QCOMPARE(store.attempts.front(), cleaned);
+        QVERIFY(!f.record.cleanup_complete);
+        QCOMPARE(store.load_calls, 0);
+    }
+
+    void discardVerifiedPreparedPartialsNeverRequiresMediaDecode() {
+        Fixture f;
+        QVERIFY(f.ready());
+        f.prepared();
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Discarded);
+        QVERIFY(!QFile::exists(f.job));
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+        QCOMPARE(store.attempts.front().stage, DownloadOwnershipStage::PublicationPrepared);
+        QCOMPARE(store.attempts.front().output_sha256, f.record.output_sha256);
+    }
+
+    void discardFinalCandidateRefusesTheEntireOperation_data() {
+        QTest::addColumn<bool>("published");
+        QTest::newRow("prepared-rename") << false;
+        QTest::newRow("published") << true;
+    }
+    void discardFinalCandidateRefusesTheEntireOperation() {
+        QFETCH(bool, published);
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        if (!published)
+            f.record.stage = DownloadOwnershipStage::PublicationPrepared;
+        // A final needs only read access. This reader denies DELETE sharing,
+        // so obtaining a delete capability for the final would fail the test.
+        Handle final_reader(CreateFileW(native(f.final).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                        FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+        QVERIFY(final_reader.valid());
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::OwnedFinalCandidate);
+        QCOMPARE(readFile(f.final), QByteArray(output_content));
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QVERIFY(QFile::exists(f.job));
+        QVERIFY(store.attempts.empty());
+    }
+
+    void discardRevalidatesAfterAssessmentAndPreservesReplacements() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QCOMPARE(f.assess(), DownloadOwnershipAssessment::OwnedPartial);
+        const auto original = f.root.filePath(QStringLiteral("keep-original-input.bin"));
+        QVERIFY(MoveFileExW(native(f.input).c_str(), native(original).c_str(), 0));
+        QVERIFY(createFile(f.input, input_content, f.security));
+        QVERIFY(identity(f.input, false) != f.record.input);
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Conflict);
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QCOMPARE(readFile(original), QByteArray(input_content));
+        QCOMPARE(readFile(f.output), QByteArray(output_content));
+        QVERIFY(store.attempts.empty());
+    }
+
+    void discardRefusesConflictingEvidenceBeforeAnyMutation_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("unknown-child") << 0;
+        QTest::newRow("cleanup-contradiction") << 1;
+        QTest::newRow("staging-identity") << 2;
+        QTest::newRow("publication-identity") << 3;
+        QTest::newRow("job-identity") << 4;
+        QTest::newRow("input-identity") << 5;
+        QTest::newRow("output-identity") << 6;
+        QTest::newRow("prepared-digest") << 7;
+        QTest::newRow("prepared-input-size") << 8;
+        QTest::newRow("configured-budget") << 9;
+        QTest::newRow("private-dacl") << 10;
+        QTest::newRow("hardlink") << 11;
+        QTest::newRow("ready-final-collision") << 12;
+        QTest::newRow("published-source-contradiction") << 13;
+    }
+    void discardRefusesConflictingEvidenceBeforeAnyMutation() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.ready());
+        auto config = f.config();
+        const auto sentinel = f.root.filePath(QStringLiteral("keep.bin"));
+        QVERIFY(createFile(sentinel, "keep", f.security));
+        const auto unknown = f.job + QStringLiteral("/unknown.bin");
+        const auto hardlink = f.root.filePath(QStringLiteral("keep-hardlink.bin"));
+        if (kind == 0)
+            QVERIFY(createFile(unknown, "unknown", f.security));
+        else if (kind == 1)
+            f.record.cleanup_complete = true;
+        else if (kind >= 2 && kind <= 6) {
+            auto* changed = kind == 2   ? &f.record.staging_parent
+                            : kind == 3 ? &f.record.publish_parent
+                            : kind == 4 ? &*f.record.job_directory
+                            : kind == 5 ? &*f.record.input
+                                        : &*f.record.output;
+            changed->file_id[15] ^= 0x55;
+        } else if (kind == 7 || kind == 8) {
+            f.prepared();
+            if (kind == 7)
+                f.record.output_sha256 = std::string(64, 'a');
+            else
+                ++f.record.input_bytes;
+        } else if (kind == 9)
+            config.max_workspace_bytes = 1;
+        else if (kind == 10) {
+            PrivateSecurity no_inheritance(false);
+            QVERIFY(no_inheritance.valid());
+            QVERIFY(replaceDacl(f.output, false, no_inheritance));
+        } else if (kind == 11)
+            QVERIFY(CreateHardLinkW(native(hardlink).c_str(), native(f.output).c_str(), nullptr));
+        else if (kind == 12)
+            QVERIFY(createFile(f.final, "keep-final", f.security));
+        else {
+            f.prepared();
+            f.record.stage = DownloadOwnershipStage::Published;
+        }
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(config, f.record, store),
+                 DownloadOwnershipDiscardOutcome::Conflict);
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QCOMPARE(readFile(f.output), QByteArray(output_content));
+        QCOMPARE(readFile(sentinel), QByteArray("keep"));
+        QVERIFY(QFile::exists(f.job));
+        QVERIFY(store.attempts.empty());
+        if (kind == 0)
+            QCOMPARE(readFile(unknown), QByteArray("unknown"));
+        if (kind == 11)
+            QCOMPARE(readFile(hardlink), QByteArray(output_content));
+        if (kind == 12)
+            QCOMPARE(readFile(f.final), QByteArray("keep-final"));
+    }
+
+    void discardPlannedInvalidOrUntrustedConfigurationCannotClaimObjects_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("planned") << 0;
+        QTest::newRow("invalid-id") << 1;
+        QTest::newRow("relative-parent") << 2;
+        QTest::newRow("zero-budget") << 3;
+    }
+    void discardPlannedInvalidOrUntrustedConfigurationCannotClaimObjects() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.ready());
+        auto config = f.config();
+        if (kind == 0) {
+            f.record.stage = DownloadOwnershipStage::Planned;
+            f.record.job_directory.reset();
+            f.record.input.reset();
+            f.record.output.reset();
+        } else if (kind == 1)
+            f.record.workspace_id = "../outside";
+        else if (kind == 2)
+            config.staging_parent = QStringLiteral("relative/staging");
+        else
+            config.max_workspace_bytes = 0;
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(config, f.record, store),
+                 DownloadOwnershipDiscardOutcome::Unverified);
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QCOMPARE(readFile(f.output), QByteArray(output_content));
+        QVERIFY(store.attempts.empty());
+    }
+
+    void discardDoesNotCreateMissingParentsOrRewriteMissingWorkspace() {
+        Fixture f;
+        QVERIFY(f.ready());
+        RecordingStore store;
+        auto config = f.config();
+        config.staging_parent += QStringLiteral("/not-created");
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(config, f.record, store),
+                 DownloadOwnershipDiscardOutcome::Unreadable);
+        QVERIFY(!QFile::exists(config.staging_parent));
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QVERIFY(f.removeTemps());
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Missing);
+        QVERIFY(!QFile::exists(f.job));
+        QVERIFY(store.attempts.empty());
+    }
+
+    void discardSharingDenialPreservesEveryTemporary() {
+        Fixture f;
+        QVERIFY(f.ready());
+        RecordingStore store;
+        {
+            Handle blocker(CreateFileW(native(f.output).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                       FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+            QVERIFY(blocker.valid());
+            QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                     DownloadOwnershipDiscardOutcome::Unreadable);
+        }
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QCOMPARE(readFile(f.output), QByteArray(output_content));
+        QVERIFY(store.attempts.empty());
+    }
+
+    void discardPhysicalFailureKeepsRecordAndAllowsFreshRetryOfSurvivingObjects() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(SetFileAttributesW(native(f.output).c_str(), FILE_ATTRIBUTE_READONLY));
+        RestoreAttributes restore{f.output};
+        RecordingStore store;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Incomplete);
+        QVERIFY(!QFile::exists(f.input));
+        QCOMPARE(readFile(f.output), QByteArray(output_content));
+        QVERIFY(QFile::exists(f.job));
+        QVERIFY(store.attempts.empty());
+        QVERIFY(!f.record.cleanup_complete);
+        QVERIFY(SetFileAttributesW(native(f.output).c_str(), FILE_ATTRIBUTE_NORMAL));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Discarded);
+        QVERIFY(!QFile::exists(f.job));
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+        QVERIFY(store.attempts.front().cleanup_complete);
+    }
+
+    void discardDeletePendingIsNotPhysicalCompletionBeforeExternalReaderCloses() {
+        Fixture f;
+        QVERIFY(f.ready());
+        RecordingStore store;
+        {
+            Handle reader(CreateFileW(native(f.input).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+            QVERIFY(reader.valid());
+            QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                     DownloadOwnershipDiscardOutcome::Incomplete);
+            QVERIFY(store.attempts.empty());
+            // The still-open reader can read the delete-pending original.
+            std::array<char, 16> bytes{};
+            DWORD read = 0;
+            QVERIFY(ReadFile(reader.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr));
+            QCOMPARE(QByteArray(bytes.data(), read), QByteArray(input_content));
+            QCOMPARE(readFile(f.output), QByteArray(output_content));
+            QVERIFY(QFile::exists(f.job));
+        }
+        QVERIFY(!QFile::exists(f.input));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Discarded);
+        QVERIFY(!QFile::exists(f.job));
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+    }
+
+    void discardRealStoreSeparatesPhysicalRemovalFromJournalAcknowledgement_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("saved") << 0;
+        QTest::newRow("failed-before-commit") << 1;
+        QTest::newRow("failed-after-commit") << 2;
+        QTest::newRow("save-directory-absent") << 3;
+    }
+    void discardRealStoreSeparatesPhysicalRemovalFromJournalAcknowledgement() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.initialized);
+        PrivateSecurity document_security(false);
+        QVERIFY(document_security.valid());
+        const auto directory = f.root.filePath(QStringLiteral("private-journal"));
+        QVERIFY(CreateDirectoryW(native(directory).c_str(), document_security.attributes()));
+        WindowsDownloadOwnershipStore baseline(directory);
+        QCOMPARE(baseline.record(f.record), DownloadCheckpointSaveStatus::Saved);
+        QVERIFY(f.ready());
+        QCOMPARE(baseline.record(f.record), DownloadCheckpointSaveStatus::Saved);
+        const auto journal = directory + QStringLiteral("/download-ownership.json");
+        const auto before = readFile(journal);
+        QVERIFY(!before.isEmpty());
+        const auto sentinel = directory + QStringLiteral("/keep-sentinel.bin");
+        QVERIFY(createFile(sentinel, "keep-sentinel", document_security));
+        const auto entries = QDir(directory).entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        const auto missing_directory = f.root.filePath(QStringLiteral("never-created-journal"));
+        WindowsDownloadOwnershipStore store(
+            kind == 3 ? missing_directory : directory,
+            {.inject_fault = [kind](WindowsDownloadOwnershipFaultPoint point) {
+                return (kind == 1 && point == WindowsDownloadOwnershipFaultPoint::BeforeCommit) ||
+                       (kind == 2 && point == WindowsDownloadOwnershipFaultPoint::AfterCommit);
+            }});
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 kind == 0 ? DownloadOwnershipDiscardOutcome::Discarded : DownloadOwnershipDiscardOutcome::Unconfirmed);
+        QVERIFY(!QFile::exists(f.job));
+        QVERIFY(!QFile::exists(f.input));
+        QVERIFY(!QFile::exists(f.output));
+        QVERIFY(!QFile::exists(f.final));
+        QVERIFY(!QFile::exists(missing_directory));
+        QCOMPARE(readFile(sentinel), QByteArray("keep-sentinel"));
+        QCOMPARE(QDir(directory).entryList(QDir::AllEntries | QDir::NoDotAndDotDot), entries);
+        WindowsDownloadOwnershipStore restarted(directory);
+        const auto loaded = restarted.load();
+        QCOMPARE(loaded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), std::size_t{1});
+        auto expected = f.record;
+        expected.cleanup_complete = kind == 0 || kind == 2;
+        QCOMPARE(loaded.journal->records.front(), expected);
+        const auto after = readFile(journal);
+        if (kind == 1 || kind == 3)
+            QCOMPARE(after, before);
+        else
+            QVERIFY(after != before);
+        // A visible cleanup=true after Failed is not an acknowledgement, and a
+        // retry on absent physical objects performs no repair or second save.
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Missing);
+        QCOMPARE(readFile(journal), after);
+    }
+
+    void discardRequiresSavedNotAReadableCommitAfterRemoval_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("failed-before-commit") << 0;
+        QTest::newRow("failed-after-commit") << 1;
+        QTest::newRow("blocked-save") << 2;
+        QTest::newRow("throw-before-commit") << 3;
+        QTest::newRow("throw-after-commit") << 4;
+    }
+    void discardRequiresSavedNotAReadableCommitAfterRemoval() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.ready());
+        RecordingStore store;
+        store.status =
+            kind == 2 ? DownloadCheckpointSaveStatus::BlockedByExistingData : DownloadCheckpointSaveStatus::Failed;
+        store.commit_before_failure = kind == 1 || kind == 4;
+        store.throw_on_record = kind == 3 || kind == 4;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Unconfirmed);
+        QVERIFY(!QFile::exists(f.input));
+        QVERIFY(!QFile::exists(f.output));
+        QVERIFY(!QFile::exists(f.job));
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+        QVERIFY(store.attempts.front().cleanup_complete);
+        QVERIFY(!f.record.cleanup_complete);
+        QCOMPARE(store.load_calls, 0);
+        if (store.commit_before_failure)
+            QVERIFY(store.committed && store.committed->cleanup_complete);
+        // Explicit recheck cannot turn an unacknowledged save into success.
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
+                 DownloadOwnershipDiscardOutcome::Missing);
+        QCOMPARE(store.attempts.size(), std::size_t{1});
+        QCOMPARE(store.load_calls, 0);
+    }
+
     void plannedEvidenceDoesNotClaimExistingObjectsOrMutateThem() {
         Fixture f;
         QVERIFY(f.ready());

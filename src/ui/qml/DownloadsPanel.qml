@@ -8,6 +8,11 @@ Popup {
 
     property var closeConsentOwner: null
     property string closeConsentWarning: ""
+    property var discardConsentOwner: null
+    property string discardConsentJobId: ""
+    property string discardConsentToken: ""
+    property Item discardRestoreFocusItem: null
+    readonly property bool discardConsentCurrent: discardConsentOwner !== null && discardConsentOwner === downloads && discardConsentToken.length > 0 && downloads.discardConsentJobId === discardConsentJobId && downloads.discardConsentToken === discardConsentToken
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
@@ -20,6 +25,40 @@ Popup {
     readonly property string warning: downloads !== null ? downloads.warningText : ""
 
     signal exitRequested
+
+    function requestDiscardConsent(jobId, opener) {
+        if (downloads === null || discardConfirmation.visible || exitConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
+            return;
+        discardConsentOwner = downloads;
+        discardConsentJobId = downloads.discardConsentJobId;
+        discardConsentToken = downloads.discardConsentToken;
+        discardRestoreFocusItem = opener;
+        if (discardConsentCurrent)
+            discardConfirmation.open();
+        else
+            invalidateDiscardConsent();
+    }
+    function invalidateDiscardConsent() {
+        const owner = discardConsentOwner;
+        const jobId = discardConsentJobId;
+        const token = discardConsentToken;
+        discardConsentOwner = null;
+        discardConsentJobId = "";
+        discardConsentToken = "";
+        if (owner !== null && token.length > 0)
+            owner.cancelDiscardPartialsConfirmation(jobId, token);
+        if (discardConfirmation.visible)
+            discardConfirmation.close();
+    }
+    function confirmDiscardConsent() {
+        if (!discardConfirmation.opened || !discardConsentCurrent)
+            return;
+        const owner = discardConsentOwner;
+        const jobId = discardConsentJobId;
+        const token = discardConsentToken;
+        owner.confirmDiscardPartials(jobId, token);
+        invalidateDiscardConsent();
+    }
 
     function confirmCloseWithoutSave() {
         if (!exitConfirmation.opened || !closeWithoutSaveAvailable || closeConsentOwner !== downloads || closeConsentWarning !== warning)
@@ -37,6 +76,8 @@ Popup {
             return row.retryControl;
         if (row && row.reviewControl.visible && row.reviewControl.enabled)
             return row.reviewControl;
+        if (row && row.discardControl.visible && row.discardControl.enabled)
+            return row.discardControl;
         return closeButton;
     }
     function invalidateCloseConsent() {
@@ -47,6 +88,8 @@ Popup {
     }
     function lastRowControl() {
         const row = jobsList.currentItem;
+        if (row && row.discardControl.visible && row.discardControl.enabled)
+            return row.discardControl;
         if (row && row.reviewControl.visible && row.reviewControl.enabled)
             return row.reviewControl;
         if (row && row.retryControl.visible && row.retryControl.enabled)
@@ -245,6 +288,7 @@ Popup {
                 required property bool canCancel
                 required property bool canRetryImport
                 required property bool canReviewFiles
+                required property bool canDiscardPartials
                 property alias cancelControl: cancelButton
                 required property string errorText
                 required property bool indeterminate
@@ -253,6 +297,7 @@ Popup {
                 required property real progressRatio
                 property alias retryControl: retryButton
                 property alias reviewControl: reviewButton
+                property alias discardControl: discardButton
                 required property bool reviewBusy
                 required property string reviewText
                 required property string statusText
@@ -364,7 +409,7 @@ Popup {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy
+                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials
 
                         AccessibleTransportButton {
                             id: cancelButton
@@ -410,7 +455,7 @@ Popup {
                             id: reviewButton
 
                             KeyNavigation.backtab: retryButton.visible && retryButton.enabled ? retryButton : cancelButton.visible && cancelButton.enabled ? cancelButton : jobsList
-                            KeyNavigation.tab: closeButton
+                            KeyNavigation.tab: discardButton.visible && discardButton.enabled ? discardButton : closeButton
                             contract: root.contract
                             enabled: row.canReviewFiles && !row.reviewBusy
                             objectName: "download-review-files"
@@ -424,6 +469,26 @@ Popup {
                             onClicked: {
                                 if (row.canReviewFiles && !row.reviewBusy && root.downloads !== null)
                                     root.downloads.reviewFiles(row.jobId);
+                            }
+                        }
+                        AccessibleTransportButton {
+                            id: discardButton
+
+                            KeyNavigation.backtab: reviewButton.visible && reviewButton.enabled ? reviewButton : jobsList
+                            KeyNavigation.tab: closeButton
+                            contract: root.contract
+                            enabled: row.canDiscardPartials && !row.reviewBusy
+                            objectName: "download-discard-partials"
+                            text: labels.discardPartials
+                            visible: row.canDiscardPartials
+
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (row.canDiscardPartials && !row.reviewBusy)
+                                    root.requestDiscardConsent(row.jobId, discardButton);
                             }
                         }
                         Item {
@@ -462,7 +527,17 @@ Popup {
         }
     }
 
-    onAboutToHide: invalidateCloseConsent()
+    onAboutToHide: {
+        invalidateCloseConsent();
+        invalidateDiscardConsent();
+    }
+    onDiscardConsentCurrentChanged: {
+        if (!discardConsentCurrent)
+            Qt.callLater(function () {
+                if (!root.discardConsentCurrent)
+                    root.invalidateDiscardConsent();
+            });
+    }
     onCloseWithoutSaveAvailableChanged: {
         if (!closeWithoutSaveAvailable)
             invalidateCloseConsent();
@@ -480,6 +555,7 @@ Popup {
     }
     onDownloadsChanged: {
         invalidateCloseConsent();
+        invalidateDiscardConsent();
         if (downloads === null)
             close();
     }
@@ -488,6 +564,97 @@ Popup {
 
     DownloadText {
         id: labels
+    }
+    Popup {
+        id: discardConfirmation
+
+        closePolicy: Popup.CloseOnEscape
+        dim: false
+        focus: true
+        height: discardContent.implicitHeight + padding * 2
+        modal: true
+        objectName: "downloads-discard-confirmation"
+        padding: root.contract.spacingUnit * 3
+        parent: root.parent
+        popupType: Popup.Item
+        width: Math.min(root.width, 560)
+        x: root.x + (root.width - width) / 2
+        y: root.y + (root.height - height) / 2
+
+        background: Rectangle {
+            border.color: root.contract.borderColor
+            border.width: root.contract.highContrast ? 2 : 1
+            color: root.contract.surfaceRaisedColor
+            radius: root.contract.radiusMedium
+        }
+        contentItem: ColumnLayout {
+            id: discardContent
+
+            Accessible.name: labels.discardPartials
+            Accessible.role: Accessible.Dialog
+            spacing: root.contract.spacingUnit * 3
+
+            Text {
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                font.bold: true
+                text: labels.discardPartials
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            Text {
+                Accessible.name: text
+                Accessible.role: Accessible.StaticText
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                objectName: "download-discard-advice"
+                text: labels.discardPartialsAdvice
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+
+                AccessibleTransportButton {
+                    id: cancelDiscardButton
+
+                    KeyNavigation.backtab: confirmDiscardButton
+                    KeyNavigation.tab: confirmDiscardButton
+                    contract: root.contract
+                    objectName: "download-discard-cancel"
+                    text: labels.cancelDiscard
+
+                    onClicked: root.invalidateDiscardConsent()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                AccessibleTransportButton {
+                    id: confirmDiscardButton
+
+                    KeyNavigation.backtab: cancelDiscardButton
+                    KeyNavigation.tab: cancelDiscardButton
+                    contract: root.contract
+                    enabled: root.discardConsentCurrent
+                    objectName: "download-discard-confirm"
+                    text: labels.discardPartials
+
+                    onClicked: root.confirmDiscardConsent()
+                }
+            }
+        }
+        onClosed: {
+            root.invalidateDiscardConsent();
+            const target = root.discardRestoreFocusItem;
+            root.discardRestoreFocusItem = null;
+            Qt.callLater(function () {
+                if (root.opened) {
+                    const destination = target && target.visible && target.enabled ? target : jobsList;
+                    destination.forceActiveFocus(Qt.TabFocusReason);
+                }
+            });
+        }
+        onOpened: cancelDiscardButton.forceActiveFocus(Qt.TabFocusReason)
     }
     Popup {
         id: exitConfirmation

@@ -92,6 +92,67 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void discardCapabilityNeedsOwnPartialsAndConsumesTheirOldAssessment() {
+        ReviewIdentity identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        QVERIFY(service.restore({.receipts = {{.request_id = request_id,
+                                               .fingerprint = std::string(64, 'a'),
+                                               .job_ids = {"previous-1"},
+                                               .retained_request_bytes = 128}},
+                                 .jobs = {{.job_id = "previous-1", .title = "First"}}}));
+        DownloadJobsModel model(service);
+        model.setReviewAvailable(true);
+        model.setDiscardSupported(true);
+        QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(model.beginReview(QStringLiteral("previous-1")));
+        QVERIFY(model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedPartial));
+        QVERIFY(value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(model.beginReview(QStringLiteral("previous-1"), DownloadRecoveryReviewAction::DiscardPartials));
+        QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("Descartando")));
+        QVERIFY(model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::Discarded));
+        QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("histórico confirmado")));
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.calls, 0);
+    }
+    void discardOutcomesDoNotConflateDeletionAndDurability_data() {
+        QTest::addColumn<int>("outcome");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("confirmed") << int(DownloadRecoveryReviewOutcome::Discarded)
+                                   << QStringLiteral("histórico confirmado");
+        QTest::newRow("incomplete") << int(DownloadRecoveryReviewOutcome::DiscardIncomplete)
+                                    << QStringLiteral("não foi concluído");
+        QTest::newRow("unconfirmed") << int(DownloadRecoveryReviewOutcome::DiscardUnconfirmed)
+                                     << QStringLiteral("não foi confirmado");
+    }
+    void discardOutcomesDoNotConflateDeletionAndDurability() {
+        QFETCH(int, outcome);
+        QFETCH(QString, expected);
+        ReviewIdentity identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        QVERIFY(service.restore({.receipts = {{.request_id = request_id,
+                                               .fingerprint = std::string(64, 'a'),
+                                               .job_ids = {"previous-1"},
+                                               .retained_request_bytes = 128}},
+                                 .jobs = {{.job_id = "previous-1", .title = "First"}}}));
+        DownloadJobsModel model(service);
+        model.setReviewAvailable(true);
+        QVERIFY(model.beginReview(QStringLiteral("previous-1")));
+        QVERIFY(model.finishReview(QStringLiteral("previous-1"), static_cast<DownloadRecoveryReviewOutcome>(outcome)));
+        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole).toString().contains(expected));
+        QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+    }
     void interruptedReviewProjectionIsExplicitBoundedAndDoesNotExposeFileAuthority() {
         ReviewIdentity identity;
         Execution execution;
@@ -363,7 +424,7 @@ class DownloadJobsModelTests final : public QObject {
         const QList<QByteArray> expected{"jobId",          "title",      "state",         "statusText",
                                          "completedUnits", "totalUnits", "indeterminate", "progressRatio",
                                          "outputPath",     "errorText",  "canCancel",     "canRetryImport",
-                                         "canReviewFiles", "reviewText", "reviewBusy"};
+                                         "canReviewFiles", "reviewText", "reviewBusy",    "canDiscardPartials"};
         QCOMPARE(roles.size(), expected.size());
         for (const auto& role : expected)
             QVERIFY(roles.values().contains(role));

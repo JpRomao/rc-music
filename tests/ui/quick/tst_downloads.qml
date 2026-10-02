@@ -28,6 +28,7 @@ TestCase {
             "canCancel": canCancel,
             "canRetryImport": canRetryImport,
             "canReviewFiles": false,
+            "canDiscardPartials": false,
             "reviewText": "",
             "reviewBusy": false,
             "outputPath": "C:/private/never-show-me.mp3",
@@ -221,6 +222,77 @@ TestCase {
         tryVerify(function () {
             return findChild(shell, "downloads-close").activeFocus;
         });
+    }
+    function test_partialDiscardRequiresSeparateConsentAndPreservesFinalAdvice() {
+        addJob("partials-a", "interrupted", "Interrompido; revisão necessária", false, false, false, 0.3);
+        jobs.setProperty(0, "canReviewFiles", true);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        jobs.setProperty(0, "reviewText", "Arquivos parciais reconhecidos.");
+        openDownloads();
+        const discard = findChild(rowAt(0), "download-discard-partials");
+        verifyTarget(discard);
+        discard.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(downloads.discardedIds.length, 0);
+        const popup = findChild(shell, "downloads-discard-confirmation");
+        verify(popup);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        verify(visibleText(popup.contentItem).includes("MP3 final"));
+        verify(visibleText(popup.contentItem).includes("temporários"));
+        compare(findChild(shell, "download-discard-advice").textFormat, Text.PlainText);
+        compare(findChild(shell, "download-discard-cancel").Accessible.name, "Cancelar");
+        verify(popup.x >= 0 && popup.y >= 0);
+        verify(popup.x + popup.width <= shell.width && popup.y + popup.height <= shell.height);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(downloads.discardedIds.length, 0);
+        compare(downloads.discardConsentToken, "");
+        mouseClick(discard);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const confirm = findChild(shell, "download-discard-confirm");
+        verifyTarget(confirm);
+        mouseClick(confirm);
+        compare(downloads.discardedIds.length, 1);
+        compare(downloads.discardedIds[0], "partials-a");
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_partialDiscardConsentCannotFollowAReplacedOwnerOrRevokedRevision() {
+        addJob("partials-a", "interrupted", "Interrompido", false, false, false, 0);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        openDownloads();
+        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        const popup = findChild(shell, "downloads-discard-confirmation");
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const previous = downloads;
+        previous.cancelDiscardPartialsConfirmation(previous.discardConsentJobId, previous.discardConsentToken);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(previous.discardedIds.length, 0);
+        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const oldToken = previous.discardConsentToken;
+        const replacement = createTemporaryObject(bindingComponent, testCase);
+        verify(replacement);
+        downloads = replacement;
+        shell.downloads = replacement;
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(previous.discardConsentToken, "");
+        verify(!previous.confirmDiscardPartials("partials-a", oldToken));
+        compare(previous.discardedIds.length, 0);
+        compare(replacement.discardedIds.length, 0);
     }
     function test_jobActionsUseCurrentStableIdsAndCapabilities() {
         addJob("cancel-a", "queued", "Na fila", true, false, true, 0);
@@ -468,6 +540,10 @@ TestCase {
             property var jobsModel: jobs
             property int startupRetries: 0
             property var reviewedIds: []
+            property var discardedIds: []
+            property string discardConsentJobId: ""
+            property string discardConsentToken: ""
+            property int discardRevision: 0
             property string statusText: "Downloads disponíveis"
             property int unsafeCloses: 0
             property string warningText: ""
@@ -490,6 +566,25 @@ TestCase {
             function reviewFiles(jobId) {
                 reviewedIds = reviewedIds.concat([jobId]);
                 return true;
+            }
+            function requestDiscardPartials(jobId) {
+                discardConsentJobId = jobId;
+                discardConsentToken = String(++discardRevision);
+                return true;
+            }
+            function confirmDiscardPartials(jobId, token) {
+                if (jobId !== discardConsentJobId || token !== discardConsentToken || token.length === 0)
+                    return false;
+                discardConsentJobId = "";
+                discardConsentToken = "";
+                discardedIds = discardedIds.concat([jobId]);
+                return true;
+            }
+            function cancelDiscardPartialsConfirmation(jobId, token) {
+                if (jobId === discardConsentJobId && token === discardConsentToken) {
+                    discardConsentJobId = "";
+                    discardConsentToken = "";
+                }
             }
         }
     }

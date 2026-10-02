@@ -79,6 +79,14 @@ Falha tipada normal `Unreadable` continua recuperável por ação explícita. Ex
 
 Estado deste ADR permanece Aceito; ADR-0009 permanece Proposto. A integração instrumentada e seus testes não equivalem à ativação do workflow de produção, engine da Completa, host/Brave instalados ou release.
 
+### Descarte explícito sem alteração do histórico de jobs
+
+Adotar o opt-in `supportsDiscardPartials`/`startDiscardPartials` na mesma porta, sem dar autoridade destrutiva à classificação da revisão. Consentimento separado por job/token é revogável e one-shot; confirmação revalida Interrupted conhecido/controller Ready e OwnedPartial mais recente, consumindo intenção/classificação antes de admitir I/O. Nova tentativa exige revisão e consentimento novos. Revisão/descarte compartilham slot e correlação de operação/job/action, inclusive completion não observada e operações incertas preservadas para drain. Imported permanece inerte e não recebe essas ações. Violação da porta após possível admissão projeta DiscardUnconfirmed e quarentena, nunca garantia de preservação dos parciais.
+
+Worker relê o journal e valida fresh DELETE pins sob pais atuais confiáveis; só temporários correspondentes e diretório vazio são removidos por handles. Final candidato é sempre preservado, sem importação ou retomada. Discarded exige ausência física e Saved de cleanup_complete, conservando stage/provas e demais registros. Incomplete/Unconfirmed/Missing não viram sucesso por readback; nova tentativa exige novo consentimento, sem auto-retry. Não modifica estado Interrupted, checkpoint, recibos, fila ou quotas/capacidade. A saída espera teardown físico antes de destruir owners.
+
+Esta ação útil limitada não resolve importação de candidatos, capacidade/divergências, resíduos do runtime, identidade instalada ou promoção protegida de produção. Painel/serviço comuns a Lite/Completa permanecem instrumentados, sem engine na Lite; ADR-0009 continua Proposto e ferramentas/sandbox/licenças/distribuição mantêm gates próprios.
+
 ### Admissão durável assíncrona
 
 Adotar `DownloadAdmissionController` e `SingleWorkerDownloadCheckpointIo`, com portas puras de store/IO/submissão assíncrona, por implementação testada de 2026-10-02. O controller é o dono da admissão/restauração/checkpoints na thread da aplicação, enquanto controles confiáveis de job podem usar o serviço na mesma thread. Nenhum caller submete/restaura por fora desse dono. Factory/store/load/save/destruição ficam na thread C++ privada, sem Qt ou I/O síncrono na UI. Uma operação incluindo completion não observada ocupa o slot; IDs aceitos são positivos/crescentes e poll obsoleto não consome outra completion.
@@ -109,5 +117,7 @@ Para o importador, Qt Test observa append sem autoplay/backend load, estado/sele
 No modo durável, Red→Green deve exigir `Importing` até Saved matching, revisão antiga/newest, falha ambígua sem ACK por readback, retry explícito sem append, dois importadores sobre o mesmo owner, reentrância do writer/sinais e drenagem em shutdown. Core/codec cobrem quotas/scalars/IDs, migração v1→v2 e preservação de futuro; store real em TEMP próprio cobre Before/AfterCommit e restart que mantém fila+recibo juntos sem abrir candidatos. O bootstrap de processo real precisa conservar o ledger com restauração e opcionais OFF sem hidratação/autoplay. Isso não substitui composição com download real/host/browser ou smokes de distribuição.
 
 Na reconciliação estrita, Red→Green precisa provar ID confirmado com checkpoint antigo sem path, Imported sem métricas inventadas, conflitos all-or-nothing, Unconfirmed sem recibo, órfãos/namespace completo inclusive Missing e nenhum port chamado. Controller cobre fontes saudáveis/DTO inválido/backup/default/futuro, cópia detached e retry que não melhora saúde. Codec/model preservam Imported como histórico privado, sem path/ações públicas; UI instalada, ownership físico e recuperação acionável não são inferidos desses checks.
+
+Descarte exige regressões de consentimento/replay/reentrância/action matching, ausência+Saved contra remoção parcial/save ambíguo, final e arquivos desconhecidos preservados, nenhum checkpoint/job/recibo/quota alterado e saída aguardando drain. Fakes, TEMP Windows real e painel QML composto têm oráculos próprios; não substituem download remoto ou instalação.
 
 Revisar ao implementar persistência/limpeza do histórico, múltiplos workers, outro cliente autorizado ou política de retry; não alegar atendimento global de FR-051–053 apenas por estes testes.

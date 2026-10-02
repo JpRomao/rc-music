@@ -30,7 +30,8 @@ class DownloadJobsModel final : public QAbstractListModel {
         CanRetryImportRole,
         CanReviewFilesRole,
         ReviewTextRole,
-        ReviewBusyRole
+        ReviewBusyRole,
+        CanDiscardPartialsRole
     };
     Q_ENUM(Role)
 
@@ -45,7 +46,9 @@ class DownloadJobsModel final : public QAbstractListModel {
     Q_INVOKABLE bool retryImport(const QString& job_id);
     void setReviewAvailable(bool available);
     void setReviewUnavailable();
-    [[nodiscard]] bool beginReview(const QString& job_id);
+    void setDiscardSupported(bool supported);
+    [[nodiscard]] bool beginReview(const QString& job_id,
+                                   DownloadRecoveryReviewAction action = DownloadRecoveryReviewAction::ReviewFiles);
     [[nodiscard]] bool finishReview(const QString& job_id, DownloadRecoveryReviewOutcome outcome);
 
   signals:
@@ -63,6 +66,8 @@ class DownloadJobsModel final : public QAbstractListModel {
     bool refresh_requested_{false};
     bool review_available_{false};
     bool review_unavailable_{false};
+    bool discard_supported_{false};
+    DownloadRecoveryReviewAction review_action_{DownloadRecoveryReviewAction::ReviewFiles};
     QString review_job_id_{};
     QHash<QString, DownloadRecoveryReviewOutcome> reviews_{};
 };

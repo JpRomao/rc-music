@@ -37,7 +37,7 @@ constexpr auto old_job = "old-1";
 
 // Only create a new directory inside the test's own TEMP. Do not repair an
 // existing ACL, consult user configuration or install/register any component.
-bool createPrivateObject(const QString& path, const QByteArray* contents = nullptr) {
+bool createPrivateObject(const QString& path, const QByteArray* contents = nullptr, bool workspace_object = false) {
     HANDLE raw = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
         return false;
@@ -51,7 +51,9 @@ bool createPrivateObject(const QString& path, const QByteArray* contents = nullp
     if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(bytes.data())->User.Sid, &sid))
         return false;
     const auto free_sid = qScopeGuard([&] { LocalFree(sid); });
-    const auto sddl = QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;") + QString::fromWCharArray(sid) + QLatin1Char(')');
+    const auto sddl = (workspace_object ? QStringLiteral("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;")
+                                        : QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;")) +
+                      QString::fromWCharArray(sid) + QLatin1Char(')');
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
                                                               nullptr))
@@ -72,6 +74,18 @@ bool createPrivateObject(const QString& path, const QByteArray* contents = nullp
 QByteArray readOwnedFile(const QString& path) {
     QFile file{path};
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
+
+std::optional<DownloadFileIdentity> ownIdentity(const QString& path, bool directory) {
+    const download_artifacts::Handle handle{CreateFileW(
+        download_artifacts::nativePath(path).c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr)};
+    FILE_ID_INFO info{};
+    if (!handle.valid() || !download_artifacts::information(handle.get(), directory, info))
+        return std::nullopt;
+    DownloadFileIdentity identity{.volume_serial = info.VolumeSerialNumber};
+    std::copy(std::begin(info.FileId.Identifier), std::end(info.FileId.Identifier), identity.file_id.begin());
+    return identity;
 }
 
 class Platform final : public PlatformIntegration {
@@ -238,6 +252,14 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(result.has_value() || (result = review.poll(1)).has_value(), 5'000);
         QCOMPARE(result->operation_id, std::uint64_t{1});
         QCOMPARE(result->job_id, std::string{old_job});
+        QCOMPARE(int(result->outcome), expected);
+        QCOMPARE(result->action, DownloadRecoveryReviewAction::ReviewFiles);
+        QCOMPARE(review.startDiscardPartials(2, old_job), DownloadRecoveryReviewCommand::Accepted);
+        result.reset();
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value() || (result = review.poll(2)).has_value(), 5'000);
+        QCOMPARE(result->operation_id, std::uint64_t{2});
+        QCOMPARE(result->job_id, std::string{old_job});
+        QCOMPARE(result->action, DownloadRecoveryReviewAction::DiscardPartials);
         QCOMPARE(int(result->outcome), expected);
         QCOMPARE(QFile::exists(journal_path), exists);
         if (exists)
@@ -414,6 +436,194 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QVERIFY(controller.stopped());
         QCOMPARE(controller.saveStatus(), std::optional{DownloadCheckpointSaveStatus::Saved});
         QTRY_VERIFY_WITH_TIMEOUT(review.stopped(), 5'000);
+        root.reset();
+    }
+    void realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent_data() {
+        QTest::addColumn<bool>("substitute_after_consent");
+        QTest::newRow("owned-partials") << false;
+        QTest::newRow("substituted-after-consent") << true;
+    }
+    void realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent() {
+        QFETCH(bool, substitute_after_consent);
+        QTemporaryDir temporary{QDir::tempPath() + QStringLiteral("/rc-music-discard-espaço-音-XXXXXX")};
+        QVERIFY(temporary.isValid());
+        const auto documents = temporary.filePath(QStringLiteral("documents"));
+        QVERIFY(createPrivateObject(documents));
+        const WindowsDownloadWorkspaceConfig config{temporary.filePath(QStringLiteral("staging")),
+                                                    temporary.filePath(QStringLiteral("publication"))};
+        QVERIFY(QDir{}.mkdir(config.staging_parent));
+        QVERIFY(QDir{}.mkdir(config.publish_parent));
+        const std::string uuid{"01234567-89ab-4cde-8fab-0123456789ab"};
+        const auto job =
+            QDir{config.staging_parent}.filePath(QStringLiteral("rc-music-job-") + QString::fromStdString(uuid));
+        const auto input = QDir{job}.filePath(QStringLiteral("input.bin"));
+        const auto output = QDir{job}.filePath(QStringLiteral("converted.part"));
+        const QByteArray input_bytes{"owned synthetic input"}, output_bytes{"owned partial output"};
+        QVERIFY(createPrivateObject(job, nullptr, true));
+        QVERIFY(createPrivateObject(input, &input_bytes, true));
+        QVERIFY(createPrivateObject(output, &output_bytes, true));
+        const auto sibling = QDir{config.staging_parent}.filePath(QStringLiteral("not-owned.txt"));
+        const auto other_final = QDir{config.publish_parent}.filePath(QStringLiteral("other-final.mp3"));
+        const QByteArray sentinel{"preserve sibling and final byte for byte"};
+        QVERIFY(createPrivateObject(sibling, &sentinel));
+        QVERIFY(createPrivateObject(other_final, &sentinel));
+        const auto staging_id = ownIdentity(config.staging_parent, true);
+        const auto publish_id = ownIdentity(config.publish_parent, true);
+        const auto job_id = ownIdentity(job, true);
+        const auto input_id = ownIdentity(input, false);
+        const auto output_id = ownIdentity(output, false);
+        QVERIFY(staging_id && publish_id && job_id && input_id && output_id);
+        WindowsDownloadOwnershipStore ownership{documents};
+        DownloadOwnershipRecord record{
+            .job_id = old_job, .workspace_id = uuid, .staging_parent = *staging_id, .publish_parent = *publish_id};
+        QCOMPARE(ownership.record(record), DownloadCheckpointSaveStatus::Saved);
+        record.stage = DownloadOwnershipStage::WorkspaceReady;
+        record.job_directory = *job_id;
+        record.input = *input_id;
+        record.output = *output_id;
+        QCOMPARE(ownership.record(record), DownloadCheckpointSaveStatus::Saved);
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = uuid,
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {old_job},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = old_job,
+                                                      .title = "Synthetic interrupted download",
+                                                      .state = DownloadJobState::Interrupted,
+                                                      .error = DownloadFailure::Unavailable}}};
+        WindowsDownloadCheckpointStore seed{documents};
+        QCOMPARE(seed.save(checkpoint), DownloadCheckpointSaveStatus::Saved);
+        const auto checkpoint_path = QDir{documents}.filePath(QStringLiteral("download-checkpoint.json"));
+        const auto ownership_path = QDir{documents}.filePath(QStringLiteral("download-ownership.json"));
+        const auto checkpoint_before = readOwnedFile(checkpoint_path);
+        const auto ownership_before = readOwnedFile(ownership_path);
+        Platform platform;
+        Audio audio;
+        Metadata metadata;
+        PlayerPresenter presenter{platform, audio, metadata, [] { return std::vector<std::filesystem::path>{}; }};
+        ShellUiContract contract{nullptr};
+        Execution execution;
+        Importer importer;
+        Identity identity;
+        std::atomic<int> checkpoint_writes{0};
+        SingleWorkerDownloadCheckpointIo checkpoint_io{
+            [&] { return std::make_unique<ObservedCheckpointStore>(documents, checkpoint_writes); }};
+        WindowsDownloadRecoveryReview recovery{documents, config};
+        const auto fallback_drain = qScopeGuard([&] {
+            recovery.shutdown();
+            checkpoint_io.shutdown();
+        });
+        DownloadService service{execution, importer, "fresh", {}, &identity};
+        DownloadAdmissionController controller{service, checkpoint_io, SessionLoadResult{},
+                                               DownloadFinalSavePolicy::HoldForDecision};
+        DownloadApplicationBinding binding{presenter,
+                                           controller,
+                                           service,
+                                           {.shutdown = [] {}, .stopped = [] { return true; }},
+                                           {.recovery_review = &recovery}};
+        QVERIFY(binding.start());
+        QTRY_COMPARE_WITH_TIMEOUT(controller.state(), DownloadAdmissionControllerState::Ready, 5'000);
+        auto* model = binding.jobsModel();
+        const auto index = model->index(0, 0);
+        QQmlEngine engine;
+        QQmlComponent component{&engine};
+        component.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root{
+            component.createWithInitialProperties({{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
+                                                   {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
+                                                   {QStringLiteral("downloads"), QVariant::fromValue(&binding)}})};
+        QVERIFY2(root != nullptr, qPrintable(component.errorString()));
+        auto* window = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QVERIFY(click(*window, root->findChild<QQuickItem*>(QStringLiteral("downloads"))));
+        QQuickItem* review_button = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT(
+            (review_button = visualControl(window->contentItem(), QStringLiteral("download-review-files"))) &&
+                review_button->isVisible() && review_button->isEnabled(),
+            5'000);
+        QVERIFY(click(*window, review_button));
+        QTRY_VERIFY_WITH_TIMEOUT(model->data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool(), 5'000);
+        QQuickItem* discard_button = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT(
+            (discard_button = visualControl(window->contentItem(), QStringLiteral("download-discard-partials"))) &&
+                discard_button->isVisible() && discard_button->isEnabled(),
+            5'000);
+        QVERIFY(click(*window, discard_button));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.discardConsentToken().isEmpty(), 5'000);
+        const auto cancelled_token = binding.discardConsentToken();
+        QQuickItem* cancel_button = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT(
+            (cancel_button = visualControl(window->contentItem(), QStringLiteral("download-discard-cancel"))) &&
+                cancel_button->isVisible() && cancel_button->isEnabled(),
+            5'000);
+        QVERIFY(click(*window, cancel_button));
+        QTRY_VERIFY_WITH_TIMEOUT(binding.discardConsentToken().isEmpty(), 5'000);
+        QCOMPARE(readOwnedFile(input), input_bytes);
+        QCOMPARE(readOwnedFile(output), output_bytes);
+        QCOMPARE(readOwnedFile(ownership_path), ownership_before);
+        QVERIFY(!binding.confirmDiscardPartials(QString::fromLatin1(old_job), cancelled_token));
+        QVERIFY(click(*window, discard_button));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.discardConsentToken().isEmpty(), 5'000);
+        QVERIFY(binding.discardConsentToken() != cancelled_token);
+        QByteArray replacement{"unowned replacement after consent"};
+        if (substitute_after_consent) {
+            // Keep the old object alive under another leaf so its file ID cannot
+            // be recycled; the UI's preceding review/token is not a capability.
+            QVERIFY(QFile::rename(input, temporary.filePath(QStringLiteral("unowned-old-input"))));
+            QVERIFY(createPrivateObject(input, &replacement, true));
+        }
+        QQuickItem* confirm_button = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT(
+            (confirm_button = visualControl(window->contentItem(), QStringLiteral("download-discard-confirm"))) &&
+                confirm_button->isVisible() && confirm_button->isEnabled(),
+            5'000);
+        confirm_button->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY_WITH_TIMEOUT(binding.discardConsentToken().isEmpty(), 5'000);
+        QTRY_VERIFY_WITH_TIMEOUT(!model->data(index, DownloadJobsModel::ReviewBusyRole).toBool(), 5'000);
+        if (substitute_after_consent) {
+            QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
+                        .toString()
+                        .contains(QStringLiteral("conflito"), Qt::CaseInsensitive));
+            QCOMPARE(readOwnedFile(input), replacement);
+            QCOMPARE(readOwnedFile(output), output_bytes);
+            QCOMPARE(readOwnedFile(ownership_path), ownership_before);
+            QVERIFY(QDir{job}.exists());
+        } else {
+            QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
+                        .toString()
+                        .contains(QStringLiteral("descartados"), Qt::CaseInsensitive));
+            QVERIFY(!QFile::exists(input));
+            QVERIFY(!QFile::exists(output));
+            QVERIFY(!QDir{job}.exists());
+            const auto after = ownership.load();
+            QCOMPARE(after.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(after.journal && after.journal->records.size() == 1);
+            auto expected = record;
+            expected.cleanup_complete = true;
+            QCOMPARE(after.journal->records.front(), expected);
+        }
+        QCOMPARE(readOwnedFile(sibling), sentinel);
+        QCOMPARE(readOwnedFile(other_final), sentinel);
+        QCOMPARE(readOwnedFile(checkpoint_path), checkpoint_before);
+        QCOMPARE(checkpoint_writes.load(), 0);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.imports, 0);
+        QCOMPARE(audio.loads, 0);
+        QCOMPARE(audio.plays, 0);
+        QCOMPARE(metadata.reads, 0);
+        QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+        QCOMPARE(model->data(index, DownloadJobsModel::StateRole).toString(), QStringLiteral("interrupted"));
+        QVERIFY(model->data(index, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QVERIFY(!model->data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(!binding.warningText().contains(temporary.path()));
+        QVERIFY(!binding.statusText().contains(temporary.path()));
+        QVERIFY(presenter.requestExit());
+        QTRY_VERIFY_WITH_TIMEOUT((PlayerPresenterTestAccess::pollPersistence(presenter), platform.exits == 1), 5'000);
+        QVERIFY(controller.stopped());
+        QCOMPARE(controller.saveStatus(), std::optional{DownloadCheckpointSaveStatus::Saved});
+        QTRY_VERIFY_WITH_TIMEOUT(recovery.stopped(), 5'000);
         root.reset();
     }
 };

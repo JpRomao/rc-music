@@ -124,7 +124,16 @@ class Io final : public DownloadCheckpointIo {
 class Review final : public DownloadRecoveryReview {
   public:
     DownloadRecoveryReviewCommand startReview(std::uint64_t operation_id, std::string_view job_id) override {
+        return startAction(operation_id, job_id, DownloadRecoveryReviewAction::ReviewFiles);
+    }
+    DownloadRecoveryReviewCommand startDiscardPartials(std::uint64_t operation_id, std::string_view job_id) override {
+        return startAction(operation_id, job_id, DownloadRecoveryReviewAction::DiscardPartials);
+    }
+    bool supportsDiscardPartials() const override { return discard_supported; }
+    DownloadRecoveryReviewCommand startAction(std::uint64_t operation_id, std::string_view job_id,
+                                              DownloadRecoveryReviewAction action) {
         requests.emplace_back(operation_id, std::string{job_id});
+        actions.push_back(action);
         if (enforce_slot && active_operation)
             return DownloadRecoveryReviewCommand::Busy;
         if (enforce_slot && command == DownloadRecoveryReviewCommand::Accepted)
@@ -153,6 +162,7 @@ class Review final : public DownloadRecoveryReview {
         return shutdowns != 0 && physical_stopped;
     }
     std::vector<std::pair<std::uint64_t, std::string>> requests;
+    std::vector<DownloadRecoveryReviewAction> actions;
     std::vector<std::uint64_t> polled_ids;
     std::optional<DownloadRecoveryReviewResult> completion;
     DownloadRecoveryReviewCommand command{DownloadRecoveryReviewCommand::Accepted};
@@ -162,12 +172,15 @@ class Review final : public DownloadRecoveryReview {
     bool throw_poll{false};
     bool throw_probe{false};
     bool enforce_slot{false};
+    bool discard_supported{false};
     std::optional<std::uint64_t> active_operation;
     bool physical_stopped{false};
     int shutdowns{0};
     void complete(DownloadRecoveryReviewOutcome outcome) {
-        completion = DownloadRecoveryReviewResult{
-            .operation_id = requests.back().first, .job_id = requests.back().second, .outcome = outcome};
+        completion = DownloadRecoveryReviewResult{.operation_id = requests.back().first,
+                                                  .job_id = requests.back().second,
+                                                  .outcome = outcome,
+                                                  .action = actions.back()};
     }
 };
 struct Harness final {
@@ -232,6 +245,198 @@ struct Harness final {
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback() {
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto token = h.binding.discardConsentToken();
+        QCOMPARE(h.binding.discardConsentJobId(), QStringLiteral("old-1"));
+        QVERIFY(!token.isEmpty());
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-2"), token));
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token + QStringLiteral("0")));
+        QVERIFY(h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token));
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token));
+        QCOMPARE(h.review.requests.size(), std::size_t{2});
+        QCOMPARE(h.review.actions.back(), DownloadRecoveryReviewAction::DiscardPartials);
+        QVERIFY(h.review.requests.back().first > h.review.requests.front().first);
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::Discarded);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("histórico confirmado")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QVERIFY(h.reviewValue(DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.io.saves.size(), std::size_t{0});
+    }
+    void discardConsentIsRevokedByCancellationRecheckAndShutdown() {
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto first = h.binding.discardConsentToken();
+        h.binding.cancelDiscardPartialsConfirmation(QStringLiteral("old-2"), first);
+        QCOMPARE(h.binding.discardConsentToken(), first);
+        h.binding.cancelDiscardPartialsConfirmation(QStringLiteral("old-1"), first);
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), first));
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto second = h.binding.discardConsentToken();
+        QVERIFY(second != first);
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), second));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto third = h.binding.discardConsentToken();
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), third));
+        QCOMPARE(h.review.requests.size(), std::size_t{2});
+    }
+    void unavailableDiscardCapabilityNeverOffersDestructiveConsent() {
+        Harness h({}, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), QStringLiteral("1")));
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+    }
+    void uncertainDiscardUsesMutationSpecificDiagnosticAndDrainsOriginalAction_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("start accepted then throws") << 0;
+        QTest::newRow("poll throws") << 1;
+        QTest::newRow("wrong action result") << 2;
+        QTest::newRow("read-only partial outcome for discard") << 3;
+    }
+    void uncertainDiscardUsesMutationSpecificDiagnosticAndDrainsOriginalAction() {
+        QFETCH(int, fault);
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        h.review.enforce_slot = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto token = h.binding.discardConsentToken();
+        h.review.throw_start = fault == 0;
+        QCOMPARE(h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token), fault != 0);
+        if (fault != 0) {
+            h.review.complete(DownloadRecoveryReviewOutcome::Discarded);
+            h.review.throw_poll = fault == 1;
+            if (fault == 2)
+                h.review.completion->action = DownloadRecoveryReviewAction::ReviewFiles;
+            if (fault == 3)
+                h.review.completion->outcome = DownloadRecoveryReviewOutcome::OwnedPartial;
+            h.binding.poll();
+        }
+        const auto text = h.reviewValue(DownloadJobsModel::ReviewTextRole).toString();
+        QVERIFY(text.contains(QStringLiteral("não foi confirmado")));
+        QVERIFY(text.contains(QStringLiteral("Reinicie")));
+        QVERIFY(!text.contains(QStringLiteral("Tudo foi preservado")));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("dados foram preservados")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        h.review.throw_start = false;
+        h.review.throw_poll = false;
+        h.review.complete(DownloadRecoveryReviewOutcome::Discarded);
+        h.binding.poll();
+        QVERIFY(
+            h.reviewValue(DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("não foi confirmado")));
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void consentNotificationsCannotConfirmReentrantlyOrExecuteAfterNestedExit() {
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        connect(&h.binding, &DownloadApplicationBinding::discardConsentChanged, &h.binding, [&] {
+            if (!h.binding.discardConsentToken().isEmpty())
+                QVERIFY(!h.binding.confirmDiscardPartials(h.binding.discardConsentJobId(),
+                                                          h.binding.discardConsentToken()));
+        });
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto token = h.binding.discardConsentToken();
+        connect(&h.binding, &DownloadApplicationBinding::discardConsentChanged, &h.binding, [&] {
+            if (h.binding.discardConsentToken().isEmpty())
+                QVERIFY(h.presenter.requestExit());
+        });
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token));
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+        QCOMPARE(h.execution.shutdowns, 1);
+        QCOMPARE(h.review.shutdowns, 1);
+    }
+    void busyDiscardConsumesAssessmentAndRequiresFreshReadOnlyReview() {
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto token = h.binding.discardConsentToken();
+        h.review.command = DownloadRecoveryReviewCommand::Busy;
+        QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token));
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QCOMPARE(h.review.shutdowns, 0);
+        h.review.command = DownloadRecoveryReviewCommand::Accepted;
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        QVERIFY(h.binding.discardConsentToken() != token);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void cancellationConsentNotificationResumesNestedShutdown() {
+        Harness h({}, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.binding.poll();
+        QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        const auto token = h.binding.discardConsentToken();
+        connect(&h.binding, &DownloadApplicationBinding::discardConsentChanged, &h.binding, [&] {
+            if (h.binding.discardConsentToken().isEmpty())
+                QVERIFY(h.presenter.requestExit());
+        });
+        h.binding.cancelDiscardPartialsConfirmation(QStringLiteral("old-1"), token);
+        QVERIFY(h.binding.discardConsentToken().isEmpty());
+        QCOMPARE(h.review.requests.size(), std::size_t{1});
+        QCOMPARE(h.execution.shutdowns, 1);
+        QCOMPARE(h.review.shutdowns, 1);
+    }
     void explicitReviewProjectsMatchedOutcomeWithoutChangingTheJobOrPlayback() {
         Harness h({}, true);
         QVERIFY(h.interrupted());

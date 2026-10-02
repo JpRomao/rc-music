@@ -17,6 +17,7 @@ namespace music_player::m0 {
 namespace {
 using download_artifacts::Handle;
 using Assessment = DownloadOwnershipAssessment;
+using DiscardOutcome = DownloadOwnershipDiscardOutcome;
 constexpr std::uint64_t maximum_workspace_bytes = 512ULL * 1024 * 1024;
 
 enum class OpenState { Present, Missing, Conflict, Unreadable };
@@ -34,13 +35,18 @@ bool matches(const FILE_ID_INFO& actual, const DownloadFileIdentity& expected) n
            std::memcmp(actual.FileId.Identifier, expected.file_id.data(), expected.file_id.size()) == 0;
 }
 
-Object observe(const QString& path, const bool directory) {
+Object observe(const QString& path, const bool directory, const bool delete_access = false) {
     const DWORD access =
-        directory ? FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | READ_CONTROL : GENERIC_READ | READ_CONTROL;
+        (directory ? FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | READ_CONTROL : GENERIC_READ | READ_CONTROL) |
+        (delete_access ? DELETE : 0);
+    // NTFS directory enumeration/child deletion needs the owned job pin to
+    // share DELETE. File pins remain share-READ-only, excluding writers and
+    // replacement/deletion while the entire workspace is verified.
+    const DWORD sharing = FILE_SHARE_READ | (directory && delete_access ? FILE_SHARE_DELETE : 0);
     const DWORD flags =
         FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : FILE_FLAG_SEQUENTIAL_SCAN);
     Object object;
-    object.handle = Handle(CreateFileW(download_artifacts::nativePath(path).c_str(), access, FILE_SHARE_READ, nullptr,
+    object.handle = Handle(CreateFileW(download_artifacts::nativePath(path).c_str(), access, sharing, nullptr,
                                        OPEN_EXISTING, flags, nullptr));
     if (!object.handle.valid()) {
         const auto error = GetLastError();
@@ -175,7 +181,7 @@ class PrivateSecurity final {
     PSID user_sid_{nullptr};
 };
 
-OpenState knownChildrenOnly(const QString& job_path) {
+OpenState knownChildrenOnly(const QString& job_path, const bool require_empty = false) {
     WIN32_FIND_DATAW entry{};
     const auto pattern = download_artifacts::nativePath(job_path + QStringLiteral("/*"));
     const auto raw = FindFirstFileW(pattern.c_str(), &entry);
@@ -187,8 +193,8 @@ OpenState knownChildrenOnly(const QString& job_path) {
     } search{raw};
     for (;;) {
         const auto name = QString::fromWCharArray(entry.cFileName);
-        if (name != QStringLiteral(".") && name != QStringLiteral("..") && name != QStringLiteral("input.bin") &&
-            name != QStringLiteral("converted.part"))
+        if (name != QStringLiteral(".") && name != QStringLiteral("..") &&
+            (require_empty || (name != QStringLiteral("input.bin") && name != QStringLiteral("converted.part"))))
             return OpenState::Conflict;
         if (!FindNextFileW(raw, &entry))
             return GetLastError() == ERROR_NO_MORE_FILES ? OpenState::Present : OpenState::Unreadable;
@@ -246,7 +252,18 @@ OpenState hashMatches(const Object& object, const DownloadOwnershipRecord& recor
                                                                                     : OpenState::Conflict;
 }
 
-Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record) {
+struct Workspace final {
+    Parent staging{}, publication{};
+    PrivateSecurity security{};
+    Object job{}, input{}, output{}, final{};
+    QString job_path{}, input_path{}, output_path{}, final_path{};
+};
+
+// Shared fresh proof, with all handles kept alive in the caller's workspace.
+// A writable proof grants DELETE only to the owned job and temporary files;
+// assessment and the publication candidate always remain read-only.
+Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
+                          Workspace& workspace, const bool delete_access = false) {
     QString staging_path;
     QString publication_path;
     if (!validDownloadOwnershipRecord(record) || record.stage == DownloadOwnershipStage::Planned ||
@@ -255,8 +272,8 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         !download_artifacts::validPath(config.publish_parent, publication_path))
         return Assessment::Unverified;
 
-    Parent staging;
-    Parent publication;
+    auto& staging = workspace.staging;
+    auto& publication = workspace.publication;
     auto state = pinParent(staging_path, staging);
     if (state != OpenState::Present)
         return failure(state);
@@ -268,15 +285,19 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         staging.leaf.identity.VolumeSerialNumber != publication.leaf.identity.VolumeSerialNumber)
         return Assessment::Conflict;
 
-    PrivateSecurity security;
+    auto& security = workspace.security;
     if (!security.initialize())
         return Assessment::Unreadable;
     const auto uuid =
         QString::fromLatin1(record.workspace_id.data(), static_cast<qsizetype>(record.workspace_id.size()));
     const auto job_leaf = QStringLiteral("rc-music-job-") + uuid;
-    const auto job_path = staging_path + QLatin1Char('/') + job_leaf;
+    workspace.job_path = staging_path + QLatin1Char('/') + job_leaf;
+    const auto& job_path = workspace.job_path;
+    workspace.input_path = job_path + QStringLiteral("/input.bin");
+    workspace.output_path = job_path + QStringLiteral("/converted.part");
     const auto job_canonical = staging.leaf.canonical + QLatin1Char('\\') + job_leaf;
-    auto job = observe(job_path, true);
+    auto& job = workspace.job;
+    job = observe(job_path, true, delete_access);
     state = verifyObject(job, *record.job_directory, job_canonical, security);
     if (state != OpenState::Present && state != OpenState::Missing)
         return failure(state);
@@ -286,14 +307,16 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
             return failure(state);
     }
 
-    Object input;
-    Object output;
+    auto& input = workspace.input;
+    auto& output = workspace.output;
     if (job.state == OpenState::Present) {
-        input = observe(job_path + QStringLiteral("/input.bin"), false);
-        output = observe(job_path + QStringLiteral("/converted.part"), false);
+        input = observe(workspace.input_path, false, delete_access);
+        output = observe(workspace.output_path, false, delete_access);
     }
     const auto final_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
-    auto final = observe(publication_path + QLatin1Char('/') + final_leaf, false);
+    workspace.final_path = publication_path + QLatin1Char('/') + final_leaf;
+    auto& final = workspace.final;
+    final = observe(workspace.final_path, false);
     for (const auto item : {std::pair{&input, &*record.input}, std::pair{&output, &*record.output}}) {
         const auto leaf = item.first == &input ? QStringLiteral("input.bin") : QStringLiteral("converted.part");
         state = verifyObject(*item.first, *item.second, job_canonical + QLatin1Char('\\') + leaf, security);
@@ -359,14 +382,94 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
                ? Assessment::OwnedPartial
                : Assessment::Missing;
 }
+
+DiscardOutcome refusedDiscard(const Assessment assessment) noexcept {
+    switch (assessment) {
+    case Assessment::Unverified:
+        return DiscardOutcome::Unverified;
+    case Assessment::OwnedFinalCandidate:
+        return DiscardOutcome::OwnedFinalCandidate;
+    case Assessment::Missing:
+        return DiscardOutcome::Missing;
+    case Assessment::Conflict:
+        return DiscardOutcome::Conflict;
+    case Assessment::Unreadable:
+        return DiscardOutcome::Unreadable;
+    case Assessment::OwnedPartial:
+        break;
+    }
+    return DiscardOutcome::Unverified;
+}
+
+bool eraseOwned(Object& object, const QString& path, const bool directory) {
+    if (object.state == OpenState::Missing)
+        return true;
+    if (unchanged(object, directory) != OpenState::Present)
+        return false;
+    FILE_DISPOSITION_INFO disposition{TRUE};
+    if (!SetFileInformationByHandle(object.handle.get(), FileDispositionInfo, &disposition, sizeof(disposition)))
+        return false;
+    // Delete-on-close alone is not success: an external delete-sharing reader
+    // can keep the object pending. Require observable absence after closing.
+    object.handle = Handle{};
+    if (observe(path, directory).state != OpenState::Missing)
+        return false;
+    object.state = OpenState::Missing;
+    return true;
+}
+
+bool removedUnderPinnedParents(const Workspace& workspace) {
+    return unchanged(workspace.staging.leaf, true) == OpenState::Present &&
+           unchanged(workspace.publication.leaf, true) == OpenState::Present &&
+           observe(workspace.job_path, true).state == OpenState::Missing &&
+           observe(workspace.input_path, false).state == OpenState::Missing &&
+           observe(workspace.output_path, false).state == OpenState::Missing &&
+           observe(workspace.final_path, false).state == OpenState::Missing;
+}
 } // namespace
 
 DownloadOwnershipAssessment WindowsDownloadOwnershipRecovery::assess(const WindowsDownloadWorkspaceConfig& config,
                                                                      const DownloadOwnershipRecord& record) noexcept {
     try {
-        return assessExisting(config, record);
+        Workspace workspace;
+        return assessExisting(config, record, workspace);
     } catch (...) {
         return DownloadOwnershipAssessment::Unreadable;
+    }
+}
+
+DownloadOwnershipDiscardOutcome
+WindowsDownloadOwnershipRecovery::discardPartials(const WindowsDownloadWorkspaceConfig& config,
+                                                  const DownloadOwnershipRecord& record,
+                                                  DownloadOwnershipStore& store) noexcept {
+    bool mutation_started = false;
+    bool physically_removed = false;
+    try {
+        Workspace workspace;
+        const auto assessment = assessExisting(config, record, workspace, true);
+        if (assessment != Assessment::OwnedPartial)
+            return refusedDiscard(assessment);
+        auto cleaned = record;
+        cleaned.cleanup_complete = true;
+        mutation_started = true;
+        if (!eraseOwned(workspace.input, workspace.input_path, false) ||
+            !eraseOwned(workspace.output, workspace.output_path, false))
+            return DiscardOutcome::Incomplete;
+        if (workspace.job.state == OpenState::Present &&
+            (workspace.security.check(workspace.job.handle.get()) != OpenState::Present ||
+             knownChildrenOnly(workspace.job_path, true) != OpenState::Present))
+            return DiscardOutcome::Incomplete;
+        if (!eraseOwned(workspace.job, workspace.job_path, true) || !removedUnderPinnedParents(workspace))
+            return DiscardOutcome::Incomplete;
+        physically_removed = true;
+        // This exact acknowledgement, not a subsequent load/readback, is the
+        // only durable success. Pins outlive it. Never retry an ambiguous save.
+        return store.record(cleaned) == DownloadCheckpointSaveStatus::Saved ? DiscardOutcome::Discarded
+                                                                            : DiscardOutcome::Unconfirmed;
+    } catch (...) {
+        return physically_removed ? DiscardOutcome::Unconfirmed
+               : mutation_started ? DiscardOutcome::Incomplete
+                                  : DiscardOutcome::Unreadable;
     }
 }
 } // namespace music_player::m0

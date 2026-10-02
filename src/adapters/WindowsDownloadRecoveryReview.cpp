@@ -17,10 +17,13 @@ bool validJob(std::string_view id) {
                ch == '-';
     });
 }
-DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewOutcome outcome) {
+DownloadRecoveryReviewOutcome uncertain(DownloadRecoveryReviewAction action) {
+    return action == DownloadRecoveryReviewAction::DiscardPartials ? DownloadRecoveryReviewOutcome::DiscardUnconfirmed
+                                                                   : DownloadRecoveryReviewOutcome::Unreadable;
+}
+DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewAction action, DownloadRecoveryReviewOutcome outcome) {
     switch (outcome) {
     case DownloadRecoveryReviewOutcome::Unverified:
-    case DownloadRecoveryReviewOutcome::OwnedPartial:
     case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
     case DownloadRecoveryReviewOutcome::Missing:
     case DownloadRecoveryReviewOutcome::Conflict:
@@ -29,11 +32,17 @@ DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewOutcome outcome) {
     case DownloadRecoveryReviewOutcome::HistoryInvalid:
     case DownloadRecoveryReviewOutcome::HistoryFuture:
         return outcome;
+    case DownloadRecoveryReviewOutcome::OwnedPartial:
+        return action == DownloadRecoveryReviewAction::ReviewFiles ? outcome : uncertain(action);
+    case DownloadRecoveryReviewOutcome::Discarded:
+    case DownloadRecoveryReviewOutcome::DiscardIncomplete:
+    case DownloadRecoveryReviewOutcome::DiscardUnconfirmed:
+        return action == DownloadRecoveryReviewAction::DiscardPartials ? outcome : uncertain(action);
     }
-    return DownloadRecoveryReviewOutcome::Unreadable;
+    return uncertain(action);
 }
 DownloadRecoveryReviewOutcome assess(DownloadOwnershipStore& store, const WindowsDownloadWorkspaceConfig& config,
-                                     std::string_view job_id) {
+                                     DownloadRecoveryReviewAction action, std::string_view job_id) {
     const auto loaded = store.load();
     if (loaded.status != DownloadCheckpointLoadStatus::Loaded && loaded.journal)
         return DownloadRecoveryReviewOutcome::Unreadable;
@@ -58,6 +67,27 @@ DownloadRecoveryReviewOutcome assess(DownloadOwnershipStore& store, const Window
         std::find_if(records.begin(), records.end(), [&](const auto& item) { return item.job_id == job_id; });
     if (found == records.end())
         return DownloadRecoveryReviewOutcome::Unverified;
+    if (action == DownloadRecoveryReviewAction::DiscardPartials) {
+        switch (WindowsDownloadOwnershipRecovery::discardPartials(config, *found, store)) {
+        case DownloadOwnershipDiscardOutcome::Discarded:
+            return DownloadRecoveryReviewOutcome::Discarded;
+        case DownloadOwnershipDiscardOutcome::Missing:
+            return DownloadRecoveryReviewOutcome::Missing;
+        case DownloadOwnershipDiscardOutcome::Unverified:
+            return DownloadRecoveryReviewOutcome::Unverified;
+        case DownloadOwnershipDiscardOutcome::OwnedFinalCandidate:
+            return DownloadRecoveryReviewOutcome::OwnedFinalCandidate;
+        case DownloadOwnershipDiscardOutcome::Conflict:
+            return DownloadRecoveryReviewOutcome::Conflict;
+        case DownloadOwnershipDiscardOutcome::Unreadable:
+            return DownloadRecoveryReviewOutcome::Unreadable;
+        case DownloadOwnershipDiscardOutcome::Incomplete:
+            return DownloadRecoveryReviewOutcome::DiscardIncomplete;
+        case DownloadOwnershipDiscardOutcome::Unconfirmed:
+            return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+        }
+        return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+    }
     switch (WindowsDownloadOwnershipRecovery::assess(config, *found)) {
     case DownloadOwnershipAssessment::Unverified:
         return DownloadRecoveryReviewOutcome::Unverified;
@@ -80,6 +110,7 @@ struct WindowsDownloadRecoveryReview::Impl final {
     struct Request final {
         std::uint64_t operation_id{};
         std::string job_id{};
+        DownloadRecoveryReviewAction action{DownloadRecoveryReviewAction::ReviewFiles};
     };
     explicit Impl(Factory factory) : worker([this, factory = std::move(factory)]() mutable { run(factory); }) {}
     ~Impl() {
@@ -96,7 +127,8 @@ struct WindowsDownloadRecoveryReview::Impl final {
             return DownloadRecoveryReviewCommand::InvalidRequest;
         return DownloadRecoveryReviewCommand::Accepted;
     }
-    DownloadRecoveryReviewCommand startReview(std::uint64_t id, std::string_view job_id) {
+    DownloadRecoveryReviewCommand start(std::uint64_t id, std::string_view job_id,
+                                        DownloadRecoveryReviewAction action) {
         {
             const std::scoped_lock lock(mutex);
             const auto command = admission(id);
@@ -104,7 +136,7 @@ struct WindowsDownloadRecoveryReview::Impl final {
                 return command;
             if (!validJob(job_id))
                 return DownloadRecoveryReviewCommand::InvalidRequest;
-            pending = Request{id, std::string{job_id}};
+            pending = Request{id, std::string{job_id}, action};
             last_id = id;
         }
         condition.notify_one();
@@ -128,7 +160,7 @@ struct WindowsDownloadRecoveryReview::Impl final {
         return drained;
     }
     static DownloadRecoveryReviewResult failure(const Request& request) {
-        return {request.operation_id, request.job_id, DownloadRecoveryReviewOutcome::Unreadable};
+        return {request.operation_id, request.job_id, DownloadRecoveryReviewOutcome::Unreadable, request.action};
     }
     void run(Factory& factory) {
         Work work;
@@ -166,9 +198,10 @@ struct WindowsDownloadRecoveryReview::Impl final {
             auto result = failure(request);
             try {
                 if (!cancel_before_io && work)
-                    result.outcome = checked(work(request.job_id));
+                    result.outcome = checked(request.action, work(request.action, request.job_id));
             } catch (...) {
                 // Preserve only a closed failure code, not native error/path.
+                result.outcome = uncertain(request.action);
             }
             {
                 const std::scoped_lock lock(mutex);
@@ -198,13 +231,19 @@ WindowsDownloadRecoveryReview::WindowsDownloadRecoveryReview(QString journal_dir
                                                              WindowsDownloadWorkspaceConfig config)
     : WindowsDownloadRecoveryReview([directory = std::move(journal_directory), config = std::move(config)] {
           auto store = std::make_shared<WindowsDownloadOwnershipStore>(directory);
-          return [store = std::move(store), config](std::string_view id) { return assess(*store, config, id); };
+          return [store = std::move(store), config](DownloadRecoveryReviewAction action, std::string_view id) {
+              return assess(*store, config, action, id);
+          };
       }) {}
 WindowsDownloadRecoveryReview::WindowsDownloadRecoveryReview(Factory factory)
     : impl_(std::make_unique<Impl>(std::move(factory))) {}
 WindowsDownloadRecoveryReview::~WindowsDownloadRecoveryReview() = default;
 DownloadRecoveryReviewCommand WindowsDownloadRecoveryReview::startReview(std::uint64_t id, std::string_view job_id) {
-    return impl_->startReview(id, job_id);
+    return impl_->start(id, job_id, DownloadRecoveryReviewAction::ReviewFiles);
+}
+DownloadRecoveryReviewCommand WindowsDownloadRecoveryReview::startDiscardPartials(std::uint64_t id,
+                                                                                  std::string_view job_id) {
+    return impl_->start(id, job_id, DownloadRecoveryReviewAction::DiscardPartials);
 }
 std::optional<DownloadRecoveryReviewResult> WindowsDownloadRecoveryReview::poll(std::uint64_t id) {
     return impl_->poll(id);

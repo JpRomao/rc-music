@@ -1243,6 +1243,14 @@
         },
         {
           "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
+          "marker": "realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
           "marker": "realMainReviewsOwnedFinalAndRechecksChangedBytesWithoutImporting"
         },
         {
@@ -1558,6 +1566,58 @@
         {
           "path": "tests/qt/WindowsDownloadRecoveryReviewTests.cpp",
           "marker": "shutdown_does_not_wait_or_acknowledge_while_read_is_active"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadRecoveryReviewTests.cpp",
+          "marker": "discard_runs_privately_and_shares_the_review_slot_until_result_is_observed"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp",
+          "marker": "discardOwnedPartialsRemovesRealObjectsBeforeDurableConfirmation"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp",
+          "marker": "discardFinalCandidateRefusesTheEntireOperation"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp",
+          "marker": "discardRequiresSavedNotAReadableCommitAfterRemoval"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp",
+          "marker": "discardDeletePendingIsNotPhysicalCompletionBeforeExternalReaderCloses"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp",
+          "marker": "discardRealStoreSeparatesPhysicalRemovalFromJournalAcknowledgement"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "discardConsentIsRevokedByCancellationRecheckAndShutdown"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "uncertainDiscardUsesMutationSpecificDiagnosticAndDrainsOriginalAction"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "busyDiscardConsumesAssessmentAndRequiresFreshReadOnlyReview"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
+          "marker": "cancellationConsentNotificationResumesNestedShutdown"
+        },
+        {
+          "path": "tests/qt/DownloadJobsModelTests.cpp",
+          "marker": "discardCapabilityNeedsOwnPartialsAndConsumesTheirOldAssessment"
+        },
+        {
+          "path": "tests/ui/quick/tst_downloads.qml",
+          "marker": "test_partialDiscardRequiresSeparateConsentAndPreservesFinalAdvice"
+        },
+        {
+          "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
+          "marker": "realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent"
         },
         {
           "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",

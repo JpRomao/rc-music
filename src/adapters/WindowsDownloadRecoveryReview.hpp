@@ -9,12 +9,14 @@
 namespace music_player::m0 {
 
 // The production constructor owns detached trusted configuration, not paths
-// from a checkpoint/page/QML. All load/assessment and resource teardown occur
-// on one private thread, lazily after explicit startReview. No filesystem
-// creation, permission repair, saving, cleanup or import is performed here.
+// from a checkpoint/page/QML. A private thread exists after construction, but
+// factory/load/actions run only after an explicit operation. Work/factory
+// resources are destroyed there before stopped. Review is read-only;
+// separately requested discard freshly verifies and removes only owned partials,
+// then acknowledges the journal. No creation, permission repair or import.
 class WindowsDownloadRecoveryReview final : public DownloadRecoveryReview {
   public:
-    using Work = std::function<DownloadRecoveryReviewOutcome(std::string_view)>;
+    using Work = std::function<DownloadRecoveryReviewOutcome(DownloadRecoveryReviewAction, std::string_view)>;
     using Factory = std::function<Work()>;
     WindowsDownloadRecoveryReview(QString journal_directory, WindowsDownloadWorkspaceConfig config);
     // Deterministic contract seam. Factory/work/captures are private-worker
@@ -25,6 +27,9 @@ class WindowsDownloadRecoveryReview final : public DownloadRecoveryReview {
     WindowsDownloadRecoveryReview& operator=(const WindowsDownloadRecoveryReview&) = delete;
     [[nodiscard]] DownloadRecoveryReviewCommand startReview(std::uint64_t operation_id,
                                                             std::string_view job_id) override;
+    [[nodiscard]] bool supportsDiscardPartials() const override { return true; }
+    [[nodiscard]] DownloadRecoveryReviewCommand startDiscardPartials(std::uint64_t operation_id,
+                                                                     std::string_view job_id) override;
     [[nodiscard]] std::optional<DownloadRecoveryReviewResult> poll(std::uint64_t operation_id) override;
     void shutdown() override;
     [[nodiscard]] bool stopped() const override;

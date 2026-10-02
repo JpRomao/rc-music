@@ -67,3 +67,7 @@ FR-051/FR-053 também vinculam recusa do segundo servidor/processo, aliases de c
 ## Revisão explícita dos arquivos interrompidos
 
 FR-051/FR-053 acrescentam vínculos para revisão correlacionada por ID, slot incluindo completion não observada, worker/parada física, projeção segura e ação explícita por teclado. A composição QML usa painel/binding/model/controller/service reais e worker Windows sobre TEMP próprio; um resultado de ownership não autoriza importação/exclusão/retomada nem muda o histórico Interrupted. [O contrato de revisão](../download-ownership.md#revisão-explícita-assíncrona) mantém produção remota OFF e separa presença de testes dos resultados executados no checkpoint. Nenhum estado de requisito ou gate amplo foi promovido.
+
+## Descarte confirmado de temporários interrompidos
+
+FR-051/FR-053 acrescentam markers literais de consentimento job/token one-shot, slot/action matching, fresh proof por DELETE handles, ausência física+Saved, final preservado e ambiguidade de remoção/save. O painel real composto tem casos de confirmação e substituição dos objetos após consentimento; fakes e TEMP Windows reais continuam evidências separadas. [O contrato limitado](../download-ownership.md#descarte-explícito-somente-de-temporários) não altera Interrupted/checkpoint/recibos/quotas; não importa candidatos ou ativa produção remota. Estados dos requisitos e evidências anteriores permanecem intactos; existência desses vínculos não anuncia execução nem aprovação de checks/release.

@@ -14,6 +14,7 @@ class DownloadAdmissionController;
 class DownloadService;
 class DownloadRecoveryReview;
 enum class ExitPreparationState;
+enum class DownloadRecoveryReviewAction;
 
 struct DownloadExecutionDrainCallbacks final {
     std::function<void()> shutdown{};
@@ -42,6 +43,8 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(bool canRetryAdmission READ canRetryAdmission NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryFinalSave READ canRetryFinalSave NOTIFY stateChanged)
     Q_PROPERTY(bool canCloseAfterFinalSaveFailure READ canCloseAfterFinalSaveFailure NOTIFY stateChanged)
+    Q_PROPERTY(QString discardConsentJobId READ discardConsentJobId NOTIFY discardConsentChanged)
+    Q_PROPERTY(QString discardConsentToken READ discardConsentToken NOTIFY discardConsentChanged)
 
   public:
     DownloadApplicationBinding(PlayerPresenter& presenter, DownloadAdmissionController& controller,
@@ -55,6 +58,8 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canRetryAdmission() const;
     [[nodiscard]] bool canRetryFinalSave() const;
     [[nodiscard]] bool canCloseAfterFinalSaveFailure() const;
+    [[nodiscard]] QString discardConsentJobId() const;
+    [[nodiscard]] QString discardConsentToken() const;
     // Trusted composition only, not exposed to QML. poll is deterministic when
     // automatic_polling is false. Neither method admits remote requests.
     [[nodiscard]] bool start();
@@ -67,15 +72,22 @@ class DownloadApplicationBinding final : public QObject {
     // permits explicit recheck; an uncertain/broken port is retired until a new
     // owner is composed, preserving its original operation for physical drain.
     Q_INVOKABLE bool reviewFiles(const QString& job_id);
+    Q_INVOKABLE bool requestDiscardPartials(const QString& job_id);
+    Q_INVOKABLE bool confirmDiscardPartials(const QString& job_id, const QString& token);
+    Q_INVOKABLE void cancelDiscardPartialsConfirmation(const QString& job_id, const QString& token);
 
   signals:
     void stateChanged();
+    void discardConsentChanged();
 
   private:
     void beginShutdown();
     void shutdownReview();
     void pollReview();
     void failReview();
+    void invalidateDiscardConsent();
+    [[nodiscard]] bool canDiscardForJob(const QString& job_id) const;
+    [[nodiscard]] bool startReviewAction(const QString& job_id, DownloadRecoveryReviewAction action);
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     void refreshProjection();
     [[nodiscard]] bool performControl(const std::function<bool()>& action);
