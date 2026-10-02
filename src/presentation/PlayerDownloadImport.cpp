@@ -1,0 +1,176 @@
+#include "presentation/PlayerDownloadImport.hpp"
+
+#include "presentation/PlayerPresenter.hpp"
+
+#include <QPointer>
+#include <QScopedValueRollback>
+#include <QString>
+#include <QThread>
+
+#include <algorithm>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+
+namespace music_player::m0 {
+namespace {
+
+constexpr std::size_t max_id_bytes = 64;
+constexpr std::size_t max_native_path_units = 30'000;
+
+bool validId(const std::string_view id) {
+    return !id.empty() && id.size() <= max_id_bytes && std::ranges::all_of(id, [](const char value) {
+        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') ||
+               value == '_' || value == '-';
+    });
+}
+
+template <typename Character> Character asciiLower(const Character value) {
+    return value >= 'A' && value <= 'Z' ? static_cast<Character>(value + ('a' - 'A')) : value;
+}
+
+#ifdef Q_OS_WIN
+bool windowsSeparator(const wchar_t value) { return value == L'/' || value == L'\\'; }
+
+bool reservedWindowsComponent(const std::wstring_view component) {
+    const auto stem = component.substr(0, component.find(L'.'));
+    const auto equals = [stem](const std::wstring_view name) {
+        return stem.size() == name.size() &&
+               std::ranges::equal(stem, name,
+                                  [](const wchar_t left, const wchar_t right) { return asciiLower(left) == right; });
+    };
+    if (equals(L"con") || equals(L"prn") || equals(L"aux") || equals(L"nul"))
+        return true;
+    if (stem.size() != 4)
+        return false;
+    const auto prefix = stem.substr(0, 3);
+    const bool serial = asciiLower(prefix[0]) == L'c' && asciiLower(prefix[1]) == L'o' && asciiLower(prefix[2]) == L'm';
+    const bool printer =
+        asciiLower(prefix[0]) == L'l' && asciiLower(prefix[1]) == L'p' && asciiLower(prefix[2]) == L't';
+    const wchar_t suffix = stem[3];
+    return (serial || printer) &&
+           ((suffix >= L'1' && suffix <= L'9') || suffix == L'\u00b9' || suffix == L'\u00b2' || suffix == L'\u00b3');
+}
+
+bool validWindowsPath(const std::wstring& native) {
+    const QString text = QString::fromStdWString(native);
+    if (!text.isValidUtf16() || text.toStdWString() != native || native.size() < 3 ||
+        !((native[0] >= L'a' && native[0] <= L'z') || (native[0] >= L'A' && native[0] <= L'Z')) || native[1] != L':' ||
+        !windowsSeparator(native[2]))
+        return false;
+    for (std::size_t index = 3; index < native.size(); ++index) {
+        const wchar_t value = native[index];
+        if (value < L' ' || value == L':' || value == L'<' || value == L'>' || value == L'"' || value == L'|' ||
+            value == L'?' || value == L'*')
+            return false;
+    }
+    std::size_t begin = 3;
+    while (begin < native.size()) {
+        auto end = begin;
+        while (end < native.size() && !windowsSeparator(native[end]))
+            ++end;
+        if (end == begin || native[end - 1] == L'.' || native[end - 1] == L' ' ||
+            reservedWindowsComponent(std::wstring_view{native}.substr(begin, end - begin)))
+            return false;
+        begin = end + 1;
+    }
+    return true;
+}
+#endif
+
+bool validPublishedPath(const std::filesystem::path& path) {
+    const auto& native = path.native();
+    if (native.empty() || native.size() > max_native_path_units || !path.is_absolute() ||
+        path != path.lexically_normal() || std::ranges::find(native, 0) != native.end())
+        return false;
+    auto extension = path.extension().native();
+    std::ranges::transform(extension, extension.begin(), [](const auto value) { return asciiLower(value); });
+    if (extension != std::filesystem::path{".mp3"}.native())
+        return false;
+#ifdef Q_OS_WIN
+    return validWindowsPath(native);
+#else
+    const auto text = QString::fromUtf8(native.data(), static_cast<qsizetype>(native.size()));
+    return text.toUtf8().toStdString() == native;
+#endif
+}
+
+} // namespace
+
+struct PlayerDownloadImport::Impl final {
+    struct Receipt final {
+        std::filesystem::path path;
+        bool committed{false};
+    };
+    QPointer<PlayerPresenter> presenter;
+    QThread* const owner_thread;
+    const PlayerDownloadImportLimits limits;
+    std::unordered_map<std::string, Receipt> receipts{};
+    std::size_t retained_bytes{0};
+    bool calling_presenter{false};
+
+    Impl(PlayerPresenter& owner, const PlayerDownloadImportLimits caps)
+        : presenter(&owner), owner_thread(owner.thread()), limits(caps) {}
+};
+
+PlayerDownloadImport::PlayerDownloadImport(PlayerPresenter& presenter, const PlayerDownloadImportLimits limits)
+    : impl_(std::make_unique<Impl>(presenter, limits)) {}
+PlayerDownloadImport::~PlayerDownloadImport() = default;
+
+bool PlayerDownloadImport::accept(const std::string& job_id, const std::filesystem::path& mp3_path) {
+    auto& state = *impl_;
+    // Check the immutable owner identity before touching QPointer or receipt state.
+    // This port is application-thread-owned, not a cross-thread command queue.
+    if (QThread::currentThread() != state.owner_thread)
+        return false;
+    auto receipt = state.receipts.end();
+    const auto release_uncommitted = [&] {
+        if (receipt == state.receipts.end() || receipt->second.committed)
+            return;
+        state.retained_bytes -=
+            receipt->first.size() + receipt->second.path.native().size() * sizeof(std::filesystem::path::value_type);
+        state.receipts.erase(receipt);
+        receipt = state.receipts.end();
+    };
+    try {
+        if (!state.presenter || state.presenter->thread() != state.owner_thread || !validId(job_id) ||
+            !validPublishedPath(mp3_path))
+            return false;
+        receipt = state.receipts.find(job_id);
+        if (receipt != state.receipts.end()) {
+            if (receipt->second.path != mp3_path)
+                return false;
+            // The presenter records commitment before its first observable signal.
+            // Reentrant replay may acknowledge it without recursing into the queue.
+            if (receipt->second.committed)
+                return true;
+        }
+        if (state.calling_presenter)
+            return false;
+        if (receipt == state.receipts.end()) {
+            const auto path_bytes = mp3_path.native().size() * sizeof(std::filesystem::path::value_type);
+            if (state.receipts.size() >= state.limits.max_receipts || job_id.size() > state.limits.max_retained_bytes ||
+                path_bytes > state.limits.max_retained_bytes - job_id.size())
+                return false;
+            const auto bytes = job_id.size() + path_bytes;
+            if (state.retained_bytes > state.limits.max_retained_bytes - bytes)
+                return false;
+            receipt = state.receipts.emplace(job_id, Impl::Receipt{mp3_path}).first;
+            state.retained_bytes += bytes;
+        }
+        const QScopedValueRollback guard(state.calling_presenter, true);
+        const bool accepted = state.presenter->appendPublishedAudio(receipt->second.path, receipt->second.committed);
+        if (!receipt->second.committed) {
+            release_uncommitted();
+            return false;
+        }
+        return accepted;
+    } catch (...) {
+        // Preparation/ordinary refusal cannot reserve capacity forever. The
+        // presenter promises no queue mutation unless it set commitment; retain
+        // only committed receipts, even if a later observer threw.
+        release_uncommitted();
+        return false;
+    }
+}
+} // namespace music_player::m0

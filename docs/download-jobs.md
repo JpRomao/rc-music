@@ -1,6 +1,6 @@
 # Coordenação opcional de downloads
 
-**Estado:** incremento R1.8 em desenvolvimento; sem rede, conversor, tela QML ligada ao player ou host instalado.
+**Estado:** incremento R1.8 em desenvolvimento. Coordenação, execução Windows opcional e importação local têm componentes próprios; ainda sem workflow de download ligado ao player, tela QML de jobs ou host instalado.
 
 Contratos: [requisitos FR-051–053](product/requirements.md#26-extensões-navegação-e-fontes-remotas-planejadas), [ADR-0008](architecture/decisions/0008-download-job-service.md), [avaliação de execução ADR-0009](architecture/decisions/0009-download-execution-backends.md). O pedido completo continua incluindo downloads reais/conversão/importação, ambas as edições e instaladores; esta camada não os substitui.
 
@@ -10,15 +10,31 @@ Contratos: [requisitos FR-051–053](product/requirements.md#26-extensões-naveg
 
 Admissão copia o lote inteiro e não inicia I/O. O serviço conserva recibos, sem expulsão, até ser destruído; limita inicialmente 128 jobs, 64 pedidos e 1 MiB de strings de pedidos (ID/URLs/títulos, não o overhead de containers/snapshots). Ao atingir um teto, recusa novas admissões sem perder as anteriores. Esses limites são ajustáveis por composição confiável, não por mensagem da página. Ainda falta a persistência/limpeza limitada de histórico para recuperação após restart; não anunciar deduplicação entre processos independentes.
 
-[DownloadExecution e DownloadImport](../include/m0/ports/DownloadExecution.hpp) separam execução e importação. A porta concreta do serviço ainda não existe. A [sessão worker-only](download-conversion.md#composição-do-job-no-controlador) já compõe transferência falsa, filesystem/conversor/validação/publicação reais em testes, sem ser ligada à fila. Não confundir esse resultado com DNS/TLS isolado ou downloads disponíveis ao usuário.
+[DownloadExecution e DownloadImport](../include/m0/ports/DownloadExecution.hpp) separam execução e importação. [WindowsDownloadExecution](../src/adapters/WindowsDownloadExecution.hpp) já implementa a porta rápida fora do app, mantendo tarefa, I/O e destruição em thread Qt privada. O [ensaio assíncrono MP3/MP4](download-conversion.md#incremento-de-execução-assíncrona) liga execução real ao serviço com transferência sintética e importador falso; filesystem, processos, conversor, validação e publicação são reais. O importador local descrito abaixo é outro componente: esses ensaios não comprovam a composição completa com player/host ou downloads disponíveis ao usuário.
 
 - Uma execução ativa, fila FIFO. Fases de download, conversão e publicação têm progresso próprio; total desconhecido mantém indicador indeterminado.
 - Cancelamento de item na fila é imediato; em execução aguarda confirmação terminal. Timeout total inicial de 30 minutos também pede cancelamento, sem presumir que o worker parou. Nenhum próximo trabalho começa antes de confirmar a saída do ativo.
 - Cancelamento/shutdown não ocultam falha de cleanup: `Failed/Publication` permanece falha acionável. A primeira causa observada durante a drenagem (inclusive timeout, relógio regressivo ou exceção de polling) é preservada. ACK terminal não precisa repetir contadores anteriores; payload malformado falha como `InvalidResult`, estado desconhecido não libera o slot e publicação tardia nunca importa arquivo.
 - Resultado obsoleto, inválido ou contraditório não importa arquivo; exceção não implica sucesso. Shutdown recusa novos pedidos e cancela/drena os próprios jobs, sem tocar na reprodução local. A composição deve aguardar `stopped()` antes de destruir adapters emprestados; o destrutor não encerra processos externos por conta própria.
-- Apenas resultado publicado com path absoluto normalizado `.mp3` é encaminhado à importação. Essa checagem do core não valida bytes: o executor deve provar formato/áudio e publicação sem sobrescrita. Falha de importação preserva o arquivo e permite retry explícito pelo mesmo job, sem repetir download; o importador concreto deve ser idempotente e usar o pipeline local sem autoplay.
+- Apenas resultado publicado com path absoluto normalizado `.mp3` é encaminhado à importação. Essa checagem do core não valida bytes: o executor deve provar formato/áudio e publicação sem sobrescrita. Falha de importação preserva o arquivo e permite retry explícito pelo mesmo job, sem repetir download; [PlayerDownloadImport](../src/presentation/PlayerDownloadImport.hpp) faz o handoff append-only à fila local, sem autoplay.
 
 [DownloadJobsModel](../src/adapters/DownloadJobsModel.hpp) expõe títulos, estados, progresso, erro tipado e ações por ID para a futura UI Qt/QML. Não oferece papel de URL/query. `refresh()` não executa trabalho ou avança relógio; inserções/atualizações preservam índices existentes. Texto de página continua não confiável: a futura QML deve usar texto simples, não RichText/HTML. A projeção não é uma tela já disponível no RC Music.
+
+## Importação local de resultado publicado
+
+`PlayerDownloadImport::accept(job_id, mp3_path)` é um handoff C++ confiável, executado na thread da aplicação sobre o [PlayerPresenter](../src/presentation/PlayerPresenter.hpp). Não é comando de página nem método invocável por QML. A composição entrega somente um `Published` confiável, com arquivo final já validado/publicado pelo executor. O importador faz verificações lexicais, mas não abre arquivos, consulta filesystem, decodifica áudio, descobre fontes ou inicia leitura de metadata; tampouco autentica bytes, sandbox ou ownership do arquivo.
+
+O append cria uma ocorrência no fim da fila existente, sem limpar/reordenar itens anteriores, alterar seleção/contexto/posição ou chamar `load`, `play` ou outros comandos do backend. Mesmo numa fila vazia, não escolhe automaticamente a nova faixa. Reprodução e metadata seguem o fluxo local normal somente quando uma ação posterior seleciona a ocorrência; eventos de playback já em curso continuam sob suas próprias regras após a transação.
+
+O recibo liga o ID do job ao path aceito durante a vida deste importador. Mesmo ID/path retorna sucesso sem criar outra ocorrência, inclusive depois de remoção manual ou limpeza da fila. Trocar o path de um ID já comprometido é recusado. Jobs distintos podem criar ocorrências distintas do mesmo path: não há deduplicação global por arquivo. Os recibos não são expulsos para admitir novos jobs; replay comprometido continua aceito em capacidade cheia e enquanto o presenter vivo está busy/em saída, sem nova mutação. Presenter já destruído recusa todas as chamadas, inclusive replay.
+
+Os limites iniciais de [PlayerDownloadImportLimits](../src/presentation/PlayerDownloadImport.hpp) são **128 recibos** e **1 MiB lógico** de IDs/paths nativos retidos: `id.size() + path.native().size() * sizeof(std::filesystem::path::value_type)`, sem overhead de containers/alocadores. O ID aceita de 1 a 64 caracteres ASCII `[A-Za-z0-9_-]`; no Windows, o path local absoluto/normalizado aceita até 30.000 unidades de código nativas UTF-16, Unicode válido e extensão `.mp3` sem distinguir caixa. NUL, URL, path relativo, UNC, namespaces de dispositivo e alternate streams são recusados. Tetos são inclusivos e ajustáveis só por composição confiável; capacidade zero recusa novos recibos. São quotas independentes dos limites de jobs/pedidos retidos do serviço, não cotas de transferência/disco, journal ou prova de existência do arquivo.
+
+Nova importação é recusada antes do commit enquanto há descoberta/seleção/localização de arquivo ou outra transação ativa, durante saída, no presenter de cenário congelado ou sem owner válido. Caller de outra thread é recusado antes de ler/mutar o presenter. Recusa anterior ao commit não altera a fila, não retém reserva nem consome quota do importador; não registra uma importação concluída e deixa capacidade para retry ou outro job. O serviço conserva `ImportFailed` e permite retry explícito pelo mesmo ID/path, sem baixar novamente.
+
+O [LocalQueueListModel](../include/m0/presentation/LocalQueueListModel.hpp) prepara/valida itens e reserva a projeção antes de executar o callback de commit do owner, que deve ser não lançante. Fila e marca de compromisso do recibo ficam estabelecidas antes das notificações Qt de inserção/estado. Assim, replay reentrante já comprometido não duplica a ocorrência; novo append, mutações da fila/transporte e saída são bloqueados durante a transação. Polling de metadata e eventos de playback ficam adiados até a projeção estar consistente; um `Ended` da geração atual tem prioridade sobre snapshots posteriores dessa geração e não deve ser apagado.
+
+Owner, importador, model e adapters emprestados devem permanecer vivos durante a chamada. Callbacks Qt de linhas não podem lançar exceções nem destruir owner/model durante a transação; não há promessa de rollback para violação dessa precondição. Os recibos são apenas em memória: autosave da fila não é um journal atômico de fila+importação. Persistência/recuperação de jobs, propriedade durável dos arquivos e retry idempotente após restart continuam gates separados. Ter este componente não significa que host, model de jobs e UI de download já estejam ligados ao player.
 
 ## Checks locais Windows
 
@@ -42,7 +58,22 @@ if ($LASTEXITCODE -ne 0) { throw 'Build puro falhou' }
 ctest --test-dir out/product/download-service-release -N
 ```
 
-Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de dependências ou Registry para estes testes. Os opcionais da raiz ficam OFF por padrão; o player permanece sem os novos serviços de rede/engine. O [transporte HTTP/TLS](download-network.md) tem testes próprios; a [porta assíncrona Windows](download-conversion.md#execução-assíncrona-windows) já compõe o serviço em ensaio MP3/MP4 sintético, ainda sem importador real ou ligação ao player.
+### Importador local
+
+Na árvore desktop de testes configurada conforme [build Windows](desktop-build.md#configure-build-e-testes), habilite também `RC_MUSIC_BUILD_DOWNLOADS=ON`. O alvo requer `RC_MUSIC_BUILD_DESKTOP=ON` e `BUILD_TESTING=ON`, com Qt/TagLib/Catch2 explícitos daquela receita; não exige ativar transporte de rede, browser integration ou conectar serviços ao executável do player. Reutilizando esse cache:
+
+```powershell
+cmake -S . -B out/product/desktop-tests -DRC_MUSIC_BUILD_DESKTOP=ON -DRC_MUSIC_BUILD_DOWNLOADS=ON -DBUILD_TESTING=ON
+if ($LASTEXITCODE -ne 0) { throw 'Configure de importação local falhou' }
+cmake --build out/product/desktop-tests --target rc_music_ui_download_import_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build de importação local falhou' }
+ctest --test-dir out/product/desktop-tests -R '^rc_music\.ui\.download-import$' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'Testes de importação local falharam' }
+```
+
+[PlayerDownloadImportTests](../tests/ui/qtest/PlayerDownloadImportTests.cpp) exercita presenter/model/serviço reais com backend, metadata, descoberta e execução falsos, usando paths lexicais sintéticos sem criar/abrir mídia. Os contratos cobrem append sem autoplay, preservação do playback, replay/conflito/remoção/capacidade, limites, busy/retry, callbacks reentrantes, evento `Ended`, polling adiado, thread/lifetime e superfície QML não privilegiada. Esta receita não é evidência de execução dos checks nem valida conteúdo/publicação, sandbox ou UI instalada.
+
+Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de dependências ou Registry para estes testes. Os opcionais da raiz ficam OFF por padrão; o player permanece sem os novos serviços de rede/engine. O [transporte HTTP/TLS](download-network.md) tem testes próprios; execução Windows e importador local não equivalem à composição completa com o player.
 
 ## Evidência do incremento de 2026-09-08
 
@@ -53,16 +84,22 @@ Não solicitar benchmark, mídia pessoal, DLLs novas, download/instalação de d
 - Produção opcional: `download-service-release` compilou `rc_music_downloads` sem Qt/Catch2/adapters nativos; `browser-integration-release` compilou a biblioteca com Qt Core, sem Qt Test/Catch2/Qt Network/WebEngine. Ambos usam `BUILD_TESTING=OFF` e registram zero testes. Não geram host, runtime ou instalador atualizado.
 - Formato dos oito C++ novos, validação documental **68 Markdown, 83 requisitos, 17 checks e 80 etapas**, rastreabilidade e `git diff --check` aprovados. Revisão independente da implementação e dos contratos não deixou achados materiais neste escopo.
 
-Nenhum requisito amplo foi promovido: 15 planejados, 66 em andamento e 2 comprovados. A execução concreta, a integração com o player e as edições completas continuam os próximos incrementos, não funcionalidades entregues por estes fakes.
+Nenhum requisito amplo foi promovido neste checkpoint: 15 planejados, 66 em andamento e 2 comprovados. Seus fakes não entregaram execução concreta nem edições completas; os componentes posteriores de execução Windows e importação local são descritos separadamente acima. A composição final com o player e as duas edições continua pendente.
 
 ## Regressão de cancelamento de 2026-10-01
 
-O teste reproduziu falha de cleanup tratada como cancelamento bem-sucedido: Red **28/34** casos Catch2, seguido de Green **34/34**. Duas regressões adicionais reproduziram exceção/deadline/clock ignorados durante a drenagem (Red **34/36**); Green **36/36**, zero skips. Os 28 casos anteriores foram preservados, corrigindo somente a expectativa antiga que também ocultava `Failed/Network` tardio. Build Release MSVC 19.44, formato e diff passaram; testes continuam com portas falsas, sem rede, filesystem ou mídia pessoal. Isso corrige a coordenação, não comprova término físico do futuro executor.
+O teste reproduziu falha de cleanup tratada como cancelamento bem-sucedido: Red **28/34** casos Catch2, seguido de Green **34/34**. Duas regressões adicionais reproduziram exceção/deadline/clock ignorados durante a drenagem (Red **34/36**); Green **36/36**, zero skips. Os 28 casos anteriores foram preservados, corrigindo somente a expectativa antiga que também ocultava `Failed/Network` tardio. Build Release MSVC 19.44, formato e diff passaram; testes continuam com portas falsas, sem rede, filesystem ou mídia pessoal. Isso corrige a coordenação; evidência de término físico da execução Windows pertence aos seus testes separados, não a estes fakes.
+
+## Evidência da importação local de 2026-10-01
+
+Red corrigido dos stubs de importador/model: **8 passagens/45 falhas**. Green inicial **55/56** identificou expectativa incorreta de remoção no EOF, corrigida conforme avanço normal que preserva histórico. Teste adicional de falha de clock após commit teve setup inválido de preferências; corrigido só o harness. Green final **57/57** casos Qt, sem skips: fila/seleção/transporte preservados, idempotência e limites, busy/retry/liberação de quota, commit antes de notificações, EOF/metadata/power reentrantes, afinidade/lifetime e porta ausente do meta-object. Relógio C++ falso após commit prova retry sem reinserção e guard liberado, sem lançar em callback Qt. Power cobre estado final/refresh, não checkpoint completo da sessão.
+
+Build Release ON completo e **337/337 CTest** passaram após a correção do único alvo da primeira execução **336/337**. Presenter **292/292**, contrato **35/35**, Quick **234/234**, core **227** e serviço **36**, além de adapters/áudio/processos existentes. Quatro casos internos de symlink foram skipped pela política do host. `all_qmllint`, formato C++, docs/rastreabilidade/diff passaram. Release OFF compila app com zero testes e sem ativar serviço/host/rede/engine de downloads; não foi gerado runtime/instalador. Componentes de rede/TLS/conversão e JavaScript não foram reexecutados; o handoff usa paths lexicais e portas falsas, não mídia baixada de fato.
 
 ## Pendências funcionais
 
 1. Executável Native Messaging com transporte binário e encaminhamento para o serviço dono no app; composição/prefixo/identidade por instalação.
 2. Download real protegido contra SSRF/redirects e conversão isolada, com ferramentas corrigidas e verificadas conforme ADR-0009; fakes não provam esses controles.
 3. Persistência limitada de jobs/recibos, recuperação/cancelamento no restart e tratamento acionável de capacidade/histórico sem duplicação silenciosa.
-4. Importador concreto, timer/ciclo de vida e tela QML no player; MP3 real validado deve ser escutável na fila existente.
+4. Compor serviço, execução e importador local com timer/ciclo de vida e tela QML no player; validar MP3 publicado escutável na fila existente, sem handoff de parciais ou autoplay.
 5. Navegação interna da Completa, integração comum instalada nas duas edições, opcionais do setup e testes reais autorizados do Brave. YouTube continua separado.

@@ -38,9 +38,17 @@ bool LocalQueueListModel::replace(const LocalFileQueue& queue) {
 bool LocalQueueListModel::append(const std::span<const LocalFileQueueItem> source_items) {
     return insert(source_items, static_cast<std::size_t>(items_.size()));
 }
+bool LocalQueueListModel::appendWithCommit(const std::span<const LocalFileQueueItem> source_items,
+                                           const std::function<void()>& commit) {
+    return commit && insertPrepared(source_items, static_cast<std::size_t>(items_.size()), commit);
+}
 
 bool LocalQueueListModel::insert(const std::span<const LocalFileQueueItem> source_items,
                                  const std::size_t insertion_index) {
+    return insertPrepared(source_items, insertion_index, {});
+}
+bool LocalQueueListModel::insertPrepared(const std::span<const LocalFileQueueItem> source_items,
+                                         const std::size_t insertion_index, const std::function<void()>& commit) {
     const auto item_count = static_cast<std::size_t>(items_.size());
     constexpr auto max_row_count = static_cast<std::size_t>(std::numeric_limits<int>::max());
     if (source_items.empty() || insertion_index > item_count || item_count > max_row_count ||
@@ -65,6 +73,8 @@ bool LocalQueueListModel::insert(const std::span<const LocalFileQueueItem> sourc
     const int last_row = first_row + inserted_count - 1;
     const bool loaded_changed = !loaded_;
     items_.reserve(items_.size() + inserted_items.size());
+    if (commit)
+        commit();
     beginInsertRows({}, first_row, last_row);
     for (int offset = 0; offset < inserted_count; ++offset)
         items_.insert(first_row + offset, std::move(inserted_items[offset]));

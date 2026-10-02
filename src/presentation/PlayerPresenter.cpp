@@ -9,6 +9,7 @@
 #include <QPointer>
 #include <QRandomGenerator>
 #include <QScopeGuard>
+#include <QThread>
 #include <QTimeZone>
 #include <QVariantMap>
 
@@ -974,6 +975,8 @@ bool PlayerPresenter::canRetryCurrentOccurrence() const noexcept {
 }
 
 void PlayerPresenter::setAudioFilesPicker(AudioFilesPicker* picker) {
+    if (download_append_in_progress_)
+        return;
     if (audio_files_picker_ == picker || file_dialog_cancellation_active_)
         return;
     const QPointer<PlayerPresenter> guard{this};
@@ -1002,6 +1005,8 @@ void PlayerPresenter::cancelAudioFileSelection() noexcept {
 }
 
 bool PlayerPresenter::beginAudioFileSelection(const bool append_only) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || file_dialog_cancellation_active_ || audio_files_picker_ == nullptr ||
         selectingAudioFiles() || file_location_request_.has_value())
         return false;
@@ -1067,6 +1072,8 @@ void PlayerPresenter::finishAudioFileSelection(const std::uint64_t generation, A
 }
 
 void PlayerPresenter::setAudioFileLocator(AudioFileLocator* locator) {
+    if (download_append_in_progress_)
+        return;
     if (audio_file_locator_ == locator || file_dialog_cancellation_active_)
         return;
     const QPointer<PlayerPresenter> guard{this};
@@ -1591,6 +1598,8 @@ void PlayerPresenter::initializeShuffleRound() {
     }
 }
 bool PlayerPresenter::toggleShuffleQueue() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     const bool enabled = !shuffleQueueEnabled();
@@ -1609,6 +1618,8 @@ void PlayerPresenter::setQueueShuffleSeedForTest(const std::uint32_t seed) noexc
 }
 #endif
 bool PlayerPresenter::shuffleQueue() {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_)
         return false;
     const auto current = local_queue_.currentIndex();
@@ -1655,6 +1666,8 @@ bool PlayerPresenter::shuffleQueue() {
     return true;
 }
 bool PlayerPresenter::toggleRepeatQueue() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     controller_.setRepeatQueueEnabled(!repeatQueueEnabled());
@@ -1676,6 +1689,8 @@ PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { r
 bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
 bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fixture_; }
 bool PlayerPresenter::openAudio() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() || file_location_request_.has_value())
         return false;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -1690,6 +1705,8 @@ bool PlayerPresenter::openAudio() {
 }
 
 bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
+    if (download_append_in_progress_)
+        return false;
     if (selected_paths.empty())
         return false;
     auto candidate = local_queue_;
@@ -1729,6 +1746,8 @@ bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>
     return true;
 }
 bool PlayerPresenter::addAudio() {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() ||
         file_location_request_.has_value())
         return false;
@@ -1739,6 +1758,8 @@ bool PlayerPresenter::addAudio() {
 }
 
 bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
+    if (download_append_in_progress_)
+        return false;
     if (selected_paths.empty())
         return false;
     auto candidate = local_queue_;
@@ -1783,12 +1804,73 @@ bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>&
         emit queueFocusRequested(static_cast<int>(first_inserted));
     return true;
 }
+bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bool& committed) {
+    committed = false;
+    if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
+        file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
+        file_location_request_.has_value() || path.empty())
+        return false;
+
+    auto candidate = local_queue_;
+    const auto first_inserted = candidate.size();
+    if (!candidate.append({path}))
+        return false;
+    auto navigation = navigationItems(candidate);
+    const QPointer<PlayerPresenter> guard{this};
+    download_append_in_progress_ = true;
+    const auto release = qScopeGuard([guard] {
+        if (guard)
+            guard->finishPublishedAudioAppend();
+    });
+    // Projection preparation can fail without committing the domain/receipt.
+    // The commit itself only moves prepared state, before any Qt notification.
+    const bool projected =
+        local_queue_model_.appendWithCommit(candidate.items().subspan(first_inserted), [&]() noexcept {
+            local_queue_ = std::move(candidate);
+            navigation_items_ = std::move(navigation);
+            committed = true;
+        });
+    if (!projected)
+        return false;
+    if (!guard)
+        return true;
+    sessionStructureDidChange();
+    emit stateChanged();
+    if (guard)
+        emit playbackChanged();
+    return true;
+}
+void PlayerPresenter::finishPublishedAudioAppend() {
+    download_append_in_progress_ = false;
+    const auto event = std::exchange(deferred_playback_event_, std::nullopt);
+    const auto power = std::exchange(deferred_download_power_event_, std::nullopt);
+    const bool suspended = std::exchange(deferred_download_suspend_, false);
+    reconcileTimer();
+    if (!event.has_value() && !power.has_value())
+        return;
+    const QPointer<PlayerPresenter> guard{this};
+    // A nested event loop must not mutate the queue while Qt is inserting rows,
+    // nor from the scope guard before the import adapter has returned.
+    QMetaObject::invokeMethod(
+        this,
+        [guard, event, power, suspended] {
+            if (guard && suspended)
+                static_cast<void>(guard->handleSystemPowerEvent(SystemPowerEvent::Suspending));
+            if (guard && power == std::optional{SystemPowerEvent::Resumed})
+                static_cast<void>(guard->handleSystemPowerEvent(SystemPowerEvent::Resumed));
+            if (guard && event.has_value())
+                guard->handlePlaybackEvent(*event);
+        },
+        Qt::QueuedConnection);
+}
 bool PlayerPresenter::openSourcePaths(std::vector<std::filesystem::path> source_paths,
                                       const std::size_t insertion_index) {
     return beginSourceImport(std::move(source_paths), insertion_index, 0, true);
 }
 
 bool PlayerPresenter::importDroppedUrls(const QList<QUrl>& urls, const int insertion_index) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || source_discovery_ == nullptr || sourceImportActive())
         return false;
     if (insertion_index < 0 || static_cast<std::size_t>(insertion_index) > local_queue_.size())
@@ -1813,6 +1895,8 @@ bool PlayerPresenter::beginSourceImport(std::vector<std::filesystem::path> roots
                                         const std::optional<std::size_t> insertion_index,
                                         const std::uint64_t boundary_issue_count,
                                         const bool allow_during_source_exit_drain) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || (exiting_ && !(allow_during_source_exit_drain && source_exit_drain_active_)) ||
         source_discovery_ == nullptr || sourceImportActive())
         return false;
@@ -1889,6 +1973,8 @@ bool PlayerPresenter::dismissSourceImportStatus() {
     return true;
 }
 bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_)
         return false;
     const auto target = localOccurrenceIndex(occurrence_id);
@@ -1928,6 +2014,8 @@ bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
     return true;
 }
 bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || !retryingOccurrenceId().isEmpty())
         return false;
     const auto target = localOccurrenceIndex(occurrence_id);
@@ -1956,6 +2044,8 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
     return true;
 }
 bool PlayerPresenter::locateQueueOccurrence(const QString& occurrence_id) {
+    if (download_append_in_progress_)
+        return false;
     if (!fileLocationAvailable() || exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() ||
         file_location_request_.has_value() || !retryingOccurrenceId().isEmpty())
         return false;
@@ -2079,6 +2169,8 @@ void PlayerPresenter::finishFileLocation(const std::uint64_t request_generation,
 }
 
 bool PlayerPresenter::moveQueueOccurrence(const QString& occurrence_id, const int destination_index) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || destination_index < 0)
         return false;
     const auto source_index = localOccurrenceIndex(occurrence_id);
@@ -2098,6 +2190,8 @@ bool PlayerPresenter::moveQueueOccurrence(const QString& occurrence_id, const in
     return true;
 }
 bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_)
         return false;
     const auto source_index = localOccurrenceIndex(occurrence_id);
@@ -2170,6 +2264,8 @@ bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
     return true;
 }
 bool PlayerPresenter::clearQueue() {
+    if (download_append_in_progress_)
+        return false;
     if (uses_frozen_fixture_ || exiting_ || (sourceImportActive() && !cancelSourceImport()) || local_queue_.empty() ||
         !local_track_session_->unload()) {
         return false;
@@ -2193,7 +2289,7 @@ bool PlayerPresenter::clearQueue() {
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exit_committed_)
         return;
-    if (exiting_) {
+    if (exiting_ || download_append_in_progress_) {
         if (local_track_session_ != nullptr &&
             event.snapshot.generation == local_track_session_->playbackGeneration() &&
             (!deferred_playback_event_.has_value() || deferred_playback_event_->type != PlaybackEventType::Ended ||
@@ -2349,6 +2445,8 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         emit sourceImportChanged();
 }
 void PlayerPresenter::pollMetadata() {
+    if (download_append_in_progress_)
+        return;
     if (uses_frozen_fixture_ || exiting_)
         return;
     const auto duration_before = localDurationMs();
@@ -2369,6 +2467,8 @@ void PlayerPresenter::pollMetadata() {
         emit playbackChanged();
 }
 void PlayerPresenter::pollSourceImport() {
+    if (download_append_in_progress_)
+        return;
     if (!sourceImportActive() || source_discovery_ == nullptr || (exiting_ && !source_exit_drain_active_))
         return;
 
@@ -2573,6 +2673,8 @@ void PlayerPresenter::reportTrayUnavailable() {
     emit lifecycleChanged();
 }
 bool PlayerPresenter::requestClose() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     refreshPlatformAvailability();
@@ -2590,6 +2692,8 @@ bool PlayerPresenter::requestClose() {
     return requestHide();
 }
 bool PlayerPresenter::requestHide() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     refreshPlatformAvailability();
@@ -2610,6 +2714,8 @@ bool PlayerPresenter::requestHide() {
     return true;
 }
 bool PlayerPresenter::requestRestore() {
+    if (download_append_in_progress_)
+        return false;
     if (source_exit_drain_active_)
         return true;
     if (exiting_)
@@ -2618,6 +2724,8 @@ bool PlayerPresenter::requestRestore() {
     return true;
 }
 bool PlayerPresenter::requestExit() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_ || file_dialog_cancellation_active_)
         return false;
 
@@ -2770,6 +2878,11 @@ bool PlayerPresenter::setTrayNoticeEnabled(const bool enabled) {
     return true;
 }
 bool PlayerPresenter::handleSystemPowerEvent(const SystemPowerEvent event) {
+    if (download_append_in_progress_) {
+        deferred_download_suspend_ = deferred_download_suspend_ || event == SystemPowerEvent::Suspending;
+        deferred_download_power_event_ = event;
+        return true;
+    }
     if (exit_committed_ || last_system_power_event_ == std::optional{event})
         return false;
 
@@ -2871,6 +2984,8 @@ void PlayerPresenter::completeDefaultAppsSettingsLaunch(const DefaultAppsSetting
     emit defaultAppsSettingsChanged();
 }
 bool PlayerPresenter::play() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
@@ -2891,6 +3006,8 @@ bool PlayerPresenter::play() {
     return uses_frozen_fixture_ ? changed : true;
 }
 bool PlayerPresenter::pause() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
@@ -2909,6 +3026,8 @@ bool PlayerPresenter::pause() {
     return uses_frozen_fixture_ ? changed : true;
 }
 bool PlayerPresenter::togglePlayback() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
@@ -2932,6 +3051,8 @@ bool PlayerPresenter::togglePlayback() {
 bool PlayerPresenter::skipBackward() { return skipByPreference(false); }
 bool PlayerPresenter::skipForward() { return skipByPreference(true); }
 bool PlayerPresenter::skipByPreference(const bool forward) {
+    if (download_append_in_progress_)
+        return false;
     const auto snapshot = controller_.confirmedSnapshot();
     const bool transport_active = snapshot.status == PlaybackStatus::Ready ||
                                   snapshot.status == PlaybackStatus::Paused ||
@@ -3052,6 +3173,8 @@ bool PlayerPresenter::loadLocalOccurrence(const std::size_t index, const LocalTr
     return loadLocalOccurrenceWithResult(index, start_intent) == PlaybackCommandResult::Accepted;
 }
 bool PlayerPresenter::navigate(const QueueDirection direction) {
+    if (download_append_in_progress_)
+        return false;
 
     const auto target = navigationTarget(direction);
     if (!target.has_value())
@@ -3106,6 +3229,8 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
     return true;
 }
 bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     const PlaybackStatus status = controller_.confirmedSnapshot().status;
@@ -3125,6 +3250,8 @@ bool PlayerPresenter::beginSeekPreview(const qint64 position_ms) {
     return true;
 }
 bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_ || !controller_.seekPreviewActive() || controller_.seekPending())
         return false;
     const auto before = controller_.displayedPositionMs();
@@ -3134,6 +3261,8 @@ bool PlayerPresenter::updateSeekPreview(const qint64 position_ms) {
     return true;
 }
 bool PlayerPresenter::commitSeekPreview() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_)
         return false;
     ++seek_commit_attempt_count_;
@@ -3157,12 +3286,16 @@ bool PlayerPresenter::finishSeekCommand(const bool accepted, const std::uint64_t
     return accepted;
 }
 bool PlayerPresenter::setVolume(const double volume) {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_ || volume == controller_.preferences().volume || !controller_.setVolume(volume))
         return false;
     preferenceDidChange();
     return true;
 }
 bool PlayerPresenter::toggleMute() {
+    if (download_append_in_progress_)
+        return false;
     if (exiting_ || !controller_.toggleMute())
         return false;
     preferenceDidChange();
@@ -3317,6 +3450,8 @@ void PlayerPresenter::preferenceDidChange() {
 void PlayerPresenter::pollPreferencePersistence() { pollPersistence(); }
 
 void PlayerPresenter::pollPersistence() {
+    if (download_append_in_progress_)
+        return;
     if (preferences_autosave_ != nullptr)
         preferences_autosave_->poll();
     if (session_autosave_ != nullptr)
@@ -3557,6 +3692,8 @@ bool PlayerPresenter::enterFrozenUnavailableScenario() {
 #endif
 
 bool PlayerPresenter::executeErrorAction() {
+    if (download_append_in_progress_)
+        return false;
     if (!hasError() || exiting_)
         return false;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -3568,6 +3705,8 @@ bool PlayerPresenter::executeErrorAction() {
     return errorActionId() == QStringLiteral("open-audio") && openAudio();
 }
 bool PlayerPresenter::recoverAudioOutput() {
+    if (download_append_in_progress_)
+        return false;
     const auto current = local_queue_.currentIndex();
     if (!current.has_value())
         return false;
@@ -3595,6 +3734,8 @@ bool PlayerPresenter::recoverAudioOutput() {
     return true;
 }
 bool PlayerPresenter::skipUnavailable() {
+    if (download_append_in_progress_)
+        return false;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (exiting_)
         return false;
@@ -3653,7 +3794,7 @@ void PlayerPresenter::rejectNextSeekForTest() noexcept {
 
 std::size_t PlayerPresenter::seekCommitAttemptCountForTest() const noexcept { return seek_commit_attempt_count_; }
 bool PlayerPresenter::applicationPollingEnabled() const noexcept {
-    return last_system_power_event_ != std::optional{SystemPowerEvent::Suspending};
+    return !download_append_in_progress_ && last_system_power_event_ != std::optional{SystemPowerEvent::Suspending};
 }
 void PlayerPresenter::reconcileTimer() {
     const bool application_needed =

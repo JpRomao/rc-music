@@ -52,6 +52,8 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ApplicationText.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemPowerEventsBinding.hpp"

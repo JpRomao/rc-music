@@ -383,6 +383,11 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setTrayNoticeEnabled(bool enabled);
     Q_INVOKABLE bool openAudio();
     Q_INVOKABLE bool addAudio();
+    // Trusted C++ handoff only, never a page/QML command. No I/O or autoplay.
+    // committed is set after queue append and BEFORE notifications; a receipt
+    // can recognize this commit even if a later observer throws. False without
+    // commitment permits retry. Composition supplies a validated final MP3.
+    [[nodiscard]] bool appendPublishedAudio(const std::filesystem::path& path, bool& committed);
     [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
     Q_INVOKABLE bool cancelSourceImport();
@@ -519,6 +524,7 @@ class PlayerPresenter final : public QObject {
     void cancelAudioFileSelection() noexcept;
     [[nodiscard]] bool openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     [[nodiscard]] bool addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
+    void finishPublishedAudioAppend();
     [[nodiscard]] bool navigate(QueueDirection direction);
     [[nodiscard]] bool skipByPreference(bool forward);
     [[nodiscard]] bool finishSeekCommand(bool accepted, std::uint64_t generation);
@@ -592,6 +598,9 @@ class PlayerPresenter final : public QObject {
     bool source_import_needs_autoplay_{false};
     std::optional<LocalTrackStartIntent> local_recovery_intent_{};
     bool uses_frozen_fixture_{false};
+    bool download_append_in_progress_{false};
+    bool deferred_download_suspend_{false};
+    std::optional<SystemPowerEvent> deferred_download_power_event_{};
     std::size_t seek_commit_attempt_count_{0};
     bool exiting_{false};
     bool exit_committed_{false};

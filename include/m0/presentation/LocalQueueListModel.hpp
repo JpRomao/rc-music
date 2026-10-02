@@ -12,6 +12,7 @@
 #include <QVariant>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 
@@ -42,6 +43,11 @@ class LocalQueueListModel final : public QAbstractListModel {
     [[nodiscard]] bool loaded() const noexcept;
     [[nodiscard]] bool replace(const LocalFileQueue& queue);
     [[nodiscard]] bool append(std::span<const LocalFileQueueItem> source_items);
+    // Trusted owner only: prepare/validate/reserve before the non-throwing commit,
+    // then publish Qt insertion signals. Owner/model must outlive row callbacks;
+    // those callbacks must not throw or destroy the model during its transaction.
+    [[nodiscard]] bool appendWithCommit(std::span<const LocalFileQueueItem> source_items,
+                                        const std::function<void()>& commit);
     [[nodiscard]] bool insert(std::span<const LocalFileQueueItem> source_items, std::size_t insertion_index);
     [[nodiscard]] bool move(std::size_t source_index, std::size_t destination_index);
     [[nodiscard]] bool remove(std::size_t index);
@@ -73,6 +79,8 @@ class LocalQueueListModel final : public QAbstractListModel {
     };
 
     [[nodiscard]] static Item makeItem(const LocalFileQueueItem& source, int order_index);
+    [[nodiscard]] bool insertPrepared(std::span<const LocalFileQueueItem> source_items, std::size_t insertion_index,
+                                      const std::function<void()>& commit);
     void reindex(std::size_t first_index);
     [[nodiscard]] static QString pathComponent(const std::filesystem::path& value);
     [[nodiscard]] QList<Item>::iterator find(LocalQueueOccurrenceId occurrence_id);
