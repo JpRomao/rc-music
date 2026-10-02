@@ -22,6 +22,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
     add_executable(rc_music_download_network_worker
@@ -36,7 +37,7 @@ if(BUILD_TESTING)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
             WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
-            WindowsDownloadNetworkWorker WindowsProcessDownloadIo)
+            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution)
         add_executable(rc_music_download_io_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
         target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)

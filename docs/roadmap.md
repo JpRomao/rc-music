@@ -10,7 +10,7 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Estado:** stack aceita; sequência de promoção e conclusão Windows, sem compromisso de datas
 
-**Última revisão:** 2026-09-06
+**Última revisão:** 2026-10-01
 
 ## 1. Como ler
 
@@ -418,7 +418,11 @@ Biblioteca indexada é o primeiro caso que pode justificar SQLite. Cada candidat
 
 **Estado:** escopo de produto aceito no [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), implementação planejada; suporte a YouTube continua pesquisa independente sem promessa de release.
 
-R1.7 iniciado em 2026-09-08 com o [cliente principal MV3 e recepção C++](browser-extension.md); R1.8 possui [coordenação comum de jobs](download-jobs.md), [transporte HTTP/TLS opcional](download-network.md) e [conversão/publicação local Windows](download-conversion.md). A sessão worker-only compõe transferência falsa e filesystem/conversor/validação/publicação reais, sem estar ligada à fila; execução completa/importação permanecem falsas nos testes da coordenação. Socket separado usa loopback e conversor usa fixtures sintéticas autenticadas. Não há executável de host, workflow de download/conversão no player ou validação no Brave; os recortes não encerram o marco nem reduzem descoberta ampliada, ambas as edições ou opcionais do instalador.
+R1.7 iniciado em 2026-09-08 com o [cliente principal MV3 e recepção C++](browser-extension.md); R1.8 possui [coordenação comum de jobs](download-jobs.md), [worker/proxy de rede diskless](download-network.md), [conversão/publicação local Windows](download-conversion.md) e a porta rápida opcional [WindowsDownloadExecution](../src/adapters/WindowsDownloadExecution.hpp), ainda fora do player. A porta mantém um pedido pendente, um snapshot coalescido e um wake enfileirado no máximo; factory, tarefa, I/O e destruição executam em event loop Qt privado. `start`/`cancel`/`poll`/`shutdown` não aguardam esse trabalho lento. Somente a observação de terminal pelo ID correspondente libera um novo start; `shutdown` fecha admissão, enquanto `stopped` reconhece também o teardown da thread. Destruição com join não substitui esse protocolo na UI.
+
+Factory só pode criar objetos inertes, sem I/O ativo ou recursos escapados em falha. Recusa ou exception de `WindowsDownloadTask::start` exige cancelamento/drenagem até terminal válido, sem transformar a admissão já aceita da porta rápida em recusa. Start falso, sem exception/DTO inválido durante a tarefa, conserva o erro tipado de um `Failed` do ID correspondente; terminal sem essa falha explicativa gera `InvalidResult` depois da drenagem. Exceptions/DTOs inválidos mantêm `InvalidResult` como causa técnica, publicado somente após ACK válido. A composição de ensaio MP3/MP4→MP3→serviço deve usar transferência falsa em helper e filesystem, supervisor/processos, conversor, validação e publicação de produção, com importador falso. Worker real tem ensaios separados de DNS literal e HTTP loopback; isso não comprova a jornada TLS completa nem mídia da internet.
+
+Continuam pendentes launcher/runtime autenticados antes dos imports, ferramenta corrigida/proveniência/licenças e sandbox, journal de recuperação/ownership durável, importador local concreto, host/model/UI e composição no player. Não há workflow instalado no Brave ou aprovação de mídia remota/distribuição. Os recortes não encerram R1 nem reduzem descoberta ampliada, Lite/Completa ou opcionais do instalador.
 
 Ordem atual:
 

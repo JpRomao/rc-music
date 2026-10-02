@@ -1,5 +1,7 @@
+#include "WindowsDownloadExecution.hpp"
 #include "WindowsDownloadJobSession.hpp"
 #include "WindowsProcessDownloadIo.hpp"
+#include "m0/application/DownloadService.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -8,6 +10,9 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <algorithm>
+#include <vector>
 
 using namespace music_player::m0;
 
@@ -68,6 +73,52 @@ struct Harness final {
     }
     QStringList jobs() const { return QDir(staging).entryList(QDir::Dirs | QDir::NoDotAndDotDot); }
     QStringList finals() const { return QDir(publication).entryList(QDir::Files); }
+};
+bool waitFor(const std::function<bool()>& condition) {
+    QElapsedTimer watchdog;
+    watchdog.start();
+    do {
+        if (condition())
+            return true;
+        QTest::qWait(5);
+    } while (watchdog.elapsed() < 10000);
+    return condition();
+}
+struct DrainOnExit final {
+    DownloadService& service;
+    WindowsDownloadExecution& execution;
+    QElapsedTimer& clock;
+    ~DrainOnExit() {
+        service.shutdown();
+        static_cast<void>(waitFor([&] {
+            service.tick(clock.elapsed());
+            return service.stopped();
+        }));
+        execution.shutdown();
+        static_cast<void>(waitFor([&] { return execution.stopped(); }));
+    }
+};
+class ObservedImport final : public DownloadImport {
+  public:
+    struct Call final {
+        std::string job_id;
+        std::filesystem::path path;
+        DownloadExecutionUpdate update;
+        bool staging_empty;
+        bool final_exists;
+    };
+    std::vector<Call> calls;
+    explicit ObservedImport(WindowsDownloadExecution& execution, const Harness& files)
+        : execution_(execution), files_(files) {}
+    bool accept(const std::string& job_id, const std::filesystem::path& path) override {
+        calls.push_back({job_id, path, execution_.poll(job_id), files_.jobs().isEmpty(),
+                         QFileInfo(QString::fromStdWString(path.wstring())).isFile()});
+        return true;
+    }
+
+  private:
+    WindowsDownloadExecution& execution_;
+    const Harness& files_;
 };
 DownloadExecutionUpdate finish(WindowsDownloadJobSession& job, QElapsedTimer& clock,
                                const std::function<void(const DownloadExecutionUpdate&)>& observe = {}) {
@@ -176,6 +227,132 @@ class WindowsProcessDownloadJobTests final : public QObject {
         QVERIFY(h.finals().isEmpty());
         QVERIFY(io.stopped_before_conversion);
         QVERIFY(io.io.pollStop().stopped);
+    }
+    void asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce() {
+        Harness h;
+        QVERIFY(h.directory.isValid());
+        // Only the framed synthetic helper transfers bytes. This exercises the real
+        // async port, native processes, filesystem and converter, not public TLS or
+        // the still-open pre-launch authentication/tool-isolation/player gates.
+        WindowsDownloadExecution execution(ioConfiguration(h.directory.path()), h.configuration());
+        ObservedImport importer(execution, h);
+        DownloadService service(execution, importer, "real-composition");
+        QElapsedTimer clock;
+        clock.start();
+        DrainOnExit drain{service, execution, clock};
+        const DownloadRequest request{
+            "abcdefab-cdef-4abc-8def-000000000001",
+            {{"https://media.example.test/synthetic-mp3", "Synthetic MP3", DownloadMediaKind::Audio},
+             {"https://media.example.test/synthetic-mp4", "Synthetic MP4 audio", DownloadMediaKind::Video}}};
+        const auto receipt = service.submit(request);
+        QCOMPARE(receipt.error, DownloadSubmissionError::None);
+        QCOMPARE(receipt.job_ids.size(), std::size_t{2});
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.finals().isEmpty());
+        QVERIFY(importer.calls.empty());
+        QCOMPARE(service.submit(request).job_ids, receipt.job_ids);
+        QVERIFY(waitFor([&] {
+            service.tick(clock.elapsed());
+            const auto jobs = service.snapshot();
+            return std::all_of(jobs.begin(), jobs.end(), [](const DownloadJobSnapshot& job) {
+                return job.state == DownloadJobState::Completed || job.state == DownloadJobState::ImportFailed ||
+                       job.state == DownloadJobState::Failed || job.state == DownloadJobState::Cancelled;
+            });
+        }));
+        const auto jobs = service.snapshot();
+        QCOMPARE(jobs.size(), std::size_t{2});
+        QCOMPARE(importer.calls.size(), std::size_t{2});
+        QVERIFY(jobs[0].completed_mp3 != jobs[1].completed_mp3);
+        for (std::size_t index = 0; index < jobs.size(); ++index) {
+            const auto& job = jobs[index];
+            const auto& imported = importer.calls[index];
+            QCOMPARE(job.job_id, receipt.job_ids[index]);
+            QCOMPARE(job.state, DownloadJobState::Completed);
+            QCOMPARE(job.error, DownloadFailure::None);
+            QVERIFY(job.completed_mp3.is_absolute());
+            QVERIFY(job.completed_mp3 == job.completed_mp3.lexically_normal());
+            QCOMPARE(imported.job_id, job.job_id);
+            QVERIFY(imported.path == job.completed_mp3);
+            QCOMPARE(imported.update.state, DownloadExecutionState::Published);
+            QCOMPARE(imported.update.phase, DownloadPhase::Publishing);
+            QCOMPARE(imported.update.error, DownloadFailure::None);
+            QVERIFY(imported.update.published_mp3 == imported.path);
+            QVERIFY(imported.staging_empty);
+            QVERIFY(imported.final_exists);
+            const QFileInfo final(QString::fromStdWString(job.completed_mp3.wstring()));
+            QCOMPARE(final.suffix(), QStringLiteral("mp3"));
+            QCOMPARE(final.absolutePath(), QFileInfo(h.publication).absoluteFilePath());
+            QVERIFY(final.size() > 0);
+            QVERIFY(!service.retryImport(job.job_id));
+        }
+        QVERIFY(h.jobs().isEmpty());
+        QCOMPARE(h.finals().size(), 2);
+        QVERIFY(execution.retainedPublicationPath(receipt.job_ids[1]) == jobs[1].completed_mp3);
+        auto replay = request;
+        replay.request_id = "ABCDEFAB-CDEF-4ABC-8DEF-000000000001";
+        const auto repeated = service.submit(replay);
+        QCOMPARE(repeated.error, DownloadSubmissionError::None);
+        QCOMPARE(repeated.job_ids, receipt.job_ids);
+        for (int index = 0; index < 5; ++index) {
+            service.tick(clock.elapsed());
+            QTest::qWait(5);
+        }
+        QCOMPARE(importer.calls.size(), std::size_t{2});
+        QCOMPARE(h.finals().size(), 2);
+        service.shutdown();
+        QVERIFY(service.stopped());
+        execution.shutdown();
+        QVERIFY(waitFor([&] { return execution.stopped(); }));
+        QVERIFY(!execution.start("after-shutdown", request.items[0]));
+    }
+    void serviceShutdownDrainsTheRealAsyncJobWithoutImportOrStartingItsQueuedSuccessor() {
+        Harness h;
+        QVERIFY(h.directory.isValid());
+        auto io = ioConfiguration(h.directory.path());
+        io.process.total_timeout_ms = 5000; // cleanup watchdog even when an assertion fails
+        WindowsDownloadExecution execution(std::move(io), h.configuration());
+        ObservedImport importer(execution, h);
+        DownloadService service(execution, importer, "real-cancel");
+        QElapsedTimer clock;
+        clock.start();
+        DrainOnExit drain{service, execution, clock};
+        const DownloadRequest request{
+            "abcdefab-cdef-4abc-8def-000000000002",
+            {{"https://stall.example.test/synthetic-mp3", "Stalled synthetic", DownloadMediaKind::Audio},
+             {"https://media.example.test/synthetic-mp4", "Never started", DownloadMediaKind::Video}}};
+        const auto receipt = service.submit(request);
+        QCOMPARE(receipt.error, DownloadSubmissionError::None);
+        QCOMPARE(receipt.job_ids.size(), std::size_t{2});
+        service.tick(clock.elapsed());
+        QVERIFY(waitFor([&] {
+            service.tick(clock.elapsed());
+            return !h.jobs().isEmpty();
+        }));
+        QVERIFY(importer.calls.empty());
+        service.shutdown();
+        QVERIFY(!service.stopped()); // cancel is a request; only terminal observation drains
+        const auto cancelling = service.snapshot();
+        QCOMPARE(cancelling[0].state, DownloadJobState::Cancelling);
+        QCOMPARE(cancelling[1].state, DownloadJobState::Cancelled);
+        QVERIFY(waitFor([&] {
+            service.tick(clock.elapsed());
+            return service.stopped();
+        }));
+        execution.shutdown();
+        QVERIFY(waitFor([&] { return execution.stopped(); }));
+        const auto jobs = service.snapshot();
+        QCOMPARE(jobs.size(), std::size_t{2});
+        for (const auto& job : jobs) {
+            QCOMPARE(job.state, DownloadJobState::Cancelled);
+            QCOMPARE(job.error, DownloadFailure::None);
+            QVERIFY(job.completed_mp3.empty());
+        }
+        QCOMPARE(execution.poll(receipt.job_ids[0]).state, DownloadExecutionState::Cancelled);
+        QVERIFY(execution.retainedPublicationPath(receipt.job_ids[0]).empty());
+        QVERIFY(importer.calls.empty());
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.finals().isEmpty());
+        QCOMPARE(service.submit(request).error, DownloadSubmissionError::NotAvailable);
     }
 };
 QTEST_GUILESS_MAIN(WindowsProcessDownloadJobTests)

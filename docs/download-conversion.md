@@ -1,8 +1,8 @@
 # Conversão local opcional de downloads
 
-**Estado:** componentes locais, worker de rede diskless e composição worker-only de R1.2/R1.8 implementados no alvo opcional. Ensaios offline distinguem socket real de transferência falsa; continuam fora do player e sem backend completo de execução de downloads.
+**Estado:** componentes locais, worker de rede diskless e execução assíncrona de R1.2/R1.8 implementados no alvo opcional. Ensaios offline distinguem socket real de transferência falsa; continuam fora do player e sem workflow completo de downloads.
 
-O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permanece **Proposto**. Além de área temporária Windows, subprocesso limitado e conversão de bytes locais, a sessão abaixo compõe [transferência](download-network.md), conversão e publicação. Não implementa a porta rápida `DownloadExecution`, não se conecta à [coordenação de jobs](download-jobs.md) nem ao importador do player. É uma implementação comum às futuras edições Lite/Completa, sem engine de navegação.
+O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permanece **Proposto**. A sessão compõe [transferência](download-network.md), conversão e publicação; `WindowsDownloadExecution` a mantém em thread privada e já tem ensaio com a [coordenação de jobs](download-jobs.md), ainda com importador falso e fora do player. É uma implementação comum às futuras edições Lite/Completa, sem engine de navegação.
 
 **Restrição do ensaio:** o FFmpeg/ffprobe Gyan 8.1.1 já disponível é usado somente com fixtures sintéticas confiáveis, autenticadas pelo teste. O gate de correções de segurança registrado no ADR não foi fechado; disponibilidade local e testes verdes não aprovam processamento de mídia remota ou não confiável, instalação ou redistribuição do CLI.
 
@@ -15,14 +15,15 @@ O [ADR-0009](architecture/decisions/0009-download-execution-backends.md) permane
 | [FfmpegDownloadCodec](../src/adapters/FfmpegDownloadCodec.hpp) | Constrói vetores de argumentos locais, decodifica JSON de inspeção com campos limitados e interpreta progresso incremental. Não lança processos nem aceita URLs. |
 | [WindowsLocalMediaConverter](../src/adapters/WindowsLocalMediaConverter.hpp) | `start(workspace, now_ms)` exige entrada selada e saída vazia; `poll(now_ms)` coordena inspeção, conversão, inspeção de saída e decodificação integral; `cancel()` aguarda parada reconhecida. `Validated` não publica nem importa. |
 | [WindowsDownloadJobSession](../src/adapters/WindowsDownloadJobSession.hpp) | Sessão de um único job no controlador worker; exige reconhecimento nativo de parada do I/O antes de selagem, conversão, cleanup ou terminal. Projeta `DownloadExecutionUpdate`, mas não implementa a porta de UI. |
+| [WindowsDownloadExecution](../src/adapters/WindowsDownloadExecution.hpp) | Porta rápida com thread/event loop Qt privado; admissão/snapshot limitados e cancelamento/shutdown sem aguardar I/O. `stopped()` reconhece teardown; importação e journal são separados. |
 | [WindowsDownloadTlsRuntime](../src/adapters/WindowsDownloadTlsRuntime.hpp) | Ativação one-shot, fail-closed, do backend TLS restrito em processo novo de rede; verifica artefatos/runtime e conserva pins somente leitura. Não troca TLS no player. |
 | [DownloadWorkerProtocol](../src/adapters/DownloadWorkerProtocol.hpp) | Pedido binário privado de uma operação e frames limitados; valida campos, versão, truncamento e EOF explícito. Não substitui policy de URLs/IP nem autenticação pré-launch. |
 | [WindowsProcessDownloadIo](../src/adapters/WindowsProcessDownloadIo.hpp) | Proxy no controlador worker; supervisiona um filho diskless por resolução/conexão, backpressure e parada reconhecida. Redirect aguarda o filho anterior antes de iniciar o sucessor. |
 | [Worker de rede](../src/adapters/WindowsDownloadNetworkWorkerMain.cpp) | Executável opcional real de DNS/socket, sem mídia no filesystem ou dados do pedido em argv/ambiente. Exige runtime TLS restrito inclusive para DNS/HTTP, sem fallback. |
 
-Construir, usar e destruir estes objetos em uma mesma thread worker com event loop Qt, nunca na thread visual. O workspace emprestado deve sobreviver ao conversor. Escritas, flush e operações nativas de arquivos podem bloquear; `poll()` não cria timer, worker ou event loop. O proprietário fornece relógio monotônico e mantém o lifecycle até o reconhecimento terminal. Relógio regressivo é erro, não reinício de deadline.
+Construir, usar e destruir os componentes lentos em uma mesma thread worker com event loop Qt, nunca na thread visual. O workspace emprestado deve sobreviver ao conversor. Escritas, flush e operações nativas de arquivos podem bloquear; o `poll()` da sessão não cria timer, worker ou event loop. A porta rápida cria a thread privada, fornece relógio monotônico e mantém lifecycle até terminal. Relógio regressivo é erro, não reinício de deadline.
 
-Os pais de staging/publicação e executáveis são configuração da composição confiável. URLs, títulos, nomes de arquivo, argumentos e caminhos fornecidos por extensão/página não são parâmetros destas APIs. A construção lexical de argumentos locais não constitui autorização para qualquer arquivo do host.
+Os pais de staging/publicação e executáveis são configuração da composição confiável. `DownloadItem` recebe somente URL/título/tipo validados pela boundary; conteúdo de página/extensão nunca escolhe paths locais, argumentos, ferramentas, quotas ou configuração de runtime. A construção lexical de argumentos locais não constitui autorização para qualquer arquivo do host.
 
 ## Área privada, cota e publicação
 
@@ -106,6 +107,18 @@ Rename é o commit. Cancelamento/clock observado depois dele não deve esconder 
 O [teste da sessão](../tests/qt/WindowsDownloadJobSessionTests.cpp) usa `DirectDownloadIo` falso, DNS público aprovado e framing HTTP sintético com as fixtures autenticadas abaixo. Filesystem, FFmpeg/ffprobe, inspeção/decodificação e publicação são reais. Não há socket, DNS/TLS real ou exceção de localhost na policy de produção neste teste; a composição completa de rede isolada e importação continua pendente.
 
 O [teste de composição com subprocesso](../tests/qt/WindowsProcessDownloadJobTests.cpp) acrescenta o proxy/supervisor reais e um helper exclusivo de teste que simula DNS/HTTP com as mesmas fixtures autenticadas. Comprova bytes recebidos, MP3 e MP4→MP3 reais, parada antes de conversão/publicação, limpeza e preservação de um arquivo existente. Não é o worker de socket real nessa jornada. O [teste do worker real](../tests/qt/WindowsDownloadNetworkWorkerTests.cpp) verifica separadamente DNS literal offline, HTTP em loopback, request-target assinado, runtime exigido e falhas; não comprova download/conversão com DNS público, handshake TLS real ou mídia da internet.
+
+## Execução assíncrona Windows
+
+`WindowsDownloadExecution` implementa `DownloadExecution` sem aguardar filesystem, processo, tarefa ou destruição no caller. Factory confiável cria **somente objetos inertes**, sem I/O, processo ou arquivo de mídia ativo antes de `WindowsDownloadTask::start`; failure/null não podem reter recursos. A composição concreta possui I/O antes de sessão, destruindo sessão antes de I/O no worker. Nenhuma chamada lenta ocorre sob mutex.
+
+Há um pedido pendente, um snapshot coalescido e um wake enfileirado no máximo. ID ASCII tem até 64 bytes; URL/título exigem UTF-8 exato, até 8.192/800 bytes e policy lexical sem DNS. Paths de snapshot/recuperação são limitados a 30.000 unidades nativas Windows antes da cópia ao caller, não limitando alocações internas da tarefa confiável. Terminal é estável; somente `poll` do ID correspondente observa ACK e libera novo start. Poll/cancel antigos são inertes.
+
+`start` da porta devolve `false` apenas por recusa local sem trabalho/recursos para o pedido. Factory falha após admissão gera `Failed/Unavailable`, sob o contrato inerte. `start` falso da tarefa exige cancelamento/drenagem: sem malfunction, conserva `Failed.error` reconhecido; terminal sem falha explicativa gera `InvalidResult`. Exception/DTO inválido mantém causa técnica `InvalidResult`, sem liberar ownership antes de ACK válido e destruição da tarefa. Progresso intermediário pode ser coalescido; serviço observa `Publishing` antes do callback de importação.
+
+`shutdown()` fecha admissão prontamente; `stopped()` exige término da thread após drenagem/destruição. `DownloadService::stopped()` reconhece somente seu job: composição deve fechar **ambos** e observar ambos antes de destruir na UI. Join do destrutor é fallback fora da UI e pode bloquear se a tarefa violar o contrato, sem detach/término forçado ou timeout inventado como ACK. Guard impede passos reentrantes em event loops aninhados de tarefas/callbacks.
+
+Publicação que vence cancelamento permanece `Published` no executor, sem apagar/importar o final; serviço cancelado não importa. Cleanup após rename conserva `Failed/Publication` e path privado. Evidência limitada do job atual não é autoridade de importação, journal durável ou recuperação após restart: próximo start aceito a substitui. Ownership/persistência dos finais ainda precisam de composição antes de habilitar entradas externas.
 
 ## Build opcional e ensaio local
 
@@ -195,10 +208,30 @@ Green final: protocolo **11/11**, worker **19/19**, proxy **33/33**, supervisor 
 
 Build Release MSVC 19.44/Qt 6.11.2 e seleção `^rc_music\.(download-network\.|downloads\.|browser\.)` passaram **55/55 CTest** em **35,01 s**: 36 casos do serviço e 19 alvos Qt. Dois skips internos de symlink do workspace persistem pela política do host; não são falhas nem casos comprovados. Build OFF compilou biblioteca e worker real e registrou zero testes; helpers, fixtures, paths do CLI, Qt Test/Catch2, Multimedia e WebEngine não compõem esse grafo. Formato dos 20 C++ afetados, documentos/rastreabilidade e revisão são verificações separadas. Core foi compilado, mas seus testes, JavaScript e UI não foram reexecutados. Nenhum benchmark, runtime/instalador novo, instalação/Registry, perfil pessoal ou download público foi executado.
 
+### Incremento de execução assíncrona
+
+Em 2026-10-01, a porta vazia reproduziu Red **8 passagens/20 falhas**; Green inicial **28/28**. Regressão adicional demonstrou `start` falso ocultando falha tipada de configuração/publicação/rede: Red **28 passagens/3 falhas**, depois separação de recusa e malfunction. Com progresso/terminal e watchdog que não mascara bloqueio do caller, Green final **32/32** casos Qt. Gates controlados bloqueiam factory/start/poll/cancel/destruição e exigem que chamadas UI retornem enquanto o gate continua fechado, sem benchmark. Um guard protege passos contra eventos Qt aninhados; refactor manteve a suíte verde.
+
+Composição assíncrona passou **10/10** casos Qt, preservando oito anteriores e acrescentando lote MP3+MP4→serviço/importação única no replay e shutdown com workspace ativo sem executar o sucessor/importar parcial. DNS/transferência em helper e importador são falsos; supervisor/processos, arquivos, FFmpeg/ffprobe, inspeção/decodificação integral e publicação são reais. Não é importação no player nem ensaio de socket/TLS público.
+
+Build Release MSVC 19.44/Qt 6.11.2 e CTest focado passaram **41/41 em 18,69 s**: serviço **36/36** e cinco alvos Qt (execução **32**, composição **10**, supervisor **44**, proxy **33**, sessão **60** casos), sem skips. OFF compilou biblioteca/worker real, listou zero testes e excluiu Qt Test/Catch2/helpers/fixtures/CLI/Multimedia/WebEngine do grafo. C++ formatado, documentos/rastreabilidade, diff e revisão são checks separados. Não reexecutar worker/socket/TLS, JavaScript, core independente ou UI sem mudança relevante; seu histórico não é validação atual. Não houve runtime/instalador novo, benchmark, instalação/Registry, perfil ou mídia pessoal/pública.
+
+Na árvore ON já configurada com ferramentas sintéticas explícitas, e na sessão MSVC documentada:
+
+```powershell
+cmake --build out/product/browser-integration-tests --target rc_music_WindowsDownloadExecution_tests rc_music_WindowsProcessDownloadJob_tests rc_music_WindowsDownloadJobSession_tests rc_music_WindowsDownloadProcess_tests rc_music_WindowsProcessDownloadIo_tests rc_music_downloads_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build de execução assíncrona falhou' }
+ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.(downloads\.|download-network\.(WindowsDownloadExecution|WindowsProcessDownloadJob|WindowsDownloadJobSession|WindowsDownloadProcess|WindowsProcessDownloadIo)$)' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'Checks de execução assíncrona falharam' }
+cmake --build out/product/download-network-release --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build opcional OFF falhou' }
+ctest --test-dir out/product/download-network-release -N
+```
+
 ## Gates que continuam abertos
 
 1. CLI corrigido, artefato/proveniência/hashes e revisão dos avisos antes de aceitar mídia não confiável; licenças, notices, fontes correspondentes e distribuição do conjunto exato.
 2. Sandbox efetivo de rede/sistema de arquivos para parser/conversor; Job Object e `-protocol_whitelist file` não fecham esse gate. Avaliar todos os acessos indiretos e limites nativos, sem diminuir verificação.
-3. Autenticar e conservar os artefatos antes de criar o worker, controlar busca de DLLs/ambiente/WD e compor a porta rápida `DownloadExecution`. Worker/proxy e reconhecimento nativo existem; seus ensaios separados ainda não comprovam a jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia.
+3. Autenticar e conservar artefatos antes de criar o worker e controlar busca de DLLs/ambiente/WD. Worker/proxy e porta rápida existem fora do app; ensaios separados não comprovam jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia.
 4. Importador local, persistência/recuperação e projeção de jobs, host Native Messaging e UI do player. Não há abertura automática de MP3 parcial nem integração com playback.
 5. Fluxo Brave/Chromium, navegação interna opcional, edições Lite/Completa, extensão e instaladores/ownership; YouTube permanece separado. Sem instalação, Registry, perfis, mídia pública ou aprovação de release neste incremento.

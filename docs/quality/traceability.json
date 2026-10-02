@@ -1224,6 +1224,14 @@
         {
           "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
           "marker": "framedChildBytesAreConvertedValidatedAndPublishedOnlyAfterNativeStop"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadExecutionTests.cpp",
+          "marker": "uiMethodsReturnWhileSlowWorkerOperationIsBlocked"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
+          "marker": "asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce"
         }
       ],
       "evidence": [
@@ -1237,7 +1245,7 @@
         },
         {
           "path": "docs/development-plan.md",
-          "marker": "Incremento de rede diskless de 2026-10-01"
+          "marker": "Incremento de execução assíncrona de 2026-10-01"
         },
         {
           "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
@@ -1245,7 +1253,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção e serviço idempotente entre conexões testados; worker DNS/HTTP/TLS diskless e proxy supervisionado implementados, exercitados com HTTP loopback e DNS literal. Composição MP3/MP4 usa transferência falsa em helper e processo/supervisor/filesystem/conversor/validação/publicação reais, aguardando parada nativa antes de converter/limpar/emitir terminal. Continua fora da porta/serviço/player. Completar launcher/runtime autenticados antes do carregamento de DLLs, FFmpeg corrigido/proveniência/licenças/sandbox, porta rápida/importação, persistência/recuperação de jobs/recibos, host/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de Lite/Completa; ambas integram a extensão externa opcional e YouTube permanece separado. Streaming do ADR-0003 e backend do ADR-0009 permanecem propostos; não há workflow completo no app ou aprovação de mídia remota/distribuição."
+        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida mantém tarefa/I/O/destruição na thread privada, com mailbox limitado e shutdown/teardown reconhecidos. Composição MP3/MP4→serviço usa transferência/helper e importador falsos, com processos/filesystem/conversor/validação/publicação reais. Continua fora do player. Completar launcher/runtime pré-DLLs, FFmpeg corrigido/proveniência/licenças/sandbox, importação append-only sem autoplay, journal/persistência/recuperação de jobs/recibos/finais, host/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos, sem workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {
@@ -1432,6 +1440,18 @@
           "marker": "childFailureOrCancellationNeverPublishes"
         },
         {
+          "path": "tests/qt/WindowsDownloadExecutionTests.cpp",
+          "marker": "uncertainWorkerResultsNeverAcknowledgeUntilValidDrain"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadExecutionTests.cpp",
+          "marker": "refusedTaskStartPreservesAcknowledgedTypedFailure"
+        },
+        {
+          "path": "tests/qt/WindowsProcessDownloadJobTests.cpp",
+          "marker": "serviceShutdownDrainsTheRealAsyncJobWithoutImportOrStartingItsQueuedSuccessor"
+        },
+        {
           "path": "tools/download-tls/tests/RestrictedTlsTests.cpp",
           "marker": "incompleteAiaChainCannotFetchTrapOrSendMediaGet"
         }
@@ -1443,7 +1463,7 @@
         },
         {
           "path": "docs/development-plan.md",
-          "marker": "Incremento de rede diskless de 2026-10-01"
+          "marker": "Incremento de execução assíncrona de 2026-10-01"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1455,7 +1475,7 @@
         }
       ],
       "remaining": [
-        "Cliente, fronteira, serviço e transporte cobrem schema/framing/origem, idempotência, cancelamento/timeout, policy DNS/redirects/SSRF e TLS loopback. Worker diskless/proxy têm frames limitados, EOF explícito e ACK de saída nativa/pipes, que antecede selagem/conversão/cleanup/terminal; erro tipado de timeout/protocolo e primeira causa sobrevivem ao cancelamento e drenagem. Cancelamento tardio/redirect não apaga saída natural inválida ou descarta pipes pendentes. Sessão Windows e integração MP3/MP4 usam transferência falsa com temporários/cotas/processos/conversão/validação/publicação reais, terminal estável e falha de cleanup preservada. RAII e QtDownloadIo in-process não qualificam o ACK; AIA restrito tem ensaio separado. Faltam launcher/runtime autenticados antes de carregar DLLs, porta rápida/importação, demais gates Schannel/FFmpeg corrigido/proveniência/licenças/sandbox, recuperação/host/persistência/UI, edições/instaladores e cobertura de expiração/live/restrições/headers/seek. Não há backend completo no app nem aprovação de mídia remota/distribuição."
+        "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; cancel/redirect preservam saída natural inválida e pipes. Porta rápida tem um pedido/snapshot/wake, métodos prompt, factory inerte e ACK após destruir tarefa; falhas/throws/DTOs inválidos não liberam ownership prematuramente. Start falso preserva Failed tipado após dreno, malfunction mantém InvalidResult; publicação tardia/falha após rename retêm path privado, sem importação automática. Ensaio MP3/MP4→serviço usa transferência/helper e importador falsos com processos/arquivos/conversor/publicação reais. Faltam launcher pré-DLLs, demais gates Schannel/ferramenta corrigida/proveniência/licenças/sandbox, importador/journal/host/persistência/UI, edições/instaladores e expiração/live/restrições/headers/seek. RAII/QtDownloadIo não qualificam ACK. Sem backend completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {

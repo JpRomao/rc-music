@@ -743,7 +743,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — rede diskless e próxima composição
+### Checkpoint atual — execução assíncrona e próxima integração
+
+Incremento de execução assíncrona de 2026-10-01: [porta rápida Windows e lifecycle](download-conversion.md#incremento-de-execução-assíncrona) passou Red **8 passagens/20 falhas**, Green **28/28**, regressão de falha tipada **28 passagens/3 falhas** e Green final **32/32** casos Qt. Factory/tarefa/I/O/destruição ficam na thread privada; caller retorna enquanto gates continuam bloqueados, sem benchmark. Um pedido/snapshot/wake são limitados; terminal correspondente libera novo start somente depois do ACK válido e destruição. `shutdown` fecha admissão prontamente; `stopped` reconhece também teardown. Destruir na UI requer observar parada previamente; join não é protocolo rápido.
+
+Ensaio assíncrono real MP3/MP4→serviço passou **10/10** casos Qt de composição, preservando os oito anteriores: transferência/helper e importador são falsos; processos/supervisor, filesystem, FFmpeg, validação/publicação são reais. Replay não reimporta; shutdown com workspace ativo não executa sucessor/importa parcial. Fechamento Release ON proporcional passou **41/41 CTest em 18,69 s**, incluindo serviço 36/36, supervisor 44/44, proxy 33/33 e sessão 60/60. OFF compilou biblioteca/worker real com zero testes e sem helpers/fixtures/CLI/Qt Test/Catch2/engines. Core independente, JavaScript, UI e worker de socket/TLS não foram reexecutados; evidências históricas não viram checks atuais.
+
+Próxima sequência: launcher/runtime autenticados **antes** dos imports; FFmpeg corrigido/proveniência/licenças/sandbox; importação append-only sem autoplay, journal/recuperação limitados de jobs/recibos/finais e composição de lifecycle/host/model/UI no player. Depois engine isolada da Completa e instaladores/opcionais de ambas. A porta assíncrona existe fora do app, não há download instalado ou aprovação de mídia remota/distribuição. [ADR-0006 aceito](architecture/decisions/0006-browser-editions-and-extensions.md): Lite sem engine interna, Completa com navegação isolada, ambas com integração externa opcional e YouTube separado. Não marcar R1 amplo concluído, instalar/registrar componentes, retomar benchmarks/Computer Use ou substituir o pedido completo por este recorte.
+
+### Checkpoint anterior — rede diskless e próxima composição
 
 Incremento de rede diskless de 2026-10-01: [protocolo privado, worker real e proxy supervisionado](download-conversion.md#incremento-de-rede-diskless) passaram Red/Green e revisão, com **Protocol 11/11, Worker 19/19, Proxy 33/33, Process 44/44, Direct 58/58, Job 60/60 e ProcessJob 8/8** casos Qt. O getter de falha tipada conserva timeout/erro de protocolo antes do cancelamento; enum desconhecido vira `InvalidResult`. A sessão mantém erro privado e ownership dos temporários até reconhecer saída do processo nativo e todos os pipes: não sela, converte, limpa ou publica terminal antes desse ACK. RAII best-effort não comprova parada; `QtDownloadIo` in-process não atende esse requisito.
 

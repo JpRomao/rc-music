@@ -1,0 +1,58 @@
+#pragma once
+
+#include "WindowsDownloadJobSession.hpp"
+#include "WindowsProcessDownloadIo.hpp"
+
+#include <functional>
+#include <memory>
+
+namespace music_player::m0 {
+
+// Slow, worker-only seam. A terminal poll acknowledges stopped native work.
+// A false/throwing start is NOT an acknowledgement: cancel + poll must drain it.
+// A factory creates only inert objects: no native I/O, process or media file may
+// become active before task.start. A failure/null must retain no resources.
+// No native work may escape the returned task's ownership.
+class WindowsDownloadTask {
+  public:
+    virtual ~WindowsDownloadTask() = default;
+    [[nodiscard]] virtual bool start(const std::string& job_id, const DownloadItem& item, qint64 now_ms) = 0;
+    virtual void cancel() = 0;
+    [[nodiscard]] virtual DownloadExecutionUpdate poll(qint64 now_ms) = 0;
+    [[nodiscard]] virtual std::filesystem::path retainedPublicationPath() const { return {}; }
+};
+
+// Prompt UI port with one pending task and one coalesced snapshot. Factory,
+// task methods, filesystem/native I/O and destruction run in a private Qt loop.
+// Only a matching terminal poll releases admission for the next job.
+// shutdown closes admission promptly; stopped additionally acknowledges thread
+// teardown. The owner must observe stopped before destruction on the UI thread.
+// The destructor's off-UI fallback joins: it is not a prompt shutdown substitute.
+// Trusted configuration only. Pre-launch runtime authentication, hostile-media
+// converter isolation, recovery journal and player composition remain gates.
+class WindowsDownloadExecution final : public DownloadExecution {
+  public:
+    using TaskFactory = std::function<std::unique_ptr<WindowsDownloadTask>()>;
+    explicit WindowsDownloadExecution(TaskFactory factory);
+    WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
+    ~WindowsDownloadExecution() override;
+    WindowsDownloadExecution(const WindowsDownloadExecution&) = delete;
+    WindowsDownloadExecution& operator=(const WindowsDownloadExecution&) = delete;
+
+    [[nodiscard]] bool start(const std::string& job_id, const DownloadItem& item) override;
+    void cancel(std::string_view job_id) override;
+    [[nodiscard]] DownloadExecutionUpdate poll(std::string_view job_id) override;
+    void shutdown();
+    [[nodiscard]] bool stopped() const;
+
+    // Current job's committed final, including Published racing cancellation or
+    // failed post-rename cleanup. Bounded private recovery evidence, NOT import
+    // authority or durable ownership. Cleared only by the next successful start.
+    [[nodiscard]] std::filesystem::path retainedPublicationPath(std::string_view job_id) const;
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace music_player::m0
