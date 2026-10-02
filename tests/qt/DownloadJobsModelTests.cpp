@@ -46,6 +46,8 @@ class Importer final : public DownloadImport {
     bool accepted{true};
     std::string last_id{};
     std::filesystem::path last_path{};
+    bool pending{false};
+    DownloadImportState polled{DownloadImportState::Pending};
 
     bool accept(const std::string& job_id, const std::filesystem::path& path) override {
         ++calls;
@@ -53,6 +55,13 @@ class Importer final : public DownloadImport {
         last_path = path;
         return accepted;
     }
+    DownloadImportState begin(const std::string& job_id, const std::filesystem::path& path) override {
+        if (!pending)
+            return DownloadImport::begin(job_id, path);
+        static_cast<void>(accept(job_id, path));
+        return DownloadImportState::Pending;
+    }
+    DownloadImportState pollImport(std::string_view) override { return polled; }
 };
 
 DownloadRequest request(std::string id = request_id, std::string title = "Audio") {
@@ -72,6 +81,44 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void pendingImportShowsPersistenceWaitWithoutCancelRetryOrFalseCompletion() {
+        Execution execution;
+        Importer importer;
+        importer.pending = true;
+        DownloadService service(execution, importer, "model");
+        const auto receipt = service.submit(request());
+        DownloadJobsModel model(service);
+        service.tick(0);
+        execution.update = {.job_id = receipt.job_ids[0],
+                            .state = DownloadExecutionState::Published,
+                            .phase = DownloadPhase::Publishing,
+                            .published_mp3 = finalPath()};
+        service.tick(1);
+        model.refresh();
+        QCOMPARE(value(model, DownloadJobsModel::StateRole).toString(), QStringLiteral("importing"));
+        QCOMPARE(value(model, DownloadJobsModel::StatusTextRole).toString(),
+                 QStringLiteral("Confirmando importação na fila"));
+        QCOMPARE(model.activeCount(), 1);
+        QCOMPARE(model.completedCount(), 0);
+        QCOMPARE(value(model, DownloadJobsModel::ProgressRatioRole).toDouble(), 1.0);
+        QVERIFY(!value(model, DownloadJobsModel::IndeterminateRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanCancelRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
+        QVERIFY(value(model, DownloadJobsModel::ErrorTextRole).toString().isEmpty());
+        QCOMPARE(value(model, DownloadJobsModel::OutputPathRole).toString(),
+                 QString::fromStdWString(finalPath().wstring()));
+        QVERIFY(!model.cancel(QString::fromStdString(receipt.job_ids[0])));
+        QVERIFY(!model.retryImport(QString::fromStdString(receipt.job_ids[0])));
+        importer.polled = DownloadImportState::Committed;
+        service.tick(2);
+        model.refresh();
+        QCOMPARE(model.activeCount(), 0);
+        QCOMPARE(model.completedCount(), 1);
+        QCOMPARE(value(model, DownloadJobsModel::StateRole).toString(), QStringLiteral("completed"));
+        QCOMPARE(importer.calls, 1);
+        QCOMPARE(execution.starts, 1);
+        QCOMPARE(execution.cancellations, 0);
+    }
     void recoveredJobsExposeReviewStateWithoutExecutableActionsOrCandidatePath() {
         class Identity final : public DownloadRequestIdentity {
           public:

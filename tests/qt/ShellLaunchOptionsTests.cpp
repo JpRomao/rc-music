@@ -333,6 +333,39 @@ class ShellLaunchOptionsTests final : public QObject {
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
     }
 
+    void acceptsClosedSessionReceiptsHookOnlyForTheCombinedShell() {
+        const QString root = testConfigRoot(QStringLiteral("session receipts"));
+        music_player::m0::experiment::ShellLaunchOptions options;
+        try {
+            options = parseShellLaunchOptions({QStringLiteral("m0_qt_shell"),
+                                               QStringLiteral("--m0-smoke=session-receipts-without-restore"),
+                                               QStringLiteral("--m0-test-config-root=") + root});
+        } catch (const std::exception& error) {
+            QFAIL(error.what());
+        }
+        QVERIFY(options.smoke_session_receipts_without_restore);
+        QVERIFY(options.source_paths.isEmpty());
+        QCOMPARE(options.test_config_root, std::optional<QString>{QDir::cleanPath(root)});
+        validateShellLaunchOptions(options, true, true);
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, true));
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            static_cast<void>(parseShellLaunchOptions(
+                {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-receipts-without-restore")})));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            static_cast<void>(parseShellLaunchOptions(
+                {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-receipts-without-restore"),
+                 QStringLiteral("--m0-test-config-root=") + root, QStringLiteral("--m0-scenario=unavailable")})));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            static_cast<void>(parseShellLaunchOptions(
+                {QStringLiteral("m0_qt_shell"), QStringLiteral("--m0-smoke=session-receipts-without-restore"),
+                 QStringLiteral("--m0-test-config-root=") + root, QStringLiteral("--"),
+                 QStringLiteral("C:/Music/never-read.mp3")})));
+    }
+
     void acceptsClosedSessionRecoveryHooksOnlyForTheCombinedShell_data() {
         QTest::addColumn<QString>("smoke");
         QTest::newRow("forced termination before primary commit")

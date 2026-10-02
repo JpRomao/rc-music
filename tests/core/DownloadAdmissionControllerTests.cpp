@@ -22,6 +22,14 @@ DownloadRequest admissionInput(const unsigned int number = 1, const std::size_t 
     return request;
 }
 
+std::filesystem::path admissionFinalPath() {
+#ifdef _WIN32
+    return std::filesystem::path{L"C:/rc-music-synthetic/final.mp3"};
+#else
+    return std::filesystem::path{"/rc-music-synthetic/final.mp3"};
+#endif
+}
+
 struct AdmissionExecution final : DownloadExecution {
     std::vector<std::string> starts{};
     std::vector<std::string> polls{};
@@ -46,9 +54,23 @@ struct AdmissionExecution final : DownloadExecution {
 
 struct AdmissionImport final : DownloadImport {
     unsigned int calls{0};
+    bool pending{false};
+    DownloadImportState polled{DownloadImportState::Pending};
+    std::function<void()> on_poll{};
     bool accept(const std::string&, const std::filesystem::path&) override {
         ++calls;
         return true;
+    }
+    DownloadImportState begin(const std::string& job_id, const std::filesystem::path& path) override {
+        if (!pending)
+            return DownloadImport::begin(job_id, path);
+        static_cast<void>(accept(job_id, path));
+        return DownloadImportState::Pending;
+    }
+    DownloadImportState pollImport(std::string_view) override {
+        if (on_poll)
+            on_poll();
+        return polled;
     }
 };
 
@@ -567,6 +589,45 @@ TEST_CASE("Shutdown during Saved observation prevents staged execution before fi
     h.controller.tick(2);
     REQUIRE(h.controller.stopped());
     REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Download owner final checkpoint waits for durable import acknowledgement",
+          "[download][admission][import-pending]") {
+    AdmissionHarness h;
+    h.ready();
+    h.importer.pending = true;
+    pendingWithoutAck(h.controller.begin(admissionInput(1, 2)));
+    h.io.saved();
+    h.controller.tick(0);
+    h.execution.update = {.job_id = "owner-1",
+                          .state = DownloadExecutionState::Published,
+                          .phase = DownloadPhase::Publishing,
+                          .published_mp3 = admissionFinalPath()};
+    h.controller.tick(1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+    SECTION("external close") { h.controller.shutdown(); }
+    SECTION("close during import observation") {
+        h.importer.on_poll = [&] { h.controller.shutdown(); };
+    }
+    h.controller.tick(2);
+    h.importer.on_poll = {};
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopping);
+    REQUIRE_FALSE(h.service.stopped());
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Cancelled);
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.io.saves.size() == 1);
+    h.importer.polled = DownloadImportState::Committed;
+    h.controller.tick(3);
+    REQUIRE(h.service.stopped());
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.io.saves[1].checkpoint.jobs[0].state == DownloadJobState::Completed);
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(4);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.importer.calls == 1);
+    REQUIRE(h.execution.cancellations.empty());
 }
 
 TEST_CASE("A failed final checkpoint remains visible after physical download-owner shutdown", "[download][admission]") {

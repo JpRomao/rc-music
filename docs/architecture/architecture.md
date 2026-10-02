@@ -295,9 +295,11 @@ O [cliente externo e fronteira de recepção](../browser-extension.md), regidos 
 
 ### Importação local e recuperação de downloads
 
-O [handoff local de resultados publicados](../download-jobs.md#importação-local-de-resultado-publicado) tem `PlayerDownloadImport` concreto na apresentação, usando o mesmo presenter/fila do player. A porta recebe ID/path de composição confiável, não DTO de página nem chamada QML; lexicalidade não prova conteúdo/publicação/ownership. Acrescenta ocorrência sem seleção/autoplay/FS/decoder/discovery ou alteração do backend. Recibos por lifetime do owner são limitados e idempotentes, inclusive após remoção manual; não substituem journal durável.
+O [handoff local de resultados publicados](../download-jobs.md#importação-local-de-resultado-publicado) tem `PlayerDownloadImport` concreto na apresentação, usando o mesmo presenter/fila do player. A porta recebe ID/path de composição confiável, não DTO de página nem chamada QML; lexicalidade não prova conteúdo/publicação/ownership. Acrescenta ocorrência sem seleção/autoplay/FS/decoder/discovery ou alteração do backend. O modo volátil conserva recibos por lifetime do owner, limitados e idempotentes mesmo após remoção manual; não é evidência durável.
 
-`LocalQueueListModel::appendWithCommit` prepara/valida/reserva a linha antes do callback não lançante que move fila/navegação e marca o recibo comprometido, antes de sinais Qt. Guard recusa reentrância de fila/transporte/saída e posterga metadata/eventos até liberar a transação. `Ended` da geração atual prevalece sobre snapshots no slot diferido; power conserva suspend observado e último estado, não um histórico ilimitado de edges. Callbacks de linhas não podem lançar/destruir owner/model e importador/adapters emprestados devem sobreviver à chamada. O componente compila nas variantes da UI, mas nenhum serviço/host/rede é instanciado no player; persistência/recuperação e composição lifecycle/model/UI seguem pendentes.
+`LocalQueueListModel::appendWithCommit` prepara/valida/reserva a linha antes do callback não lançante que move fila/navegação e marca o recibo comprometido, antes de sinais Qt. Guard recusa reentrância de fila/transporte/saída e posterga metadata/eventos até liberar a transação. `Ended` da geração atual prevalece sobre snapshots no slot diferido; power conserva suspend observado e último estado, não um histórico ilimitado de edges. Callbacks de linhas não podem lançar/destruir owner/model e importador/adapters emprestados devem sobreviver à chamada.
+
+No modo `Session`, o mesmo callback compromete fila e `DownloadImportReceipt` no presenter; o snapshot único v2 é submetido ao writer existente sem I/O de store na UI. `begin`/`pollImport` expõem `Pending` até `SessionAutosave::savedRevision()` reconhecer `Saved` da revisão que contém o recibo, ou uma posterior que o preserva. `Failed` recuperável/readback não é ACK, e polling não reescreve nem repete a importação; retry explícito conserva o mesmo ID/path sem novo append/download. O serviço projeta `Importing` enquanto aguarda e só publica `Completed` após `Committed`. Recibos carregados de sessão válida são históricos inertes mesmo sem a ocorrência na fila, sem abrir/importar o path. Backup recuperado, defaults inválidos e versão futura bloqueiam novas importações duráveis até reconciliação explícita; nenhum candidato recuperado vira autoridade de filesystem. Os componentes não são uma transação global entre sessão, checkpoint de jobs e journal de arquivos, nem garantia exactly-once universal. Nenhum serviço/host/rede de downloads é instanciado no player; recuperação/capacidade acionáveis e composição lifecycle/model/UI continuam pendentes.
 
 Os [componentes de conversão local Windows](../download-conversion.md) acrescentam temporários privados/limitados, supervisor de processo e pipeline de inspeção → conversão MP3 → inspeção/decodificação integral. São adapters do mesmo alvo opcional, não regras no domínio/QML nem ferramentas distribuídas automaticamente. O conversor recebe somente bytes locais selados; o controlador worker conserva ownership do workspace e supervisiona rede e ferramenta separadamente. Nenhuma etapa altera playback ou importa parciais. A [porta rápida Windows](../download-conversion.md#execução-assíncrona-windows) existe fora do player; a composição do importador, persistência e tela continuam pendentes. Lite/Completa compartilharão esse serviço sem tornar a engine dependência da Lite.
 
@@ -472,11 +474,11 @@ Um restart instrumentado entre dois processos exercita a persistência no primei
 
 O fechamento automatizado do recorte passou 225/225 no CTest Release combinado e 183/183 num core fresco sem Qt com MSVC 19.44/toolset 14.44. O alvo Quick passou 1/1 com 100 casos, `all_qmllint` ficou verde e o formato cobriu 112 arquivos C++ e 46 QML. Como `qmlformat` 6.11.2 não oferece `--check`, a validação QML comparou sua saída padrão normalizada em LF. A composição `BUILD_TESTING=OFF` foi recompilada, listou zero testes e rejeitou o hook reservado de restart de preferências com exit 1 sem criar a raiz solicitada. A validação documental passou com 44 Markdown, 83 requisitos, 17 checks e 76 etapas; nenhum benchmark foi executado.
 
-O schema v1 separado da sessão é:
+O schema vigente v2 separado da sessão é:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "queue": {
     "items": [
       {
@@ -486,13 +488,21 @@ O schema v1 separado da sessão é:
     ],
     "currentOccurrenceId": "9007199254740993"
   },
-  "positionMs": "123456"
+  "positionMs": "123456",
+  "downloadImports": [
+    {
+      "jobId": "download-job-1",
+      "sourcePath": "C:\\Música\\Abertura 日本語.mp3"
+    }
+  ]
 }
 ```
 
-`queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths Unicode são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras são toleradas, mas todas as chaves v1 são obrigatórias.
+`queue` é uma unidade porque itens e seleção compartilham a mesma invariável. Sem seleção, `currentOccurrenceId` é `null` e `positionMs` precisa ser `"0"`. IDs e posição usam strings ASCII decimais canônicas para preservar exatamente inteiros acima de `2^53`; sinais, espaços, zeros à esquerda, expoentes, overflow e dígitos não ASCII são inválidos. Paths da fila são preservados literalmente, sem canonicalização nem consulta ao filesystem no codec. Chaves extras de raiz/fila/itens continuam toleradas, e os campos de fila/posição permanecem obrigatórios.
 
-`session.json` tem limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão futura dentro do limite é classificada antes da leitura dos campos atuais. Os três primeiros recortes de M4.1 materializaram snapshot/hidratação, porta/codec v1 e store Windows; o quarto acrescentou writer/autosave no core C++ puro; o quinto integrou startup e presenter; o sexto acrescentou os cenários destrutivos locais e a contenção multiprocesso. Depois das preferências, o bootstrap chama o store de sessão somente se `restore_last_session=true`; quando a opção está desligada, fornece snapshot vazio sem ler `session.json`.
+O encoder grava v2; o decoder aceita v1 como migração com `download_import_receipts` vazio, sem interpretar um eventual campo desconhecido como recibo e sem reescrever durante load. Em v2, `downloadImports` é obrigatório, inclusive vazio. Cada recibo contém exatamente `jobId`/`sourcePath`; IDs distintos têm 1–64 caracteres ASCII `[A-Za-z0-9_-]`, paths são absolutos/normalizados lexicalmente `.mp3` sem distinguir caixa, sem NUL ou Unicode inválido. Não precisam existir no disco nem continuar na fila: remoção manual não ressuscita importação. O vetor puro tem teto inclusivo de 128 recibos e 1 MiB de bytes de IDs + paths nativos, com aritmética sem overflow e sem expulsão; count/bytes são conferidos antes de alocar o vetor decodificado. Duplicatas de IDs, chaves de recibos e dos campos de reconhecimento `schemaVersion`/`downloadImports` são recusadas, inclusive escapes equivalentes. O snapshot é evidência de reconhecimento, não autorização para importar/apagar/abrir candidatos recuperados.
+
+`session.json` mantém o limite inclusivo de 16 MiB. O codec rejeita entrada maior antes do parse e não produz bytes se o snapshot for inválido, contiver path com `U+0000` ou exceder o limite serializado. Versão >2 dentro do limite é classificada antes da leitura dos campos atuais. Os três primeiros recortes de M4.1 materializaram snapshot/hidratação, porta/codec v1 e store Windows; o quarto acrescentou writer/autosave no core C++ puro; o quinto integrou startup e presenter; o sexto acrescentou os cenários destrutivos locais e a contenção multiprocesso. Naquele bootstrap v1, restauração desligada evitava a leitura. O bootstrap vigente preserva o ledger v2 independentemente de `restore_last_session` e dos opcionais de downloads, evitando que o autosave comum apague reconhecimentos existentes. Desligar restauração continua impedindo hidratação da fila, abertura do backend e autoplay; preservar recibos não inicia serviço/download nem lê seus arquivos de mídia.
 
 Antes de expor o estado ao QML, o presenter hidrata a fila e abre a ocorrência selecionada com a intenção `RestorePaused`, que nunca chama play. O seek restaurado é vinculado à geração aberta, espera duração conhecida quando o destino é positivo e aceita confirmação do backend dentro de 50 ms; trocar de geração descarta a restauração pendente. Uma marca de EOF da mesma geração sobrevive ao snapshot pausado e impede que o `Ended` relacionado avance ou inicie outra faixa. Alterações estruturais alimentam o autosave coalescido, mas a posição persistida vem somente de snapshots confirmados pelo backend. Retry, substituição explícita de versão futura e recuperação de timeout ficam no boundary existente; alternar restauração de `false` para `true` força uma gravação estrutural mesmo quando o snapshot corrente é vazio, reparando ou substituindo estado antigo autorizado.
 
@@ -520,7 +530,7 @@ Chamadas concorrentes de `shutdown()` são serializadas, drenam uma gravação j
 
 O `SessionAutosave` mantém deadlines independentes e escolhe sempre o mais próximo. Mudanças estruturais usam debounce trailing de 500 ms, limitado a 5 s desde a primeira mudança estrutural ainda não aceita. Posição confirmada altera somente o escalar `position_ms` em O(1); o primeiro tick arma um checkpoint fixo de 10 s e ticks posteriores não o adiam. Preview de seek, interpolação visual e ticks não confirmados pelo backend nunca alimentam o snapshot persistido.
 
-`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na integração atual, seek confirmado, pausa, parada/fim, erro terminal, saída e a transição `Suspending` usam esses gatilhos somente depois de obter a posição confirmada. O caminho de suspensão inicia a escrita assíncrona, sem `flush()` bloqueante e sem comandar pause, play ou autoplay; por isso ele reduz a janela de perda, mas não garante que o replace já esteja durável antes de o sistema congelar o processo. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual.
+`checkpointConfirmedPosition()` e `requestSaveNow()` tornam o estado sujo imediatamente elegível. Na integração atual, seek confirmado, pausa, parada/fim, erro terminal, saída e a transição `Suspending` usam esses gatilhos somente depois de obter a posição confirmada. O caminho de suspensão inicia a escrita assíncrona, sem `flush()` bloqueante e sem comandar pause, play ou autoplay; por isso ele reduz a janela de perda, mas não garante que o replace já esteja durável antes de o sistema congelar o processo. Após `Failed` ou bloqueio por versão futura da revisão atual, deadlines automáticos são removidos: alterações posteriores continuam coalescidas no snapshot/revisão mais recentes, mas apenas retry explícito, confirmação explícita de substituição, save-now ou flush rearmam a escrita. Completion obsoleta nunca limpa a revisão atual. `savedRevision()` começa em zero e avança somente por completion `Saved` correspondente à gravação submetida pelo owner; estado inicial limpo e readback recuperável não criam ACK. Uma revisão antiga salva pode avançar essa confirmação sem limpar o snapshot mais novo ainda sujo.
 
 Salvar por debounce após mudanças importantes e no shutdown. A fila preserva paths ausentes como itens indisponíveis para que o usuário possa localizar ou remover. SQLite só entra com biblioteca indexada e busca que comprovem necessidade.
 
@@ -531,7 +541,7 @@ Sequência de startup:
 1. capturar argumentos como valores nativos, sem reparse de string;
 2. adquirir instância única cedo;
 3. se secundária, encaminhar lista tipada e ativar a principal, então sair;
-4. principal carrega preferências e, somente quando `restore_last_session=true`, a sessão pausada;
+4. principal carrega preferências e a sessão para preservar seus recibos; somente `restore_last_session=true` hidrata a fila/ocorrência pausada;
 5. inicializa engine e integrações;
 6. processa argumentos novos conforme política de fila;
 7. resolve a disposição inicial depois do placement: fonte explícita mostra/restaura; sem fonte, a preferência só oculta quando a tray está disponível;

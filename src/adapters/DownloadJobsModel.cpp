@@ -11,11 +11,12 @@ namespace {
 bool active(const DownloadJobState state) {
     return state == DownloadJobState::Queued || state == DownloadJobState::Downloading ||
            state == DownloadJobState::Converting || state == DownloadJobState::Publishing ||
-           state == DownloadJobState::Cancelling;
+           state == DownloadJobState::Cancelling || state == DownloadJobState::Importing;
 }
 
 bool hasFinalFile(const DownloadJobState state) {
-    return state == DownloadJobState::Completed || state == DownloadJobState::ImportFailed;
+    return state == DownloadJobState::Completed || state == DownloadJobState::ImportFailed ||
+           state == DownloadJobState::Importing;
 }
 
 QString stateName(const DownloadJobState state) {
@@ -40,6 +41,8 @@ QString stateName(const DownloadJobState state) {
         return QStringLiteral("import_failed");
     case DownloadJobState::Interrupted:
         return QStringLiteral("interrupted");
+    case DownloadJobState::Importing:
+        return QStringLiteral("importing");
     }
     return QStringLiteral("failed");
 }
@@ -66,6 +69,8 @@ QString statusText(const DownloadJobState state) {
         return DownloadJobsModel::tr("Arquivo pronto; importação pendente");
     case DownloadJobState::Interrupted:
         return DownloadJobsModel::tr("Interrompido; revisão necessária");
+    case DownloadJobState::Importing:
+        return DownloadJobsModel::tr("Confirmando importação na fila");
     }
     return DownloadJobsModel::tr("Falhou");
 }
@@ -149,7 +154,7 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
     case TotalUnitsRole:
         return item.total_units ? QVariant::fromValue(static_cast<qulonglong>(*item.total_units)) : QVariant{};
     case IndeterminateRole:
-        return active(item.state) && (!item.total_units || *item.total_units == 0);
+        return active(item.state) && !hasFinalFile(item.state) && (!item.total_units || *item.total_units == 0);
     case ProgressRatioRole:
         if (hasFinalFile(item.state))
             return 1.0;
@@ -161,7 +166,8 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
     case ErrorTextRole:
         return errorText(item.error);
     case CanCancelRole:
-        return active(item.state) && item.state != DownloadJobState::Cancelling;
+        return active(item.state) && item.state != DownloadJobState::Cancelling &&
+               item.state != DownloadJobState::Importing;
     case CanRetryImportRole:
         return item.state == DownloadJobState::ImportFailed;
     default:

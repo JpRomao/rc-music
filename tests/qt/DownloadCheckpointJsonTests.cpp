@@ -142,6 +142,25 @@ class DownloadCheckpointJsonTests final : public QObject {
         QCOMPARE(decoded.checkpoint, std::optional<DownloadCheckpoint>{empty});
     }
 
+    void importingStateIsClosedRoundTripsAndRejectsMissingFinalEvidence() {
+        auto checkpoint = sample();
+        checkpoint.jobs[0].state = DownloadJobState::Importing;
+        const auto encoded = DownloadCheckpointJson::encode(checkpoint);
+        QVERIFY(encoded.contains("\"state\":\"importing\""));
+        const auto decoded = DownloadCheckpointJson::decode(encoded);
+        QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
+        QCOMPARE(decoded.checkpoint, std::optional<DownloadCheckpoint>{checkpoint});
+        checkpoint.jobs[0].completed_mp3.clear();
+        QVERIFY(DownloadCheckpointJson::encode(checkpoint).isEmpty());
+        auto root = QJsonDocument::fromJson(encoded).object();
+        auto jobs = root.value(u"jobs"_s).toArray();
+        auto job = jobs.at(0).toObject();
+        job.insert(u"completedMp3"_s, QString{});
+        jobs[0] = job;
+        root.insert(u"jobs"_s, jobs);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+    }
+
     void roundTripsAllClosedStatesAndErrors() {
         const DownloadJobState states[]{DownloadJobState::Queued,       DownloadJobState::Downloading,
                                         DownloadJobState::Converting,   DownloadJobState::Publishing,

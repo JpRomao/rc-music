@@ -51,6 +51,7 @@
 #include <QDir>
 #include <QMessageBox>
 #ifdef M0_QT_SHELL_TEST_HOOKS
+#include "presentation/PlayerDownloadImport.hpp"
 #include <QFile>
 #include <QFileInfo>
 #include <QSemaphore>
@@ -387,8 +388,10 @@ int main(int argc, char* argv[]) {
 #else
         music_player::m0::QtJsonWindowsSessionStore session_store(config_root);
 #endif
-        music_player::m0::SessionLoadResult loaded_session =
-            music_player::m0::loadSessionForStartup(session_store, loaded_preferences.preferences.restore_last_session);
+        // Durable import receipts remain authoritative even when queue
+        // restoration or the optional download components are disabled.
+        music_player::m0::SessionLoadResult loaded_session = music_player::m0::loadSessionForStartup(
+            session_store, loaded_preferences.preferences.restore_last_session, true);
         music_player::m0::SingleWorkerSessionWriter session_writer(session_store);
         music_player::m0::SessionAutosave session_autosave(session_writer, loaded_session.snapshot);
         presenter_preferences.session = {
@@ -412,8 +415,9 @@ int main(int argc, char* argv[]) {
         if (options.smoke_tray_lifecycle || options.smoke_preferences_restart_write ||
             options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
             options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
-            options.smoke_session_defaults_read || options.smoke_single_instance_executable ||
-            options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence)
+            options.smoke_session_defaults_read || options.smoke_session_receipts_without_restore ||
+            options.smoke_single_instance_executable || options.smoke_start_minimized_no_tray ||
+            options.smoke_startup_source_precedence)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(music_player::m0::ApplicationIdentity::icon(), contract.appName(),
@@ -549,6 +553,19 @@ int main(int argc, char* argv[]) {
             (presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 0)) {
             throw std::runtime_error{"disabled session restore performed hydration"};
         }
+        if (options.smoke_session_receipts_without_restore) {
+            music_player::m0::PlayerDownloadImport importer(presenter, {},
+                                                            music_player::m0::PlayerDownloadImportPersistence::Session);
+            if (presenter.restoreLastSession() || presenter.hasCurrentTrack() ||
+                presenter.queueModelObject()->rowCount() != 0 || backend.snapshot().generation != 0) {
+                throw std::runtime_error{"disabled session restore hydrated or loaded the queue"};
+            }
+            if (importer.pollImport("restart-receipt") != music_player::m0::DownloadImportState::Committed) {
+                std::fputs("M0_SESSION_RECEIPTS_MISSING_AT_BOOTSTRAP\n", stdout);
+                std::fflush(stdout);
+                throw std::runtime_error{"disabled session restore lost durable receipts"};
+            }
+        }
         const bool restored_session_smoke = options.smoke_session_restart_read ||
                                             options.smoke_session_crash_before_primary_commit ||
                                             options.smoke_session_recovery_repair;
@@ -630,6 +647,7 @@ int main(int argc, char* argv[]) {
         bool session_restart_completed = false;
         bool session_recovery_completed = false;
         bool session_defaults_completed = false;
+        bool session_receipts_completed = false;
         bool single_instance_completed = false;
         int single_instance_command_count = 0;
         bool session_crash_clear_requested = false;
@@ -1070,6 +1088,23 @@ int main(int argc, char* argv[]) {
                     application.exit(2);
             });
         }
+        if (options.smoke_session_receipts_without_restore) {
+            QTimer::singleShot(0, &application, [&application, &presenter, &backend, &session_receipts_completed] {
+                music_player::m0::PlayerDownloadImport importer(
+                    presenter, {}, music_player::m0::PlayerDownloadImportPersistence::Session);
+                session_receipts_completed =
+                    presenter.setRestoreLastSession(true) && !presenter.hasCurrentTrack() &&
+                    presenter.queueModelObject()->rowCount() == 0 && backend.snapshot().generation == 0 &&
+                    importer.pollImport("restart-receipt") == music_player::m0::DownloadImportState::Committed &&
+                    presenter.requestExit();
+                if (!session_receipts_completed)
+                    application.exit(2);
+            });
+            QTimer::singleShot(3'000, &application, [&application, &presenter, &session_receipts_completed] {
+                if (!session_receipts_completed || !presenter.exitCommitted())
+                    application.exit(2);
+            });
+        }
 #endif
 #endif
         const int result = application.exec();
@@ -1127,6 +1162,18 @@ int main(int argc, char* argv[]) {
             (result != 0 || !session_defaults_completed || !presenter.exiting())) {
             qCritical() << "The invalid-session defaults smoke did not complete";
             return 2;
+        }
+        if (options.smoke_session_receipts_without_restore) {
+            // No load occurred at generation zero; orderly shutdown advances it once.
+            if (result != 0 || !session_receipts_completed || !presenter.exitCommitted() ||
+                presenter.hasCurrentTrack() || presenter.queueModelObject()->rowCount() != 0 ||
+                backend.snapshot().generation != 1 ||
+                backend.snapshot().status != music_player::m0::PlaybackStatus::Empty) {
+                qCritical() << "The receipt-only session smoke did not commit its empty-session exit";
+                return 2;
+            }
+            std::fputs("M0_SESSION_RECEIPTS_WITHOUT_RESTORE\n", stdout);
+            std::fflush(stdout);
         }
         if (options.smoke_session_crash_before_primary_commit) {
             qCritical() << "The forced-termination smoke exited without being killed at its transaction gate";

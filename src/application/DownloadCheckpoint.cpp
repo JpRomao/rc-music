@@ -112,10 +112,11 @@ bool validJob(const DownloadJobSnapshot& job) {
     case DownloadJobState::Cancelling:
         return job.completed_mp3.empty();
     case DownloadJobState::Completed:
+    case DownloadJobState::Importing:
     case DownloadJobState::ImportFailed:
         return !job.completed_mp3.empty() &&
                job.error ==
-                   (job.state == DownloadJobState::Completed ? DownloadFailure::None : DownloadFailure::Import) &&
+                   (job.state == DownloadJobState::ImportFailed ? DownloadFailure::Import : DownloadFailure::None) &&
                (!job.total_units || job.completed_units == *job.total_units);
     case DownloadJobState::Failed:
         return job.error != DownloadFailure::None && job.completed_mp3.empty();

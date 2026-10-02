@@ -3,6 +3,7 @@
 #include "m0/application/DownloadCheckpoint.hpp"
 #include "m0/ports/DownloadRequestIdentity.hpp"
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -20,7 +21,8 @@ struct DownloadServiceLimits final {
 // This service also bounds typed inputs, owns them and never calls execution from submit.
 // Receipts are retained without eviction for this service lifetime; persistence is separate.
 // Dependencies are borrowed: composition must shutdown/drain before destroying them. The
-// destructor does not invoke ports or promise worker termination; stopped() observes the drain.
+// destructor does not invoke ports or promise worker termination; stopped() observes
+// execution and pending handoff statuses, not separate session/autosave worker teardown.
 class DownloadService final : public DownloadSubmission {
   public:
     DownloadService(DownloadExecution& execution, DownloadImport& importer, std::string job_id_prefix,
@@ -39,7 +41,11 @@ class DownloadService final : public DownloadSubmission {
     // a fresh prefix and identity port. It never starts work or trusts stored paths.
     [[nodiscard]] std::optional<DownloadCheckpoint> checkpoint();
     [[nodiscard]] bool restore(const DownloadCheckpoint& checkpoint);
-    void tick(std::int64_t now_ms);
+    // Trusted composition may suppress a new native start after a handoff
+    // callback requests owner shutdown. Existing execution/import drains remain
+    // observed. The optional predicate is bounded and cannot reenter mutations;
+    // false/exception conservatively leaves the queued job unchanged.
+    void tick(std::int64_t now_ms, const std::function<bool()>& allow_start = {});
     [[nodiscard]] bool cancel(std::string_view job_id);
     [[nodiscard]] bool retryImport(std::string_view job_id);
     void shutdown();

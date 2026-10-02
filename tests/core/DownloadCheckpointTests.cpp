@@ -153,6 +153,33 @@ TEST_CASE("Download recovery retains completed history but no import authority",
     REQUIRE(h.service.checkpoint() == checkpoint);
 }
 
+TEST_CASE("Pending download imports restore only as private interrupted candidates",
+          "[download][checkpoint][import-pending]") {
+    auto checkpoint = saved(DownloadJobState::Importing);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    checkpoint.jobs[0].completed_units = 1;
+    checkpoint.jobs[0].total_units = 1;
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    Harness h;
+    REQUIRE(h.service.restore(checkpoint));
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Unavailable);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE_FALSE(h.service.retryImport("old-1"));
+    h.service.tick(0);
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.service.checkpoint()->jobs[0].completed_mp3 == candidate());
+    checkpoint.jobs[0].completed_mp3.clear();
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    checkpoint.jobs[0].error = DownloadFailure::Import;
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+    checkpoint.jobs[0].error = DownloadFailure::None;
+    checkpoint.jobs[0].completed_units = 0;
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+}
+
 TEST_CASE("Download recovery preserves typed failure and cancelled history", "[download][checkpoint]") {
     const auto state = GENERATE(DownloadJobState::Failed, DownloadJobState::Cancelled, DownloadJobState::Interrupted);
     auto checkpoint = saved(state);

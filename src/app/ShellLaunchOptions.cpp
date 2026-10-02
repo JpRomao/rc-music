@@ -103,6 +103,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_session_recovery_repair = true;
             else if (value == QStringLiteral("session-defaults-read"))
                 options.smoke_session_defaults_read = true;
+            else if (value == QStringLiteral("session-receipts-without-restore"))
+                options.smoke_session_receipts_without_restore = true;
             else if (value == QStringLiteral("single-instance-executable"))
                 options.smoke_single_instance_executable = true;
             else if (value == QStringLiteral("start-minimized-no-tray"))
@@ -136,7 +138,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     const bool preferences_restart = options.smoke_preferences_restart_write || options.smoke_preferences_restart_read;
     const bool session_restart = options.smoke_session_restart_read ||
                                  options.smoke_session_crash_before_primary_commit ||
-                                 options.smoke_session_recovery_repair || options.smoke_session_defaults_read;
+                                 options.smoke_session_recovery_repair || options.smoke_session_defaults_read ||
+                                 options.smoke_session_receipts_without_restore;
     const bool startup_behavior =
         options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence || options.smoke_diagnostics;
     if ((preferences_restart || session_restart || options.smoke_single_instance_executable || startup_behavior) &&
@@ -149,6 +152,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
         throw std::invalid_argument{"the startup source precedence smoke requires a source"};
     if (options.smoke_start_minimized_no_tray && !options.source_paths.isEmpty())
         throw std::invalid_argument{"the no-tray startup smoke requires no source"};
+    if (options.smoke_session_receipts_without_restore && !options.source_paths.isEmpty())
+        throw std::invalid_argument{"the session receipt smoke requires no source"};
     return options;
 }
 
@@ -215,9 +220,10 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
          options.smoke_combined_startup || options.smoke_preferences_restart_write ||
          options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
          options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
-         options.smoke_session_defaults_read || options.smoke_single_instance_executable ||
-         options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence ||
-         options.smoke_diagnostics || options.test_config_root.has_value())) {
+         options.smoke_session_defaults_read || options.smoke_session_receipts_without_restore ||
+         options.smoke_single_instance_executable || options.smoke_start_minimized_no_tray ||
+         options.smoke_startup_source_precedence || options.smoke_diagnostics ||
+         options.test_config_root.has_value())) {
         throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
@@ -230,7 +236,8 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
         throw std::invalid_argument{"shell source paths require audio support"};
     if (!combined_audio_enabled &&
         (options.smoke_session_restart_read || options.smoke_session_crash_before_primary_commit ||
-         options.smoke_session_recovery_repair || options.smoke_session_defaults_read))
+         options.smoke_session_recovery_repair || options.smoke_session_defaults_read ||
+         options.smoke_session_receipts_without_restore))
         throw std::invalid_argument{"the session restart smoke requires audio support"};
 }
 

@@ -44,6 +44,7 @@
 
 namespace music_player::m0 {
 class ArtworkImageCache;
+class PlayerDownloadImport;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 namespace experiment {
 class PlayerPresenterScenarioControl;
@@ -463,6 +464,8 @@ class PlayerPresenter final : public QObject {
     void initializePersistedPreferences(const PlayerPresenterPreferences& preferences);
     void initializePersistedSession(const PlayerPresenterPreferences& preferences);
     [[nodiscard]] SessionSnapshot currentSessionSnapshot() const;
+    [[nodiscard]] bool appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
+                                                const std::string* download_job_id);
     void discardStaleRestoredSessionState();
     void cancelRestoredPositionForExplicitTransport();
     void sessionStructureDidChange();
@@ -613,6 +616,13 @@ class PlayerPresenter final : public QObject {
     bool tray_notice_seen_{false};
     PreferencesAutosave* preferences_autosave_{nullptr};
     SessionAutosave* session_autosave_{nullptr};
+    friend class PlayerDownloadImport;
+    // Receipts survive all queue CRUD. Zero marks a valid loaded receipt; the
+    // maximum revision marks a live append not yet staged into the autosave.
+    std::vector<DownloadImportReceipt> download_import_receipts_{};
+    std::vector<SessionRevision> download_import_revisions_{};
+    bool download_import_persistence_ready_{false};
+    bool download_import_call_in_progress_{false};
     PreferenceWarning preference_persistence_warning_{PreferenceWarning::NoPreferenceWarning};
     PreferenceWarning session_persistence_warning_{PreferenceWarning::NoPreferenceWarning};
     PreferenceWarning preference_warning_{PreferenceWarning::NoPreferenceWarning};

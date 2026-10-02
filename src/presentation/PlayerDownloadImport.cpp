@@ -8,6 +8,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -108,17 +109,126 @@ struct PlayerDownloadImport::Impl final {
     std::unordered_map<std::string, Receipt> receipts{};
     std::size_t retained_bytes{0};
     bool calling_presenter{false};
+    PlayerDownloadImportPersistence persistence{PlayerDownloadImportPersistence::Volatile};
 
     Impl(PlayerPresenter& owner, const PlayerDownloadImportLimits caps)
         : presenter(&owner), owner_thread(owner.thread()), limits(caps) {}
 };
 
-PlayerDownloadImport::PlayerDownloadImport(PlayerPresenter& presenter, const PlayerDownloadImportLimits limits)
-    : impl_(std::make_unique<Impl>(presenter, limits)) {}
+PlayerDownloadImport::PlayerDownloadImport(PlayerPresenter& presenter, const PlayerDownloadImportLimits limits,
+                                           const PlayerDownloadImportPersistence persistence)
+    : impl_(std::make_unique<Impl>(presenter, limits)) {
+    impl_->persistence = persistence;
+}
 PlayerDownloadImport::~PlayerDownloadImport() = default;
+
+DownloadImportState PlayerDownloadImport::begin(const std::string& id, const std::filesystem::path& path) {
+    auto& state = *impl_;
+    if (state.persistence == PlayerDownloadImportPersistence::Volatile)
+        return accept(id, path) ? DownloadImportState::Committed : DownloadImportState::Failed;
+    if (state.persistence != PlayerDownloadImportPersistence::Session || QThread::currentThread() != state.owner_thread)
+        return DownloadImportState::Failed;
+    try {
+        if (!state.presenter || state.presenter->thread() != state.owner_thread || !validId(id) ||
+            !validPublishedPath(path))
+            return DownloadImportState::Failed;
+        auto& owner = *state.presenter;
+        const bool reentrant = state.calling_presenter || owner.download_import_call_in_progress_;
+        const QScopedValueRollback call_guard(state.calling_presenter, true);
+        const QScopedValueRollback owner_guard(owner.download_import_call_in_progress_, true);
+        auto find = [&] {
+            return std::ranges::find(owner.download_import_receipts_, id, &DownloadImportReceipt::job_id);
+        };
+        auto receipt = find();
+        if (receipt != owner.download_import_receipts_.end()) {
+            if (receipt->source_path != path)
+                return DownloadImportState::Failed;
+            const auto status = pollImport(id);
+            if (status == DownloadImportState::Committed)
+                return status;
+            // A replay sees the queue/ledger commit before Qt row signals, but
+            // cannot stage or acknowledge persistence inside that transaction.
+            if (reentrant || owner.download_append_in_progress_)
+                return DownloadImportState::Pending;
+        } else {
+            if (reentrant || owner.download_append_in_progress_ || !owner.download_import_persistence_ready_ ||
+                owner.session_autosave_ == nullptr)
+                return DownloadImportState::Failed;
+            if (owner.download_import_receipts_.size() >= state.limits.max_receipts)
+                return DownloadImportState::Failed;
+            std::size_t remaining = state.limits.max_retained_bytes;
+            const auto count = [&](const std::string& job, const std::filesystem::path& source) {
+                if (job.size() > remaining)
+                    return false;
+                remaining -= job.size();
+                if (source.native().size() > remaining / sizeof(std::filesystem::path::value_type))
+                    return false;
+                remaining -= source.native().size() * sizeof(std::filesystem::path::value_type);
+                return true;
+            };
+            for (const auto& existing : owner.download_import_receipts_)
+                if (!count(existing.job_id, existing.source_path))
+                    return DownloadImportState::Failed;
+            if (!count(id, path))
+                return DownloadImportState::Failed;
+            bool committed = false;
+            static_cast<void>(owner.appendPublishedAudioImpl(path, committed, &id));
+            if (!committed)
+                return DownloadImportState::Failed;
+            receipt = find();
+        }
+        if (!owner.download_import_persistence_ready_ || owner.session_autosave_ == nullptr || owner.exiting_)
+            return DownloadImportState::Failed;
+        const auto index = static_cast<std::size_t>(receipt - owner.download_import_receipts_.begin());
+        if (owner.download_import_revisions_[index] == std::numeric_limits<SessionRevision>::max()) {
+            static_cast<void>(owner.session_autosave_->scheduleStructural(owner.currentSessionSnapshot()));
+            // No vector element reference is held across trusted clock callbacks.
+            owner.download_import_revisions_[index] = owner.session_autosave_->latestRevision();
+        }
+        // Only begin (an explicit admission/retry) may rearm a failed write.
+        // pollImport is read-only and never retries or promotes readback.
+        if (!owner.session_autosave_->writeActive() && owner.session_autosave_->notice() != SessionAutosaveNotice::None)
+            static_cast<void>(owner.session_autosave_->retry());
+        owner.session_autosave_->requestSaveNow();
+        owner.reconcileTimer();
+        return pollImport(id);
+    } catch (...) {
+        // A queue+receipt commit is retained for idempotent explicit retry even
+        // when subsequent snapshot/clock/writer preparation failed.
+        return DownloadImportState::Failed;
+    }
+}
+DownloadImportState PlayerDownloadImport::pollImport(const std::string_view id) {
+    auto& state = *impl_;
+    if (QThread::currentThread() != state.owner_thread || !state.presenter || !validId(id))
+        return DownloadImportState::Failed;
+    if (state.persistence == PlayerDownloadImportPersistence::Volatile) {
+        const auto receipt = state.receipts.find(std::string{id});
+        return receipt != state.receipts.end() && receipt->second.committed ? DownloadImportState::Committed
+                                                                            : DownloadImportState::Failed;
+    }
+    if (state.persistence != PlayerDownloadImportPersistence::Session)
+        return DownloadImportState::Failed;
+    auto& owner = *state.presenter;
+    const auto receipt = std::ranges::find(owner.download_import_receipts_, id, &DownloadImportReceipt::job_id);
+    if (receipt == owner.download_import_receipts_.end() || owner.session_autosave_ == nullptr)
+        return DownloadImportState::Failed;
+    const auto index = static_cast<std::size_t>(receipt - owner.download_import_receipts_.begin());
+    const auto revision = owner.download_import_revisions_[index];
+    if (revision == 0 || (revision != std::numeric_limits<SessionRevision>::max() &&
+                          owner.session_autosave_->savedRevision() >= revision))
+        return DownloadImportState::Committed;
+    if (!owner.session_autosave_->writeActive() && owner.session_autosave_->notice() != SessionAutosaveNotice::None)
+        return DownloadImportState::Failed;
+    return DownloadImportState::Pending;
+}
 
 bool PlayerDownloadImport::accept(const std::string& job_id, const std::filesystem::path& mp3_path) {
     auto& state = *impl_;
+    if (state.persistence == PlayerDownloadImportPersistence::Session)
+        return begin(job_id, mp3_path) == DownloadImportState::Committed;
+    if (state.persistence != PlayerDownloadImportPersistence::Volatile)
+        return false;
     // Check the immutable owner identity before touching QPointer or receipt state.
     // This port is application-thread-owned, not a cross-thread command queue.
     if (QThread::currentThread() != state.owner_thread)

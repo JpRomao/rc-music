@@ -36,6 +36,7 @@ class CountingSessionStore final : public SessionStore {
                 .current_occurrence_id = LocalQueueOccurrenceId{17},
             },
         .position_ms = 12'345,
+        .download_import_receipts = {{"historic-17", std::filesystem::path{LR"(C:\Music\downloaded.mp3)"}}},
     };
 }
 
@@ -76,6 +77,30 @@ TEST_CASE("startup loads exactly once and forwards the store result when restore
     CHECK(store.load_calls == 1);
     CHECK(result.status == expected.status);
     CHECK(result.snapshot == expected.snapshot);
+}
+
+TEST_CASE("durable import startup loads persistence independently of queue restoration",
+          "[m0][qt][core][session][startup][FR-043][FR-051]") {
+    const SessionLoadResult expected{.snapshot = startupSnapshot(), .status = SessionLoadStatus::RecoveredFromBackup};
+    CountingSessionStore store{expected};
+    const auto result = loadSessionForStartup(store, false, true);
+    CHECK(store.load_calls == 1);
+    CHECK(result.status == expected.status);
+    // The presenter alone decides whether to hydrate the queue. Autosave needs
+    // the complete stored snapshot until a deliberate live-session change.
+    CHECK(result.snapshot == expected.snapshot);
+}
+
+TEST_CASE("durable import startup preserves unknown session load status without inventing defaults",
+          "[m0][qt][core][session][startup][FR-044][FR-051]") {
+    SessionLoadStatus status = SessionLoadStatus::FutureVersion;
+    SECTION("future document") { status = SessionLoadStatus::FutureVersion; }
+    SECTION("invalid document") { status = SessionLoadStatus::InvalidUsingDefaults; }
+    CountingSessionStore store{{.status = status}};
+    const auto result = loadSessionForStartup(store, false, true);
+    CHECK(store.load_calls == 1);
+    CHECK(result.status == status);
+    CHECK(result.snapshot == SessionSnapshot{});
 }
 
 } // namespace music_player::m0::test

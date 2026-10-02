@@ -56,6 +56,11 @@ struct FakeImport final : DownloadImport {
     bool accepted{true};
     bool throws{false};
     std::function<void()> on_accept;
+    std::optional<DownloadImportState> begin_state{};
+    DownloadImportState poll_state{DownloadImportState::Pending};
+    std::vector<std::string> import_polls{};
+    bool throw_poll{false};
+    std::function<void()> on_import_poll{};
 
     bool accept(const std::string& id, const std::filesystem::path& path) override {
         imports.emplace_back(id, path);
@@ -64,6 +69,20 @@ struct FakeImport final : DownloadImport {
         if (throws)
             throw std::runtime_error("private import detail");
         return accepted;
+    }
+    DownloadImportState begin(const std::string& id, const std::filesystem::path& path) override {
+        if (!begin_state)
+            return DownloadImport::begin(id, path);
+        static_cast<void>(accept(id, path));
+        return *begin_state;
+    }
+    DownloadImportState pollImport(const std::string_view id) override {
+        import_polls.emplace_back(id);
+        if (on_import_poll)
+            on_import_poll();
+        if (throw_poll)
+            throw std::runtime_error("private persistence detail");
+        return poll_state;
     }
 };
 
@@ -110,6 +129,221 @@ struct Harness {
 };
 
 } // namespace
+
+TEST_CASE("Legacy download import begin preserves its synchronous acceptance contract", "[download][import-pending]") {
+    FakeImport importer;
+    const bool accepted = GENERATE(false, true);
+    importer.accepted = accepted;
+    REQUIRE(importer.begin("job-1", finalPath()) ==
+            (accepted ? DownloadImportState::Committed : DownloadImportState::Failed));
+    REQUIRE(importer.imports.size() == 1);
+    REQUIRE(importer.DownloadImport::pollImport("job-1") == DownloadImportState::Failed);
+}
+
+TEST_CASE("A published download remains importing until its durable handoff commits", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit();
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    const auto pending = h.service.snapshot()[0];
+    REQUIRE(pending.state == DownloadJobState::Importing);
+    REQUIRE(pending.error == DownloadFailure::None);
+    REQUIRE(pending.completed_mp3 == finalPath());
+    REQUIRE_FALSE(h.service.retryImport(ids[0]));
+    REQUIRE_FALSE(h.service.cancel(ids[0]));
+    h.service.tick(std::numeric_limits<std::int64_t>::max());
+    REQUIRE(h.service.snapshot()[0] == pending);
+    REQUIRE(h.execution.polls.size() == 1);
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.importer.import_polls == std::vector<std::string>{ids[0]});
+    h.importer.poll_state = DownloadImportState::Committed;
+    h.service.tick(0);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Completed);
+    REQUIRE(h.service.snapshot()[0].completed_units == pending.completed_units);
+    REQUIRE(h.service.snapshot()[0].total_units == pending.total_units);
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("Durable import pending does not hold the native download execution slot", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    h.service.tick(2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+    REQUIRE(h.execution.starts.size() == 2);
+    REQUIRE(h.execution.starts.back().first == ids[1]);
+    h.service.tick(3);
+    REQUIRE(h.execution.polls == std::vector<std::string>{ids[0], ids[1]});
+    REQUIRE(h.importer.import_polls == std::vector<std::string>{ids[0], ids[0]});
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("A trusted start gate refuses work promptly while durable import drains", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    const bool throws = GENERATE(false, true);
+    h.service.tick(2, [&] {
+        REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
+        REQUIRE_FALSE(h.service.cancel(ids[1]));
+        h.service.tick(3);
+        if (throws)
+            throw std::runtime_error("private shutdown state");
+        return false;
+    });
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Queued);
+    REQUIRE(h.importer.import_polls == std::vector<std::string>{ids[0]});
+    h.service.tick(4, [] { return true; });
+    REQUIRE(h.execution.starts.size() == 2);
+    REQUIRE(h.execution.starts.back().first == ids[1]);
+}
+
+TEST_CASE("All durable handoffs drain independently after the native slot is released", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    h.service.tick(2);
+    published(h.execution, ids[1]);
+    h.service.tick(3);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Importing);
+    h.service.shutdown();
+    REQUIRE_FALSE(h.service.stopped());
+    h.importer.poll_state = DownloadImportState::Committed;
+    h.service.tick(4);
+    REQUIRE(h.service.stopped());
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Completed);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Completed);
+    REQUIRE(h.importer.imports.size() == 2);
+    REQUIRE(h.importer.import_polls.back() == ids[1]);
+    REQUIRE(h.execution.starts.size() == 2);
+    REQUIRE(h.execution.polls.size() == 2);
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("Failed durable imports preserve the published file and retry without redownload",
+          "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit();
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    h.importer.poll_state = DownloadImportState::Failed;
+    h.service.tick(2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::ImportFailed);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Import);
+    REQUIRE(h.service.snapshot()[0].completed_mp3 == finalPath());
+    REQUIRE(h.service.retryImport(ids[0]));
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+    REQUIRE(h.importer.imports.size() == 2);
+    REQUIRE(h.importer.imports[0] == h.importer.imports[1]);
+    h.importer.poll_state = DownloadImportState::Committed;
+    h.service.tick(3);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Completed);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.polls.size() == 1);
+    REQUIRE_FALSE(h.service.retryImport(ids[0]));
+}
+
+TEST_CASE("Shutdown drains durable import without cancelling terminal execution", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit(2);
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    h.service.shutdown();
+    REQUIRE_FALSE(h.service.stopped());
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Cancelled);
+    REQUIRE_FALSE(h.service.retryImport(ids[0]));
+    h.service.tick(std::numeric_limits<std::int64_t>::max());
+    REQUIRE_FALSE(h.service.stopped());
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.polls.size() == 1);
+    REQUIRE(h.execution.cancellations.empty());
+    h.importer.poll_state = GENERATE(DownloadImportState::Committed, DownloadImportState::Failed);
+    h.service.tick(0);
+    REQUIRE(h.service.stopped());
+    REQUIRE(h.service.snapshot()[0].state == (h.importer.poll_state == DownloadImportState::Committed
+                                                  ? DownloadJobState::Completed
+                                                  : DownloadJobState::ImportFailed));
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("Import port callbacks cannot reenter mutations or duplicate pending handoffs",
+          "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit();
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    h.importer.on_import_poll = [&] {
+        REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Importing);
+        REQUIRE_FALSE(h.service.retryImport(ids[0]));
+        REQUIRE_FALSE(h.service.cancel(ids[0]));
+        REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
+        h.service.tick(3);
+        h.service.shutdown();
+    };
+    h.service.tick(2);
+    REQUIRE(h.importer.import_polls.size() == 1);
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.execution.polls.size() == 1);
+    h.importer.on_import_poll = {};
+    h.importer.poll_state = DownloadImportState::Committed;
+    h.service.tick(4);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Completed);
+    REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::None);
+}
+
+TEST_CASE("Invalid or throwing begin cannot report a committed import", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = static_cast<DownloadImportState>(99);
+    SECTION("invalid state") {}
+    SECTION("exception") { h.importer.throws = true; }
+    const auto ids = h.admit();
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::ImportFailed);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Import);
+    REQUIRE(h.service.snapshot()[0].completed_mp3 == finalPath());
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("Invalid or throwing import polls never manufacture durable completion", "[download][import-pending]") {
+    Harness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    const auto ids = h.admit();
+    h.service.tick(0);
+    published(h.execution, ids[0]);
+    h.service.tick(1);
+    SECTION("invalid state") { h.importer.poll_state = static_cast<DownloadImportState>(99); }
+    SECTION("exception") { h.importer.throw_poll = true; }
+    h.service.tick(2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::ImportFailed);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Import);
+    REQUIRE(h.service.snapshot()[0].completed_mp3 == finalPath());
+    REQUIRE(h.importer.import_polls.size() == 1);
+    REQUIRE(h.execution.cancellations.empty());
+}
 
 TEST_CASE("Download admission owns the entire ordered batch without execution", "[download][FR-051]") {
     Harness h;

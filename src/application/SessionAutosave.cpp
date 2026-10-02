@@ -5,6 +5,19 @@
 #include <utility>
 
 namespace music_player::m0 {
+namespace {
+
+bool validSaveStatus(const SessionSaveStatus status) {
+    switch (status) {
+    case SessionSaveStatus::Saved:
+    case SessionSaveStatus::Failed:
+    case SessionSaveStatus::BlockedByFutureVersion:
+        return true;
+    }
+    return false;
+}
+
+} // namespace
 
 SessionAutosave::SessionAutosave(SessionWriter& writer, SessionSnapshot initial, SessionAutosaveOptions options)
     : writer_(writer), latest_(std::move(initial)), options_(std::move(options)) {
@@ -24,11 +37,15 @@ bool SessionAutosave::scheduleStructural(const SessionSnapshot& snapshot) {
     if (!isValidSessionSnapshot(snapshot) || snapshot == latest_)
         return false;
 
-    latest_ = snapshot;
+    // Prepare allocation and clock lookup before replacing any authoritative
+    // state. A failed copy must not leave a partially updated latest snapshot.
+    SessionSnapshot replacement = snapshot;
+    const auto changed_at = automatic_rearming_suspended_ ? TimePoint{} : options_.now();
+    latest_ = std::move(replacement);
     ++latest_revision_;
     dirty_ = true;
     if (!automatic_rearming_suspended_)
-        armStructuralWrite(options_.now());
+        armStructuralWrite(changed_at);
     return true;
 }
 
@@ -81,21 +98,22 @@ void SessionAutosave::requestSaveNow() {
 
 void SessionAutosave::poll() {
     if (const auto completion = writer_.poll(); completion.has_value()) {
-        bool replaced_future_version = false;
-        bool retry_after_completion = false;
         if (active_revision_.has_value() && *active_revision_ == completion->revision) {
-            replaced_future_version = active_replaces_future_version_.value_or(false);
-            retry_after_completion = retry_after_active_;
+            const bool replaced_future_version = active_replaces_future_version_.value_or(false);
+            const bool retry_after_completion = retry_after_active_;
             active_revision_.reset();
             active_replaces_future_version_.reset();
             retry_after_active_ = false;
-        }
-
-        applyCompletion(*completion, replaced_future_version);
-        if (retry_after_completion && dirty_ && completion->revision == latest_revision_ &&
-            completion->status == SessionSaveStatus::Failed) {
-            automatic_rearming_suspended_ = false;
-            immediate_due_ = options_.now();
+            const auto matching =
+                validSaveStatus(completion->status)
+                    ? *completion
+                    : SessionWriteCompletion{.revision = completion->revision, .status = SessionSaveStatus::Failed};
+            applyCompletion(matching, replaced_future_version);
+            if (retry_after_completion && dirty_ && matching.revision == latest_revision_ &&
+                matching.status == SessionSaveStatus::Failed) {
+                automatic_rearming_suspended_ = false;
+                immediate_due_ = options_.now();
+            }
         }
     }
     tryStartDueWrite();
@@ -111,13 +129,8 @@ SessionSaveStatus SessionAutosave::flush() {
     active_revision_.reset();
     active_replaces_future_version_.reset();
     retry_after_active_ = false;
-    if (!completion.has_value()) {
-        immediate_due_.reset();
-        structural_due_.reset();
-        position_due_.reset();
-        first_structural_dirty_at_.reset();
-        automatic_rearming_suspended_ = true;
-        notice_ = SessionAutosaveNotice::SaveFailed;
+    if (!completion.has_value() || completion->revision != request.revision || !validSaveStatus(completion->status)) {
+        applyCompletion({.revision = request.revision, .status = SessionSaveStatus::Failed}, false);
         return SessionSaveStatus::Failed;
     }
 
@@ -159,6 +172,8 @@ bool SessionAutosave::needsPolling() const noexcept {
 }
 
 SessionRevision SessionAutosave::latestRevision() const noexcept { return latest_revision_; }
+
+SessionRevision SessionAutosave::savedRevision() const noexcept { return saved_revision_; }
 
 SessionAutosaveNotice SessionAutosave::notice() const noexcept { return notice_; }
 
@@ -218,6 +233,10 @@ void SessionAutosave::tryStartDueWrite() {
 }
 
 void SessionAutosave::applyCompletion(const SessionWriteCompletion& completion, const bool replaced_future_version) {
+    // Callers only pass an exact matching active/promptly flushed revision.
+    // This acknowledges a saved prefix while newer snapshots remain dirty.
+    if (completion.status == SessionSaveStatus::Saved)
+        saved_revision_ = std::max(saved_revision_, completion.revision);
     if (completion.revision != latest_revision_)
         return;
 

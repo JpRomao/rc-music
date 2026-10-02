@@ -116,6 +116,8 @@ Incremento de checkpoint de 2026-10-02: [histórico privado limitado](../downloa
 
 Incremento worker-only de ownership de 2026-10-02: [journal privado de arquivos](../download-ownership.md) adiciona gates antes de sinks/rename/retorno importável e assessment somente leitura. Falha pósrename preserva final como candidato sem importar; registros não contêm paths arbitrários/URLs e não autorizam ações. Ainda faltam reconciliação durável fila+recibos, recovery/capacidade acionáveis, resíduos do runtime e composição app/host/UI; não encerra FR-051–053, Lite/Completa ou opcionais de instalação.
 
+Incremento de importação durável de 2026-10-02: o [modo Session do importador](../download-jobs.md#importação-local-de-resultado-publicado) conserva fila+recibo por job/path no mesmo `session.json` v2, com migração de v1 para recibos vazios e sem expulsão nos tetos de 128 recibos/1 MiB nativo. O serviço permanece `Importing` até Saved matching; falha exige retry explícito sem novo append/download, e backup/estado inválido/futuro bloqueiam novas importações duráveis. Bootstrap/autosave preservam o ledger mesmo com restauração e opcionais OFF, sem hidratar/tocar suas faixas; remoção manual não ressuscita importação. Paths recuperados não autorizam ações e a atomicidade não é exactly-once universal nem transação global entre documentos. São componentes sem serviço/host/UI de downloads instanciado no app; reconciliação/capacidade acionáveis, resíduos do runtime, ferramentas/sandbox, Brave, Completa e instaladores continuam pendentes. FR-051–053 permanecem abertos.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |

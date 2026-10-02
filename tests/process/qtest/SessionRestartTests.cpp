@@ -1,3 +1,4 @@
+#include "adapters/QtJsonWindowsPreferencesStore.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
 
 #include <QCoreApplication>
@@ -188,6 +189,44 @@ class SessionRestartTests final : public QObject {
         : shell_executable_(std::move(shell_executable)), audio_fixture_(std::move(audio_fixture)) {}
 
   private slots:
+    void preservesDurableReceiptsWithoutRestoringOrLoadingTheQueue() {
+        QTemporaryDir config_root{QDir::tempPath() + QStringLiteral("/music player receipts 日本-XXXXXX")};
+        QVERIFY(config_root.isValid());
+        music_player::m0::QtJsonWindowsPreferencesStore preferences{config_root.path()};
+        QCOMPARE(preferences.save({.preferences = {.restore_last_session = false}}),
+                 music_player::m0::PreferencesSaveStatus::Saved);
+        auto snapshot = restartSnapshot(config_root.filePath(QStringLiteral("not-created-source.wav")));
+        snapshot.download_import_receipts.push_back(
+            {.job_id = "restart-receipt",
+             .source_path =
+                 std::filesystem::path{config_root.filePath(QStringLiteral("never-opened.mp3")).toStdWString()}});
+        QtJsonWindowsSessionStore store{config_root.path()};
+        QCOMPARE(store.save({.snapshot = snapshot}), SessionSaveStatus::Saved);
+
+        QProcess process;
+        RunningProcessGuard process_guard{process};
+        configureShellProcess(process, shell_executable_, QStringLiteral("session-receipts-without-restore"),
+                              config_root.path());
+        process.start();
+        QVERIFY2(process.waitForStarted(process_start_timeout_ms), qPrintable(process.errorString()));
+        const bool finished = process.waitForFinished(process_finish_timeout_ms);
+        const QByteArray output = diagnostics(process);
+        QVERIFY2(finished, output.constData());
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QVERIFY2(process.exitCode() == 0, output.constData());
+        QByteArray normalized_output = output;
+        normalized_output.replace("\r\n", "\n");
+        QVERIFY(normalized_output.split('\n').contains(QByteArray{"M0_SESSION_RECEIPTS_WITHOUT_RESTORE"}));
+
+        const auto saved = store.load();
+        QCOMPARE(saved.status, SessionLoadStatus::Loaded);
+        QVERIFY(saved.snapshot.queue.items.empty());
+        QVERIFY(!saved.snapshot.queue.current_occurrence_id);
+        QCOMPARE(saved.snapshot.position_ms, std::int64_t{0});
+        QCOMPARE(saved.snapshot.download_import_receipts, snapshot.download_import_receipts);
+        QCOMPARE(preferences.load().preferences.restore_last_session, true);
+    }
+
     void restoresAUnicodeSessionPausedAtItsConfirmedPosition() {
         QTemporaryDir config_root{QDir::tempPath() + QStringLiteral("/music player session 日本-XXXXXX")};
         QVERIFY(config_root.isValid());

@@ -56,6 +56,7 @@ namespace {
              {u"currentOccurrenceId"_s, u"9007199254740993"_s},
          }},
         {u"positionMs"_s, u"123456"_s},
+        {u"downloadImports"_s, QJsonArray{}},
     };
 }
 
@@ -96,6 +97,161 @@ class SessionJsonCodecTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void migratesV1WithoutCreatingImportReceipts() {
+        auto root = validObject();
+        root.insert(u"schemaVersion"_s, 1);
+        root.remove(u"downloadImports"_s);
+        // A legacy unknown field never becomes an import acknowledgement.
+        root.insert(u"downloadImports"_s, false);
+        const auto result = SessionJsonCodec::decode(bytes(root));
+        QCOMPARE(result.status, SessionJsonDecodeStatus::Valid);
+        QVERIFY(result.snapshot.has_value());
+        QVERIFY(result.snapshot->download_import_receipts.empty());
+        const auto encoded = QJsonDocument::fromJson(SessionJsonCodec::encode(*result.snapshot)).object();
+        QCOMPARE(encoded.value(u"schemaVersion"_s), QJsonValue{2});
+        QCOMPARE(encoded.value(u"downloadImports"_s), QJsonValue{QJsonArray{}});
+    }
+
+    void roundTripsImportReceiptsWithoutQueueOccurrences() {
+#ifdef _WIN32
+        const auto path = nativePath(uR"(C:\Downloads\Faixa 日本語 ☕ 🎵.mp3)"_s);
+#else
+        const auto path = nativePath(u"/downloads/Faixa 日本語 ☕ 🎵.mp3"_s);
+#endif
+        const SessionSnapshot expected{.download_import_receipts = {{"job-1", path}, {"job-2", path}}};
+        const auto encoded = SessionJsonCodec::encode(expected);
+        QVERIFY(!encoded.isEmpty());
+        const auto root = QJsonDocument::fromJson(encoded).object();
+        QCOMPARE(root.value(u"schemaVersion"_s), QJsonValue{2});
+        const auto imports = root.value(u"downloadImports"_s).toArray();
+        QCOMPARE(imports.size(), 2);
+        QCOMPARE(keySet(imports.at(0).toObject()), QSet<QString>({u"jobId"_s, u"sourcePath"_s}));
+        QCOMPARE(imports.at(0).toObject().value(u"jobId"_s), QJsonValue{u"job-1"_s});
+        QCOMPARE(SessionJsonCodec::decode(encoded).snapshot, std::optional<SessionSnapshot>{expected});
+    }
+
+    void rejectsMalformedImportReceipts_data() {
+        QTest::addColumn<QByteArray>("json");
+        auto add = [](const char* name, const QJsonValue& receipts) {
+            auto root = validObject();
+            root.insert(u"schemaVersion"_s, 2);
+            root.insert(u"downloadImports"_s, receipts);
+            QTest::newRow(name) << bytes(root);
+        };
+        const QJsonObject receipt{{u"jobId"_s, u"job-1"_s}, {u"sourcePath"_s, uR"(C:\Downloads\file.mp3)"_s}};
+        add("null", QJsonValue::Null);
+        add("object", receipt);
+        add("string item", QJsonArray{u"job-1"_s});
+        auto malformed = receipt;
+        malformed.remove(u"jobId"_s);
+        add("missing job", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"jobId"_s, 1);
+        add("numeric job", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"jobId"_s, u"job 1"_s);
+        add("non ASCII job", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"jobId"_s, QString(65, u'a'));
+        add("long job", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.remove(u"sourcePath"_s);
+        add("missing path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s, false);
+        add("boolean path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s, u"relative.mp3"_s);
+        add("relative path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s, u"https://example.test/file.mp3"_s);
+        add("URL path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s, uR"(C:\Downloads\..\file.mp3)"_s);
+        add("unnormalized path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s, uR"(C:\Downloads\file.mp4)"_s);
+        add("non MP3 path", QJsonArray{malformed});
+        malformed = receipt;
+        malformed.insert(u"url"_s, u"https://example.test/private"_s);
+        add("unknown field", QJsonArray{malformed});
+        add("duplicate ID", QJsonArray{receipt, receipt});
+        QJsonArray excessive;
+        for (std::size_t index = 0; index <= maximum_download_import_receipts; ++index) {
+            malformed = receipt;
+            malformed.insert(u"jobId"_s, QStringLiteral("job-%1").arg(index));
+            excessive.append(malformed);
+        }
+        add("count above limit", excessive);
+        malformed = receipt;
+        malformed.insert(u"sourcePath"_s,
+                         QStringLiteral("C:\\") + QString(maximum_download_import_receipt_bytes, u'a') + u".mp3"_s);
+        add("native bytes above limit", QJsonArray{malformed});
+        auto missing = validObject();
+        missing.insert(u"schemaVersion"_s, 2);
+        missing.remove(u"downloadImports"_s);
+        QTest::newRow("missing imports") << bytes(missing);
+        QTest::newRow("duplicate receipt key") << QByteArray{
+            R"({"schemaVersion":2,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[{"jobId":"ignored","jobId":"job-1","sourcePath":"C:\\Downloads\\file.mp3"}]})"};
+        QTest::newRow("escaped duplicate receipt key") << QByteArray{
+            R"({"schemaVersion":2,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[{"jobId":"ignored","job\u0049d":"job-1","sourcePath":"C:\\Downloads\\file.mp3"}]})"};
+        QTest::newRow("duplicate root imports") << QByteArray{
+            R"({"schemaVersion":2,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[{"jobId":"job-1","sourcePath":"C:\\Downloads\\file.mp3"}],"downloadImports":[]})"};
+        QTest::newRow("unpaired high surrogate") << QByteArray{
+            R"({"schemaVersion":2,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[{"jobId":"job-1","sourcePath":"C:\\Downloads\\\ud800.mp3"}]})"};
+        QTest::newRow("unpaired low surrogate") << QByteArray{
+            R"({"schemaVersion":2,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[{"jobId":"job-1","sourcePath":"C:\\Downloads\\\udc00.mp3"}]})"};
+        auto invalid_utf8_root = validObject();
+        invalid_utf8_root.insert(u"schemaVersion"_s, 2);
+        invalid_utf8_root.insert(u"downloadImports"_s, QJsonArray{receipt});
+        auto invalid_utf8 = bytes(invalid_utf8_root);
+        invalid_utf8.replace("file.mp3", QByteArray(1, char(-1)) + ".mp3");
+        QTest::newRow("invalid UTF8") << invalid_utf8;
+    }
+
+    void rejectsMalformedImportReceipts() {
+        QFETCH(QByteArray, json);
+        QCOMPARE(SessionJsonCodec::decode(json).status, SessionJsonDecodeStatus::Invalid);
+    }
+
+    void roundTripsInclusiveReceiptCountAndNativeByteLimits() {
+#ifdef _WIN32
+        const QString prefix = uR"(C:\Downloads\)"_s;
+#else
+        const QString prefix = u"/downloads/"_s;
+#endif
+        SessionSnapshot snapshot;
+        for (std::size_t index = 0; index < maximum_download_import_receipts; ++index)
+            snapshot.download_import_receipts.push_back(
+                {"job-" + std::to_string(index), nativePath(prefix + u"file.mp3"_s)});
+        auto encoded = SessionJsonCodec::encode(snapshot);
+        QVERIFY(!encoded.isEmpty());
+        QCOMPARE(SessionJsonCodec::decode(encoded).snapshot, std::optional<SessionSnapshot>{snapshot});
+
+        constexpr auto unit_bytes = sizeof(std::filesystem::path::value_type);
+        const std::string job(unit_bytes, 'a');
+        const auto units = (maximum_download_import_receipt_bytes - job.size()) / unit_bytes;
+        const auto path_text = prefix + QString(static_cast<qsizetype>(units) - prefix.size() - 4, u'a') + u".mp3"_s;
+        snapshot.download_import_receipts = {{job, nativePath(path_text)}};
+        encoded = SessionJsonCodec::encode(snapshot);
+        QVERIFY(!encoded.isEmpty());
+        QCOMPARE(SessionJsonCodec::decode(encoded).snapshot, std::optional<SessionSnapshot>{snapshot});
+        snapshot.download_import_receipts.front().source_path = nativePath(path_text + u"x.mp3"_s);
+        QVERIFY(SessionJsonCodec::encode(snapshot).isEmpty());
+    }
+
+    void refusesToEncodeUnpairedReceiptPathSurrogates() {
+#ifdef _WIN32
+        QString path = uR"(C:\Downloads\)"_s;
+        path.append(QChar{0xd800});
+        path.append(u".mp3"_s);
+        const SessionSnapshot snapshot{.download_import_receipts = { { "job-1", nativePath(path) } }};
+        QVERIFY(SessionJsonCodec::encode(snapshot).isEmpty());
+#else
+        QSKIP("POSIX native invalid UTF-8 is exercised by core receipt validation.");
+#endif
+    }
+
     void encodesExactDecimalStringsAndRoundTripsDeterministically() {
         const SessionSnapshot expected = exactSnapshot();
 
@@ -108,9 +264,9 @@ class SessionJsonCodecTests final : public QObject {
         QCOMPARE(parse_error.error, QJsonParseError::NoError);
         QVERIFY(document.isObject());
         const QJsonObject root = document.object();
-        const QSet<QString> expected_root_keys{u"schemaVersion"_s, u"queue"_s, u"positionMs"_s};
+        const QSet<QString> expected_root_keys{u"schemaVersion"_s, u"queue"_s, u"positionMs"_s, u"downloadImports"_s};
         QCOMPARE(keySet(root), expected_root_keys);
-        QCOMPARE(root.value(u"schemaVersion"_s), QJsonValue{1});
+        QCOMPARE(root.value(u"schemaVersion"_s), QJsonValue{2});
         QCOMPARE(root.value(u"positionMs"_s), QJsonValue{u"9223372036854775807"_s});
 
         const QJsonObject queue = root.value(u"queue"_s).toObject();
@@ -179,11 +335,11 @@ class SessionJsonCodecTests final : public QObject {
 
     void classifiesFutureVersionBeforeReadingItsFields_data() {
         QTest::addColumn<QByteArray>("json");
-        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":2})"};
+        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":3})"};
         QTest::newRow("missing current fields") << QByteArray{R"({"schemaVersion":99,"queue":false})"};
         QTest::newRow("large numeric version") << QByteArray{R"({"schemaVersion":2147483648})"};
         QTest::newRow("hostile current fields")
-            << QByteArray{R"({"schemaVersion":2,"queue":"C:\\private\\session.json","positionMs":{}})"};
+            << QByteArray{R"({"schemaVersion":3,"queue":"C:\\private\\session.json","positionMs":{}})"};
     }
 
     void classifiesFutureVersionBeforeReadingItsFields() {

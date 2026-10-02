@@ -623,6 +623,8 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
 
     session_autosave_ = session.autosave;
     session_now_ = session.now;
+    download_import_persistence_ready_ =
+        session.load_status == SessionLoadStatus::Missing || session.load_status == SessionLoadStatus::Loaded;
     switch (session.load_status) {
     case SessionLoadStatus::Missing:
         return;
@@ -646,6 +648,8 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
     }
     projectPersistenceWarning();
 
+    download_import_receipts_ = session.initial.download_import_receipts;
+    download_import_revisions_.resize(download_import_receipts_.size(), 0);
     if (!preferences.initial.restore_last_session || session.initial.queue.items.empty())
         return;
     if (!local_queue_.restore(session.initial.queue) || !local_queue_model_.replace(local_queue_))
@@ -666,7 +670,8 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
 }
 
 SessionSnapshot PlayerPresenter::currentSessionSnapshot() const {
-    SessionSnapshot result{.queue = local_queue_.snapshot(), .position_ms = 0};
+    SessionSnapshot result{
+        .queue = local_queue_.snapshot(), .position_ms = 0, .download_import_receipts = download_import_receipts_};
     if (result.queue.current_occurrence_id.has_value() && local_track_session_ != nullptr &&
         local_track_session_->hasTrack()) {
         result.position_ms = restored_position_.has_value() &&
@@ -1806,6 +1811,13 @@ bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>&
 }
 bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bool& committed) {
     committed = false;
+    if (QThread::currentThread() != thread() || download_import_call_in_progress_)
+        return false;
+    return appendPublishedAudioImpl(path, committed, nullptr);
+}
+bool PlayerPresenter::appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
+                                               const std::string* download_job_id) {
+    committed = false;
     if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
         file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
         file_location_request_.has_value() || path.empty())
@@ -1816,6 +1828,16 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
     if (!candidate.append({path}))
         return false;
     auto navigation = navigationItems(candidate);
+    auto receipts = download_import_receipts_;
+    auto revisions = download_import_revisions_;
+    if (download_job_id != nullptr) {
+        if (!download_import_persistence_ready_ || session_autosave_ == nullptr)
+            return false;
+        receipts.push_back({.job_id = *download_job_id, .source_path = path});
+        if (!isValidDownloadImportReceipts(receipts))
+            return false;
+        revisions.push_back(std::numeric_limits<SessionRevision>::max());
+    }
     const QPointer<PlayerPresenter> guard{this};
     download_append_in_progress_ = true;
     const auto release = qScopeGuard([guard] {
@@ -1828,6 +1850,8 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
         local_queue_model_.appendWithCommit(candidate.items().subspan(first_inserted), [&]() noexcept {
             local_queue_ = std::move(candidate);
             navigation_items_ = std::move(navigation);
+            download_import_receipts_ = std::move(receipts);
+            download_import_revisions_ = std::move(revisions);
             committed = true;
         });
     if (!projected)

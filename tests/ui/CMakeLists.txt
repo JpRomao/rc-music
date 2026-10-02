@@ -66,7 +66,7 @@ add_ui_test(rc_music_ui_presenter_tests rc_music.ui.presenter
     qtest/PlayerPresenterTests.cpp rc_music_test_ui Qt6::Gui Qt6::Quick)
 if(TARGET rc_music_downloads)
     add_ui_test(rc_music_ui_download_import_tests rc_music.ui.download-import
-        qtest/PlayerDownloadImportTests.cpp rc_music_test_ui rc_music_downloads Qt6::Gui Qt6::Quick)
+        qtest/PlayerDownloadImportTests.cpp rc_music_test_ui rc_music_downloads m0_qt_session_persistence Qt6::Gui Qt6::Quick)
     target_compile_definitions(rc_music_ui_download_import_tests PRIVATE
         M0_TEST_FIXTURE_FILE="${ui_fixtures}/fixture.v1.json"
         M0_TEST_QUEUE_FILE="${ui_fixtures}/queue.v1.json")

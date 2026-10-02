@@ -1206,6 +1206,14 @@
           "marker": "realServiceCompletesOnlyAfterAppendAndReplayDoesNotImport"
         },
         {
+          "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
+          "marker": "durableImportWaitsForMatchingSaveOfQueueAndReceipt"
+        },
+        {
+          "path": "tests/process/qtest/SessionRestartTests.cpp",
+          "marker": "preservesDurableReceiptsWithoutRestoringOrLoadingTheQueue"
+        },
+        {
           "path": "tests/core/DownloadCheckpointTests.cpp",
           "marker": "Recovered request identity rejects conflicting batches without losing receipt"
         },
@@ -1272,6 +1280,10 @@
           "marker": "Falha remota nunca altera a disponibilidade de arquivos locais."
         },
         {
+          "path": "docs/download-jobs.md",
+          "marker": "## Evidência da importação durável de 2026-10-02"
+        },
+        {
           "path": "docs/development-plan.md",
           "marker": "Incremento de execução assíncrona de 2026-10-01"
         },
@@ -1281,7 +1293,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida mantém tarefa/I/O/destruição na thread privada; prepara capability por job antes da sessão e retém nove artefatos autenticados até teardown após ACK. Handoff local concreto acrescenta Published confiável ao presenter/fila real sem autoplay, com recibos limitados e idempotentes; testes do handoff usam execução/áudio falsos, não downloads reais. Ensaio MP3/MP4→serviço anterior usa transferência/helper e importador falsos, com processos/filesystem/conversor/publicação reais. Nenhum fluxo está composto no player. Completar perfil exato de distribuição/notices, FFmpeg corrigido/proveniência/licenças/sandbox, journal/persistência/recuperação de jobs/recibos/finais/residuais, composição do importador/host/lifecycle/model/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos; sem workflow completo no app ou aprovação de mídia remota/distribuição."
+        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida prepara capability por job e conserva tarefa/I/O/destruição na thread privada. Há checkpoint assíncrono de admissão, journal worker-only de ownership e assessment conservador; importador Session conserva fila+recibo v2 e aguarda Saved matching, sem autoplay/reappend no retry. Bootstrap preserva ledger com restauração/opcionais OFF sem carregar áudio. Testes do handoff usam execução/áudio falsos e store real em TEMP próprio; ensaio MP3/MP4→serviço anterior usa transferência/helper e importador falsos, com processos/filesystem/conversor/publicação reais. Nenhum fluxo está composto no player. Completar reconciliação entre históricos, recuperação/capacidade acionáveis, resíduos de runtime, perfil exato de distribuição/notices, FFmpeg corrigido/proveniência/licenças/sandbox, composição importador/host/lifecycle/model/UI, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos; sem workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {
@@ -1366,6 +1378,14 @@
         {
           "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
           "marker": "realServiceRetriesImportWithoutExecutingAgain"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
+          "marker": "durableFailureDoesNotPromoteReadbackAndExplicitRetryDoesNotAppend"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
+          "marker": "durableWriterReentryCannotBypassTheGuardThroughVolatileOrDirectAppend"
         },
         {
           "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
@@ -1518,6 +1538,10 @@
           "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
         },
         {
+          "path": "docs/download-jobs.md",
+          "marker": "## Evidência da importação durável de 2026-10-02"
+        },
+        {
           "path": "docs/development-plan.md",
           "marker": "Incremento de execução assíncrona de 2026-10-01"
         },
@@ -1531,7 +1555,7 @@
         }
       ],
       "remaining": [
-        "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback em testes de componentes. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; launcher autentica cópias privadas/bootstrap antes de carregar Qt, preparado na thread privada por job. Porta rápida só publica terminal após destruir tarefa; RAII/QtDownloadIo não qualificam ACK. Falhas tipadas, malfunction, publicação tardia e residual após rename não liberam ownership/importam prematuramente. Handoff concreto para presenter/fila real é append-only, idempotente/limitado e recusa busy antes do commit; retry não executa download novamente. Seus testes usam execução/áudio falsos; ensaio MP3/MP4→serviço anterior usa importador falso e processos/arquivos/conversor reais. Faltam perfil exato/distribuição, demais gates TLS e ferramenta corrigida/proveniência/licenças/sandbox, journal/persistência/recuperação/ownership durável/residuais, composição importador/host/lifecycle/model/UI, edições/instaladores e expiração/live/restrições/headers/seek. Sem backend completo no app ou aprovação de mídia remota/distribuição."
+        "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback em testes de componentes. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; launcher autentica cópias privadas/bootstrap antes de carregar Qt, preparado na thread privada por job. Porta rápida só publica terminal após destruir tarefa; RAII/QtDownloadIo não qualificam ACK. Checkpoint assíncrono e journal de ownership preservam falhas ambíguas/candidatos privados, sem ações automáticas. Importador Session é append-only com fila+recibo no mesmo documento e Importing até Saved matching; Failed/readback não vira ACK, retry explícito não repete append/download e guard fecha reentradas. Bootstrap conserva recibos sem hidratar quando restore está OFF. Seus testes usam execução/áudio falsos e store real em TEMP próprio; ensaio MP3/MP4→serviço anterior usa importador falso e processos/arquivos/conversor reais. Faltam reconciliação/divergências/recuperação/capacidade acionáveis, resíduos de runtime, perfil exato/distribuição, demais gates TLS e ferramenta corrigida/proveniência/licenças/sandbox, composição importador/host/lifecycle/model/UI, edições/instaladores e expiração/live/restrições/headers/seek. Sem backend completo no app, exactly-once universal ou aprovação de mídia remota/distribuição."
       ]
     },
     {

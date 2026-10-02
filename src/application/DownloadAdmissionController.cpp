@@ -258,7 +258,10 @@ void DownloadAdmissionController::tick(const std::int64_t now_ms) {
     owner.applyShutdown();
     // Active work keeps observing progress, cancellation and deadlines while
     // storage is pending; the staged FIFO barrier prevents new work starting.
-    owner.service.tick(now_ms);
+    // Import acknowledgement polling may request shutdown from a trusted
+    // callback inside the service port call. Recheck ingress immediately before
+    // any successor is started, while execution/import draining stays enabled.
+    owner.service.tick(now_ms, [&owner] { return !owner.closing; });
     owner.drain();
 }
 DownloadAdmissionResult DownloadAdmissionController::begin(const DownloadRequest& request) {

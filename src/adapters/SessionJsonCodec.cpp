@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QSet>
 #include <QString>
 
 #include <cmath>
@@ -17,6 +18,211 @@ namespace music_player::m0 {
 namespace {
 
 [[nodiscard]] bool containsNull(const QString& value) { return value.contains(QChar{0}); }
+
+[[nodiscard]] std::optional<std::filesystem::path> decodePath(const QJsonValue& value);
+
+[[nodiscard]] bool scalarString(const QString& value) {
+    for (qsizetype index = 0; index < value.size(); ++index) {
+        const auto unit = value.at(index).unicode();
+        if (unit >= 0xdc00 && unit <= 0xdfff)
+            return false;
+        if (unit >= 0xd800 && unit <= 0xdbff) {
+            if (++index == value.size())
+                return false;
+            const auto next = value.at(index).unicode();
+            if (next < 0xdc00 || next > 0xdfff)
+                return false;
+        }
+    }
+    return true;
+}
+
+// Qt objects have already lost duplicate keys. Only the v2 acknowledgement
+// fields need this lexical pass; legacy queue and unknown-field tolerance stay
+// unchanged. Syntax and numbers are still parsed by Qt before this pass.
+class ImportKeysPreflight final {
+  public:
+    explicit ImportKeysPreflight(const QByteArrayView bytes) : bytes_(bytes) {}
+    bool valid() {
+        if (!value(Context::Root, 0))
+            return false;
+        whitespace();
+        return position_ == bytes_.size();
+    }
+
+  private:
+    enum class Context { Ordinary, Root, Imports, Receipt };
+    QByteArrayView bytes_;
+    qsizetype position_{0};
+
+    void whitespace() {
+        while (position_ < bytes_.size()) {
+            const auto character = bytes_[position_];
+            if (character != ' ' && character != '\t' && character != '\r' && character != '\n')
+                break;
+            ++position_;
+        }
+    }
+    bool consume(const char expected) {
+        whitespace();
+        if (position_ == bytes_.size() || bytes_[position_] != expected)
+            return false;
+        ++position_;
+        return true;
+    }
+    std::optional<QString> string(const bool decode) {
+        whitespace();
+        if (position_ == bytes_.size() || bytes_[position_] != '"')
+            return std::nullopt;
+        const auto begin = position_++;
+        while (position_ < bytes_.size()) {
+            const auto character = bytes_[position_++];
+            if (character == '\\') {
+                if (position_ == bytes_.size())
+                    return std::nullopt;
+                ++position_;
+            } else if (character == '"') {
+                if (!decode)
+                    return QString{};
+                QByteArray wrapped{"["};
+                wrapped.append(bytes_.data() + begin, position_ - begin);
+                wrapped.append(']');
+                const auto parsed = QJsonDocument::fromJson(wrapped);
+                if (!parsed.isArray() || parsed.array().size() != 1)
+                    return std::nullopt;
+                return parsed.array().at(0).toString();
+            }
+        }
+        return std::nullopt;
+    }
+    bool value(const Context context, const unsigned int depth) {
+        whitespace();
+        if (position_ == bytes_.size())
+            return false;
+        const auto character = bytes_[position_];
+        if ((character == '{' || character == '[') && depth >= 1024)
+            return false;
+        if (character == '"')
+            return string(false).has_value();
+        if (character == '{') {
+            ++position_;
+            QSet<QString> keys;
+            if (consume('}'))
+                return true;
+            do {
+                const auto key = string(context == Context::Root || context == Context::Receipt);
+                if (!key || !consume(':'))
+                    return false;
+                const bool acknowledgement_key =
+                    context == Context::Receipt ||
+                    (context == Context::Root &&
+                     (*key == QStringLiteral("downloadImports") || *key == QStringLiteral("schemaVersion")));
+                if (acknowledgement_key) {
+                    if (keys.contains(*key))
+                        return false;
+                    keys.insert(*key);
+                }
+                const auto child = context == Context::Root && *key == QStringLiteral("downloadImports")
+                                       ? Context::Imports
+                                       : Context::Ordinary;
+                if (!value(child, depth + 1))
+                    return false;
+            } while (consume(','));
+            return consume('}');
+        }
+        if (character == '[') {
+            ++position_;
+            if (consume(']'))
+                return true;
+            do {
+                if (!value(context == Context::Imports ? Context::Receipt : Context::Ordinary, depth + 1))
+                    return false;
+            } while (consume(','));
+            return consume(']');
+        }
+        const auto begin = position_;
+        while (position_ < bytes_.size()) {
+            const auto next = bytes_[position_];
+            if (next == ',' || next == '}' || next == ']' || next == ' ' || next == '\t' || next == '\r' ||
+                next == '\n')
+                break;
+            ++position_;
+        }
+        return position_ != begin;
+    }
+};
+
+[[nodiscard]] std::optional<std::size_t> receiptNativeBytes(const QString& text) {
+    if (text.isEmpty() || containsNull(text) || !scalarString(text))
+        return std::nullopt;
+#ifdef _WIN32
+    if (static_cast<std::size_t>(text.size()) > maximum_download_import_receipt_bytes / sizeof(wchar_t))
+        return std::nullopt;
+    return static_cast<std::size_t>(text.size()) * sizeof(wchar_t);
+#else
+    std::size_t bytes = 0;
+    for (qsizetype index = 0; index < text.size(); ++index) {
+        const auto unit = text.at(index).unicode();
+        if (unit >= 0xd800 && unit <= 0xdbff) {
+            bytes += 4;
+            ++index;
+        } else {
+            bytes += unit <= 0x7f ? 1 : unit <= 0x7ff ? 2 : 3;
+        }
+        if (bytes > maximum_download_import_receipt_bytes)
+            return std::nullopt;
+    }
+    return bytes;
+#endif
+}
+
+[[nodiscard]] bool decodeReceipts(const QJsonValue& value, SessionSnapshot& snapshot) {
+    if (!value.isArray())
+        return false;
+    const auto receipts = value.toArray();
+    if (receipts.size() > static_cast<qsizetype>(maximum_download_import_receipts))
+        return false;
+    std::size_t remaining_bytes = maximum_download_import_receipt_bytes;
+    QSet<QString> ids;
+    // Check closed fields, count and aggregate native bytes before allocating
+    // any receipt/path vector; Qt's document itself has the independent 16 MiB cap.
+    for (const auto& item : receipts) {
+        if (!item.isObject())
+            return false;
+        const auto object = item.toObject();
+        if (object.size() != 2 || !object.value(QStringLiteral("jobId")).isString() ||
+            !object.value(QStringLiteral("sourcePath")).isString())
+            return false;
+        const auto id = object.value(QStringLiteral("jobId")).toString();
+        if (id.isEmpty() || id.size() > 64 || ids.contains(id))
+            return false;
+        for (const auto unit : id) {
+            const auto code = unit.unicode();
+            if (!((code >= u'a' && code <= u'z') || (code >= u'A' && code <= u'Z') || (code >= u'0' && code <= u'9') ||
+                  code == u'_' || code == u'-'))
+                return false;
+        }
+        const auto id_bytes = static_cast<std::size_t>(id.size());
+        if (id_bytes > remaining_bytes)
+            return false;
+        remaining_bytes -= id_bytes;
+        const auto native_bytes = receiptNativeBytes(object.value(QStringLiteral("sourcePath")).toString());
+        if (!native_bytes || *native_bytes > remaining_bytes)
+            return false;
+        remaining_bytes -= *native_bytes;
+        ids.insert(id);
+    }
+    snapshot.download_import_receipts.reserve(static_cast<std::size_t>(receipts.size()));
+    for (const auto& item : receipts) {
+        const auto object = item.toObject();
+        const auto path = decodePath(object.value(QStringLiteral("sourcePath")));
+        if (!path)
+            return false;
+        snapshot.download_import_receipts.push_back(
+            {object.value(QStringLiteral("jobId")).toString().toStdString(), *path});
+    }
+    return isValidDownloadImportReceipts(snapshot.download_import_receipts);
+}
 
 [[nodiscard]] std::optional<QString> encodePath(const std::filesystem::path& path) {
 #ifdef _WIN32
@@ -112,10 +318,22 @@ QByteArray SessionJsonCodec::encode(const SessionSnapshot& snapshot) {
                      encodeUnsigned(snapshot.queue.current_occurrence_id->value));
     }
 
+    QJsonArray imports;
+    for (const auto& receipt : snapshot.download_import_receipts) {
+        const auto source_path = encodePath(receipt.source_path);
+        if (!source_path || !scalarString(*source_path))
+            return {};
+        imports.append(QJsonObject{
+            {QStringLiteral("jobId"), QString::fromStdString(receipt.job_id)},
+            {QStringLiteral("sourcePath"), *source_path},
+        });
+    }
+
     const QJsonObject root{
         {QStringLiteral("schemaVersion"), schema_version},
         {QStringLiteral("queue"), queue},
         {QStringLiteral("positionMs"), QString::number(static_cast<qlonglong>(snapshot.position_ms))},
+        {QStringLiteral("downloadImports"), imports},
     };
     QByteArray encoded = QJsonDocument{root}.toJson(QJsonDocument::Compact);
     if (encoded.size() > maximum_document_size)
@@ -138,7 +356,10 @@ SessionJsonDecodeResult SessionJsonCodec::decode(const QByteArrayView bytes) {
         return {};
     if (*version > schema_version)
         return {.status = SessionJsonDecodeStatus::FutureVersion};
-    if (*version != schema_version)
+    if (*version != 1 && *version != schema_version)
+        return {};
+
+    if (*version == schema_version && !ImportKeysPreflight{bytes}.valid())
         return {};
 
     const QJsonValue queue_value = root.value(QStringLiteral("queue"));
@@ -151,6 +372,8 @@ SessionJsonDecodeResult SessionJsonCodec::decode(const QByteArrayView bytes) {
         return {};
 
     SessionSnapshot snapshot;
+    if (*version == schema_version && !decodeReceipts(root.value(QStringLiteral("downloadImports")), snapshot))
+        return {};
     const QJsonArray items = items_value.toArray();
     snapshot.queue.items.reserve(static_cast<std::size_t>(items.size()));
     for (const QJsonValue& item_value : items) {

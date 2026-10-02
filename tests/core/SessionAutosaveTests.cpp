@@ -52,7 +52,7 @@ class RecordingSessionWriter final : public SessionWriter {
         if (!flush_returns_completion)
             return std::nullopt;
         return SessionWriteCompletion{
-            .revision = request.revision,
+            .revision = flush_completion_revision.value_or(request.revision),
             .status = flush_status,
             .requested_snapshot_recoverable_after_failure = flush_recoverable_after_failure,
         };
@@ -76,6 +76,7 @@ class RecordingSessionWriter final : public SessionWriter {
     SessionSaveStatus flush_status{SessionSaveStatus::Saved};
     std::optional<bool> flush_recoverable_after_failure{};
     bool flush_returns_completion{true};
+    std::optional<SessionRevision> flush_completion_revision{};
 
   private:
     std::optional<SessionWriteRequest> active_;
@@ -531,6 +532,185 @@ TEST_CASE("repair and flush persist only a dirty latest session and retain failu
     CHECK(autosave.dirty());
     CHECK(autosave.notice() == SessionAutosaveNotice::SaveIncomplete);
     CHECK_FALSE(autosave.nextWakeup().has_value());
+}
+
+TEST_CASE("session saved revision acknowledges an active save even behind a newer snapshot",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(autosave.flush() == SessionSaveStatus::Saved);
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(writer.flushes.empty());
+
+    auto first = snapshot(2);
+    first.download_import_receipts = {{"download-1", std::filesystem::path{LR"(C:\Music\first.mp3)"}}};
+    REQUIRE(autosave.scheduleStructural(first));
+    autosave.requestSaveNow();
+    REQUIRE(writer.starts.size() == 1);
+    auto newer = snapshot(3);
+    newer.download_import_receipts = first.download_import_receipts;
+    newer.download_import_receipts.push_back({"download-2", std::filesystem::path{LR"(C:\Music\second.mp3)"}});
+    REQUIRE(autosave.scheduleStructural(newer));
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 1);
+    CHECK(autosave.latestRevision() == 2);
+    CHECK(autosave.dirty());
+    CHECK(writer.starts.front().snapshot.download_import_receipts == first.download_import_receipts);
+
+    autosave.requestSaveNow();
+    REQUIRE(writer.starts.size() == 2);
+    CHECK(writer.starts.back().snapshot.download_import_receipts == newer.download_import_receipts);
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 2);
+    CHECK_FALSE(autosave.dirty());
+}
+
+TEST_CASE("session autosave ignores a saved completion for a revision never submitted",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    writer.completions.push_back({.revision = autosave.latestRevision(), .status = SessionSaveStatus::Saved});
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(autosave.dirty());
+    CHECK(writer.starts.empty());
+    CHECK(autosave.notice() == SessionAutosaveNotice::None);
+
+    clock.advance(500ms);
+    autosave.poll();
+    REQUIRE(writer.starts.size() == 1);
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 1);
+    CHECK_FALSE(autosave.dirty());
+}
+
+TEST_CASE("session autosave ignores stale or future completion while retaining the active write",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    autosave.requestSaveNow();
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    REQUIRE(autosave.scheduleStructural(snapshot(3)));
+    autosave.requestSaveNow();
+    REQUIRE(writer.starts.size() == 2);
+    SECTION("duplicate old completion") {
+        writer.completions.push_back({.revision = 1, .status = SessionSaveStatus::Saved});
+    }
+    SECTION("never-submitted future completion") {
+        writer.completions.push_back({.revision = 3, .status = SessionSaveStatus::Saved});
+    }
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 1);
+    CHECK(autosave.writeActive());
+    CHECK(autosave.dirty());
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 2);
+    CHECK_FALSE(autosave.writeActive());
+    CHECK_FALSE(autosave.dirty());
+}
+
+TEST_CASE("session failed or blocked writes never advance acknowledged durability",
+          "[m0][qt][core][session][FR-043][FR-044][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    autosave.requestSaveNow();
+    writer.complete(SessionSaveStatus::Saved);
+    autosave.poll();
+    REQUIRE(autosave.scheduleStructural(snapshot(3)));
+    autosave.requestSaveNow();
+    SECTION("failed despite exact readback") { writer.complete(SessionSaveStatus::Failed, true); }
+    SECTION("future-version blocked") { writer.complete(SessionSaveStatus::BlockedByFutureVersion); }
+    SECTION("unknown save status") { writer.complete(static_cast<SessionSaveStatus>(99)); }
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 1);
+    CHECK(autosave.dirty());
+}
+
+TEST_CASE("session flush acknowledges only its exact requested saved revision",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(autosave.flush() == SessionSaveStatus::Saved);
+    CHECK(autosave.savedRevision() == 1);
+    CHECK_FALSE(autosave.dirty());
+}
+
+TEST_CASE("session malformed or failed flush cannot acknowledge durability or clean dirty state",
+          "[m0][qt][core][session][FR-043][FR-044][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    SECTION("wrong newer revision") { writer.flush_completion_revision = 2; }
+    SECTION("wrong older revision") { writer.flush_completion_revision = 0; }
+    SECTION("unknown status") { writer.flush_status = static_cast<SessionSaveStatus>(99); }
+    SECTION("failed with exact readback") {
+        writer.flush_status = SessionSaveStatus::Failed;
+        writer.flush_recoverable_after_failure = true;
+    }
+    SECTION("no completion") { writer.flush_returns_completion = false; }
+    CHECK(autosave.flush() == SessionSaveStatus::Failed);
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(autosave.dirty());
+}
+
+TEST_CASE("session polling cannot convert a duplicate of a failed flush into a saved acknowledgement",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto autosave = makeAutosave(writer, clock);
+    REQUIRE(autosave.scheduleStructural(snapshot(2)));
+    writer.flush_status = SessionSaveStatus::Failed;
+    CHECK(autosave.flush() == SessionSaveStatus::Failed);
+    writer.completions.push_back({.revision = 1, .status = SessionSaveStatus::Saved});
+    autosave.poll();
+    CHECK(autosave.savedRevision() == 0);
+    CHECK(autosave.dirty());
+    CHECK(autosave.notice() == SessionAutosaveNotice::SaveFailed);
+}
+
+TEST_CASE("session structural preparation failure preserves the previous snapshot and revision",
+          "[m0][qt][core][session][FR-043][FR-051][regression]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    bool fail_clock = false;
+    auto scheduling = options(clock);
+    scheduling.now = [&] {
+        if (fail_clock)
+            throw std::runtime_error{"injected clock failure"};
+        return clock.now();
+    };
+    SessionAutosave autosave{writer, snapshot(1), std::move(scheduling)};
+    auto changed = snapshot(2);
+    changed.download_import_receipts = {{"download-1", std::filesystem::path{LR"(C:\Music\first.mp3)"}}};
+    fail_clock = true;
+    CHECK_THROWS_AS(autosave.scheduleStructural(changed), std::runtime_error);
+    CHECK(autosave.latestRevision() == 0);
+    CHECK(autosave.savedRevision() == 0);
+    CHECK_FALSE(autosave.dirty());
+    CHECK_FALSE(autosave.nextWakeup().has_value());
+    fail_clock = false;
+    REQUIRE(autosave.scheduleStructural(changed));
+    CHECK(autosave.latestRevision() == 1);
+    autosave.requestSaveNow();
+    REQUIRE(writer.starts.size() == 1);
+    CHECK(writer.starts.front().snapshot == changed);
 }
 
 } // namespace music_player::m0::test

@@ -27,6 +27,7 @@ enum class DownloadFailure {
     InvalidResult
 };
 enum class DownloadExecutionState { Running, Published, Failed, Cancelled };
+enum class DownloadImportState { Pending, Committed, Failed };
 
 struct DownloadExecutionUpdate final {
     std::string job_id{};
@@ -60,10 +61,22 @@ class DownloadExecution {
 
 // Idempotent handoff keyed by job_id to the existing local import pipeline; never autoplay,
 // clear the local queue, or accept an unfinished/remote path. False permits explicit retry.
+// The synchronous accept seam remains compatible with volatile importers. Durable
+// importers override begin/pollImport: every call returns promptly, Pending waits
+// for the matching session-store acknowledgement and Committed means that handoff
+// is durable. Failed/exception never proves that a borrowed session writer stopped;
+// composition separately drains its autosave/worker resources. The importer owns
+// no worker itself. Idempotent receipts make explicit retry safe after uncertainty.
+// Once begin committed the local queue transaction it cannot be cancelled through
+// this port. Only trusted Published input reaches begin; loaded paths remain evidence.
 class DownloadImport {
   public:
     virtual ~DownloadImport() = default;
     [[nodiscard]] virtual bool accept(const std::string& job_id, const std::filesystem::path& mp3_path) = 0;
+    [[nodiscard]] virtual DownloadImportState begin(const std::string& job_id, const std::filesystem::path& mp3_path) {
+        return accept(job_id, mp3_path) ? DownloadImportState::Committed : DownloadImportState::Failed;
+    }
+    [[nodiscard]] virtual DownloadImportState pollImport(std::string_view) { return DownloadImportState::Failed; }
 };
 
 } // namespace music_player::m0

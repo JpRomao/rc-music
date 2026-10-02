@@ -39,7 +39,8 @@ endfunction()
 
 add_process_driver(rc_music_preferences_restart_tests PreferencesRestartTests
     m0_qt_preferences_persistence m0_qt_session_persistence)
-add_process_driver(rc_music_session_restart_tests SessionRestartTests m0_qt_session_persistence)
+add_process_driver(rc_music_session_restart_tests SessionRestartTests
+    m0_qt_session_persistence m0_qt_preferences_persistence)
 add_process_driver(rc_music_single_instance_executable_tests SingleInstanceExecutableTests
     m0_qt_shell_bootstrap Qt6::Network)
 add_process_driver(rc_music_diagnostic_executable_tests DiagnosticExecutableTests m0_qt_preferences_persistence)

@@ -225,16 +225,48 @@ struct DownloadService::Impl {
         }
     }
 
+    void applyImport(Job& job, const DownloadImportState result) {
+        switch (result) {
+        case DownloadImportState::Pending:
+            job.view.state = DownloadJobState::Importing;
+            job.view.error = DownloadFailure::None;
+            return;
+        case DownloadImportState::Committed:
+            job.view.state = DownloadJobState::Completed;
+            job.view.error = DownloadFailure::None;
+            return;
+        case DownloadImportState::Failed:
+            break;
+        }
+        // Unknown statuses and exceptions never manufacture commitment. Failed
+        // is a handoff result, not evidence that borrowed session I/O is stopped.
+        job.view.state = DownloadJobState::ImportFailed;
+        job.view.error = DownloadFailure::Import;
+    }
+
     bool import(Job& job) {
-        bool accepted = false;
+        auto result = DownloadImportState::Failed;
         try {
             const PortCall guard(calling_port);
-            accepted = importer.accept(job.view.job_id, job.view.completed_mp3);
+            result = importer.begin(job.view.job_id, job.view.completed_mp3);
         } catch (...) {
         }
-        job.view.state = accepted ? DownloadJobState::Completed : DownloadJobState::ImportFailed;
-        job.view.error = accepted ? DownloadFailure::None : DownloadFailure::Import;
-        return accepted;
+        applyImport(job, result);
+        return result == DownloadImportState::Pending || result == DownloadImportState::Committed;
+    }
+
+    void observeImports() {
+        for (auto& job : jobs) {
+            if (job.view.state != DownloadJobState::Importing)
+                continue;
+            auto result = DownloadImportState::Failed;
+            try {
+                const PortCall guard(calling_port);
+                result = importer.pollImport(job.view.job_id);
+            } catch (...) {
+            }
+            applyImport(job, result);
+        }
     }
 
     bool validProgress(const Job& job, const DownloadExecutionUpdate& update) const {
@@ -384,6 +416,7 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
             case DownloadJobState::Publishing:
             case DownloadJobState::Cancelling:
             case DownloadJobState::ImportFailed:
+            case DownloadJobState::Importing:
                 view.state = DownloadJobState::Interrupted;
                 view.error = DownloadFailure::Unavailable;
                 break;
@@ -567,16 +600,32 @@ std::vector<DownloadJobSnapshot> DownloadService::snapshot() const {
     return result;
 }
 
-void DownloadService::tick(const std::int64_t now_ms) {
+void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()>& allow_start) {
     auto& state = *impl_;
     if (state.calling_port || !state.valid_configuration)
         return;
+    // A published job owns no native execution slot. Its durable handoff is
+    // observed separately, including after shutdown, without a download clock
+    // or execution cancellation being applied to the borrowed session writer.
+    state.observeImports();
     if (!state.active.has_value()) {
         if (state.closed)
             return;
         const auto next = std::find_if(state.jobs.begin(), state.jobs.end(),
                                        [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
         if (next == state.jobs.end() || next->awaiting_confirmation)
+            return;
+        bool allowed = true;
+        try {
+            if (allow_start) {
+                const PortCall guard(state.calling_port);
+                allowed = allow_start();
+            }
+        } catch (...) {
+            allowed = false;
+        }
+        if (!allowed || state.closed || state.calling_port || state.active ||
+            next->view.state != DownloadJobState::Queued || next->awaiting_confirmation)
             return;
         state.active = static_cast<std::size_t>(next - state.jobs.begin());
         auto& job = *next;
@@ -659,6 +708,10 @@ void DownloadService::shutdown() {
         state.requestCancellation(state.jobs[*state.active], DownloadFailure::None);
 }
 
-bool DownloadService::stopped() const { return impl_->closed && !impl_->active.has_value(); }
+bool DownloadService::stopped() const {
+    return impl_->closed && !impl_->active.has_value() && std::ranges::none_of(impl_->jobs, [](const Impl::Job& job) {
+               return job.view.state == DownloadJobState::Importing;
+           });
+}
 
 } // namespace music_player::m0

@@ -23,6 +23,7 @@ struct ShellLaunchOptions final {
     bool smoke_session_crash_before_primary_commit{false};
     bool smoke_session_recovery_repair{false};
     bool smoke_session_defaults_read{false};
+    bool smoke_session_receipts_without_restore{false};
     bool smoke_single_instance_executable{false};
     bool smoke_start_minimized_no_tray{false};
     bool smoke_startup_source_precedence{false};

@@ -42,6 +42,93 @@ void checkItemsEqual(const std::vector<LocalFileQueueItem>& expected, const Loca
     };
 }
 
+[[nodiscard]] std::filesystem::path receiptPath() {
+#ifdef _WIN32
+    return LR"(C:\Downloads\Faixa 日本語.mp3)";
+#else
+    return "/downloads/Faixa 日本語.mp3";
+#endif
+}
+
+TEST_CASE("session import receipts survive manual queue removal and missing media",
+          "[core][session][download-receipts]") {
+    SessionSnapshot snapshot;
+    snapshot.download_import_receipts = {{"job-1", receiptPath()}, {"job-2", receiptPath()}};
+    CHECK(isValidSessionSnapshot(snapshot));
+    CHECK(isValidDownloadImportReceipts(snapshot.download_import_receipts));
+    CHECK(snapshot == SessionSnapshot{.download_import_receipts = snapshot.download_import_receipts});
+    auto changed = snapshot;
+    changed.download_import_receipts.front().job_id = "another";
+    CHECK_FALSE(changed == snapshot);
+}
+
+TEST_CASE("session import receipts reject malformed identity and paths", "[core][session][download-receipts]") {
+    SessionSnapshot snapshot{.download_import_receipts = {{"job-1", receiptPath()}}};
+    SECTION("empty job") { snapshot.download_import_receipts.front().job_id.clear(); }
+    SECTION("long job") { snapshot.download_import_receipts.front().job_id.assign(65, 'a'); }
+    SECTION("space job") { snapshot.download_import_receipts.front().job_id = "job 1"; }
+    SECTION("unicode job") { snapshot.download_import_receipts.front().job_id = "job-日本語"; }
+    SECTION("NUL job") { snapshot.download_import_receipts.front().job_id = std::string{"job\0a", 5}; }
+    SECTION("duplicate job") { snapshot.download_import_receipts.push_back(snapshot.download_import_receipts.front()); }
+    SECTION("empty path") { snapshot.download_import_receipts.front().source_path.clear(); }
+    SECTION("relative path") { snapshot.download_import_receipts.front().source_path = "relative.mp3"; }
+    SECTION("URL path") { snapshot.download_import_receipts.front().source_path = "https://example.test/file.mp3"; }
+    SECTION("unnormalized path") {
+        snapshot.download_import_receipts.front().source_path = receiptPath().parent_path() / ".." / "file.mp3";
+    }
+    SECTION("non MP3") { snapshot.download_import_receipts.front().source_path.replace_extension(".mp4"); }
+    SECTION("NUL path") {
+        auto native = receiptPath().native();
+        native.push_back(std::filesystem::path::value_type{});
+        native.append(std::filesystem::path{"other.mp3"}.native());
+        snapshot.download_import_receipts.front().source_path = native;
+    }
+    SECTION("invalid Unicode path") {
+        auto native = receiptPath().native();
+#ifdef _WIN32
+        native.insert(native.size() - 4, 1, static_cast<wchar_t>(0xd800));
+#else
+        native.insert(native.size() - 4, 1, static_cast<char>(0xff));
+#endif
+        snapshot.download_import_receipts.front().source_path = native;
+    }
+    CHECK_FALSE(isValidDownloadImportReceipts(snapshot.download_import_receipts));
+    CHECK_FALSE(isValidSessionSnapshot(snapshot));
+}
+
+TEST_CASE("session import receipt limits are inclusive without eviction", "[core][session][download-receipts]") {
+    SessionSnapshot snapshot;
+    for (std::size_t index = 0; index < maximum_download_import_receipts; ++index)
+        snapshot.download_import_receipts.push_back({"job-" + std::to_string(index), receiptPath()});
+    REQUIRE(isValidSessionSnapshot(snapshot));
+    snapshot.download_import_receipts.push_back({"extra", receiptPath()});
+    CHECK_FALSE(isValidSessionSnapshot(snapshot));
+
+    const auto fixed = receiptPath().parent_path().native();
+    constexpr auto unit_bytes = sizeof(std::filesystem::path::value_type);
+    // Choose an ASCII job length that exactly fills the native-unit byte boundary.
+    const std::string job_id(unit_bytes, 'a');
+    const auto units = (maximum_download_import_receipt_bytes - job_id.size()) / unit_bytes;
+    auto native = fixed;
+    native.push_back(std::filesystem::path::preferred_separator);
+    native.append(units - native.size() - 4, static_cast<std::filesystem::path::value_type>('a'));
+    native.append(std::filesystem::path{".mp3"}.native());
+    snapshot.download_import_receipts = {{job_id, std::filesystem::path{native}}};
+    REQUIRE(isValidSessionSnapshot(snapshot));
+    native.insert(native.size() - 4, 1, static_cast<std::filesystem::path::value_type>('a'));
+    snapshot.download_import_receipts.front().source_path = native;
+    CHECK_FALSE(isValidSessionSnapshot(snapshot));
+}
+
+TEST_CASE("session import receipt MP3 suffix and longest ASCII identity are accepted",
+          "[core][session][download-receipts]") {
+    auto path = receiptPath();
+    path.replace_extension(".MP3");
+    const SessionSnapshot snapshot{
+        .download_import_receipts = {{std::string(64, 'Z'), path}, {"a-z_A0-9", receiptPath()}}};
+    CHECK(isValidSessionSnapshot(snapshot));
+}
+
 TEST_CASE("session snapshot restores duplicate paths by occurrence id without transient availability",
           "[m0][qt][core][session][FR-043]") {
     const auto persisted = validSnapshot();

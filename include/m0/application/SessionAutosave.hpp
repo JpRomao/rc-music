@@ -43,6 +43,10 @@ class SessionAutosave final {
     [[nodiscard]] bool writeActive() const noexcept;
     [[nodiscard]] bool needsPolling() const noexcept;
     [[nodiscard]] SessionRevision latestRevision() const noexcept;
+    // Last exact Saved acknowledgement for this owner's submitted write. Zero
+    // means none; clean initial/load state and recoverable Failed are not ACKs.
+    // A superseded save can advance this without cleaning newer dirty state.
+    [[nodiscard]] SessionRevision savedRevision() const noexcept;
     [[nodiscard]] SessionAutosaveNotice notice() const noexcept;
     [[nodiscard]] std::optional<TimePoint> nextWakeup() const noexcept;
 
@@ -57,6 +61,7 @@ class SessionAutosave final {
     SessionSnapshot latest_{};
     SessionAutosaveOptions options_{};
     SessionRevision latest_revision_{0};
+    SessionRevision saved_revision_{0};
     std::optional<SessionRevision> active_revision_;
     std::optional<bool> active_replaces_future_version_;
     std::optional<TimePoint> immediate_due_;
