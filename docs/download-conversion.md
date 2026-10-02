@@ -80,6 +80,10 @@ Os nove arquivos não incluem DLLs do Windows: System32/ICU (`icuuc` → ICU do 
 
 Cleanup reabre apenas os nove nomes próprios e exige mesma identidade/path final regular antes de marcar remoção por handle. Remove a folha apenas se ainda for o diretório criado e estiver vazio; não há remoção recursiva, travessia de reparse ou exclusão de extras. Incerteza/falha de limpeza deixa o residual privado, não autoriza apagá-lo como árvore. Ownership/journal e recuperação duráveis de residuais ainda precisam de integração própria.
 
+`WindowsDownloadExecution(launch_config, job_config)` compõe esse preparo na tarefa worker, nunca na UI nem na factory. `makeWindowsPreparedDownloadTask` cria somente objetos inertes. `start` da tarefa valida entrada/configuração básica e prepara uma capability nova; somente o primeiro `poll` não cancelado cria/inicia a sessão com `prepared_launch`. A execução reobserva cancel/shutdown após o preparo, impedindo rede/conversão se a intenção chegou durante hash/cópia. Essas chamadas nativas não são interrompidas instantaneamente. O clock original é passado à sessão e o deadline é conferido antes de criá-la: preparo não renova o total. Falha de preparo é `Unavailable`; malfunction do preparer confiável é `InvalidResult`, sem mensagem livre. A tarefa é one-shot e conserva a primeira falha.
+
+Sessão/I/O/supervisor são destruídos antes da última lease. O terminal público continua exigindo ACK válido e destruição da tarefa; cancel pedido ou destrutor best-effort não significam ausência universal de resíduos. O callback opcional `WindowsDownloadRuntimePreparer` existe somente como seam confiável de teste/composição, sem recursos escapados em null/exception, nunca callback de página ou fonte de pins enviada pela extensão. O overload cru de I/O permanece seam sintético legado. Perfil exato/notices/distribuição, journal e integração no app continuam pendentes.
+
 ## Rede diskless e protocolo privado
 
 `rc_music_download_network_worker` recebe exatamente um pedido binário versionado, de até 256 KiB, pelo stdin privado seguido de EOF; recusa argumentos adicionais. O pedido contém pins confiáveis do runtime e uma operação de resolução ou um endpoint numérico/Host/request-target. Os campos têm comprimentos limitados, UTF-8 exato e enums fechados; não aceita comandos, paths de mídia ou execução arbitrária enviados por página. O loader permanece vivo até a saída. Resolução numérica não chama `QHostInfo`, evitando PTR implícito; nomes usam lookup assíncrono. Respostas DNS preservam todos os endereços para a policy comum recusar conjuntos mistos, sem aprovar o primeiro isoladamente.
@@ -139,9 +143,9 @@ Publicação que vence cancelamento permanece `Published` no executor, sem apaga
 
 ## Build opcional e ensaio local
 
-[RcMusicDownloadNetwork.cmake](../cmake/RcMusicDownloadNetwork.cmake) acrescenta o codec à biblioteca opcional `rc_music_download_network` e os adapters/protocolo Windows, além do executável `rc_music_download_network_worker` somente em Windows. `RC_MUSIC_BUILD_DOWNLOAD_NETWORK` permanece OFF por padrão e não liga esta biblioteca ou worker ao player. Não introduz download de dependências, instalação, host ou pacote.
+[RcMusicDownloadNetwork.cmake](../cmake/RcMusicDownloadNetwork.cmake) acrescenta o codec à biblioteca opcional `rc_music_download_network` e os adapters/protocolo Windows, além do bootstrap `RCMusicDownloadWorker.exe`/payload `rcmusic-download-network.dll` somente em Windows. O EXE Qt direto `rc_music_download_network_worker` é seam histórico/teste, excluído do build padrão. `RC_MUSIC_BUILD_DOWNLOAD_NETWORK` permanece OFF por padrão e não liga esta biblioteca ou worker ao player. Não introduz download de dependências, instalação, host ou pacote.
 
-Com `BUILD_TESTING=ON`, entram os testes de codec/workspace/processo/protocolo/worker/proxy e helpers exclusivos dos testes. Os alvos `rc_music_WindowsLocalMediaConverter_tests`, `rc_music_WindowsDownloadJobSession_tests` e `rc_music_WindowsProcessDownloadJob_tests` só existem quando **ambos** os caches `RC_MUSIC_DOWNLOAD_TEST_FFMPEG` e `RC_MUSIC_DOWNLOAD_TEST_FFPROBE` são informados, absolutos e existentes; configuração inválida falha. Os caches não selecionam um conversor de produção. Com `BUILD_TESTING=OFF`, helpers, fixtures e testes não fazem parte do grafo, mas o worker real permanece alvo de produção opcional.
+Com `BUILD_TESTING=ON`, entram os testes de codec/workspace/processo/protocolo/worker/proxy e helpers exclusivos dos testes, incluindo `rc_music_WindowsPreparedDownloadTask_tests` e `rc_music_WindowsPreparedDownloadExecution_tests` em Windows. Os alvos `rc_music_WindowsLocalMediaConverter_tests`, `rc_music_WindowsDownloadJobSession_tests` e `rc_music_WindowsProcessDownloadJob_tests` só existem quando **ambos** os caches `RC_MUSIC_DOWNLOAD_TEST_FFMPEG` e `RC_MUSIC_DOWNLOAD_TEST_FFPROBE` são informados, absolutos e existentes; configuração inválida falha. Os caches não selecionam um conversor de produção. Com `BUILD_TESTING=OFF`, helpers, fixtures e testes não fazem parte do grafo; biblioteca/bootstrap/payload permanecem alvos de produção opcionais.
 
 Na sessão MSVC de [core-build](core-build.md#build-windows), com a árvore de [integração opcional](browser-extension.md#biblioteca-nativa-windows) já configurada para Qt/Catch2, a receita local é:
 
@@ -264,10 +268,30 @@ ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.download-n
 if ($LASTEXITCODE -ne 0) { throw 'CTest do runtime pré-launch falhou' }
 ```
 
+### Incremento de preparação na tarefa assíncrona
+
+Em 2026-10-01, a factory stub nula confirmou Red **2 passagens/13 falhas** na tarefa e **14/3** no executor configurado. Green inicial **15/15** e **17/17** foi seguido da regressão one-shot: poll/cancel antes de start ainda permitiam preparar outra vez, Red **17 passagens/2 falhas**, Green final **19/19**. A revisão reforçou construção/default inerte, ID/path, configuração real na admissão recusada e nomes que não atribuem preparo não observado. Nenhum teste foi relaxado para evitar rede: workspace inválido encerra antes de DNS, mantendo a policy de produção intacta.
+
+Testes da tarefa observam cópias/pins de bytes sintéticos que nunca podem ser executados. Um gate do preparer na thread privada permanece bloqueado enquanto caller admite/cancela/polla/encerra; depois de liberar, cancel/shutdown produz `Cancelled` sem workspace/rede/conversão e terminal somente após liberar a lease. Clocks exato/ultrapassado/regressivo/negativo/próximo do máximo usam valores determinísticos, sem benchmark. Testes do overload real verificam nove pins incorretos, configuração recusada e reautenticação por job após alterar somente bootstrap copiado para TEMP próprio; fontes SDK/CRT/plugin são somente leitura. Ausência de files após job inválido não comprova sozinha preparo, e esses testes não iniciam DNS/bootstrap/socket/conversor. As jornadas reais de launcher e MP3/MP4 permanecem ensaios separados.
+
+Release MSVC 19.44/Qt 6.11.2 passou **44/44 CTest em 25,55 s**: serviço **36/36** e oito alvos Qt (supervisor **44**, proxy **33**, execução **32**, launcher **21**, tarefa preparada **19**, executor preparado **17**, sessão **60**, composição **10** casos), sem skips. OFF recompilou biblioteca/bootstrap/payload, listou zero testes e não incorpora helpers/fixtures/CLI/Qt Test/Catch2/Multimedia/WebEngine no grafo; EXE Qt legado não integra o build padrão. Formato, docs/rastreabilidade e diff são checks separados. Suites dedicadas de worker/socket/TLS, core independente, JavaScript e UI não foram reexecutadas; launcher exercita separadamente DNS literal/HTTP local. Seu histórico não é validação atual. Nenhuma instalação/Registry, perfil/mídia pessoal/pública, runtime/instalador do player novo ou benchmark.
+
+Na árvore ON já configurada com as fixtures TLS/CRT e as ferramentas sintéticas explícitas, na sessão MSVC documentada:
+
+```powershell
+cmake --build out/product/browser-integration-tests --target rc_music_WindowsPreparedDownloadTask_tests rc_music_WindowsPreparedDownloadExecution_tests rc_music_WindowsDownloadExecution_tests rc_music_WindowsDownloadNetworkLaunch_tests rc_music_WindowsDownloadProcess_tests rc_music_WindowsProcessDownloadIo_tests rc_music_WindowsDownloadJobSession_tests rc_music_WindowsProcessDownloadJob_tests rc_music_downloads_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build de preparação assíncrona falhou' }
+ctest --test-dir out/product/browser-integration-tests -R '^rc_music\.(downloads\.|download-network\.(WindowsPreparedDownloadTask|WindowsPreparedDownloadExecution|WindowsDownloadExecution|WindowsDownloadNetworkLaunch|WindowsDownloadProcess|WindowsProcessDownloadIo|WindowsDownloadJobSession|WindowsProcessDownloadJob)$)' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'Checks de preparação assíncrona falharam' }
+cmake --build out/product/download-network-release --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build opcional OFF falhou' }
+ctest --test-dir out/product/download-network-release -N
+```
+
 ## Gates que continuam abertos
 
 1. CLI corrigido, artefato/proveniência/hashes e revisão dos avisos antes de aceitar mídia não confiável; licenças, notices, fontes correspondentes e distribuição do conjunto exato.
 2. Sandbox efetivo de rede/sistema de arquivos para parser/conversor; Job Object e `-protocol_whitelist file` não fecham esse gate. Avaliar todos os acessos indiretos e limites nativos, sem diminuir verificação.
-3. Perfil exato revisado de artefatos/imports/notices e composição da capability pré-launch na factory worker; preparação/cópia não podem bloquear UI. Worker/proxy/porta rápida e capability existem fora do app; ensaios separados não comprovam jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia. Ownership/journal durável de runtime residual não está implementado.
+3. Perfil exato revisado de artefatos/imports/notices para distribuir a composição preparada. Preparo/cópia já ocorrem na tarefa privada, não na UI/factory; worker/proxy/porta rápida e capability ainda existem fora do app. Ensaios separados não comprovam jornada inteira DNS/TLS real→publicação/importação ou todos os caminhos auxiliares de cadeia. Ownership/journal durável de runtime residual não está implementado.
 4. Importador local, persistência/recuperação e projeção de jobs, host Native Messaging e UI do player. Não há abertura automática de MP3 parcial nem integração com playback.
 5. Fluxo Brave/Chromium, navegação interna opcional, edições Lite/Completa, extensão e instaladores/ownership; YouTube permanece separado. Sem instalação, Registry, perfis, mídia pública ou aprovação de release neste incremento.

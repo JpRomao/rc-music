@@ -116,7 +116,104 @@ class SessionTask final : public WindowsDownloadTask {
     WindowsProcessDownloadIo io_; // borrowed by session; destroyed AFTER session
     WindowsDownloadJobSession session_;
 };
+class PreparedSessionTask final : public WindowsDownloadTask {
+  public:
+    PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
+                        WindowsDownloadRuntimePreparer prepare)
+        : launch_(std::move(launch)), job_(std::move(job)), prepare_(std::move(prepare)) {}
+
+    bool start(const std::string& id, const DownloadItem& item, const qint64 now_ms) override {
+        if (started_ || terminal(update_.state))
+            return false;
+        started_ = true;
+        update_.job_id = id;
+        if (!validId(id) || !validItem(item) || now_ms < 0 || job_.total_timeout_ms <= 0) {
+            fail(DownloadFailure::InvalidResult);
+            return false;
+        }
+        item_ = item;
+        started_ms_ = now_ms;
+        try {
+            lease_ = prepare_ ? prepare_(launch_) : WindowsDownloadNetworkLaunch::prepare(launch_);
+        } catch (...) {
+            // Trusted preparer guarantees no escaped work on an exception.
+            fail(DownloadFailure::InvalidResult);
+            return false;
+        }
+        if (!lease_) {
+            fail(DownloadFailure::Unavailable);
+            return false;
+        }
+        // Deliberately do not start the session here. The private executor must
+        // observe cancel/shutdown after this blocking preparation returns.
+        return true;
+    }
+    void cancel() override {
+        if (session_)
+            session_->cancel();
+        else if (!terminal(update_.state))
+            update_.state = DownloadExecutionState::Cancelled;
+    }
+    DownloadExecutionUpdate poll(const qint64 now_ms) override {
+        if (terminal(update_.state))
+            return update_;
+        if (!session_) {
+            if (!started_ || !lease_ || now_ms < started_ms_) {
+                fail(DownloadFailure::InvalidResult);
+                return update_;
+            }
+            // Both clocks are nonnegative here; subtraction cannot overflow.
+            // Preparation is part of the original end-to-end deadline.
+            if (now_ms - started_ms_ >= job_.total_timeout_ms) {
+                fail(DownloadFailure::Timeout);
+                return update_;
+            }
+            try {
+                WindowsProcessDownloadIoConfig io;
+                io.prepared_launch = lease_;
+                session_ = std::make_unique<SessionTask>(std::move(io), job_);
+            } catch (...) {
+                // Session construction is inert: no native work escaped.
+                fail(DownloadFailure::InvalidResult);
+                return update_;
+            }
+        }
+        if (!session_start_attempted_) {
+            // Set before calling: false/throw may own work and must never retry.
+            session_start_attempted_ = true;
+            if (!session_->start(update_.job_id, item_, started_ms_))
+                session_->cancel();
+        }
+        return session_->poll(now_ms); // only its real terminal ACK releases work
+    }
+    std::filesystem::path retainedPublicationPath() const override {
+        return session_ ? session_->retainedPublicationPath() : std::filesystem::path{};
+    }
+
+  private:
+    void fail(const DownloadFailure error) {
+        update_.state = DownloadExecutionState::Failed;
+        update_.error = error;
+    }
+    WindowsDownloadNetworkLaunchConfig launch_;
+    WindowsDownloadJobSessionConfig job_;
+    WindowsDownloadRuntimePreparer prepare_;
+    DownloadExecutionUpdate update_;
+    DownloadItem item_;
+    qint64 started_ms_{0};
+    bool started_{false}, session_start_attempted_{false};
+    // Reverse destruction: session, native IO/process, then final lease. The
+    // executor observes terminal ACK and destroys this task before publishing.
+    std::shared_ptr<const WindowsDownloadNetworkLaunch> lease_;
+    std::unique_ptr<SessionTask> session_;
+};
 } // namespace
+
+std::unique_ptr<WindowsDownloadTask> makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig launch,
+                                                                     WindowsDownloadJobSessionConfig job,
+                                                                     WindowsDownloadRuntimePreparer prepare) {
+    return std::make_unique<PreparedSessionTask>(std::move(launch), std::move(job), std::move(prepare));
+}
 
 struct WindowsDownloadExecution::Impl final {
     struct Request final {
@@ -307,6 +404,11 @@ WindowsDownloadExecution::WindowsDownloadExecution(WindowsProcessDownloadIoConfi
                                                    WindowsDownloadJobSessionConfig job)
     : WindowsDownloadExecution(
           [io = std::move(io), job = std::move(job)] { return std::make_unique<SessionTask>(io, job); }) {}
+WindowsDownloadExecution::WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch,
+                                                   WindowsDownloadJobSessionConfig job)
+    : WindowsDownloadExecution([launch = std::move(launch), job = std::move(job)] {
+          return makeWindowsPreparedDownloadTask(launch, job);
+      }) {}
 WindowsDownloadExecution::~WindowsDownloadExecution() {
     shutdown();
     impl_->worker.wait(); // owner must have observed stopped before UI destruction

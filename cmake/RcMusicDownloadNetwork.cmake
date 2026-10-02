@@ -56,7 +56,8 @@ if(BUILD_TESTING)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
             WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
-            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadNetworkLaunch)
+            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadNetworkLaunch
+            WindowsPreparedDownloadTask WindowsPreparedDownloadExecution)
         add_executable(rc_music_download_io_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
         target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)
@@ -129,7 +130,7 @@ if(BUILD_TESTING)
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
-        elseif(unit STREQUAL "WindowsDownloadNetworkLaunch")
+        elseif(unit STREQUAL "WindowsDownloadNetworkLaunch" OR unit STREQUAL "WindowsPreparedDownloadExecution")
             add_dependencies(${target} rc_music_download_network_bootstrap rc_music_download_network_payload)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_TEST_BOOTSTRAP_PATH="$<TARGET_FILE:rc_music_download_network_bootstrap>"

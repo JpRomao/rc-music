@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WindowsDownloadJobSession.hpp"
+#include "WindowsDownloadNetworkLaunch.hpp"
 #include "WindowsProcessDownloadIo.hpp"
 
 #include <functional>
@@ -22,19 +23,30 @@ class WindowsDownloadTask {
     [[nodiscard]] virtual std::filesystem::path retainedPublicationPath() const { return {}; }
 };
 
+// Trusted worker-only seam. The optional preparer must return an authenticated
+// capability or no escaped resources; it is never a page/plugin callback.
+// Construction is inert. Preparation happens in start, session launch in the
+// first uncancelled poll; the original clock includes preparation time.
+using WindowsDownloadRuntimePreparer =
+    std::function<std::shared_ptr<const WindowsDownloadNetworkLaunch>(const WindowsDownloadNetworkLaunchConfig&)>;
+[[nodiscard]] std::unique_ptr<WindowsDownloadTask>
+makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
+                                WindowsDownloadRuntimePreparer prepare = {});
+
 // Prompt UI port with one pending task and one coalesced snapshot. Factory,
 // task methods, filesystem/native I/O and destruction run in a private Qt loop.
 // Only a matching terminal poll releases admission for the next job.
 // shutdown closes admission promptly; stopped additionally acknowledges thread
 // teardown. The owner must observe stopped before destruction on the UI thread.
 // The destructor's off-UI fallback joins: it is not a prompt shutdown substitute.
-// Trusted configuration only. Pre-launch runtime authentication, hostile-media
+// Trusted configuration only. Reviewed distribution profile, hostile-media
 // converter isolation, recovery journal and player composition remain gates.
 class WindowsDownloadExecution final : public DownloadExecution {
   public:
     using TaskFactory = std::function<std::unique_ptr<WindowsDownloadTask>()>;
     explicit WindowsDownloadExecution(TaskFactory factory);
     WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
+    WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job);
     ~WindowsDownloadExecution() override;
     WindowsDownloadExecution(const WindowsDownloadExecution&) = delete;
     WindowsDownloadExecution& operator=(const WindowsDownloadExecution&) = delete;

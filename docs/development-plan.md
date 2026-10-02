@@ -743,7 +743,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — runtime autenticado pré-launch
+### Checkpoint atual — preparação na tarefa assíncrona
+
+Incremento de 2026-10-01: [composição preparada](download-conversion.md#incremento-de-preparação-na-tarefa-assíncrona) cria tarefa inerte a partir de configuração confiável e prepara uma capability nova por job na thread privada. `start` da tarefa prepara; primeiro `poll` não cancelado inicia a sessão. Cancel/shutdown recebido durante hash/cópia é observado antes de rede/conversão. Deadline original inclui preparo; não há interrupção instantânea de operações nativas. Sessão/I/O/processo são destruídos antes da última lease e do terminal público, sem assumir que cleanup best-effort remove todo residual.
+
+TDD: tarefa stub **2 passagens/13 falhas**, executor stub **14/3**; regressão poll/cancel-before-start **17/2**, Green final **19/19** e **17/17** casos Qt. Gate controlado demonstra caller livre durante preparo, sem benchmark. Bytes sintéticos não são executados; nove PEs reais são fontes somente leitura e os ensaios novos falham antes de DNS. Reautenticação por job usa mutação somente de uma cópia temporária própria do bootstrap. Testes não ampliam policy para loopback nem alegam jornada inteira de rede/conversão.
+
+Fechamento Release ON passou **44/44 CTest em 25,55 s**: serviço 36 e oito suites Qt (supervisor 44, proxy 33, execução 32, launcher 21, tarefa preparada 19, executor preparado 17, sessão 60, composição 10), sem skips. OFF compila biblioteca/bootstrap/payload e lista zero testes, sem Qt Test/Catch2/helpers/fixtures/CLI/Multimedia/WebEngine; EXE Qt legado fora do default. Formato, docs/rastreabilidade e diff são checks próprios. Suites dedicadas de worker/socket/TLS, core independente, JavaScript e UI não foram reexecutadas; launcher exercita separadamente DNS literal/HTTP local. Histórico não é evidência atual.
+
+Próxima sequência: perfil exato de distribuição/imports/notices, FFmpeg corrigido/proveniência/licenças/sandbox; importação append-only sem autoplay, journal/recuperação limitados de jobs/recibos/finais/residuais e lifecycle/host/model/UI no player. Depois engine isolada da Completa e instaladores/opcionais de ambas. ADR-0006 continua aceito: Lite sem engine interna, Completa com navegação isolada, ambas com integração externa opcional e YouTube separado. Não houve instalação/Registry, runtime/instalador do player novo, mídia pessoal/pública ou aprovação remota/release, benchmark ou Computer Use. Não marcar R1 amplo concluído nem substituir o plano completo por este recorte.
+
+### Checkpoint anterior — runtime autenticado pré-launch
 
 Incremento de runtime autenticado pré-launch de 2026-10-01: [capability privada e bootstrap nativo](download-conversion.md#runtime-privado-autenticado-antes-do-launch) autenticam nove artefatos antes de criar o filho. Cópia por handle/CREATE_NEW, DACL privada, reautenticação e pins são do controlador; o proxy retém a capability até destruir o supervisor depois de ACK nativo. Bootstrap `/MT` só importa KERNEL32 e restringe DLL search antes de carregar payload Qt `/MD` absoluto. QRC contém `qt.conf` fixo; extras/reparse são recusados. O EXE Qt direto permanece seam histórico/de teste, não entrada autenticada/default OFF. OS/System32/API sets/KnownDLL/SxS/ICU e ausência de host comprometido são precondições, não DLLs universalmente pinadas ou sandbox.
 
