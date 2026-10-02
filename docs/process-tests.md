@@ -2,10 +2,11 @@
 
 **Estado:** promoção validada nos gates locais de build, testes, scripts e documentação; M1 e os gates nativos/release permanecem abertos.
 **Data:** 2026-09-06.
+**Revisão dos opcionais:** 2026-10-02.
 
-Os cinco drivers históricos e seu helper de lifecycle passam a viver em [tests/process](../tests/process), sem alterar suas assertions. [tests/process/CMakeLists.txt](../tests/process/CMakeLists.txt) registra sete jornadas somente com Windows, desktop e `BUILD_TESTING=ON`. O consumidor histórico aponta para as mesmas fontes; configurar o experimento não é pré-requisito da suite raiz.
+Os cinco drivers históricos e seu helper de lifecycle vivem em [tests/process](../tests/process), sem alterar suas assertions. [tests/process/CMakeLists.txt](../tests/process/CMakeLists.txt) preserva sete jornadas de baseline somente com Windows, desktop e `BUILD_TESTING=ON`; os opcionais de downloads abaixo acrescentam jornadas próprias. O consumidor histórico aponta para as mesmas fontes; configurar o experimento não é pré-requisito da suite raiz.
 
-## Sete registros, dois executáveis instrumentados
+## Baseline: sete registros, dois executáveis instrumentados
 
 Os dois executáveis exclusivos de teste compilam a mesma [main.cpp](../src/app/main.cpp) do produto. A composição comum fica em [RcMusicShell.cmake](../cmake/RcMusicShell.cmake); não há cópia da implementação do bootstrap. Ambos recebem `M0_QT_SHELL_TEST_HOOKS`, `RC_MUSIC_TEST_UI_VARIANT` e a ABI da [UI de testes](ui-tests.md), nunca a UI/plugin de produção.
 
@@ -24,7 +25,7 @@ Os dois executáveis exclusivos de teste compilam a mesma [main.cpp](../src/app/
 | `rc_music.process.error-recovery` | `ShellExecutableSmokeTests` | Fixture; recuperação do cenário `unavailable`. |
 | `rc_music.process.tray-lifecycle` | `ShellExecutableSmokeTests` | Fixture; menu, ocultação/restauração e persistência com disponibilidade de bandeja injetada. |
 
-Os sete recebem os labels `windows;desktop;qt;process`. A guarda `rc_music.process.build-boundary`, com labels `process;boundary`, é o oitavo registro da seleção `process`, não uma oitava jornada. Com as [12 integrações anteriores](windows-integration-tests.md), o label `windows` passa a selecionar 19 registros; os quatro smokes com QPA Windows continuam separados.
+Os sete recebem os labels `windows;desktop;qt;process`. A guarda `rc_music.process.build-boundary`, com labels `process;boundary`, foi o oitavo registro da seleção `process`, não uma oitava jornada. Com as [12 integrações anteriores](windows-integration-tests.md), o label `windows` selecionava 19 registros naquele baseline; esse total histórico não inclui os opcionais posteriores. Os quatro smokes com QPA Windows continuam separados.
 
 ## Isolamento, ABI e recursos
 
@@ -62,6 +63,36 @@ Com `RC_MUSIC_BUILD_BROWSER_INTEGRATION` e persistência de downloads ligados, `
 O driver copia o MP3 CBR autenticado do corpus para TEMP Unicode próprio e cria um novo filho de checkpoint com DACL protegida usuário atual+SYSTEM, sem reparar ACL existente. A main preserva o `SessionLoadResult` antes de mover o snapshot para o presenter. Serviço, controller, binding/model, importador durável, worker/store de checkpoint e worker/store de sessão são reais; somente `Published` vem do executor sintético, sem transporte/conversão/ownership de mídia real. QML recebe o binding opcional verdadeiro. O primeiro boot comprova Saved de admissão antes da execução, fila durável sem load/autoplay e reprodução após seleção explícita; o segundo, com restauração desligada, reconhece Imported sem executar, hidratar ou duplicar.
 
 Saída normal exige `exitCommitted`, parada física do controller/IO/executor e `Saved` final antes de destruir os owners. Dois leitores novos após cada `NormalExit` verificam os documentos, IDs e fila/recibo; isso não é readback promovido a ACK nem transação global dos documentos. O driver tem watchdogs e guarda somente seus filhos, timeout CTest de 60 s e labels próprios. Não consulta sites/perfis/áudios pessoais, instala extensão ou altera Registry. Este ensaio não aprova release, sandbox, perda de energia, som físico, engine da Completa ou integração instalada.
+
+## Processo do host Native Messaging
+
+Com `RC_MUSIC_BUILD_NATIVE_MESSAGING=ON`, Windows e `BUILD_TESTING=ON`, [NativeHostProcessTests](../tests/qt/NativeHostProcessTests.cpp) registra `rc_music.native.host-process`, separado das jornadas de shell. O alvo de produção `rc_music_native_host` e os dois alvos de teste compilam a mesma [main real](../src/app/native_host_main.cpp). Produção recebe configuração confiável de build, vazia por padrão e sem overrides de argv/ambiente/JSON; `rc_music_native_host_test` recebe identidade sintética própria do cache e `rc_music_native_host_disabled_test` recebe configuração sempre vazia, inclusive quando o build de produção estiver explicitamente configurado. Sintético não vira fallback no produto.
+
+O driver atua como browser peer por stdin/stdout binários e como dono falso por `QLocalServer` manual, independente do servidor de produção. Exige um único preâmbulo/frame exato, resposta estrita correlacionada, stdout sem bytes extras e stderr vazio. Mantém stdin aberto durante Pending e cobre prefixo/corpo fragmentados, origem/flags/spoof sem IPC, frames excessivos/zero/incompletos, `NotAvailable` por dono ausente e resposta hostil/mismatch/double/oversized sem ACK ou reconnect. EOF Pending fecha somente o observador e não reenvia o pedido. A composição seguinte usa dono real, mas não injeta EOF durante admissão durável pendente; a continuidade nesse instante exige ensaio próprio, não inferência do peer falso ou do caminho normal.
+
+Ausência de entrada expira pelo prazo total de montagem de 5 s. Helpers próprios do watchdog verificam finish→0, stall→2 e stall durante teardown→2; o watchdog do host real tem limite independente de 15 s e pode terminar somente o próprio host. `ChildGuard` encerra e aguarda exclusivamente filhos do driver. O registro tem timeout CTest de 90 s e compartilha o resource lock do endpoint sintético com a composição seguinte. Deadlines/watchdogs verificam protocolo e cleanup, não orçamento de desempenho. Pipes, diretórios e configuração ficam próprios do teste; não há instalação, Registry, browser ou rede.
+
+## Composição instrumentada do ingresso Native Messaging
+
+Com os opcionais de integração/persistência e Native Messaging ligados, `rc_music.process.native-downloads-composition` acrescenta [NativeDownloadsCompositionTests](../tests/process/qtest/NativeDownloadsCompositionTests.cpp). Usa `rc_music_test_shell --m0-smoke=native-downloads`, a main compartilhada e `DownloadsShellSmoke` com capacidade nativa exclusiva de teste. Parser/guards recusam o hook em builds sem a capacidade, antes de configuração, com raiz absoluta, cenário vazio e nenhum path de abertura. O player real ON/OFF não alcança macros, identidade sintética, executor de fixture ou hooks de teste.
+
+O TEMP Unicode próprio contém uma cópia do MP3 CBR autenticado e um diretório de checkpoint novo com DACL protegida usuário atual+SYSTEM. Servidor/client/host Native Messaging, controller/serviço, binding/model/QML, importador durável e ambos stores/workers são reais. **Somente publicação `Published` é sintética**: não há transferência, rede, conversão ou ownership físico da mídia neste fluxo. O modo nativo não chama `controller.begin` diretamente; cada admissão/replay chega por um host real ao endpoint separado de `OpenSources`.
+
+São quatro processos de host, dois por boot em dois boots, sempre com o mesmo UUID. Cada resposta exige NormalExit/exit 0, frame único e ACK estrito com os mesmos IDs de job. Um leitor independente do checkpoint deve carregar exatamente um job e um recibo após cada resposta; não se mede o instante físico do ACK. Depois de ambos ACKs e do marker esperado, o driver cria exclusivamente o sentinel fechado `m0-native-downloads-exit` no TEMP. Ele dirige somente lifecycle instrumentado, nunca acrescenta um comando ao protocolo de produção.
+
+No primeiro boot, a execução só começa após Saved de admissão; importação conserva fila+recibo sem load/autoplay e a reprodução exige seleção explícita. No segundo, `restore_last_session=false` preserva o ledger e reconhece o único job como Imported, sem executar, hidratar ou duplicar. Após cada NormalExit, leitores novos de sessão/checkpoint conferem fila/recibo/estado: Completed com uma ocorrência no primeiro boot, Imported e fila vazia no segundo. A saída exige `exitCommitted`, Saved final e parada reconhecida do servidor/controller/workers/executor antes de destruir owners; parada física não é promovida a gravação bem-sucedida.
+
+O driver limita a captura de saída do app, mantém watchdogs e guards apenas de seus filhos, e usa timeout CTest de 150 s e resource lock do endpoint sintético. Os labels acrescentam `native;downloads;session;FR-051;FR-053`. `RC_MUSIC_BUILD_NATIVE_MESSAGING` permanece OFF por padrão, Qt Network é um componente opcional separado, e produção continua sem ingresso/serviço remoto ativo. Origem em argv/pipe do mesmo usuário não autentica navegador; primeira instância/colisão do pipe Windows, identidade instalada, representação signed HWND/Brave, registro/upgrade e instalação continuam pendentes. Sem ferramenta/sandbox, mídia da internet, perda de energia, transação global entre documentos, release ou engine da Completa aprovados por este ensaio.
+
+### Evidência focada do ingresso de 2026-10-02
+
+- Processo real/peer independente/watchdog: Red **19 passagens/13 falhas**, Green **32/32 QtTest**, CTest focado **1/1 em 9,01 s**.
+- Composição anterior de downloads e composição com ingresso nativo: **3/3 QtTest cada**, com publicação sintética nos dois ensaios.
+- Entrada da main: regressão causal Red **3 passagens/1 falha**, Green **4/4**, relendo o clock após o read potencialmente bloqueante.
+- Codec **188/188**, launch **54/54**, I/O Win32 **13/13** e transporte **27/27** têm gates próprios; os três achados de reentrada/drain do transporte tiveram Red **24 passagens/3 falhas** antes do Green.
+- Consolidação Release ON/build/`all_qmllint`: **470/470 CTest em 138,98 s**. Esse tempo de execução, inclusive com builds concorrentes, não é benchmark. O fechamento dos probes OFF de produção é separado e não é inferido dessa suíte: desktop OFF/lint/zero testes/grafo de 253 comandos e host standalone OFF/zero testes passaram; três probes reais recusaram hook/spoof sem saída, IPC ou configuração. Perfil com identidade de produção explicitamente configurada passou **2/2 CTest**, incluindo **32/32 QtTest** contra o fixture sempre vazio separado. Não instala ou ativa essa identidade no app.
+
+As contagens incluem setup/cleanup QtTest e não se somam aos registros CTest. Não houve runtime/setup novo, instalação/registro, Brave/Chromium real, download remoto, ferramenta nova, Computer Use ou benchmark. Os estados dos requisitos FR-051–053 permanecem em andamento.
 
 ## Comandos
 

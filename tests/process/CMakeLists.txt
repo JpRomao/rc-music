@@ -54,6 +54,18 @@ if(TARGET rc_music_download_persistence AND TARGET rc_music_browser_integration)
     add_test(NAME rc_music.process.downloads-composition COMMAND rc_music_downloads_composition_tests
         "$<TARGET_FILE:rc_music_test_shell>"
         "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3")
+    if(TARGET rc_music_native_messaging)
+        target_link_libraries(rc_music_test_shell PRIVATE rc_music_native_messaging)
+        target_include_directories(rc_music_test_shell PRIVATE "${RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY}")
+        target_compile_definitions(rc_music_test_shell PRIVATE RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE)
+        add_process_driver(rc_music_native_downloads_composition_tests NativeDownloadsCompositionTests
+            m0_qt_session_persistence rc_music_download_persistence rc_music_native_messaging)
+        target_include_directories(rc_music_native_downloads_composition_tests PRIVATE "${RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY}")
+        add_dependencies(rc_music_native_downloads_composition_tests rc_music_native_host_test)
+        add_test(NAME rc_music.process.native-downloads-composition COMMAND rc_music_native_downloads_composition_tests
+            "$<TARGET_FILE:rc_music_test_shell>" "$<TARGET_FILE:rc_music_native_host_test>"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3")
+    endif()
 endif()
 add_dependencies(rc_music_shell_executable_smoke_tests rc_music_fixture_test_shell)
 
@@ -89,6 +101,9 @@ set(process_combined_tests
 if(TARGET rc_music_downloads_composition_tests)
     list(APPEND process_combined_tests rc_music.process.downloads-composition)
 endif()
+if(TARGET rc_music_native_downloads_composition_tests)
+    list(APPEND process_combined_tests rc_music.process.native-downloads-composition)
+endif()
 set(process_fixture_tests rc_music.process.error-recovery rc_music.process.tray-lifecycle)
 set_tests_properties(${process_combined_tests} ${process_fixture_tests} PROPERTIES
     LABELS "windows;desktop;qt;process" TIMEOUT 25)
@@ -103,6 +118,11 @@ set_tests_properties(rc_music.process.session-restart PROPERTIES TIMEOUT 120)
 if(TARGET rc_music_downloads_composition_tests)
     set_tests_properties(rc_music.process.downloads-composition PROPERTIES TIMEOUT 60)
     set_property(TEST rc_music.process.downloads-composition APPEND PROPERTY LABELS "downloads;session;FR-051;FR-053")
+endif()
+if(TARGET rc_music_native_downloads_composition_tests)
+    set_tests_properties(rc_music.process.native-downloads-composition PROPERTIES TIMEOUT 150
+        RESOURCE_LOCK "rc_music_native_host_test_endpoint")
+    set_property(TEST rc_music.process.native-downloads-composition APPEND PROPERTY LABELS "native;downloads;session;FR-051;FR-053")
 endif()
 set_tests_properties(rc_music.process.single-instance rc_music.process.diagnostics PROPERTIES TIMEOUT 45)
 set_property(TEST rc_music.process.preferences-restart APPEND PROPERTY LABELS "preferences;restart;FR-042")

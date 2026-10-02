@@ -1,6 +1,6 @@
 # Extensão principal Brave/Chromium
 
-**Estado:** cliente e biblioteca de recepção C++ em desenvolvimento; sem executável de host nativo, download/conversão ou integração instalada. Não é uma entrega funcional ponta a ponta nem extensão publicada.
+**Estado:** cliente, biblioteca Qt Core de recepção e host/transporte Native Messaging Windows opcionais implementados. A configuração de produção do host fica vazia/desabilitada e o player de produção continua sem ingresso/serviço remoto ativo. Não há extensão/host instalados, download remoto ativado, engine interna ou prova no Brave real; não é uma entrega funcional instalada nem extensão publicada.
 
 Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. YouTube segue extensão independente, ainda não implementada.
 
@@ -73,6 +73,43 @@ if ($LASTEXITCODE -ne 0) { throw 'Testes da ponte falharam' }
 
 O CTest configura PATH e saída Qt dos cinco executáveis; não precisa de janela/áudio/rede. O filtro é obrigatório se só esses alvos foram compilados, pois o configure também registra os testes do core e do serviço puro. O build independente sem testes usa outro diretório, `-DBUILD_TESTING=OFF`, e alvo `rc_music_browser_integration`. Para incluir a suite Catch2 de coordenação, usar os [checks de jobs](download-jobs.md#checks-locais-windows).
 
+### Host e transporte Native Messaging Windows
+
+`RC_MUSIC_BUILD_NATIVE_MESSAGING` é **OFF por padrão**, Windows-only e independente do desktop. Quando ON, inclui a biblioteca de recepção acima e o alvo separado [rc_music_native_messaging](../cmake/RcMusicNativeMessaging.cmake), com Qt Network 6.11.2 para `QLocalServer`/`QLocalSocket`; não adiciona Qt Network ao alvo Qt Core `rc_music_browser_integration`, engine, HTTP server ou workflow remoto ao player. O executável [rc_music_native_host](../src/app/native_host_main.cpp) usa o mesmo codec/sessão v1 e encaminha admissão assíncrona ao dono persistente dos downloads, sem executar o serviço ou acessar seus stores.
+
+- **Configuração confiável:** `RC_MUSIC_NATIVE_MAIN_ORIGIN` e `RC_MUSIC_NATIVE_ENDPOINT` são configuração C++ gerada no build, nunca JSON, argumentos, ambiente ou página. Ambos vazios produzem host desabilitado, com exit 2 antes de `QCoreApplication`, stdin/stdout ou conexão local; configuração parcial é recusada. A origem deve ter exatamente `chrome-extension://` + 32 letras `a`–`p` + `/`; o nome dedicado aceita somente 1–96 caracteres ASCII alfanuméricos/`_`/`-`.
+- **Invocação:** a origem crua de `argv` deve coincidir exatamente com a configurada. Só é permitido um argumento adicional `--parent-window=` seguido de uint64 decimal canônico, sem sinal, espaços, zeros iniciais ou overflow. Esse valor é metadado inerte, não HWND validado nem autenticação do Brave.
+- **IPC privado, distinto de OpenSources:** preâmbulo fixo de **61 bytes** — oito bytes ASCII `RCMDLIPC`, um byte de versão `1` e a origem exata de 52 bytes — seguido do mesmo schema/frame v1 uint32 little-endian, com JSON reserializado estritamente a partir do DTO tipado por `encodeNativeDownloadRequest`. O lote e as strings de URL/query/título são preservados exatamente; bytes JSON originais, whitespace e ordem original das chaves não são preservados. O dono usa `UserAccessOption`, backlog/conexões limitados a oito, buffers limitados antes de ler e prazos totais sem renovação por fragmentos. Valida origem/schema antes de encaminhar a `AsyncDownloadSubmission`; `Pending` não gera mensagem nem ACK. Somente o controller durável pode tornar aceitação observável após `Saved` correspondente.
+- **Observação e saída:** o cliente conecta uma única vez, sem retry, autolaunch do player ou reenvio. Uma resposta só é reconhecida após EOF do peer, com corpo de até **4.096 bytes**, frame único e schema/UUID/quantidade de jobs exatos. Resposta parcial, extra, contraditória, timeout ou falha após escrita produzem recebimento incerto, não ACK/rejeição inventados. EOF/shutdown fecham observadores e ingresso, não cancelam jobs do dono; `stopped` exige callbacks/recursos drenados. A composição deve fechar ingresso antes do executor e manter controller/stores vivos até a parada reconhecida.
+- **I/O do host:** stdin/stdout são handles Win32 binários `FILE_TYPE_PIPE`, sem CRT/texto, logs ou flush em stdout. O leitor exclusivo consome um snapshot limitado a corpo de 256 KiB + prefixo de quatro bytes + um byte de excesso, recusando snapshots maiores antes de alocar; nunca publica snapshot parcial. O relógio da sessão é amostrado imediatamente **depois** de `readAvailable`, antes de validar/admitir, para não usar um instante anterior à leitura e admitir após o deadline. Um writer privado conserva seu buffer, tem prazo de 2 s e repete `CancelSynchronousIo` até parada física. Um watchdog independente de **15 s** cobre leitura/teardown que não coopere com cancelamento e termina **somente o próprio processo do host** com exit 2, nunca o player, Brave ou outro PID.
+
+Limitar o pipe ao usuário e comparar a origem não autentica outro processo do mesmo usuário nem prova lançamento pelo browser. A eleição/identidade instalada, exclusividade de primeira instância do pipe no Windows, propriedade/upgrade/registro do manifest e o formato real de HWND/`--parent-window` do Brave continuam gates; não habilitar a configuração de produção para contorná-los. Lite/Completa usam a mesma futura composição protegida; navegação interna e YouTube permanecem separados.
+
+Checks reproduzíveis na sessão MSVC do [core](core-build.md#build-windows), usando os caminhos locais acima e outro cache. A identidade de produção é explicitamente vazia; o CMake cria **outro executável de teste**, com identidade sintética compilada e endpoint próprio derivado do cache, sem overrides no host de produção:
+
+```powershell
+$rcSource = (Resolve-Path .).Path
+$rcQt = Join-Path $rcSource 'q/f75eb9bea8280844c6d1a2b3f4/sdk'
+$rcCatch2 = Join-Path $rcSource 'out/m0/toolchains/Catch2-3.15.3'
+$rcNinja = 'C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
+$rcFormat = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-format.exe'
+Get-ChildItem src/adapters/NativeHostLaunch.*, src/adapters/NativeDownloadCodec.*, src/adapters/NativeDownloadIpcProtocol.hpp, src/adapters/QtNativeDownload*.?pp, src/adapters/WindowsNative*.?pp, src/app/native_host_main.cpp, src/app/NativeHostInputStep.hpp, tests/qt/NativeHost*Tests.cpp, tests/qt/NativeHostWatchdogHelper.cpp, tests/qt/QtNativeDownloadTransportTests.cpp, tests/qt/WindowsNativeMessagingIoTests.cpp | ForEach-Object { & $rcFormat --dry-run --Werror $_.FullName; if ($LASTEXITCODE -ne 0) { throw 'Formato do host nativo falhou' } }
+cmake -S . -B out/product/native-messaging-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DRC_MUSIC_BUILD_NATIVE_MESSAGING=ON -DRC_MUSIC_BUILD_DESKTOP=OFF -DBUILD_TESTING=ON -DRC_MUSIC_NATIVE_MAIN_ORIGIN= -DRC_MUSIC_NATIVE_ENDPOINT= "-DCMAKE_PREFIX_PATH=$rcQt" "-DRC_MUSIC_CATCH2_SOURCE_DIR=$rcCatch2" "-DCMAKE_MAKE_PROGRAM=$rcNinja"
+if ($LASTEXITCODE -ne 0) { throw 'Configure do host nativo falhou' }
+cmake --build out/product/native-messaging-tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build Release do host nativo falhou' }
+ctest --test-dir out/product/native-messaging-tests -R '^(rc_music.native.|rc_music.browser.NativeDownloadCodec$)' --output-on-failure
+if ($LASTEXITCODE -ne 0) { throw 'Testes do host nativo falharam' }
+pwsh -NoProfile -File scripts/validate-docs.ps1
+if ($LASTEXITCODE -ne 0) { throw 'Documentação inválida' }
+pwsh -NoProfile -File scripts/validate-traceability.ps1
+if ($LASTEXITCODE -ne 0) { throw 'Rastreabilidade inválida' }
+git diff --check
+if ($LASTEXITCODE -ne 0) { throw 'Diff inválido' }
+```
+
+O filtro acima é do host/codec, não a suíte inteira nem a composição gráfica. Para build sem testes, usar cache novo com `-DBUILD_TESTING=OFF` e compilar `rc_music_native_host`; configuração vazia continua desabilitada e não exige Qt Test. Essa receita não instala/lança setup, registra Native Messaging, carrega extensão ou acessa navegador/rede/conversor.
+
 ### Contrato de recepção
 
 - Uma mensagem por sessão, prefixo de 32 bits little-endian do Windows, corpo de 1 byte a 256 KiB validado antes da reserva. Recepção fragmentada tem deadline total de 5 s; EOF, excesso, segunda mensagem ou relógio regressivo fecham sem nova admissão.
@@ -80,7 +117,7 @@ O CTest configura PATH e saída Qt dos cinco executáveis; não precisa de janel
 - JSON UTF-8 estrito, profundidade limitada, chaves duplicadas inclusive escapadas recusadas antes do parser Qt, schema/campos/tipos exatos e lote atômico. URLs já normalizadas pelo cliente preservam escapes/query; não reserializar via QUrl e alterar assinaturas. Títulos usam até 200 unidades UTF-16, sem controles/bidi ou surrogates isolados; domínios têm rótulos até 63 e nome até 253 caracteres sem ponto final.
 - A sessão fecha a admissão antes de chamar a porta, inclusive em reentrância. Exceção/receipt contraditório não geram ACK falso. O deadline de montagem não preempta uma implementação bloqueante de `submit`; a porta exige enfileiramento rápido e não faz downloads.
 - O overload assíncrono observa `AsyncDownloadSubmission` por UUID, sem dirigir IO/tick/execução. Pending não tem ACK/IDs nem mensagem própria no wire; completion válida responde v1, com um ID distinto por item. Há prazo total próprio de 5 s inclusivos depois do frame completo, sem renovação por poll; clock regressivo falha fechado. EOF/entrada extra/timeout só fecham o observador, sem cancelar/repetir trabalho do dono.
-- O serviço comum mantém idempotência entre conexões e coordena progresso/cancelamento via portas. A [admissão durável](download-jobs.md#admissão-durável-assíncrona) conecta controller/worker/store e só torna aceitação observável após Saved matching; novo startup restaura histórico inerte. O overload síncrono não oferece essa garantia de durabilidade e não deve servir ao host durável futuro. Transporte stdin/stdout binário, identidade instalada, composição do app/UI e duas edições continuam pendentes. Nenhuma URL é aberta por essa biblioteca.
+- O serviço comum mantém idempotência entre conexões e coordena progresso/cancelamento via portas. A [admissão durável](download-jobs.md#admissão-durável-assíncrona) conecta controller/worker/store e só torna aceitação observável após Saved matching; novo startup restaura histórico inerte. O overload síncrono não oferece essa garantia de durabilidade e não serve ao host durável. O transporte binário/IPC opcional acima já existe; identidade instalada e composição protegida de produção continuam pendentes. Model/binding/painel comuns existem no shell instrumentado, sem engine de navegação. Nenhuma URL é aberta pela biblioteca de recepção.
 
 ## Evidência do incremento
 
@@ -100,10 +137,20 @@ Depois do baseline do cliente acima, os stubs C++ confirmaram Red comportamental
 
 Nenhum requisito foi promovido a comprovado: 15 planejados, 66 em andamento, 2 comprovados. Não houve benchmark, execução instalada/nativa, mídia pessoal, rede de download ou alteração do player. Executável de host, admissão idempotente real e workflow completo continuam próximos trabalhos, não resultados deste incremento.
 
+### Incremento de host e IPC de 2026-10-02
+
+TDD do transporte começou com stubs: **2 casos passaram/15 falharam** pelos contratos ausentes. Regressões posteriores expuseram reentrância de polling/shutdown e clock, preservação do observador em callbacks e reconhecimento prematuro de parada; a revisão independente acrescentou três Reds antes das correções. O alvo `rc_music_QtNativeDownloadTransport_tests` terminou focado em **27/27 casos Qt**, sem skips, **1/1 CTest**, com socket real e owner assíncrono falso. Isso comprova o contrato do transporte, não persistência ou execução real de downloads.
+
+O adapter Win32 teve **13/13 casos Qt** focados. O build Release MSVC `/W4 /WX` do host/watchdog passou e `rc_music.native.host-process` ficou verde em **1/1 CTest** (8,81 s), usando o main/stdio/IPC reais contra peer de teste independente e helper próprio do watchdog; a contagem Qt confirmada no log final foi **32/32**, sem skips. Não transferir esses checks para Brave instalado. O cliente JS foi reexecutado: **110/110**, sem skips. O alvo de recepção Qt Core isolado recompilou em Release/testes OFF, com zero testes e sem Qt Network no grafo; o transporte mantém sua dependência separada. Formato dos C++ alterados, QML inalterado com qmllint e validação documental/rastreabilidade passaram nos gates proporcionais.
+
+O ensaio host → IPC → Main/controller instrumentados, com sessão/checkpoint reais e **somente publicação sintética**, ficou verde: a seleção host-process + downloads-composition + native-downloads-composition passou **3/3 CTest** em 11,69 s. Exerceu admissão/replay do mesmo UUID, UI/importação durável e novo startup, sem duplicar jobs/fila. A composição de teste usa identidade sintética compilada e um sentinel de saída fixo dentro do TEMP próprio, acionado pelo driver somente depois dos ACKs/replays; não há comando de controle adicional no IPC ou no host de produção. O driver observa o host já encerrado depois da resposta; isso não comprova o instante exato da parada física do leitor no momento do ACK. Um alvo separado com configuração vazia comprova recusa antes de I/O; não transfere identidade instalada ao host de produção.
+
+A consolidação Release ON/build + `all_qmllint` passou, seguida de **470/470 registros CTest**, zero falhas, em 138,98 s. Incluiu `rc_music.process.native-downloads-composition` **1/1** em 1,95 s e host-process **1/1** em 9,11 s. Esses tempos são duração de checks com trabalho concorrente, não benchmark ou aprovação de desempenho. Não habilitam rede/conversor, instalação/Registry, extensão/browser, engine interna ou identidade de produção e não aprovam release. Os probes finais do desktop OFF/host de produção com defaults vazios têm registro separado; não inferir sua conclusão pelo fixture desabilitado no ON. O [checkpoint central](development-plan.md#17-próxima-sequência-segura) registra o fechamento e seus riscos residuais.
+
 ## Pendências e próxima integração
 
 1. Gate real isolado do Brave/Chromium, incluindo popup/teclado, permissão temporária, navegação, iframe e ativação/remoção; não executar em perfil pessoal sem autorização.
-2. Integrar a biblioteca de recepção a um executável Native Messaging com stdin/stdout binário, origem/identidade estáveis e transporte para o serviço comum no app; acrescentar persistência/recuperação dos recibos. Registro/ownership/upgrade permanecem em R1.10.
-3. Executor limitado/cancelável de download, validação DNS/redirects/TLS contra SSRF, ferramentas de conversão revisadas, importador e tela QML sobre a [coordenação já implementada](download-jobs.md). Sem essa revisão não habilitar downloads reais.
+2. Compor o host/IPC já implementados com identidade instalada estável, eleição/exclusividade/propriedade do dono e lifecycle protegido de produção. Persistência/admissão, importação durável e UI comum já têm componentes/ensaios próprios; recuperação física/acionável e registro/ownership/upgrade permanecem gates, incluindo R1.10.
+3. Fechar a composição protegida de executor/rede/TLS/filesystem/conversão/importador sobre a [coordenação já implementada](download-jobs.md), com ferramentas corrigidas/revisadas e isolamento efetivo. Componentes e ensaios locais existentes não aprovam conteúdo da internet nem ativam downloads reais.
 4. Evoluir descoberta para casos não cobertos: iframes, Shadow DOM aberto/fechado, mídia em tráfego anterior ao clique ou sem URL direta. Blob/MSE, manifestos HLS/DASH, live e DRM não são tratados como MP4 baixável nem contornados.
 5. Navegação interna da Completa, opcionais no instalador e extensão YouTube têm implementação/gates separados. Este cliente não conclui R1.2/R1.7/R1.8, FR-051–053 ou release.

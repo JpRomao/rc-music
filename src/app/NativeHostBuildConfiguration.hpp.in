@@ -1,0 +1,8 @@
+#pragma once
+#include "adapters/NativeHostLaunch.hpp"
+
+namespace music_player::m0 {
+[[nodiscard]] inline NativeHostConfiguration nativeHostBuildConfiguration() {
+    return {QStringLiteral("@native_config_origin@"), QStringLiteral("@native_config_endpoint@")};
+}
+} // namespace music_player::m0

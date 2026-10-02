@@ -9,14 +9,21 @@
 #include "presentation/DownloadApplicationBinding.hpp"
 #include "presentation/PlayerDownloadImport.hpp"
 #include "presentation/PlayerPresenter.hpp"
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+#include "NativeHostBuildConfiguration.hpp"
+#include "adapters/QtNativeDownloadServer.hpp"
+#endif
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QPointer>
 #include <QTimer>
 #include <QUuid>
 
 #include <cstdio>
+#include <functional>
 #include <stdexcept>
 
 namespace music_player::m0 {
@@ -29,9 +36,10 @@ void marker(const char* text) {
 
 class FixturePublication final : public DownloadExecution {
   public:
-    explicit FixturePublication(const QString& file) : path_(file.toStdWString()) {}
+    explicit FixturePublication(const QString& file, std::function<bool()> admitted)
+        : path_(file.toStdWString()), admitted_(std::move(admitted)) {}
     bool start(const std::string& id, const DownloadItem&) override {
-        if (closed_)
+        if (closed_ || !admitted_())
             return false;
         ++starts;
         result_ = {.job_id = id,
@@ -53,6 +61,7 @@ class FixturePublication final : public DownloadExecution {
 
   private:
     std::filesystem::path path_;
+    std::function<bool()> admitted_;
     DownloadExecutionUpdate result_{};
     bool closed_{false};
 };
@@ -62,23 +71,37 @@ struct DownloadsShellSmoke::Impl final {
     PlayerPresenter& presenter;
     PlaybackBackend& backend;
     bool restart;
+    bool native_ingress;
+    QString exit_marker;
     FixturePublication execution;
     QtDownloadRequestIdentity identity;
     PlayerDownloadImport importer;
     SingleWorkerDownloadCheckpointIo checkpoint_io;
     DownloadService service;
     DownloadAdmissionController controller;
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+    std::unique_ptr<QtNativeDownloadServer> server;
+#endif
     DownloadApplicationBinding view;
     QTimer timer;
     QElapsedTimer watchdog;
     QObject* root{nullptr};
-    enum class Phase { Startup, Admission, Import, Playback, Exit };
+    enum class Phase { Startup, Admission, Import, Playback, AwaitDriverExit, Exit };
     Phase phase{Phase::Startup};
     bool exit_requested{false};
 
-    Impl(PlayerPresenter& owner, PlaybackBackend& audio, const SessionLoadResult& session, const QString& config)
+    Impl(PlayerPresenter& owner, PlaybackBackend& audio, const SessionLoadResult& session, const QString& config,
+         const bool native)
         : presenter(owner), backend(audio), restart(!session.snapshot.download_import_receipts.empty()),
-          execution(QDir{config}.filePath(QStringLiteral("synthetic-input.mp3"))),
+          native_ingress(native), exit_marker(QDir{config}.filePath(QStringLiteral("m0-native-downloads-exit"))),
+          execution(QDir{config}.filePath(QStringLiteral("synthetic-input.mp3")),
+                    [this] {
+                        if (controller.saveStatus() != DownloadCheckpointSaveStatus::Saved)
+                            return false;
+                        if (native_ingress)
+                            marker("M0_NATIVE_DURABLE_BEFORE_EXECUTION");
+                        return true;
+                    }),
           importer(owner, {}, PlayerDownloadImportPersistence::Session),
           checkpoint_io([directory = QDir{config}.filePath(QStringLiteral("downloads"))] {
               return std::make_unique<WindowsDownloadCheckpointStore>(directory);
@@ -86,13 +109,42 @@ struct DownloadsShellSmoke::Impl final {
           service(execution, importer, QUuid::createUuid().toString(QUuid::Id128).toStdString(), {}, &identity),
           controller(service, checkpoint_io, session, DownloadFinalSavePolicy::HoldForDecision),
           view(owner, controller, service,
-               {.shutdown = [this] { execution.shutdown(); }, .stopped = [this] { return execution.stopped(); }}) {
+               {.shutdown =
+                    [this] {
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+                        if (server)
+                            server->beginShutdown();
+#endif
+                        execution.shutdown();
+                    },
+                .stopped = [this] { return ingressStopped() && execution.stopped(); }}) {
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+        if (native_ingress) {
+            const QPointer<PlayerPresenter> guard{&owner};
+            server = std::make_unique<QtNativeDownloadServer>(
+                nativeHostBuildConfiguration(), controller,
+                QtNativeDownloadServerOptions{.available = [guard] { return guard && !guard->exiting(); }});
+            if (!server->start())
+                throw std::runtime_error{"isolated native download ingress could not start"};
+        }
+#else
+        if (native_ingress)
+            throw std::runtime_error{"native ingress unavailable in this instrumented build"};
+#endif
         // Both runs use disabled restore: a persisted receipt must not become
         // playback or hydration authority in the restarted app.
         if ((presenter.restoreLastSession() && !presenter.setRestoreLastSession(false)) || !view.start())
             throw std::runtime_error{"isolated download composition could not start"};
         timer.setInterval(25);
         QObject::connect(&timer, &QTimer::timeout, &timer, [this] { tick(); });
+    }
+
+    bool ingressStopped() const {
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+        return !server || server->stopped();
+#else
+        return true;
+#endif
     }
 
     void fail() {
@@ -110,11 +162,16 @@ struct DownloadsShellSmoke::Impl final {
             marker("M0_DOWNLOAD_COMPOSITION_FAILED playback");
             break;
         case Phase::Exit:
+        case Phase::AwaitDriverExit:
             marker("M0_DOWNLOAD_COMPOSITION_FAILED exit");
             break;
         }
         timer.stop();
         controller.shutdown();
+#ifdef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+        if (server)
+            server->beginShutdown();
+#endif
         execution.shutdown();
         QCoreApplication::exit(2);
     }
@@ -126,7 +183,7 @@ struct DownloadsShellSmoke::Impl final {
             fail();
     }
     void tick() {
-        if (watchdog.elapsed() > 10'000) {
+        if (watchdog.elapsed() > (native_ingress ? 45'000 : 10'000)) {
             fail();
             return;
         }
@@ -150,7 +207,16 @@ struct DownloadsShellSmoke::Impl final {
                     return;
                 }
                 marker("M0_DOWNLOAD_RESTART_NO_DUPLICATES");
-                requestExit();
+                if (native_ingress) {
+                    marker("M0_NATIVE_DOWNLOAD_READY");
+                    phase = Phase::AwaitDriverExit;
+                } else
+                    requestExit();
+                return;
+            }
+            if (native_ingress) {
+                phase = Phase::Admission;
+                marker("M0_NATIVE_DOWNLOAD_READY");
                 return;
             }
             const DownloadRequest request{
@@ -206,14 +272,22 @@ struct DownloadsShellSmoke::Impl final {
                 return;
             }
             marker("M0_DOWNLOAD_EXPLICIT_PLAYBACK");
+            if (native_ingress)
+                phase = Phase::AwaitDriverExit;
+            else
+                requestExit();
+        } else if (phase == Phase::AwaitDriverExit && QFile::exists(exit_marker)) {
+            // The process driver creates only this closed test lifecycle file
+            // after strict host replies. Nothing extends the production wire.
             requestExit();
         }
     }
 };
 
 DownloadsShellSmoke::DownloadsShellSmoke(PlayerPresenter& presenter, PlaybackBackend& backend,
-                                         const SessionLoadResult& session, const QString& config_root)
-    : impl_(std::make_unique<Impl>(presenter, backend, session, config_root)) {}
+                                         const SessionLoadResult& session, const QString& config_root,
+                                         const bool native_ingress)
+    : impl_(std::make_unique<Impl>(presenter, backend, session, config_root, native_ingress)) {}
 DownloadsShellSmoke::~DownloadsShellSmoke() = default;
 DownloadApplicationBinding* DownloadsShellSmoke::binding() const { return &impl_->view; }
 void DownloadsShellSmoke::bindWindow(QObject& root) {
@@ -223,7 +297,7 @@ void DownloadsShellSmoke::bindWindow(QObject& root) {
 }
 bool DownloadsShellSmoke::completed() const {
     const bool ready = impl_->exit_requested && impl_->presenter.exitCommitted() && impl_->controller.stopped() &&
-                       impl_->checkpoint_io.stopped() && impl_->execution.stopped() &&
+                       impl_->checkpoint_io.stopped() && impl_->ingressStopped() && impl_->execution.stopped() &&
                        impl_->controller.saveStatus() == DownloadCheckpointSaveStatus::Saved;
     if (ready)
         marker("M0_DOWNLOAD_SAFE_EXIT");

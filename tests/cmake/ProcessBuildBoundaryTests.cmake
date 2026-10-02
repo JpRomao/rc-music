@@ -8,7 +8,7 @@ function(require_product_graph graph graph_build_root)
     # Generated paths may live in out/product/tests/desktop. Remove only the
     # absolute build prefix; source paths and test-generated tails remain.
     string(REPLACE "${graph_build_root}" "<build>" graph "${graph}")
-    if(graph MATCHES "RC_MUSIC_ENABLE_FIXTURE_SCENARIOS|M0_QT_SHELL_TEST_HOOKS|RC_MUSIC_TEST_UI_VARIANT|RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE|DownloadsShellSmoke|/tests/|fixture_data|FixtureRepository|DeterministicPlaybackBackend|rc_music_test_ui|rc_music_test_support|rc_music_ui_scenario_support")
+    if(graph MATCHES "RC_MUSIC_ENABLE_FIXTURE_SCENARIOS|M0_QT_SHELL_TEST_HOOKS|RC_MUSIC_TEST_UI_VARIANT|RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE|RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE|test-native-host|DownloadsShellSmoke|/tests/|fixture_data|FixtureRepository|DeterministicPlaybackBackend|rc_music_test_ui|rc_music_test_support|rc_music_ui_scenario_support")
         message(FATAL_ERROR "Real application reaches a test hook, scenario or test support")
     endif()
 endfunction()

@@ -28,6 +28,31 @@ class ShellLaunchOptionsTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void nativeDownloadsSmokeRequiresTestHooksIsolatedRootAndAudio() {
+        bool rejected = false;
+        try {
+            const auto options =
+                parseShellLaunchOptions({QStringLiteral("app"), QStringLiteral("--m0-smoke=native-downloads"),
+                                         testConfigArgument(QStringLiteral("native-downloads"))});
+            QVERIFY(options.source_paths.isEmpty());
+            validateShellLaunchOptions(options, true, true);
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, false, true));
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument, validateShellLaunchOptions(options, true, false));
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        QVERIFY2(!rejected, "The isolated native downloads composition hook must be recognised");
+        const auto hook = QStringLiteral("--m0-smoke=native-downloads");
+        const auto root = testConfigArgument(QStringLiteral("native-downloads"));
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, (void)parseShellLaunchOptions({QStringLiteral("app"), hook}));
+        QVERIFY_THROWS_EXCEPTION(
+            std::invalid_argument,
+            (void)parseShellLaunchOptions({QStringLiteral("app"), hook, root, QStringLiteral("C:/audio.mp3")}));
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,
+                                 (void)parseShellLaunchOptions(
+                                     {QStringLiteral("app"), hook, root, QStringLiteral("--m0-scenario=unavailable")}));
+    }
+
     void downloadsSmokeIsClosedAndRequiresAnIsolatedCombinedApp() {
         bool rejected = false;
         try {

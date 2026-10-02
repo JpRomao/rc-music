@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <utility>
 
 namespace music_player::m0 {
 namespace {
@@ -416,6 +417,103 @@ QByteArray encodeNativeDownloadResponse(const std::string& request_id, const Dow
         response.insert(QStringLiteral("code"), code);
     }
     return QJsonDocument{response}.toJson(QJsonDocument::Compact);
+}
+
+QByteArray encodeNativeDownloadRequest(const DownloadRequest& request) {
+    if (!validRequestId(request.request_id) || request.items.empty() ||
+        request.items.size() > static_cast<std::size_t>(max_items))
+        return {};
+    QJsonArray items;
+    for (const auto& item : request.items) {
+        // Bound construction before Qt allocates decoded strings. URLs are
+        // ASCII by policy; four UTF-8 bytes per UTF-16 unit is a safe title cap.
+        if (item.url.size() > static_cast<std::size_t>(max_url_units) ||
+            item.title.size() > static_cast<std::size_t>(4 * max_title_units))
+            return {};
+        QString kind;
+        switch (item.kind) {
+        case DownloadMediaKind::Audio:
+            kind = QStringLiteral("audio");
+            break;
+        case DownloadMediaKind::Video:
+            kind = QStringLiteral("video");
+            break;
+        default:
+            return {};
+        }
+        items.push_back(QJsonObject{{QStringLiteral("url"), QString::fromStdString(item.url)},
+                                    {QStringLiteral("title"), QString::fromStdString(item.title)},
+                                    {QStringLiteral("kind"), kind}});
+    }
+    const QJsonObject object{{QStringLiteral("schemaVersion"), 1},
+                             {QStringLiteral("type"), QStringLiteral("download.request")},
+                             {QStringLiteral("requestId"), QString::fromStdString(request.request_id)},
+                             {QStringLiteral("items"), items}};
+    const auto payload = QJsonDocument{object}.toJson(QJsonDocument::Compact);
+    const auto decoded = decodeNativeDownloadRequest(payload);
+    // The one strict policy remains authoritative; invalid UTF-8 replacement
+    // or any other coercion cannot turn a malformed DTO into a different batch.
+    return decoded.error == DownloadSubmissionError::None && decoded.request == request ? payload : QByteArray{};
+}
+
+std::optional<DownloadSubmissionResult> decodeNativeDownloadResponse(const QByteArray& payload,
+                                                                     const std::string_view expected_request_id,
+                                                                     const std::size_t expected_item_count) {
+    if (!validRequestId(expected_request_id) || expected_item_count == 0 ||
+        expected_item_count > static_cast<std::size_t>(max_items) || payload.size() > max_payload_bytes ||
+        !strictJsonPreflight(payload))
+        return std::nullopt;
+    const auto document = QJsonDocument::fromJson(payload);
+    if (!document.isObject())
+        return std::nullopt;
+    const auto object = document.object();
+    const auto id = object.value(QStringLiteral("requestId"));
+    const auto status = object.value(QStringLiteral("status"));
+    if (!object.value(QStringLiteral("schemaVersion")).isDouble() ||
+        object.value(QStringLiteral("schemaVersion")).toDouble() != 1.0 ||
+        !object.value(QStringLiteral("type")).isString() ||
+        object.value(QStringLiteral("type")).toString() != QStringLiteral("download.response") || !id.isString() ||
+        id.toString().size() != 36 || id.toString().toStdString() != expected_request_id || !status.isString())
+        return std::nullopt;
+    if (status.toString() == QStringLiteral("accepted")) {
+        if (!exactKeys(object,
+                       std::array{QStringLiteral("schemaVersion"), QStringLiteral("type"), QStringLiteral("requestId"),
+                                  QStringLiteral("status"), QStringLiteral("jobIds")}) ||
+            !object.value(QStringLiteral("jobIds")).isArray())
+            return std::nullopt;
+        const auto ids = object.value(QStringLiteral("jobIds")).toArray();
+        if (static_cast<std::size_t>(ids.size()) != expected_item_count)
+            return std::nullopt;
+        DownloadSubmissionResult result{.error = DownloadSubmissionError::None};
+        result.job_ids.reserve(expected_item_count);
+        QSet<QString> seen;
+        for (const auto& value : ids) {
+            if (!value.isString())
+                return std::nullopt;
+            const auto id_string = value.toString();
+            if (id_string.isEmpty() || id_string.size() > 80)
+                return std::nullopt;
+            auto job_id = id_string.toStdString();
+            if (!validJobId(job_id) || seen.contains(id_string))
+                return std::nullopt;
+            seen.insert(id_string);
+            result.job_ids.push_back(std::move(job_id));
+        }
+        return result;
+    }
+    if (status.toString() != QStringLiteral("rejected") ||
+        !exactKeys(object, std::array{QStringLiteral("schemaVersion"), QStringLiteral("type"),
+                                      QStringLiteral("requestId"), QStringLiteral("status"), QStringLiteral("code")}) ||
+        !object.value(QStringLiteral("code")).isString())
+        return std::nullopt;
+    const auto code = object.value(QStringLiteral("code")).toString();
+    for (const auto error : {DownloadSubmissionError::InvalidRequest, DownloadSubmissionError::UnsupportedSource,
+                             DownloadSubmissionError::Busy, DownloadSubmissionError::NotAvailable,
+                             DownloadSubmissionError::LimitExceeded}) {
+        if (code == errorCode(error))
+            return DownloadSubmissionResult{.error = error};
+    }
+    return std::nullopt;
 }
 
 } // namespace music_player::m0

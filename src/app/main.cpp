@@ -308,8 +308,12 @@ int main(int argc, char* argv[]) {
 #endif
         );
 #ifndef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
-        if (options.smoke_downloads)
+        if (options.smoke_downloads || options.smoke_native_downloads)
             throw std::invalid_argument{"download composition hooks are unavailable in this build"};
+#endif
+#ifndef RC_MUSIC_NATIVE_DOWNLOAD_SMOKE_AVAILABLE
+        if (options.smoke_native_downloads)
+            throw std::invalid_argument{"native download composition hooks are unavailable in this build"};
 #endif
 #ifndef Q_OS_WIN
         if (options.diagnostics_enabled)
@@ -428,7 +432,7 @@ int main(int argc, char* argv[]) {
             options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
             options.smoke_session_defaults_read || options.smoke_session_receipts_without_restore ||
             options.smoke_single_instance_executable || options.smoke_start_minimized_no_tray ||
-            options.smoke_startup_source_precedence || options.smoke_downloads)
+            options.smoke_startup_source_precedence || options.smoke_downloads || options.smoke_native_downloads)
             availability_reader = [&tray_smoke_available] { return tray_smoke_available; };
 #endif
         music_player::m0::QtShellPlatform platform(music_player::m0::ApplicationIdentity::icon(), contract.appName(),
@@ -549,9 +553,9 @@ int main(int argc, char* argv[]) {
 #endif
 #ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
         std::unique_ptr<music_player::m0::DownloadsShellSmoke> downloads_smoke;
-        if (options.smoke_downloads)
+        if (options.smoke_downloads || options.smoke_native_downloads)
             downloads_smoke = std::make_unique<music_player::m0::DownloadsShellSmoke>(
-                presenter, backend, downloads_initial_session, config_root);
+                presenter, backend, downloads_initial_session, config_root, options.smoke_native_downloads);
 #endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
         QQmlApplicationEngine engine;

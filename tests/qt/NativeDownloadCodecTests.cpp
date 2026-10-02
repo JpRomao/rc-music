@@ -26,6 +26,22 @@ QJsonObject request(const QJsonArray& items = QJsonArray{item()}) {
 
 QByteArray bytes(const QJsonObject& value) { return QJsonDocument{value}.toJson(QJsonDocument::Compact); }
 
+QJsonObject acceptedResponse(const QJsonArray& ids = {QStringLiteral("job_1"), QStringLiteral("Job-2")}) {
+    return {{QStringLiteral("schemaVersion"), 1},
+            {QStringLiteral("type"), QStringLiteral("download.response")},
+            {QStringLiteral("requestId"), request_id},
+            {QStringLiteral("status"), QStringLiteral("accepted")},
+            {QStringLiteral("jobIds"), ids}};
+}
+
+QJsonObject rejectedResponse(const QString& code = QStringLiteral("busy")) {
+    auto response = acceptedResponse();
+    response.insert(QStringLiteral("status"), QStringLiteral("rejected"));
+    response.remove(QStringLiteral("jobIds"));
+    response.insert(QStringLiteral("code"), code);
+    return response;
+}
+
 } // namespace
 
 class NativeDownloadCodecTests final : public QObject {
@@ -433,6 +449,226 @@ class NativeDownloadCodecTests final : public QObject {
         QVERIFY(!encodeNativeDownloadResponse(request_id.toStdString(),
                                               {DownloadSubmissionError::None, {std::string(80, 'a')}})
                      .isEmpty());
+    }
+
+    void serializesTypedRequestWithoutChangingStrings() {
+        const DownloadRequest original{
+            request_id.toUpper().toStdString(),
+            {{"https://media.example.test/a%2fb%2FB?sig=A%2fb%2FB&x=1+2&x=3", "Áudio 日本", DownloadMediaKind::Audio},
+             {"http://other.example.test/video.mp4?escaped=%26%3D&x=two", "Vídeo 🎵", DownloadMediaKind::Video}}};
+        const auto preserved = original;
+        const auto payload = encodeNativeDownloadRequest(original);
+        QVERIFY(!payload.isEmpty());
+        QVERIFY(payload.size() <= 256 * 1024);
+        const auto decoded = decodeNativeDownloadRequest(payload);
+        QCOMPARE(decoded.error, DownloadSubmissionError::None);
+        QVERIFY(decoded.request == original);
+        QVERIFY(original == preserved);
+    }
+
+    void typedRequestEncoderAcceptsInclusiveBounds() {
+        DownloadRequest original{request_id.toStdString(), {}};
+        for (int index = 0; index < 20; ++index)
+            original.items.push_back({"https://media.example.test/" + std::to_string(index), std::string(200, 'a'),
+                                      DownloadMediaKind::Audio});
+        const auto payload = encodeNativeDownloadRequest(original);
+        QVERIFY(!payload.isEmpty());
+        QVERIFY(decodeNativeDownloadRequest(payload).request == original);
+        original.items = {
+            {"https://media.example.test/" + std::string(8192 - 27, 'a'), "Title", DownloadMediaKind::Video}};
+        QCOMPARE(original.items.front().url.size(), std::size_t{8192});
+        QVERIFY(!encodeNativeDownloadRequest(original).isEmpty());
+        original.items.front().title = (QString(198, QLatin1Char('a')) + QString::fromUcs4(U"🎵")).toStdString();
+        QVERIFY(!encodeNativeDownloadRequest(original).isEmpty());
+        original.items.front().title.insert(0, "a");
+        QVERIFY(encodeNativeDownloadRequest(original).isEmpty());
+    }
+
+    void typedRequestEncoderRejectsInvalidDtos() {
+        const DownloadRequest valid{request_id.toStdString(), {{"https://media.example.test/audio.mp3", "Audio"}}};
+        std::vector<DownloadRequest> invalid;
+        auto changed = valid;
+        changed.request_id.clear();
+        invalid.push_back(changed);
+        changed = valid;
+        changed.request_id = std::string(500'000, 'a');
+        invalid.push_back(changed);
+        changed = valid;
+        changed.items.clear();
+        invalid.push_back(changed);
+        changed = valid;
+        changed.items.assign(21, valid.items.front());
+        invalid.push_back(changed);
+        changed = valid;
+        changed.items.push_back(valid.items.front());
+        invalid.push_back(changed);
+        for (const std::string& url :
+             {std::string{"file:///C:/audio.mp3"}, std::string{"https://youtube.com/audio.mp3"},
+              std::string{"https://MEDIA.example.test/audio.mp3"}, std::string(8193, 'a'),
+              std::string{"https://media.example.test/"} + QByteArray::fromHex("ff").toStdString()}) {
+            changed = valid;
+            changed.items.front().url = url;
+            invalid.push_back(changed);
+        }
+        for (const std::string& title :
+             {std::string{}, std::string{" Audio "}, std::string{"bad\ntext"}, std::string(201, 'a'),
+              QByteArray::fromHex("ff").toStdString(), std::string{"A\0B", 3}, std::string(100'000, 'a')}) {
+            changed = valid;
+            changed.items.front().title = title;
+            invalid.push_back(changed);
+        }
+        changed = valid;
+        changed.items.front().kind = static_cast<DownloadMediaKind>(999);
+        invalid.push_back(changed);
+        for (const auto& candidate : invalid)
+            QVERIFY(encodeNativeDownloadRequest(candidate).isEmpty());
+    }
+
+    void decodesCorrelatedAcceptedResponse() {
+        const auto result = decodeNativeDownloadResponse(bytes(acceptedResponse()), request_id.toStdString(), 2);
+        QVERIFY(result);
+        QCOMPARE(result->error, DownloadSubmissionError::None);
+        QCOMPARE(result->job_ids, (std::vector<std::string>{"job_1", "Job-2"}));
+        auto upper = acceptedResponse();
+        upper.insert(QStringLiteral("requestId"), request_id.toUpper());
+        QVERIFY(decodeNativeDownloadResponse(bytes(upper), request_id.toUpper().toStdString(), 2));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(upper), request_id.toStdString(), 2));
+    }
+
+    void decodesEveryTypedRejection_data() {
+        QTest::addColumn<QString>("code");
+        QTest::addColumn<DownloadSubmissionError>("error");
+        QTest::newRow("invalid_request") << QStringLiteral("invalid_request")
+                                         << DownloadSubmissionError::InvalidRequest;
+        QTest::newRow("unsupported_source")
+            << QStringLiteral("unsupported_source") << DownloadSubmissionError::UnsupportedSource;
+        QTest::newRow("busy") << QStringLiteral("busy") << DownloadSubmissionError::Busy;
+        QTest::newRow("not_available") << QStringLiteral("not_available") << DownloadSubmissionError::NotAvailable;
+        QTest::newRow("limit_exceeded") << QStringLiteral("limit_exceeded") << DownloadSubmissionError::LimitExceeded;
+    }
+
+    void decodesEveryTypedRejection() {
+        QFETCH(QString, code);
+        QFETCH(DownloadSubmissionError, error);
+        const auto result = decodeNativeDownloadResponse(bytes(rejectedResponse(code)), request_id.toStdString(), 2);
+        QVERIFY(result);
+        QCOMPARE(result->error, error);
+        QVERIFY(result->job_ids.empty());
+    }
+
+    void rejectsMalformedOrAmbiguousResponses_data() {
+        QTest::addColumn<QByteArray>("payload");
+        QTest::newRow("empty response") << QByteArray{};
+        QTest::newRow("broken response") << QByteArray{"{"};
+        QTest::newRow("array response") << QByteArray{"[]"};
+        QTest::newRow("trailing JSON") << bytes(acceptedResponse()) + QByteArray{"{}"};
+        auto changed = acceptedResponse();
+        changed.insert(QStringLiteral("schemaVersion"), true);
+        QTest::newRow("boolean version") << bytes(changed);
+        changed.insert(QStringLiteral("schemaVersion"), 1.1);
+        QTest::newRow("fractional version") << bytes(changed);
+        changed.insert(QStringLiteral("schemaVersion"), 2);
+        QTest::newRow("future version") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("type"), QStringLiteral("download.request"));
+        QTest::newRow("request masquerades as reply") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("requestId"), QStringLiteral("01234567-89ab-4cde-8fab-0123456789ac"));
+        QTest::newRow("uncorrelated request") << bytes(changed);
+        changed.insert(QStringLiteral("requestId"), true);
+        QTest::newRow("boolean request identity") << bytes(changed);
+        changed.insert(QStringLiteral("requestId"), QStringLiteral("01234567-89ab-3cde-8fab-0123456789ab"));
+        QTest::newRow("invalid UUID version") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("status"), true);
+        QTest::newRow("boolean status") << bytes(changed);
+        changed.insert(QStringLiteral("status"), QStringLiteral("pending"));
+        QTest::newRow("pending forbidden on wire") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("code"), QStringLiteral("busy"));
+        QTest::newRow("accepted with rejection code") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("message"), QStringLiteral("anything"));
+        QTest::newRow("free text extra field") << bytes(changed);
+        changed = acceptedResponse();
+        changed.remove(QStringLiteral("jobIds"));
+        QTest::newRow("accepted missing jobs") << bytes(changed);
+        changed = acceptedResponse();
+        changed.insert(QStringLiteral("jobIds"), QStringLiteral("job_1"));
+        QTest::newRow("nonarray jobs") << bytes(changed);
+        QTest::newRow("empty jobs") << bytes(acceptedResponse({}));
+        QTest::newRow("duplicate jobs") << bytes(acceptedResponse({QStringLiteral("same"), QStringLiteral("same")}));
+        QTest::newRow("wrong jobs count") << bytes(acceptedResponse({QStringLiteral("job_1")}));
+        QTest::newRow("nonstring job") << bytes(acceptedResponse({QStringLiteral("job_1"), 7}));
+        QTest::newRow("object job") << bytes(acceptedResponse({QStringLiteral("job_1"), QJsonObject{}}));
+        QTest::newRow("empty job") << bytes(acceptedResponse({QStringLiteral("job_1"), QString{}}));
+        QTest::newRow("long job") << bytes(acceptedResponse({QStringLiteral("job_1"), QString(81, QLatin1Char('a'))}));
+        QTest::newRow("Unicode job") << bytes(acceptedResponse({QStringLiteral("job_1"), QStringLiteral("áudio")}));
+        QTest::newRow("control job") << bytes(acceptedResponse({QStringLiteral("job_1"), QStringLiteral("bad\njob")}));
+        QTest::newRow("job path") << bytes(acceptedResponse({QStringLiteral("job_1"), QStringLiteral("C:/audio.mp3")}));
+        changed = rejectedResponse();
+        changed.insert(QStringLiteral("jobIds"), QJsonArray{});
+        QTest::newRow("rejected with jobs") << bytes(changed);
+        changed = rejectedResponse();
+        changed.remove(QStringLiteral("code"));
+        QTest::newRow("missing rejection code") << bytes(changed);
+        changed = rejectedResponse();
+        changed.insert(QStringLiteral("code"), 7);
+        QTest::newRow("numeric rejection code") << bytes(changed);
+        QTest::newRow("unknown rejection code") << bytes(rejectedResponse(QStringLiteral("all_ok")));
+        QTest::newRow("uppercase rejection code") << bytes(rejectedResponse(QStringLiteral("BUSY")));
+        auto payload = bytes(acceptedResponse());
+        payload.insert(1, "\"status\":\"accepted\",");
+        QTest::newRow("duplicate member") << payload;
+        payload = bytes(acceptedResponse());
+        payload.insert(1, "\"sta\\u0074us\":\"accepted\",");
+        QTest::newRow("escaped duplicate alias") << payload;
+        payload = bytes(acceptedResponse());
+        payload.replace("Job-2", "bad\\q");
+        QTest::newRow("unknown JSON escape") << payload;
+        payload = bytes(acceptedResponse());
+        payload.replace("Job-2", "\\ud800");
+        QTest::newRow("lone surrogate") << payload;
+        payload = bytes(acceptedResponse());
+        payload.replace("Job-2", QByteArray::fromHex("c328"));
+        QTest::newRow("invalid UTF8") << payload;
+        const auto bom = QByteArray::fromHex("efbbbf");
+        QTest::newRow("payload BOM") << bom + bytes(acceptedResponse());
+        payload = bytes(acceptedResponse());
+        payload.replace("\"requestId\":", '"' + bom + "requestId\":");
+        QTest::newRow("BOM key alias") << payload;
+        QTest::newRow("deep JSON") << QByteArray(5000, '[') + QByteArray(5000, ']');
+        payload = bytes(acceptedResponse());
+        payload.replace("\"schemaVersion\":1", "\"schemaVersion\":1.");
+        QTest::newRow("nonJSON numeric spelling") << payload;
+    }
+
+    void rejectsMalformedOrAmbiguousResponses() {
+        QFETCH(QByteArray, payload);
+        QVERIFY(!decodeNativeDownloadResponse(payload, request_id.toStdString(), 2));
+    }
+
+    void responseDecoderEnforcesExpectedContextAndInclusiveBounds() {
+        QJsonArray ids;
+        for (int index = 0; index < 20; ++index)
+            ids.push_back(QString::number(index) + QString(78, QLatin1Char('a')));
+        ids[0] = QString(80, QLatin1Char('a'));
+        QVERIFY(decodeNativeDownloadResponse(bytes(acceptedResponse(ids)), request_id.toStdString(), 20));
+        ids.push_back(QStringLiteral("extra"));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(acceptedResponse(ids)), request_id.toStdString(), 21));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(acceptedResponse()), std::string_view{}, 2));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(acceptedResponse()), "not-a-UUID", 2));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(acceptedResponse()), request_id.toStdString(), 0));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(rejectedResponse()), request_id.toStdString(), 0));
+        QVERIFY(!decodeNativeDownloadResponse(bytes(rejectedResponse()), request_id.toStdString(), 21));
+        auto payload = bytes(acceptedResponse());
+        payload.append(QByteArray(256 * 1024 - payload.size(), ' '));
+        QVERIFY(decodeNativeDownloadResponse(payload, request_id.toStdString(), 2));
+        payload.append(' ');
+        QVERIFY(!decodeNativeDownloadResponse(payload, request_id.toStdString(), 2));
+        payload = bytes(acceptedResponse());
+        payload.replace("\"schemaVersion\":1", "\"schemaVersion\":1.0");
+        QVERIFY(decodeNativeDownloadResponse(payload, request_id.toStdString(), 2));
     }
 };
 

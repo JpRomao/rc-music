@@ -1190,6 +1190,26 @@
           "marker": "agreesWithSharedBrowserProtocolVectors"
         },
         {
+          "path": "tests/qt/NativeDownloadCodecTests.cpp",
+          "marker": "serializesTypedRequestWithoutChangingStrings"
+        },
+        {
+          "path": "tests/qt/NativeDownloadCodecTests.cpp",
+          "marker": "decodesCorrelatedAcceptedResponse"
+        },
+        {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "pendingHasNoWireAcknowledgementThenMatchingCompletionReplies"
+        },
+        {
+          "path": "tests/qt/NativeHostProcessTests.cpp",
+          "marker": "fragmentedStdinProducesOneExactBinaryReplyAndOneIpcRequest"
+        },
+        {
+          "path": "tests/process/qtest/NativeDownloadsCompositionTests.cpp",
+          "marker": "realHostOwnerUiAndDurableReceiptsSurviveReplayAndRestart"
+        },
+        {
           "path": "tests/qt/NativeDownloadServiceTests.cpp",
           "marker": "acceptedBatchSurvivesBrowserConnectionAndIsNotStartedByAcknowledgement"
         },
@@ -1300,6 +1320,14 @@
           "marker": "## Evidência da importação durável de 2026-10-02"
         },
         {
+          "path": "docs/process-tests.md",
+          "marker": "## Composição instrumentada do ingresso Native Messaging"
+        },
+        {
+          "path": "docs/architecture/decisions/0007-main-extension-boundary.md",
+          "marker": "### Host e transporte privados Windows"
+        },
+        {
           "path": "docs/development-plan.md",
           "marker": "Incremento de execução assíncrona de 2026-10-01"
         },
@@ -1309,7 +1337,7 @@
         }
       ],
       "remaining": [
-        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida prepara capability por job e conserva tarefa/I/O/destruição na thread privada. Há checkpoint assíncrono de admissão, journal worker-only de ownership e assessment conservador; importador Session conserva fila+recibo v2 e aguarda Saved matching, sem autoplay/reappend no retry. Bootstrap preserva ledger com restauração/opcionais OFF sem carregar áudio. Reconciliação estrita reconhece recibos saudáveis como Imported sem reimportação, preserva métricas e protege namespace de órfãos; controller valida/copia evidência de startup antes de Ready. Testes do handoff/reconciliação usam execução/áudio e checkpoint IO falsos com store real de sessão em TEMP próprio; ensaio MP3/MP4→serviço anterior usa transferência/helper e importador falsos, com processos/filesystem/conversor/publicação reais. Binding/painel e saída tipada compõem serviços/importador e ambos stores/workers reais na main instrumentada, com executor Published sintético; o produto permanece sem ingresso/serviço ativados. Completar composição da reconciliação com ownership, recuperação/capacidade acionáveis, resíduos de runtime, perfil exato de distribuição/notices, FFmpeg corrigido/proveniência/licenças/sandbox, promoção da composição instrumentada para execução protegida de produção/host, descoberta ampliada e Brave real. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos; sem workflow completo no app ou aprovação de mídia remota/distribuição."
+        "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida prepara capability por job e conserva tarefa/I/O/destruição na thread privada. Há checkpoint assíncrono de admissão, journal worker-only de ownership e assessment conservador; importador Session conserva fila+recibo v2 e aguarda Saved matching, sem autoplay/reappend no retry. Bootstrap preserva ledger com restauração/opcionais OFF sem carregar áudio. Reconciliação estrita reconhece recibos saudáveis como Imported sem reimportação, preserva métricas e protege namespace de órfãos; controller valida/copia evidência de startup antes de Ready. Host binário real e canal Qt Network dedicado são opcionais/OFF por padrão, com identidade confiável de produção vazia e sem configuração por argv/ambiente/JSON; não alteram OpenSources local. Main instrumentada compõe ingresso, serviços/importador, binding/painel e ambos stores/workers reais, com publicação Published somente sintética: quatro hosts repetem o mesmo UUID duas vezes por boot em dois boots, leitores independentes conferem recibos/IDs após resposta e documentos após NormalExit, sem autoplay/duplicação e com Imported/restore=false no restart. Os ensaios anteriores de MP3/MP4→serviço continuam usando transferência/helper e importador falsos, com processos/filesystem/conversor/publicação reais, sem conexão desse executor à composição instrumentada. O produto permanece sem ingresso/serviço remoto ativos. Completar promoção para execução protegida de produção, composição da reconciliação com ownership, recuperação/capacidade acionáveis, resíduos de runtime, perfil exato de distribuição/notices, FFmpeg corrigido/proveniência/licenças/sandbox, descoberta ampliada e Brave real. Identidade instalada, registro/upgrade e primeira instância/colisão do pipe Windows continuam gates; origem/pipe do mesmo usuário não autenticam navegador. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos; sem workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
     },
     {
@@ -1346,7 +1374,7 @@
         }
       ],
       "remaining": [
-        "ADR-0007/0008 adotam cliente/coordenação; transporte Qt Network opcional possui ensaio isolado. ADR-0009 mantém gates de egress/cancelamento da validação Schannel, segurança/atualização do CLI, proveniência/licenças/distribuição; ainda não aceito para mídia remota. Escolher/revisar host/engine, validar registro Brave e upgrade/ownership; nenhuma aprovação de publicação por associação."
+        "ADR-0007/0008 adotam cliente/coordenação e host/transporte Native Messaging opcional com Qt Network da mesma toolchain, sem escolher engine ou dependência nova. ADR-0009 mantém gates de egress/cancelamento da validação Schannel, segurança/atualização do CLI, proveniência/licenças/distribuição; ainda não aceito para mídia remota. Definir identidade instalada e validar registro Brave, primeira instância/colisão do pipe, upgrade/ownership e engine da Completa; nenhuma aprovação de publicação por associação."
       ]
     },
     {
@@ -1366,6 +1394,50 @@
         {
           "path": "tests/qt/NativeDownloadCodecTests.cpp",
           "marker": "rejectsDuplicateMembersEvenEscapedAliases"
+        },
+        {
+          "path": "tests/qt/NativeDownloadCodecTests.cpp",
+          "marker": "rejectsMalformedOrAmbiguousResponses"
+        },
+        {
+          "path": "tests/qt/NativeHostLaunchTests.cpp",
+          "marker": "missingTrustedConfigurationCannotAdoptCaller"
+        },
+        {
+          "path": "tests/qt/NativeHostProcessTests.cpp",
+          "marker": "disabledProductionHostCannotAdoptSpoofedArgumentsOrEnvironment"
+        },
+        {
+          "path": "tests/qt/NativeHostProcessTests.cpp",
+          "marker": "pendingEofClosesObserverWithoutAckOrRetransmission"
+        },
+        {
+          "path": "tests/qt/NativeHostProcessTests.cpp",
+          "marker": "hostilePeerReplyNeverProducesAckOrReconnect"
+        },
+        {
+          "path": "tests/qt/WindowsNativeMessagingIoTests.cpp",
+          "marker": "boundsEntireAvailableInputBeforeAllocation"
+        },
+        {
+          "path": "tests/qt/NativeHostInputStepTests.cpp",
+          "marker": "inputReturningAfterAssemblyDeadlineCannotAdmit"
+        },
+        {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "nestedServerPollFromClockObservesTheClockOnlyOnce"
+        },
+        {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "shutdownDuringAdmissionIsNotDrainedUntilCallbackUnwinds"
+        },
+        {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "shutdownDuringPollClockIsNotDrainedUntilPollUnwinds"
+        },
+        {
+          "path": "tests/process/qtest/NativeDownloadsCompositionTests.cpp",
+          "marker": "realHostOwnerUiAndDurableReceiptsSurviveReplayAndRestart"
         },
         {
           "path": "tests/qt/NativeDownloadSessionTests.cpp",
@@ -1582,6 +1654,14 @@
           "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
         },
         {
+          "path": "docs/process-tests.md",
+          "marker": "### Evidência focada do ingresso de 2026-10-02"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Host Native Messaging e transporte privado Windows"
+        },
+        {
           "path": "docs/download-jobs.md",
           "marker": "## Evidência da importação durável de 2026-10-02"
         },
@@ -1599,7 +1679,7 @@
         }
       ],
       "remaining": [
-        "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback em testes de componentes. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; launcher autentica cópias privadas/bootstrap antes de carregar Qt, preparado na thread privada por job. Porta rápida só publica terminal após destruir tarefa; RAII/QtDownloadIo não qualificam ACK. Checkpoint assíncrono e journal de ownership preservam falhas ambíguas/candidatos privados, sem ações automáticas. Importador Session é append-only com fila+recibo no mesmo documento e Importing até Saved matching; Failed/readback não vira ACK, retry explícito não repete append/download e guard fecha reentradas. Bootstrap conserva recibos sem hidratar quando restore está OFF. Reconciliação estrita bloqueia conflitos/saúde de sessão inválida sem rewrite, preserva métricas/candidatos privados e não transforma Completed sem recibo em importação confirmada; órfãos reservam namespace sem jobs/quotas inventados. Seus testes usam execução/áudio e checkpoint IO falsos com store real de sessão em TEMP próprio; ensaio MP3/MP4→serviço anterior usa importador falso e processos/arquivos/conversor reais. Faltam composição da reconciliação com ownership e divergências/recuperação/capacidade acionáveis, resíduos de runtime, perfil exato/distribuição, demais gates TLS e ferramenta corrigida/proveniência/licenças/sandbox, composição importador/host/lifecycle/model/UI, edições/instaladores e expiração/live/restrições/headers/seek. Sem backend completo no app, exactly-once universal ou aprovação de mídia remota/distribuição."
+        "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback em testes de componentes. Host real opt-in/OFF por padrão exige identidade confiável, pipes binários limitados, clock pós-read e watchdog próprio; não adota argv/ambiente/JSON e não muda OpenSources. Cliente/servidor do canal dedicado exigem resposta única/correlacionada, nenhum ACK Pending, incerteza pós-escrita sem retry/cancelamento do dono e drain após callbacks/poll. Processo contra peer falso testa framing/EOF/hostilidade/watchdog, não continuidade do owner real; composição instrumentada com quatro hosts e owner/UI/stores/workers reais prova replay/restart e saída Saved+drain, com publicação exclusivamente sintética e produto remoto inativo. Origem/pipe do mesmo usuário não autentica browser; identidade instalada, primeira instância/colisão do pipe, signed HWND/Brave real e registro/upgrade permanecem gates. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; launcher autentica cópias privadas/bootstrap antes de carregar Qt, preparado na thread privada por job. Porta rápida só publica terminal após destruir tarefa; RAII/QtDownloadIo não qualificam ACK. Checkpoint assíncrono e journal de ownership preservam falhas ambíguas/candidatos privados, sem ações automáticas. Importador Session é append-only com fila+recibo no mesmo documento e Importing até Saved matching; Failed/readback não vira ACK, retry explícito não repete append/download e guard fecha reentradas. Bootstrap conserva recibos sem hidratar quando restore está OFF. Reconciliação estrita bloqueia conflitos/saúde de sessão inválida sem rewrite, preserva métricas/candidatos privados e não transforma Completed sem recibo em importação confirmada; órfãos reservam namespace sem jobs/quotas inventados. Ensaios anteriores de MP3/MP4→serviço usam importador falso e processos/arquivos/conversor reais, separados da composição instrumentada sem conversão/rede. Faltam promoção protegida para produção, composição da reconciliação com ownership e divergências/recuperação/capacidade acionáveis, resíduos de runtime, perfil exato/distribuição, demais gates TLS e ferramenta corrigida/proveniência/licenças/sandbox, edições/instaladores e expiração/live/restrições/headers/seek. Sem backend completo no app, exactly-once universal ou aprovação de mídia remota/distribuição."
       ]
     },
     {

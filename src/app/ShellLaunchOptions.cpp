@@ -107,6 +107,8 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
                 options.smoke_session_receipts_without_restore = true;
             else if (value == QStringLiteral("downloads"))
                 options.smoke_downloads = true;
+            else if (value == QStringLiteral("native-downloads"))
+                options.smoke_native_downloads = true;
             else if (value == QStringLiteral("single-instance-executable"))
                 options.smoke_single_instance_executable = true;
             else if (value == QStringLiteral("start-minimized-no-tray"))
@@ -138,10 +140,10 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
     if (options.smoke_combined_startup && options.initial_scenario != InitialShellScenario::Empty)
         throw std::invalid_argument{"the combined startup smoke requires the empty scenario"};
     const bool preferences_restart = options.smoke_preferences_restart_write || options.smoke_preferences_restart_read;
-    const bool session_restart = options.smoke_session_restart_read ||
-                                 options.smoke_session_crash_before_primary_commit ||
-                                 options.smoke_session_recovery_repair || options.smoke_session_defaults_read ||
-                                 options.smoke_session_receipts_without_restore || options.smoke_downloads;
+    const bool session_restart =
+        options.smoke_session_restart_read || options.smoke_session_crash_before_primary_commit ||
+        options.smoke_session_recovery_repair || options.smoke_session_defaults_read ||
+        options.smoke_session_receipts_without_restore || options.smoke_downloads || options.smoke_native_downloads;
     const bool startup_behavior =
         options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence || options.smoke_diagnostics;
     if ((preferences_restart || session_restart || options.smoke_single_instance_executable || startup_behavior) &&
@@ -156,7 +158,7 @@ ShellLaunchOptions parseShellLaunchOptions(const QStringList& arguments) {
         throw std::invalid_argument{"the no-tray startup smoke requires no source"};
     if (options.smoke_session_receipts_without_restore && !options.source_paths.isEmpty())
         throw std::invalid_argument{"the session receipt smoke requires no source"};
-    if (options.smoke_downloads && !options.source_paths.isEmpty())
+    if ((options.smoke_downloads || options.smoke_native_downloads) && !options.source_paths.isEmpty())
         throw std::invalid_argument{"the download composition smoke requires no source"};
     return options;
 }
@@ -225,9 +227,9 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
          options.smoke_preferences_restart_read || options.smoke_session_restart_read ||
          options.smoke_session_crash_before_primary_commit || options.smoke_session_recovery_repair ||
          options.smoke_session_defaults_read || options.smoke_session_receipts_without_restore ||
-         options.smoke_downloads || options.smoke_single_instance_executable || options.smoke_start_minimized_no_tray ||
-         options.smoke_startup_source_precedence || options.smoke_diagnostics ||
-         options.test_config_root.has_value())) {
+         options.smoke_downloads || options.smoke_native_downloads || options.smoke_single_instance_executable ||
+         options.smoke_start_minimized_no_tray || options.smoke_startup_source_precedence ||
+         options.smoke_diagnostics || options.test_config_root.has_value())) {
         throw std::invalid_argument{"M0 shell scenario controls are unavailable in this build"};
     }
     if (!combined_audio_enabled && options.smoke_combined_startup)
@@ -241,7 +243,7 @@ void validateShellLaunchOptions(const ShellLaunchOptions& options, const bool te
     if (!combined_audio_enabled &&
         (options.smoke_session_restart_read || options.smoke_session_crash_before_primary_commit ||
          options.smoke_session_recovery_repair || options.smoke_session_defaults_read ||
-         options.smoke_session_receipts_without_restore || options.smoke_downloads))
+         options.smoke_session_receipts_without_restore || options.smoke_downloads || options.smoke_native_downloads))
         throw std::invalid_argument{"the session restart smoke requires audio support"};
 }
 
