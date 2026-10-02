@@ -38,6 +38,8 @@ QString stateName(const DownloadJobState state) {
         return QStringLiteral("failed");
     case DownloadJobState::ImportFailed:
         return QStringLiteral("import_failed");
+    case DownloadJobState::Interrupted:
+        return QStringLiteral("interrupted");
     }
     return QStringLiteral("failed");
 }
@@ -62,6 +64,8 @@ QString statusText(const DownloadJobState state) {
         return DownloadJobsModel::tr("Falhou");
     case DownloadJobState::ImportFailed:
         return DownloadJobsModel::tr("Arquivo pronto; importação pendente");
+    case DownloadJobState::Interrupted:
+        return DownloadJobsModel::tr("Interrompido; revisão necessária");
     }
     return DownloadJobsModel::tr("Falhou");
 }

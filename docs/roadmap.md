@@ -426,6 +426,8 @@ O [runtime autenticado pré-launch](download-conversion.md#runtime-privado-auten
 
 O [importador local concreto](download-jobs.md#importação-local-de-resultado-publicado) acrescenta `Published` confiável ao presenter/fila real sem seleção/autoplay ou I/O, com recibos limitados e retry sem duplicação. Testes deste handoff usam serviço/presenter reais e executor/áudio falsos; não compõem downloads reais, host/lifecycle/UI, journal ou ownership durável. As duas edições e opcionais permanecem no mesmo escopo, não são substituídos pelo componente.
 
+O [checkpoint privado limitado](download-jobs.md#checkpoint-privado-e-recuperação-conservadora) acrescenta recuperação histórica inerte de jobs/recibos, sem campos URL/query, mantendo quotas/deduplicação e interrompendo trabalho antigo sem re-download ou importação automática. Codec/store Windows opcionais não estão compostos no player. ACK durável, ownership/residuais, reconciliação da fila, escrita assíncrona/host/lifecycle/UI e demais gates de R1.8 continuam abertos; não encerra Lite/Completa, extensões ou instaladores.
+
 Ordem atual:
 
 1. registrar ferramentas, termos/licenças e threat model para mídia autorizada, sem compartilhar cookies/credenciais;

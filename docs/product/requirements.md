@@ -112,6 +112,8 @@ O fechamento diskless passou 55/55 CTest ON e compilou worker real OFF/zero test
 
 Incremento de importação local de 2026-10-01: [PlayerDownloadImport](../download-jobs.md#importação-local-de-resultado-publicado) implementa o handoff de `Published` confiável ao presenter/fila real, append-only sem seleção/autoplay ou I/O. Recibos limitados por ID/path não duplicam após remoção manual; recusa pré-commit devolve capacidade e permite retry sem nova execução. Testes ligam serviço/presenter reais a executor/áudio falsos, não provam bytes ou arquivo de download real. Composição no app/host/UI, journal/recuperação, ferramentas revisadas/sandbox, descoberta ampliada, Completa e instaladores continuam pendentes; FR-051–053 não estão concluídos.
 
+Incremento de checkpoint de 2026-10-02: [histórico privado limitado](../download-jobs.md#checkpoint-privado-e-recuperação-conservadora) conserva jobs/recibos sem campos URL/query e restaura trabalho interrompido de forma inerte, sem re-download/importação automática. Paths recuperados não viram autoridade para importação ou limpeza e Completed histórico não comprova persistência da fila. Codec/store Windows são opcionais separados, não serviço já composto no player. ACK durável, journal de ownership/residuais, reconciliação fila+recibos, writer/lifecycle/UI, segurança/ferramentas, Brave, Completa e instaladores continuam pendentes; FR-051–053 não estão concluídos.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |

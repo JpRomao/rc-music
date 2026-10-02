@@ -1,33 +1,12 @@
 #pragma once
 
-#include "m0/ports/DownloadExecution.hpp"
+#include "m0/application/DownloadCheckpoint.hpp"
+#include "m0/ports/DownloadRequestIdentity.hpp"
 
 #include <memory>
 #include <vector>
 
 namespace music_player::m0 {
-
-enum class DownloadJobState {
-    Queued,
-    Downloading,
-    Converting,
-    Publishing,
-    Cancelling,
-    Completed,
-    Cancelled,
-    Failed,
-    ImportFailed
-};
-
-struct DownloadJobSnapshot final {
-    std::string job_id{};
-    std::string title{};
-    DownloadJobState state{DownloadJobState::Queued};
-    std::uint64_t completed_units{0};
-    std::optional<std::uint64_t> total_units{};
-    std::filesystem::path completed_mp3{};
-    DownloadFailure error{DownloadFailure::None};
-};
 
 struct DownloadServiceLimits final {
     std::size_t max_jobs{128};
@@ -45,13 +24,17 @@ struct DownloadServiceLimits final {
 class DownloadService final : public DownloadSubmission {
   public:
     DownloadService(DownloadExecution& execution, DownloadImport& importer, std::string job_id_prefix,
-                    DownloadServiceLimits limits = {});
+                    DownloadServiceLimits limits = {}, DownloadRequestIdentity* identity = nullptr);
     ~DownloadService();
     DownloadService(const DownloadService&) = delete;
     DownloadService& operator=(const DownloadService&) = delete;
 
     [[nodiscard]] DownloadSubmissionResult submit(const DownloadRequest& request) override;
     [[nodiscard]] std::vector<DownloadJobSnapshot> snapshot() const;
+    // These methods do not perform I/O. Restore is only for a pristine owner with
+    // a fresh prefix and identity port. It never starts work or trusts stored paths.
+    [[nodiscard]] std::optional<DownloadCheckpoint> checkpoint();
+    [[nodiscard]] bool restore(const DownloadCheckpoint& checkpoint);
     void tick(std::int64_t now_ms);
     [[nodiscard]] bool cancel(std::string_view job_id);
     [[nodiscard]] bool retryImport(std::string_view job_id);

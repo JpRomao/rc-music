@@ -1206,6 +1206,18 @@
           "marker": "realServiceCompletesOnlyAfterAppendAndReplayDoesNotImport"
         },
         {
+          "path": "tests/core/DownloadCheckpointTests.cpp",
+          "marker": "Recovered request identity rejects conflicting batches without losing receipt"
+        },
+        {
+          "path": "tests/qt/DownloadCheckpointJsonTests.cpp",
+          "marker": "requestFingerprintMatchesIndependentTypedSha256Vectors"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadCheckpointStoreTests.cpp",
+          "marker": "realServiceIdentityAndStoreRestoreInertHistoryAndPreserveReplay"
+        },
+        {
           "path": "tests/qt/DirectDownloadSessionTests.cpp",
           "marker": "approvedDnsIsPinnedAndSuccessfulBytesAreOnlyATransferNotAnImport"
         },
@@ -1362,6 +1374,22 @@
         {
           "path": "tests/ui/qtest/PlayerDownloadImportTests.cpp",
           "marker": "nestedPlaybackEndWaitsForAppendThenAdvancesExactlyOnce"
+        },
+        {
+          "path": "tests/core/DownloadCheckpointTests.cpp",
+          "marker": "Download recovery interrupts queued and active work without executing ports"
+        },
+        {
+          "path": "tests/qt/DownloadJobsModelTests.cpp",
+          "marker": "recoveredJobsExposeReviewStateWithoutExecutableActionsOrCandidatePath"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadCheckpointStoreTests.cpp",
+          "marker": "refusesUnknownExistingDocumentWithoutChangingItsBytes"
+        },
+        {
+          "path": "tests/qt/WindowsDownloadCheckpointStoreTests.cpp",
+          "marker": "afterCommitFailureRemainsFailedEvenWhenNewDocumentIsLoadable"
         },
         {
           "path": "tests/qt/DownloadNetworkPolicyTests.cpp",

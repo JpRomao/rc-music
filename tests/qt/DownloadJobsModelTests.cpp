@@ -72,6 +72,40 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void recoveredJobsExposeReviewStateWithoutExecutableActionsOrCandidatePath() {
+        class Identity final : public DownloadRequestIdentity {
+          public:
+            std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+        } identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service(execution, importer, "fresh", {}, &identity);
+        DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                    .fingerprint = std::string(64, 'a'),
+                                                    .job_ids = {"previous-1"},
+                                                    .retained_request_bytes = 128}},
+                                      .jobs = {{.job_id = "previous-1",
+                                                .title = "Synthetic title",
+                                                .state = DownloadJobState::ImportFailed,
+                                                .completed_units = 1,
+                                                .total_units = 1,
+                                                .completed_mp3 = finalPath(),
+                                                .error = DownloadFailure::Import}}};
+        QVERIFY(service.restore(checkpoint));
+        DownloadJobsModel model(service);
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QCOMPARE(value(model, DownloadJobsModel::StateRole).toString(), QStringLiteral("interrupted"));
+        QCOMPARE(value(model, DownloadJobsModel::StatusTextRole).toString(),
+                 QStringLiteral("Interrompido; revisão necessária"));
+        QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QVERIFY(!value(model, DownloadJobsModel::CanCancelRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
+        QVERIFY(!model.retryImport(QStringLiteral("previous-1")));
+        QVERIFY(!model.cancel(QStringLiteral("previous-1")));
+        QCOMPARE(model.activeCount(), 0);
+        QCOMPARE(execution.starts, 0);
+        QCOMPARE(importer.calls, 0);
+    }
     void emptyProjectionHasOnlySafePublicRolesAndNoSideEffects() {
         Execution execution;
         Importer importer;

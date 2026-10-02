@@ -38,6 +38,43 @@ Owner, importador, model e adapters emprestados devem permanecer vivos durante a
 
 ## Checks locais Windows
 
+### Checkpoint privado e recuperação conservadora
+
+[DownloadCheckpoint](../include/m0/application/DownloadCheckpoint.hpp) é histórico privado limitado, separado da projeção pública. Exporta UUIDs canônicos, fingerprint, IDs, títulos/estados/progresso/erro e paths candidatos locais; não tem campos para URLs/query, cookies, credenciais, histórico de navegação ou deadlines monotônicos. Títulos e paths privados não são criptografados; um título recebido pode conter texto escolhido pela origem. `DownloadRequestIdentity` rápida/emprestada calcula SHA-256 na admissão; o adapter Qt usa o domínio ASCII `RCMusic.DownloadRequest.v1` seguido de NUL, quantidade de itens uint64 big-endian e, por item, tipo em um byte (áudio 0/vídeo 1), URL e título UTF-8 com comprimento uint64 big-endian. UUID é chave separada, não entra no hash. SHA é identidade de replay, não assinatura, criptografia ou proteção contra guessing/correlação offline de URLs conhecidas.
+
+`checkpoint()` não chama ports nem I/O e recusa durante chamada externa, sem identidade ou quando a representação não cabe no schema. `restore()` só aceita owner prístino/aberto, uma vez (inclusive vazio), com identidade e prefixo que não sobrepõe os IDs recuperados. Valida/prepara tudo antes de swap; falha conserva estado anterior. Recibos restaurados contam integralmente nos limites originais, sem expulsão; replay compara hash e conserva os IDs, lote conflitante é recusado. Novos pedidos mantêm o fluxo normal sob namespace novo.
+
+Queued/Downloading/Converting/Publishing/Cancelling/ImportFailed recuperados viram `Interrupted/Unavailable`, não Queued ou ImportFailed executáveis. Não há start/poll/cancel/import nem retry automático. Failed/Cancelled/Completed/Interrupted históricos preservam identidade/causa; Completed não prova que a fila local tenha sido salva, não restaura recibo comprometido do importador e não importa novamente. Todos os paths recuperados são ocultados da projeção pública; candidatos ficam apenas no checkpoint privado, sem autoridade de leitura/importação/cleanup. Recuperação acionável de mídia exige revisão assíncrona de ownership/bytes e escolha explícita futura.
+
+Schema v1: 128 jobs, 64 recibos, 20 IDs por lote; bijeção/ordem de recibos→jobs, IDs/UUID/hash canônicos e enums/progresso/path lexicais válidos. Há teto inclusivo de 1 MiB lógico para strings/paths nativos do checkpoint, separado de 1 MiB para contagem original dos pedidos. Não inclui overhead de containers. Codec JSON tem teto absoluto de 2 MiB, profundidade máxima 64, UTF-8/Unicode válidos, membros exatos sem duplicatas/aliases e inteiros uint64 como strings decimais canônicas. Versão futura é distinguida antes dos campos v1, após limites/sintaxe; não é permissão para interpretar esse schema.
+
+[WindowsDownloadCheckpointStore](../src/adapters/WindowsDownloadCheckpointStore.hpp) é síncrono e **somente para worker**, em diretório já existente/privado de composição confiável; não cria/repara config real. Pins de ancestrais/diretório, lock nativo exclusivo, arquivos regulares sem reparse/hardlinks e DACL protegida delimitam a transação. Novo temporário privado é escrito/flushed e publicado por rename atômico; nenhum backup automático ou truncamento de documento existente. Dados corrompidos/desconhecidos/futuros/ilegíveis bloqueiam save e são preservados. Falha antes do commit conserva documento anterior; falha após commit continua `Failed`, mesmo se readback encontrar o novo documento. Readback não vira ACK de sucesso/rollback. Diretório app-owned privado e ausência de host/same-user malicioso são precondições, não prova de CAS universal, flush físico ou perda de energia.
+
+O diretório leaf permite sharing de escrita/delete exigido pelo rename NTFS no mesmo pai; os ancestrais permanecem pinados, e identidade, path final, reparse e DACL do leaf são revalidados. Isso não impede toda mutação concorrente feita por processo malicioso do mesmo usuário nem transforma um path no JSON em autoridade sobre mídia.
+
+Os handles de inspeção do journal anterior são fechados depois da última comparação e antes do rename, mantendo lock/pins do diretório. O rename normal não substitui destino com handles ainda abertos; não são usadas semânticas POSIX para ignorar essa condição. Não é compare-and-swap contra um escritor que não respeite o lock. [Regras nativas de rename da Microsoft](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
+
+O opcional `RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE=ON` compila codec/identidade/store com Qt Core, sem desktop, browser integration, Qt Network ou WebEngine obrigatórios. Permanece OFF por padrão e não é instanciado no player. Journal de ownership/temporários/residuais, ACK durável antes da resposta à extensão, checkpoint conjunto de fila+importação e writer assíncrono/lifecycle/UI continuam gates separados; não há promessa exactly-once após crash.
+
+Na sessão MSVC/SDK explícita do build desktop, configure o cache de testes existente:
+
+```powershell
+cmake -S . -B out/product/desktop-tests -DRC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE=ON -DBUILD_TESTING=ON
+if ($LASTEXITCODE -ne 0) { throw 'Configure de checkpoint falhou' }
+cmake --build out/product/desktop-tests --target rc_music_downloads_tests rc_music_DownloadCheckpointJson_tests rc_music_WindowsDownloadCheckpointStore_tests --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Build de checkpoint falhou' }
+ctest --test-dir out/product/desktop-tests -R '^rc_music\.(downloads\.|download-checkpoint\.)' --output-on-failure --parallel 4
+if ($LASTEXITCODE -ne 0) { throw 'Testes de checkpoint falharam' }
+```
+
+Receita não é evidência de execução. Tests usam TEMP privado e candidatos lexicais sintéticos, sem abrir mídia, rede, perfil pessoal, Registry ou benchmarks. Produção opcional com `BUILD_TESTING=OFF` deve registrar zero testes; o build default não ganha dependências de persistência/downloads.
+
+Incremento de 2026-10-02: Red precedeu implementação no core, model, codec e store. Green final **54/54 casos Catch2** do serviço, **23/23** do model, **80/80** do codec e **23 passagens/0 falhas/2 skips** do store. A regressão de profundidade teve Red **79/1**; os Greens parciais do store falharam em sharing/handles próprios antes das correções, sem relaxar expectativas. Dois fixtures de symlink próprio não foram executados pela política do host. Sem diag temporário no código final.
+
+Fechamento passou no cache desktop com downloads/browser/persistência ON e rede OFF: build Release completo, **362/362 CTest em 35,77 s** e `all_qmllint`. Seis skips internos no total incluem os quatro históricos do diagnóstico. Build separado de persistência com desktop/browser/rede/testing OFF passou, listou zero testes e não incorporou Qt Test/Network/WebEngine, helpers ou fixtures. Core de downloads sem Qt e default desktop/testing OFF também compilaram. Formato dos 14 C++ alterados e checks documentais/rastreabilidade/diff são próprios; este recorte não reexecutou JavaScript nem os componentes de rede/TLS/conversão, não ligou host/UI no player e não criou runtime/instalador.
+
+### Coordenação e recepção
+
 Na sessão MSVC local descrita em [build do core](core-build.md#build-windows), reutilizando Qt/Catch2 já provisionados, configure conforme [biblioteca nativa](browser-extension.md#biblioteca-nativa-windows). Compile os alvos e filtre os testes desse componente:
 
 ```powershell

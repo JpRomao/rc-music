@@ -53,6 +53,12 @@ bool validRequest(const DownloadRequest& request) {
            });
 }
 
+bool validFingerprint(const std::string_view fingerprint) {
+    return fingerprint.size() == 64 && std::all_of(fingerprint.begin(), fingerprint.end(), [](const char value) {
+               return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+           });
+}
+
 bool validPhase(const DownloadPhase phase) {
     switch (phase) {
     case DownloadPhase::Downloading:
@@ -156,10 +162,15 @@ struct DownloadService::Impl {
     struct Receipt {
         DownloadRequest request;
         std::vector<std::string> job_ids;
+        std::string fingerprint;
+        std::size_t retained_request_bytes{0};
+        bool recovered{false};
     };
 
     struct Job {
         DownloadJobSnapshot view;
+        // Recovery evidence is private, never authority for import or execution.
+        std::filesystem::path candidate_mp3{};
         std::size_t receipt_index{0};
         std::size_t item_index{0};
         DownloadPhase phase{DownloadPhase::Downloading};
@@ -169,6 +180,7 @@ struct DownloadService::Impl {
 
     DownloadExecution& execution;
     DownloadImport& importer;
+    DownloadRequestIdentity* const identity;
     const std::string prefix;
     const DownloadServiceLimits limits;
     std::vector<Receipt> receipts;
@@ -179,11 +191,13 @@ struct DownloadService::Impl {
     bool valid_configuration;
     bool closed{false};
     bool calling_port{false};
+    bool restoration_performed{false};
 
-    Impl(DownloadExecution& worker, DownloadImport& local_import, std::string id_prefix, DownloadServiceLimits caps)
-        : execution(worker), importer(local_import), prefix(std::move(id_prefix)), limits(caps),
-          valid_configuration(validPrefix(prefix) && limits.max_jobs > 0 && limits.max_requests > 0 &&
-                              limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0) {}
+    Impl(DownloadExecution& worker, DownloadImport& local_import, std::string id_prefix, DownloadServiceLimits caps,
+         DownloadRequestIdentity* request_identity)
+        : execution(worker), importer(local_import), identity(request_identity), prefix(std::move(id_prefix)),
+          limits(caps), valid_configuration(validPrefix(prefix) && limits.max_jobs > 0 && limits.max_requests > 0 &&
+                                            limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0) {}
 
     Job* find(const std::string_view id) {
         const auto found =
@@ -303,9 +317,113 @@ struct DownloadService::Impl {
 };
 
 DownloadService::DownloadService(DownloadExecution& execution, DownloadImport& importer, std::string prefix,
-                                 DownloadServiceLimits limits)
-    : impl_(std::make_unique<Impl>(execution, importer, std::move(prefix), limits)) {}
+                                 DownloadServiceLimits limits, DownloadRequestIdentity* identity)
+    : impl_(std::make_unique<Impl>(execution, importer, std::move(prefix), limits, identity)) {}
 DownloadService::~DownloadService() = default;
+
+std::optional<DownloadCheckpoint> DownloadService::checkpoint() {
+    const auto& state = *impl_;
+    if (state.calling_port || !state.valid_configuration || state.identity == nullptr)
+        return std::nullopt;
+
+    DownloadCheckpoint result;
+    result.receipts.reserve(state.receipts.size());
+    result.jobs.reserve(state.jobs.size());
+    for (const auto& receipt : state.receipts) {
+        if (!validFingerprint(receipt.fingerprint))
+            return std::nullopt;
+        result.receipts.push_back({.request_id = receipt.request.request_id,
+                                   .fingerprint = receipt.fingerprint,
+                                   .job_ids = receipt.job_ids,
+                                   .retained_request_bytes = receipt.retained_request_bytes});
+    }
+    for (const auto& job : state.jobs) {
+        auto view = job.view;
+        if (!job.candidate_mp3.empty())
+            view.completed_mp3 = job.candidate_mp3;
+        result.jobs.push_back(std::move(view));
+    }
+    if (!validDownloadCheckpoint(result))
+        return std::nullopt;
+    return result;
+}
+
+bool DownloadService::restore(const DownloadCheckpoint& checkpoint) {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed || !state.valid_configuration || state.identity == nullptr ||
+        state.restoration_performed || state.active.has_value() || !state.receipts.empty() || !state.jobs.empty())
+        return false;
+
+    // Validate and allocate a complete replacement before committing any ownership.
+    // Stored paths are copied only as private evidence, never passed to a port.
+    try {
+        if (!validDownloadCheckpoint(checkpoint) || checkpoint.receipts.size() > state.limits.max_requests ||
+            checkpoint.jobs.size() > state.limits.max_jobs)
+            return false;
+        const auto namespace_prefix = state.prefix + '-';
+        std::size_t retained_bytes = 0;
+        for (const auto& receipt : checkpoint.receipts) {
+            if (receipt.retained_request_bytes > state.limits.max_retained_request_bytes - retained_bytes)
+                return false;
+            retained_bytes += receipt.retained_request_bytes;
+        }
+
+        std::vector<Impl::Job> jobs;
+        jobs.reserve(checkpoint.jobs.size());
+        for (const auto& original : checkpoint.jobs) {
+            if (original.job_id.starts_with(namespace_prefix))
+                return false;
+            auto view = original;
+            auto candidate = std::move(view.completed_mp3);
+            view.completed_mp3.clear();
+            switch (view.state) {
+            case DownloadJobState::Queued:
+            case DownloadJobState::Downloading:
+            case DownloadJobState::Converting:
+            case DownloadJobState::Publishing:
+            case DownloadJobState::Cancelling:
+            case DownloadJobState::ImportFailed:
+                view.state = DownloadJobState::Interrupted;
+                view.error = DownloadFailure::Unavailable;
+                break;
+            case DownloadJobState::Completed:
+            case DownloadJobState::Cancelled:
+            case DownloadJobState::Failed:
+            case DownloadJobState::Interrupted:
+                break;
+            }
+            jobs.push_back({.view = std::move(view), .candidate_mp3 = std::move(candidate)});
+        }
+
+        std::vector<Impl::Receipt> receipts;
+        receipts.reserve(checkpoint.receipts.size());
+        for (std::size_t receipt_index = 0; receipt_index < checkpoint.receipts.size(); ++receipt_index) {
+            const auto& original = checkpoint.receipts[receipt_index];
+            for (std::size_t item_index = 0; item_index < original.job_ids.size(); ++item_index) {
+                const auto found = std::find_if(jobs.begin(), jobs.end(), [&](const Impl::Job& job) {
+                    return job.view.job_id == original.job_ids[item_index];
+                });
+                if (found == jobs.end())
+                    return false;
+                found->receipt_index = receipt_index;
+                found->item_index = item_index;
+            }
+            receipts.push_back({.request = {.request_id = original.request_id},
+                                .job_ids = original.job_ids,
+                                .fingerprint = original.fingerprint,
+                                .retained_request_bytes = original.retained_request_bytes,
+                                .recovered = true});
+        }
+
+        state.receipts.swap(receipts);
+        state.jobs.swap(jobs);
+        state.retained_request_bytes = retained_bytes;
+        state.restoration_performed = true;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 
 DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request) {
     auto& state = *impl_;
@@ -323,8 +441,21 @@ DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request)
             return receipt.request.request_id == canonical_id;
         });
     if (previous != state.receipts.end()) {
-        if (previous->request.items != request.items)
+        if (previous->recovered) {
+            std::string fingerprint;
+            try {
+                const PortCall guard(state.calling_port);
+                fingerprint = state.identity->fingerprint(request);
+            } catch (...) {
+                return {.error = DownloadSubmissionError::NotAvailable};
+            }
+            if (!validFingerprint(fingerprint))
+                return {.error = DownloadSubmissionError::NotAvailable};
+            if (previous->fingerprint != fingerprint)
+                return {.error = DownloadSubmissionError::InvalidRequest};
+        } else if (previous->request.items != request.items) {
             return {.error = DownloadSubmissionError::InvalidRequest};
+        }
         return {.error = DownloadSubmissionError::None, .job_ids = previous->job_ids};
     }
 
@@ -341,7 +472,19 @@ DownloadSubmissionResult DownloadService::submit(const DownloadRequest& request)
     if (bytes > state.limits.max_retained_request_bytes - state.retained_request_bytes)
         return {.error = DownloadSubmissionError::LimitExceeded};
 
-    Impl::Receipt receipt{.request = request};
+    std::string fingerprint;
+    if (state.identity != nullptr) {
+        try {
+            const PortCall guard(state.calling_port);
+            fingerprint = state.identity->fingerprint(request);
+        } catch (...) {
+            return {.error = DownloadSubmissionError::NotAvailable};
+        }
+        if (!validFingerprint(fingerprint))
+            return {.error = DownloadSubmissionError::NotAvailable};
+    }
+
+    Impl::Receipt receipt{.request = request, .fingerprint = std::move(fingerprint), .retained_request_bytes = bytes};
     receipt.request.request_id = std::move(canonical_id);
     receipt.job_ids.reserve(count);
     std::vector<Impl::Job> new_jobs;
