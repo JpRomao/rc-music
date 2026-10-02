@@ -3,14 +3,17 @@
 #include "adapters/NativeMessageFrame.hpp"
 #include "adapters/QtNativeDownloadClient.hpp"
 #include "adapters/QtNativeDownloadServer.hpp"
+#include "adapters/WindowsNativeDownloadLease.hpp"
 
 #include <QCoreApplication>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
 #include <QUuid>
 #include <QtEndian>
+#include <qt_windows.h>
 
 #include <functional>
 #include <memory>
@@ -67,6 +70,72 @@ void pump() { QCoreApplication::processEvents(); }
 class QtNativeDownloadTransportTests final : public QObject {
     Q_OBJECT
   private slots:
+    void secondOwnerOfSameEndpointIsRefusedWithoutDispatch() {
+        Submission first_owner;
+        Submission second_owner;
+        const auto config = configuration();
+        QtNativeDownloadServer first{config, first_owner};
+        QtNativeDownloadServer second{config, second_owner};
+        QVERIFY(first.start());
+        QVERIFY(!second.start());
+        QtNativeDownloadClient client{config};
+        QCOMPARE(client.begin(request()).state, DownloadAdmissionState::Pending);
+        QTRY_COMPARE(first_owner.begins, 1);
+        QCOMPARE(second_owner.begins, 0);
+        client.shutdown();
+        first.beginShutdown();
+        second.beginShutdown();
+        QVERIFY(first.stopped());
+        QVERIFY(second.stopped());
+    }
+    void endpointCaseAndOriginCannotBypassExclusiveOwner() {
+        Submission first_owner;
+        Submission second_owner;
+        const auto config = configuration();
+        auto alias = config;
+        alias.endpoint_name = alias.endpoint_name.toUpper();
+        alias.allowed_origin = QStringLiteral("chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/");
+        QtNativeDownloadServer first{config, first_owner};
+        QtNativeDownloadServer second{alias, second_owner};
+        QVERIFY(first.start());
+        QVERIFY(!second.start());
+        QCOMPARE(second_owner.begins, 0);
+    }
+    void ownerLeaseOutlivesIngressShutdownUntilOwnerIsDestroyed() {
+        Submission owner;
+        const auto config = configuration();
+        {
+            QtNativeDownloadServer first{config, owner};
+            QVERIFY(first.start());
+            first.beginShutdown();
+            QVERIFY(first.stopped());
+            QtNativeDownloadServer during_owner_drain{config, owner};
+            QVERIFY(!during_owner_drain.start());
+        }
+        QtNativeDownloadServer successor{config, owner};
+        QVERIFY(successor.start());
+        QtNativeDownloadClient client{config};
+        QCOMPARE(client.begin(request()).state, DownloadAdmissionState::Pending);
+        QTRY_COMPARE(owner.begins, 1);
+        client.shutdown();
+        successor.beginShutdown();
+        QVERIFY(successor.stopped());
+    }
+    void failedListenReleasesItsReservationWhileFailedServerStillExists() {
+        Submission owner;
+        const auto config = configuration();
+        const auto name = QStringLiteral("\\\\.\\pipe\\") + config.endpoint_name;
+        const auto blocker = CreateNamedPipeW(
+            name.toStdWString().c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4'096, 4'096, 0, nullptr);
+        QVERIFY(blocker != INVALID_HANDLE_VALUE);
+        const auto close_blocker = qScopeGuard([&] { CloseHandle(blocker); });
+        QtNativeDownloadServer failed{config, owner};
+        QVERIFY(!failed.start());
+        WindowsNativeDownloadLease successor;
+        QVERIFY(successor.acquire(config.endpoint_name));
+        QCOMPARE(owner.begins, 0);
+    }
     void pendingHasNoWireAcknowledgementThenMatchingCompletionReplies() {
         Submission owner;
         qint64 now = 0;
@@ -572,9 +641,12 @@ class QtNativeDownloadTransportTests final : public QObject {
         const auto config = configuration();
         QtNativeDownloadServer server{config, owner, {.automatic_polling = false}};
         bool observed_stopped_in_callback = true;
+        bool admitted_another_owner_in_callback = true;
         owner.during_begin = [&] {
             server.beginShutdown();
             observed_stopped_in_callback = server.stopped();
+            WindowsNativeDownloadLease contender;
+            admitted_another_owner_in_callback = contender.acquire(config.endpoint_name);
         };
         QVERIFY(server.start());
         QLocalSocket socket;
@@ -583,6 +655,7 @@ class QtNativeDownloadTransportTests final : public QObject {
         QCOMPARE(socket.write(framedRequest()), framedRequest().size());
         QTRY_COMPARE(owner.begins, 1);
         QVERIFY(!observed_stopped_in_callback);
+        QVERIFY(!admitted_another_owner_in_callback);
         QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
         QTRY_VERIFY(server.stopped());
         QCOMPARE(owner.received.request_id, request_id);

@@ -94,6 +94,18 @@ O driver limita a captura de saída do app, mantém watchdogs e guards apenas de
 
 As contagens incluem setup/cleanup QtTest e não se somam aos registros CTest. Não houve runtime/setup novo, instalação/registro, Brave/Chromium real, download remoto, ferramenta nova, Computer Use ou benchmark. Os estados dos requisitos FR-051–053 permanecem em andamento.
 
+## Exclusividade cooperativa do dono Native Messaging
+
+`rc_music.native.owner-process` executa [NativeDownloadOwnerProcessTests](../tests/qt/NativeDownloadOwnerProcessTests.cpp) com o helper exclusivo de testes [NativeDownloadOwnerHelper](../tests/qt/NativeDownloadOwnerHelper.cpp). O helper instancia o servidor real com porta falsa de admissão, sem Main/UI, stores, mídia, rede ou instalação. Endpoints UUID próprios e comandos stdin fechados permitem observar READY/REFUSED/STOPPED/RELEASED; entrada acumulada até 256 bytes e captura de 1.024 bytes por canal conservam limites. Watchdog independente termina somente o próprio helper; cleanup/kill nunca usa PID recebido nem processos externos.
+
+O segundo processo é recusado para o mesmo endpoint e para alias de caixa com origem diferente. Ele permanece vivo com seu servidor recusado: a prova de liberação não depende de terminar o contender. Um pedido real pelo pipe recebe um único recibo do primeiro dono, sem admissão no segundo. STOPPED fecha ingresso, mas o servidor vivo conserva a reserva; RELEASED destrói esse objeto e permite sucessor enquanto o processo antigo continua vivo. Outro caso mata somente o helper dono, aguarda `NotRunning`/CrashExit e aceita sucessor com dois contenders recusados ainda vivos. Configuração inválida não ocupa o endpoint e endpoints distintos coexistem.
+
+Red real: **3 passagens/4 falhas**, por contendores indevidamente READY, sem falha de compilação/harness. Green focado: **7/7 QtTest**, juntamente com transporte **31/31** e lease/DACL **23/23**, CTest **3/3 em 4,82 s**. A reserva usa criação atômica de marcador privado por SID/endpoint, não mutex adquirido por thread, portanto não permite recursão na mesma thread. Retenção até o último HANDLE é conservadora; observadores externos podem prolongar a indisponibilidade. O teste low-level verifica DACL e colisões preexistentes, sem API extra de inspeção no produto.
+
+Exclusividade é cooperativa, não autenticação do browser, `FILE_FLAG_FIRST_PIPE_INSTANCE`, resistência a pipe/processo hostil do mesmo usuário, prova de sessões Windows diferentes ou disponibilidade simultânea entre usuários. O marcador `Global\\` tem SID, mas o pipe configurado atual continua global e sem derivação per-SID. A eleição/ACK de `OpenSources` não muda. Produção continua desativada; identidade/namespace instalados, runtime/ownership, ferramentas/sandbox, Completa e opcionais do instalador permanecem gates separados.
+
+Fechamento do código final: build Release ON, `all_qmllint` e CTest **472/472**, com 472 entradas/472 Test Passed no log completo atual e os oito skips internos históricos declarados no plano. A correção de revisão separa falha real de listen de fechamento reentrante após listen que já teve êxito, retendo a reserva no segundo ramo; não se alega injeção determinística dessa corrida de startup. Native Release BUILD_TESTING OFF foi recompilado após a correção: zero testes, guarda de grafo verde, dois probes do host desativado exit 2/silenciosos/sem timeout kills. Grafo desktop default OFF foi inspecionado, sem novo build alegado. Nenhum helper/driver de owner chega ao grafo de produção e nenhum desses processos permaneceu ativo.
+
 ## Comandos
 
 Os [comandos existentes](development-commands.md) incluem os novos alvos no build ON, sem downloads ou novo wrapper:

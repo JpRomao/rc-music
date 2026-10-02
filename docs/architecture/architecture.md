@@ -38,6 +38,8 @@ O aplicativo é uma instância desktop única do ponto de vista do usuário. A q
 
 O módulo opcional [de apresentação dos downloads](../download-jobs.md#painel-compartilhado-e-preparação-de-saída) é compartilhado entre Lite e Completa: binding/timer/model e painel QML não dependem de engine de navegação. O presenter usa preparação de saída C++ tipada, separada de source-drain e da persistência local; aprovação exige parada física e Saved ou abandono explícito confirmado. A composição completa atual existe somente no shell instrumentado, com stores/workers reais e publicação sintética. O [host e IPC Native Messaging Windows](../browser-extension.md#host-e-transporte-native-messaging-windows) existem em alvo opcional separado, com identidade de produção vazia/desabilitada. O produto continua sem ingresso remoto/serviço ativados; isso não fecha ownership, namespace/identidade instalada entre processos, ferramenta/sandbox ou distribuição.
 
+A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-cooperativa-do-dono) pertence ao adapter do servidor, não ao domínio ou à eleição `OpenSources`. A chave por SID do usuário/endpoint case-insensitive independe de origem, edição, perfil e CWD; criação atômica recusa concorrentes cooperativos antes do `listen`. Falha de `listen` libera a tentativa; sucesso retém a reserva até destruição do servidor, inclusive após ingresso `stopped`. A composição deve conservar servidor, serviço/controller e stores/workers vivos na ordem de drenagem, sem interpretar encerramento do socket como encerramento do dono. Não é autenticação, exclusividade contra pipe hostil ou escolha de identidade instalada entre Lite/Completa.
+
 ## 3. Componentes do produto e alternativa histórica
 
 O fluxo invariante é:

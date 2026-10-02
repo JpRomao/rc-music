@@ -2,6 +2,7 @@
 
 #include "adapters/NativeDownloadIpcProtocol.hpp"
 #include "adapters/NativeDownloadSession.hpp"
+#include "adapters/WindowsNativeDownloadLease.hpp"
 
 #include <QElapsedTimer>
 #include <QLocalServer>
@@ -44,6 +45,9 @@ struct QtNativeDownloadServer::Impl {
     NativeHostConfiguration configuration;
     AsyncDownloadSubmission& submission;
     QtNativeDownloadServerOptions options;
+    // Declared before the listener so it is destroyed after all pipe resources.
+    // Successful owners retain it even after ingress is physically stopped.
+    WindowsNativeDownloadLease lease;
     BoundedServer server;
     QTimer timer;
     QElapsedTimer elapsed;
@@ -282,8 +286,21 @@ bool QtNativeDownloadServer::start() {
     if (!isValidNativeHostConfiguration(impl_->configuration) || impl_->options.max_active_connections < 1 ||
         impl_->options.max_active_connections > 8 || !impl_->now() || impl_->closing)
         return false;
-    if (!impl_->server.listen(impl_->configuration.endpoint_name))
+    if (!impl_->lease.acquire(impl_->configuration.endpoint_name))
         return false;
+    // Qt can deliver a pending connection synchronously during listen. A trusted
+    // callback may close ingress; never report success or restart its timer then.
+    if (!impl_->server.listen(impl_->configuration.endpoint_name)) {
+        impl_->shutdown();
+        impl_->lease.reset();
+        return false;
+    }
+    if (impl_->closing || !impl_->server.isListening()) {
+        // A synchronous listen callback may already have admitted owner work.
+        // Close ingress, but retain its lease through the owner's teardown.
+        impl_->shutdown();
+        return false;
+    }
     if (impl_->options.automatic_polling)
         impl_->timer.start();
     return true;

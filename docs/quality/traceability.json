@@ -1202,6 +1202,14 @@
           "marker": "pendingHasNoWireAcknowledgementThenMatchingCompletionReplies"
         },
         {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "secondOwnerOfSameEndpointIsRefusedWithoutDispatch"
+        },
+        {
+          "path": "tests/qt/NativeDownloadOwnerProcessTests.cpp",
+          "marker": "contenderRefusesWithoutDisruptingOriginalOwner"
+        },
+        {
           "path": "tests/qt/NativeHostProcessTests.cpp",
           "marker": "fragmentedStdinProducesOneExactBinaryReplyAndOneIpcRequest"
         },
@@ -1434,6 +1442,26 @@
         {
           "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
           "marker": "shutdownDuringPollClockIsNotDrainedUntilPollUnwinds"
+        },
+        {
+          "path": "tests/qt/WindowsNativeDownloadLeaseTests.cpp",
+          "marker": "createsExpectedPrivateProtectedUserAndSystemMarker"
+        },
+        {
+          "path": "tests/qt/WindowsNativeDownloadLeaseTests.cpp",
+          "marker": "preexistingFreeMutexStillRefusesOwnership"
+        },
+        {
+          "path": "tests/qt/QtNativeDownloadTransportTests.cpp",
+          "marker": "failedListenReleasesItsReservationWhileFailedServerStillExists"
+        },
+        {
+          "path": "tests/qt/NativeDownloadOwnerProcessTests.cpp",
+          "marker": "stoppedObjectRetainsLeaseAndDestructionReleasesItWhileProcessLives"
+        },
+        {
+          "path": "tests/qt/NativeDownloadOwnerProcessTests.cpp",
+          "marker": "killedOwnerRecoversWithRejectedContenderObjectsStillAlive"
         },
         {
           "path": "tests/process/qtest/NativeDownloadsCompositionTests.cpp",

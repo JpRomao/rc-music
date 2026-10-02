@@ -7,10 +7,12 @@ add_library(rc_music_native_messaging STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeHostLaunch.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadServer.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadClient.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeDownloadLease.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeMessagingIo.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeHostWatchdog.cpp")
 target_include_directories(rc_music_native_messaging PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_native_messaging PUBLIC rc_music_browser_integration Qt6::Network)
+target_link_libraries(rc_music_native_messaging PRIVATE advapi32)
 set_target_properties(rc_music_native_messaging PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_native_messaging)
 
@@ -51,7 +53,7 @@ if(BUILD_TESTING)
         "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
         -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/NativeMessagingBuildBoundaryTests.cmake")
     set_tests_properties(rc_music.native.build-boundary PROPERTIES LABELS "native;boundary" TIMEOUT 15)
-    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep QtNativeDownloadTransport WindowsNativeMessagingIo)
+    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep QtNativeDownloadTransport WindowsNativeMessagingIo WindowsNativeDownloadLease)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
@@ -101,6 +103,22 @@ if(BUILD_TESTING)
     set_tests_properties(rc_music.native.host-process PROPERTIES
         LABELS "windows;native;qt;process;FR-051;FR-053" TIMEOUT 90
         RESOURCE_LOCK "rc_music_native_host_test_endpoint"
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(rc_music_native_owner_helper "${RC_MUSIC_SOURCE_ROOT}/tests/qt/NativeDownloadOwnerHelper.cpp")
+    target_link_libraries(rc_music_native_owner_helper PRIVATE rc_music_native_messaging)
+    rc_music_configure_cpp(rc_music_native_owner_helper)
+    add_executable(rc_music_NativeDownloadOwnerProcess_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/NativeDownloadOwnerProcessTests.cpp")
+    target_link_libraries(rc_music_NativeDownloadOwnerProcess_tests PRIVATE rc_music_native_messaging Qt6::Test)
+    set_target_properties(rc_music_NativeDownloadOwnerProcess_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_NativeDownloadOwnerProcess_tests)
+    add_dependencies(rc_music_NativeDownloadOwnerProcess_tests rc_music_native_owner_helper)
+    add_test(NAME rc_music.native.owner-process COMMAND rc_music_NativeDownloadOwnerProcess_tests
+        "$<TARGET_FILE:rc_music_native_owner_helper>")
+    set_tests_properties(rc_music.native.owner-process PROPERTIES
+        LABELS "windows;native;qt;process;FR-051;FR-053" TIMEOUT 60
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
