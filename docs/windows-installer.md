@@ -1,7 +1,7 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados OFF e com declaração v2 compilados; execução/lifecycle e gates de distribuição ainda pendentes.
-**Data:** 2026-09-06.
+**Estado:** setup privado atualizado em 2026-10-24 compilado com associações OFF; os setups históricos OFF/v2 foram preservados. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Data:** 2026-10-24.
 
 ## Fonte única e proveniência
 
@@ -61,6 +61,26 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 ```
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
+
+## Instalador local gerado em 2026-10-24
+
+A receita de produto compilou, sem executar o setup, o [runtime atualizado](windows-runtime.md#runtime-local-gerado-em-2026-10-24) em `out/product/rc-music-installer/rc-music-windows-dev-1c79d81-20261024/RCMusic-Setup.exe`. Receita e runtime vinculam o commit limpo `1c79d8187e8acd0cb9d0d295640f22f1e21ea25f`; `recipe_dirty=false`, runtime Release/x64 com `BUILD_TESTING=OFF` e associações OFF. Não foi fornecida matriz de formatos nem transferida a declaração do runtime antigo.
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-1c79d81-20261024/app -OutputDirectory out/product/rc-music-installer/rc-music-windows-dev-1c79d81-20261024 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+```
+
+O destino era novo e o comando terminou com exit 0. A revisão independente somente leitura confirmou:
+
+- Setup: **38.052.419 bytes**, SHA-256 `ff809cde4ffd6ad608e455ea6f9ed0155f120c8411f97ec2e0a52ef4b8756009`.
+- `installer-receipt.json`: SHA-256 `f8a23026510da3ec06ab4b0d64219b563dc4ac9f9f530cfd84fdb8ed8322da07`.
+- `installer-config.nsh`: SHA-256 `9862fd803b5eeafebd7aa98c833edbf0636cc247fed6907d208549958f1ff519`.
+- Manifesto do runtime: SHA-256 `d09940046752a96968d291976243bac050b5c62c3113a937cee103ca88caf113`.
+- Inventário físico de **554 arquivos / 96.301.175 bytes**, coincidente com manifesto/receipt; cinco hashes de receita do runtime, nove da receita do instalador e compilador NSIS conferidos.
+- Replanejamento sem escrita reproduziu o payload ID `8ea215cfd0e5824b1f6e655033c2c40dcddaa67aff1b3ec5e767a9d249e46c5c`, formatos vazios, assinatura do conjunto vazio e `format_matrix=null`.
+- Authenticode **`NotSigned`**; executável do player com subsistema Windows GUI (2).
+
+O [registro do runtime](windows-runtime.md#runtime-local-gerado-em-2026-10-24) documenta o build aprovado e as seis falhas de criação de junction por `Acesso negado` nos checks puros. Não houve execução do novo player/setup, instalação, Registry, áudio, Brave/extensão ou publicação. O artefato permanece privado/experimental; lifecycle, máquina limpa, assinatura, segurança/licenças e distribuição continuam pendentes. A limpeza posterior preservou o novo setup, os setups históricos e os respectivos receipts.
 
 ## Instalador local gerado em 2026-09-06
 

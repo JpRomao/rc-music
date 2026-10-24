@@ -1,7 +1,7 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado sem terminal adicional, com atalhos/modos de fila, montado e hashes verificados; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
-**Data:** 2026-09-06.
+**Estado:** runtime local atualizado em 2026-10-24, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Data:** 2026-10-24.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
 
@@ -52,6 +52,27 @@ pwsh -NoProfile -File packaging/windows/tests/LocalRuntime.Smoke.ps1 -RuntimeDir
 O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt/Multimedia/TagLib. Não baixa dependências, reconstrói SDK, copia CRT/System32 ou instala. Recusa saída existente; falha tardia pode deixar diretório parcial, sem rollback ou reutilização automática. O runtime permanece privado/experimental, não uma release.
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
+
+## Runtime local gerado em 2026-10-24
+
+O runtime `out/product/rc-music-local/rc-music-windows-dev-1c79d81-20261024/app` foi montado do commit limpo `1c79d8187e8acd0cb9d0d295640f22f1e21ea25f`, em Release/x64, com `BUILD_TESTING=OFF` e `recipe_dirty=false`. O build via `develop.ps1 build -Diagnostics` passou; o recibo `out/product/validation-runs/run-a2ef9574017f42149fff249228814118/run.json` registra preflight, configure e build com exit 0 e checkout limpo no início/fim.
+
+Comandos no mesmo PowerShell de desenvolvimento MSVC 14.44 / Windows SDK 10.0.22621.0, usando o cache Release/OFF existente e um destino de runtime novo:
+
+```powershell
+& ./scripts/develop.ps1 build -ToolchainFile tools/windows.example.psd1 -BuildDirectory out/product/m1-desktop-release-off-20260906 -Diagnostics
+& ./packaging/windows/tests/LocalRuntime.Tests.ps1 -BuildDirectory out/product/m1-desktop-release-off-20260906 -OutputDirectory out/product/rc-music-local/rc-music-windows-dev-1c79d81-20261024
+```
+
+Repetir a montagem exige outro `OutputDirectory`. A conferência independente confirmou **554 arquivos / 96.301.175 bytes**, inventário exato e todos os tamanhos/SHA-256, além dos cinco hashes da receita. O executável tem subsistema PE **Windows GUI (2)**, sem console automático.
+
+- `RCMusic.exe`: **2.067.456 bytes**, SHA-256 `c1c21010b884f8136f824560cc29d75b1969f93d8d8bbaec2e213ee97648cb48`.
+- `runtime-manifest.json`: SHA-256 `d09940046752a96968d291976243bac050b5c62c3113a937cee103ca88caf113`.
+- O runtime alimentou o [setup local de 2026-10-24](windows-installer.md#instalador-local-gerado-em-2026-10-24), com associações OFF.
+
+Checks puros proporcionais: WindowsRuntimePlan **60 passagens/4 falhas**, PeDependencyReport **5/5**, WindowsInstallerPlan **33 passagens/2 falhas** e InstallerRecipe **3/3**. Os seis casos falharam ao criar junctions, com `Acesso negado`; as fixtures próprias foram removidas, sem alterar testes ou elevar privilégios. Isso não equivale a uma suíte inteiramente verde.
+
+Não houve nova execução do player/setup, instalação, Registry, smoke de áudio ou validação de Brave/extensão. A cópia preexistente `bfeb90f` permaneceu fora da limpeza. A montagem e os hashes não comprovam playback, máquina limpa, acessibilidade nativa, lifecycle, segurança/licenças ou release. A [limpeza posterior](development-commands.md) preservou este runtime e removeu os payloads antigos `3f22fda`/`fc11d40`, mantendo seus manifests e registros históricos.
 
 ## Runtime sem terminal adicional
 
