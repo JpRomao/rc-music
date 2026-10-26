@@ -324,8 +324,10 @@ TEST_CASE("Durable admission blocks untrusted session history without repairing 
     REQUIRE(h.controller.loadStatus() == DownloadCheckpointLoadStatus::Missing);
     REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::InvalidHistory);
     REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::NotAvailable);
-    REQUIRE(h.controller.retryStartup());
-    h.io.loaded({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReloadSession);
+    const auto loads = h.io.loads;
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE(h.io.loads == loads);
     h.controller.tick(1);
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
     REQUIRE(h.io.saves.empty());
@@ -350,8 +352,70 @@ TEST_CASE("Durable admission rejects contradictory missing and malformed loaded 
     h.load({.status = DownloadCheckpointLoadStatus::Missing});
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
     REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::InvalidHistory);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReloadSession);
+    const auto loads = h.io.loads;
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE(h.io.loads == loads);
     REQUIRE(h.service.snapshot().empty());
     REQUIRE(h.io.saves.empty());
+}
+
+TEST_CASE("Startup recovery action follows checkpoint retry availability and physical drain",
+          "[download][recovery-controller][FR-053]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession()};
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE(h.controller.start());
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE(h.io.loads.size() == 1);
+    h.io.loaded({.status = DownloadCheckpointLoadStatus::Unreadable});
+    h.controller.tick(0);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RetryCheckpoint);
+    h.io.on_load = [&] {
+        REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+        REQUIRE_FALSE(h.controller.retryStartup());
+    };
+    REQUIRE(h.controller.retryStartup());
+    REQUIRE(h.io.loads.size() == 2);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    h.io.loaded({.status = DownloadCheckpointLoadStatus::Missing});
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    h.controller.shutdown();
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    h.controller.tick(2);
+    h.io.saved();
+    h.controller.tick(3);
+    REQUIRE_FALSE(h.controller.stopped());
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    h.io.allow_stopped = true;
+    h.controller.tick(4);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Session reload recovery action retires on shutdown without a replacement write",
+          "[download][recovery-controller][FR-053]") {
+    RecoveryAdmissionHarness h{{.status = SessionLoadStatus::FutureVersion}};
+    h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReloadSession);
+    h.controller.shutdown();
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
 }
 
 TEST_CASE("Durable admission preserves path and terminal conflicts instead of saving reconciled defaults",

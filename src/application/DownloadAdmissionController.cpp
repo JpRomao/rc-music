@@ -403,10 +403,17 @@ bool DownloadAdmissionController::retryAdmission() {
     const Impl::Guard guard(owner);
     return owner.save(Impl::Purpose::Admission);
 }
-bool DownloadAdmissionController::retryStartup() {
-    auto& owner = *impl_;
+DownloadStartupRecoveryAction DownloadAdmissionController::startupRecoveryAction() const {
+    const auto& owner = *impl_;
     if (owner.operating || owner.closing || owner.healthy_startup || owner.operation ||
         owner.state != DownloadAdmissionControllerState::Blocked)
+        return DownloadStartupRecoveryAction::None;
+    return owner.reconcile_imports && !owner.import_history_healthy ? DownloadStartupRecoveryAction::ReloadSession
+                                                                    : DownloadStartupRecoveryAction::RetryCheckpoint;
+}
+bool DownloadAdmissionController::retryStartup() {
+    auto& owner = *impl_;
+    if (startupRecoveryAction() != DownloadStartupRecoveryAction::RetryCheckpoint)
         return false;
     const Impl::Guard guard(owner);
     return owner.load();

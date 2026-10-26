@@ -580,6 +580,7 @@ void DownloadApplicationBinding::refreshProjection() {
         return;
     Impl::Projection next;
     const auto state = impl_->controller.state();
+    const auto startup_action = impl_->controller.startupRecoveryAction();
     switch (state) {
     case DownloadAdmissionControllerState::NotStarted:
         next.status = tr("Downloads ainda não inicializados");
@@ -599,7 +600,11 @@ void DownloadApplicationBinding::refreshProjection() {
         break;
     case DownloadAdmissionControllerState::Blocked:
         next.status = tr("Downloads bloqueados para preservar o histórico");
-        next.warning = tr("Não foi possível reconciliar o histórico. Os dados existentes foram preservados.");
+        next.warning =
+            startup_action == DownloadStartupRecoveryAction::ReloadSession
+                ? tr("Reabra o RC Music para revisar a sessão da fila. Repetir a leitura de downloads não confirma "
+                     "essa sessão; os dados existentes foram preservados.")
+                : tr("Não foi possível reconciliar o histórico. Os dados existentes foram preservados.");
         break;
     case DownloadAdmissionControllerState::Stopping:
         next.status = tr("Encerrando downloads e salvando o histórico");
@@ -634,7 +639,7 @@ void DownloadApplicationBinding::refreshProjection() {
                                 "novamente; não é possível afirmar o que foi removido ou salvo.")
                            : tr("A verificação de arquivos foi interrompida. Reinicie o RC Music para tentar "
                                 "novamente; os dados foram preservados.");
-    next.retry_startup = !impl_->closing && state == DownloadAdmissionControllerState::Blocked;
+    next.retry_startup = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RetryCheckpoint;
     next.retry_admission = !impl_->closing && state == DownloadAdmissionControllerState::AdmissionFailed;
     next.retry_final = impl_->closing && state == DownloadAdmissionControllerState::FinalSaveFailed;
     next.close_failed = next.retry_final;

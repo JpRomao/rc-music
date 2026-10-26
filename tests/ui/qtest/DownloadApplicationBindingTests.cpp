@@ -676,22 +676,50 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(!h.binding.statusText().isEmpty());
         QVERIFY(!h.binding.start());
     }
+    void startupFailureAndUnhealthySessionStayExplicitAndNeverRunJobs_data() {
+        QTest::addColumn<int>("status");
+        QTest::newRow("backup") << static_cast<int>(SessionLoadStatus::RecoveredFromBackup);
+        QTest::newRow("invalid") << static_cast<int>(SessionLoadStatus::InvalidUsingDefaults);
+        QTest::newRow("future") << static_cast<int>(SessionLoadStatus::FutureVersion);
+        QTest::newRow("unknown") << 999;
+    }
     void startupFailureAndUnhealthySessionStayExplicitAndNeverRunJobs() {
-        Harness h({.status = SessionLoadStatus::RecoveredFromBackup});
+        QFETCH(int, status);
+        Harness h({.status = static_cast<SessionLoadStatus>(status)});
         QVERIFY(h.binding.start());
         h.io.loaded();
         h.binding.poll();
         QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
-        QVERIFY(!h.binding.warningText().isEmpty());
-        QVERIFY(h.binding.canRetryStartup());
-        QVERIFY(h.binding.retryStartup());
-        h.io.loaded();
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("sessão")));
+        QVERIFY(!h.binding.canRetryStartup());
+        const auto loads = h.io.loads.size();
+        QVERIFY(!h.binding.retryStartup());
+        QCOMPARE(h.io.loads.size(), loads);
         h.binding.poll();
         QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
         QCOMPARE(h.execution.starts, 0);
         QCOMPARE(h.importer.calls, 0);
         QVERIFY(!h.binding.retryAdmission());
         QVERIFY(!h.binding.retryFinalSave());
+        QVERIFY(h.io.saves.empty());
+    }
+    void checkpointReadFailureStillOffersExplicitRetryWithHealthySession() {
+        Harness h;
+        QVERIFY(h.binding.start());
+        h.io.loaded({.status = DownloadCheckpointLoadStatus::Unreadable});
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
+        QVERIFY(h.binding.canRetryStartup());
+        QVERIFY(h.binding.retryStartup());
+        QCOMPARE(h.io.loads.size(), std::size_t{2});
+        h.io.loaded();
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+        QVERIFY(!h.binding.canRetryStartup());
+        QVERIFY(h.binding.warningText().isEmpty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QVERIFY(h.io.saves.empty());
     }
     void admissionFailureRetriesTheSameCheckpointBeforeStartingExecution() {
         Harness h;

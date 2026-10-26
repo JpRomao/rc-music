@@ -20,6 +20,7 @@ enum class DownloadAdmissionControllerState {
 };
 
 enum class DownloadFinalSavePolicy { CloseAfterAttempt, HoldForDecision };
+enum class DownloadStartupRecoveryAction { None, RetryCheckpoint, ReloadSession };
 
 // Single application-thread owner of admission, restoration and checkpoints.
 // Trusted job controls may use the service on that same thread, never submit or
@@ -46,6 +47,9 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     [[nodiscard]] DownloadAdmissionResult begin(const DownloadRequest& request) override;
     [[nodiscard]] std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override;
     [[nodiscard]] bool retryAdmission();
+    // The startup session ledger is a detached, immutable snapshot. Retrying
+    // checkpoint I/O cannot replace untrusted session evidence in this owner.
+    [[nodiscard]] DownloadStartupRecoveryAction startupRecoveryAction() const;
     [[nodiscard]] bool retryStartup();
     // HoldForDecision only, after physical service drain. Retry saves the final
     // history, never confirms a failed admission or restarts/imports its jobs.
