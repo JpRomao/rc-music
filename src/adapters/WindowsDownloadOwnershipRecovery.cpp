@@ -428,6 +428,35 @@ bool removedUnderPinnedParents(const Workspace& workspace) {
 }
 } // namespace
 
+struct WindowsPinnedDownloadFinal::Impl {
+    WindowsDownloadWorkspaceConfig config;
+    DownloadOwnershipRecord record;
+    Workspace workspace{};
+    Impl(const WindowsDownloadWorkspaceConfig& settings, const DownloadOwnershipRecord& evidence)
+        : config(settings), record(evidence) {}
+};
+WindowsPinnedDownloadFinal::WindowsPinnedDownloadFinal(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+WindowsPinnedDownloadFinal::~WindowsPinnedDownloadFinal() = default;
+QString WindowsPinnedDownloadFinal::pathForValidation() const { return impl_->workspace.final_path; }
+const DownloadOwnershipRecord& WindowsPinnedDownloadFinal::record() const { return impl_->record; }
+DownloadOwnershipAssessment WindowsPinnedDownloadFinal::revalidate() const noexcept {
+    return WindowsDownloadOwnershipRecovery::assess(impl_->config, impl_->record);
+}
+DownloadFinalPinResult WindowsDownloadOwnershipRecovery::pinFinal(const WindowsDownloadWorkspaceConfig& config,
+                                                                  const DownloadOwnershipRecord& record) noexcept {
+    try {
+        auto impl = std::make_unique<WindowsPinnedDownloadFinal::Impl>(config, record);
+        const auto assessment = assessExisting(config, record, impl->workspace);
+        if (assessment != Assessment::OwnedFinalCandidate)
+            return {.assessment = assessment};
+        return {.assessment = assessment,
+                .candidate =
+                    std::unique_ptr<WindowsPinnedDownloadFinal>(new WindowsPinnedDownloadFinal(std::move(impl)))};
+    } catch (...) {
+        return {.assessment = Assessment::Unreadable};
+    }
+}
+
 DownloadOwnershipAssessment WindowsDownloadOwnershipRecovery::assess(const WindowsDownloadWorkspaceConfig& config,
                                                                      const DownloadOwnershipRecord& record) noexcept {
     try {

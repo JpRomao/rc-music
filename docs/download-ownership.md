@@ -1,6 +1,6 @@
 # Ownership privado dos arquivos de download
 
-**Estado:** journal/assessment worker-only, revisão e descarte explicitamente confirmado de temporários no painel instrumentado de R1.8, comuns a Lite/Completa; workflow remoto de produção permanece desligado. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host instalado ou engine.
+**Estado:** journal/assessment e validação de candidatos worker-only; revisão e descarte explicitamente confirmado de temporários no painel instrumentado de R1.8, comuns a Lite/Completa. A validação ainda não está ligada ao painel; workflow remoto de produção permanece desligado. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host instalado ou engine.
 
 ## Registro e store
 
@@ -40,6 +40,20 @@ O método `assess` de [WindowsDownloadOwnershipRecovery](../src/adapters/Windows
 | Unreadable | Impossível verificar; preservar, não confundir com ausência. |
 
 Ready permite parciais vazios/incompletos dentro da cota; counters iniciais não prometem progresso durável. Prepared/Published exigem tamanho/hash da saída. Hash matching não substitui validação de mídia ou reconciliação da fila. Prepared admite source ou destino, nunca ambos. Published não admite source sobrevivente; cleanupComplete contradito por temporários/diretório gera Conflict. Pais trocados, hardlinks, reparse e filhos desconhecidos não são próprios.
+
+## Validação de candidatos sob pins
+
+Incremento de 2026-10-26: `WindowsDownloadOwnershipRecovery::pinFinal(config, record)` repete a prova de `assessExisting` e entrega uma `WindowsPinnedDownloadFinal` somente para `OwnedFinalCandidate`. Seu PIMPL conserva o Workspace inteiro: ancestrais, pais, diretório e temporários observados, além do final. Não movimenta o buffer de SID após inicializá-lo. Record/configuração são cópias; o path é derivado dos pais atuais e UUID, nunca de um path no journal. Leitores podem reabrir o arquivo; os pins sem compartilhamento WRITE/DELETE impedem escrita, remoção e renomeação. Não é defesa completa contra processo malicioso do mesmo usuário/admin nem bloqueio de toda alteração de DACL.
+
+[WindowsRecoveredMediaValidator](../src/adapters/WindowsRecoveredMediaValidator.hpp) compõe essa prova com o [validador MP3 compartilhado](download-conversion.md#validação-local-de-mp3). Construção, prova/hash, polling e destruição pertencem a **um worker com event loop Qt**, não à UI nem à thread simples do `WindowsDownloadRecoveryReview` atual. O primeiro poll adia o launch e observa cancelamento/deadline depois da prova; o orçamento inclui a preparação, sem reiniciar entre probe e decode. Falha/cancelamento conserva pins até término físico/pipes drenados, depois os libera. A ordem de destruição também conserva pins enquanto o processo é drenado em fallback; isso não substitui o protocolo normal de terminal do owner.
+
+`Validated` exige probe MP3, decode integral e **nova prova** de ownership/bytes/DACL após o decoder. `validatedCandidate()` devolve somente um ponteiro emprestado ao worker nesse estado; os pins continuam vivos até destruir o owner. Handoff adiado exige nova revalidação e retenção do owner até o ACK durável. Nenhum path/handle é exposto ao QML. Um final `PublicationPrepared` pode ser validado como mídia, mas continua Prepared: validação não grava/promove Published/Saved, não importa e não muda checkpoint, quotas ou recibos.
+
+TDD do pin: Red **78 passagens/13 falhas/2 skips históricos** contra o stub; Green **91 passagens/zero falhas/2 skips**. A restauração de DACL no fixture foi corrigida sem relaxar a prova. Wrapper teve primeiro uma falha de setup de DACL do diretório do store; após ajustar ao contrato existente, Red válido **2 passagens/6 falhas**, todas em `start()` contra o stub, e Green final **10/10 QtTest**. TEMP Unicode usa workspace/store reais, MP3 sintético autenticado, Published e Prepared sem ACK, journal inalterado, texto de hash válido recusado como MP3, DACL alterada recusada, conflitos, pins vivos e liberação após cancelamento. Não houve importação, playback ou rede.
+
+Fechamento proporcional: **6/6 CTest** de mídia/sessão/execução e **2/2 CTest** de ownership/revisão, sem falhas; somente os dois skips de symlink já existentes na primitive permanecem. Builds Release de rede e documentos com `BUILD_TESTING=OFF` passaram e expõem zero testes; desktop default OFF também compilou. Formato dos 13 C++, revisão independente e checks documentais são gates separados. Não é suíte global, validação de internet, atualização de ferramentas, sandbox ou aprovação de distribuição.
+
+Faltam a porta rápida/owner Qt de validação por job ID, consentimento e lifecycle no painel, confirmação durável da recuperação de Prepared, handoff do Interrupted existente via importador Session e as demais integrações/gates do plano. O validador lento não deve ser chamado diretamente pela UI ou encaixado sem adaptação no worker de revisão síncrona.
 
 ## Revisão explícita assíncrona
 

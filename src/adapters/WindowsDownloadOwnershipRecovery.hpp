@@ -3,6 +3,8 @@
 #include "adapters/DownloadOwnership.hpp"
 #include "adapters/WindowsDownloadWorkspace.hpp"
 
+#include <memory>
+
 namespace music_player::m0 {
 
 enum class DownloadOwnershipAssessment { Unverified, OwnedPartial, OwnedFinalCandidate, Missing, Conflict, Unreadable };
@@ -18,15 +20,42 @@ enum class DownloadOwnershipDiscardOutcome {
     Unconfirmed
 };
 
+// Worker-only, read-only lifetime capability. Owns all ancestor/workspace/file
+// pins; its path is only input to a trusted local media validator, never proof
+// that MP3 is valid or permission to import/delete/publish. No QObject/QML API.
+class WindowsPinnedDownloadFinal final {
+  public:
+    ~WindowsPinnedDownloadFinal();
+    WindowsPinnedDownloadFinal(const WindowsPinnedDownloadFinal&) = delete;
+    WindowsPinnedDownloadFinal& operator=(const WindowsPinnedDownloadFinal&) = delete;
+    [[nodiscard]] QString pathForValidation() const;
+    [[nodiscard]] const DownloadOwnershipRecord& record() const;
+    [[nodiscard]] DownloadOwnershipAssessment revalidate() const noexcept;
+
+  private:
+    struct Impl;
+    explicit WindowsPinnedDownloadFinal(std::unique_ptr<Impl> impl);
+    friend class WindowsDownloadOwnershipRecovery;
+    std::unique_ptr<Impl> impl_;
+};
+
+struct DownloadFinalPinResult final {
+    DownloadOwnershipAssessment assessment{DownloadOwnershipAssessment::Unverified};
+    std::unique_ptr<WindowsPinnedDownloadFinal> candidate{};
+};
+
 // Worker-only recovery using current trusted parent configuration. Assessment
 // observations never authorize deletion/import/execution or approve MP3 media;
-// explicit discard must acquire its own fresh proof. No handle/capability or
-// journal-supplied path escapes this API.
+// explicit discard must acquire its own fresh proof. Assessment/discard expose
+// no handles or paths. pinFinal separately retains the fresh proof for trusted
+// worker-only validation; no journal-supplied path is accepted or exported.
 // This does not defend against a malicious same-user process or administrator.
 class WindowsDownloadOwnershipRecovery final {
   public:
     [[nodiscard]] static DownloadOwnershipAssessment assess(const WindowsDownloadWorkspaceConfig& config,
                                                             const DownloadOwnershipRecord& record) noexcept;
+    [[nodiscard]] static DownloadFinalPinResult pinFinal(const WindowsDownloadWorkspaceConfig& config,
+                                                         const DownloadOwnershipRecord& record) noexcept;
     // Separate explicit worker-only action: freshly verify the entire workspace,
     // discard only owned temporaries by handle, and confirm cleanup in the store.
     // Never deletes a final candidate or repairs/creates any filesystem object.

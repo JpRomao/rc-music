@@ -3,6 +3,7 @@
 #include "FfmpegDownloadCodec.hpp"
 #include "WindowsDownloadProcess.hpp"
 #include "WindowsDownloadWorkspace.hpp"
+#include "WindowsLocalMp3Validator.hpp"
 
 namespace music_player::m0 {
 
@@ -42,11 +43,12 @@ class WindowsLocalMediaConverter final {
     LocalMediaConversionUpdate poll(qint64 now_ms);
 
   private:
-    enum class Stage { InputProbe, Conversion, OutputProbe, Decode };
+    enum class Stage { InputProbe, Conversion, Validation };
     bool launch(Stage stage, qint64 now_ms);
     void stop(DownloadFailure error, bool cancelled = false);
     WindowsLocalMediaConverterConfig config_;
     WindowsDownloadProcess process_{};
+    std::unique_ptr<WindowsLocalMp3Validator> validator_{};
     WindowsDownloadWorkspace* workspace_{nullptr};
     LocalMediaConversionUpdate update_{};
     Stage stage_{Stage::InputProbe};

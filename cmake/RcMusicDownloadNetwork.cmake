@@ -23,6 +23,8 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMp3Validator.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRecoveredMediaValidator.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
@@ -108,8 +110,8 @@ if(BUILD_TESTING)
                     message(FATAL_ERROR "${tool} requires an existing absolute executable path")
                 endif()
             endforeach()
-            list(APPEND rc_music_download_network_test_units WindowsLocalMediaConverter WindowsDownloadJobSession
-                WindowsProcessDownloadJob)
+            list(APPEND rc_music_download_network_test_units WindowsLocalMediaConverter WindowsLocalMp3Validator
+                WindowsRecoveredMediaValidator WindowsDownloadJobSession WindowsProcessDownloadJob)
             add_executable(rc_music_download_converter_helper
                 "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsLocalMediaConverterHelper.cpp")
             target_link_libraries(rc_music_download_converter_helper PRIVATE Qt6::Core)
@@ -160,7 +162,8 @@ if(BUILD_TESTING)
                 RC_MUSIC_TEST_TLS_NETWORK_SHA256="${rc_music_test_tls_network_sha256}"
                 RC_MUSIC_TEST_TLS_PLUGIN_PATH="${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
                 RC_MUSIC_TEST_TLS_PLUGIN_SHA256="${rc_music_test_tls_plugin_sha256}")
-        elseif(unit STREQUAL "WindowsLocalMediaConverter" OR unit STREQUAL "WindowsDownloadJobSession")
+        elseif(unit STREQUAL "WindowsLocalMediaConverter" OR unit STREQUAL "WindowsLocalMp3Validator" OR
+               unit STREQUAL "WindowsRecoveredMediaValidator" OR unit STREQUAL "WindowsDownloadJobSession")
             add_dependencies(${target} rc_music_download_converter_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"

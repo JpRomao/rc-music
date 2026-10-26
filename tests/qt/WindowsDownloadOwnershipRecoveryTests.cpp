@@ -10,6 +10,7 @@
 #include <array>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -236,6 +237,184 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void finalPinRetainsDerivedPathDetachedEvidenceAndReadOnlyAccess_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("prepared-after-rename") << 0;
+        QTest::newRow("published-with-temporaries") << 1;
+        QTest::newRow("published-cleaned") << 2;
+    }
+    void finalPinRetainsDerivedPathDetachedEvidenceAndReadOnlyAccess() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        if (kind == 0)
+            f.record.stage = DownloadOwnershipStage::PublicationPrepared;
+        if (kind == 2) {
+            QVERIFY(f.removeTemps());
+            f.record.cleanup_complete = true;
+        }
+        const auto evidence = f.record;
+        auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), f.record);
+        QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QVERIFY(pinned.candidate);
+        QCOMPARE(pinned.candidate->pathForValidation(), f.final);
+        QCOMPARE(pinned.candidate->record(), evidence);
+        QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        // These intentionally non-MP3 bytes may be pinned, never media-approved.
+        QCOMPARE(readFile(pinned.candidate->pathForValidation()), QByteArray(output_content));
+        f.record.job_id = "caller-replaced-id";
+        QCOMPARE(pinned.candidate->record(), evidence);
+        QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        pinned.candidate.reset();
+        QCOMPARE(readFile(f.final), QByteArray(output_content));
+        QCOMPARE(QFile::exists(f.input), kind != 2);
+        QCOMPARE(QFile::exists(f.job), kind != 2);
+        QVERIFY(!QFile::exists(f.output));
+    }
+
+    void finalPinKeepsFileTemporaryAndParentIdentitiesUntilItsLastOwnerReleases() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), f.record);
+        QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QVERIFY(pinned.candidate);
+        auto owner = std::move(pinned.candidate);
+        QVERIFY(!pinned.candidate);
+        const auto renamed = f.final + QStringLiteral(".moved");
+        const auto moved_publication = f.publication + QStringLiteral("-moved");
+        const auto moved_staging = f.staging + QStringLiteral("-moved");
+        {
+            Handle final_writer(CreateFileW(native(f.final).c_str(), GENERIC_WRITE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, 0, nullptr));
+            Handle input_writer(CreateFileW(native(f.input).c_str(), GENERIC_WRITE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, 0, nullptr));
+            QVERIFY(!final_writer.valid());
+            QVERIFY(!input_writer.valid());
+        }
+        QVERIFY(!changeBytes(f.final, "must-not-replace"));
+        QVERIFY(!DeleteFileW(native(f.final).c_str()));
+        QVERIFY(!MoveFileExW(native(f.final).c_str(), native(renamed).c_str(), 0));
+        QVERIFY(!MoveFileExW(native(f.publication).c_str(), native(moved_publication).c_str(), 0));
+        QVERIFY(!MoveFileExW(native(f.staging).c_str(), native(moved_staging).c_str(), 0));
+        QCOMPARE(readFile(f.final), QByteArray(output_content));
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+        QCOMPARE(owner->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        owner.reset();
+        {
+            Handle final_writer(CreateFileW(native(f.final).c_str(), GENERIC_WRITE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, 0, nullptr));
+            Handle input_writer(CreateFileW(native(f.input).c_str(), GENERIC_WRITE,
+                                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, 0, nullptr));
+            QVERIFY(final_writer.valid());
+            QVERIFY(input_writer.valid());
+        }
+        QVERIFY(MoveFileExW(native(f.final).c_str(), native(renamed).c_str(), 0));
+        QVERIFY(MoveFileExW(native(renamed).c_str(), native(f.final).c_str(), 0));
+        QVERIFY(MoveFileExW(native(f.publication).c_str(), native(moved_publication).c_str(), 0));
+        QVERIFY(MoveFileExW(native(moved_publication).c_str(), native(f.publication).c_str(), 0));
+        QVERIFY(DeleteFileW(native(f.final).c_str()));
+        QCOMPARE(readFile(f.input), QByteArray(input_content));
+    }
+
+    void finalPinRevalidatesDaclRatherThanReusingItsEarlierObservation() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), f.record);
+        QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QVERIFY(pinned.candidate);
+        PrivateSecurity wrong_dacl(false);
+        QVERIFY(wrong_dacl.valid());
+        QVERIFY(replaceDacl(f.final, false, wrong_dacl));
+        QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::Conflict);
+        QCOMPARE(readFile(f.final), QByteArray(output_content));
+        // Restore the fixture's original explicit descriptor and ACE flags.
+        // This is fixture restoration only; recovery never repairs permissions.
+        {
+            Handle restore(CreateFileW(native(f.final).c_str(), WRITE_DAC,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                       FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+            QVERIFY(restore.valid());
+            QVERIFY(SetKernelObjectSecurity(restore.get(),
+                                            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                            f.security.descriptor()));
+        }
+        QCOMPARE(f.assess(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QCOMPARE(pinned.candidate->record(), f.record);
+    }
+
+    void finalPinPreservesNonFinalOrRefusedAssessmentAndNeverReturnsACapability_data() {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<int>("expected");
+        const auto row = [](const char* name, int kind, DownloadOwnershipAssessment expected) {
+            QTest::newRow(name) << kind << static_cast<int>(expected);
+        };
+        row("partial", 0, DownloadOwnershipAssessment::OwnedPartial);
+        row("prepared-partial", 1, DownloadOwnershipAssessment::OwnedPartial);
+        row("missing", 2, DownloadOwnershipAssessment::Missing);
+        row("invalid-record", 3, DownloadOwnershipAssessment::Unverified);
+        row("bad-hash", 4, DownloadOwnershipAssessment::Conflict);
+        row("hardlinked-final", 5, DownloadOwnershipAssessment::Conflict);
+        row("wrong-final-dacl", 6, DownloadOwnershipAssessment::Conflict);
+        row("over-budget", 7, DownloadOwnershipAssessment::Conflict);
+        row("invalid-config", 8, DownloadOwnershipAssessment::Unverified);
+        row("sharing-denied", 9, DownloadOwnershipAssessment::Unreadable);
+    }
+    void finalPinPreservesNonFinalOrRefusedAssessmentAndNeverReturnsACapability() {
+        QFETCH(int, kind);
+        QFETCH(int, expected);
+        Fixture f;
+        QVERIFY(f.ready());
+        if (kind == 1)
+            f.prepared();
+        if (kind >= 2)
+            QVERIFY(f.publish());
+        auto config = f.config();
+        PrivateSecurity wrong_dacl(false);
+        std::unique_ptr<Handle> blocker;
+        if (kind == 2) {
+            QVERIFY(f.removeTemps());
+            QVERIFY(DeleteFileW(native(f.final).c_str()));
+        } else if (kind == 3)
+            f.record.job_directory.reset();
+        else if (kind == 4)
+            f.record.output_sha256 = std::string(64, 'b');
+        else if (kind == 5) {
+            const auto alias = f.root.filePath(QStringLiteral("same-final-hardlink.bin"));
+            QVERIFY(CreateHardLinkW(native(alias).c_str(), native(f.final).c_str(), nullptr));
+        } else if (kind == 6) {
+            QVERIFY(wrong_dacl.valid());
+            QVERIFY(replaceDacl(f.final, false, wrong_dacl));
+        } else if (kind == 7)
+            config.max_workspace_bytes = 1;
+        else if (kind == 8)
+            config.max_workspace_bytes = 0;
+        else if (kind == 9) {
+            blocker = std::make_unique<Handle>(CreateFileW(native(f.final).c_str(), GENERIC_WRITE,
+                                                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                                           nullptr, OPEN_EXISTING, 0, nullptr));
+            QVERIFY(blocker->valid());
+        }
+        const auto input_before = readFile(f.input);
+        const auto output_before = readFile(f.output);
+        const auto final_before = readFile(f.final);
+        const auto evidence = f.record;
+        const auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(config, f.record);
+        QCOMPARE(pinned.assessment, static_cast<DownloadOwnershipAssessment>(expected));
+        QVERIFY(!pinned.candidate);
+        QCOMPARE(f.record, evidence);
+        QCOMPARE(readFile(f.input), input_before);
+        QCOMPARE(readFile(f.output), output_before);
+        QCOMPARE(readFile(f.final), final_before);
+    }
+
     void discardOwnedPartialsRemovesRealObjectsBeforeDurableConfirmation() {
         Fixture f;
         QVERIFY(f.ready());

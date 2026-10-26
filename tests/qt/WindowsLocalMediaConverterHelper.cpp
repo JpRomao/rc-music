@@ -13,6 +13,18 @@ int main(int argc, char** argv) {
     const auto arguments = app.arguments();
     if (_setmode(_fileno(stdout), _O_BINARY) == -1 || _setmode(_fileno(stderr), _O_BINARY) == -1)
         return 2;
+    const auto name = QFileInfo(app.applicationFilePath()).baseName();
+    const bool conversion_then_validation_hang = name == "conversion-validation-hang";
+    if (name == "validation-hang" || (conversion_then_validation_hang && !arguments.contains("-progress"))) {
+        QFile started("validation-started");
+        const auto marker = conversion_then_validation_hang ? QByteArray::number(QCoreApplication::applicationPid())
+                                                            : QByteArray{"started"};
+        if (!started.open(QIODevice::WriteOnly | QIODevice::NewOnly) || started.write(marker) != marker.size() ||
+            !started.flush())
+            return 2;
+        for (;;)
+            QThread::msleep(10);
+    }
     if (!arguments.contains("-progress"))
         return 17; // Controlled full-decode failure.
     if (QFileInfo(app.applicationFilePath()).baseName() == "conversion-hang") {

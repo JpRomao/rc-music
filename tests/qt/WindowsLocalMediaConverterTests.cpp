@@ -5,8 +5,11 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <Windows.h>
 
 using namespace music_player::m0;
 
@@ -140,6 +143,48 @@ class WindowsLocalMediaConverterTests final : public QObject {
         const auto result = finish(converter);
         QCOMPARE(result.state, LocalMediaConversionState::Cancelled);
         QVERIFY(h.workspace.outputPath().isEmpty());
+        QVERIFY(QDir(h.publication).entryList(QDir::Files).isEmpty());
+    }
+    void cancellationDuringDelegatedValidationWaitsForTheDecoderToExit() {
+        Harness h;
+        QVERIFY(h.prepare(fixture("m4a-aac-lc.m4a")));
+        const auto helper = h.directory.filePath("conversion-validation-hang.exe");
+        QVERIFY(QFile::copy(QString::fromUtf8(RC_MUSIC_TEST_CONVERTER_HELPER_PATH), helper));
+        auto config = configuration();
+        config.ffmpeg_executable = helper;
+        WindowsLocalMediaConverter converter(config);
+        QVERIFY(converter.start(h.workspace, 0));
+        QElapsedTimer clock;
+        clock.start();
+        QString marker;
+        LocalMediaConversionUpdate result;
+        do {
+            result = converter.poll(clock.elapsed());
+            if (!h.workspace.outputPath().isEmpty())
+                marker = QFileInfo(h.workspace.outputPath()).absolutePath() + "/validation-started";
+            QTest::qWait(5);
+        } while ((marker.isEmpty() || !QFile::exists(marker)) && clock.elapsed() < 5000);
+        QVERIFY(!marker.isEmpty());
+        QVERIFY(QFile::exists(marker));
+        QCOMPARE(result.state, LocalMediaConversionState::Validating);
+        QFile started(marker);
+        QVERIFY(started.open(QIODevice::ReadOnly));
+        bool parsed = false;
+        const auto pid = started.readAll().toULong(&parsed);
+        QVERIFY(parsed && pid > 0);
+        const HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+        QVERIFY(process != nullptr);
+        const auto close_process = qScopeGuard([process] { CloseHandle(process); });
+        QCOMPARE(WaitForSingleObject(process, 0), DWORD{WAIT_TIMEOUT});
+        converter.cancel();
+        do {
+            result = converter.poll(clock.elapsed());
+            QTest::qWait(5);
+        } while (result.state == LocalMediaConversionState::Stopping && clock.elapsed() < 10000);
+        QCOMPARE(result.state, LocalMediaConversionState::Cancelled);
+        QCOMPARE(result.error, DownloadFailure::None);
+        QCOMPARE(WaitForSingleObject(process, 0), DWORD{WAIT_OBJECT_0});
+        QVERIFY(!h.workspace.outputPath().isEmpty());
         QVERIFY(QDir(h.publication).entryList(QDir::Files).isEmpty());
     }
     void aggregateDiskQuotaStopsConversionWithoutPublication() {
