@@ -177,6 +177,9 @@ struct DownloadService::Impl {
         std::int64_t started_at{0};
         std::int64_t last_observed_at{0};
         bool awaiting_confirmation{false};
+        // Recovery telemetry remains Interrupted until the durable receipt is
+        // acknowledged; it is not reconstructed transfer progress.
+        std::optional<DownloadImportState> recovered_import{};
     };
 
     DownloadExecution& execution;
@@ -245,6 +248,29 @@ struct DownloadService::Impl {
         job.view.error = DownloadFailure::Import;
     }
 
+    void applyRecoveredImport(Job& job, const DownloadImportState result) {
+        switch (result) {
+        case DownloadImportState::Pending:
+            job.recovered_import = result;
+            job.view.state = DownloadJobState::Interrupted;
+            job.view.error = DownloadFailure::Unavailable;
+            return;
+        case DownloadImportState::Committed:
+            job.recovered_import = result;
+            job.view.state = DownloadJobState::Imported;
+            job.view.error = DownloadFailure::None;
+            for (auto& item : recovery_report.items)
+                if (item.job_id == job.view.job_id)
+                    item.disposition = DownloadRecoveryDisposition::Imported;
+            return;
+        case DownloadImportState::Failed:
+            break;
+        }
+        job.recovered_import = DownloadImportState::Failed;
+        job.view.state = DownloadJobState::Interrupted;
+        job.view.error = DownloadFailure::Import;
+    }
+
     bool import(Job& job) {
         auto result = DownloadImportState::Failed;
         try {
@@ -258,7 +284,8 @@ struct DownloadService::Impl {
 
     void observeImports() {
         for (auto& job : jobs) {
-            if (job.view.state != DownloadJobState::Importing)
+            const bool recovered = job.recovered_import == DownloadImportState::Pending;
+            if (!recovered && job.view.state != DownloadJobState::Importing)
                 continue;
             auto result = DownloadImportState::Failed;
             try {
@@ -266,7 +293,10 @@ struct DownloadService::Impl {
                 result = importer.pollImport(job.view.job_id);
             } catch (...) {
             }
-            applyImport(job, result);
+            if (recovered)
+                applyRecoveredImport(job, result);
+            else
+                applyImport(job, result);
         }
     }
 
@@ -771,6 +801,69 @@ bool DownloadService::retryImport(const std::string_view job_id) {
     return state.import(*job);
 }
 
+bool DownloadService::canImportRecovered(const std::string_view job_id) const {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed || !state.valid_configuration)
+        return false;
+    const auto* const job = state.find(job_id);
+    if (job == nullptr || job->view.state != DownloadJobState::Interrupted ||
+        job->recovered_import == DownloadImportState::Pending || !state.receipts[job->receipt_index].recovered)
+        return false;
+    try {
+        const PortCall guard(state.calling_port);
+        return state.importer.supportsDurableRecovery();
+    } catch (...) {
+        return false;
+    }
+}
+bool DownloadService::beginRecoveredImport(const std::string_view job_id,
+                                           const std::filesystem::path& trusted_published_path,
+                                           const std::function<bool()>& allow_handoff) {
+    if (!canImportRecovered(job_id))
+        return false;
+    auto& state = *impl_;
+    auto* const job = state.find(job_id);
+    // Prepare the complete persistence representation before publishing a path
+    // to the importer. No file is opened and no stored path authorizes work.
+    try {
+        if (!validPublishedPath(trusted_published_path) ||
+            (!job->candidate_mp3.empty() && job->candidate_mp3 != trusted_published_path))
+            return false;
+        auto prospective = checkpoint();
+        if (!prospective)
+            return false;
+        const auto index = static_cast<std::size_t>(job - state.jobs.data());
+        prospective->jobs[index].completed_mp3 = trusted_published_path;
+        if (!validDownloadCheckpoint(*prospective))
+            return false;
+        auto candidate = trusted_published_path;
+        // A capability callback may have requested shutdown of the borrowing
+        // owner. Recheck that intent after all outward health queries and
+        // before changing even private job evidence or invoking the importer.
+        if (allow_handoff) {
+            const PortCall guard(state.calling_port);
+            if (!allow_handoff())
+                return false;
+        }
+        job->candidate_mp3.swap(candidate);
+    } catch (...) {
+        return false;
+    }
+    state.applyRecoveredImport(*job, DownloadImportState::Pending);
+    auto result = DownloadImportState::Failed;
+    try {
+        const PortCall guard(state.calling_port);
+        result = state.importer.begin(job->view.job_id, job->candidate_mp3);
+    } catch (...) {
+    }
+    state.applyRecoveredImport(*job, result);
+    return result == DownloadImportState::Pending || result == DownloadImportState::Committed;
+}
+std::optional<DownloadImportState> DownloadService::recoveredImportState(const std::string_view job_id) const {
+    const auto* const job = impl_->find(job_id);
+    return job != nullptr ? job->recovered_import : std::nullopt;
+}
+
 void DownloadService::shutdown() {
     auto& state = *impl_;
     if (state.calling_port || state.closed)
@@ -786,7 +879,8 @@ void DownloadService::shutdown() {
 
 bool DownloadService::stopped() const {
     return impl_->closed && !impl_->active.has_value() && std::ranges::none_of(impl_->jobs, [](const Impl::Job& job) {
-               return job.view.state == DownloadJobState::Importing;
+               return job.view.state == DownloadJobState::Importing ||
+                      job.recovered_import == DownloadImportState::Pending;
            });
 }
 

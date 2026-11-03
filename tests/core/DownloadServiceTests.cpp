@@ -61,6 +61,19 @@ struct FakeImport final : DownloadImport {
     std::vector<std::string> import_polls{};
     bool throw_poll{false};
     std::function<void()> on_import_poll{};
+    bool durable_recovery{false};
+    bool throw_capability{false};
+    mutable int capability_queries{0};
+    mutable std::function<void()> on_capability{};
+
+    bool supportsDurableRecovery() const override {
+        ++capability_queries;
+        if (on_capability)
+            on_capability();
+        if (throw_capability)
+            throw std::runtime_error{"private capability detail"};
+        return durable_recovery;
+    }
 
     bool accept(const std::string& id, const std::filesystem::path& path) override {
         imports.emplace_back(id, path);
@@ -128,6 +141,36 @@ struct Harness {
     }
 };
 
+struct RecoveryIdentity final : DownloadRequestIdentity {
+    std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+};
+
+DownloadCheckpoint interruptedCheckpoint(bool with_candidate = false) {
+    return {.receipts = {{.request_id = request().request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"old-1"},
+                          .retained_request_bytes = 100}},
+            .jobs = {{.job_id = "old-1",
+                      .title = "Recovered audio",
+                      .state = DownloadJobState::Interrupted,
+                      .completed_units = 2,
+                      .total_units = 9,
+                      .completed_mp3 = with_candidate ? finalPath() : std::filesystem::path{},
+                      .error = DownloadFailure::Unavailable}}};
+}
+
+struct RecoveryHarness final {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service;
+    explicit RecoveryHarness(DownloadServiceLimits limits = {}, DownloadCheckpoint checkpoint = interruptedCheckpoint())
+        : service(execution, importer, "fresh", limits, &identity) {
+        importer.durable_recovery = true;
+        REQUIRE(service.restore(checkpoint, {}));
+    }
+};
+
 } // namespace
 
 TEST_CASE("Legacy download import begin preserves its synchronous acceptance contract", "[download][import-pending]") {
@@ -138,6 +181,267 @@ TEST_CASE("Legacy download import begin preserves its synchronous acceptance con
             (accepted ? DownloadImportState::Committed : DownloadImportState::Failed));
     REQUIRE(importer.imports.size() == 1);
     REQUIRE(importer.DownloadImport::pollImport("job-1") == DownloadImportState::Failed);
+}
+
+TEST_CASE("Recovered import preserves the original job and partial telemetry until durable commitment",
+          "[download][recovered-import][FR-051]") {
+    RecoveryHarness h;
+    const auto before = h.service.checkpoint();
+    REQUIRE(before);
+    REQUIRE(h.service.canImportRecovered("old-1"));
+    REQUIRE_FALSE(h.service.recoveredImportState("old-1"));
+    h.importer.begin_state = DownloadImportState::Pending;
+    REQUIRE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(h.service.recoveredImportState("old-1") == DownloadImportState::Pending);
+    REQUIRE(h.service.snapshot()[0] == before->jobs[0]);
+    REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE_FALSE(h.service.retryImport("old-1"));
+    REQUIRE_FALSE(h.service.cancel("old-1"));
+    const auto pending = h.service.checkpoint();
+    REQUIRE(pending);
+    REQUIRE(validDownloadCheckpoint(*pending));
+    REQUIRE(pending->receipts == before->receipts);
+    REQUIRE(pending->jobs[0].completed_mp3 == finalPath());
+    REQUIRE(pending->jobs[0].completed_units == 2);
+    REQUIRE(pending->jobs[0].total_units == 9);
+    h.service.tick(-1);
+    REQUIRE(h.service.recoveredImportState("old-1") == DownloadImportState::Pending);
+    h.importer.poll_state = DownloadImportState::Committed;
+    h.service.tick(1);
+    const auto imported = h.service.snapshot()[0];
+    REQUIRE(imported.state == DownloadJobState::Imported);
+    REQUIRE(imported.error == DownloadFailure::None);
+    REQUIRE(imported.completed_mp3.empty());
+    REQUIRE(imported.completed_units == 2);
+    REQUIRE(imported.total_units == 9);
+    REQUIRE(h.service.recoveredImportState("old-1") == DownloadImportState::Committed);
+    REQUIRE(h.service.recoveryReport().items ==
+            std::vector<DownloadRecoveryItem>{{"old-1", DownloadRecoveryDisposition::Imported}});
+    REQUIRE(h.service.checkpoint()->receipts == before->receipts);
+    REQUIRE(validDownloadCheckpoint(*h.service.checkpoint()));
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(h.importer.imports == std::vector<std::pair<std::string, std::filesystem::path>>{{"old-1", finalPath()}});
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.polls.empty());
+    REQUIRE(h.execution.cancellations.empty());
+}
+
+TEST_CASE("Recovered import failures need a fresh explicit admission without reexecuting download",
+          "[download][recovered-import][FR-053]") {
+    RecoveryHarness h({}, interruptedCheckpoint(true));
+    h.importer.begin_state = DownloadImportState::Failed;
+    SECTION("failed begin") {}
+    SECTION("throwing begin") { h.importer.throws = true; }
+    SECTION("unknown begin") { h.importer.begin_state = static_cast<DownloadImportState>(99); }
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(h.service.recoveredImportState("old-1") == DownloadImportState::Failed);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    REQUIRE(h.service.snapshot()[0].error == DownloadFailure::Import);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.service.checkpoint()->jobs[0].completed_mp3 == finalPath());
+    REQUIRE_FALSE(h.service.retryImport("old-1"));
+    REQUIRE(h.service.canImportRecovered("old-1"));
+    h.service.tick(0);
+    REQUIRE(h.importer.imports.size() == 1);
+    h.importer.throws = false;
+    h.importer.begin_state = DownloadImportState::Committed;
+    REQUIRE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Imported);
+    REQUIRE(h.service.recoveredImportState("old-1") == DownloadImportState::Committed);
+    REQUIRE(h.importer.imports.size() == 2);
+    REQUIRE(h.importer.imports[0] == h.importer.imports[1]);
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Recovered import admission refuses wrong identity path capability and closed owners atomically",
+          "[download][recovered-import][FR-053]") {
+    RecoveryHarness h({}, interruptedCheckpoint(true));
+    auto id = std::string{"old-1"};
+    auto path = finalPath();
+    SECTION("unknown job") { id = "unknown"; }
+    SECTION("private candidate conflict") { path = path.parent_path() / "other.mp3"; }
+    SECTION("relative path") { path = "relative.mp3"; }
+    SECTION("unnormalized path") { path = path.parent_path() / "x/../final.mp3"; }
+    SECTION("wrong suffix") { path.replace_extension(".mp4"); }
+    SECTION("embedded nul") {
+        auto native = path.native();
+        native.insert(native.begin() + 3, 0);
+        path = std::filesystem::path{native};
+    }
+    SECTION("volatile importer") { h.importer.durable_recovery = false; }
+    SECTION("throwing capability") { h.importer.throw_capability = true; }
+    SECTION("closed owner") { h.service.shutdown(); }
+    const auto before = h.service.checkpoint();
+    REQUIRE_FALSE(h.service.beginRecoveredImport(id, path));
+    REQUIRE(h.service.checkpoint() == before);
+    REQUIRE_FALSE(h.service.recoveredImportState("old-1"));
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Recovered import capability is prompt guarded and never authorizes a live or confirmed job",
+          "[download][recovered-import]") {
+    RecoveryHarness h;
+    h.importer.on_capability = [&] {
+        REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
+        REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+        REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
+        REQUIRE(h.service.snapshot().size() == 1);
+    };
+    REQUIRE(h.service.canImportRecovered("old-1"));
+    REQUIRE(h.importer.capability_queries == 1);
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE_FALSE(h.service.canImportRecovered("unknown"));
+    Harness live;
+    live.importer.durable_recovery = true;
+    const auto id = live.admit()[0];
+    REQUIRE_FALSE(live.service.canImportRecovered(id));
+    REQUIRE_FALSE(live.service.beginRecoveredImport(id, finalPath()));
+    FakeImport legacy;
+    REQUIRE_FALSE(legacy.DownloadImport::supportsDurableRecovery());
+    // A different pristine owner recognizes a healthy receipt without invoking
+    // the import port again, including when the old queue was later cleared.
+    FakeExecution execution;
+    FakeImport importer;
+    importer.durable_recovery = true;
+    RecoveryIdentity identity;
+    DownloadService restored{execution, importer, "later", {}, &identity};
+    REQUIRE(restored.restore(interruptedCheckpoint(), std::vector<DownloadImportReceipt>{{"old-1", finalPath()}}));
+    REQUIRE_FALSE(restored.canImportRecovered("old-1"));
+    REQUIRE_FALSE(restored.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(importer.imports.empty());
+}
+
+TEST_CASE("Recovered import keeps quota receipts and fresh namespace while guarding port reentry",
+          "[download][recovered-import]") {
+    RecoveryHarness h({.max_jobs = 1, .max_requests = 1, .max_retained_request_bytes = 100});
+    const auto receipts = h.service.checkpoint()->receipts;
+    h.importer.on_accept = [&] {
+        REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+        REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
+        REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+        REQUIRE_FALSE(h.service.retryImport("old-1"));
+        REQUIRE_FALSE(h.service.checkpoint());
+        REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
+        h.service.tick(2);
+    };
+    h.importer.begin_state = DownloadImportState::Pending;
+    REQUIRE(h.service.beginRecoveredImport("old-1", finalPath()));
+    REQUIRE(h.service.checkpoint()->receipts == receipts);
+    REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::LimitExceeded);
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Shutdown drains recovered pending import even with no native execution slot",
+          "[download][recovered-import][FR-053]") {
+    RecoveryHarness h;
+    h.importer.begin_state = DownloadImportState::Pending;
+    REQUIRE(h.service.beginRecoveredImport("old-1", finalPath()));
+    h.service.shutdown();
+    REQUIRE_FALSE(h.service.stopped());
+    REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+    h.service.tick(0);
+    REQUIRE_FALSE(h.service.stopped());
+    SECTION("saved") { h.importer.poll_state = DownloadImportState::Committed; }
+    SECTION("failed") { h.importer.poll_state = DownloadImportState::Failed; }
+    SECTION("unknown terminal") { h.importer.poll_state = static_cast<DownloadImportState>(99); }
+    SECTION("throwing terminal") { h.importer.throw_poll = true; }
+    h.service.tick(1);
+    REQUIRE(h.service.stopped());
+    REQUIRE(h.service.recoveredImportState("old-1") == (h.importer.poll_state == DownloadImportState::Committed
+                                                            ? DownloadImportState::Committed
+                                                            : DownloadImportState::Failed));
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(validDownloadCheckpoint(*h.service.checkpoint()));
+}
+
+TEST_CASE("Recovered import preflights the full checkpoint representation before touching its importer",
+          "[download][recovered-import]") {
+    auto checkpoint = interruptedCheckpoint();
+    auto path = finalPath().parent_path() / (std::string(28'990, 'x') + ".mp3");
+    SECTION("per-path representation") { path = finalPath().parent_path() / (std::string(30'001, 'x') + ".mp3"); }
+    SECTION("aggregate representation") {
+        checkpoint.receipts.front().retained_request_bytes = 1000;
+        for (unsigned int index = 2; index <= 19; ++index) {
+            auto job = checkpoint.jobs.front();
+            job.job_id = "old-" + std::to_string(index);
+            job.completed_mp3 = path;
+            checkpoint.jobs.push_back(job);
+            checkpoint.receipts.front().job_ids.push_back(job.job_id);
+        }
+        // Number of records adapts only to native path-unit width so both
+        // Windows UTF-16 and Unix byte paths approach the same schema cap.
+        if constexpr (sizeof(std::filesystem::path::value_type) == 1) {
+            for (unsigned int index = 20; index <= 37; ++index) {
+                if (index == 21) {
+                    auto receipt = checkpoint.receipts.front();
+                    receipt.request_id = request(2).request_id;
+                    receipt.job_ids.clear();
+                    checkpoint.receipts.push_back(receipt);
+                }
+                auto job = checkpoint.jobs.front();
+                job.job_id = "old-" + std::to_string(index);
+                job.completed_mp3 = path;
+                checkpoint.jobs.push_back(job);
+                checkpoint.receipts.back().job_ids.push_back(job.job_id);
+            }
+        }
+    }
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    RecoveryHarness h({}, checkpoint);
+    const auto before = h.service.checkpoint();
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", path));
+    REQUIRE(h.service.checkpoint() == before);
+    REQUIRE_FALSE(h.service.recoveredImportState("old-1"));
+    REQUIRE(h.importer.imports.empty());
+}
+
+TEST_CASE("Recovered import rechecks the owner handoff predicate after capability callbacks",
+          "[download][recovered-import][FR-053]") {
+    RecoveryHarness h;
+    bool allowed = true;
+    bool throw_predicate = false;
+    SECTION("owner refuses") { allowed = false; }
+    SECTION("owner predicate throws") { throw_predicate = true; }
+    SECTION("capability callback closes the trusted owner") {
+        h.importer.on_capability = [&] { allowed = false; };
+    }
+    const auto before = h.service.checkpoint();
+    int predicate_calls = 0;
+    REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath(), [&] {
+        ++predicate_calls;
+        if (throw_predicate)
+            throw std::runtime_error{"private owner guard failure"};
+        return allowed;
+    }));
+    REQUIRE(predicate_calls == 1);
+    REQUIRE(h.service.checkpoint() == before);
+    REQUIRE_FALSE(h.service.recoveredImportState("old-1"));
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Recovered import handoff predicate cannot reenter mutations or duplicate the handoff",
+          "[download][recovered-import]") {
+    RecoveryHarness h;
+    int predicate_calls = 0;
+    REQUIRE(h.service.beginRecoveredImport("old-1", finalPath(), [&] {
+        ++predicate_calls;
+        REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
+        REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+        REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
+        h.service.tick(4);
+        return true;
+    }));
+    REQUIRE(predicate_calls == 1);
+    REQUIRE(h.importer.imports.size() == 1);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Imported);
+    REQUIRE(h.execution.starts.empty());
 }
 
 TEST_CASE("A published download remains importing until its durable handoff commits", "[download][import-pending]") {

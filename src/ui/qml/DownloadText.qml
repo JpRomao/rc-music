@@ -17,6 +17,8 @@ QtObject {
     readonly property string reviewFilesAgain: qsTr("Reverificar arquivos")
     readonly property string validateMedia: qsTr("Validar MP3")
     readonly property string releaseValidation: qsTr("Liberar validação")
+    readonly property string importRecovered: qsTr("Adicionar à fila")
+    readonly property string importRecoveredAdvice: qsTr("Adicionar este áudio validado à fila? A inclusão aguardará a confirmação de gravação e não iniciará a reprodução. O arquivo será preservado.")
     readonly property string retryAdmission: qsTr("Tentar salvar o pedido novamente")
     readonly property string retryFinalSave: qsTr("Tentar salvar o histórico novamente")
     readonly property string retryImport: qsTr("Tentar importar novamente")

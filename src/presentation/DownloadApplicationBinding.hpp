@@ -49,6 +49,8 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(bool canCloseAfterFinalSaveFailure READ canCloseAfterFinalSaveFailure NOTIFY stateChanged)
     Q_PROPERTY(QString discardConsentJobId READ discardConsentJobId NOTIFY discardConsentChanged)
     Q_PROPERTY(QString discardConsentToken READ discardConsentToken NOTIFY discardConsentChanged)
+    Q_PROPERTY(QString importConsentJobId READ importConsentJobId NOTIFY importConsentChanged)
+    Q_PROPERTY(QString importConsentToken READ importConsentToken NOTIFY importConsentChanged)
 
   public:
     DownloadApplicationBinding(PlayerPresenter& presenter, DownloadAdmissionController& controller,
@@ -64,6 +66,8 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canCloseAfterFinalSaveFailure() const;
     [[nodiscard]] QString discardConsentJobId() const;
     [[nodiscard]] QString discardConsentToken() const;
+    [[nodiscard]] QString importConsentJobId() const;
+    [[nodiscard]] QString importConsentToken() const;
     // Trusted composition only, not exposed to QML. poll is deterministic when
     // automatic_polling is false. Neither method admits remote requests.
     [[nodiscard]] bool start();
@@ -81,10 +85,14 @@ class DownloadApplicationBinding final : public QObject {
     Q_INVOKABLE void cancelDiscardPartialsConfirmation(const QString& job_id, const QString& token);
     Q_INVOKABLE bool validateMedia(const QString& job_id);
     Q_INVOKABLE bool releaseValidation(const QString& job_id);
+    Q_INVOKABLE bool requestRecoveredImport(const QString& job_id);
+    Q_INVOKABLE bool confirmRecoveredImport(const QString& job_id, const QString& token);
+    Q_INVOKABLE void cancelRecoveredImportConfirmation(const QString& job_id, const QString& token);
 
   signals:
     void stateChanged();
     void discardConsentChanged();
+    void importConsentChanged();
 
   private:
     void beginShutdown();
@@ -94,6 +102,9 @@ class DownloadApplicationBinding final : public QObject {
     void shutdownValidation();
     void pollValidation();
     void failValidation();
+    void pollRecoveredImport();
+    void invalidateImportConsent();
+    [[nodiscard]] bool canImportForJob(const QString& job_id) const;
     [[nodiscard]] bool canValidateForJob(const QString& job_id) const;
     void invalidateDiscardConsent();
     [[nodiscard]] bool canDiscardForJob(const QString& job_id) const;

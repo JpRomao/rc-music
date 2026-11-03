@@ -13,6 +13,12 @@ Popup {
     property string discardConsentToken: ""
     property Item discardRestoreFocusItem: null
     readonly property bool discardConsentCurrent: discardConsentOwner !== null && discardConsentOwner === downloads && discardConsentToken.length > 0 && downloads.discardConsentJobId === discardConsentJobId && downloads.discardConsentToken === discardConsentToken
+    property var importConsentOwner: null
+    property string importConsentJobId: ""
+    property string importConsentToken: ""
+    property var importConsentRow: null
+    property Item importRestoreFocusItem: null
+    readonly property bool importConsentCurrent: importConsentOwner !== null && importConsentOwner === downloads && importConsentToken.length > 0 && downloads.importConsentJobId === importConsentJobId && downloads.importConsentToken === importConsentToken && importConsentRow !== null && importConsentRow.jobId === importConsentJobId && importConsentRow.canImportRecovered && !importConsentRow.validationBusy && importConsentRow.validationIdentityCurrent() && jobsList.itemAtIndex(importConsentRow.index) === importConsentRow
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
@@ -27,7 +33,7 @@ Popup {
     signal exitRequested
 
     function requestDiscardConsent(jobId, opener) {
-        if (downloads === null || discardConfirmation.visible || exitConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
+        if (downloads === null || discardConfirmation.visible || exitConfirmation.visible || importConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
             return;
         discardConsentOwner = downloads;
         discardConsentJobId = downloads.discardConsentJobId;
@@ -59,6 +65,44 @@ Popup {
         owner.confirmDiscardPartials(jobId, token);
         invalidateDiscardConsent();
     }
+    function requestRecoveredImportConsent(jobId, opener, row) {
+        if (!opened || downloads === null || importConfirmation.visible || discardConfirmation.visible || exitConfirmation.visible || !row || !row.canImportRecovered || row.validationBusy || !row.validationIdentityCurrent() || row.jobId !== jobId || jobsList.itemAtIndex(row.index) !== row)
+            return;
+        const owner = downloads;
+        if (owner.requestRecoveredImport(jobId) !== true)
+            return;
+        importConsentOwner = owner;
+        importConsentJobId = owner.importConsentJobId;
+        importConsentToken = owner.importConsentToken;
+        importConsentRow = row;
+        importRestoreFocusItem = opener;
+        if (importConsentCurrent)
+            importConfirmation.open();
+        else
+            invalidateImportConsent();
+    }
+    function invalidateImportConsent() {
+        const owner = importConsentOwner;
+        const jobId = importConsentJobId;
+        const token = importConsentToken;
+        importConsentOwner = null;
+        importConsentJobId = "";
+        importConsentToken = "";
+        importConsentRow = null;
+        if (owner !== null && token.length > 0)
+            owner.cancelRecoveredImportConfirmation(jobId, token);
+        if (importConfirmation.visible)
+            importConfirmation.close();
+    }
+    function confirmImportConsent() {
+        if (!importConfirmation.opened || !importConsentCurrent)
+            return;
+        const owner = importConsentOwner;
+        const jobId = importConsentJobId;
+        const token = importConsentToken;
+        owner.confirmRecoveredImport(jobId, token);
+        invalidateImportConsent();
+    }
 
     function confirmCloseWithoutSave() {
         if (!exitConfirmation.opened || !closeWithoutSaveAvailable || closeConsentOwner !== downloads || closeConsentWarning !== warning)
@@ -85,7 +129,7 @@ Popup {
     function rowControls(row) {
         if (!row)
             return [];
-        return [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.releaseValidationControl].filter(function (item) {
+        return [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -114,7 +158,7 @@ Popup {
         open();
     }
     function requestCloseWithoutSave() {
-        if (!closeWithoutSaveAvailable || exitConfirmation.visible)
+        if (!closeWithoutSaveAvailable || exitConfirmation.visible || discardConfirmation.visible || importConfirmation.visible)
             return;
         closeConsentOwner = downloads;
         closeConsentWarning = warning;
@@ -288,6 +332,7 @@ Popup {
                 required property bool canReviewFiles
                 required property bool canDiscardPartials
                 required property bool canValidateMedia
+                required property bool canImportRecovered
                 required property bool canReleaseValidation
                 property alias cancelControl: cancelButton
                 required property string errorText
@@ -299,6 +344,7 @@ Popup {
                 property alias reviewControl: reviewButton
                 property alias discardControl: discardButton
                 property alias validateControl: validateButton
+                property alias importRecoveredControl: importRecoveredButton
                 property alias releaseValidationControl: releaseValidationButton
                 required property bool reviewBusy
                 required property string reviewText
@@ -436,7 +482,7 @@ Popup {
                     Flow {
                         Layout.fillWidth: true
                         spacing: root.contract.spacingUnit
-                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials || row.canValidateMedia || row.canReleaseValidation
+                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials || row.canValidateMedia || row.canImportRecovered || row.canReleaseValidation
 
                         AccessibleTransportButton {
                             id: cancelButton
@@ -539,6 +585,26 @@ Popup {
                             }
                         }
                         AccessibleTransportButton {
+                            id: importRecoveredButton
+
+                            KeyNavigation.backtab: root.nextRowControl(row, importRecoveredButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, importRecoveredButton, false)
+                            contract: root.contract
+                            enabled: row.canImportRecovered && !row.validationBusy && row.validationIdentityCurrent()
+                            objectName: "download-import-recovered"
+                            text: labels.importRecovered
+                            visible: row.canImportRecovered
+
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (root.opened && row.canImportRecovered && !row.validationBusy && row.validationIdentityCurrent() && jobsList.itemAtIndex(row.index) === row)
+                                    root.requestRecoveredImportConsent(row.validationJobId, importRecoveredButton, row);
+                            }
+                        }
+                        AccessibleTransportButton {
                             id: releaseValidationButton
 
                             KeyNavigation.backtab: root.nextRowControl(row, releaseValidationButton, true)
@@ -594,12 +660,20 @@ Popup {
     onAboutToHide: {
         invalidateCloseConsent();
         invalidateDiscardConsent();
+        invalidateImportConsent();
     }
     onDiscardConsentCurrentChanged: {
         if (!discardConsentCurrent)
             Qt.callLater(function () {
                 if (!root.discardConsentCurrent)
                     root.invalidateDiscardConsent();
+            });
+    }
+    onImportConsentCurrentChanged: {
+        if (!importConsentCurrent)
+            Qt.callLater(function () {
+                if (!root.importConsentCurrent)
+                    root.invalidateImportConsent();
             });
     }
     onCloseWithoutSaveAvailableChanged: {
@@ -620,6 +694,7 @@ Popup {
     onDownloadsChanged: {
         invalidateCloseConsent();
         invalidateDiscardConsent();
+        invalidateImportConsent();
         if (downloads === null)
             close();
     }
@@ -628,6 +703,97 @@ Popup {
 
     DownloadText {
         id: labels
+    }
+    Popup {
+        id: importConfirmation
+
+        closePolicy: Popup.CloseOnEscape
+        dim: false
+        focus: true
+        height: importContent.implicitHeight + padding * 2
+        modal: true
+        objectName: "download-import-confirmation"
+        padding: root.contract.spacingUnit * 3
+        parent: root.parent
+        popupType: Popup.Item
+        width: Math.min(root.width, 560)
+        x: root.x + (root.width - width) / 2
+        y: root.y + (root.height - height) / 2
+
+        background: Rectangle {
+            border.color: root.contract.borderColor
+            border.width: root.contract.highContrast ? 2 : 1
+            color: root.contract.surfaceRaisedColor
+            radius: root.contract.radiusMedium
+        }
+        contentItem: ColumnLayout {
+            id: importContent
+
+            Accessible.name: labels.importRecovered
+            Accessible.role: Accessible.Dialog
+            spacing: root.contract.spacingUnit * 3
+
+            Text {
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                font.bold: true
+                text: labels.importRecovered
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            Text {
+                Accessible.name: text
+                Accessible.role: Accessible.StaticText
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                objectName: "download-import-advice"
+                text: labels.importRecoveredAdvice
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+
+                AccessibleTransportButton {
+                    id: cancelImportButton
+
+                    KeyNavigation.backtab: confirmImportButton
+                    KeyNavigation.tab: confirmImportButton
+                    contract: root.contract
+                    objectName: "download-import-cancel"
+                    text: labels.cancel
+
+                    onClicked: root.invalidateImportConsent()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                AccessibleTransportButton {
+                    id: confirmImportButton
+
+                    KeyNavigation.backtab: cancelImportButton
+                    KeyNavigation.tab: cancelImportButton
+                    contract: root.contract
+                    enabled: root.importConsentCurrent
+                    objectName: "download-import-confirm"
+                    text: labels.importRecovered
+
+                    onClicked: root.confirmImportConsent()
+                }
+            }
+        }
+        onClosed: {
+            root.invalidateImportConsent();
+            const target = root.importRestoreFocusItem;
+            root.importRestoreFocusItem = null;
+            Qt.callLater(function () {
+                if (root.opened) {
+                    const destination = target && target.visible && target.enabled ? target : jobsList;
+                    destination.forceActiveFocus(Qt.TabFocusReason);
+                }
+            });
+        }
+        onOpened: cancelImportButton.forceActiveFocus(Qt.TabFocusReason)
     }
     Popup {
         id: discardConfirmation

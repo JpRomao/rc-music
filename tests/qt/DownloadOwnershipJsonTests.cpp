@@ -202,6 +202,35 @@ class DownloadOwnershipJsonTests final : public QObject {
         QVERIFY(!mayReplaceDownloadOwnershipRecord(previous, modified));
         QVERIFY(!mayReplaceDownloadOwnershipRecord(sample(), sample(DownloadOwnershipStage::Published)));
     }
+    void cleanedPreparedFinalMayConfirmPublicationWithoutChangingItsProof() {
+        auto prepared = sample(DownloadOwnershipStage::PublicationPrepared);
+        prepared.cleanup_complete = true;
+        auto published = prepared;
+        published.stage = DownloadOwnershipStage::Published;
+        QVERIFY(mayReplaceDownloadOwnershipRecord(prepared, published));
+        QVERIFY(!mayReplaceDownloadOwnershipRecord(published, prepared));
+        auto changed = published;
+        changed.cleanup_complete = false;
+        QVERIFY(!mayReplaceDownloadOwnershipRecord(prepared, changed));
+        changed = published;
+        changed.output_sha256[0] = 'b';
+        QVERIFY(!mayReplaceDownloadOwnershipRecord(prepared, changed));
+        changed = published;
+        changed.input_bytes++;
+        QVERIFY(!mayReplaceDownloadOwnershipRecord(prepared, changed));
+        changed = published;
+        changed.output = identity(9);
+        QVERIFY(!mayReplaceDownloadOwnershipRecord(prepared, changed));
+        for (const auto stage : {DownloadOwnershipStage::Planned, DownloadOwnershipStage::WorkspaceReady}) {
+            auto cleaned = sample(stage);
+            cleaned.cleanup_complete = true;
+            auto advanced =
+                sample(stage == DownloadOwnershipStage::Planned ? DownloadOwnershipStage::WorkspaceReady
+                                                                : DownloadOwnershipStage::PublicationPrepared);
+            advanced.cleanup_complete = true;
+            QVERIFY(!mayReplaceDownloadOwnershipRecord(cleaned, advanced));
+        }
+    }
     void malformedShape_data() {
         QTest::addColumn<QByteArray>("document");
         auto add = [](const char* name, QJsonObject value) { QTest::newRow(name) << json(value); };

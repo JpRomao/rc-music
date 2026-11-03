@@ -110,6 +110,90 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void recoveredImportNeedsHeldProofAndPreparationCannotBeReleasedOrDuplicated() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        const auto id = QStringLiteral("previous-1");
+        h.model.setValidationAvailable(true);
+        h.model.setRecoveredImportAvailable(true);
+        QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(h.reviewed(id, DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(h.model.beginValidation(id));
+        QVERIFY(!h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(h.model.finishValidation(id, DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole, 1).toBool());
+        QVERIFY(!h.model.beginRecoveredImportPreparation(QStringLiteral("previous-2")));
+        QVERIFY(h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.model.beginValidationRelease(id));
+        QVERIFY(!h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(!h.model.beginRecoveredImportHandoff(QStringLiteral("previous-2")));
+        QVERIFY(h.model.beginRecoveredImportHandoff(id));
+        QVERIFY(!h.model.beginRecoveredImportHandoff(id));
+        QVERIFY(h.model.finishRecoveredImport(id, DownloadImportState::Pending));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationTextRole).toString().contains(QStringLiteral("gravação")));
+        QVERIFY(!h.model.beginValidationRelease(id));
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void recoveredImportFailureRetainsProofForExplicitRetryAndSavedWaitsForNativeRelease() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        const auto id = QStringLiteral("previous-1");
+        h.model.setValidationAvailable(true);
+        QVERIFY(h.reviewed(id, DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(h.model.beginValidation(id));
+        QVERIFY(h.model.finishValidation(id, DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        h.model.setRecoveredImportAvailable(true);
+        QVERIFY(h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(h.model.beginRecoveredImportHandoff(id));
+        QVERIFY(h.model.finishRecoveredImport(id, DownloadImportState::Failed));
+        QVERIFY(value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::ValidationTextRole)
+                     .toString()
+                     .contains(QString::fromStdWString(finalPath().wstring())));
+        QVERIFY(h.model.beginRecoveredImportPreparation(id));
+        QVERIFY(h.model.beginRecoveredImportHandoff(id));
+        QVERIFY(!h.model.finishRecoveredImport(QStringLiteral("previous-2"), DownloadImportState::Committed));
+        QVERIFY(h.model.finishRecoveredImport(id, DownloadImportState::Committed));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(h.model.finishValidation(id, DownloadRecoveryValidationOutcome::Released));
+        QVERIFY(value(h.model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void recoveredImportCapabilityAndApprovalAreRevokedBeforeNotifications() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        const auto id = QStringLiteral("previous-1");
+        h.model.setValidationAvailable(true);
+        h.model.setRecoveredImportAvailable(true);
+        QVERIFY(h.reviewed(id, DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(h.model.beginValidation(id));
+        QVERIFY(h.model.finishValidation(id, DownloadRecoveryValidationOutcome::Validated));
+        h.model.setRecoveredImportAvailable(false);
+        QVERIFY(!h.model.beginRecoveredImportPreparation(id));
+        h.model.setRecoveredImportAvailable(true);
+        bool observed = false;
+        connect(&h.model, &QAbstractItemModel::dataChanged, &h.model, [&] {
+            observed = true;
+            QVERIFY(!value(h.model, DownloadJobsModel::CanImportRecoveredRole).toBool());
+            QVERIFY(!h.model.beginRecoveredImportPreparation(id));
+        });
+        h.model.setValidationUnavailable();
+        QVERIFY(observed);
+        QVERIFY(!h.model.finishRecoveredImport(id, DownloadImportState::Committed));
+    }
     void validationRequiresAvailableCurrentFinalAssessmentAndExactInterruptedIdentity() {
         RecoveryModelHarness h;
         QVERIFY(h.restored);
@@ -609,7 +693,8 @@ class DownloadJobsModelTests final : public QObject {
                                          "canValidateMedia",
                                          "validationText",
                                          "validationBusy",
-                                         "canReleaseValidation"};
+                                         "canReleaseValidation",
+                                         "canImportRecovered"};
         QCOMPARE(roles.size(), expected.size());
         for (const auto& role : expected)
             QVERIFY(roles.values().contains(role));

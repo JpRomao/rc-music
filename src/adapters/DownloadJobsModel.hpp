@@ -36,7 +36,8 @@ class DownloadJobsModel final : public QAbstractListModel {
         CanValidateMediaRole,
         ValidationTextRole,
         ValidationBusyRole,
-        CanReleaseValidationRole
+        CanReleaseValidationRole,
+        CanImportRecoveredRole
     };
     Q_ENUM(Role)
 
@@ -60,6 +61,10 @@ class DownloadJobsModel final : public QAbstractListModel {
     [[nodiscard]] bool beginValidation(const QString& job_id);
     [[nodiscard]] bool beginValidationRelease(const QString& job_id);
     [[nodiscard]] bool finishValidation(const QString& job_id, DownloadRecoveryValidationOutcome outcome);
+    void setRecoveredImportAvailable(bool available);
+    [[nodiscard]] bool beginRecoveredImportPreparation(const QString& job_id);
+    [[nodiscard]] bool beginRecoveredImportHandoff(const QString& job_id);
+    [[nodiscard]] bool finishRecoveredImport(const QString& job_id, DownloadImportState state);
 
   signals:
     void summaryChanged();
@@ -68,7 +73,7 @@ class DownloadJobsModel final : public QAbstractListModel {
     void refreshSnapshot();
     void notifyReviewChanged();
     void notifyValidationChanged();
-    enum class ValidationPhase { Idle, Pending, Held, ReleasePending };
+    enum class ValidationPhase { Idle, Pending, Held, PreparingImport, ImportPending, ReleasePending };
 
     DownloadService& service_;
     std::vector<DownloadJobSnapshot> items_{};
@@ -84,6 +89,8 @@ class DownloadJobsModel final : public QAbstractListModel {
     QHash<QString, DownloadRecoveryReviewOutcome> reviews_{};
     bool validation_available_{false};
     bool validation_unavailable_{false};
+    bool recovered_import_available_{false};
+    std::optional<DownloadImportState> recovered_import_state_{};
     ValidationPhase validation_phase_{ValidationPhase::Idle};
     QString validation_job_id_{};
     QHash<QString, DownloadRecoveryValidationOutcome> validations_{};

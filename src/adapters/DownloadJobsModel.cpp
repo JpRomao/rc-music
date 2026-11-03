@@ -174,6 +174,7 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
 QString validationText(const DownloadRecoveryValidationOutcome outcome) {
     switch (outcome) {
     case DownloadRecoveryValidationOutcome::Validated:
+    case DownloadRecoveryValidationOutcome::ImportReady:
         return DownloadJobsModel::tr("MP3 validado; não foi importado na fila. Libere a validação quando terminar a "
                                      "revisão; ela não publica nem importa o arquivo.");
     case DownloadRecoveryValidationOutcome::Released:
@@ -206,6 +207,9 @@ QString validationText(const DownloadRecoveryValidationOutcome outcome) {
     case DownloadRecoveryValidationOutcome::Timeout:
         return DownloadJobsModel::tr("A validação de MP3 excedeu o tempo limite. Você pode tentar novamente; "
                                      "nada foi importado.");
+    case DownloadRecoveryValidationOutcome::PublicationUnconfirmed:
+        return DownloadJobsModel::tr("Não foi possível confirmar o arquivo no histórico. Verifique e valide o áudio "
+                                     "novamente antes de adicionar à fila. Nada foi importado.");
     }
     return validationText(DownloadRecoveryValidationOutcome::Unreadable);
 }
@@ -304,17 +308,30 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
                 return tr("Validando o MP3 local; nada será importado ou alterado.");
             if (validation_phase_ == ValidationPhase::ReleasePending)
                 return tr("Liberando a validação; aguardando a parada e a liberação dos arquivos.");
+            if (validation_phase_ == ValidationPhase::PreparingImport)
+                return tr("Preparando o áudio validado para adicionar à fila.");
+            if (validation_phase_ == ValidationPhase::ImportPending)
+                return tr("Adicionando à fila; aguardando a confirmação da gravação.");
+            if (recovered_import_state_ == DownloadImportState::Failed)
+                return tr("Não foi possível confirmar a gravação da fila. Tente adicionar novamente; "
+                          "o áudio não será duplicado.");
         }
         const auto found = validations_.constFind(job_id);
         return found != validations_.cend() ? validationText(*found) : QString{};
     }
     case ValidationBusyRole:
         return validation_job_id_ == QString::fromStdString(item.job_id) &&
-               (validation_phase_ == ValidationPhase::Pending || validation_phase_ == ValidationPhase::ReleasePending);
+               (validation_phase_ == ValidationPhase::Pending || validation_phase_ == ValidationPhase::ReleasePending ||
+                validation_phase_ == ValidationPhase::PreparingImport ||
+                validation_phase_ == ValidationPhase::ImportPending);
     case CanReleaseValidationRole:
         return validation_available_ && !validation_unavailable_ &&
                validation_job_id_ == QString::fromStdString(item.job_id) &&
                (validation_phase_ == ValidationPhase::Pending || validation_phase_ == ValidationPhase::Held);
+    case CanImportRecoveredRole:
+        return recovered_import_available_ && validation_available_ && !validation_unavailable_ &&
+               validation_job_id_ == QString::fromStdString(item.job_id) &&
+               validation_phase_ == ValidationPhase::Held && item.state == DownloadJobState::Interrupted;
     default:
         return {};
     }
@@ -340,7 +357,8 @@ QHash<int, QByteArray> DownloadJobsModel::roleNames() const {
             {CanValidateMediaRole, "canValidateMedia"},
             {ValidationTextRole, "validationText"},
             {ValidationBusyRole, "validationBusy"},
-            {CanReleaseValidationRole, "canReleaseValidation"}};
+            {CanReleaseValidationRole, "canReleaseValidation"},
+            {CanImportRecoveredRole, "canImportRecovered"}};
 }
 
 int DownloadJobsModel::activeCount() const noexcept { return active_count_; }
@@ -355,7 +373,7 @@ void DownloadJobsModel::notifyValidationChanged() {
     if (!items_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
                          {CanValidateMediaRole, ValidationTextRole, ValidationBusyRole, CanReleaseValidationRole,
-                          CanReviewFilesRole, CanDiscardPartialsRole});
+                          CanReviewFilesRole, CanDiscardPartialsRole, CanImportRecoveredRole});
 }
 void DownloadJobsModel::setReviewAvailable(const bool available) {
     if (review_available_ == available)
@@ -409,6 +427,46 @@ void DownloadJobsModel::setValidationAvailable(const bool available) {
     validation_available_ = available;
     notifyValidationChanged();
 }
+void DownloadJobsModel::setRecoveredImportAvailable(const bool available) {
+    if (recovered_import_available_ == available)
+        return;
+    recovered_import_available_ = available;
+    notifyValidationChanged();
+}
+bool DownloadJobsModel::beginRecoveredImportPreparation(const QString& job_id) {
+    const auto found = std::ranges::find_if(
+        items_, [&](const DownloadJobSnapshot& item) { return QString::fromStdString(item.job_id) == job_id; });
+    if (found == items_.end() ||
+        !data(index(static_cast<int>(found - items_.begin()), 0), CanImportRecoveredRole).toBool())
+        return false;
+    validation_phase_ = ValidationPhase::PreparingImport;
+    recovered_import_state_.reset();
+    notifyValidationChanged();
+    return true;
+}
+bool DownloadJobsModel::beginRecoveredImportHandoff(const QString& job_id) {
+    if (validation_unavailable_ || validation_job_id_ != job_id || validation_job_id_.isEmpty() ||
+        validation_phase_ != ValidationPhase::PreparingImport)
+        return false;
+    validation_phase_ = ValidationPhase::ImportPending;
+    recovered_import_state_ = DownloadImportState::Pending;
+    notifyValidationChanged();
+    return true;
+}
+bool DownloadJobsModel::finishRecoveredImport(const QString& job_id, const DownloadImportState state) {
+    if (validation_unavailable_ || validation_job_id_.isEmpty() || validation_job_id_ != job_id ||
+        (validation_phase_ != ValidationPhase::ImportPending &&
+         validation_phase_ != ValidationPhase::PreparingImport) ||
+        (state != DownloadImportState::Pending && state != DownloadImportState::Committed &&
+         state != DownloadImportState::Failed))
+        return false;
+    recovered_import_state_ = state;
+    validation_phase_ = state == DownloadImportState::Pending     ? ValidationPhase::ImportPending
+                        : state == DownloadImportState::Committed ? ValidationPhase::ReleasePending
+                                                                  : ValidationPhase::Held;
+    notifyValidationChanged();
+    return true;
+}
 void DownloadJobsModel::setValidationUnavailable() {
     if (validation_unavailable_)
         return;
@@ -425,6 +483,7 @@ bool DownloadJobsModel::beginValidation(const QString& job_id) {
         return false;
     validation_job_id_ = job_id;
     validation_phase_ = ValidationPhase::Pending;
+    recovered_import_state_.reset();
     validations_.remove(job_id);
     notifyValidationChanged();
     return true;
@@ -439,7 +498,8 @@ bool DownloadJobsModel::beginValidationRelease(const QString& job_id) {
     return true;
 }
 bool DownloadJobsModel::finishValidation(const QString& job_id, const DownloadRecoveryValidationOutcome outcome) {
-    if (validation_job_id_.isEmpty() || validation_job_id_ != job_id)
+    if (validation_job_id_.isEmpty() || validation_job_id_ != job_id ||
+        outcome == DownloadRecoveryValidationOutcome::ImportReady)
         return false;
     if (outcome == DownloadRecoveryValidationOutcome::Validated) {
         if (validation_unavailable_ || validation_phase_ != ValidationPhase::Pending)

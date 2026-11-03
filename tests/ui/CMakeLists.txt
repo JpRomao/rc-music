@@ -96,7 +96,7 @@ if(WIN32 AND TARGET rc_music_download_network AND TARGET rc_music_download_persi
         RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)
     add_ui_test(rc_music_ui_download_recovery_validation_tests rc_music.ui.download-recovery-validation
         qtest/DownloadRecoveryValidationCompositionTests.cpp rc_music_test_ui rc_music_test_uiplugin
-        rc_music_download_network rc_music_download_persistence Qt6::Qml Qt6::Quick)
+        rc_music_download_network rc_music_download_persistence m0_qt_session_persistence Qt6::Qml Qt6::Quick Qt6::QuickTest)
     target_link_libraries(rc_music_ui_download_recovery_validation_tests PRIVATE advapi32)
     target_compile_definitions(rc_music_ui_download_recovery_validation_tests PRIVATE
         RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"

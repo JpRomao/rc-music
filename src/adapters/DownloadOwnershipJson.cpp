@@ -186,7 +186,13 @@ bool mayReplaceDownloadOwnershipRecord(const DownloadOwnershipRecord& previous,
         (previous.cleanup_complete && !next.cleanup_complete))
         return false;
     const auto before = static_cast<std::size_t>(previous.stage), after = static_cast<std::size_t>(next.stage);
-    if (after < before || after > before + 1 || (previous.cleanup_complete && after != before))
+    // A failed Published acknowledgement may leave a proved final after its
+    // temporaries were already cleaned. Recovery can acknowledge that same
+    // immutable Prepared artifact; other cleaned stages cannot resume work.
+    const bool confirm_cleaned_final = previous.stage == DownloadOwnershipStage::PublicationPrepared &&
+                                       next.stage == DownloadOwnershipStage::Published;
+    if (after < before || after > before + 1 ||
+        (previous.cleanup_complete && after != before && !confirm_cleaned_final))
         return false;
     if (before != 0 && (previous.job_directory != next.job_directory || previous.input != next.input ||
                         previous.output != next.output))

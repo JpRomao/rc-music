@@ -72,6 +72,18 @@ class DownloadService final : public DownloadSubmission {
     void tick(std::int64_t now_ms, const std::function<bool()>& allow_start = {});
     [[nodiscard]] bool cancel(std::string_view job_id);
     [[nodiscard]] bool retryImport(std::string_view job_id);
+    // Trusted composition only, after explicit consent and fresh retained
+    // ownership/media/publication proof. Stored paths are never authority.
+    // Pending/Failed recovery stays Interrupted; only durable commitment makes
+    // it Imported. Original IDs, receipts, quotas and telemetry are preserved.
+    // An optional prompt owner predicate is guarded and rechecked after the
+    // importer capability query, before any job mutation or handoff. A false
+    // result or exception leaves the candidate and job unchanged.
+    [[nodiscard]] bool canImportRecovered(std::string_view job_id) const;
+    [[nodiscard]] bool beginRecoveredImport(std::string_view job_id,
+                                            const std::filesystem::path& trusted_published_path,
+                                            const std::function<bool()>& allow_handoff = {});
+    [[nodiscard]] std::optional<DownloadImportState> recoveredImportState(std::string_view job_id) const;
     void shutdown();
     [[nodiscard]] bool stopped() const;
 

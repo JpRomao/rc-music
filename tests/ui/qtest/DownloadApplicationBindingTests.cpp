@@ -62,8 +62,14 @@ class Execution final : public DownloadExecution {
 };
 class Importer final : public DownloadImport {
   public:
-    bool accept(const std::string&, const std::filesystem::path&) override {
+    bool supportsDurableRecovery() const override {
+        if (on_supports)
+            on_supports();
+        return durable;
+    }
+    bool accept(const std::string& id, const std::filesystem::path& source) override {
         ++calls;
+        inputs.emplace_back(id, source);
         if (on_accept)
             on_accept();
         return true;
@@ -71,10 +77,16 @@ class Importer final : public DownloadImport {
     int calls{0};
     std::function<void()> on_accept{};
     std::function<void()> on_poll{};
+    std::function<void()> on_supports{};
     bool pending{false};
+    bool durable{true};
+    std::optional<DownloadImportState> begin_result{};
+    std::vector<std::pair<std::string, std::filesystem::path>> inputs{};
     DownloadImportState polled{DownloadImportState::Pending};
     DownloadImportState begin(const std::string& id, const std::filesystem::path& file) override {
         const bool accepted = accept(id, file);
+        if (begin_result)
+            return *begin_result;
         return pending ? DownloadImportState::Pending
                        : (accepted ? DownloadImportState::Committed : DownloadImportState::Failed);
     }
@@ -198,6 +210,14 @@ class Validation final : public DownloadRecoveryValidation {
             throw std::runtime_error{"private validation start"};
         return command;
     }
+    DownloadRecoveryValidationCommand prepareImport(std::uint64_t id) override {
+        preparations.push_back(id);
+        if (on_prepare)
+            on_prepare();
+        if (throw_prepare)
+            throw std::runtime_error{"private import preparation"};
+        return prepare_command;
+    }
     bool release(std::uint64_t id) override {
         releases.push_back(id);
         if (throw_release)
@@ -213,7 +233,8 @@ class Validation final : public DownloadRecoveryValidation {
         if (!completion)
             return std::nullopt;
         auto result = std::exchange(completion, std::nullopt);
-        if (result->operation_id == id && result->outcome != DownloadRecoveryValidationOutcome::Validated)
+        if (result->operation_id == id && result->outcome != DownloadRecoveryValidationOutcome::Validated &&
+            result->outcome != DownloadRecoveryValidationOutcome::ImportReady)
             active.reset();
         return result;
     }
@@ -230,14 +251,20 @@ class Validation final : public DownloadRecoveryValidation {
     void complete(DownloadRecoveryValidationOutcome outcome) {
         completion = DownloadRecoveryValidationResult{requests.back().first, requests.back().second, outcome};
     }
+    void readyImport(const std::filesystem::path& source = path()) {
+        completion = DownloadRecoveryValidationResult{requests.back().first, requests.back().second,
+                                                      DownloadRecoveryValidationOutcome::ImportReady, source};
+    }
     std::vector<std::pair<std::uint64_t, std::string>> requests{};
-    std::vector<std::uint64_t> releases{}, polls{};
+    std::vector<std::uint64_t> releases{}, polls{}, preparations{};
     std::optional<std::uint64_t> active{};
     std::optional<DownloadRecoveryValidationResult> completion{};
     DownloadRecoveryValidationCommand command{DownloadRecoveryValidationCommand::Accepted};
-    std::function<void()> on_start{}, on_poll{};
+    DownloadRecoveryValidationCommand prepare_command{DownloadRecoveryValidationCommand::Accepted};
+    std::function<void()> on_start{}, on_poll{}, on_prepare{};
     bool throw_start{false}, throw_poll{false}, throw_release{false}, allow_release{true}, physical_stopped{false};
     bool throw_shutdown{false}, throw_probe{false};
+    bool throw_prepare{false};
     int shutdowns{0};
 };
 struct Harness final {
@@ -298,12 +325,244 @@ struct Harness final {
         auto* model = binding.jobsModel();
         return model->data(model->index(row, 0), role);
     }
+    bool heldValidation() {
+        if (!interrupted() || !binding.reviewFiles(QStringLiteral("old-1")))
+            return false;
+        review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        binding.poll();
+        if (!binding.validateMedia(QStringLiteral("old-1")))
+            return false;
+        validation.complete(DownloadRecoveryValidationOutcome::Validated);
+        binding.poll();
+        return reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool();
+    }
 };
 } // namespace
 
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void recoveredImportRequiresCurrentOneShotConsentAndNativePreparationBeforeHandoff() {
+        Harness h({}, true, true);
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        const auto rows = h.presenter.queueModelObject()->rowCount();
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        const auto cancelled_token = h.binding.importConsentToken();
+        QVERIFY(!cancelled_token.isEmpty());
+        QCOMPARE(h.binding.importConsentJobId(), QStringLiteral("old-1"));
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.validation.preparations.size(), std::size_t{0});
+        h.binding.cancelRecoveredImportConfirmation(QStringLiteral("old-1"), cancelled_token);
+        QVERIFY(h.binding.importConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-1"), cancelled_token));
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        const auto token = h.binding.importConsentToken();
+        QVERIFY(token != cancelled_token);
+        QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-2"), token));
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), token));
+        QVERIFY(h.binding.importConsentToken().isEmpty());
+        QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-1"), token));
+        QCOMPARE(h.validation.preparations.size(), std::size_t{1});
+        QCOMPARE(h.validation.preparations.front(), h.validation.requests.back().first);
+        QVERIFY2(h.importer.calls == 0, "Consent must prepare the retained candidate before any queue handoff");
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 0);
+        h.validation.readyImport();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.importer.inputs.front(), (std::pair{std::string{"old-1"}, path()}));
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Imported);
+        QCOMPARE(h.validation.releases.size(), std::size_t{1});
+        QVERIFY2(h.validation.active.has_value(), "Saved handoff still awaits actual native release acknowledgement");
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QVERIFY(!h.validation.active);
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), rows);
+    }
+    void recoveredImportPendingRetainsProofUntilCommitAndExitWaitsForBothAcknowledgements() {
+        Harness h({}, true, true);
+        h.importer.pending = true;
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        h.validation.readyImport();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.service.recoveredImportState("old-1"), std::optional{DownloadImportState::Pending});
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-1")));
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY2(h.validation.shutdowns == 0, "Shutdown must not release proof while Session is still pending");
+        QVERIFY(h.validation.releases.empty());
+        h.execution.physical_stopped = true;
+        h.review.physical_stopped = true;
+        h.io.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(!h.presenter.exitCommitted());
+        QCOMPARE(h.validation.shutdowns, 0);
+        QVERIFY(h.validation.releases.empty());
+        h.importer.polled = DownloadImportState::Committed;
+        h.binding.poll();
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Imported);
+        QVERIFY(!h.io.saves.empty());
+        h.io.saved();
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 0);
+        QCOMPARE(h.validation.shutdowns, 1);
+        h.validation.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 1);
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void recoveredImportFailureKeepsTheKnownJobAndProofForANewExplicitConsent() {
+        Harness h({}, true, true);
+        h.importer.begin_result = DownloadImportState::Failed;
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        const auto first_token = h.binding.importConsentToken();
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), first_token));
+        h.validation.readyImport();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.service.recoveredImportState("old-1"), std::optional{DownloadImportState::Failed});
+        QVERIFY(h.validation.active.has_value());
+        QVERIFY(h.validation.releases.empty());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanRetryImportRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-1"), first_token));
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.importConsentToken() != first_token);
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        QCOMPARE(h.validation.preparations.size(), std::size_t{2});
+        h.importer.begin_result = DownloadImportState::Committed;
+        h.validation.readyImport();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 2);
+        QCOMPARE(h.importer.inputs[0], h.importer.inputs[1]);
+        QCOMPARE(h.service.snapshot().size(), std::size_t{2});
+        QCOMPARE(h.service.snapshot()[0].job_id, std::string{"old-1"});
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Imported);
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void malformedRecoveredImportPreparationCannotReachTheImporter_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("missing trusted path") << 0;
+        QTest::newRow("relative trusted path") << 1;
+        QTest::newRow("wrong format") << 2;
+        QTest::newRow("wrong operation") << 3;
+        QTest::newRow("wrong job") << 4;
+        QTest::newRow("unexpected retained outcome with a path") << 5;
+        QTest::newRow("unknown outcome") << 6;
+    }
+    void malformedRecoveredImportPreparationCannotReachTheImporter() {
+        QFETCH(int, fault);
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        h.validation.readyImport();
+        if (fault == 0)
+            h.validation.completion->trusted_mp3.clear();
+        else if (fault == 1)
+            h.validation.completion->trusted_mp3 = "relative.mp3";
+        else if (fault == 2)
+            h.validation.completion->trusted_mp3 = std::filesystem::path{L"C:/rc-music-synthetic/known.mp4"};
+        else if (fault == 3)
+            ++h.validation.completion->operation_id;
+        else if (fault == 4)
+            h.validation.completion->job_id = "old-2";
+        else if (fault == 5)
+            h.validation.completion->outcome = DownloadRecoveryValidationOutcome::Validated;
+        else
+            h.validation.completion->outcome = static_cast<DownloadRecoveryValidationOutcome>(999);
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.validation.shutdowns, 1);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.binding.warningText().isEmpty());
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("rc-music-synthetic")));
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+    }
+    void unconfirmedPublicationAndMissingDurableCapabilityNeverImportRecoveredAudio() {
+        Harness incapable({}, true, true);
+        incapable.importer.durable = false;
+        QVERIFY(incapable.heldValidation());
+        QVERIFY(!incapable.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!incapable.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QCOMPARE(incapable.importer.calls, 0);
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        h.validation.complete(DownloadRecoveryValidationOutcome::PublicationUnconfirmed);
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.validation.active.has_value());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ValidationTextRole).toString().isEmpty());
+    }
+    void recoveredCapabilityQueryCannotAdmitHandoffAfterNestedPlayerExit() {
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        bool exit_requested = false;
+        // Install only after consent/native preparation. The next health query
+        // occurs inside the service's actual beginRecoveredImport admission.
+        h.importer.on_supports = [&] {
+            if (!exit_requested) {
+                exit_requested = true;
+                QVERIFY(h.presenter.requestExit());
+            }
+        };
+        h.validation.readyImport();
+        h.binding.poll();
+        QVERIFY(exit_requested);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.execution.starts, 0);
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.importConsentToken().isEmpty());
+    }
+    void recoveredConsentAndPreparationReentryCannotImportAfterShutdown() {
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        connect(&h.binding, &DownloadApplicationBinding::importConsentChanged, &h.binding, [&] {
+            if (!h.binding.importConsentToken().isEmpty())
+                QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-1"), h.binding.importConsentToken()));
+        });
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QCOMPARE(h.validation.preparations.size(), std::size_t{0});
+        const auto token = h.binding.importConsentToken();
+        h.validation.on_prepare = [&] {
+            QVERIFY(!h.binding.confirmRecoveredImport(QStringLiteral("old-1"), token));
+            QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-2")));
+            QVERIFY(h.presenter.requestExit());
+        };
+        QVERIFY(h.binding.confirmRecoveredImport(QStringLiteral("old-1"), token));
+        QCOMPARE(h.validation.shutdowns, 1);
+        h.validation.readyImport();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        QVERIFY(h.binding.importConsentToken().isEmpty());
+    }
     void validationRequiresFreshCandidateObservationAndRetainsTheLeaseAfterResult() {
         Harness h({}, true, true);
         QVERIFY(h.interrupted());

@@ -36,6 +36,7 @@ class PlayerDownloadImport final : public DownloadImport {
     PlayerDownloadImport(const PlayerDownloadImport&) = delete;
     PlayerDownloadImport& operator=(const PlayerDownloadImport&) = delete;
     [[nodiscard]] bool accept(const std::string& job_id, const std::filesystem::path& mp3_path) override;
+    [[nodiscard]] bool supportsDurableRecovery() const override;
     [[nodiscard]] DownloadImportState begin(const std::string& job_id, const std::filesystem::path& mp3_path) override;
     [[nodiscard]] DownloadImportState pollImport(std::string_view job_id) override;
 

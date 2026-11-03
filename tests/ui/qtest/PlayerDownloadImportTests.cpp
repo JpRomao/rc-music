@@ -485,6 +485,9 @@ class PlayerDownloadImportTests final : public QObject {
     void durableUntrustedStartupBlocksNewImports_data();
     void durableUntrustedStartupBlocksNewImports();
     void durableNeedsPersistenceAndHonorsReceiptLimits();
+    void durableRecoveryCapabilityRequiresHealthySessionAndSameThread();
+    void durableRecoveryCapabilityRejectsUntrustedStartup_data();
+    void durableRecoveryCapabilityRejectsUntrustedStartup();
     void durableReentrantReplayCannotAcknowledgeBeforeSave();
     void durableRealServiceWaitsForPersistenceAndDrainsDuringShutdown();
     void durableRestartReplaysDoNotReadOrLoadPublishedFiles();
@@ -1343,6 +1346,48 @@ void PlayerDownloadImportTests::durableNeedsPersistenceAndHonorsReceiptLimits() 
     QVERIFY(h.presenter.clearQueue());
     QCOMPARE(importer.begin("second", path), DownloadImportState::Failed);
     QCOMPARE(importer.begin("first", path), DownloadImportState::Committed);
+    QCOMPARE(h.model()->rowCount(), 0);
+}
+
+void PlayerDownloadImportTests::durableRecoveryCapabilityRequiresHealthySessionAndSameThread() {
+    Harness volatile_player;
+    PlayerDownloadImport volatile_importer(volatile_player.presenter);
+    QVERIFY(!volatile_importer.supportsDurableRecovery());
+    PlayerDownloadImport no_store(volatile_player.presenter, {}, PlayerDownloadImportPersistence::Session);
+    QVERIFY(!no_store.supportsDurableRecovery());
+    DurableHarness h;
+    PlayerDownloadImport importer(h.presenter, {}, PlayerDownloadImportPersistence::Session);
+    QVERIFY(importer.supportsDurableRecovery());
+    QVERIFY(h.writer.starts.empty());
+    QVERIFY(h.backend.loads.empty());
+    QCOMPARE(h.model()->rowCount(), 0);
+    bool foreign_capability = true;
+    std::thread foreign([&] { foreign_capability = importer.supportsDurableRecovery(); });
+    foreign.join();
+    QVERIFY(!foreign_capability);
+    QVERIFY(importer.supportsDurableRecovery());
+    QVERIFY(h.presenter.requestExit());
+    QVERIFY(!importer.supportsDurableRecovery());
+    auto temporary = std::make_unique<DurableHarness>();
+    PlayerDownloadImport destroyed(temporary->presenter, {}, PlayerDownloadImportPersistence::Session);
+    QVERIFY(destroyed.supportsDurableRecovery());
+    temporary.reset();
+    QVERIFY(!destroyed.supportsDurableRecovery());
+}
+
+void PlayerDownloadImportTests::durableRecoveryCapabilityRejectsUntrustedStartup_data() {
+    QTest::addColumn<int>("status");
+    QTest::newRow("invalid-defaults") << static_cast<int>(SessionLoadStatus::InvalidUsingDefaults);
+    QTest::newRow("future") << static_cast<int>(SessionLoadStatus::FutureVersion);
+    QTest::newRow("backup") << static_cast<int>(SessionLoadStatus::RecoveredFromBackup);
+}
+void PlayerDownloadImportTests::durableRecoveryCapabilityRejectsUntrustedStartup() {
+    QFETCH(int, status);
+    DurableHarness h({}, static_cast<SessionLoadStatus>(status));
+    PlayerDownloadImport importer(h.presenter, {}, PlayerDownloadImportPersistence::Session);
+    QVERIFY(!importer.supportsDurableRecovery());
+    QVERIFY(h.writer.starts.empty());
+    QVERIFY(h.backend.loads.empty());
     QCOMPARE(h.model()->rowCount(), 0);
 }
 

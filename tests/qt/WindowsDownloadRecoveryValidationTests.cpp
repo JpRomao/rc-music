@@ -1,3 +1,4 @@
+#include "adapters/DownloadOwnershipJson.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadRecoveryValidation.hpp"
@@ -53,9 +54,16 @@ struct Control {
     std::mutex mutex;
     std::optional<Outcome> outcome{};
     Gate factory_gate, start_gate, poll_gate, cancel_gate, destroy_gate, capture_gate;
+    Gate prepare_gate;
     bool block_factory{false}, block_start{false}, block_poll{false}, block_cancel{false}, block_destroy{false};
     bool block_capture{false}, start_result{true};
+    bool block_prepare{false};
+    DownloadRecoveryImportPreparation preparation{Outcome::ImportReady,
+                                                  std::filesystem::path{L"C:/private/recovered.mp3"}};
+    std::atomic_int preparations{0};
+    std::thread::id prepare_thread{};
     std::atomic_bool throw_start{false}, throw_poll{false}, throw_cancel{false};
+    std::atomic_bool throw_prepare{false};
     std::atomic_int factories{0}, starts{0}, polls{0}, cancels{0}, destroyed{0}, capture_destroyed{0};
     std::atomic_int first_poll_cancels{-1};
     std::thread::id factory_thread{}, start_thread{}, destroy_thread{}, capture_thread{};
@@ -70,6 +78,7 @@ struct Control {
         cancel_gate.release();
         destroy_gate.release();
         capture_gate.release();
+        prepare_gate.release();
     }
 };
 class Task final : public WindowsDownloadRecoveryValidationTask {
@@ -106,6 +115,16 @@ class Task final : public WindowsDownloadRecoveryValidationTask {
             throw std::runtime_error("not stopped");
         std::lock_guard lock(c->mutex);
         return c->outcome;
+    }
+    DownloadRecoveryImportPreparation prepareImport() override {
+        c->prepare_thread = std::this_thread::get_id();
+        ++c->preparations;
+        if (c->block_prepare)
+            c->prepare_gate.enter();
+        if (c->throw_prepare)
+            throw std::runtime_error("preparation acknowledgement uncertain");
+        std::lock_guard lock(c->mutex);
+        return c->preparation;
     }
 
   private:
@@ -206,6 +225,132 @@ bool writable(const QString& path) {
 class WindowsDownloadRecoveryValidationTests final : public QObject {
     Q_OBJECT
   private slots:
+    void preparationRequiresObservedValidationAndRetainsReadyUntilRelease() {
+        auto c = std::make_shared<Control>();
+        c->publish(Outcome::Validated);
+        WindowsDownloadRecoveryValidation owner(factory(c));
+        Finish finish{c, owner};
+        QCOMPARE(owner.prepareImport(1), Command::InvalidRequest);
+        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
+        QTRY_VERIFY(c->polls > 0);
+        QCOMPARE(owner.prepareImport(1), Command::Busy);
+        QCOMPARE(owner.prepareImport(2), Command::InvalidRequest);
+        std::optional<DownloadRecoveryValidationResult> result;
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Validated);
+        QVERIFY(result->trusted_mp3.empty());
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::ImportReady);
+        QCOMPARE(result->trusted_mp3, c->preparation.trusted_mp3);
+        QCOMPARE(result->operation_id, std::uint64_t{1});
+        QCOMPARE(result->job_id, std::string{"job-1"});
+        QCOMPARE(c->destroyed.load(), 0);
+        QCOMPARE(c->preparations.load(), 1);
+        // A deliberate retry after consuming Ready obtains a fresh worker
+        // acknowledgement; no prior completion is replayed as new authority.
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::ImportReady);
+        QCOMPARE(c->preparations.load(), 2);
+        QCOMPARE(owner.startValidation(2, "job-2"), Command::Busy);
+        QVERIFY(!owner.release(2));
+        QVERIFY(owner.release(1));
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Released);
+        QVERIFY(result->trusted_mp3.empty());
+        QCOMPARE(c->destroyed.load(), 1);
+        QVERIFY(c->prepare_thread != std::this_thread::get_id());
+    }
+    void preparationExceptionNeverExportsAPathOrRetainsAnUnacknowledgedTask() {
+        auto c = std::make_shared<Control>();
+        c->publish(Outcome::Validated);
+        c->throw_prepare = true;
+        WindowsDownloadRecoveryValidation owner(factory(c));
+        Finish finish{c, owner};
+        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
+        std::optional<DownloadRecoveryValidationResult> result;
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::PublicationUnconfirmed);
+        QVERIFY(result->trusted_mp3.empty());
+        QCOMPARE(c->destroyed.load(), 1);
+        QVERIFY(!owner.release(1));
+    }
+    void releaseOrShutdownDuringSlowPreparationSuppressesReady_data() {
+        QTest::addColumn<bool>("shutdown");
+        QTest::newRow("release") << false;
+        QTest::newRow("shutdown") << true;
+    }
+    void releaseOrShutdownDuringSlowPreparationSuppressesReady() {
+        QFETCH(bool, shutdown);
+        auto c = std::make_shared<Control>();
+        c->publish(Outcome::Validated);
+        c->block_prepare = true;
+        WindowsDownloadRecoveryValidation owner(factory(c));
+        Finish finish{c, owner};
+        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
+        std::optional<DownloadRecoveryValidationResult> result;
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Validated);
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        QVERIFY(c->prepare_gate.wait());
+        QCOMPARE(owner.prepareImport(1), Command::Busy);
+        QVERIFY(!owner.poll(1));
+        if (shutdown)
+            owner.shutdown();
+        else
+            QVERIFY(owner.release(1));
+        QVERIFY(!owner.stopped());
+        QVERIFY(!owner.poll(1));
+        QCOMPARE(c->destroyed.load(), 0);
+        QVERIFY(c->prepare_gate.blocked());
+        c->prepare_gate.release();
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Released);
+        QVERIFY(result->trusted_mp3.empty());
+        QCOMPARE(c->destroyed.load(), 1);
+        if (shutdown)
+            QTRY_VERIFY(owner.stopped());
+    }
+    void malformedPreparationCannotExportPaths_data() {
+        QTest::addColumn<int>("outcome");
+        QTest::addColumn<QString>("path");
+        QTest::newRow("empty ready") << static_cast<int>(Outcome::ImportReady) << QString{};
+        QTest::newRow("relative ready") << static_cast<int>(Outcome::ImportReady) << QStringLiteral("relative.mp3");
+        QTest::newRow("wrong format") << static_cast<int>(Outcome::ImportReady)
+                                      << QStringLiteral("C:/private/file.mp4");
+        QTest::newRow("parent traversal")
+            << static_cast<int>(Outcome::ImportReady) << QStringLiteral("C:/private/../file.mp3");
+        QTest::newRow("path on failure") << static_cast<int>(Outcome::PublicationUnconfirmed)
+                                         << QStringLiteral("C:/private/file.mp3");
+        QTest::newRow("wrong phase") << static_cast<int>(Outcome::Validated) << QString{};
+        QTest::newRow("unknown outcome") << 999 << QString{};
+    }
+    void malformedPreparationCannotExportPaths() {
+        QFETCH(int, outcome);
+        QFETCH(QString, path);
+        auto c = std::make_shared<Control>();
+        c->publish(Outcome::Validated);
+        c->preparation = {static_cast<Outcome>(outcome), std::filesystem::path{path.toStdWString()}};
+        WindowsDownloadRecoveryValidation owner(factory(c));
+        Finish finish{c, owner};
+        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
+        std::optional<DownloadRecoveryValidationResult> result;
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Unreadable);
+        QVERIFY(result->trusted_mp3.empty());
+        QCOMPARE(c->destroyed.load(), 1);
+    }
     void validationRetainsItsSlotAndCapabilityUntilMatchingReleaseAcknowledgement() {
         auto c = std::make_shared<Control>();
         c->publish(Outcome::Validated);
@@ -462,6 +607,138 @@ class WindowsDownloadRecoveryValidationTests final : public QObject {
         QTRY_VERIFY(owner.stopped());
     }
 #ifdef RC_MUSIC_TEST_FFMPEG_PATH
+    void defaultPreparationAcknowledgesPublishedUnderRetainedCleanedProof_data() {
+        QTest::addColumn<bool>("published");
+        QTest::addColumn<bool>("fail_after_commit");
+        QTest::addColumn<int>("journal_change");
+        QTest::newRow("published fresh acknowledgement") << true << false << 0;
+        QTest::newRow("cleaned prepared final") << false << false << 0;
+        QTest::newRow("failed acknowledgement cannot be promoted by readback") << false << true << 0;
+        QTest::newRow("future journal after validation") << true << false << 1;
+        QTest::newRow("changed journal proof after validation") << false << false << 2;
+    }
+    void defaultPreparationAcknowledgesPublishedUnderRetainedCleanedProof() {
+        QFETCH(bool, published);
+        QFETCH(bool, fail_after_commit);
+        QFETCH(int, journal_change);
+        const auto bytes = read(QString::fromUtf8(RC_MUSIC_TEST_AUDIO_FIXTURES) + "/mp3-unicode-tags.mp3");
+        QCOMPARE(bytes.size(), 24966);
+        QCOMPARE(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex(),
+                 QByteArray{"65e66cf43d999e98cf37cb64003d29b374a1238e454eca138c0dc5be2b18c000"});
+        QTemporaryDir directory(QDir::tempPath() + "/RC Music recovered import 日本-XXXXXX");
+        QVERIFY(directory.isValid());
+        const auto journal = directory.filePath("journal");
+        const auto staging = directory.filePath("staging");
+        const auto publication = directory.filePath("published");
+        QVERIFY(privateObject(journal, true));
+        QVERIFY(QDir().mkdir(staging));
+        QVERIFY(QDir().mkdir(publication));
+        WindowsDownloadWorkspaceConfig workspace_config{staging, publication, 1024 * 1024};
+        Store store(journal);
+        store.refuse_published = !published;
+        QString final;
+        {
+            WindowsDownloadWorkspace workspace(workspace_config, "job-1", store);
+            QVERIFY(workspace.create());
+            QCOMPARE(workspace.inputSink()->write(bytes), bytes.size());
+            QVERIFY(workspace.sealInput());
+            QCOMPARE(workspace.outputSink()->write(bytes), bytes.size());
+            QVERIFY(workspace.sealOutput());
+            final = workspace.validateAndPublish([](const QString&) { return true; });
+            if (!published)
+                final = workspace.retainedPublicationPath();
+            QVERIFY(!final.isEmpty());
+        }
+        const auto initial = store.load();
+        QVERIFY(initial.journal && initial.journal->records.size() == 1);
+        auto expected = initial.journal->records.front();
+        QCOMPARE(expected.stage,
+                 published ? DownloadOwnershipStage::Published : DownloadOwnershipStage::PublicationPrepared);
+        QVERIFY(expected.cleanup_complete);
+        expected.stage = DownloadOwnershipStage::Published;
+        std::atomic_int acknowledgements{0};
+        std::atomic_bool fail{fail_after_commit};
+        WindowsDownloadOwnershipStoreOptions options{.inject_fault = [&](WindowsPrivateDownloadFaultPoint point) {
+            if (point != WindowsPrivateDownloadFaultPoint::AfterCommit)
+                return false;
+            ++acknowledgements;
+            return fail.load();
+        }};
+        WindowsLocalMp3ValidatorConfig tools{QString::fromUtf8(RC_MUSIC_TEST_FFMPEG_PATH),
+                                             QString::fromUtf8(RC_MUSIC_TEST_FFPROBE_PATH)};
+        WindowsDownloadRecoveryValidation owner(journal, workspace_config, tools, options);
+        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
+        std::optional<DownloadRecoveryValidationResult> result;
+        QTRY_VERIFY(complete(owner, 1, result));
+        QCOMPARE(result->outcome, Outcome::Validated);
+        QVERIFY(!writable(final));
+        const auto journal_path = journal + "/download-ownership.json";
+        QByteArray changed_journal;
+        if (journal_change != 0) {
+            if (journal_change == 1)
+                changed_journal = "{\"schemaVersion\":999,\"owner\":\"rc-music-download-ownership\"}";
+            else {
+                auto changed = *initial.journal;
+                auto& hash = changed.records.front().output_sha256;
+                hash[0] = hash[0] == 'a' ? 'b' : 'a';
+                changed_journal = DownloadOwnershipJson::encode(changed);
+                QVERIFY(!changed_journal.isEmpty());
+            }
+            QFile changed{journal_path};
+            QVERIFY(changed.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QCOMPARE(changed.write(changed_journal), changed_journal.size());
+            changed.close();
+        }
+        QCOMPARE(owner.prepareImport(1), Command::Accepted);
+        result.reset();
+        QTRY_VERIFY(complete(owner, 1, result));
+        if (journal_change != 0) {
+            QCOMPARE(result->outcome, journal_change == 1 ? Outcome::HistoryFuture : Outcome::Conflict);
+            QVERIFY(result->trusted_mp3.empty());
+            QCOMPARE(acknowledgements.load(), 0);
+            QCOMPARE(read(journal_path), changed_journal);
+            QCOMPARE(read(final), bytes);
+            QVERIFY(writable(final));
+            owner.shutdown();
+            QTRY_VERIFY(owner.stopped());
+            return;
+        }
+        QCOMPARE(acknowledgements.load(), 1);
+        std::uint64_t operation = 1;
+        if (fail_after_commit) {
+            QCOMPARE(result->outcome, Outcome::PublicationUnconfirmed);
+            QVERIFY(result->trusted_mp3.empty());
+            QVERIFY(writable(final));
+            const auto readback = store.load();
+            QVERIFY(readback.journal && readback.journal->records.front() == expected);
+            QTest::qWait(25);
+            QCOMPARE(acknowledgements.load(), 1); // Never retry an ambiguous write automatically.
+            fail = false;
+            operation = 2;
+            QCOMPARE(owner.startValidation(operation, "job-1"), Command::Accepted);
+            result.reset();
+            QTRY_VERIFY(complete(owner, operation, result));
+            QCOMPARE(result->outcome, Outcome::Validated);
+            QCOMPARE(owner.prepareImport(operation), Command::Accepted);
+            result.reset();
+            QTRY_VERIFY(complete(owner, operation, result));
+            QCOMPARE(acknowledgements.load(), 2); // Readback alone did not authorize this handoff.
+        }
+        QCOMPARE(result->outcome, Outcome::ImportReady);
+        QCOMPARE(result->trusted_mp3, std::filesystem::path{final.toStdWString()});
+        QVERIFY(!writable(final));
+        const auto saved = store.load();
+        QVERIFY(saved.journal && saved.journal->records.front() == expected);
+        QCOMPARE(read(final), bytes);
+        QVERIFY(owner.release(operation));
+        result.reset();
+        QTRY_VERIFY(complete(owner, operation, result));
+        QCOMPARE(result->outcome, Outcome::Released);
+        QVERIFY(result->trusted_mp3.empty());
+        QVERIFY(writable(final));
+        owner.shutdown();
+        QTRY_VERIFY(owner.stopped());
+    }
     void defaultFactoryValidatesRealMediaAndRetainsPinsWithoutSavingPublication_data() {
         QTest::addColumn<bool>("published");
         QTest::newRow("published") << true;
@@ -501,20 +778,28 @@ class WindowsDownloadRecoveryValidationTests final : public QObject {
         WindowsLocalMp3ValidatorConfig tools{QString::fromUtf8(RC_MUSIC_TEST_FFMPEG_PATH),
                                              QString::fromUtf8(RC_MUSIC_TEST_FFPROBE_PATH)};
         WindowsDownloadRecoveryValidation owner(journal, workspace_config, tools);
-        QCOMPARE(owner.startValidation(1, "job-1"), Command::Accepted);
-        std::optional<DownloadRecoveryValidationResult> result;
-        QTRY_VERIFY(complete(owner, 1, result));
-        QCOMPARE(result->outcome, Outcome::Validated);
-        QVERIFY(!writable(final));
-        QCOMPARE(read(final), bytes);
-        QCOMPARE(read(journal + "/download-ownership.json"), journal_bytes);
-        QVERIFY(owner.release(1));
-        result.reset();
-        QTRY_VERIFY(complete(owner, 1, result));
-        QCOMPARE(result->outcome, Outcome::Released);
-        QVERIFY(writable(final));
-        QCOMPARE(read(final), bytes);
-        QCOMPARE(read(journal + "/download-ownership.json"), journal_bytes);
+        // Reuse one native owner across repeated real validator lifetimes. A
+        // prior Released completion must not leave stale task/slot/wake state.
+        for (std::uint64_t id = 1; id <= 4; ++id) {
+            QVERIFY(writable(final));
+            QCOMPARE(owner.startValidation(id, "job-1"), Command::Accepted);
+            std::optional<DownloadRecoveryValidationResult> result;
+            QTRY_VERIFY(complete(owner, id, result));
+            QCOMPARE(result->operation_id, id);
+            QCOMPARE(result->outcome, Outcome::Validated);
+            QVERIFY(result->trusted_mp3.empty());
+            QVERIFY(!writable(final));
+            QCOMPARE(read(final), bytes);
+            QCOMPARE(read(journal + "/download-ownership.json"), journal_bytes);
+            QVERIFY(owner.release(id));
+            result.reset();
+            QTRY_VERIFY(complete(owner, id, result));
+            QCOMPARE(result->operation_id, id);
+            QCOMPARE(result->outcome, Outcome::Released);
+            QVERIFY(writable(final));
+            QCOMPARE(read(final), bytes);
+            QCOMPARE(read(journal + "/download-ownership.json"), journal_bytes);
+        }
         owner.shutdown();
         QTRY_VERIFY(owner.stopped());
     }

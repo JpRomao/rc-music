@@ -72,6 +72,9 @@ class DownloadExecution {
 class DownloadImport {
   public:
     virtual ~DownloadImport() = default;
+    // Prompt, read-only capability of a healthy durable importer. Volatile and
+    // legacy implementations cannot authorize recovery handoffs by default.
+    [[nodiscard]] virtual bool supportsDurableRecovery() const { return false; }
     [[nodiscard]] virtual bool accept(const std::string& job_id, const std::filesystem::path& mp3_path) = 0;
     [[nodiscard]] virtual DownloadImportState begin(const std::string& job_id, const std::filesystem::path& mp3_path) {
         return accept(job_id, mp3_path) ? DownloadImportState::Committed : DownloadImportState::Failed;

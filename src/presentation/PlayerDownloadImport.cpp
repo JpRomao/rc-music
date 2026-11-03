@@ -122,6 +122,16 @@ PlayerDownloadImport::PlayerDownloadImport(PlayerPresenter& presenter, const Pla
 }
 PlayerDownloadImport::~PlayerDownloadImport() = default;
 
+bool PlayerDownloadImport::supportsDurableRecovery() const {
+    const auto& state = *impl_;
+    // Check the immutable owner thread before reading QPointer/presenter state.
+    if (QThread::currentThread() != state.owner_thread || state.persistence != PlayerDownloadImportPersistence::Session)
+        return false;
+    return state.presenter && state.presenter->thread() == state.owner_thread &&
+           state.presenter->download_import_persistence_ready_ && state.presenter->session_autosave_ != nullptr &&
+           !state.presenter->exiting_;
+}
+
 DownloadImportState PlayerDownloadImport::begin(const std::string& id, const std::filesystem::path& path) {
     auto& state = *impl_;
     if (state.persistence == PlayerDownloadImportPersistence::Volatile)

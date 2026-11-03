@@ -30,6 +30,7 @@ TestCase {
             "canReviewFiles": false,
             "canDiscardPartials": false,
             "canValidateMedia": false,
+            "canImportRecovered": false,
             "canReleaseValidation": false,
             "reviewText": "",
             "reviewBusy": false,
@@ -628,15 +629,16 @@ TestCase {
         compare(replacement.validatedIds.length, 0, "An old delegate cannot act on its replacement owner");
         compare(replacement.releasedIds.length, 0);
     }
-    function test_validationActionsWrapAndKeepTheSixControlFocusOrder() {
+    function test_validationActionsWrapAndKeepTheSevenControlFocusOrder() {
         addJob("all-actions", "interrupted", "Interrompido", true, true, false, 0);
         jobs.setProperty(0, "canReviewFiles", true);
         jobs.setProperty(0, "canDiscardPartials", true);
         jobs.setProperty(0, "canValidateMedia", true);
+        jobs.setProperty(0, "canImportRecovered", true);
         jobs.setProperty(0, "canReleaseValidation", true);
         openDownloads();
         const row = rowAt(0);
-        const controls = [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.releaseValidationControl];
+        const controls = [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl];
         for (let index = 0; index < controls.length; ++index) {
             verifyTarget(controls[index]);
             verify(controls[index].Accessible.name.length > 0);
@@ -657,6 +659,240 @@ TestCase {
         tryCompare(findChild(shell, "downloads-list"), "activeFocus", true);
         compare(downloads.validatedIds.length, 0);
         compare(downloads.releasedIds.length, 0);
+    }
+    function test_recoveredImportRequiresSeparateOneShotConsentWithoutAutoplay() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 1);
+        jobs.setProperty(0, "canImportRecovered", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        jobs.setProperty(0, "validationText", "MP3 validado; ainda não importado.");
+        openDownloads();
+        const row = rowAt(0);
+        const action = row.importRecoveredControl;
+        verifyTarget(action);
+        compare(action.text, "Adicionar à fila");
+        compare(action.Accessible.name, "Adicionar à fila");
+        compare(downloads.importedIds.length, 0);
+        mouseClick(action);
+        const popup = findChild(shell, "download-import-confirmation");
+        verify(popup);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const cancel = findChild(shell, "download-import-cancel");
+        const confirm = findChild(shell, "download-import-confirm");
+        verifyTarget(cancel);
+        verifyTarget(confirm);
+        tryCompare(cancel, "activeFocus", true);
+        compare(downloads.importedIds.length, 0, "Opening consent never imports the audio");
+        compare(downloads.releasedIds.length, 0);
+        const advice = findChild(shell, "download-import-advice");
+        verify(advice);
+        compare(advice.textFormat, Text.PlainText);
+        verify(advice.text.includes("fila"));
+        verify(advice.text.includes("reprodução"));
+        verify(!visibleText(popup.contentItem).includes("never-show-me"));
+        verify(!visibleText(popup.contentItem).includes("token=secret"));
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(downloads.importConsentToken, "");
+        compare(downloads.importedIds.length, 0);
+        compare(downloads.releasedIds.length, 0, "Cancelling consent keeps the validation retained");
+        tryCompare(action, "activeFocus", true);
+        mouseClick(action);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const token = downloads.importConsentToken;
+        verify(token.length > 0);
+        mouseClick(confirm);
+        compare(downloads.importedIds.length, 1);
+        compare(downloads.importedIds[0], "final-a");
+        compare(downloads.importConsentToken, "");
+        confirm.clicked();
+        verify(!downloads.confirmRecoveredImport("final-a", token));
+        compare(downloads.importedIds.length, 1, "A consumed token cannot import twice");
+        compare(downloads.validatedIds.length, 0);
+        compare(jobs.retriedIds.length, 0);
+        compare(jobs.cancelledIds.length, 0);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_recoveredImportConsentIsRevokedByLiveCapabilityIdentityTokenAndOwner() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 1);
+        jobs.setProperty(0, "canImportRecovered", true);
+        openDownloads();
+        const action = rowAt(0).importRecoveredControl;
+        verifyTarget(action);
+        mouseClick(action);
+        const popup = findChild(shell, "download-import-confirmation");
+        verify(popup);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const token = downloads.importConsentToken;
+        jobs.setProperty(0, "canImportRecovered", false);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(downloads.importConsentToken, "");
+        verify(!downloads.confirmRecoveredImport("final-a", token));
+        action.clicked();
+        compare(downloads.importedIds.length, 0);
+        jobs.setProperty(0, "canImportRecovered", true);
+        mouseClick(action);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        jobs.setProperty(0, "jobId", "replacement-row");
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(downloads.importConsentToken, "");
+        action.clicked();
+        compare(downloads.importedIds.length, 0);
+        jobs.setProperty(0, "jobId", "final-a");
+        mouseClick(action);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        downloads.cancelRecoveredImportConfirmation(downloads.importConsentJobId, downloads.importConsentToken);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        mouseClick(action);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const previous = downloads;
+        const previousToken = previous.importConsentToken;
+        const replacement = createTemporaryObject(bindingComponent, testCase);
+        verify(replacement);
+        downloads = replacement;
+        shell.downloads = replacement;
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        compare(previous.importConsentToken, "");
+        verify(!previous.confirmRecoveredImport("final-a", previousToken));
+        action.clicked();
+        compare(previous.importedIds.length, 0);
+        compare(replacement.importedIds.length, 0);
+    }
+    function test_recoveredImportIsUnavailableWithoutCapabilityAndDuringPersistence() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 1);
+        openDownloads();
+        const row = rowAt(0);
+        verify(row.importRecoveredControl !== undefined);
+        verify(!row.importRecoveredControl.visible || !row.importRecoveredControl.enabled);
+        row.importRecoveredControl.clicked();
+        compare(downloads.importRequests.length, 0);
+        jobs.setProperty(0, "state", "importing");
+        jobs.setProperty(0, "validationBusy", true);
+        jobs.setProperty(0, "validationText", "Aguardando a confirmação da fila; o arquivo continua protegido.");
+        jobs.setProperty(0, "canReleaseValidation", false);
+        row.importRecoveredControl.clicked();
+        row.releaseValidationControl.clicked();
+        compare(downloads.importRequests.length, 0);
+        compare(downloads.importedIds.length, 0);
+        compare(downloads.releasedIds.length, 0);
+        verify(visibleText(row).includes("Aguardando a confirmação da fila"));
+        verify(!visibleText(row).includes("Já importado"));
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_recoveredImportConsentDoesNotStackWithOtherDialogs() {
+        addJob("all-actions", "interrupted", "Interrompido", false, false, false, 1);
+        jobs.setProperty(0, "canImportRecovered", true);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        downloads.canCloseAfterFinalSaveFailure = true;
+        downloads.warningText = "Não foi possível salvar o histórico.";
+        const panel = openDownloads();
+        const row = rowAt(0);
+        mouseClick(row.importRecoveredControl);
+        const popup = findChild(shell, "download-import-confirmation");
+        verify(popup);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        panel.requestDiscardConsent("all-actions", row.discardControl);
+        panel.requestCloseWithoutSave();
+        verify(!findChild(shell, "downloads-discard-confirmation").visible);
+        verify(!findChild(shell, "downloads-exit-confirmation").visible);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        mouseClick(row.discardControl);
+        const discardPopup = findChild(shell, "downloads-discard-confirmation");
+        tryVerify(function () {
+            return discardPopup.opened;
+        });
+        row.importRecoveredControl.clicked();
+        verify(!popup.visible);
+        compare(downloads.importedIds.length, 0);
+    }
+    function test_recoveredImportConsentFitsMinimumWindowAndKeepsKeyboardFocus(data) {
+        driver.setSystemAppearance(data.dark, false);
+        driver.setHighContrast(data.contrast, false);
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 1);
+        jobs.setProperty(0, "canImportRecovered", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        openDownloads();
+        const row = rowAt(0);
+        const action = row.importRecoveredControl;
+        const release = row.releaseValidationControl;
+        verifyTarget(action);
+        verifyTarget(release);
+        action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(release, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(action, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        const popup = findChild(shell, "download-import-confirmation");
+        verify(popup);
+        tryVerify(function () {
+            return popup.opened;
+        });
+        const cancel = findChild(shell, "download-import-cancel");
+        const confirm = findChild(shell, "download-import-confirm");
+        tryCompare(cancel, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(confirm, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(cancel, "activeFocus", true);
+        verify(waitForPolish(shell));
+        verify(popup.x >= 0 && popup.y >= 0);
+        verify(popup.x + popup.width <= shell.width + 0.5);
+        verify(popup.y + popup.height <= shell.height + 0.5);
+        verifyTarget(cancel);
+        verifyTarget(confirm);
+        verify(!visibleText(popup.contentItem).includes("never-show-me"));
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !popup.visible;
+        });
+        tryCompare(action, "activeFocus", true);
+        compare(downloads.importedIds.length, 0);
+    }
+    function test_recoveredImportConsentFitsMinimumWindowAndKeepsKeyboardFocus_data() {
+        return [
+            {
+                "tag": "light",
+                "dark": false,
+                "contrast": false
+            },
+            {
+                "tag": "dark",
+                "dark": true,
+                "contrast": false
+            },
+            {
+                "tag": "high-contrast",
+                "dark": false,
+                "contrast": true
+            }
+        ];
     }
     function test_validationAtMinimumWindowKeepsControlsAndPlainStatusVisible(data) {
         driver.setSystemAppearance(data.dark, false);
@@ -763,6 +999,11 @@ TestCase {
             property var discardedIds: []
             property var validatedIds: []
             property var releasedIds: []
+            property var importedIds: []
+            property var importRequests: []
+            property string importConsentJobId: ""
+            property string importConsentToken: ""
+            property int importRevision: 0
             property string discardConsentJobId: ""
             property string discardConsentToken: ""
             property int discardRevision: 0
@@ -796,6 +1037,26 @@ TestCase {
             function releaseValidation(jobId) {
                 releasedIds = releasedIds.concat([jobId]);
                 return true;
+            }
+            function requestRecoveredImport(jobId) {
+                importRequests = importRequests.concat([jobId]);
+                importConsentJobId = jobId;
+                importConsentToken = String(++importRevision);
+                return true;
+            }
+            function confirmRecoveredImport(jobId, token) {
+                if (jobId !== importConsentJobId || token !== importConsentToken || token.length === 0)
+                    return false;
+                importConsentJobId = "";
+                importConsentToken = "";
+                importedIds = importedIds.concat([jobId]);
+                return true;
+            }
+            function cancelRecoveredImportConfirmation(jobId, token) {
+                if (jobId === importConsentJobId && token === importConsentToken) {
+                    importConsentJobId = "";
+                    importConsentToken = "";
+                }
             }
             function requestDiscardPartials(jobId) {
                 discardConsentJobId = jobId;

@@ -24,6 +24,16 @@ ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music\.ui\.d
 
 O ensaio inicial passou **4/4 casos Qt** (duas linhas mais init/cleanup), sem skips. Binding tem regressão separada para retirar a aprovação antes do shutdown: uma falha no checkpoint final pode reverter a intenção de saída, mas não restaurar uma prova já liberada nem projetar sucesso tardio. Resultados finais e limites ficam no [checkpoint](development-plan.md#17-próxima-sequência-segura); o teste offscreen não comprova integração instalada, Brave, áudio audível, acessibilidade nativa ou release.
 
+### Importação recuperada com sessão real
+
+O mesmo alvo de composição agora preserva as duas linhas anteriores e acrescenta quatro Published/Prepared × Saved/falha real AfterPrimaryCommit. Usa `PlayerDownloadImport` em Session e `SingleWorkerSessionWriter`/`QtJsonWindowsSessionStore` reais. O store escreve o JSON em TEMP privado e retém o ACK por um gate no próprio worker; a UI continua respondendo e não acessa o filesystem. Enquanto isso, fila/recibo existem uma única vez, mas o job permanece Interrupted, release é recusado e o arquivo segue protegido.
+
+Na saída durante Pending, o worker nativo continua vivo até a confirmação da sessão. Na falha póscommit, bytes legíveis não viram Imported: novo consentimento, preparação nativa e retry Session confirmados concluem sem outro `rowsInserted`. O restart com restauração desligada reconhece o recibo em histórico saudável, sem nova importação, metadata ou reprodução. As quatro linhas e as duas anteriores passaram: **8/8 casos Qt**, incluindo init/cleanup.
+
+O primeiro ensaio teve falha no segundo ciclo de validação da linha anterior e timeout durante desmontagem. O helper de mouse passou a usar `QQuickTest::qWaitForPolish`, comprovar exatamente um `clicked()` e preservar diagnóstico de hit miss; fallback abre o gate e observa os workers parados antes da destruição. Não houve troca para teclado, aumento de timeout ou retirada de assertions. O worker real separado também passou quatro ciclos consecutivos por Published/Prepared; isso não prova causa exclusiva de layout para a falha inicial.
+
+Quick passou de **258 passagens/8 falhas** para **266/266**. Consentimento exige token atual e separado de descarte/saída, abre com Cancelar focado, revoga em owner/job/capacidade/token obsoletos e mantém navegação/layout das sete ações em 720×520. Binding passou **80/80**, incluindo a guarda final de fechamento após consulta reentrante de capacidade. Esses checks não habilitam serviços de produção, extensão/Brave ou navegação interna; os demais gates permanecem no [plano](development-plan.md#17-próxima-sequência-segura).
+
 ## Atalhos principais e modos de fila
 
 Pedido funcional confirmado em 2026-09-06 (`FR-037`/`FR-019`): Espaço controla reprodução inclusive depois de clicar em Mudo ou outro botão; setas usam saltos configurados/volume e Shift+setas navega. F1 alterna modo aleatório persistido e F2 repetição da fila, com estado textual e acessível. Editor, menus e modais mantêm suas teclas; Enter ativa controles e Ctrl+↑/↓ seleciona linhas. O [manual](user-guide.md) contém o contrato completo, incluindo seguir a ordem exibida ao desligar aleatório.
