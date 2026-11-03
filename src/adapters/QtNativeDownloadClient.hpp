@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adapters/NativeDownloadPeerCheck.hpp"
 #include "adapters/NativeHostLaunch.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
 
@@ -13,6 +14,7 @@ struct QtNativeDownloadClientOptions final {
     // Prompt clock observation; never wait or perform I/O. Synchronous object
     // destruction from this callback is outside the borrowed lifetime contract.
     std::function<qint64()> now_ms{};
+    NativeDownloadPeerCheckFactory peer_check_factory{};
 };
 
 // One prompt native connection attempt/request, with no busy wait, retry or app

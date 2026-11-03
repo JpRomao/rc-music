@@ -1,8 +1,14 @@
 #pragma once
+#include "adapters/NativeDownloadPeerImages.hpp"
 #include "adapters/NativeHostLaunch.hpp"
 
 namespace music_player::m0 {
 [[nodiscard]] inline NativeHostConfiguration nativeHostBuildConfiguration() {
-    return {QStringLiteral("@native_config_origin@"), QStringLiteral("@native_config_endpoint@")};
+    const auto origin = QStringLiteral("@native_config_origin@");
+    const auto endpoint = QStringLiteral("@native_config_endpoint@");
+    if (origin.isEmpty() && endpoint.isEmpty())
+        return {};
+    return {origin, endpoint, nativeDownloadSiblingImages({@native_config_owner_images@}),
+            nativeDownloadSiblingImages({@native_config_host_images@})};
 }
 } // namespace music_player::m0

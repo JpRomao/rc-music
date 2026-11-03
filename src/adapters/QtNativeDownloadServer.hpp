@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adapters/NativeDownloadPeerCheck.hpp"
 #include "adapters/NativeHostLaunch.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
 
@@ -16,6 +17,9 @@ struct QtNativeDownloadServerOptions final {
     std::function<qint64()> now_ms{};
     bool automatic_polling{true};
     qsizetype max_active_connections{8};
+    // Trusted prompt construction only; production defaults to the concrete
+    // Windows image/user worker. Never supplied by the IPC peer or QML.
+    NativeDownloadPeerCheckFactory peer_check_factory{};
 };
 
 // A primary app's dedicated optional ingress. Configuration is copied/trusted;

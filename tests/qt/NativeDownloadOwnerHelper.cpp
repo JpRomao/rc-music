@@ -1,3 +1,4 @@
+#include "adapters/NativeDownloadPeerImages.hpp"
 #include "adapters/QtNativeDownloadServer.hpp"
 #include "adapters/WindowsNativeHostWatchdog.hpp"
 
@@ -54,8 +55,11 @@ int main(int argc, char* argv[]) {
     if (arguments.at(3) == QStringLiteral("invalid"))
         origin = QStringLiteral("https://invalid.example.test/");
     Submission submission;
-    auto server =
-        std::make_unique<QtNativeDownloadServer>(NativeHostConfiguration{origin, arguments.at(1)}, submission);
+    auto server = std::make_unique<QtNativeDownloadServer>(
+        NativeHostConfiguration{
+            origin, arguments.at(1), nativeDownloadSiblingImages({QStringLiteral("rc_music_native_owner_helper.exe")}),
+            nativeDownloadSiblingImages({QStringLiteral("rc_music_NativeDownloadOwnerProcess_tests.exe")})},
+        submission);
     const auto started = server->start();
     if (!(started ? marker("READY\n", 6) : marker("REFUSED\n", 8)))
         return 2;

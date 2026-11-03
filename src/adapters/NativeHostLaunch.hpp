@@ -7,11 +7,16 @@
 
 namespace music_player::m0 {
 
-// Trusted composition/build profile only. Neither field comes from caller
+// Trusted composition/build profile only. No field comes from caller
 // arguments, the environment, a page, or a Native Messaging/IPC message.
 struct NativeHostConfiguration final {
     QString allowed_origin{};
     QString endpoint_name{};
+    // Exact absolute image paths for the two IPC roles, supplied only by the
+    // trusted composition. They filter the OS-reported image/user; they do not
+    // attest mapped code, publisher integrity or browser launch provenance.
+    QStringList expected_owner_images{};
+    QStringList expected_host_images{};
 };
 
 enum class NativeHostLaunchError { None, Disabled, InvalidConfiguration, InvalidArguments, UnauthorizedOrigin };

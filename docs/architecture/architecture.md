@@ -2,7 +2,7 @@
 
 **Estado:** arquitetura vigente da stack aceita; núcleo e composição gráfica promovidos, cobertura restante e gates M1 pendentes
 **Stack do produto:** C++20 + Qt 6 Quick/QML, Qt Multimedia/FFmpeg e TagLib
-**Última revisão:** 2026-10-02
+**Última revisão:** 2026-11-03
 
 O [ADR-0005](decisions/0005-windows-product-stack.md) registra a escolha explícita do mantenedor, sem exigir A/B antes do desenvolvimento Windows. As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities permanecem independentes do toolkit. O mapeamento Qt passa a ser a direção do produto; Tauri permanece somente como alternativa histórica, não dependência a implementar. Aceitação técnica não encerra migração, benchmarks, acessibilidade nativa, Linux ou distribuição.
 
@@ -676,6 +676,8 @@ A sanitização de metadata pertence ao domínio C++ puro em `MetadataSanitizati
 O adapter aplica o limite por campo aos bytes UTF-8 originais antes da policy, conserva ausência/fallback e publica somente diagnósticos tipados `TextSanitized`/`InvalidValue` associados a `MetadataField`, que agora também distingue `TrackNumber` e `Year`. O orçamento agregado contabiliza os textos efetivamente retidos após sanitização e quatro bytes por número válido; o máximo integrado dos cinco campos é 48 KiB + 8 bytes, ainda abaixo de 256 KiB. Conversão do formato TagLib e escolha dos valores brutos permanecem no adapter, incluindo fallback numérico por campo entre subtags e aliases e a recuperação da representação binária unsigned de `trkn` MP4. A apresentação traduz códigos, não strings livres do arquivo. Os checks automatizados de core, adapter, apresentação, integração real, suíte combinada e composição de produção estão consolidados no registro central. Limites de retenção próprios não limitam alocações internas do parser de terceiros, e este recorte não altera schemas, fila, playback, corpus canônico ou decisão de stack.
 
 ## 15. Segurança e privacidade
+
+O [filtro de processos do canal Windows](../browser-extension.md#filtro-de-imagem-dos-processos) é um adapter opcional de transporte. Perfis de paths por papel vêm da composição confiável e, no build, de siblings fixos da própria imagem. Uma verificação rápida delega PID/TokenUser/imagem a worker limitado; o transporte mantém o reader e envio desativados até Eligible. Pending usa os mesmos slots/deadline, saída aguarda retirement físico, e callbacks não podem podar ou observar estado parcialmente drenado. O processo é retido por HANDLE até shutdown; o pipe duplicado fecha antes do resultado para preservar EOF. O núcleo de domínio não recebe esses tipos, paths ou handles. Elegibilidade observada não atesta código/publicador/Brave e não habilita o workflow remoto de produção; identidade/integridade instaladas, namespace e sandbox continuam gates separados.
 
 Os princípios de input não confiável, privilégio mínimo e ausência de rede são invariantes. Controles específicos complementam, mas não substituem, as regras comuns.
 

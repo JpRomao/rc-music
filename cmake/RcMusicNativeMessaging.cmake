@@ -5,6 +5,8 @@ endif()
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Network)
 add_library(rc_music_native_messaging STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeHostLaunch.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeDownloadPeerImages.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeDownloadPeerCheck.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadServer.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadClient.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeDownloadLease.cpp"
@@ -42,6 +44,8 @@ if((RC_MUSIC_NATIVE_MAIN_ORIGIN STREQUAL "" AND NOT RC_MUSIC_NATIVE_ENDPOINT STR
 endif()
 set(native_config_origin "${RC_MUSIC_NATIVE_MAIN_ORIGIN}")
 set(native_config_endpoint "${RC_MUSIC_NATIVE_ENDPOINT}")
+set(native_config_owner_images "QStringLiteral(\"RCMusic.exe\")")
+set(native_config_host_images "QStringLiteral(\"rc_music_native_host.exe\")")
 configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/native-host/NativeHostBuildConfiguration.hpp" @ONLY)
 add_executable(rc_music_native_host "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
@@ -54,7 +58,7 @@ if(BUILD_TESTING)
         "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
         -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/NativeMessagingBuildBoundaryTests.cmake")
     set_tests_properties(rc_music.native.build-boundary PROPERTIES LABELS "native;boundary" TIMEOUT 15)
-    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep QtNativeDownloadTransport WindowsNativeMessagingIo WindowsNativeDownloadLease WindowsNativeDownloadPipeReservation)
+    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep NativeDownloadPeerImages QtNativeDownloadTransport QtNativeDownloadPeerReentrancy WindowsNativeMessagingIo WindowsNativeDownloadLease WindowsNativeDownloadPipeReservation WindowsNativeDownloadPeerCheck)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
@@ -73,10 +77,16 @@ if(BUILD_TESTING)
     string(SUBSTRING "${native_test_identity}" 0 16 native_test_identity)
     set(native_config_origin "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/")
     set(native_config_endpoint "rc-music-native-test-${native_test_identity}")
+    set(native_config_owner_images "QStringLiteral(\"rc_music_NativeHostProcess_tests.exe\"), QStringLiteral(\"rc_music_test_shell.exe\")")
+    set(native_config_host_images "QStringLiteral(\"rc_music_native_host_test.exe\")")
     set(RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-native-host")
     configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
         "${RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY}/NativeHostBuildConfiguration.hpp" @ONLY)
     add_executable(rc_music_native_host_test "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
+    # Synthetic host and its allowed owners share a payload directory just as
+    # the future installed pair will. Never authorize peers through CWD or ../.
+    set_target_properties(rc_music_native_host_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/process")
     target_include_directories(rc_music_native_host_test PRIVATE "${RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY}")
     target_link_libraries(rc_music_native_host_test PRIVATE rc_music_native_messaging)
     rc_music_configure_cpp(rc_music_native_host_test)
@@ -84,6 +94,8 @@ if(BUILD_TESTING)
     # production identity; configured builds still prove the disabled contract.
     set(native_config_origin "")
     set(native_config_endpoint "")
+    set(native_config_owner_images "")
+    set(native_config_host_images "")
     configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
         "${CMAKE_CURRENT_BINARY_DIR}/test-native-host-disabled/NativeHostBuildConfiguration.hpp" @ONLY)
     add_executable(rc_music_native_host_disabled_test "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
@@ -94,6 +106,8 @@ if(BUILD_TESTING)
     target_link_libraries(rc_music_native_watchdog_helper PRIVATE rc_music_native_messaging)
     rc_music_configure_cpp(rc_music_native_watchdog_helper)
     add_executable(rc_music_NativeHostProcess_tests "${RC_MUSIC_SOURCE_ROOT}/tests/qt/NativeHostProcessTests.cpp")
+    set_target_properties(rc_music_NativeHostProcess_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/process")
     target_include_directories(rc_music_NativeHostProcess_tests PRIVATE "${RC_MUSIC_NATIVE_TEST_CONFIG_DIRECTORY}")
     target_link_libraries(rc_music_NativeHostProcess_tests PRIVATE rc_music_native_messaging Qt6::Test)
     set_target_properties(rc_music_NativeHostProcess_tests PROPERTIES AUTOMOC ON)
@@ -119,6 +133,22 @@ if(BUILD_TESTING)
     add_test(NAME rc_music.native.owner-process COMMAND rc_music_NativeDownloadOwnerProcess_tests
         "$<TARGET_FILE:rc_music_native_owner_helper>")
     set_tests_properties(rc_music.native.owner-process PROPERTIES
+        LABELS "windows;native;qt;process;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+    add_executable(rc_music_native_peer_helper "${RC_MUSIC_SOURCE_ROOT}/tests/qt/NativeDownloadPeerHelper.cpp")
+    target_link_libraries(rc_music_native_peer_helper PRIVATE rc_music_native_messaging)
+    rc_music_configure_cpp(rc_music_native_peer_helper)
+    add_executable(rc_music_NativeDownloadPeerProcess_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/NativeDownloadPeerProcessTests.cpp")
+    target_link_libraries(rc_music_NativeDownloadPeerProcess_tests PRIVATE rc_music_native_messaging Qt6::Test)
+    set_target_properties(rc_music_NativeDownloadPeerProcess_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_NativeDownloadPeerProcess_tests)
+    add_dependencies(rc_music_NativeDownloadPeerProcess_tests rc_music_native_peer_helper)
+    add_test(NAME rc_music.native.peer-process COMMAND rc_music_NativeDownloadPeerProcess_tests
+        "$<TARGET_FILE:rc_music_native_peer_helper>")
+    set_tests_properties(rc_music.native.peer-process PROPERTIES
         LABELS "windows;native;qt;process;FR-051;FR-053" TIMEOUT 60
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")

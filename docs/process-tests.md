@@ -110,6 +110,8 @@ Fechamento do código final: build Release ON, `all_qmllint` e CTest **472/472**
 
 ## Comandos
 
+O [filtro de processos de 2026-11-03](browser-extension.md#filtro-de-imagem-dos-processos) acrescenta `rc_music.native.peer-process`, com helper próprio e seis jornadas: host errado, owner errado, par permitido Pending→completion→ACK, cópia idêntica em outro diretório, perfil ausente e peer encerrado. Red **4 passagens/4 falhas**, Green **8/8 Qt Test**, incluindo init/cleanup. Helpers só recebem inputs fechados do driver de teste; não expõem overrides no host de produção. A composição host → Main/painel/stores foi revalidada **3/3** com os executáveis sintéticos co-localizados, preservando siblings exatos. Controles de reentrada e inspeção do pipe têm suites separadas; os resultados históricos abaixo não foram repetidos globalmente.
+
 Os [comandos existentes](development-commands.md) incluem os novos alvos no build ON, sem downloads ou novo wrapper:
 
 ```powershell

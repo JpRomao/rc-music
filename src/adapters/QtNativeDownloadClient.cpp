@@ -3,10 +3,13 @@
 #include "adapters/NativeDownloadCodec.hpp"
 #include "adapters/NativeDownloadIpcProtocol.hpp"
 #include "adapters/NativeMessageFrame.hpp"
+#include "adapters/WindowsNativeDownloadPeerCheck.hpp"
 
 #include <QElapsedTimer>
 #include <QLocalSocket>
+#include <QScopeGuard>
 #include <QThread>
+#include <QTimer>
 #include <QtEndian>
 #include <qt_windows.h>
 
@@ -20,12 +23,19 @@ constexpr quint64 exchange_timeout_ms = 5'000;
 constexpr qsizetype maximum_response_bytes = native_download_ipc::response_max_payload_bytes + 4 + 1;
 } // namespace
 struct QtNativeDownloadClient::Impl {
-    enum class State { Idle, Active, Completed, Uncertain, Closed };
+    enum class State { Idle, CheckingPeer, Active, Completed, Uncertain, Closed };
     QtNativeDownloadClient& owner;
     NativeHostConfiguration configuration;
     QtNativeDownloadClientOptions options;
     QLocalSocket socket;
     QElapsedTimer elapsed;
+    QTimer peer_timer;
+    std::unique_ptr<NativeDownloadPeerCheck> peer;
+    bool checking_peer{false};
+    bool beginning{false};
+    bool polling{false};
+    bool shutting_down{false};
+    qsizetype callback_depth{0};
     State state{State::Idle};
     bool used{false};
     bool sent{false};
@@ -42,6 +52,8 @@ struct QtNativeDownloadClient::Impl {
         : owner(object), configuration(std::move(config)), options(std::move(settings)) {
         elapsed.start();
         socket.setReadBufferSize(maximum_response_bytes);
+        peer_timer.setInterval(1);
+        QObject::connect(&peer_timer, &QTimer::timeout, &owner, [this] { checkPeer(); });
         QObject::connect(&socket, &QLocalSocket::readyRead, &owner, [this] { readAvailable(); });
         QObject::connect(&socket, &QLocalSocket::disconnected, &owner, [this] { finish(); });
         QObject::connect(&socket, &QLocalSocket::errorOccurred, &owner,
@@ -51,6 +63,8 @@ struct QtNativeDownloadClient::Impl {
                          });
     }
     std::optional<qint64> now() {
+        ++callback_depth;
+        const auto release = qScopeGuard([&] { --callback_depth; });
         try {
             const auto clock = options.now_ms;
             const auto current = clock ? clock() : elapsed.elapsed();
@@ -65,7 +79,7 @@ struct QtNativeDownloadClient::Impl {
     }
     bool timing() {
         const auto current = now();
-        if (!current || state != State::Active)
+        if (!current || (state != State::Active && state != State::CheckingPeer))
             return false;
         if (*current < started_ms ||
             static_cast<quint64>(*current) - static_cast<quint64>(started_ms) >= exchange_timeout_ms) {
@@ -75,16 +89,49 @@ struct QtNativeDownloadClient::Impl {
         return true;
     }
     void fail() {
-        if (state != State::Active)
+        if (state != State::Active && state != State::CheckingPeer)
             return;
+        ++callback_depth;
+        const auto release = qScopeGuard([&] { --callback_depth; });
         state = sent ? State::Uncertain : State::Completed;
         result = {};
+        peer_timer.stop();
+        if (peer)
+            peer->shutdown();
         socket.abort();
         request_frame.clear();
         response.clear();
     }
+    void checkPeer() {
+        if (state != State::CheckingPeer || checking_peer || beginning)
+            return;
+        checking_peer = true;
+        const auto release = qScopeGuard([&] { checking_peer = false; });
+        if (!timing() || state != State::CheckingPeer)
+            return;
+        try {
+            ++callback_depth;
+            const auto observation = qScopeGuard([&] { --callback_depth; });
+            const auto decision = peer->poll();
+            if (state != State::CheckingPeer)
+                return;
+            if (decision == NativeDownloadPeerState::Eligible) {
+                peer_timer.stop();
+                state = State::Active;
+                if (!socket.setSocketDescriptor(socket.socketDescriptor(), QLocalSocket::ConnectedState,
+                                                QIODevice::ReadWrite))
+                    fail();
+                else
+                    writeRequest();
+            } else if (decision != NativeDownloadPeerState::Pending) {
+                fail();
+            }
+        } catch (...) {
+            fail();
+        }
+    }
     void writeRequest() {
-        if (!timing())
+        if (state != State::Active || !timing() || state != State::Active)
             return;
         // A partial/error write may already have transferred a request. Publish
         // uncertainty before entering the socket; never retransmit its bytes.
@@ -94,7 +141,7 @@ struct QtNativeDownloadClient::Impl {
         request_frame.clear();
     }
     void readAvailable() {
-        if (!timing())
+        if (state != State::Active || !timing() || state != State::Active)
             return;
         const auto remaining = maximum_response_bytes - response.size();
         if (remaining <= 0) {
@@ -140,8 +187,11 @@ QtNativeDownloadClient::~QtNativeDownloadClient() { shutdown(); }
 DownloadAdmissionResult QtNativeDownloadClient::begin(const DownloadRequest& request) {
     if (QThread::currentThread() != thread() || impl_->used || impl_->state != Impl::State::Idle)
         return {};
+    impl_->beginning = true;
+    const auto release = qScopeGuard([&] { impl_->beginning = false; });
     impl_->used = true;
-    if (!isValidNativeHostConfiguration(impl_->configuration))
+    if (!isValidNativeHostConfiguration(impl_->configuration) ||
+        !validNativePeerImages(impl_->configuration.expected_owner_images))
         return {};
     const auto payload = encodeNativeDownloadRequest(request);
     if (payload.isEmpty())
@@ -150,9 +200,9 @@ DownloadAdmissionResult QtNativeDownloadClient::begin(const DownloadRequest& req
     impl_->item_count = request.items.size();
     impl_->request_frame =
         native_download_ipc::preamble(impl_->configuration.allowed_origin) + encodeNativeMessageFrame(payload);
-    impl_->state = Impl::State::Active;
+    impl_->state = Impl::State::CheckingPeer;
     const auto current = impl_->now();
-    if (!current || impl_->state != Impl::State::Active)
+    if (!current || impl_->state != Impl::State::CheckingPeer)
         return {};
     impl_->started_ms = *current;
     // Qt's Windows connectToServer waits synchronously for up to five seconds
@@ -163,21 +213,41 @@ DownloadAdmissionResult QtNativeDownloadClient::begin(const DownloadRequest& req
                                   FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS, nullptr);
     if (pipe == INVALID_HANDLE_VALUE) {
         impl_->fail();
-    } else if (!impl_->socket.setSocketDescriptor(reinterpret_cast<qintptr>(pipe))) {
+    } else if (!impl_->socket.setSocketDescriptor(reinterpret_cast<qintptr>(pipe), QLocalSocket::ConnectedState,
+                                                  QIODevice::WriteOnly)) {
         CloseHandle(pipe);
         impl_->fail();
     } else {
-        // Adopting a descriptor starts Qt's bounded asynchronous reader but does
-        // not emit connected(). Ownership is now exclusively the socket's.
-        impl_->writeRequest();
+        // WriteOnly adopts ownership without starting the Windows Qt reader.
+        // Neither the preamble nor request is written before the worker decision.
+        try {
+            const auto factory = impl_->options.peer_check_factory;
+            impl_->peer = factory ? factory() : std::make_unique<WindowsNativeDownloadPeerCheck>();
+            if (impl_->state != Impl::State::CheckingPeer || !impl_->peer ||
+                !impl_->peer->begin(impl_->socket.socketDescriptor(), NativeDownloadPeerSide::Server,
+                                    impl_->configuration.expected_owner_images)) {
+                if (impl_->peer)
+                    impl_->peer->shutdown();
+                impl_->fail();
+            } else if (impl_->state == Impl::State::CheckingPeer) {
+                impl_->peer_timer.start();
+            }
+        } catch (...) {
+            impl_->fail();
+        }
     }
-    if (impl_->state == Impl::State::Completed)
+    if (impl_->state == Impl::State::Completed || impl_->state == Impl::State::Closed)
         return {.result = impl_->result};
     return {.state = DownloadAdmissionState::Pending};
 }
 std::optional<DownloadSubmissionResult> QtNativeDownloadClient::poll(const std::string_view id) {
-    if (QThread::currentThread() != thread() || id != impl_->request_id)
+    if (QThread::currentThread() != thread() || id != impl_->request_id || impl_->beginning || impl_->polling ||
+        impl_->callback_depth != 0)
         return std::nullopt;
+    impl_->polling = true;
+    const auto release = qScopeGuard([&] { impl_->polling = false; });
+    if (impl_->state == Impl::State::CheckingPeer)
+        impl_->checkPeer();
     if (impl_->state == Impl::State::Active)
         static_cast<void>(impl_->timing());
     if (impl_->state == Impl::State::Uncertain)
@@ -189,12 +259,32 @@ std::optional<DownloadSubmissionResult> QtNativeDownloadClient::poll(const std::
 void QtNativeDownloadClient::shutdown() {
     if (QThread::currentThread() != thread())
         return;
+    if (impl_->shutting_down)
+        return;
+    impl_->shutting_down = true;
+    ++impl_->callback_depth;
+    const auto release = qScopeGuard([&] {
+        --impl_->callback_depth;
+        impl_->shutting_down = false;
+    });
     impl_->state = Impl::State::Closed;
+    impl_->peer_timer.stop();
+    if (impl_->peer)
+        impl_->peer->shutdown();
     impl_->socket.abort();
     impl_->request_frame.clear();
     impl_->response.clear();
 }
 bool QtNativeDownloadClient::stopped() const {
-    return impl_->state == Impl::State::Closed && impl_->socket.state() == QLocalSocket::UnconnectedState;
+    if (impl_->state != Impl::State::Closed || impl_->checking_peer || impl_->beginning || impl_->polling ||
+        impl_->callback_depth != 0 || impl_->socket.state() != QLocalSocket::UnconnectedState)
+        return false;
+    ++impl_->callback_depth;
+    const auto release = qScopeGuard([&] { --impl_->callback_depth; });
+    try {
+        return !impl_->peer || impl_->peer->stopped();
+    } catch (...) {
+        return false; // Unknown retirement never proves physical shutdown.
+    }
 }
 } // namespace music_player::m0

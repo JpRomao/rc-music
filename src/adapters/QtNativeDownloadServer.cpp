@@ -3,6 +3,7 @@
 #include "adapters/NativeDownloadIpcProtocol.hpp"
 #include "adapters/NativeDownloadSession.hpp"
 #include "adapters/WindowsNativeDownloadLease.hpp"
+#include "adapters/WindowsNativeDownloadPeerCheck.hpp"
 #include "adapters/WindowsNativeDownloadPipeReservation.hpp"
 
 #include <QElapsedTimer>
@@ -13,6 +14,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -32,7 +34,10 @@ class BoundedServer final : public QLocalServer {
     void incomingConnection(const quintptr descriptor) override {
         auto* socket = new QLocalSocket(this);
         socket->setReadBufferSize(pending_read_buffer_bytes);
-        if (!socket->setSocketDescriptor(static_cast<qintptr>(descriptor))) {
+        // In the pinned Windows Qt implementation, WriteOnly adopts the HANDLE
+        // without starting the reader. No writes are exposed before eligibility.
+        if (!socket->setSocketDescriptor(static_cast<qintptr>(descriptor), QLocalSocket::ConnectedState,
+                                         QIODevice::WriteOnly)) {
             delete socket;
             return;
         }
@@ -52,11 +57,15 @@ struct QtNativeDownloadServer::Impl {
     WindowsNativeDownloadPipeReservation pipe_reservation;
     BoundedServer server;
     QTimer timer;
+    QTimer peer_timer;
     QElapsedTimer elapsed;
     qint64 last_now{0};
     bool started{false};
     bool closing{false};
     bool polling{false};
+    bool checking_peers{false};
+    bool pruning{false};
+    bool shutting_down{false};
     bool admitting{false};
     bool prune_scheduled{false};
     qsizetype callback_depth{0};
@@ -97,8 +106,51 @@ struct QtNativeDownloadServer::Impl {
             connect(socket_, &QLocalSocket::disconnected, this, [this] { close(); });
             connect(socket_, &QLocalSocket::errorOccurred, this, [this](QLocalSocket::LocalSocketError) { close(); });
         }
+        void beginPeerCheck() {
+            try {
+                const auto factory = owner_.options.peer_check_factory;
+                peer_ = factory ? factory() : std::make_unique<WindowsNativeDownloadPeerCheck>();
+                if (closed_ || owner_.closing || !peer_ ||
+                    !peer_->begin(socket_->socketDescriptor(), NativeDownloadPeerSide::Client,
+                                  owner_.configuration.expected_host_images)) {
+                    if (peer_)
+                        peer_->shutdown();
+                    close();
+                }
+            } catch (...) {
+                close();
+            }
+            owner_.peer_timer.start();
+        }
+        void checkPeer(const qint64 now) {
+            if (closed_ || peer_ready_)
+                return;
+            if (owner_.closing || expired(started_ms_, now)) {
+                close();
+                return;
+            }
+            try {
+                const auto decision = peer_->poll();
+                if (closed_ || owner_.closing)
+                    return;
+                if (decision == NativeDownloadPeerState::Eligible) {
+                    peer_ready_ = true;
+                    // Re-adopt the same owned HANDLE only after the check. Qt
+                    // starts its first asynchronous read in this transition.
+                    if (!socket_->setSocketDescriptor(socket_->socketDescriptor(), QLocalSocket::ConnectedState,
+                                                      QIODevice::ReadWrite))
+                        close();
+                    else
+                        consume();
+                } else if (decision != NativeDownloadPeerState::Pending) {
+                    close();
+                }
+            } catch (...) {
+                close();
+            }
+        }
         void consume() {
-            if (closed_)
+            if (closed_ || !peer_ready_)
                 return;
             ++owner_.callback_depth;
             const auto release = qScopeGuard([&] {
@@ -144,6 +196,10 @@ struct QtNativeDownloadServer::Impl {
                 return;
             ++owner_.callback_depth;
             const auto release = qScopeGuard([&] { --owner_.callback_depth; });
+            if (!peer_ready_) {
+                checkPeer(now);
+                return;
+            }
             if (responding_) {
                 if (expired(response_started_ms_, now))
                     close();
@@ -157,11 +213,27 @@ struct QtNativeDownloadServer::Impl {
         void close() {
             if (closed_)
                 return;
+            ++owner_.callback_depth;
+            const auto release = qScopeGuard([&] { --owner_.callback_depth; });
             closed_ = true;
+            if (peer_)
+                peer_->shutdown();
             socket_->abort();
+            owner_.peer_timer.start();
             owner_.schedulePrune();
         }
         bool closed() const { return closed_; }
+        void observeDrain() {
+            if (!closed_ || drain_ready_)
+                return;
+            try {
+                drain_ready_ = !peer_ || peer_->stopped();
+            } catch (...) {
+                // Unknown retirement keeps the slot and owner reservation.
+            }
+        }
+        bool drained() const { return closed_ && drain_ready_; }
+        bool needsPeerWork() const { return closed_ ? !drained() : !peer_ready_; }
 
       private:
         void handle(const NativeSessionResult& result, const qint64 now) {
@@ -195,6 +267,9 @@ struct QtNativeDownloadServer::Impl {
         qint64 response_started_ms_{0};
         QByteArray preamble_;
         std::unique_ptr<NativeDownloadSession> session_;
+        std::unique_ptr<NativeDownloadPeerCheck> peer_;
+        bool peer_ready_{false};
+        bool drain_ready_{false};
         bool responding_{false};
         bool closed_{false};
     };
@@ -205,12 +280,14 @@ struct QtNativeDownloadServer::Impl {
         : owner(object), configuration(std::move(config)), submission(port), options(std::move(settings)), gate(*this) {
         elapsed.start();
         timer.setInterval(10);
+        peer_timer.setInterval(1);
         connections.reserve(8);
         server.setSocketOptions(QLocalServer::UserAccessOption);
         server.setListenBacklogSize(8);
         server.setMaxPendingConnections(8);
         QObject::connect(&server, &QLocalServer::newConnection, &owner, [this] { accept(); });
         QObject::connect(&timer, &QTimer::timeout, &owner, &QtNativeDownloadServer::poll);
+        QObject::connect(&peer_timer, &QTimer::timeout, &owner, [this] { pollPeers(); });
     }
     std::optional<qint64> now() {
         try {
@@ -246,8 +323,31 @@ struct QtNativeDownloadServer::Impl {
             auto connection = std::make_unique<Connection>(*this, socket, *current);
             auto* const pointer = connection.get();
             connections.push_back(std::move(connection));
-            pointer->consume();
+            pointer->beginPeerCheck();
         }
+    }
+    void pollPeers() {
+        if (callback_depth != 0 || polling || checking_peers)
+            return;
+        checking_peers = true;
+        ++callback_depth;
+        const auto release = qScopeGuard([&] {
+            --callback_depth;
+            checking_peers = false;
+            prune();
+        });
+        if (closing)
+            return; // prune below still observes cancelled worker retirement.
+        const auto pending = std::any_of(connections.begin(), connections.end(),
+                                         [](const auto& item) { return !item->closed() && item->needsPeerWork(); });
+        if (!pending)
+            return;
+        const auto current = now();
+        if (!current || closing)
+            return;
+        const auto count = connections.size();
+        for (std::size_t i = 0; i < count; ++i)
+            connections[i]->checkPeer(*current);
     }
     void schedulePrune() {
         if (prune_scheduled)
@@ -262,18 +362,47 @@ struct QtNativeDownloadServer::Impl {
             Qt::QueuedConnection);
     }
     void prune() {
-        if (callback_depth != 0 || polling)
+        if (callback_depth != 0 || polling || pruning)
             return;
-        std::erase_if(connections, [](const auto& item) { return item->closed(); });
+        pruning = true;
+        ++callback_depth;
+        const auto release = qScopeGuard([&] {
+            --callback_depth;
+            pruning = false;
+        });
+        // Observe outward ports while the vector is intact. No port is called
+        // during compaction, when a callback could see moved/null entries.
+        const auto count = connections.size();
+        for (std::size_t i = 0; i < count; ++i)
+            connections[i]->observeDrain();
+        std::array<std::unique_ptr<Connection>, 8> retired;
+        std::size_t next = 0;
+        for (auto& item : connections) {
+            if (item->drained())
+                retired[next++] = std::move(item);
+        }
+        std::erase_if(connections, [](const auto& item) { return !item; });
+        if (std::none_of(connections.begin(), connections.end(),
+                         [](const auto& item) { return item->needsPeerWork(); }))
+            peer_timer.stop();
+        // Retired objects die before the guard, after vector compaction.
     }
     void shutdown() {
+        if (shutting_down)
+            return;
+        shutting_down = true;
+        ++callback_depth;
+        const auto release = qScopeGuard([&] {
+            --callback_depth;
+            shutting_down = false;
+            prune();
+        });
         closing = true;
         timer.stop();
         server.close();
         for (const auto& connection : connections)
             connection->close();
-        // Never destroy a session while its admission/poll callback is on stack.
-        prune();
+        // The release guard prunes only after every shutdown callback unwinds.
     }
 };
 QtNativeDownloadServer::QtNativeDownloadServer(NativeHostConfiguration configuration,
@@ -285,8 +414,10 @@ bool QtNativeDownloadServer::start() {
     if (QThread::currentThread() != thread() || impl_->started || impl_->closing)
         return false;
     impl_->started = true;
-    if (!isValidNativeHostConfiguration(impl_->configuration) || impl_->options.max_active_connections < 1 ||
-        impl_->options.max_active_connections > 8 || !impl_->now() || impl_->closing)
+    if (!isValidNativeHostConfiguration(impl_->configuration) ||
+        !validNativePeerImages(impl_->configuration.expected_host_images) ||
+        impl_->options.max_active_connections < 1 || impl_->options.max_active_connections > 8 || !impl_->now() ||
+        impl_->closing)
         return false;
     if (!impl_->lease.acquire(impl_->configuration.endpoint_name))
         return false;
@@ -334,8 +465,16 @@ void QtNativeDownloadServer::beginShutdown() {
         impl_->shutdown();
 }
 bool QtNativeDownloadServer::stopped() const {
-    return impl_->closing && !impl_->polling && impl_->callback_depth == 0 && !impl_->server.isListening() &&
-           activeConnectionCount() == 0;
+    if (!impl_->closing || impl_->polling || impl_->checking_peers || impl_->callback_depth != 0 ||
+        impl_->server.isListening())
+        return false;
+    ++impl_->callback_depth;
+    const auto release = qScopeGuard([&] { --impl_->callback_depth; });
+    const auto count = impl_->connections.size();
+    for (std::size_t i = 0; i < count; ++i)
+        impl_->connections[i]->observeDrain();
+    return std::all_of(impl_->connections.begin(), impl_->connections.end(),
+                       [](const auto& item) { return item->drained(); });
 }
 qsizetype QtNativeDownloadServer::activeConnectionCount() const {
     return std::count_if(impl_->connections.begin(), impl_->connections.end(),

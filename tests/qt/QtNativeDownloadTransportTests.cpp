@@ -33,7 +33,10 @@ QByteArray payload() {
     return R"({"schemaVersion":1,"type":"download.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"url":"https://fixture.example.test/music.mp3?private=value","title":"Áudio","kind":"audio"}]})";
 }
 NativeHostConfiguration configuration() {
-    return {origin, QStringLiteral("rc-music-native-transport-") + QUuid::createUuid().toString(QUuid::Id128)};
+    return {origin,
+            QStringLiteral("rc-music-native-transport-") + QUuid::createUuid().toString(QUuid::Id128),
+            {QCoreApplication::applicationFilePath()},
+            {QCoreApplication::applicationFilePath()}};
 }
 QByteArray framedRequest(const QString& caller = origin) {
     return native_download_ipc::preamble(caller) + encodeNativeMessageFrame(payload());
@@ -66,12 +69,267 @@ class Submission final : public AsyncDownloadSubmission {
         return completion;
     }
 };
+struct HeldPeerState final {
+    NativeDownloadPeerState state{NativeDownloadPeerState::Pending};
+    int begins{0};
+    int shutdowns{0};
+    bool stopped{false};
+    qintptr borrowed_pipe{0};
+    int polls{0};
+};
+class HeldPeerCheck final : public NativeDownloadPeerCheck {
+  public:
+    explicit HeldPeerCheck(std::shared_ptr<HeldPeerState> state) : state_(std::move(state)) {}
+    bool begin(qintptr pipe, NativeDownloadPeerSide, const QStringList&) override {
+        ++state_->begins;
+        state_->borrowed_pipe = pipe;
+        return GetFileType(reinterpret_cast<HANDLE>(pipe)) == FILE_TYPE_PIPE;
+    }
+    NativeDownloadPeerState poll() override {
+        ++state_->polls;
+        return state_->state;
+    }
+    void shutdown() noexcept override { ++state_->shutdowns; }
+    bool stopped() override { return state_->stopped; }
+
+  private:
+    std::shared_ptr<HeldPeerState> state_;
+};
 void pump() { QCoreApplication::processEvents(); }
 } // namespace
 
 class QtNativeDownloadTransportTests final : public QObject {
     Q_OBJECT
   private slots:
+    void pendingPeerChecksLeaveRequestAndReplyBytesInTheirNativePipes() {
+        const auto config = configuration();
+        const auto server_state = std::make_shared<HeldPeerState>();
+        const auto client_state = std::make_shared<HeldPeerState>();
+        Submission owner;
+        QtNativeDownloadServer server{
+            config,
+            owner,
+            {.now_ms = [] { return qint64{0}; },
+             .peer_check_factory = [server_state] { return std::make_unique<HeldPeerCheck>(server_state); }}};
+        QVERIFY(server.start());
+        QLocalSocket sender;
+        sender.connectToServer(config.endpoint_name);
+        QTRY_COMPARE(sender.state(), QLocalSocket::ConnectedState);
+        const auto input = framedRequest();
+        QCOMPARE(sender.write(input), input.size());
+        QTRY_COMPARE(server_state->begins, 1);
+        QTRY_VERIFY(server_state->polls > 1);
+        DWORD queued = 0;
+        // With a zero-quota pipe, overlapped writes may remain pending until a
+        // read. Observe queued native bytes without waiting for write completion.
+        QTRY_VERIFY(PeekNamedPipe(reinterpret_cast<HANDLE>(server_state->borrowed_pipe), nullptr, 0, nullptr, &queued,
+                                  nullptr) &&
+                    queued == static_cast<DWORD>(input.size()));
+        QCOMPARE(owner.begins, 0);
+        server_state->state = NativeDownloadPeerState::Eligible;
+        QTRY_COMPARE(owner.begins, 1);
+        server.beginShutdown();
+        server_state->stopped = true;
+        QTRY_VERIFY(server.stopped());
+
+        auto client_config = configuration();
+        QLocalServer receiver;
+        QVERIFY(receiver.listen(client_config.endpoint_name));
+        QtNativeDownloadClient client{
+            client_config,
+            {.now_ms = [] { return qint64{0}; },
+             .peer_check_factory = [client_state] { return std::make_unique<HeldPeerCheck>(client_state); }}};
+        QCOMPARE(client.begin(request()).state, DownloadAdmissionState::Pending);
+        QTRY_VERIFY(receiver.hasPendingConnections());
+        std::unique_ptr<QLocalSocket> reply{receiver.nextPendingConnection()};
+        const auto output = encodeNativeMessageFrame(
+            encodeNativeDownloadResponse(request_id, {.error = DownloadSubmissionError::None, .job_ids = {"job-1"}}));
+        QCOMPARE(reply->write(output), output.size());
+        QTRY_VERIFY(client_state->polls > 1);
+        QTRY_VERIFY(PeekNamedPipe(reinterpret_cast<HANDLE>(client_state->borrowed_pipe), nullptr, 0, nullptr, &queued,
+                                  nullptr) &&
+                    queued == static_cast<DWORD>(output.size()));
+        QCOMPARE(reply->bytesAvailable(), qint64{0});
+        client_state->state = NativeDownloadPeerState::Eligible;
+        QTRY_COMPARE(reply->bytesAvailable(),
+                     native_download_ipc::preamble_bytes + 4 + encodeNativeDownloadRequest(request()).size());
+        const auto delivered = reply->readAll();
+        QCOMPARE(delivered.first(native_download_ipc::preamble_bytes), native_download_ipc::preamble(origin));
+        const auto frame = delivered.mid(native_download_ipc::preamble_bytes);
+        QVERIFY(frame.size() > 4);
+        QCOMPARE(qFromLittleEndian<quint32>(frame.constData()), static_cast<quint32>(frame.size() - 4));
+        const auto decoded = decodeNativeDownloadRequest(frame.mid(4));
+        QCOMPARE(decoded.error, DownloadSubmissionError::None);
+        QVERIFY(decoded.request == request());
+        reply->disconnectFromServer();
+        std::optional<DownloadSubmissionResult> result;
+        QTRY_VERIFY((result = client.poll(request_id)).has_value());
+        QCOMPARE(result->job_ids, std::vector<std::string>{"job-1"});
+        client.shutdown();
+        client_state->stopped = true;
+        QTRY_VERIFY(client.stopped());
+    }
+    void pendingClientImageCheckWritesNothingAndLateEligibilityCannotEscapeShutdown() {
+        const auto config = configuration();
+        QLocalServer peer;
+        QVERIFY(peer.listen(config.endpoint_name));
+        const auto state = std::make_shared<HeldPeerState>();
+        QtNativeDownloadClient client{
+            config, {.peer_check_factory = [state] { return std::make_unique<HeldPeerCheck>(state); }}};
+        QCOMPARE(client.begin(request()).state, DownloadAdmissionState::Pending);
+        QTRY_VERIFY(peer.hasPendingConnections());
+        std::unique_ptr<QLocalSocket> socket{peer.nextPendingConnection()};
+        QTRY_COMPARE(state->begins, 1);
+        QVERIFY(!client.poll(request_id));
+        QCOMPARE(socket->bytesAvailable(), qint64{0});
+        client.shutdown();
+        QVERIFY(!client.stopped());
+        QVERIFY(state->shutdowns > 0);
+        state->state = NativeDownloadPeerState::Eligible;
+        pump();
+        QCOMPARE(socket->bytesAvailable(), qint64{0});
+        QVERIFY(!client.stopped());
+        state->stopped = true;
+        QTRY_VERIFY(client.stopped());
+        QTRY_COMPARE(socket->state(), QLocalSocket::UnconnectedState);
+        QVERIFY(socket->readAll().isEmpty());
+    }
+    void pendingServerImageCheckUsesOriginalDeadlineAndDrainsAfterLateEligibility() {
+        const auto config = configuration();
+        const auto state = std::make_shared<HeldPeerState>();
+        qint64 now = 0;
+        Submission owner;
+        QtNativeDownloadServer server{
+            config,
+            owner,
+            {.now_ms = [&] { return now; },
+             .automatic_polling = false,
+             .peer_check_factory = [state] { return std::make_unique<HeldPeerCheck>(state); }}};
+        QVERIFY(server.start());
+        QLocalSocket socket;
+        socket.connectToServer(config.endpoint_name);
+        QTRY_COMPARE(socket.state(), QLocalSocket::ConnectedState);
+        QCOMPARE(socket.write(framedRequest()), framedRequest().size());
+        QTRY_COMPARE(state->begins, 1);
+        QCOMPARE(server.activeConnectionCount(), qsizetype{1});
+        now = 4'999;
+        server.poll();
+        QCOMPARE(owner.begins, 0);
+        now = 5'000;
+        server.poll();
+        QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
+        QCOMPARE(owner.begins, 0);
+        QVERIFY(state->shutdowns > 0);
+        state->state = NativeDownloadPeerState::Eligible;
+        server.beginShutdown();
+        QVERIFY(!server.stopped());
+        pump();
+        QCOMPARE(owner.begins, 0);
+        state->stopped = true;
+        QTRY_VERIFY(server.stopped());
+        QVERIFY(socket.readAll().isEmpty());
+    }
+    void pendingImageChecksShareAllEightSlotsAndMustDrainBeforeStopped() {
+        const auto config = configuration();
+        Submission owner;
+        std::vector<std::shared_ptr<HeldPeerState>> states;
+        QtNativeDownloadServer server{config, owner, {.peer_check_factory = [&] {
+                                          auto state = std::make_shared<HeldPeerState>();
+                                          states.push_back(state);
+                                          return std::make_unique<HeldPeerCheck>(state);
+                                      }}};
+        QVERIFY(server.start());
+        std::array<QLocalSocket, 8> sockets;
+        for (auto& socket : sockets) {
+            socket.connectToServer(config.endpoint_name);
+            QTRY_COMPARE(socket.state(), QLocalSocket::ConnectedState);
+            QCOMPARE(socket.write(framedRequest()), framedRequest().size());
+        }
+        QTRY_COMPARE(states.size(), std::size_t{8});
+        QCOMPARE(server.activeConnectionCount(), qsizetype{8});
+        QLocalSocket ninth;
+        QSignalSpy disconnected{&ninth, &QLocalSocket::disconnected};
+        QSignalSpy errors{&ninth, &QLocalSocket::errorOccurred};
+        ninth.connectToServer(config.endpoint_name);
+        QTRY_VERIFY(disconnected.count() + errors.count() > 0);
+        QCOMPARE(states.size(), std::size_t{8});
+        QCOMPARE(owner.begins, 0);
+        server.beginShutdown();
+        QVERIFY(!server.stopped());
+        for (const auto& state : states) {
+            QVERIFY(state->shutdowns > 0);
+            state->state = NativeDownloadPeerState::Eligible;
+            state->stopped = true;
+        }
+        QTRY_VERIFY(server.stopped());
+        QCOMPARE(owner.begins, 0);
+        for (auto& socket : sockets) {
+            QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
+            QVERIFY(socket.readAll().isEmpty());
+        }
+    }
+    void missingPeerImageProfilesRefuseBeforeOpeningIngressOrSendingBytes() {
+        Submission owner;
+        auto config = configuration();
+        config.expected_host_images.clear();
+        QtNativeDownloadServer server{config, owner};
+        QVERIFY(!server.start());
+        QCOMPARE(owner.begins, 0);
+        config = configuration();
+        config.expected_owner_images.clear();
+        QLocalServer peer;
+        QVERIFY(peer.listen(config.endpoint_name));
+        QtNativeDownloadClient client{config};
+        const auto result = client.begin(request());
+        QCOMPARE(result.state, DownloadAdmissionState::Completed);
+        QCOMPARE(result.result.error, DownloadSubmissionError::NotAvailable);
+        pump();
+        QVERIFY(!peer.hasPendingConnections());
+    }
+    void unlistedServerImageReceivesNoPreambleOrRequestBytes() {
+        auto config = configuration();
+        config.expected_owner_images = {QCoreApplication::applicationFilePath() + QStringLiteral(".unlisted.exe")};
+        QLocalServer peer;
+        QVERIFY(peer.listen(config.endpoint_name));
+        QByteArray received;
+        QtNativeDownloadClient client{config};
+        QCOMPARE(client.begin(request()).state, DownloadAdmissionState::Pending);
+        QTRY_VERIFY(peer.hasPendingConnections());
+        std::unique_ptr<QLocalSocket> socket{peer.nextPendingConnection()};
+        connect(socket.get(), &QLocalSocket::readyRead, socket.get(), [&] {
+            received += socket->readAll();
+            socket->disconnectFromServer();
+        });
+        if (socket->bytesAvailable()) {
+            received += socket->readAll();
+            socket->disconnectFromServer();
+        }
+        QTRY_COMPARE(socket->state(), QLocalSocket::UnconnectedState);
+        QVERIFY(received.isEmpty());
+        const auto result = client.poll(request_id);
+        QVERIFY(result);
+        QCOMPARE(result->error, DownloadSubmissionError::NotAvailable);
+        client.shutdown();
+        QTRY_VERIFY(client.stopped());
+    }
+    void unlistedClientImageCannotDispatchEvenWithValidPreambleAndFrame() {
+        auto config = configuration();
+        config.expected_host_images = {QCoreApplication::applicationFilePath() + QStringLiteral(".unlisted.exe")};
+        Submission owner;
+        owner.result = {.state = DownloadAdmissionState::Completed,
+                        .result = {.error = DownloadSubmissionError::NotAvailable}};
+        QtNativeDownloadServer server{config, owner};
+        QVERIFY(server.start());
+        QLocalSocket socket;
+        socket.connectToServer(config.endpoint_name);
+        QTRY_COMPARE(socket.state(), QLocalSocket::ConnectedState);
+        QCOMPARE(socket.write(framedRequest()), framedRequest().size());
+        QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
+        QCOMPARE(owner.begins, 0);
+        QVERIFY(socket.readAll().isEmpty());
+        server.beginShutdown();
+        QTRY_VERIFY(server.stopped());
+    }
     void secondOwnerOfSameEndpointIsRefusedWithoutDispatch() {
         Submission first_owner;
         Submission second_owner;
