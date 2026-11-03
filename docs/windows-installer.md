@@ -1,7 +1,7 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setup privado atualizado em 2026-10-24 compilado com associações OFF; os setups históricos OFF/v2 foram preservados. Execução/lifecycle e gates de distribuição ainda pendentes.
-**Data:** 2026-10-24.
+**Estado:** setup privado atualizado em 2026-11-03 compilado com associações OFF; os setups históricos OFF/v2 foram preservados. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Data:** 2026-11-03.
 
 ## Fonte única e proveniência
 
@@ -61,6 +61,24 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 ```
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
+
+## Instalador local gerado em 2026-11-03
+
+O [runtime Release/OFF do commit limpo `531c5cc`](windows-runtime.md#runtime-local-gerado-em-2026-11-03) alimentou o novo setup privado. A geração isolada preservou integralmente os 14 arquivos pendentes do checkout principal. A receita do instalador permaneceu limpa, no mesmo commit, e o NSIS existente foi conferido pelo pin de `nsis-toolchain.json`.
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-531c5cc-20261103/app -OutputDirectory out/product/rc-music-installer/rc-music-windows-dev-531c5cc-20261103 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+```
+
+A compilação terminou com exit 0, sem `-FormatMatrix`, execução de setup ou instalação. O diretório de saída era novo. A verificação independente conferiu:
+
+- `RCMusic-Setup.exe`: **38.052.800 bytes**, SHA-256 `6c762e7267218fa8d82cc5b7bd7783c4c3bb6f2fe1ef9227a2fdec0a93ff4f73`, Authenticode **NotSigned**.
+- `installer-receipt.json`: SHA-256 `2d93f4f236591e093e67263b266ad54ac79f9f76b5b501b52613a88eb3069097`.
+- `installer-config.nsh`: SHA-256 `f89b7102090aa55b6e31dce09a4f4d6c851ddba92c424b05b60b23d7661d0bdb`.
+- Inventário físico dos **554 arquivos**, manifesto, cinco fontes de receita do runtime, nove do instalador e hash do compilador correspondentes ao receipt.
+- Replanejamento sem escrita reproduziu o payload ID `dd660783590b02c19de9f78043da1a0cb672f8b46293e5755a0bec4e35b81974`, associações OFF, formatos/callbacks vazios e `format_matrix=null`.
+
+Evidência local ignorada: `out/product/cleanup-20261103/installer-verification.json`. O novo setup e runtime foram preservados na [limpeza subsequente](development-commands.md#limpeza-após-build-do-instalador--2026-11-03). Nenhum setup foi executado, Registry/associação alterado ou componente de navegador instalado. O pacote contém o player local do commit `531c5cc`; a integração remota pendente não foi ativada. Instalação/lifecycle, máquina limpa, assinatura, segurança/licenças e distribuição continuam gates separados.
 
 ## Instalador local gerado em 2026-10-24
 

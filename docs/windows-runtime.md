@@ -1,7 +1,7 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado em 2026-10-24, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
-**Data:** 2026-10-24.
+**Estado:** runtime local atualizado em 2026-11-03, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Data:** 2026-11-03.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
 
@@ -52,6 +52,22 @@ pwsh -NoProfile -File packaging/windows/tests/LocalRuntime.Smoke.ps1 -RuntimeDir
 O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt/Multimedia/TagLib. Não baixa dependências, reconstrói SDK, copia CRT/System32 ou instala. Recusa saída existente; falha tardia pode deixar diretório parcial, sem rollback ou reutilização automática. O runtime permanece privado/experimental, não uma release.
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
+
+## Runtime local gerado em 2026-11-03
+
+Atendendo ao pedido de gerar o instalador antes da limpeza, o commit concluído `531c5cc579bd29593e2002a867ddcc1c494e04ed` foi compilado em worktree Git limpa e isolada. O checkout principal continha 14 arquivos de desenvolvimento pendente, incluindo integração ainda incompleta; seus bytes foram preservados e não entraram no pacote. Foram usados os SDKs e compiladores existentes, sem reconstruir Qt ou instalar dependências.
+
+O configure CMake Release/x64 com desktop ON, `BUILD_TESTING=OFF` e opcionais remotos OFF passou, assim como o build de `m0_qt_shell`, `all_qmllint` e a inspeção do grafo de produção de 253 comandos. CTest listou zero testes no produto. O runtime foi montado pela receita da worktree e movido para `out/product/rc-music-local/rc-music-windows-dev-531c5cc-20261103/app` antes da compilação do setup.
+
+- Inventário físico: **554 arquivos / 96.300.663 bytes**, tamanhos/SHA-256 e cinco fontes da receita conferidos.
+- `RCMusic.exe`: **2.066.944 bytes**, SHA-256 `6c48b02c821e3922588e70e28ab962f033dde199391124a32762012e6c2a530e`.
+- `runtime-manifest.json`: SHA-256 `861e761e0a00067f3c462acde37311426ef8f82ee45317bc7935ace8ca141858`, `recipe_dirty=false`.
+- Leitura de identidade/recursos do executável copiado: **6/6 Qt Test**, zero falhas/skips, incluindo subsistema Windows GUI (2).
+- Recusa isolada dos hooks reservados no executável real: exit 1, stdout/stderr vazios e nenhuma configuração criada; sem abrir a interface ou a sessão pessoal.
+
+Checks puros proporcionais: parser PE **5/5**, fontes NSIS **5/5** e receita do instalador **3/3**. A verificação independente e os resultados ficam em `out/product/cleanup-20261103/`. O setup correspondente está no [registro do instalador](windows-installer.md#instalador-local-gerado-em-2026-11-03).
+
+A worktree foi removida após a conferência. O comando oficial `ninja -t clean` limpou os intermediários do build isolado; restaram 9.385.583 bytes de configuração/metadados após bloqueio da remoção direta pela revisão automática. Os manifests conservam origens absolutas dessa geração como proveniência histórica. Não houve execução do setup, instalação, Registry, novo smoke de áudio, Brave, benchmark ou validação de release. A limpeza removeu os binários dos runtimes antigos, preservando manifests e evidências conforme o [registro da operação](development-commands.md#limpeza-após-build-do-instalador--2026-11-03).
 
 ## Runtime local gerado em 2026-10-24
 
