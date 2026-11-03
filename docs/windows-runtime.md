@@ -53,6 +53,18 @@ O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
 
+## Runtime atualizado de f589040
+
+Em 2026-11-03, o checkout limpo `f5890405e103d29591c5aca871318446ec6b0395` gerou o runtime `out/product/rc-music-local/rc-music-windows-dev-f589040-20261103/app`, pelo comando `LocalRuntime.Tests.ps1` acima, com o cache `out/product/m1-desktop-release-off-20260906`. Release/x64, `BUILD_TESTING=OFF`, opcionais remotos OFF e `recipe_dirty=false`; foram reutilizados os SDKs existentes.
+
+Build incremental, `all_qmllint`, grafo de produção **253 comandos** e listagem CTest com **zero testes** passaram. Conferência independente do inventário físico: **554 arquivos / 96.338.551 bytes**, todos os tamanhos/hashes e cinco fontes da receita conferidos, **71 PEs x64**. `RCMusic.exe` tem subsistema Windows GUI (2), sem console automático.
+
+- Executável: **2.104.832 bytes**, SHA-256 `7999bd0889d6da9b5f5447ab9cdd237c841e8a2369f3711f64d912f4ef52933d`.
+- Manifesto: SHA-256 `9c617b256a90169f7885e509d5e57df24d78896ef237e97d838ecc179830ed1f`.
+- [Setup correspondente](windows-installer.md#instalador-atualizado-de-f589040) compilado e conferido antes da limpeza; evidência em `out/product/installer-refresh-f589040-20261103/`.
+
+O novo runtime foi preservado e reconferido após a limpeza. Os binários do payload anterior `531c5cc` foram removidos, conservando seu manifesto, QML, configurações e setup. Não houve execução do player/setup, novo smoke de áudio, instalação, Registry ou benchmark; os gates nativos e de distribuição continuam separados.
+
 ## Runtime local gerado em 2026-11-03
 
 Atendendo ao pedido de gerar o instalador antes da limpeza, o commit concluído `531c5cc579bd29593e2002a867ddcc1c494e04ed` foi compilado em worktree Git limpa e isolada. O checkout principal continha 14 arquivos de desenvolvimento pendente, incluindo integração ainda incompleta; seus bytes foram preservados e não entraram no pacote. Foram usados os SDKs e compiladores existentes, sem reconstruir Qt ou instalar dependências.

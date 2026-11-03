@@ -62,6 +62,22 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
 
+## Instalador atualizado de f589040
+
+Em 2026-11-03, o [runtime atualizado](windows-runtime.md#runtime-atualizado-de-f589040) e a receita do checkout limpo `f5890405e103d29591c5aca871318446ec6b0395` geraram o novo setup, com as ferramentas provisionadas:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirectory out/product/rc-music-local/rc-music-windows-dev-f589040-20261103/app -OutputDirectory out/product/rc-music-installer/rc-music-windows-dev-f589040-20261103 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+```
+
+Compilação exit 0, associações OFF, `recipe_dirty=false`, sem matriz de formatos antiga. Conferência independente de inventário, cinco hashes da receita do runtime, nove do instalador, compilador, configuração e manifesto passou. Replanejamento sem escrita reproduziu o inventário, a configuração e o payload ID `8abc0d1a46b3303dd4fc1826a269ce5623aeafb8a6ccd76f7bfffaaa6464fa4e`.
+
+- `RCMusic-Setup.exe`: **38.061.983 bytes**, SHA-256 `0b24d602a084f20373e44a8a49656fcb52940a96a5233263ab9e935af105ae9f`, Authenticode **NotSigned**.
+- `installer-receipt.json`: SHA-256 `4d123b946ad60a46365297d5d9fad136596561cbc32a3ceba2816830ed011421`.
+- `installer-config.nsh`: SHA-256 `a95a95fa65bfde1ec8c5b3542eeaa29f54ec752f1bd19e46fbe675a5dc2c5a4f`.
+
+Checks puros proporcionais: parser PE **5/5**, fontes NSIS **5/5**, receita do instalador **3/3**. Evidência em `out/product/installer-refresh-f589040-20261103/independent-verification.json`; build/lint e [limpeza posterior](development-commands.md#limpeza-após-atualização-de-f589040) têm registros próprios. Setup e runtime novos permaneceram íntegros após a limpeza. Nenhum setup/player foi executado, instalado ou publicado, nem houve mudança de Registry/associações. O pacote contém o player local; módulos remotos continuam OFF. Lifecycle, assinatura e demais gates de distribuição permanecem pendentes.
+
 ## Instalador local gerado em 2026-11-03
 
 O [runtime Release/OFF do commit limpo `531c5cc`](windows-runtime.md#runtime-local-gerado-em-2026-11-03) alimentou o novo setup privado. A geração isolada preservou integralmente os 14 arquivos pendentes do checkout principal. A receita do instalador permaneceu limpa, no mesmo commit, e o NSIS existente foi conferido pelo pin de `nsis-toolchain.json`.

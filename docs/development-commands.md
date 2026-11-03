@@ -218,3 +218,19 @@ A cópia Git isolada desta geração foi removida (**830 arquivos / 14.650.416 b
 Preservados: SDK Qt consolidado, QtHost/ferramentas, Multimedia stage, TagLib install, Catch2/NSIS, fontes/licenças de Qt necessárias à proveniência/TLS, archives, protocolos/fixtures/evidências históricas, instaladores anteriores e o novo runtime/setup. Os caches desktop ON/OFF e `browser-integration-tests` usados pelo desenvolvimento pendente também foram mantidos. Dados pessoais e configurações do player ficaram fora da seleção.
 
 Os planos, hashes e resultados locais ficam em `out/product/cleanup-20261103/`: `audit-proposed-files.json`, `prune-result.json`, `tracked-before.json`, `preserved-work.json`, `temporary-cleanup.json`, `installer-verification.json`, `executable-identity.txt` e `production-refusal.json`. Build Release, lint, inspeção do grafo, identidade PE e consistência do pacote são checks próprios; não houve suíte global nova, benchmark, instalação/Registry, áudio/Brave ou aprovação de release.
+
+## Limpeza após atualização de f589040
+
+Depois de compilar e verificar o [setup atualizado de `f589040`](windows-installer.md#instalador-atualizado-de-f589040), a nova limpeza autorizada removeu **268 arquivos / 174.025.804 bytes** de conteúdo lógico, sem criar backup:
+
+| Raiz selecionada | Arquivos | Bytes removidos |
+|---|---:|---:|
+| `out/product/session-receipts-core` | 132 | 51.240.243 |
+| `out/product/download-network-release` | 65 | 28.714.697 |
+| `out/product/rc-music-local/rc-music-windows-dev-531c5cc-20261103/app` | 71 | 94.070.864 |
+
+A seleção literal limitou-se a binários/intermediários regeneráveis dos dois caches de validação e ao runtime substituído. Os 71 binários antigos possuem contraparte no novo runtime; 70 eram byte a byte idênticos e apenas o executável mudou. Configurações, grafos, QML, manifests, resultados e logs permanecem; os caches limpos exigem recompilação para executar novamente seus testes.
+
+Antes de cada exclusão foram conferidos path canônico, confinamento, ausência de reparse point e SHA-256. A guarda de processos não encontrou escritor/app ativo. Após a operação: **zero candidatos restantes**, **834 arquivos versionados** e índice Git inalterados, setup e inventário completo do novo runtime reconferidos. Evidência ignorada em `out/product/installer-refresh-f589040-20261103/`: `prune-plan.json`, `prune-result.json` e `independent-verification.json`.
+
+Foram preservados SDK/dependências, caches ativos desktop ON/OFF e browser, backend TLS, fontes/licenças, fixtures/protocolos/evidências, todos os instaladores e dados pessoais. O cache temporário `installer-build-531c5cc-20261103` cujo delete anterior foi bloqueado não foi novamente selecionado. Não houve mudança de comportamento, nova suíte global, benchmark, instalação ou Registry.
