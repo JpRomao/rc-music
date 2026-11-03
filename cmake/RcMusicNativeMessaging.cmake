@@ -8,6 +8,7 @@ add_library(rc_music_native_messaging STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadServer.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtNativeDownloadClient.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeDownloadLease.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeDownloadPipeReservation.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeMessagingIo.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsNativeHostWatchdog.cpp")
 target_include_directories(rc_music_native_messaging PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
@@ -53,7 +54,7 @@ if(BUILD_TESTING)
         "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
         -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/NativeMessagingBuildBoundaryTests.cmake")
     set_tests_properties(rc_music.native.build-boundary PROPERTIES LABELS "native;boundary" TIMEOUT 15)
-    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep QtNativeDownloadTransport WindowsNativeMessagingIo WindowsNativeDownloadLease)
+    foreach(unit IN ITEMS NativeHostLaunch NativeHostInputStep QtNativeDownloadTransport WindowsNativeMessagingIo WindowsNativeDownloadLease WindowsNativeDownloadPipeReservation)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")

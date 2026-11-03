@@ -9,6 +9,7 @@
 #include <QTest>
 #include <QUuid>
 #include <QtEndian>
+#include <qt_windows.h>
 
 #include <string>
 #include <vector>
@@ -20,6 +21,19 @@ const QString origin = QStringLiteral("chrome-extension://aaaaaaaaaaaaaaaaaaaaaa
 const std::string request_id = "01234567-89ab-4cde-8fab-0123456789ab";
 
 QString endpoint() { return QStringLiteral("rc-music-native-owner-") + QUuid::createUuid().toString(QUuid::Id128); }
+
+DWORD firstPipeInstanceError(const QString& endpoint_name) {
+    // Probe the kernel name directly, independently of the application's owner
+    // lease. Every successful probe releases its handle before returning.
+    const auto name = QStringLiteral("\\\\.\\pipe\\") + endpoint_name;
+    const auto pipe = CreateNamedPipeW(name.toStdWString().c_str(),
+                                       PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                                       PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4'096, 4'096, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE)
+        return GetLastError();
+    CloseHandle(pipe);
+    return ERROR_SUCCESS;
+}
 
 QByteArray requestFrame() {
     const QByteArray body =
@@ -101,6 +115,8 @@ class NativeDownloadOwnerProcessTests final : public QObject {
         Child contender;
         QVERIFY(owner.start(name));
         QTRY_COMPARE_WITH_TIMEOUT(owner.count("READY"), 1, 3'000);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
+        QCOMPARE(firstPipeInstanceError(case_alias ? name.toUpper() : name), DWORD{ERROR_ACCESS_DENIED});
         QVERIFY(contender.start(case_alias ? name.toUpper() : name, variant));
         QTRY_VERIFY_WITH_TIMEOUT(contender.count("READY") + contender.count("REFUSED") != 0, 3'000);
         QCOMPARE(contender.count("REFUSED"), 1);
@@ -141,11 +157,14 @@ class NativeDownloadOwnerProcessTests final : public QObject {
         Child owner;
         Child rejected;
         Child successor;
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
         QVERIFY(owner.start(name));
         QTRY_COMPARE_WITH_TIMEOUT(owner.count("READY"), 1, 3'000);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         QVERIFY(owner.command("shutdown\n"));
         QTRY_COMPARE_WITH_TIMEOUT(owner.count("STOPPED"), 1, 3'000);
         QCOMPARE(owner.process.state(), QProcess::Running);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         QVERIFY(rejected.start(name));
         QTRY_VERIFY_WITH_TIMEOUT(rejected.count("READY") + rejected.count("REFUSED") != 0, 3'000);
         QCOMPARE(rejected.count("REFUSED"), 1);
@@ -154,10 +173,12 @@ class NativeDownloadOwnerProcessTests final : public QObject {
         QTRY_COMPARE_WITH_TIMEOUT(owner.count("RELEASED"), 1, 3'000);
         QCOMPARE(owner.process.state(), QProcess::Running);
         QCOMPARE(rejected.process.state(), QProcess::Running);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
         QVERIFY(successor.start(name));
         QTRY_VERIFY_WITH_TIMEOUT(successor.count("READY") + successor.count("REFUSED") != 0, 3'000);
         QCOMPARE(successor.count("READY"), 1);
         QCOMPARE(successor.count("REFUSED"), 0);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         for (auto* child : {&owner, &rejected, &successor}) {
             QVERIFY(child->command("quit\n"));
             QTRY_COMPARE_WITH_TIMEOUT(child->process.state(), QProcess::NotRunning, 3'000);
@@ -165,6 +186,7 @@ class NativeDownloadOwnerProcessTests final : public QObject {
             QCOMPARE(child->process.exitCode(), 0);
             QVERIFY(child->cleanOutput());
         }
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
     }
 
     void killedOwnerRecoversWithRejectedContenderObjectsStillAlive() {
@@ -173,21 +195,26 @@ class NativeDownloadOwnerProcessTests final : public QObject {
         Child rejected_one;
         Child rejected_two;
         Child successor;
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
         QVERIFY(owner.start(name));
         QTRY_COMPARE_WITH_TIMEOUT(owner.count("READY"), 1, 3'000);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         for (auto* child : {&rejected_one, &rejected_two}) {
             QVERIFY(child->start(name));
             QTRY_VERIFY_WITH_TIMEOUT(child->count("READY") + child->count("REFUSED") != 0, 3'000);
             QCOMPARE(child->count("REFUSED"), 1);
             QCOMPARE(child->process.state(), QProcess::Running);
         }
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         owner.process.kill();
         QTRY_COMPARE_WITH_TIMEOUT(owner.process.state(), QProcess::NotRunning, 3'000);
         QCOMPARE(owner.process.exitStatus(), QProcess::CrashExit);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
         QVERIFY(successor.start(name));
         QTRY_VERIFY_WITH_TIMEOUT(successor.count("READY") + successor.count("REFUSED") != 0, 3'000);
         QCOMPARE(successor.count("READY"), 1);
         QCOMPARE(successor.count("REFUSED"), 0);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_ACCESS_DENIED});
         for (auto* child : {&rejected_one, &rejected_two, &successor}) {
             QVERIFY(child->command("quit\n"));
             QTRY_COMPARE_WITH_TIMEOUT(child->process.state(), QProcess::NotRunning, 3'000);
@@ -196,6 +223,7 @@ class NativeDownloadOwnerProcessTests final : public QObject {
             QVERIFY(child->cleanOutput());
         }
         QVERIFY(owner.cleanOutput());
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
     }
 
     void invalidConfigurationDoesNotOwnEndpointAndDistinctEndpointsRemainIndependent() {
@@ -206,6 +234,7 @@ class NativeDownloadOwnerProcessTests final : public QObject {
         QVERIFY(invalid.start(name, QStringLiteral("primary"), QStringLiteral("invalid")));
         QTRY_COMPARE_WITH_TIMEOUT(invalid.count("REFUSED"), 1, 3'000);
         QCOMPARE(invalid.count("READY"), 0);
+        QCOMPARE(firstPipeInstanceError(name), DWORD{ERROR_SUCCESS});
         QVERIFY(valid.start(name));
         QTRY_COMPARE_WITH_TIMEOUT(valid.count("READY"), 1, 3'000);
         QVERIFY(independent.start(endpoint(), QStringLiteral("alternate")));

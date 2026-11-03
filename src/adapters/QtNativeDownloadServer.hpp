@@ -22,8 +22,9 @@ struct QtNativeDownloadServerOptions final {
 // submission remains borrowed through shutdown/drain. Callbacks must not destroy
 // the ingress or borrowed owner synchronously. Shutdown closes observers only,
 // never accepted jobs; no network transfer, store I/O or controller tick occurs.
-// The cooperative Windows endpoint reservation survives beginShutdown/stopped
-// until destruction. Keep this object alive through the owner's worker teardown.
+// Both the cooperative marker and a native first-instance pipe reservation
+// survive beginShutdown/stopped until destruction. Keep this object alive
+// through the owner's worker teardown. Neither authenticates same-user peers.
 class QtNativeDownloadServer final : public QObject {
     Q_OBJECT
   public:

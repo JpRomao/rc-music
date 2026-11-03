@@ -15,9 +15,9 @@ struct QtNativeDownloadClientOptions final {
     std::function<qint64()> now_ms{};
 };
 
-// One connection/request, with no retry or app launch. After bytes may have been
-// sent, malformed/disconnected/timed-out exchanges throw on observation rather
-// than asserting that an uncertain request was rejected by its owner.
+// One prompt native connection attempt/request, with no busy wait, retry or app
+// launch. After bytes may have been sent, malformed/disconnected/timed-out
+// exchanges throw on observation; they cannot declare an uncertain request rejected.
 class QtNativeDownloadClient final : public QObject, public AsyncDownloadSubmission {
     Q_OBJECT
   public:

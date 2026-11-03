@@ -8,6 +8,7 @@
 #include <QLocalSocket>
 #include <QThread>
 #include <QtEndian>
+#include <qt_windows.h>
 
 #include <optional>
 #include <stdexcept>
@@ -41,7 +42,6 @@ struct QtNativeDownloadClient::Impl {
         : owner(object), configuration(std::move(config)), options(std::move(settings)) {
         elapsed.start();
         socket.setReadBufferSize(maximum_response_bytes);
-        QObject::connect(&socket, &QLocalSocket::connected, &owner, [this] { writeRequest(); });
         QObject::connect(&socket, &QLocalSocket::readyRead, &owner, [this] { readAvailable(); });
         QObject::connect(&socket, &QLocalSocket::disconnected, &owner, [this] { finish(); });
         QObject::connect(&socket, &QLocalSocket::errorOccurred, &owner,
@@ -155,7 +155,22 @@ DownloadAdmissionResult QtNativeDownloadClient::begin(const DownloadRequest& req
     if (!current || impl_->state != Impl::State::Active)
         return {};
     impl_->started_ms = *current;
-    impl_->socket.connectToServer(impl_->configuration.endpoint_name);
+    // Qt's Windows connectToServer waits synchronously for up to five seconds
+    // when every instance is busy. This fast port makes exactly one native open;
+    // an occupied reservation or saturated listener must return without waiting.
+    const auto name = (QStringLiteral("\\\\.\\pipe\\") + impl_->configuration.endpoint_name).toStdWString();
+    const auto pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                  FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) {
+        impl_->fail();
+    } else if (!impl_->socket.setSocketDescriptor(reinterpret_cast<qintptr>(pipe))) {
+        CloseHandle(pipe);
+        impl_->fail();
+    } else {
+        // Adopting a descriptor starts Qt's bounded asynchronous reader but does
+        // not emit connected(). Ownership is now exclusively the socket's.
+        impl_->writeRequest();
+    }
     if (impl_->state == Impl::State::Completed)
         return {.result = impl_->result};
     return {.state = DownloadAdmissionState::Pending};

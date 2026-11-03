@@ -6,6 +6,7 @@
 #include "adapters/WindowsNativeDownloadLease.hpp"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QScopeGuard>
@@ -15,6 +16,7 @@
 #include <QtEndian>
 #include <qt_windows.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -134,6 +136,66 @@ class QtNativeDownloadTransportTests final : public QObject {
         QVERIFY(!failed.start());
         WindowsNativeDownloadLease successor;
         QVERIFY(successor.acquire(config.endpoint_name));
+        QCOMPARE(owner.begins, 0);
+    }
+    void preexistingUnlimitedPipeWithoutLeaseRefusesNamespaceWithoutAdmission() {
+        Submission owner;
+        const auto config = configuration();
+        const auto name = QStringLiteral("\\\\.\\pipe\\") + config.endpoint_name;
+        auto blocker = CreateNamedPipeW(name.toStdWString().c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                                        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                        PIPE_UNLIMITED_INSTANCES, 4'096, 4'096, 3'000, nullptr);
+        QVERIFY(blocker != INVALID_HANDLE_VALUE);
+        const auto close_blocker = qScopeGuard([&] {
+            if (blocker != INVALID_HANDLE_VALUE)
+                CloseHandle(blocker);
+        });
+        QtNativeDownloadServer failed{config, owner};
+        const auto started = failed.start();
+        QCOMPARE(owner.begins, 0);
+        QVERIFY(!started);
+        {
+            WindowsNativeDownloadLease successor;
+            QVERIFY(successor.acquire(config.endpoint_name));
+        }
+        QVERIFY(CloseHandle(blocker));
+        blocker = INVALID_HANDLE_VALUE;
+        QtNativeDownloadServer successor{config, owner};
+        QVERIFY(successor.start());
+        QCOMPARE(owner.begins, 0);
+    }
+    void rawFirstPipeNamespaceOutlivesIngressShutdownUntilOwnerIsDestroyed() {
+        Submission owner;
+        const auto config = configuration();
+        const auto name = QStringLiteral("\\\\.\\pipe\\") + config.endpoint_name;
+        const auto create_first_instance = [&] {
+            return CreateNamedPipeW(name.toStdWString().c_str(),
+                                    PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                    PIPE_UNLIMITED_INSTANCES, 4'096, 4'096, 0, nullptr);
+        };
+        HANDLE probe = INVALID_HANDLE_VALUE;
+        const auto close_probe = qScopeGuard([&] {
+            if (probe != INVALID_HANDLE_VALUE)
+                CloseHandle(probe);
+        });
+        auto server = std::make_unique<QtNativeDownloadServer>(config, owner);
+        QVERIFY(server->start());
+        probe = create_first_instance();
+        const auto running_error = GetLastError();
+        QVERIFY(probe == INVALID_HANDLE_VALUE);
+        QCOMPARE(running_error, DWORD{ERROR_ACCESS_DENIED});
+        server->beginShutdown();
+        QVERIFY(server->stopped());
+        QCOMPARE(server->activeConnectionCount(), qsizetype{0});
+        probe = create_first_instance();
+        const auto stopped_error = GetLastError();
+        QVERIFY(probe == INVALID_HANDLE_VALUE);
+        QCOMPARE(stopped_error, DWORD{ERROR_ACCESS_DENIED});
+        QCOMPARE(owner.begins, 0);
+        server.reset();
+        probe = create_first_instance();
+        QVERIFY(probe != INVALID_HANDLE_VALUE);
         QCOMPARE(owner.begins, 0);
     }
     void pendingHasNoWireAcknowledgementThenMatchingCompletionReplies() {
@@ -286,6 +348,48 @@ class QtNativeDownloadTransportTests final : public QObject {
         server.beginShutdown();
         QVERIFY(server.stopped());
     }
+    void eightPendingConnectionsRejectNinthAndReuseReleasedCapacityUntilShutdown() {
+        Submission owner;
+        qint64 now = 0;
+        const auto config = configuration();
+        QtNativeDownloadServer server{config, owner, {.now_ms = [&] { return now; }, .automatic_polling = false}};
+        QVERIFY(server.start());
+        std::array<QLocalSocket, 8> sockets;
+        int admitted = 0;
+        for (auto& socket : sockets) {
+            socket.connectToServer(config.endpoint_name);
+            QTRY_COMPARE(socket.state(), QLocalSocket::ConnectedState);
+            QCOMPARE(socket.write(framedRequest()), framedRequest().size());
+            ++admitted;
+            QTRY_COMPARE(owner.begins, admitted);
+        }
+        QCOMPARE(server.activeConnectionCount(), qsizetype{8});
+        QLocalSocket ninth;
+        QSignalSpy ninth_errors{&ninth, &QLocalSocket::errorOccurred};
+        QSignalSpy ninth_disconnected{&ninth, &QLocalSocket::disconnected};
+        connect(&ninth, &QLocalSocket::connected, &ninth, [&] { static_cast<void>(ninth.write(framedRequest())); });
+        ninth.connectToServer(config.endpoint_name);
+        QTRY_VERIFY(ninth_errors.count() + ninth_disconnected.count() > 0);
+        QCOMPARE(ninth.state(), QLocalSocket::UnconnectedState);
+        QCOMPARE(server.activeConnectionCount(), qsizetype{8});
+        QCOMPARE(owner.begins, 8);
+        sockets.front().abort();
+        QTRY_COMPARE(server.activeConnectionCount(), qsizetype{7});
+        server.poll();
+        QLocalSocket replacement;
+        replacement.connectToServer(config.endpoint_name);
+        QTRY_COMPARE(replacement.state(), QLocalSocket::ConnectedState);
+        QCOMPARE(replacement.write(framedRequest()), framedRequest().size());
+        QTRY_COMPARE(owner.begins, 9);
+        QCOMPARE(server.activeConnectionCount(), qsizetype{8});
+        server.beginShutdown();
+        QTRY_VERIFY(server.stopped());
+        for (auto& socket : sockets)
+            QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
+        QTRY_COMPARE(replacement.state(), QLocalSocket::UnconnectedState);
+        QCOMPARE(server.activeConnectionCount(), qsizetype{0});
+        QCOMPARE(owner.begins, 9);
+    }
     void malformedDoubleAndMismatchedRepliesRemainUncertainWithoutReconnect() {
         for (int variant = 0; variant < 3; ++variant) {
             const auto config = configuration();
@@ -423,6 +527,48 @@ class QtNativeDownloadTransportTests final : public QObject {
         QCOMPARE(arrivals.size(), 0);
         client.shutdown();
         QVERIFY(client.stopped());
+    }
+    void busyRawPipeRejectsClientPromptlyWithoutRetry() {
+        const auto config = configuration();
+        const auto name = QStringLiteral("\\\\.\\pipe\\") + config.endpoint_name;
+        auto blocker = CreateNamedPipeW(
+            name.toStdWString().c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1, 4'096, 4'096, 0, nullptr);
+        QVERIFY(blocker != INVALID_HANDLE_VALUE);
+        const auto close_blocker = qScopeGuard([&] {
+            if (blocker != INVALID_HANDLE_VALUE)
+                CloseHandle(blocker);
+        });
+        auto private_client = CreateFileW(name.toStdWString().c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                                          OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+        QVERIFY(private_client != INVALID_HANDLE_VALUE);
+        const auto close_private_client = qScopeGuard([&] {
+            if (private_client != INVALID_HANDLE_VALUE)
+                CloseHandle(private_client);
+        });
+        QtNativeDownloadClient client{config};
+        QElapsedTimer elapsed;
+        elapsed.start();
+        const auto result = client.begin(request());
+        const auto elapsed_ms = elapsed.elapsed();
+        QCOMPARE(result.state, DownloadAdmissionState::Completed);
+        QCOMPARE(result.result.error, DownloadSubmissionError::NotAvailable);
+        QVERIFY(result.result.job_ids.empty());
+        QVERIFY(CloseHandle(private_client));
+        private_client = INVALID_HANDLE_VALUE;
+        QVERIFY(CloseHandle(blocker));
+        blocker = INVALID_HANDLE_VALUE;
+        QLocalServer late_server;
+        QVERIFY(late_server.listen(config.endpoint_name));
+        QSignalSpy arrivals{&late_server, &QLocalServer::newConnection};
+        QCOMPARE(client.begin(request()).result.error, DownloadSubmissionError::NotAvailable);
+        pump();
+        QCOMPARE(arrivals.size(), 0);
+        client.shutdown();
+        QVERIFY(client.stopped());
+        // This is the prompt submission-port contract, not a throughput budget.
+        QVERIFY2(elapsed_ms < 1'000,
+                 qPrintable(QStringLiteral("begin blocked for %1 ms on a busy local pipe").arg(elapsed_ms)));
     }
     void clientPostWriteTimeoutDoesNotClaimRejectionOrReconnect() {
         const auto config = configuration();

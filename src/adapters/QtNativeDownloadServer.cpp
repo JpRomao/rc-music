@@ -3,6 +3,7 @@
 #include "adapters/NativeDownloadIpcProtocol.hpp"
 #include "adapters/NativeDownloadSession.hpp"
 #include "adapters/WindowsNativeDownloadLease.hpp"
+#include "adapters/WindowsNativeDownloadPipeReservation.hpp"
 
 #include <QElapsedTimer>
 #include <QLocalServer>
@@ -48,6 +49,7 @@ struct QtNativeDownloadServer::Impl {
     // Declared before the listener so it is destroyed after all pipe resources.
     // Successful owners retain it even after ingress is physically stopped.
     WindowsNativeDownloadLease lease;
+    WindowsNativeDownloadPipeReservation pipe_reservation;
     BoundedServer server;
     QTimer timer;
     QElapsedTimer elapsed;
@@ -288,10 +290,15 @@ bool QtNativeDownloadServer::start() {
         return false;
     if (!impl_->lease.acquire(impl_->configuration.endpoint_name))
         return false;
+    if (!impl_->pipe_reservation.acquire(impl_->configuration.endpoint_name)) {
+        impl_->lease.reset();
+        return false;
+    }
     // Qt can deliver a pending connection synchronously during listen. A trusted
     // callback may close ingress; never report success or restart its timer then.
     if (!impl_->server.listen(impl_->configuration.endpoint_name)) {
         impl_->shutdown();
+        impl_->pipe_reservation.reset();
         impl_->lease.reset();
         return false;
     }
