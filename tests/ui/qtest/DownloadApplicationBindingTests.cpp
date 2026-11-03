@@ -1,6 +1,7 @@
 #include "adapters/DownloadJobsModel.hpp"
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #include "m0/application/DownloadAdmissionController.hpp"
+#include "m0/ports/DownloadRecoveryValidation.hpp"
 #include "presentation/DownloadApplicationBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
@@ -183,6 +184,62 @@ class Review final : public DownloadRecoveryReview {
                                                   .action = actions.back()};
     }
 };
+class Validation final : public DownloadRecoveryValidation {
+  public:
+    DownloadRecoveryValidationCommand startValidation(std::uint64_t id, std::string_view job) override {
+        requests.emplace_back(id, std::string{job});
+        if (active)
+            return DownloadRecoveryValidationCommand::Busy;
+        if (command == DownloadRecoveryValidationCommand::Accepted)
+            active = id;
+        if (on_start)
+            on_start();
+        if (throw_start)
+            throw std::runtime_error{"private validation start"};
+        return command;
+    }
+    bool release(std::uint64_t id) override {
+        releases.push_back(id);
+        if (throw_release)
+            throw std::runtime_error{"private release"};
+        return active && *active == id && allow_release;
+    }
+    std::optional<DownloadRecoveryValidationResult> poll(std::uint64_t id) override {
+        polls.push_back(id);
+        if (on_poll)
+            on_poll();
+        if (throw_poll)
+            throw std::runtime_error{"private validation poll"};
+        if (!completion)
+            return std::nullopt;
+        auto result = std::exchange(completion, std::nullopt);
+        if (result->operation_id == id && result->outcome != DownloadRecoveryValidationOutcome::Validated)
+            active.reset();
+        return result;
+    }
+    void shutdown() override {
+        ++shutdowns;
+        if (throw_shutdown)
+            throw std::runtime_error{"private validation shutdown"};
+    }
+    bool stopped() const override {
+        if (throw_probe)
+            throw std::runtime_error{"private validation stop probe"};
+        return shutdowns != 0 && physical_stopped;
+    }
+    void complete(DownloadRecoveryValidationOutcome outcome) {
+        completion = DownloadRecoveryValidationResult{requests.back().first, requests.back().second, outcome};
+    }
+    std::vector<std::pair<std::uint64_t, std::string>> requests{};
+    std::vector<std::uint64_t> releases{}, polls{};
+    std::optional<std::uint64_t> active{};
+    std::optional<DownloadRecoveryValidationResult> completion{};
+    DownloadRecoveryValidationCommand command{DownloadRecoveryValidationCommand::Accepted};
+    std::function<void()> on_start{}, on_poll{};
+    bool throw_start{false}, throw_poll{false}, throw_release{false}, allow_release{true}, physical_stopped{false};
+    bool throw_shutdown{false}, throw_probe{false};
+    int shutdowns{0};
+};
 struct Harness final {
     Platform platform;
     PlayerPresenter presenter;
@@ -193,11 +250,12 @@ struct Harness final {
     DownloadService service;
     DownloadAdmissionController controller;
     Review review;
+    Validation validation;
     std::int64_t now{0};
     int clock_reads{0};
     bool throw_clock{false};
     DownloadApplicationBinding binding;
-    explicit Harness(SessionLoadResult session = {}, bool with_review = false)
+    explicit Harness(SessionLoadResult session = {}, bool with_review = false, bool with_validation = false)
         : presenter(
               FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE)),
               platform),
@@ -213,7 +271,8 @@ struct Harness final {
                            return now;
                        },
                    .automatic_polling = false,
-                   .recovery_review = with_review ? &review : nullptr}) {}
+                   .recovery_review = with_review ? &review : nullptr,
+                   .recovery_validation = with_validation ? &validation : nullptr}) {}
     bool ready() {
         if (!binding.start() || io.loads.size() != 1)
             return false;
@@ -245,6 +304,280 @@ struct Harness final {
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void validationRequiresFreshCandidateObservationAndRetainsTheLeaseAfterResult() {
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(!h.binding.validateMedia(QStringLiteral("old-1")));
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        QCOMPARE(h.validation.requests.size(), std::size_t{1});
+        QVERIFY(h.reviewValue(DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-2")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+        h.binding.poll();
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(h.validation.active.has_value());
+        QVERIFY(!h.binding.validateMedia(QStringLiteral("old-2")));
+        QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-2")));
+        QVERIFY(h.binding.releaseValidation(QStringLiteral("old-1")));
+        QCOMPARE(h.validation.releases.front(), h.validation.requests.front().first);
+        QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-1")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QVERIFY(!h.validation.active);
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QCOMPARE(h.service.snapshot().front().state, DownloadJobState::Interrupted);
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QVERIFY(h.io.saves.empty());
+    }
+    void validationWithoutAPortIsAbsentAndAnInvalidFileCanBeExplicitlyRetried() {
+        Harness absent({}, true);
+        QVERIFY(absent.interrupted());
+        QVERIFY(absent.binding.reviewFiles(QStringLiteral("old-1")));
+        absent.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        absent.binding.poll();
+        QVERIFY(!absent.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!absent.binding.validateMedia(QStringLiteral("old-1")));
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::InvalidMedia);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        QVERIFY(h.validation.requests.back().first > h.validation.requests.front().first);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void validationStartAndPollReentryCannotBypassTheSlotAndExitWaitsForPhysicalStop() {
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        h.validation.on_start = [&] { QVERIFY(!h.binding.validateMedia(QStringLiteral("old-1"))); };
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        h.validation.on_poll = [&] { QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-1"))); };
+        h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+        h.binding.poll();
+        h.presenter.requestExit();
+        h.binding.poll();
+        QCOMPARE(h.validation.shutdowns, 1);
+        h.io.saved();
+        h.io.physical_stopped = true;
+        h.review.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(!h.presenter.exitCommitted());
+        h.validation.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(h.presenter.exitCommitted());
+    }
+    void uncertainValidationKeepsItsOriginalCorrelationUntilDrain_data() {
+        QTest::addColumn<int>("failure");
+        QTest::newRow("admitted then start throws") << 0;
+        QTest::newRow("poll throws") << 1;
+        QTest::newRow("wrong operation") << 2;
+        QTest::newRow("wrong job") << 3;
+        QTest::newRow("unknown outcome") << 4;
+        QTest::newRow("release throws") << 5;
+        QTest::newRow("release refused") << 6;
+    }
+    void uncertainValidationKeepsItsOriginalCorrelationUntilDrain() {
+        QFETCH(int, failure);
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        h.validation.throw_start = failure == 0;
+        const bool accepted = h.binding.validateMedia(QStringLiteral("old-1"));
+        QCOMPARE(accepted, failure != 0);
+        QCOMPARE(h.validation.requests.size(), std::size_t{1});
+        const auto id = h.validation.requests.front().first;
+        if (failure != 0) {
+            h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+            h.validation.throw_poll = failure == 1;
+            if (failure == 2)
+                ++h.validation.completion->operation_id;
+            if (failure == 3)
+                h.validation.completion->job_id = "not-the-observed-job";
+            if (failure == 4)
+                h.validation.completion->outcome = static_cast<DownloadRecoveryValidationOutcome>(999);
+            h.binding.poll();
+            if (failure >= 5) {
+                h.validation.throw_release = failure == 5;
+                h.validation.allow_release = failure != 6;
+                QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-1")));
+            }
+        }
+        QCOMPARE(h.validation.shutdowns, 1);
+        QVERIFY(!h.binding.validateMedia(QStringLiteral("old-1")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!h.binding.warningText().isEmpty());
+        h.validation.throw_start = h.validation.throw_poll = h.validation.throw_release = false;
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QCOMPARE(h.validation.polls.back(), id);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+        QVERIFY(h.io.saves.empty());
+    }
+    void validationBusyAllowsExplicitRetryButOtherRefusalsRetireTheOwner_data() {
+        QTest::addColumn<int>("command");
+        QTest::newRow("busy") << static_cast<int>(DownloadRecoveryValidationCommand::Busy);
+        QTest::newRow("closed") << static_cast<int>(DownloadRecoveryValidationCommand::Closed);
+        QTest::newRow("invalid") << static_cast<int>(DownloadRecoveryValidationCommand::InvalidRequest);
+        QTest::newRow("unknown") << 999;
+    }
+    void validationBusyAllowsExplicitRetryButOtherRefusalsRetireTheOwner() {
+        QFETCH(int, command);
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        h.validation.command = static_cast<DownloadRecoveryValidationCommand>(command);
+        QVERIFY(!h.binding.validateMedia(QStringLiteral("old-1")));
+        QCOMPARE(h.validation.requests.size(), std::size_t{1});
+        const auto first_id = h.validation.requests.front().first;
+        const bool retryable = command == static_cast<int>(DownloadRecoveryValidationCommand::Busy);
+        QCOMPARE(h.validation.shutdowns, retryable ? 0 : 1);
+        QCOMPARE(h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool(), retryable);
+        h.validation.command = DownloadRecoveryValidationCommand::Accepted;
+        QCOMPARE(h.binding.validateMedia(QStringLiteral("old-1")), retryable);
+        QCOMPARE(h.validation.requests.size(), retryable ? std::size_t{2} : std::size_t{1});
+        if (retryable)
+            QVERIFY(h.validation.requests.back().first > first_id);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+        QVERIFY(h.io.saves.empty());
+    }
+    void pendingValidationReleaseRequiresAnExplicitRequestAndPhysicalAcknowledgement_data() {
+        QTest::addColumn<bool>("requested");
+        QTest::newRow("explicit pending cancellation") << true;
+        QTest::newRow("unsolicited release is uncertain") << false;
+    }
+    void pendingValidationReleaseRequiresAnExplicitRequestAndPhysicalAcknowledgement() {
+        QFETCH(bool, requested);
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        QVERIFY(h.reviewValue(DownloadJobsModel::ValidationBusyRole).toBool());
+        if (requested) {
+            QVERIFY(h.binding.releaseValidation(QStringLiteral("old-1")));
+            QCOMPARE(h.validation.releases.size(), std::size_t{1});
+            QVERIFY(!h.binding.releaseValidation(QStringLiteral("old-1")));
+            QVERIFY(h.reviewValue(DownloadJobsModel::ValidationBusyRole).toBool());
+            QVERIFY(!h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        }
+        QVERIFY(!h.binding.validateMedia(QStringLiteral("old-1")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QCOMPARE(h.validation.shutdowns, requested ? 0 : 1);
+        QCOMPARE(h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool(), requested);
+        if (!requested)
+            QVERIFY(!h.binding.warningText().isEmpty());
+        QCOMPARE(h.importer.calls, 0);
+        QVERIFY(h.io.saves.empty());
+    }
+    void idleValidationWorkerAndUncertainStopCallsCannotApproveExit_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("idle owner still drains") << 0;
+        QTest::newRow("shutdown throws") << 1;
+        QTest::newRow("stopped throws") << 2;
+    }
+    void idleValidationWorkerAndUncertainStopCallsCannotApproveExit() {
+        QFETCH(int, fault);
+        Harness h({}, false, true);
+        QVERIFY(h.ready());
+        h.validation.throw_shutdown = fault == 1;
+        h.validation.throw_probe = fault == 2;
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(h.validation.requests.empty());
+        QVERIFY(h.validation.shutdowns > 0);
+        h.io.saved();
+        h.io.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(!h.presenter.exitCommitted());
+        h.validation.physical_stopped = true;
+        if (fault != 0) {
+            h.binding.poll();
+            h.playerPoll();
+            QVERIFY(!h.presenter.exitCommitted());
+            QVERIFY(!h.binding.warningText().isEmpty());
+        }
+        h.validation.throw_shutdown = h.validation.throw_probe = false;
+        h.binding.poll();
+        if (!h.presenter.exiting())
+            QVERIFY(h.presenter.requestExit());
+        h.playerPoll();
+        QVERIFY(h.presenter.exitCommitted());
+        QVERIFY(h.validation.requests.empty());
+    }
+    void validationApprovalCannotSurviveShutdownOrReturnAfterReversedExit_data() {
+        QTest::addColumn<bool>("observed");
+        QTest::newRow("held approval before shutdown") << true;
+        QTest::newRow("late success after shutdown") << false;
+    }
+    void validationApprovalCannotSurviveShutdownOrReturnAfterReversedExit() {
+        QFETCH(bool, observed);
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        if (observed) {
+            h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+            h.binding.poll();
+            QVERIFY(h.reviewValue(DownloadJobsModel::ValidationTextRole)
+                        .toString()
+                        .startsWith(QStringLiteral("MP3 validado")));
+        }
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::ValidationTextRole)
+                     .toString()
+                     .startsWith(QStringLiteral("MP3 validado")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        if (!observed) {
+            h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+            h.binding.poll();
+            QVERIFY(!h.reviewValue(DownloadJobsModel::ValidationTextRole)
+                         .toString()
+                         .startsWith(QStringLiteral("MP3 validado")));
+        }
+        h.io.saved(DownloadCheckpointSaveStatus::Failed);
+        h.validation.physical_stopped = true;
+        h.review.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(!h.presenter.exiting());
+        QVERIFY(!h.presenter.exitCommitted());
+        const auto status = h.reviewValue(DownloadJobsModel::ValidationTextRole).toString();
+        QVERIFY(!status.isEmpty());
+        QVERIFY(!status.startsWith(QStringLiteral("MP3 validado")));
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QCOMPARE(h.service.snapshot().front().state, DownloadJobState::Interrupted);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.execution.starts, 0);
+    }
     void partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback() {
         Harness h({}, true);
         h.review.discard_supported = true;

@@ -1,6 +1,6 @@
 # Ownership privado dos arquivos de download
 
-**Estado:** journal/assessment e validação de candidatos worker-only; revisão e descarte explicitamente confirmado de temporários no painel instrumentado de R1.8, comuns a Lite/Completa. A validação ainda não está ligada ao painel; workflow remoto de produção permanece desligado. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host instalado ou engine.
+**Estado:** journal/assessment e validação de candidatos worker-only, com porta assíncrona e ações explícitas no painel instrumentado de R1.8; revisão/descarte e validação são comuns a Lite/Completa. Workflow remoto de produção permanece desligado. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) aceito e [ADR-0009](architecture/decisions/0009-download-execution-backends.md) proposto permanecem nesses estados. Não aprova ferramentas, sandbox, licenças, distribuição, host instalado ou engine.
 
 ## Registro e store
 
@@ -53,7 +53,19 @@ TDD do pin: Red **78 passagens/13 falhas/2 skips históricos** contra o stub; Gr
 
 Fechamento proporcional: **6/6 CTest** de mídia/sessão/execução e **2/2 CTest** de ownership/revisão, sem falhas; somente os dois skips de symlink já existentes na primitive permanecem. Builds Release de rede e documentos com `BUILD_TESTING=OFF` passaram e expõem zero testes; desktop default OFF também compilou. Formato dos 13 C++, revisão independente e checks documentais são gates separados. Não é suíte global, validação de internet, atualização de ferramentas, sandbox ou aprovação de distribuição.
 
-Faltam a porta rápida/owner Qt de validação por job ID, consentimento e lifecycle no painel, confirmação durável da recuperação de Prepared, handoff do Interrupted existente via importador Session e as demais integrações/gates do plano. O validador lento não deve ser chamado diretamente pela UI ou encaixado sem adaptação no worker de revisão síncrona.
+O incremento assíncrono abaixo liga esse validador ao painel sem chamá-lo na UI ou encaixá-lo no worker de revisão síncrona. Consentimento de importação, confirmação durável da recuperação de Prepared, handoff do Interrupted existente via importador Session e as demais integrações/gates do plano continuam pendentes.
+
+## Validação assíncrona por job ID
+
+Incremento de 2026-11-03: a porta pura [DownloadRecoveryValidation](../include/m0/ports/DownloadRecoveryValidation.hpp) admite apenas operation ID positivo/crescente e job ID limitado da composição confiável. Seus métodos rápidos `startValidation`, `release`, `poll`, `shutdown` e `stopped` não fazem I/O de arquivo, prova de ownership ou decode na thread da aplicação. Há um único slot, incluindo completion ainda não observada; poll de outro ID não consome resultado nem libera capacidade. O DTO repete os dois IDs e um outcome fechado, sem paths, handles, URLs ou comandos do QML.
+
+[WindowsDownloadRecoveryValidation](../src/adapters/WindowsDownloadRecoveryValidation.hpp) mantém factory, tarefa, recursos capturados e destruição em uma thread Qt privada com event loop. A factory padrão carrega o journal privado atual, encontra o ID exato e compõe `WindowsRecoveredMediaValidator` com configuração confiável. Journal ausente/inválido/futuro e registro não reconhecido têm resultados distintos; não criam workspace nem corrigem históricos. Cancelamento/shutdown observado após uma preparação lenta impede o primeiro launch, e tarefas ativas são canceladas e observadas até terminal físico.
+
+`Validated` retém a tarefa e a capability mesmo depois de consumir a completion. `release` do ID correspondente revoga aprovação ainda não observada, cancela validação ativa quando necessário e só emite `Released` **depois** do drain e da destruição da tarefa/pins no worker. Repetir a liberação matching enquanto pendente é inerte; outro ID não libera o candidato. Outros resultados terminais liberam admissão após o poll correspondente. Nenhuma dessas operações grava journal, confirma publicação, importa áudio ou modifica o job.
+
+Exceção/recusa incerta após chamar `start`, erro inesperado em `cancel`/`poll` ou enum desconhecido não comprovam parada. O worker solicita cancelamento e continua observando até uma confirmação terminal válida antes de destruir recursos; esse caminho devolve `Unreadable`, sem inventar `Released`. `shutdown` fecha novas admissões prontamente; `stopped` só fica verdadeiro após terminar a thread e destruir também factory/captures. O owner emprestado permanece vivo até esse reconhecimento; join no destructor é fallback.
+
+Os testes de componente passaram **36/36 Qt Test**, incluindo factory padrão com journal/workspace reais e MP3 sintético autenticado, Prepared/Published sem rewrite, pins retidos após consumir `Validated`, liberação após drain, IDs/slot, factory inerte nula/exception, métodos rápidos durante tarefas lentas e teardown na thread privada. Model **58/58**, binding **67/67** e Quick **259/259** passaram; seus fakes observam correlação, ações/estados e saída física. A [jornada única Main→worker nativo](ui-tests.md#validação-de-candidatos-com-worker-real) passou **4/4 casos Qt**, incluindo a recusa de HANDLE de escrita enquanto retido e sua liberação por botão/saída, com journals inalterados. O fechamento proporcional passou **9/9 CTest**, sem skips, e Release OFF de rede/default desktop passou com zero testes. Não houve mídia da internet, importação, Brave ou aprovação de ferramentas/distribuição; produção permanece OFF.
 
 ## Revisão explícita assíncrona
 

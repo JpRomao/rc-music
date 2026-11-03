@@ -2,6 +2,7 @@
 
 #include "adapters/DownloadJobsModel.hpp"
 #include "m0/application/DownloadAdmissionController.hpp"
+#include "m0/ports/DownloadRecoveryValidation.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
 #include <QElapsedTimer>
@@ -17,6 +18,24 @@
 
 namespace music_player::m0 {
 namespace {
+bool validValidationOutcome(const DownloadRecoveryValidationOutcome outcome) {
+    switch (outcome) {
+    case DownloadRecoveryValidationOutcome::Validated:
+    case DownloadRecoveryValidationOutcome::Released:
+    case DownloadRecoveryValidationOutcome::Unverified:
+    case DownloadRecoveryValidationOutcome::OwnedPartial:
+    case DownloadRecoveryValidationOutcome::Missing:
+    case DownloadRecoveryValidationOutcome::Conflict:
+    case DownloadRecoveryValidationOutcome::Unreadable:
+    case DownloadRecoveryValidationOutcome::HistoryMissing:
+    case DownloadRecoveryValidationOutcome::HistoryInvalid:
+    case DownloadRecoveryValidationOutcome::HistoryFuture:
+    case DownloadRecoveryValidationOutcome::InvalidMedia:
+    case DownloadRecoveryValidationOutcome::Timeout:
+        return true;
+    }
+    return false;
+}
 bool validReviewOutcome(const DownloadRecoveryReviewOutcome outcome, const DownloadRecoveryReviewAction action) {
     switch (outcome) {
     case DownloadRecoveryReviewOutcome::Unverified:
@@ -39,6 +58,12 @@ bool validReviewOutcome(const DownloadRecoveryReviewOutcome outcome, const Downl
 }
 } // namespace
 struct DownloadApplicationBinding::Impl {
+    enum class ValidationPhase { Pending, Held, Releasing };
+    struct ValidationOperation final {
+        std::uint64_t id;
+        std::string job_id;
+        ValidationPhase phase{ValidationPhase::Pending};
+    };
     struct ReviewOperation final {
         std::uint64_t id;
         std::string job_id;
@@ -81,12 +106,18 @@ struct DownloadApplicationBinding::Impl {
     std::uint64_t consent_revision{0};
     std::optional<DiscardConsent> discard_consent{};
     bool discard_uncertain{false};
+    std::uint64_t validation_operation_id{0};
+    std::optional<ValidationOperation> validation_operation{};
+    bool validation_shutdown_requested{false};
+    bool validation_stopped{false};
+    bool validation_unavailable{false};
 
     Impl(DownloadApplicationBinding& binding, PlayerPresenter& player, DownloadAdmissionController& admission,
          DownloadService& service, DownloadExecutionDrainCallbacks drain, DownloadApplicationBindingOptions settings)
         : presenter(&player), controller(admission), download_service(service), execution(std::move(drain)),
           options(std::move(settings)), model(service, &binding), timer(&binding) {
         review_stopped = options.recovery_review == nullptr;
+        validation_stopped = options.recovery_validation == nullptr;
         elapsed.start();
         timer.setInterval(25);
     }
@@ -111,6 +142,175 @@ DownloadApplicationBinding::~DownloadApplicationBinding() {
     if (impl_->gate_attached && impl_->presenter)
         static_cast<void>(impl_->presenter->setExitPreparationCallbacks({}));
 }
+bool DownloadApplicationBinding::canValidateForJob(const QString& job_id) const {
+    if (!impl_->gate_attached || impl_->closing || impl_->validation_unavailable || impl_->validation_operation ||
+        impl_->review_operation || !impl_->options.recovery_validation ||
+        impl_->controller.state() != DownloadAdmissionControllerState::Ready)
+        return false;
+    for (int row = 0; row < impl_->model.rowCount(); ++row) {
+        const auto index = impl_->model.index(row, 0);
+        if (impl_->model.data(index, DownloadJobsModel::JobIdRole).toString() == job_id &&
+            impl_->model.data(index, DownloadJobsModel::CanValidateMediaRole).toBool()) {
+            const auto jobs = impl_->download_service.snapshot();
+            return std::ranges::any_of(jobs, [&](const DownloadJobSnapshot& job) {
+                return job.state == DownloadJobState::Interrupted && QString::fromStdString(job.job_id) == job_id;
+            });
+        }
+    }
+    return false;
+}
+bool DownloadApplicationBinding::validateMedia(const QString& job_id) {
+    if (QThread::currentThread() != thread() || impl_->operating ||
+        impl_->validation_operation_id == std::numeric_limits<std::uint64_t>::max() || !canValidateForJob(job_id))
+        return false;
+    const QPointer<DownloadApplicationBinding> guard{this};
+    const auto id = ++impl_->validation_operation_id;
+    const auto trusted_job_id = job_id.toStdString();
+    auto* const validation = impl_->options.recovery_validation;
+    impl_->operating = true;
+    impl_->validation_operation = Impl::ValidationOperation{id, trusted_job_id};
+    invalidateDiscardConsent();
+    if (!guard)
+        return false;
+    const bool projected = impl_->model.beginValidation(job_id);
+    if (!guard)
+        return false;
+    bool accepted = false;
+    bool uncertain = false;
+    if (projected && !impl_->closing) {
+        try {
+            const auto command = validation->startValidation(id, trusted_job_id);
+            accepted = command == DownloadRecoveryValidationCommand::Accepted;
+            uncertain = !accepted && command != DownloadRecoveryValidationCommand::Busy;
+        } catch (...) {
+            uncertain = true;
+        }
+    }
+    if (!guard)
+        return false;
+    if (uncertain) {
+        failValidation();
+        if (!guard)
+            return false;
+    } else if (!accepted) {
+        impl_->validation_operation.reset();
+        static_cast<void>(impl_->model.finishValidation(job_id, DownloadRecoveryValidationOutcome::Unreadable));
+        if (!guard)
+            return false;
+    }
+    refreshProjection();
+    if (!guard)
+        return false;
+    impl_->operating = false;
+    if (impl_->closing)
+        beginShutdown();
+    return guard && accepted;
+}
+bool DownloadApplicationBinding::releaseValidation(const QString& job_id) {
+    if (QThread::currentThread() != thread() || impl_->operating || impl_->closing || impl_->validation_unavailable ||
+        !impl_->validation_operation || impl_->review_operation ||
+        impl_->validation_operation->job_id != job_id.toStdString() ||
+        impl_->validation_operation->phase == Impl::ValidationPhase::Releasing)
+        return false;
+    const QPointer<DownloadApplicationBinding> guard{this};
+    const auto id = impl_->validation_operation->id;
+    const auto previous_phase = impl_->validation_operation->phase;
+    impl_->operating = true;
+    impl_->validation_operation->phase = Impl::ValidationPhase::Releasing;
+    const bool projected = impl_->model.beginValidationRelease(job_id);
+    if (!guard)
+        return false;
+    if (!projected)
+        impl_->validation_operation->phase = previous_phase;
+    bool accepted = false;
+    if (projected && !impl_->closing) {
+        try {
+            accepted = impl_->options.recovery_validation->release(id);
+        } catch (...) {
+            accepted = false;
+        }
+        if (!guard)
+            return false;
+        if (!accepted)
+            failValidation();
+        if (!guard)
+            return false;
+    }
+    refreshProjection();
+    if (!guard)
+        return false;
+    impl_->operating = false;
+    if (impl_->closing)
+        beginShutdown();
+    return guard && accepted;
+}
+void DownloadApplicationBinding::shutdownValidation() {
+    if ((!impl_->closing && !impl_->validation_unavailable) || !impl_->options.recovery_validation ||
+        impl_->validation_shutdown_requested)
+        return;
+    const QPointer<DownloadApplicationBinding> guard{this};
+    // A shutdown can release the retained proof before exit is committed. A
+    // failed final save may keep the panel visible; its approval must retire
+    // before the worker can drop that proof, including a late success result.
+    impl_->model.setValidationUnavailable();
+    if (!guard)
+        return;
+    try {
+        impl_->options.recovery_validation->shutdown();
+        if (guard)
+            impl_->validation_shutdown_requested = true;
+    } catch (...) {
+        if (guard)
+            impl_->poll_failed = true;
+    }
+}
+void DownloadApplicationBinding::pollValidation() {
+    if (!impl_->validation_operation || (impl_->validation_operation->phase == Impl::ValidationPhase::Held &&
+                                         !impl_->closing && !impl_->validation_unavailable))
+        return;
+    const QPointer<DownloadApplicationBinding> guard{this};
+    const auto operation = *impl_->validation_operation;
+    std::optional<DownloadRecoveryValidationResult> result;
+    bool failed = false;
+    try {
+        result = impl_->options.recovery_validation->poll(operation.id);
+    } catch (...) {
+        failed = true;
+    }
+    if (!guard || (!failed && !result))
+        return;
+    const bool retiring = impl_->closing || impl_->validation_unavailable;
+    if (failed || result->operation_id != operation.id || result->job_id != operation.job_id ||
+        !validValidationOutcome(result->outcome) ||
+        (!retiring && ((result->outcome == DownloadRecoveryValidationOutcome::Validated &&
+                        operation.phase != Impl::ValidationPhase::Pending) ||
+                       (result->outcome == DownloadRecoveryValidationOutcome::Released &&
+                        operation.phase != Impl::ValidationPhase::Releasing)))) {
+        failValidation();
+        return;
+    }
+    if (result->outcome == DownloadRecoveryValidationOutcome::Validated)
+        impl_->validation_operation->phase = Impl::ValidationPhase::Held;
+    else
+        impl_->validation_operation.reset();
+    if (!retiring)
+        static_cast<void>(impl_->model.finishValidation(QString::fromStdString(operation.job_id), result->outcome));
+}
+void DownloadApplicationBinding::failValidation() {
+    const QPointer<DownloadApplicationBinding> guard{this};
+    if (!impl_->validation_unavailable) {
+        impl_->validation_unavailable = true;
+        invalidateDiscardConsent();
+        if (!guard)
+            return;
+        impl_->model.setValidationUnavailable();
+        if (!guard)
+            return;
+    }
+    // An exception does not prove rejection or release. Retain the correlation
+    // until the worker acknowledges terminal drain or physical shutdown.
+    shutdownValidation();
+}
 QAbstractItemModel* DownloadApplicationBinding::jobsModel() const { return &impl_->model; }
 QString DownloadApplicationBinding::statusText() const { return impl_->projection.status; }
 QString DownloadApplicationBinding::warningText() const { return impl_->projection.warning; }
@@ -132,7 +332,8 @@ void DownloadApplicationBinding::invalidateDiscardConsent() {
 }
 bool DownloadApplicationBinding::canDiscardForJob(const QString& job_id) const {
     if (!impl_->gate_attached || impl_->closing || impl_->review_unavailable || impl_->review_operation ||
-        !impl_->options.recovery_review || impl_->controller.state() != DownloadAdmissionControllerState::Ready)
+        impl_->validation_operation || !impl_->options.recovery_review ||
+        impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
     for (int row = 0; row < impl_->model.rowCount(); ++row) {
         const auto index = impl_->model.index(row, 0);
@@ -200,7 +401,7 @@ bool DownloadApplicationBinding::reviewFiles(const QString& job_id) {
 bool DownloadApplicationBinding::startReviewAction(const QString& job_id, const DownloadRecoveryReviewAction action) {
     if (QThread::currentThread() != thread() || impl_->operating || !impl_->gate_attached || impl_->closing ||
         !impl_->options.recovery_review || impl_->review_unavailable || impl_->review_operation ||
-        impl_->review_operation_id == std::numeric_limits<std::uint64_t>::max() ||
+        impl_->validation_operation || impl_->review_operation_id == std::numeric_limits<std::uint64_t>::max() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
     if (action == DownloadRecoveryReviewAction::DiscardPartials && !canDiscardForJob(job_id))
@@ -388,6 +589,9 @@ void DownloadApplicationBinding::beginShutdown() {
     shutdownReview();
     if (!guard)
         return;
+    shutdownValidation();
+    if (!guard)
+        return;
     impl_->operating = false;
     poll();
 }
@@ -435,6 +639,9 @@ void DownloadApplicationBinding::poll() {
     shutdownReview();
     if (!guard)
         return;
+    shutdownValidation();
+    if (!guard)
+        return;
     try {
         impl_->controller.tick(impl_->last_now);
     } catch (...) {
@@ -448,7 +655,13 @@ void DownloadApplicationBinding::poll() {
     pollReview();
     if (!guard)
         return;
+    pollValidation();
+    if (!guard)
+        return;
     shutdownReview();
+    if (!guard)
+        return;
+    shutdownValidation();
     if (!guard)
         return;
     // Do not recurse into another tick when closure arrived during a port call.
@@ -488,6 +701,22 @@ void DownloadApplicationBinding::poll() {
                 impl_->poll_failed = true;
         }
     }
+    if (impl_->validation_shutdown_requested) {
+        try {
+            const bool observed = impl_->options.recovery_validation->stopped();
+            if (!guard)
+                return;
+            impl_->validation_stopped = observed;
+            if (observed)
+                impl_->validation_operation.reset();
+        } catch (...) {
+            if (!guard)
+                return;
+            impl_->validation_stopped = false;
+            if (impl_->closing)
+                impl_->poll_failed = true;
+        }
+    }
     impl_->model.refresh();
     if (guard) {
         refreshProjection();
@@ -509,7 +738,7 @@ ExitPreparationState DownloadApplicationBinding::pollExitPreparation() {
         return ExitPreparationState::Failed;
     if (!impl_->controller.stopped() || !impl_->execution_shutdown_requested)
         return ExitPreparationState::Pending;
-    if (!impl_->execution_stopped || !impl_->review_stopped)
+    if (!impl_->execution_stopped || !impl_->review_stopped || !impl_->validation_stopped)
         return ExitPreparationState::Pending;
     const auto saved = impl_->controller.saveStatus();
     if (saved && *saved != DownloadCheckpointSaveStatus::Saved && !impl_->explicit_loss_accepted)
@@ -569,11 +798,28 @@ void DownloadApplicationBinding::refreshProjection() {
     if (!guard)
         return;
     impl_->model.setReviewAvailable(impl_->gate_attached && !impl_->closing && !impl_->review_unavailable &&
-                                    impl_->options.recovery_review &&
+                                    impl_->options.recovery_review && !impl_->validation_operation &&
                                     impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
                                     impl_->review_operation_id != std::numeric_limits<std::uint64_t>::max());
     if (!guard)
         return;
+    impl_->model.setValidationAvailable(
+        impl_->gate_attached && !impl_->closing && !impl_->validation_unavailable &&
+        impl_->options.recovery_validation && !impl_->review_operation &&
+        impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
+        (impl_->validation_operation || impl_->validation_operation_id != std::numeric_limits<std::uint64_t>::max()));
+    if (!guard)
+        return;
+    // Model notifications can synchronously request exit. Withdraw capabilities
+    // again before publishing the rest of that same projection.
+    if (impl_->closing) {
+        impl_->model.setReviewAvailable(false);
+        if (!guard)
+            return;
+        impl_->model.setValidationAvailable(false);
+        if (!guard)
+            return;
+    }
     if (impl_->discard_consent && !canDiscardForJob(impl_->discard_consent->job_id))
         invalidateDiscardConsent();
     if (!guard)
@@ -610,8 +856,9 @@ void DownloadApplicationBinding::refreshProjection() {
         next.status = tr("Encerrando downloads e salvando o histórico");
         break;
     case DownloadAdmissionControllerState::Stopped:
-        next.status = impl_->execution_stopped && impl_->review_stopped ? tr("Downloads encerrados")
-                                                                        : tr("Finalizando encerramento dos downloads");
+        next.status = impl_->execution_stopped && impl_->review_stopped && impl_->validation_stopped
+                          ? tr("Downloads encerrados")
+                          : tr("Finalizando encerramento dos downloads");
         break;
     case DownloadAdmissionControllerState::FinalSaveFailed:
         next.status = tr("Falha ao salvar o histórico final");
@@ -639,6 +886,9 @@ void DownloadApplicationBinding::refreshProjection() {
                                 "novamente; não é possível afirmar o que foi removido ou salvo.")
                            : tr("A verificação de arquivos foi interrompida. Reinicie o RC Music para tentar "
                                 "novamente; os dados foram preservados.");
+    else if (impl_->validation_unavailable)
+        next.warning = tr("A validação do MP3 foi interrompida. Reinicie o RC Music para verificar novamente; "
+                          "não há confirmação de importação ou liberação do arquivo.");
     next.retry_startup = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RetryCheckpoint;
     next.retry_admission = !impl_->closing && state == DownloadAdmissionControllerState::AdmissionFailed;
     next.retry_final = impl_->closing && state == DownloadAdmissionControllerState::FinalSaveFailed;

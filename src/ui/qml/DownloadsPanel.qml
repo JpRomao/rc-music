@@ -69,16 +69,8 @@ Popup {
             root.exitRequested();
     }
     function firstRowControl() {
-        const row = jobsList.currentItem;
-        if (row && row.cancelControl.visible && row.cancelControl.enabled)
-            return row.cancelControl;
-        if (row && row.retryControl.visible && row.retryControl.enabled)
-            return row.retryControl;
-        if (row && row.reviewControl.visible && row.reviewControl.enabled)
-            return row.reviewControl;
-        if (row && row.discardControl.visible && row.discardControl.enabled)
-            return row.discardControl;
-        return closeButton;
+        const controls = rowControls(jobsList.currentItem);
+        return controls.length > 0 ? controls[0] : closeButton;
     }
     function invalidateCloseConsent() {
         closeConsentOwner = null;
@@ -87,16 +79,22 @@ Popup {
             exitConfirmation.close();
     }
     function lastRowControl() {
-        const row = jobsList.currentItem;
-        if (row && row.discardControl.visible && row.discardControl.enabled)
-            return row.discardControl;
-        if (row && row.reviewControl.visible && row.reviewControl.enabled)
-            return row.reviewControl;
-        if (row && row.retryControl.visible && row.retryControl.enabled)
-            return row.retryControl;
-        if (row && row.cancelControl.visible && row.cancelControl.enabled)
-            return row.cancelControl;
-        return jobsList;
+        const controls = rowControls(jobsList.currentItem);
+        return controls.length > 0 ? controls[controls.length - 1] : jobsList;
+    }
+    function rowControls(row) {
+        if (!row)
+            return [];
+        return [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.releaseValidationControl].filter(function (item) {
+            return item && item.visible && item.enabled;
+        });
+    }
+    function nextRowControl(row, item, backwards) {
+        const controls = rowControls(row);
+        const index = controls.indexOf(item);
+        if (backwards)
+            return index > 0 ? controls[index - 1] : jobsList;
+        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : closeButton;
     }
     function nextTopControl(item, backwards) {
         const controls = topControls();
@@ -289,6 +287,8 @@ Popup {
                 required property bool canRetryImport
                 required property bool canReviewFiles
                 required property bool canDiscardPartials
+                required property bool canValidateMedia
+                required property bool canReleaseValidation
                 property alias cancelControl: cancelButton
                 required property string errorText
                 required property bool indeterminate
@@ -298,10 +298,25 @@ Popup {
                 property alias retryControl: retryButton
                 property alias reviewControl: reviewButton
                 property alias discardControl: discardButton
+                property alias validateControl: validateButton
+                property alias releaseValidationControl: releaseValidationButton
                 required property bool reviewBusy
                 required property string reviewText
+                required property bool validationBusy
+                required property string validationText
                 required property string statusText
                 required property string title
+                property var validationOwner: null
+                property string validationJobId: ""
+
+                function validationIdentityCurrent() {
+                    return root.downloads !== null && validationOwner === root.downloads && validationJobId.length > 0 && validationJobId === jobId;
+                }
+
+                Component.onCompleted: {
+                    validationOwner = root.downloads;
+                    validationJobId = jobId;
+                }
 
                 height: rowLayout.implicitHeight + root.contract.spacingUnit * 4
                 width: jobsList.width
@@ -404,18 +419,30 @@ Popup {
                         objectName: "download-review-status"
                         text: row.reviewText
                         textFormat: Text.PlainText
+                        visible: text.length > 0 && row.validationText.length === 0
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        Accessible.name: text
+                        Accessible.role: Accessible.StaticText
+                        Layout.fillWidth: true
+                        color: root.contract.textSecondaryColor
+                        objectName: "download-validation-status"
+                        text: row.validationText
+                        textFormat: Text.PlainText
                         visible: text.length > 0
                         wrapMode: Text.Wrap
                     }
-                    RowLayout {
+                    Flow {
                         Layout.fillWidth: true
-                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials
+                        spacing: root.contract.spacingUnit
+                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials || row.canValidateMedia || row.canReleaseValidation
 
                         AccessibleTransportButton {
                             id: cancelButton
 
-                            KeyNavigation.backtab: jobsList
-                            KeyNavigation.tab: retryButton.visible && retryButton.enabled ? retryButton : reviewButton.visible && reviewButton.enabled ? reviewButton : closeButton
+                            KeyNavigation.backtab: root.nextRowControl(row, cancelButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, cancelButton, false)
                             contract: root.contract
                             enabled: row.canCancel
                             objectName: "download-cancel"
@@ -434,8 +461,8 @@ Popup {
                         AccessibleTransportButton {
                             id: retryButton
 
-                            KeyNavigation.backtab: cancelButton.visible && cancelButton.enabled ? cancelButton : jobsList
-                            KeyNavigation.tab: reviewButton.visible && reviewButton.enabled ? reviewButton : closeButton
+                            KeyNavigation.backtab: root.nextRowControl(row, retryButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, retryButton, false)
                             contract: root.contract
                             enabled: row.canRetryImport
                             objectName: "download-retry-import"
@@ -454,8 +481,8 @@ Popup {
                         AccessibleTransportButton {
                             id: reviewButton
 
-                            KeyNavigation.backtab: retryButton.visible && retryButton.enabled ? retryButton : cancelButton.visible && cancelButton.enabled ? cancelButton : jobsList
-                            KeyNavigation.tab: discardButton.visible && discardButton.enabled ? discardButton : closeButton
+                            KeyNavigation.backtab: root.nextRowControl(row, reviewButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, reviewButton, false)
                             contract: root.contract
                             enabled: row.canReviewFiles && !row.reviewBusy
                             objectName: "download-review-files"
@@ -474,8 +501,8 @@ Popup {
                         AccessibleTransportButton {
                             id: discardButton
 
-                            KeyNavigation.backtab: reviewButton.visible && reviewButton.enabled ? reviewButton : jobsList
-                            KeyNavigation.tab: closeButton
+                            KeyNavigation.backtab: root.nextRowControl(row, discardButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, discardButton, false)
                             contract: root.contract
                             enabled: row.canDiscardPartials && !row.reviewBusy
                             objectName: "download-discard-partials"
@@ -491,8 +518,45 @@ Popup {
                                     root.requestDiscardConsent(row.jobId, discardButton);
                             }
                         }
-                        Item {
-                            Layout.fillWidth: true
+                        AccessibleTransportButton {
+                            id: validateButton
+
+                            KeyNavigation.backtab: root.nextRowControl(row, validateButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, validateButton, false)
+                            contract: root.contract
+                            enabled: row.canValidateMedia && !row.validationBusy && row.validationIdentityCurrent()
+                            objectName: "download-validate-media"
+                            text: labels.validateMedia
+                            visible: row.canValidateMedia
+
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (root.opened && row.canValidateMedia && !row.validationBusy && row.validationIdentityCurrent() && jobsList.itemAtIndex(row.index) === row)
+                                    root.downloads.validateMedia(row.validationJobId);
+                            }
+                        }
+                        AccessibleTransportButton {
+                            id: releaseValidationButton
+
+                            KeyNavigation.backtab: root.nextRowControl(row, releaseValidationButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, releaseValidationButton, false)
+                            contract: root.contract
+                            enabled: row.canReleaseValidation && row.validationIdentityCurrent()
+                            objectName: "download-release-validation"
+                            text: row.validationBusy ? labels.cancelValidation : labels.releaseValidation
+                            visible: row.canReleaseValidation
+
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (root.opened && row.canReleaseValidation && row.validationIdentityCurrent() && jobsList.itemAtIndex(row.index) === row)
+                                    root.downloads.releaseValidation(row.validationJobId);
+                            }
                         }
                     }
                 }

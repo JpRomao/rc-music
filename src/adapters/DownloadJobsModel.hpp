@@ -2,6 +2,7 @@
 
 #include "m0/application/DownloadService.hpp"
 #include "m0/ports/DownloadRecoveryReview.hpp"
+#include "m0/ports/DownloadRecoveryValidation.hpp"
 
 #include <QAbstractListModel>
 #include <QHash>
@@ -31,7 +32,11 @@ class DownloadJobsModel final : public QAbstractListModel {
         CanReviewFilesRole,
         ReviewTextRole,
         ReviewBusyRole,
-        CanDiscardPartialsRole
+        CanDiscardPartialsRole,
+        CanValidateMediaRole,
+        ValidationTextRole,
+        ValidationBusyRole,
+        CanReleaseValidationRole
     };
     Q_ENUM(Role)
 
@@ -50,6 +55,11 @@ class DownloadJobsModel final : public QAbstractListModel {
     [[nodiscard]] bool beginReview(const QString& job_id,
                                    DownloadRecoveryReviewAction action = DownloadRecoveryReviewAction::ReviewFiles);
     [[nodiscard]] bool finishReview(const QString& job_id, DownloadRecoveryReviewOutcome outcome);
+    void setValidationAvailable(bool available);
+    void setValidationUnavailable();
+    [[nodiscard]] bool beginValidation(const QString& job_id);
+    [[nodiscard]] bool beginValidationRelease(const QString& job_id);
+    [[nodiscard]] bool finishValidation(const QString& job_id, DownloadRecoveryValidationOutcome outcome);
 
   signals:
     void summaryChanged();
@@ -57,6 +67,8 @@ class DownloadJobsModel final : public QAbstractListModel {
   private:
     void refreshSnapshot();
     void notifyReviewChanged();
+    void notifyValidationChanged();
+    enum class ValidationPhase { Idle, Pending, Held, ReleasePending };
 
     DownloadService& service_;
     std::vector<DownloadJobSnapshot> items_{};
@@ -70,6 +82,11 @@ class DownloadJobsModel final : public QAbstractListModel {
     DownloadRecoveryReviewAction review_action_{DownloadRecoveryReviewAction::ReviewFiles};
     QString review_job_id_{};
     QHash<QString, DownloadRecoveryReviewOutcome> reviews_{};
+    bool validation_available_{false};
+    bool validation_unavailable_{false};
+    ValidationPhase validation_phase_{ValidationPhase::Idle};
+    QString validation_job_id_{};
+    QHash<QString, DownloadRecoveryValidationOutcome> validations_{};
 };
 
 } // namespace music_player::m0

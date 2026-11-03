@@ -171,6 +171,45 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
     return reviewText(DownloadRecoveryReviewOutcome::Unreadable);
 }
 
+QString validationText(const DownloadRecoveryValidationOutcome outcome) {
+    switch (outcome) {
+    case DownloadRecoveryValidationOutcome::Validated:
+        return DownloadJobsModel::tr("MP3 validado; não foi importado na fila. Libere a validação quando terminar a "
+                                     "revisão; ela não publica nem importa o arquivo.");
+    case DownloadRecoveryValidationOutcome::Released:
+        return DownloadJobsModel::tr("Validação liberada. O arquivo não foi importado nem removido.");
+    case DownloadRecoveryValidationOutcome::Unverified:
+        return DownloadJobsModel::tr("A origem do arquivo não pôde ser confirmada. Nada foi importado; verifique "
+                                     "os arquivos novamente.");
+    case DownloadRecoveryValidationOutcome::OwnedPartial:
+        return DownloadJobsModel::tr("Há apenas arquivos parciais; nenhum MP3 final foi validado ou importado.");
+    case DownloadRecoveryValidationOutcome::Missing:
+        return DownloadJobsModel::tr("O arquivo final não foi encontrado. Se necessário, selecione a mídia "
+                                     "novamente na página.");
+    case DownloadRecoveryValidationOutcome::Conflict:
+        return DownloadJobsModel::tr("Conflito entre o arquivo e o histórico. Nada foi importado; verifique "
+                                     "os arquivos novamente antes de outra tentativa.");
+    case DownloadRecoveryValidationOutcome::Unreadable:
+        return DownloadJobsModel::tr("Não foi possível validar o arquivo. Verifique o acesso às pastas e "
+                                     "tente novamente; nada foi importado.");
+    case DownloadRecoveryValidationOutcome::HistoryMissing:
+        return DownloadJobsModel::tr("O histórico de arquivos deste download não foi encontrado. A validação "
+                                     "não pode confirmar sua origem; nada foi importado.");
+    case DownloadRecoveryValidationOutcome::HistoryInvalid:
+        return DownloadJobsModel::tr("O histórico de arquivos não pôde ser validado. Não remova os dados "
+                                     "para tentar recuperar este áudio; nada foi importado.");
+    case DownloadRecoveryValidationOutcome::HistoryFuture:
+        return DownloadJobsModel::tr("O histórico de arquivos pertence a uma versão mais nova. Use uma versão "
+                                     "compatível do RC Music; nada foi importado.");
+    case DownloadRecoveryValidationOutcome::InvalidMedia:
+        return DownloadJobsModel::tr("Não foi possível validar este arquivo como MP3. Nada foi importado ou alterado.");
+    case DownloadRecoveryValidationOutcome::Timeout:
+        return DownloadJobsModel::tr("A validação de MP3 excedeu o tempo limite. Você pode tentar novamente; "
+                                     "nada foi importado.");
+    }
+    return validationText(DownloadRecoveryValidationOutcome::Unreadable);
+}
+
 } // namespace
 
 DownloadJobsModel::DownloadJobsModel(DownloadService& service, QObject* parent)
@@ -220,7 +259,7 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
     case CanRetryImportRole:
         return item.state == DownloadJobState::ImportFailed;
     case CanReviewFilesRole:
-        return review_available_ && !review_unavailable_ && review_job_id_.isEmpty() &&
+        return review_available_ && !review_unavailable_ && review_job_id_.isEmpty() && validation_job_id_.isEmpty() &&
                item.state == DownloadJobState::Interrupted;
     case ReviewTextRole: {
         if (item.state != DownloadJobState::Interrupted)
@@ -244,9 +283,38 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
     case CanDiscardPartialsRole: {
         const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
         return review_available_ && !review_unavailable_ && discard_supported_ && review_job_id_.isEmpty() &&
-               item.state == DownloadJobState::Interrupted && found != reviews_.cend() &&
-               *found == DownloadRecoveryReviewOutcome::OwnedPartial;
+               validation_job_id_.isEmpty() && item.state == DownloadJobState::Interrupted &&
+               found != reviews_.cend() && *found == DownloadRecoveryReviewOutcome::OwnedPartial;
     }
+    case CanValidateMediaRole: {
+        const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
+        return validation_available_ && !validation_unavailable_ && validation_job_id_.isEmpty() &&
+               review_job_id_.isEmpty() && item.state == DownloadJobState::Interrupted && found != reviews_.cend() &&
+               *found == DownloadRecoveryReviewOutcome::OwnedFinalCandidate;
+    }
+    case ValidationTextRole: {
+        if (item.state != DownloadJobState::Interrupted)
+            return QString{};
+        const auto job_id = QString::fromStdString(item.job_id);
+        if (validation_job_id_ == job_id) {
+            if (validation_unavailable_)
+                return tr("A validação foi interrompida. Não é possível confirmar a aprovação do áudio; "
+                          "reinicie o RC Music para verificar novamente. Nada foi importado.");
+            if (validation_phase_ == ValidationPhase::Pending)
+                return tr("Validando o MP3 local; nada será importado ou alterado.");
+            if (validation_phase_ == ValidationPhase::ReleasePending)
+                return tr("Liberando a validação; aguardando a parada e a liberação dos arquivos.");
+        }
+        const auto found = validations_.constFind(job_id);
+        return found != validations_.cend() ? validationText(*found) : QString{};
+    }
+    case ValidationBusyRole:
+        return validation_job_id_ == QString::fromStdString(item.job_id) &&
+               (validation_phase_ == ValidationPhase::Pending || validation_phase_ == ValidationPhase::ReleasePending);
+    case CanReleaseValidationRole:
+        return validation_available_ && !validation_unavailable_ &&
+               validation_job_id_ == QString::fromStdString(item.job_id) &&
+               (validation_phase_ == ValidationPhase::Pending || validation_phase_ == ValidationPhase::Held);
     default:
         return {};
     }
@@ -268,15 +336,26 @@ QHash<int, QByteArray> DownloadJobsModel::roleNames() const {
             {CanReviewFilesRole, "canReviewFiles"},
             {ReviewTextRole, "reviewText"},
             {ReviewBusyRole, "reviewBusy"},
-            {CanDiscardPartialsRole, "canDiscardPartials"}};
+            {CanDiscardPartialsRole, "canDiscardPartials"},
+            {CanValidateMediaRole, "canValidateMedia"},
+            {ValidationTextRole, "validationText"},
+            {ValidationBusyRole, "validationBusy"},
+            {CanReleaseValidationRole, "canReleaseValidation"}};
 }
 
 int DownloadJobsModel::activeCount() const noexcept { return active_count_; }
 int DownloadJobsModel::completedCount() const noexcept { return completed_count_; }
 void DownloadJobsModel::notifyReviewChanged() {
     if (!items_.empty())
+        emit dataChanged(
+            index(0, 0), index(rowCount() - 1, 0),
+            {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole, CanValidateMediaRole});
+}
+void DownloadJobsModel::notifyValidationChanged() {
+    if (!items_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
-                         {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole});
+                         {CanValidateMediaRole, ValidationTextRole, ValidationBusyRole, CanReleaseValidationRole,
+                          CanReviewFilesRole, CanDiscardPartialsRole});
 }
 void DownloadJobsModel::setReviewAvailable(const bool available) {
     if (review_available_ == available)
@@ -299,7 +378,7 @@ void DownloadJobsModel::setDiscardSupported(const bool supported) {
 bool DownloadJobsModel::beginReview(const QString& job_id, const DownloadRecoveryReviewAction action) {
     if (action != DownloadRecoveryReviewAction::ReviewFiles && action != DownloadRecoveryReviewAction::DiscardPartials)
         return false;
-    if (!review_available_ || review_unavailable_ || !review_job_id_.isEmpty() ||
+    if (!review_available_ || review_unavailable_ || !review_job_id_.isEmpty() || !validation_job_id_.isEmpty() ||
         std::ranges::none_of(items_, [&](const DownloadJobSnapshot& item) {
             return item.state == DownloadJobState::Interrupted && QString::fromStdString(item.job_id) == job_id;
         }))
@@ -321,6 +400,60 @@ bool DownloadJobsModel::finishReview(const QString& job_id, const DownloadRecove
     reviews_.insert(job_id, outcome);
     review_job_id_.clear();
     notifyReviewChanged();
+    return true;
+}
+
+void DownloadJobsModel::setValidationAvailable(const bool available) {
+    if (validation_available_ == available)
+        return;
+    validation_available_ = available;
+    notifyValidationChanged();
+}
+void DownloadJobsModel::setValidationUnavailable() {
+    if (validation_unavailable_)
+        return;
+    validation_unavailable_ = true;
+    if (!validation_job_id_.isEmpty())
+        validations_.insert(validation_job_id_, DownloadRecoveryValidationOutcome::Unreadable);
+    notifyValidationChanged();
+}
+bool DownloadJobsModel::beginValidation(const QString& job_id) {
+    const auto found = std::ranges::find_if(
+        items_, [&](const DownloadJobSnapshot& item) { return QString::fromStdString(item.job_id) == job_id; });
+    if (found == items_.end() ||
+        !data(index(static_cast<int>(found - items_.begin()), 0), CanValidateMediaRole).toBool())
+        return false;
+    validation_job_id_ = job_id;
+    validation_phase_ = ValidationPhase::Pending;
+    validations_.remove(job_id);
+    notifyValidationChanged();
+    return true;
+}
+bool DownloadJobsModel::beginValidationRelease(const QString& job_id) {
+    if (!validation_available_ || validation_unavailable_ || validation_job_id_.isEmpty() ||
+        validation_job_id_ != job_id ||
+        (validation_phase_ != ValidationPhase::Pending && validation_phase_ != ValidationPhase::Held))
+        return false;
+    validation_phase_ = ValidationPhase::ReleasePending;
+    notifyValidationChanged();
+    return true;
+}
+bool DownloadJobsModel::finishValidation(const QString& job_id, const DownloadRecoveryValidationOutcome outcome) {
+    if (validation_job_id_.isEmpty() || validation_job_id_ != job_id)
+        return false;
+    if (outcome == DownloadRecoveryValidationOutcome::Validated) {
+        if (validation_unavailable_ || validation_phase_ != ValidationPhase::Pending)
+            return false;
+        validation_phase_ = ValidationPhase::Held;
+    } else {
+        if (outcome == DownloadRecoveryValidationOutcome::Released &&
+            validation_phase_ != ValidationPhase::ReleasePending)
+            return false;
+        validation_job_id_.clear();
+        validation_phase_ = ValidationPhase::Idle;
+    }
+    validations_.insert(job_id, outcome);
+    notifyValidationChanged();
     return true;
 }
 

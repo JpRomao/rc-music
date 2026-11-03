@@ -86,12 +86,181 @@ QVariant value(const DownloadJobsModel& model, int role, int row = 0) { return m
 
 std::filesystem::path finalPath() { return std::filesystem::path(L"C:\\RC Music synthetic downloads\\Música.mp3"); }
 
+struct RecoveryModelHarness final {
+    ReviewIdentity identity;
+    Execution execution;
+    Importer importer;
+    DownloadService service{execution, importer, "fresh", {}, &identity};
+    bool restored = service.restore(
+        {.receipts = {{.request_id = request_id,
+                       .fingerprint = std::string(64, 'a'),
+                       .job_ids = {"previous-1", "previous-2"},
+                       .retained_request_bytes = 128}},
+         .jobs = {{.job_id = "previous-1", .title = "First"}, {.job_id = "previous-2", .title = "Second"}}});
+    DownloadJobsModel model{service};
+    bool reviewed(const QString& id, DownloadRecoveryReviewOutcome outcome) {
+        model.setReviewAvailable(true);
+        return model.beginReview(id) && model.finishReview(id, outcome);
+    }
+};
+
 } // namespace
 
 class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void validationRequiresAvailableCurrentFinalAssessmentAndExactInterruptedIdentity() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QVERIFY(!value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+        h.model.setValidationAvailable(true);
+        QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedPartial));
+        QVERIFY(!value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!h.model.beginValidation(QStringLiteral("PREVIOUS-1")));
+        QVERIFY(!h.model.beginValidation(QStringLiteral("unknown")));
+        h.model.setValidationAvailable(false);
+        QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+        h.model.setValidationAvailable(true);
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(value(h.model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void validationHoldsTheGlobalSlotUntilMatchingReleaseAndNeverImports() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QAbstractItemModelTester tester(&h.model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(h.reviewed(QStringLiteral("previous-2"), DownloadRecoveryReviewOutcome::OwnedPartial));
+        h.model.setDiscardSupported(true);
+        h.model.setValidationAvailable(true);
+        const auto before = h.service.snapshot();
+        QVERIFY(value(h.model, DownloadJobsModel::CanDiscardPartialsRole, 1).toBool());
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole, 1).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanDiscardPartialsRole, 1).toBool());
+        QVERIFY(!h.model.beginReview(QStringLiteral("previous-2")));
+        QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.finishValidation(QStringLiteral("previous-2"), DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(!value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        const auto text = value(h.model, DownloadJobsModel::ValidationTextRole).toString();
+        QVERIFY(text.contains(QStringLiteral("MP3 validado")));
+        QVERIFY(text.contains(QStringLiteral("não foi importado")));
+        QVERIFY(value(h.model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+        QVERIFY(!h.model.beginReview(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.beginValidationRelease(QStringLiteral("previous-2")));
+        QVERIFY(h.model.beginValidationRelease(QStringLiteral("previous-1")));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!h.model.beginValidationRelease(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Released));
+        QVERIFY(!value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanDiscardPartialsRole, 1).toBool());
+        QCOMPARE(h.service.snapshot(), before);
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.execution.polls, 0);
+        QCOMPARE(h.execution.cancellations, 0);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void validationFailuresAreTypedPrivateAndReleaseTheModelSlot_data() {
+        QTest::addColumn<int>("outcome");
+        for (auto outcome :
+             {DownloadRecoveryValidationOutcome::Unverified, DownloadRecoveryValidationOutcome::OwnedPartial,
+              DownloadRecoveryValidationOutcome::Missing, DownloadRecoveryValidationOutcome::Conflict,
+              DownloadRecoveryValidationOutcome::Unreadable, DownloadRecoveryValidationOutcome::HistoryMissing,
+              DownloadRecoveryValidationOutcome::HistoryInvalid, DownloadRecoveryValidationOutcome::HistoryFuture,
+              DownloadRecoveryValidationOutcome::InvalidMedia, DownloadRecoveryValidationOutcome::Timeout})
+            QTest::newRow(qPrintable(QString::number(int(outcome)))) << int(outcome);
+        QTest::newRow("unknown") << 999;
+    }
+    void validationFailuresAreTypedPrivateAndReleaseTheModelSlot() {
+        QFETCH(int, outcome);
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        h.model.setValidationAvailable(true);
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(h.model.finishValidation(QStringLiteral("previous-1"),
+                                         static_cast<DownloadRecoveryValidationOutcome>(outcome)));
+        const auto text = value(h.model, DownloadJobsModel::ValidationTextRole).toString();
+        QVERIFY(!text.isEmpty());
+        QVERIFY(!text.contains(QStringLiteral("https:")));
+        QVERIFY(!text.contains(QStringLiteral("C:/")));
+        QVERIFY(!text.contains(QStringLiteral("MP3 validado")));
+        QVERIFY(!value(h.model, DownloadJobsModel::ValidationBusyRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(value(h.model, DownloadJobsModel::CanReviewFilesRole).toBool());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void validationCanBeReleasedWhilePendingAndCannotRaceAnotherReview() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        h.model.setValidationAvailable(true);
+        QVERIFY(h.model.beginReview(QStringLiteral("previous-2")));
+        QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(h.model.finishReview(QStringLiteral("previous-2"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Released));
+        QVERIFY(h.model.beginValidationRelease(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Validated));
+        QVERIFY(h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Released));
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(
+            !value(h.model, DownloadJobsModel::ValidationTextRole).toString().contains(QStringLiteral("MP3 validado")));
+    }
+    void validationUnavailableIsLatchedAndNeverPreservesAClaimOfValidatedMedia() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        h.model.setValidationAvailable(true);
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Validated));
+        h.model.setValidationUnavailable();
+        h.model.setValidationAvailable(true);
+        QVERIFY(!value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!value(h.model, DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(!h.model.beginValidationRelease(QStringLiteral("previous-1")));
+        QVERIFY(!h.model.beginReview(QStringLiteral("previous-2")));
+        QVERIFY(!h.model.finishValidation(QStringLiteral("previous-1"), DownloadRecoveryValidationOutcome::Validated));
+        const auto text = value(h.model, DownloadJobsModel::ValidationTextRole).toString();
+        QVERIFY(text.contains(QStringLiteral("interrompida")));
+        QVERIFY(!text.contains(QStringLiteral("MP3 validado")));
+        QVERIFY(value(h.model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
+    }
+    void validationSignalsObserveFrozenControlsBeforeReentrantRequests() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        QVERIFY(h.reviewed(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+        h.model.setValidationAvailable(true);
+        bool observed = false;
+        connect(&h.model, &QAbstractItemModel::dataChanged, &h.model, [&] {
+            if (!value(h.model, DownloadJobsModel::ValidationBusyRole).toBool() || observed)
+                return;
+            observed = true;
+            QVERIFY(!value(h.model, DownloadJobsModel::CanValidateMediaRole).toBool());
+            QVERIFY(!value(h.model, DownloadJobsModel::CanReviewFilesRole, 1).toBool());
+            QVERIFY(!h.model.beginValidation(QStringLiteral("previous-1")));
+            QVERIFY(!h.model.beginReview(QStringLiteral("previous-2")));
+        });
+        QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
+        QVERIFY(observed);
+    }
     void discardCapabilityNeedsOwnPartialsAndConsumesTheirOldAssessment() {
         ReviewIdentity identity;
         Execution execution;
@@ -421,10 +590,26 @@ class DownloadJobsModelTests final : public QObject {
         DownloadJobsModel model(service);
         QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
         const auto roles = model.roleNames();
-        const QList<QByteArray> expected{"jobId",          "title",      "state",         "statusText",
-                                         "completedUnits", "totalUnits", "indeterminate", "progressRatio",
-                                         "outputPath",     "errorText",  "canCancel",     "canRetryImport",
-                                         "canReviewFiles", "reviewText", "reviewBusy",    "canDiscardPartials"};
+        const QList<QByteArray> expected{"jobId",
+                                         "title",
+                                         "state",
+                                         "statusText",
+                                         "completedUnits",
+                                         "totalUnits",
+                                         "indeterminate",
+                                         "progressRatio",
+                                         "outputPath",
+                                         "errorText",
+                                         "canCancel",
+                                         "canRetryImport",
+                                         "canReviewFiles",
+                                         "reviewText",
+                                         "reviewBusy",
+                                         "canDiscardPartials",
+                                         "canValidateMedia",
+                                         "validationText",
+                                         "validationBusy",
+                                         "canReleaseValidation"};
         QCOMPARE(roles.size(), expected.size());
         for (const auto& role : expected)
             QVERIFY(roles.values().contains(role));

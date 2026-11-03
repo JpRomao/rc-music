@@ -9,6 +9,21 @@
 
 Qt Test compõe binding/model/controller/serviço reais com IO/execução falsos e prova Saved separado de parada física, retry/abandono explícitos, exceções/clock/reentrada e gate que não aprova owner expirado. A [main instrumentada](process-tests.md#composição-instrumentada-dos-downloads) acrescenta stores/workers reais e áudio sintético autenticado com publicação falsa, sem ingresso remoto de produção ou engine. As evidências e lacunas ficam no [checkpoint central](development-plan.md); nenhuma suíte UI comprova extensão instalada, navegação da Completa, download/conversão/sandbox ou release.
 
+### Validação de candidatos com worker real
+
+`DownloadRecoveryValidationCompositionTests` liga Main/QML, binding/model/controller e os workers Windows reais de checkpoint, revisão e validação. Só é registrado com Windows, rede/persistência opcionais e paths explícitos de FFmpeg/ffprobe confiáveis. Isso não ativa os serviços no executável de produção. O ensaio usa o MP3 sintético autenticado do corpus em TEMP Unicode, sem páginas, mídia pessoal ou rede.
+
+As duas linhas Published/Prepared sem Saved percorrem os cliques Verificar arquivos → Validar MP3 → Liberar → Validar novamente → sair. Conferem texto literal sem paths, ausência de importação/seleção/playback, fila vazia e journal/final inalterados. Um HANDLE de escrita é recusado enquanto a validação retém a prova e volta a ser permitido depois de Released ou saída fisicamente drenada. Playback, metadata, execução de rede e importador são fakes observados; o probe e a decodificação MP3, workspace, journals, workers e UI são reais. Não é download da internet ou instalação da extensão.
+
+Com o cache de testes combinado já configurado:
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_ui_download_recovery_validation_tests --parallel 4
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music\.ui\.download-recovery-validation$' --output-on-failure --no-tests=error
+```
+
+O ensaio inicial passou **4/4 casos Qt** (duas linhas mais init/cleanup), sem skips. Binding tem regressão separada para retirar a aprovação antes do shutdown: uma falha no checkpoint final pode reverter a intenção de saída, mas não restaurar uma prova já liberada nem projetar sucesso tardio. Resultados finais e limites ficam no [checkpoint](development-plan.md#17-próxima-sequência-segura); o teste offscreen não comprova integração instalada, Brave, áudio audível, acessibilidade nativa ou release.
+
 ## Atalhos principais e modos de fila
 
 Pedido funcional confirmado em 2026-09-06 (`FR-037`/`FR-019`): Espaço controla reprodução inclusive depois de clicar em Mudo ou outro botão; setas usam saltos configurados/volume e Shift+setas navega. F1 alterna modo aleatório persistido e F2 repetição da fila, com estado textual e acessível. Editor, menus e modais mantêm suas teclas; Enter ativa controles e Ctrl+↑/↓ seleciona linhas. O [manual](user-guide.md) contém o contrato completo, incluindo seguir a ordem exibida ao desligar aleatório.

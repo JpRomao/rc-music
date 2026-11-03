@@ -13,6 +13,7 @@ class PlayerPresenter;
 class DownloadAdmissionController;
 class DownloadService;
 class DownloadRecoveryReview;
+class DownloadRecoveryValidation;
 enum class ExitPreparationState;
 enum class DownloadRecoveryReviewAction;
 
@@ -28,6 +29,9 @@ struct DownloadApplicationBindingOptions final {
     bool automatic_polling{true};
     // Borrowed prompt, worker-backed port; outlives this binding and its drain.
     DownloadRecoveryReview* recovery_review{nullptr};
+    // Borrowed Qt-worker validation owner, including its retained candidate.
+    // No path/capability is exposed to QML. Owner survives physical drain.
+    DownloadRecoveryValidation* recovery_validation{nullptr};
 };
 
 // Qt application-thread owner of projection/timer/exit coordination only. The
@@ -75,6 +79,8 @@ class DownloadApplicationBinding final : public QObject {
     Q_INVOKABLE bool requestDiscardPartials(const QString& job_id);
     Q_INVOKABLE bool confirmDiscardPartials(const QString& job_id, const QString& token);
     Q_INVOKABLE void cancelDiscardPartialsConfirmation(const QString& job_id, const QString& token);
+    Q_INVOKABLE bool validateMedia(const QString& job_id);
+    Q_INVOKABLE bool releaseValidation(const QString& job_id);
 
   signals:
     void stateChanged();
@@ -85,6 +91,10 @@ class DownloadApplicationBinding final : public QObject {
     void shutdownReview();
     void pollReview();
     void failReview();
+    void shutdownValidation();
+    void pollValidation();
+    void failValidation();
+    [[nodiscard]] bool canValidateForJob(const QString& job_id) const;
     void invalidateDiscardConsent();
     [[nodiscard]] bool canDiscardForJob(const QString& job_id) const;
     [[nodiscard]] bool startReviewAction(const QString& job_id, DownloadRecoveryReviewAction action);

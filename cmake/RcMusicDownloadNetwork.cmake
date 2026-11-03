@@ -25,6 +25,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMp3Validator.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRecoveredMediaValidator.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadRecoveryValidation.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
@@ -57,8 +58,8 @@ if(BUILD_TESTING)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
             WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
-            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadNetworkLaunch
-            WindowsPreparedDownloadTask WindowsPreparedDownloadExecution)
+            WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
+            WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution)
         add_executable(rc_music_download_io_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
         target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)
@@ -162,6 +163,13 @@ if(BUILD_TESTING)
                 RC_MUSIC_TEST_TLS_NETWORK_SHA256="${rc_music_test_tls_network_sha256}"
                 RC_MUSIC_TEST_TLS_PLUGIN_PATH="${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
                 RC_MUSIC_TEST_TLS_PLUGIN_SHA256="${rc_music_test_tls_plugin_sha256}")
+        elseif(unit STREQUAL "WindowsDownloadRecoveryValidation")
+            if(RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)
+                target_compile_definitions(${target} PRIVATE
+                    RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"
+                    RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}"
+                    RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid")
+            endif()
         elseif(unit STREQUAL "WindowsLocalMediaConverter" OR unit STREQUAL "WindowsLocalMp3Validator" OR
                unit STREQUAL "WindowsRecoveredMediaValidator" OR unit STREQUAL "WindowsDownloadJobSession")
             add_dependencies(${target} rc_music_download_converter_helper)

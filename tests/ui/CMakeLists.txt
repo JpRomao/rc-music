@@ -92,6 +92,19 @@ if(WIN32 AND TARGET rc_music_download_documents AND TARGET rc_music_download_per
     set_tests_properties(rc_music.ui.download-recovery-review PROPERTIES
         LABELS "ui;qt;downloads;persistence;windows;FR-051;FR-053")
 endif()
+if(WIN32 AND TARGET rc_music_download_network AND TARGET rc_music_download_persistence AND
+        RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)
+    add_ui_test(rc_music_ui_download_recovery_validation_tests rc_music.ui.download-recovery-validation
+        qtest/DownloadRecoveryValidationCompositionTests.cpp rc_music_test_ui rc_music_test_uiplugin
+        rc_music_download_network rc_music_download_persistence Qt6::Qml Qt6::Quick)
+    target_link_libraries(rc_music_ui_download_recovery_validation_tests PRIVATE advapi32)
+    target_compile_definitions(rc_music_ui_download_recovery_validation_tests PRIVATE
+        RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"
+        RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}"
+        RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid")
+    set_tests_properties(rc_music.ui.download-recovery-validation PROPERTIES
+        LABELS "ui;qt;downloads;persistence;windows;FR-051;FR-053")
+endif()
 foreach(target IN ITEMS rc_music_ui_fixture_tests rc_music_ui_presenter_tests)
     target_compile_definitions(${target} PRIVATE
         M0_TEST_FIXTURE_FILE="${ui_fixtures}/fixture.v1.json"

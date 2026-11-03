@@ -29,8 +29,12 @@ TestCase {
             "canRetryImport": canRetryImport,
             "canReviewFiles": false,
             "canDiscardPartials": false,
+            "canValidateMedia": false,
+            "canReleaseValidation": false,
             "reviewText": "",
             "reviewBusy": false,
+            "validationText": "",
+            "validationBusy": false,
             "outputPath": "C:/private/never-show-me.mp3",
             "url": "https://private.invalid/never-show-me?token=secret"
         });
@@ -484,6 +488,222 @@ TestCase {
             }
         ];
     }
+    function test_recoveredMediaValidationIsExplicitAndDoesNotImportTheJob() {
+        addJob("final-a", "interrupted", "Interrompido; revisão necessária", false, false, false, 0.3);
+        jobs.setProperty(0, "canValidateMedia", true);
+        jobs.setProperty(0, "reviewText", "Arquivo final reconhecido; conteúdo ainda não validado.");
+        openDownloads();
+        const row = rowAt(0);
+        const validate = row.validateControl;
+        verifyTarget(validate);
+        compare(validate.text, "Validar MP3");
+        compare(validate.Accessible.name, "Validar MP3");
+        compare(downloads.validatedIds.length, 0, "Opening the panel never validates media");
+        validate.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(downloads.validatedIds.length, 1);
+        compare(downloads.validatedIds[0], "final-a");
+        jobs.setProperty(0, "canValidateMedia", false);
+        jobs.setProperty(0, "validationBusy", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        jobs.setProperty(0, "validationText", "Validando MP3 local; nenhum áudio será importado.");
+        tryVerify(function () {
+            return !validate.visible || !validate.enabled;
+        });
+        const release = row.releaseValidationControl;
+        verify(waitForPolish(shell));
+        verifyTarget(release);
+        verify(!findChild(row, "download-review-status").visible, "Validation supersedes its stale observation text");
+        compare(release.text, "Cancelar validação");
+        compare(release.Accessible.name, "Cancelar validação");
+        jobs.setProperty(0, "validationBusy", false);
+        const message = "<b>MP3 validado localmente; ainda não importado.</b>";
+        jobs.setProperty(0, "validationText", message);
+        tryCompare(release, "text", "Liberar validação");
+        compare(release.Accessible.name, "Liberar validação");
+        const status = findChild(row, "download-validation-status");
+        verify(status);
+        compare(status.text, message);
+        compare(status.textFormat, Text.PlainText);
+        compare(status.Accessible.name, message);
+        verify(!visibleText(row).includes("conteúdo ainda não validado"));
+        compare(jobs.get(0).state, "interrupted", "Validated is not Imported");
+        compare(findChild(row, "download-status").text, "Interrompido; revisão necessária");
+        verify(!visibleText(row).includes("never-show-me"));
+        verify(!visibleText(row).includes("token=secret"));
+        mouseClick(release);
+        compare(downloads.releasedIds.length, 1);
+        compare(downloads.releasedIds[0], "final-a");
+        compare(jobs.retriedIds.length, 0);
+        compare(jobs.cancelledIds.length, 0);
+        compare(downloads.discardedIds.length, 0);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_validationControlsAreAbsentWithoutCapabilities() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 0);
+        openDownloads();
+        const row = rowAt(0);
+        verify(row.validateControl !== undefined, "The row exposes the guarded validation control");
+        verify(row.releaseValidationControl !== undefined, "The row exposes the guarded release control");
+        verify(!row.validateControl.visible || !row.validateControl.enabled);
+        verify(!row.releaseValidationControl.visible || !row.releaseValidationControl.enabled);
+        row.validateControl.clicked();
+        row.releaseValidationControl.clicked();
+        compare(downloads.validatedIds.length, 0);
+        compare(downloads.releasedIds.length, 0);
+        const status = findChild(row, "download-validation-status");
+        verify(status);
+        verify(!status.visible);
+    }
+    function test_validationKeyboardNavigationIncludesBothActions() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 0);
+        jobs.setProperty(0, "canValidateMedia", true);
+        openDownloads();
+        const list = findChild(shell, "downloads-list");
+        const close = findChild(shell, "downloads-close");
+        const row = rowAt(0);
+        const validate = row.validateControl;
+        verifyTarget(validate);
+        list.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(validate, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(validate, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(list, "activeFocus", true);
+        jobs.setProperty(0, "canValidateMedia", false);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        jobs.setProperty(0, "validationBusy", true);
+        const release = row.releaseValidationControl;
+        verify(waitForPolish(shell));
+        verifyTarget(release);
+        list.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(release, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(downloads.releasedIds.length, 1);
+        compare(downloads.releasedIds[0], "final-a");
+        keyClick(Qt.Key_Tab);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(release, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(list, "activeFocus", true);
+    }
+    function test_validationActionsRecheckLiveCapabilitiesRowIdentityAndOwner() {
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 0);
+        jobs.setProperty(0, "canValidateMedia", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        openDownloads();
+        const row = rowAt(0);
+        const validate = row.validateControl;
+        const release = row.releaseValidationControl;
+        verifyTarget(validate);
+        verifyTarget(release);
+        jobs.setProperty(0, "canValidateMedia", false);
+        jobs.setProperty(0, "canReleaseValidation", false);
+        validate.clicked();
+        release.clicked();
+        compare(downloads.validatedIds.length, 0);
+        compare(downloads.releasedIds.length, 0);
+        jobs.setProperty(0, "canValidateMedia", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        jobs.setProperty(0, "jobId", "replacement-row");
+        validate.clicked();
+        release.clicked();
+        compare(downloads.validatedIds.length, 0, "A recycled row cannot retarget a previous validation control");
+        compare(downloads.releasedIds.length, 0, "A recycled row cannot release another job");
+        jobs.setProperty(0, "jobId", "final-a");
+        const previous = downloads;
+        const replacement = createTemporaryObject(bindingComponent, testCase);
+        verify(replacement);
+        downloads = replacement;
+        shell.downloads = replacement;
+        validate.clicked();
+        release.clicked();
+        compare(previous.validatedIds.length, 0);
+        compare(previous.releasedIds.length, 0);
+        compare(replacement.validatedIds.length, 0, "An old delegate cannot act on its replacement owner");
+        compare(replacement.releasedIds.length, 0);
+    }
+    function test_validationActionsWrapAndKeepTheSixControlFocusOrder() {
+        addJob("all-actions", "interrupted", "Interrompido", true, true, false, 0);
+        jobs.setProperty(0, "canReviewFiles", true);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        jobs.setProperty(0, "canValidateMedia", true);
+        jobs.setProperty(0, "canReleaseValidation", true);
+        openDownloads();
+        const row = rowAt(0);
+        const controls = [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.releaseValidationControl];
+        for (let index = 0; index < controls.length; ++index) {
+            verifyTarget(controls[index]);
+            verify(controls[index].Accessible.name.length > 0);
+        }
+        controls[0].forceActiveFocus(Qt.TabFocusReason);
+        for (let index = 1; index < controls.length; ++index) {
+            keyClick(Qt.Key_Tab);
+            tryCompare(controls[index], "activeFocus", true);
+        }
+        const close = findChild(shell, "downloads-close");
+        keyClick(Qt.Key_Tab);
+        tryCompare(close, "activeFocus", true);
+        for (let index = controls.length - 1; index >= 0; --index) {
+            keyClick(Qt.Key_Backtab);
+            tryCompare(controls[index], "activeFocus", true);
+        }
+        keyClick(Qt.Key_Backtab);
+        tryCompare(findChild(shell, "downloads-list"), "activeFocus", true);
+        compare(downloads.validatedIds.length, 0);
+        compare(downloads.releasedIds.length, 0);
+    }
+    function test_validationAtMinimumWindowKeepsControlsAndPlainStatusVisible(data) {
+        driver.setSystemAppearance(data.dark, false);
+        driver.setHighContrast(data.contrast, false);
+        addJob("final-a", "interrupted", "Interrompido", false, false, false, 0.5);
+        jobs.setProperty(0, "canReviewFiles", true);
+        jobs.setProperty(0, "canValidateMedia", !data.retained);
+        jobs.setProperty(0, "canReleaseValidation", data.retained);
+        jobs.setProperty(0, "validationText", "A validação de MP3 é somente leitura; ela não importa áudio, não retoma downloads e preserva os arquivos locais.");
+        const panel = openDownloads();
+        const row = rowAt(0);
+        verify(panel.width <= 672 && panel.height <= 472);
+        verifyTarget(row.reviewControl);
+        verifyTarget(data.retained ? row.releaseValidationControl : row.validateControl);
+        const status = findChild(row, "download-validation-status");
+        verify(status);
+        compare(status.textFormat, Text.PlainText);
+        verify(Qt.colorEqual(status.color, shell.uiContract.textSecondaryColor));
+        const p = status.mapToItem(shell.contentItem, 0, 0);
+        verify(p.x >= 0 && p.y >= 0);
+        verify(p.x + status.width <= shell.width + 0.5);
+        verify(p.y + status.height <= shell.height + 0.5);
+        verify(!visibleText(panel.contentItem).includes("never-show-me"));
+        verify(!visibleText(panel.contentItem).includes("token=secret"));
+    }
+    function test_validationAtMinimumWindowKeepsControlsAndPlainStatusVisible_data() {
+        return [
+            {
+                "tag": "light-validate",
+                "dark": false,
+                "contrast": false,
+                "retained": false
+            },
+            {
+                "tag": "dark-release",
+                "dark": true,
+                "contrast": false,
+                "retained": true
+            },
+            {
+                "tag": "contrast-release",
+                "dark": false,
+                "contrast": true,
+                "retained": true
+            }
+        ];
+    }
     function verifyTarget(control) {
         verify(control);
         verify(control.width >= 40 && control.height >= 40);
@@ -541,6 +761,8 @@ TestCase {
             property int startupRetries: 0
             property var reviewedIds: []
             property var discardedIds: []
+            property var validatedIds: []
+            property var releasedIds: []
             property string discardConsentJobId: ""
             property string discardConsentToken: ""
             property int discardRevision: 0
@@ -565,6 +787,14 @@ TestCase {
             }
             function reviewFiles(jobId) {
                 reviewedIds = reviewedIds.concat([jobId]);
+                return true;
+            }
+            function validateMedia(jobId) {
+                validatedIds = validatedIds.concat([jobId]);
+                return true;
+            }
+            function releaseValidation(jobId) {
+                releasedIds = releasedIds.concat([jobId]);
                 return true;
             }
             function requestDiscardPartials(jobId) {
