@@ -1,4 +1,5 @@
 #include "adapters/WindowsDownloadWorkspace.hpp"
+#include "adapters/WindowsDownloadReadInput.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -427,6 +428,15 @@ struct WindowsDownloadWorkspace::Impl final {
         return true;
     }
 
+    std::shared_ptr<const WindowsDownloadReadInput> read(const OwnedFile& file) const {
+        if (!created || cleanup_requested || failure != DownloadFailure::None || !file.sealed || file.published ||
+            !inspectFile(file))
+            return {};
+        const auto capability =
+            WindowsDownloadReadInput::fromHandle(reinterpret_cast<std::uintptr_t>(file.handle.get()));
+        return capability && inspectFile(file) ? capability : std::shared_ptr<const WindowsDownloadReadInput>{};
+    }
+
     bool erase(OwnedFile& file) {
         if (file.path.isEmpty()) {
             return true;
@@ -592,6 +602,9 @@ bool WindowsDownloadWorkspace::sealInput() { return impl_->seal(impl_->input, im
 QString WindowsDownloadWorkspace::inputPath() const {
     return impl_->input.sealed && !impl_->cleanup_requested ? impl_->input.path : QString{};
 }
+std::shared_ptr<const WindowsDownloadReadInput> WindowsDownloadWorkspace::readInput() const {
+    return impl_->read(impl_->input);
+}
 QIODevice* WindowsDownloadWorkspace::outputSink() noexcept {
     return impl_->created && !impl_->cleanup_requested ? impl_->output_sink.get() : nullptr;
 }
@@ -599,6 +612,9 @@ bool WindowsDownloadWorkspace::sealOutput() { return impl_->seal(impl_->output, 
 QString WindowsDownloadWorkspace::outputPath() const {
     return impl_->output.sealed && !impl_->cleanup_requested && !impl_->output.published ? impl_->output.path
                                                                                          : QString{};
+}
+std::shared_ptr<const WindowsDownloadReadInput> WindowsDownloadWorkspace::readOutput() const {
+    return impl_->read(impl_->output);
 }
 QString WindowsDownloadWorkspace::plannedPublicationPath() const { return impl_->planned_publication; }
 

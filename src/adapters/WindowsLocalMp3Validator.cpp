@@ -1,6 +1,8 @@
 #include "WindowsLocalMp3Validator.hpp"
 
 #include "MediaFoundationWorkerProtocol.hpp"
+#include "WindowsDownloadArtifactPins.hpp"
+#include "WindowsDownloadReadInput.hpp"
 #include "WindowsMediaFoundationLaunch.hpp"
 
 #include <QFileInfo>
@@ -70,15 +72,39 @@ bool WindowsLocalMp3Validator::start(const QString& local_mp3, qint64 now_ms) {
          config_.backend != WindowsLocalMediaBackend::MediaFoundation))
         return false;
     const bool foundation = config_.backend == WindowsLocalMediaBackend::MediaFoundation;
-    if (foundation ? !validMediaFoundationWorkerRequest(
-                         {.mode = MediaFoundationWorkerMode::Validate, .input_path = local_mp3.toStdU16String()})
-                   : (downloadProbeArguments(local_mp3).isEmpty() || downloadValidationArguments(local_mp3).isEmpty()))
+    if (foundation) {
+        QString normalized;
+        if (!download_artifacts::validPath(local_mp3, normalized))
+            return false;
+        const download_artifacts::Handle original{
+            CreateFileW(download_artifacts::nativePath(normalized).c_str(), GENERIC_READ,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)};
+        auto input = WindowsDownloadReadInput::fromHandle(reinterpret_cast<std::uintptr_t>(original.get()));
+        if (!input) {
+            update_.state = LocalMp3ValidationState::Failed;
+            update_.error = DownloadFailure::Unavailable;
+            return false;
+        }
+        return startReadInput(std::move(input), now_ms);
+    }
+    if (downloadProbeArguments(local_mp3).isEmpty() || downloadValidationArguments(local_mp3).isEmpty())
         return false;
     path_ = local_mp3;
     started_ms_ = previous_ms_ = now_ms;
     return launch(foundation ? Stage::Decode : Stage::Probe, now_ms);
 }
-bool WindowsLocalMp3Validator::launch(Stage stage, qint64 now_ms) {
+bool WindowsLocalMp3Validator::startReadInput(std::shared_ptr<const WindowsDownloadReadInput> input, qint64 now_ms) {
+    if (update_.state != LocalMp3ValidationState::Idle || now_ms < 0 || config_.total_timeout_ms <= 0 ||
+        !config_.max_process_memory_bytes || config_.backend != WindowsLocalMediaBackend::MediaFoundation || !input ||
+        !validMediaFoundationWorkerRequest(
+            {.mode = MediaFoundationWorkerMode::Validate, .input_handle = input->handleValue()}))
+        return false;
+    started_ms_ = previous_ms_ = now_ms;
+    return launch(Stage::Decode, now_ms, std::move(input));
+}
+bool WindowsLocalMp3Validator::launch(Stage stage, qint64 now_ms,
+                                      std::shared_ptr<const WindowsDownloadReadInput> input) {
     stage_ = stage;
     probe_bytes_.clear();
     WindowsDownloadProcessConfig process;
@@ -94,11 +120,14 @@ bool WindowsLocalMp3Validator::launch(Stage stage, qint64 now_ms) {
     } else {
         process.executable = foundation ? config_.media_foundation_executable
                                         : (probe ? config_.ffprobe_executable : config_.ffmpeg_executable);
-        process.working_directory = QFileInfo(path_).absolutePath();
+        process.working_directory = QFileInfo(foundation ? process.executable : path_).absolutePath();
     }
     if (foundation) {
-        const auto bytes = encodeMediaFoundationWorkerRequest(
-            {.mode = MediaFoundationWorkerMode::Validate, .input_path = path_.toStdU16String()});
+        process.read_input = std::move(input);
+        const auto bytes = process.read_input
+                               ? encodeMediaFoundationWorkerRequest({.mode = MediaFoundationWorkerMode::Validate,
+                                                                     .input_handle = process.read_input->handleValue()})
+                               : std::vector<std::uint8_t>{};
         if (!config_.prepared_launch)
             process.environment = mediaFoundationEnvironment();
         if (bytes.empty() || !process.environment || !QFileInfo(process.executable).isFile()) {

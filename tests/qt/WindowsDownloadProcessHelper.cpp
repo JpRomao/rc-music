@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 
@@ -91,6 +92,37 @@ int readInput() {
     }
 }
 
+int readFileHandle(const QString& encoded_handle, const QString& encoded_canary) {
+    bool converted = false;
+    const auto number = encoded_handle.toULongLong(&converted);
+    if (!converted)
+        return 89;
+    const auto input = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(number));
+    if (::GetFileType(input) != FILE_TYPE_DISK)
+        return 90;
+    DWORD read = 0;
+    std::array<char, 4096> bytes{};
+    if (!::ReadFile(input, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr))
+        return 91;
+    DWORD written = 0;
+    const bool wrote = ::WriteFile(input, "X", 1, &written, nullptr) != FALSE;
+    const auto write_error = ::GetLastError();
+    const bool truncated = ::SetEndOfFile(input) != FALSE;
+    const auto truncate_error = ::GetLastError();
+    FILE_DISPOSITION_INFO disposition{TRUE};
+    const bool deleted =
+        ::SetFileInformationByHandle(input, FileDispositionInfo, &disposition, sizeof(disposition)) != FALSE;
+    const auto delete_error = ::GetLastError();
+    const auto canary_number = encoded_canary.toULongLong(&converted);
+    if (converted && canary_number)
+        (void)::SetEvent(reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(canary_number)));
+    const QJsonObject result{{QStringLiteral("data"), QString::fromLatin1(QByteArray(bytes.data(), read).toBase64())},
+                             {QStringLiteral("write_denied"), !wrote && write_error == ERROR_ACCESS_DENIED},
+                             {QStringLiteral("truncate_denied"), !truncated && truncate_error == ERROR_ACCESS_DENIED},
+                             {QStringLiteral("delete_denied"), !deleted && delete_error == ERROR_ACCESS_DENIED}};
+    return writeBytes(STD_OUTPUT_HANDLE, QJsonDocument(result).toJson(QJsonDocument::Compact)) ? 0 : 92;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -120,6 +152,8 @@ int main(int argc, char* argv[]) {
         return spawnProbe(application.applicationFilePath());
     if (mode == QStringLiteral("read-stdin"))
         return readInput();
+    if (mode == QStringLiteral("read-file-handle") && arguments.size() == 4)
+        return readFileHandle(arguments.at(2), arguments.at(3));
     if (mode == QStringLiteral("fill") && arguments.size() == 4) {
         bool stdout_ok = false;
         bool stderr_ok = false;

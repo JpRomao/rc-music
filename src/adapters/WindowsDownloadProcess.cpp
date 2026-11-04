@@ -1,4 +1,5 @@
 #include "WindowsDownloadProcess.hpp"
+#include "WindowsDownloadReadInput.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -422,7 +423,7 @@ struct WindowsDownloadProcess::Impl final {
     NativeInput stdin_pipe{};
     STARTUPINFOEXW startup{};
     std::array<HANDLE, 1> assigned_jobs{};
-    std::array<HANDLE, 3> inherited{};
+    std::array<HANDLE, 4> inherited{};
     QByteArray attribute_storage{};
     std::wstring native_executable{};
     Q_PROCESS_INFORMATION* created_information{nullptr};
@@ -431,8 +432,27 @@ struct WindowsDownloadProcess::Impl final {
     qint64 started_ms{0};
     qint64 last_ms{0};
     WindowsDownloadProcessState stopped_state{WindowsDownloadProcessState::Exited};
+    bool read_input_acquired{false};
+    bool read_input_inheritable{false};
 
     ~Impl() { release(); }
+
+    [[nodiscard]] bool restoreInputInheritance() {
+        if (!read_input_inheritable)
+            return true;
+        const auto restored = config.read_input->endInheritance();
+        read_input_inheritable = !restored;
+        return restored;
+    }
+
+    void releaseInputUse() {
+        if (!read_input_acquired)
+            return;
+        (void)restoreInputInheritance();
+        config.read_input->releaseUse();
+        read_input_acquired = false;
+        read_input_inheritable = false;
+    }
 
     void releaseAttributes() {
         if (startup.lpAttributeList) {
@@ -455,6 +475,8 @@ struct WindowsDownloadProcess::Impl final {
         process.reset();
         process_handle.reset();
         job.reset();
+        releaseInputUse();
+        config.read_input.reset();
         releaseAttributes();
         created_information = nullptr;
         config.standard_input.clear();
@@ -561,6 +583,17 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         return false;
     }
     value.config = config;
+    if (config.read_input) {
+        if (!config.read_input->acquireUse()) {
+            // Rejection has no child and owns no claim. Do not keep the other
+            // owner's file alive after that owner has acknowledged its exit.
+            value.config.read_input.reset();
+            value.update.state = WindowsDownloadProcessState::Failed;
+            value.update.error = WindowsDownloadProcessError::Isolation;
+            return false;
+        }
+        value.read_input_acquired = true;
+    }
     if (!value.prepare()) {
         value.release();
         value.update.state = WindowsDownloadProcessState::Failed;
@@ -593,9 +626,18 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.startup.StartupInfo.hStdOutput = value.stdout_pipe.writer();
         value.startup.StartupInfo.hStdError = value.stderr_pipe.writer();
         value.inherited = {value.startup.StartupInfo.hStdInput, value.stdout_pipe.writer(), value.stderr_pipe.writer()};
-        attributes_ready =
-            ::UpdateProcThreadAttribute(value.startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                                        value.inherited.data(), sizeof(value.inherited), nullptr, nullptr) != FALSE;
+        std::size_t inherited_count = 3;
+        if (value.config.read_input) {
+            value.read_input_inheritable = value.config.read_input->beginInheritance();
+            attributes_ready = value.read_input_inheritable;
+            value.inherited[3] =
+                reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(value.config.read_input->handleValue()));
+            inherited_count = 4;
+        }
+        attributes_ready = attributes_ready &&
+                           ::UpdateProcThreadAttribute(value.startup.lpAttributeList, 0,
+                                                       PROC_THREAD_ATTRIBUTE_HANDLE_LIST, value.inherited.data(),
+                                                       inherited_count * sizeof(HANDLE), nullptr, nullptr) != FALSE;
         arguments->startupInfo = &value.startup.StartupInfo;
         arguments->flags |= CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
         arguments->inheritHandles = true;
@@ -607,11 +649,12 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     });
     value.process->start();
     value.process->setCreateProcessArgumentsModifier({});
+    const auto inheritance_restored = value.restoreInputInheritance();
     if (value.process->state() == QProcess::NotRunning) {
         value.release();
         value.update.state = WindowsDownloadProcessState::Failed;
-        value.update.error =
-            attributes_ready ? WindowsDownloadProcessError::Start : WindowsDownloadProcessError::Isolation;
+        value.update.error = attributes_ready && inheritance_restored ? WindowsDownloadProcessError::Start
+                                                                      : WindowsDownloadProcessError::Isolation;
         return false;
     }
     HANDLE native_process = nullptr;
@@ -627,7 +670,9 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.stdin_pipe.releaseReader();
     value.config.standard_input.clear();
     value.update.state = WindowsDownloadProcessState::Running;
-    if (!monitored)
+    if (!inheritance_restored)
+        value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Isolation);
+    else if (!monitored)
         value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
     return true;
 }
@@ -663,6 +708,10 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
         value.stdin_pipe.close();
         value.process_handle.reset();
         value.job.reset();
+        value.releaseInputUse();
+        // Data handles must leave before the workspace removes its job tree.
+        // A delete-shared handle can still keep a legacy unlink delete-pending.
+        value.config.read_input.reset();
     }
     return value.update;
 }

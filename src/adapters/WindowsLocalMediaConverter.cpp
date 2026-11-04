@@ -1,6 +1,7 @@
 #include "WindowsLocalMediaConverter.hpp"
 
 #include "MediaFoundationWorkerProtocol.hpp"
+#include "WindowsDownloadReadInput.hpp"
 #include "WindowsMediaFoundationLaunch.hpp"
 
 #include <QFileInfo>
@@ -94,16 +95,19 @@ bool WindowsLocalMediaConverter::launch(Stage stage, qint64 now_ms) {
     } else {
         process_config.executable = foundation ? config_.media_foundation_executable
                                                : (probe ? config_.ffprobe_executable : config_.ffmpeg_executable);
-        process_config.working_directory = QFileInfo(path).absolutePath();
+        process_config.working_directory = QFileInfo(foundation ? process_config.executable : path).absolutePath();
     }
     process_config.max_memory_bytes = config_.max_process_memory_bytes;
     process_config.total_timeout_ms = config_.total_timeout_ms - (now_ms - started_ms_);
     process_config.max_stdout_bytes = probe ? 16384 : 512ULL * 1024 * 1024;
     process_config.max_stderr_bytes = probe ? 16384 : 4 * 1024 * 1024;
     if (foundation) {
-        const MediaFoundationWorkerRequest request{.mode = MediaFoundationWorkerMode::Convert,
-                                                   .input_path = path.toStdU16String()};
-        const auto bytes = encodeMediaFoundationWorkerRequest(request);
+        process_config.read_input = workspace_->readInput();
+        const auto bytes =
+            process_config.read_input
+                ? encodeMediaFoundationWorkerRequest({.mode = MediaFoundationWorkerMode::Convert,
+                                                      .input_handle = process_config.read_input->handleValue()})
+                : std::vector<std::uint8_t>{};
         if (!config_.prepared_launch)
             process_config.environment = mediaFoundationEnvironment();
         if (bytes.empty() || !process_config.environment || !QFileInfo(process_config.executable).isFile()) {
@@ -242,7 +246,10 @@ LocalMediaConversionUpdate WindowsLocalMediaConverter::poll(qint64 now_ms) {
                 config_.prepared_launch});
             stage_ = Stage::Validation;
             update_.state = LocalMediaConversionState::Validating;
-            if (!validator_->start(workspace_->outputPath(), now_ms)) {
+            const bool validation_started = config_.backend == WindowsLocalMediaBackend::MediaFoundation
+                                                ? validator_->startReadInput(workspace_->readOutput(), now_ms)
+                                                : validator_->start(workspace_->outputPath(), now_ms);
+            if (!validation_started) {
                 update_.state = LocalMediaConversionState::Failed;
                 const auto error = validator_->poll(now_ms).error;
                 update_.error = error == DownloadFailure::None ? DownloadFailure::InvalidResult : error;

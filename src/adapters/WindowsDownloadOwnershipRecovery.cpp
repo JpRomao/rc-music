@@ -1,6 +1,7 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 
 #include "adapters/WindowsDownloadArtifactPins.hpp"
+#include "adapters/WindowsDownloadReadInput.hpp"
 
 #include <QCryptographicHash>
 
@@ -438,6 +439,34 @@ struct WindowsPinnedDownloadFinal::Impl {
 WindowsPinnedDownloadFinal::WindowsPinnedDownloadFinal(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 WindowsPinnedDownloadFinal::~WindowsPinnedDownloadFinal() = default;
 QString WindowsPinnedDownloadFinal::pathForValidation() const { return impl_->workspace.final_path; }
+std::shared_ptr<const WindowsDownloadReadInput> WindowsPinnedDownloadFinal::readInput() const {
+    const auto& workspace = impl_->workspace;
+    const auto consistent = [&] {
+        if (!impl_->record.output || workspace.final.state != OpenState::Present ||
+            !matches(workspace.final.identity, *impl_->record.output) ||
+            workspace.final.bytes != impl_->record.output_bytes)
+            return false;
+        for (const auto* parent : {&workspace.staging.leaf, &workspace.publication.leaf}) {
+            if (parent->state != OpenState::Present || unchanged(*parent, true) != OpenState::Present)
+                return false;
+        }
+        for (const auto [object, directory] :
+             {std::pair{&workspace.job, true}, std::pair{&workspace.input, false}, std::pair{&workspace.output, false},
+              std::pair{&workspace.final, false}}) {
+            if (object->state == OpenState::Missing)
+                continue;
+            if (object->state != OpenState::Present || unchanged(*object, directory) != OpenState::Present ||
+                workspace.security.check(object->handle.get()) != OpenState::Present)
+                return false;
+        }
+        return true;
+    };
+    if (!consistent())
+        return {};
+    const auto input =
+        WindowsDownloadReadInput::fromHandle(reinterpret_cast<std::uintptr_t>(workspace.final.handle.get()));
+    return input && consistent() ? input : std::shared_ptr<const WindowsDownloadReadInput>{};
+}
 const DownloadOwnershipRecord& WindowsPinnedDownloadFinal::record() const { return impl_->record; }
 DownloadOwnershipAssessment WindowsPinnedDownloadFinal::revalidate() const noexcept {
     return WindowsDownloadOwnershipRecovery::assess(impl_->config, impl_->record);

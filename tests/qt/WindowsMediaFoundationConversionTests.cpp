@@ -1,3 +1,4 @@
+#include "WindowsDownloadReadInput.hpp"
 #include "WindowsLocalMediaConverter.hpp"
 #include "WindowsLocalMp3Validator.hpp"
 #include "WindowsMediaFoundationLaunch.hpp"
@@ -9,6 +10,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include <qt_windows.h>
 
 using namespace music_player::m0;
 
@@ -113,6 +115,73 @@ class WindowsMediaFoundationConversionTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void missingNamedCompatibilityInputReportsUnavailableBeforeLaunchingAWorker() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        WindowsLocalMp3Validator validator{validationConfig()};
+        QVERIFY(!validator.start(directory.filePath(QStringLiteral("missing.mp3")), 0));
+        QCOMPARE(validator.poll(0).state, LocalMp3ValidationState::Failed);
+        QCOMPARE(validator.poll(0).error, DownloadFailure::Unavailable);
+    }
+
+    void validatesAReadCapabilityAfterItsNameChangesAndRetainsItThroughDrainAndTeardown() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto original = directory.filePath(QStringLiteral("selected 日本.bin"));
+        const auto renamed = directory.filePath(QStringLiteral("renamed without mp3 extension.bin"));
+        const auto bytes = fixture(QStringLiteral("mp3-unicode-tags.mp3"));
+        QVERIFY(write(original, bytes));
+        const auto native = QDir::toNativeSeparators(original).toStdWString();
+        const auto handle =
+            CreateFileW(native.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        QVERIFY(handle != INVALID_HANDLE_VALUE);
+        auto input = WindowsDownloadReadInput::fromHandle(reinterpret_cast<std::uintptr_t>(handle));
+        CloseHandle(handle);
+        QVERIFY(input);
+        QVERIFY(QFile::rename(original, renamed));
+        QVERIFY(!QFileInfo::exists(original));
+        const std::weak_ptr<const WindowsDownloadReadInput> retained{input};
+        {
+            WindowsLocalMp3Validator validator{validationConfig()};
+            QVERIFY(validator.startReadInput(input, 0));
+            input.reset();
+            QVERIFY(!retained.expired());
+            const auto result = finish(validator);
+            QCOMPARE(result.state, LocalMp3ValidationState::Validated);
+            QCOMPARE(result.error, DownloadFailure::None);
+        }
+        QVERIFY(retained.expired());
+        QCOMPARE(read(renamed), bytes);
+    }
+
+    void failedWorkerStartAndTheLegacyBackendDoNotRetainReadCapabilities() {
+        Workspace owned;
+        QVERIFY(owned.prepare(fixture(QStringLiteral("mp3-unicode-tags.mp3"))));
+        auto input = owned.workspace.readInput();
+        QVERIFY(input);
+        const std::weak_ptr<const WindowsDownloadReadInput> retained{input};
+        auto config = validationConfig();
+        config.media_foundation_executable = owned.directory.filePath(QStringLiteral("missing-worker.exe"));
+        {
+            WindowsLocalMp3Validator missing{config};
+            QVERIFY(!missing.startReadInput(input, 0));
+            QCOMPARE(missing.poll(0).state, LocalMp3ValidationState::Failed);
+            QCOMPARE(missing.poll(0).error, DownloadFailure::Unavailable);
+            WindowsLocalMp3Validator legacy{{}};
+            QVERIFY(!legacy.startReadInput(input, 0));
+            QCOMPARE(legacy.poll(0).state, LocalMp3ValidationState::Idle);
+        }
+        input.reset();
+        QVERIFY(retained.expired());
+    }
+
+    void absentReadCapabilityCannotStartAWorker() {
+        WindowsLocalMp3Validator validator{validationConfig()};
+        QVERIFY(!validator.startReadInput({}, 0));
+        QCOMPARE(validator.poll(0).state, LocalMp3ValidationState::Idle);
+    }
+
     void preparedRuntimeOwnsBothConversionAndValidationUntilDestruction() {
         Workspace owned;
         QVERIFY(owned.prepare(fixture(QStringLiteral("m4a-aac-lc.m4a"))));

@@ -5,13 +5,14 @@
 
 #include <array>
 #include <limits>
+#include <string_view>
 
 using namespace music_player::m0;
 
 namespace {
 MediaFoundationWorkerRequest request() {
     return {.mode = MediaFoundationWorkerMode::Convert,
-            .input_path = u"C:\\Synthetic folder\\áudio.mp4",
+            .input_handle = 0x0d0e0f10,
             .max_input_bytes = 0x01020304,
             .max_output_bytes = 0x05060708,
             .max_duration_us = 0x090a0b0c};
@@ -21,17 +22,27 @@ void append(std::vector<std::uint8_t>& bytes, const std::uint64_t value, const u
         bytes.push_back(static_cast<std::uint8_t>(value >> (i * 8)));
 }
 std::vector<std::uint8_t> wire(const MediaFoundationWorkerRequest& value) {
+    std::vector<std::uint8_t> bytes{'R', 'C', 'M', 'M', 'F', 'W', 'R', 'Q', 2, static_cast<std::uint8_t>(value.mode)};
+    append(bytes, value.max_input_bytes, 8);
+    append(bytes, value.max_output_bytes, 8);
+    append(bytes, value.max_duration_us, 8);
+    append(bytes, value.input_handle, 8);
+    return bytes;
+}
+std::vector<std::uint8_t> legacyPathWire() {
+    const auto value = request();
+    const std::u16string_view path = u"C:\\Synthetic folder\\áudio.mp4";
     std::vector<std::uint8_t> bytes{'R', 'C', 'M', 'M', 'F', 'W', 'R', 'Q', 1, static_cast<std::uint8_t>(value.mode)};
     append(bytes, value.max_input_bytes, 8);
     append(bytes, value.max_output_bytes, 8);
     append(bytes, value.max_duration_us, 8);
-    append(bytes, value.input_path.size(), 4);
-    for (const auto unit : value.input_path)
+    append(bytes, path.size(), 4);
+    for (const auto unit : path)
         append(bytes, unit, 2);
     return bytes;
 }
 bool same(const MediaFoundationWorkerRequest& left, const MediaFoundationWorkerRequest& right) {
-    return left.mode == right.mode && left.input_path == right.input_path &&
+    return left.mode == right.mode && left.input_handle == right.input_handle &&
            left.max_input_bytes == right.max_input_bytes && left.max_output_bytes == right.max_output_bytes &&
            left.max_duration_us == right.max_duration_us;
 }
@@ -74,18 +85,18 @@ class MediaFoundationWorkerProtocolTests final : public QObject {
         const auto value = request();
         QVERIFY(validMediaFoundationWorkerRequest(value));
         const auto expected = wire(value);
-        QCOMPARE(expected.size(), std::size_t{38} + value.input_path.size() * 2);
+        QCOMPARE(expected.size(), std::size_t{42});
         QVERIFY(encodeMediaFoundationWorkerRequest(value) == expected);
         const auto decoded = decodeMediaFoundationWorkerRequest(expected);
         QVERIFY(decoded.has_value());
         QVERIFY(same(*decoded, value));
     }
 
-    void bothModesPreserveAllFieldsAndSafeUtf16Pairs() {
+    void bothModesPreserveAllHandleAndLimitBits() {
         for (const auto mode : {MediaFoundationWorkerMode::Convert, MediaFoundationWorkerMode::Validate}) {
             auto value = request();
             value.mode = mode;
-            value.input_path = u"D:/Synthetic/\U0001f3b5/source.mp3";
+            value.input_handle = static_cast<std::uint64_t>(std::numeric_limits<std::intptr_t>::max()) - 3;
             const auto encoded = encodeMediaFoundationWorkerRequest(value);
             QVERIFY(!encoded.empty());
             const auto decoded = decodeMediaFoundationWorkerRequest(encoded);
@@ -94,47 +105,35 @@ class MediaFoundationWorkerProtocolTests final : public QObject {
         }
     }
 
-    void acceptsExactMaximumPathAndResourceLimits() {
+    void acceptsLargestPositiveHandleAndExactResourceLimits() {
         auto value = request();
-        value.input_path = u"C:\\" + std::u16string(8'189, u'a');
-        QCOMPARE(value.input_path.size(), std::size_t{8'192});
+        value.input_handle = static_cast<std::uint64_t>(std::numeric_limits<std::intptr_t>::max());
         value.max_input_bytes = value.max_output_bytes = 1024ULL * 1024 * 1024;
         value.max_duration_us = 24ULL * 60 * 60 * 1'000'000;
         QVERIFY(validMediaFoundationWorkerRequest(value));
         const auto encoded = encodeMediaFoundationWorkerRequest(value);
-        QVERIFY(encoded.size() < media_foundation_worker_max_request_bytes);
+        QCOMPARE(encoded.size(), media_foundation_worker_max_request_bytes);
         const auto decoded = decodeMediaFoundationWorkerRequest(encoded);
         QVERIFY(decoded.has_value());
         QVERIFY(same(value, *decoded));
     }
 
-    void rejectsUnsafePaths_data() {
-        QTest::addColumn<QString>("path");
-        QTest::newRow("empty") << QString{};
-        QTest::newRow("relative") << QStringLiteral("source.mp4");
-        QTest::newRow("drive-relative") << QStringLiteral("C:source.mp4");
-        QTest::newRow("UNC") << QStringLiteral("\\\\server\\share\\source.mp4");
-        QTest::newRow("device") << QStringLiteral("\\\\?\\C:\\source.mp4");
-        QTest::newRow("device-dot") << QStringLiteral("\\\\.\\C:\\source.mp4");
-        QTest::newRow("ADS") << QStringLiteral("C:\\source.mp4:stream");
-        QTest::newRow("parent-component") << QStringLiteral("C:\\folder\\..\\source.mp4");
-        QTest::newRow("dot-component") << QStringLiteral("C:\\folder\\.\\source.mp4");
-        QTest::newRow("empty-component") << QStringLiteral("C:\\folder\\\\source.mp4");
-        QTest::newRow("trailing-separator") << QStringLiteral("C:\\folder\\");
-        QTest::newRow("trailing-dot") << QStringLiteral("C:\\folder\\source.mp4.");
-        QTest::newRow("trailing-space") << QStringLiteral("C:\\folder\\source.mp4 ");
-        QTest::newRow("wildcard") << QStringLiteral("C:\\folder\\*.mp4");
-        QTest::newRow("DOS-device") << QStringLiteral("C:\\folder\\NUL.mp4");
-        QTest::newRow("NUL") << QStringLiteral("C:\\folder\\a") + QChar{0} + QStringLiteral(".mp4");
-        QTest::newRow("high-surrogate") << QStringLiteral("C:\\folder\\a") + QChar{0xd800};
-        QTest::newRow("low-surrogate") << QStringLiteral("C:\\folder\\a") + QChar{0xdc00};
-        QTest::newRow("too-long") << QStringLiteral("C:\\") + QString(8'190, QLatin1Char('a'));
+    void rejectsNullPseudoAndOutOfWidthHandles_data() {
+        QTest::addColumn<qulonglong>("handle");
+        QTest::newRow("null") << qulonglong{0};
+        for (int value = -1; value >= -6; --value)
+            QTest::newRow(qPrintable(QStringLiteral("pseudo %1").arg(value)))
+                << static_cast<qulonglong>(static_cast<std::int64_t>(value));
+        QTest::newRow("sign bit") << static_cast<qulonglong>(
+            static_cast<std::uint64_t>(std::numeric_limits<std::intptr_t>::max()) + 1);
+        if constexpr (sizeof(std::uintptr_t) < sizeof(std::uint64_t))
+            QTest::newRow("wider than process handle") << (qulonglong{1} << 32);
     }
 
-    void rejectsUnsafePaths() {
-        QFETCH(QString, path);
+    void rejectsNullPseudoAndOutOfWidthHandles() {
+        QFETCH(qulonglong, handle);
         auto value = request();
-        value.input_path = path.toStdU16String();
+        value.input_handle = handle;
         QVERIFY(!validMediaFoundationWorkerRequest(value));
         QVERIFY(encodeMediaFoundationWorkerRequest(value).empty());
         QVERIFY(!decodeMediaFoundationWorkerRequest(wire(value)).has_value());
@@ -189,10 +188,18 @@ class MediaFoundationWorkerProtocolTests final : public QObject {
         QVERIFY(!decodeMediaFoundationWorkerRequest(
                      std::vector<std::uint8_t>(media_foundation_worker_max_request_bytes + 1, 0))
                      .has_value());
-        auto bad_length = bytes;
-        for (std::size_t i = 34; i < 38; ++i)
-            bad_length[i] = 0xff;
-        QVERIFY(!decodeMediaFoundationWorkerRequest(bad_length).has_value());
+        auto bad_handle = bytes;
+        for (std::size_t i = 34; i < 42; ++i)
+            bad_handle[i] = 0xff;
+        QVERIFY(!decodeMediaFoundationWorkerRequest(bad_handle).has_value());
+    }
+
+    void thePathProtocolIsRejectedEvenWhenItsFrameHasTheNewLength() {
+        QVERIFY(!decodeMediaFoundationWorkerRequest(legacyPathWire()).has_value());
+        auto old_version = wire(request());
+        old_version[8] = 1;
+        QCOMPARE(old_version.size(), media_foundation_worker_max_request_bytes);
+        QVERIFY(!decodeMediaFoundationWorkerRequest(old_version).has_value());
     }
 
     void workerRejectsArgumentsBeforeInterpretingItsRequest() {
@@ -221,6 +228,12 @@ class MediaFoundationWorkerProtocolTests final : public QObject {
         QTest::newRow("truncated") << bytes.left(bytes.size() - 1);
         QTest::newRow("trailing") << bytes + 'x';
         QTest::newRow("double-request") << bytes + bytes;
+        const auto legacy = legacyPathWire();
+        QTest::newRow("legacy path request")
+            << QByteArray(reinterpret_cast<const char*>(legacy.data()), static_cast<qsizetype>(legacy.size()));
+        auto legacy_same_size = bytes;
+        legacy_same_size[8] = 1;
+        QTest::newRow("legacy version fixed frame") << legacy_same_size;
         QTest::newRow("over-budget") << QByteArray(
             static_cast<qsizetype>(media_foundation_worker_max_request_bytes + 1), 'x');
     }

@@ -7,6 +7,8 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
+Checkpoint de 2026-11-04: a [entrada por handle somente de leitura](download-conversion.md#entrada-de-mídia-por-capability-de-leitura) substitui caminhos no protocolo privado dos workers Media Foundation. Conversão, validação e recuperação usam os arquivos já retidos; a liberação no ACK físico permite a limpeza no NTFS. Fechamento focado: **14/14 CTest**, **494 casos Qt**, quatro skips históricos de symlink; o total combina 493 casos do fechamento com a reexecução de 23 casos da conversão após acrescentar a regressão de entrada ausente. Evidências em `out/product/test-runs/media-foundation-read-input-20261104/`. Sandbox efetiva, composição de produção, instalação e demais gates de R1 continuam pendentes; opcionais remotos permanecem OFF.
+
 ## 1. Regras de uso
 
 ### 1.1 Hierarquia

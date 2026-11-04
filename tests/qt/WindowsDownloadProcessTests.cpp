@@ -1,4 +1,5 @@
 #include "WindowsDownloadProcess.hpp"
+#include "WindowsDownloadReadInput.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -108,6 +109,35 @@ struct NativeEventGuard final {
     }
 };
 
+struct NativeFileGuard final {
+    HANDLE handle{INVALID_HANDLE_VALUE};
+    ~NativeFileGuard() { close(); }
+    void close() {
+        if (handle && handle != INVALID_HANDLE_VALUE)
+            ::CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+    }
+    bool valid() const { return handle && handle != INVALID_HANDLE_VALUE; }
+};
+
+HANDLE fixtureFile(const QString& path, const QByteArray& bytes = QByteArrayLiteral("leased-file-input")) {
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
+        return INVALID_HANDLE_VALUE;
+    file.close();
+    return ::CreateFileW(path.toStdWString().c_str(), GENERIC_READ | GENERIC_WRITE | DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                         FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+}
+
+std::uintptr_t handleNumber(HANDLE value) { return reinterpret_cast<std::uintptr_t>(value); }
+
+bool nonInheritable(const WindowsDownloadReadInput& input) {
+    DWORD flags = HANDLE_FLAG_INHERIT;
+    return ::GetHandleInformation(reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(input.handleValue())), &flags) &&
+           (flags & HANDLE_FLAG_INHERIT) == 0;
+}
+
 struct QtProcessGuard final {
     QProcess& process;
     ~QtProcessGuard() {
@@ -185,6 +215,200 @@ class WindowsDownloadProcessTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void readInputRejectsNonFileObjectsAndDoesNotChangeBorrowedHandleFlags() {
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(0));
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(INVALID_HANDLE_VALUE)));
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(::GetCurrentProcess())));
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        NativeFileGuard folder{::CreateFileW(directory.path().toStdWString().c_str(), FILE_LIST_DIRECTORY,
+                                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                                             nullptr)};
+        QVERIFY(folder.valid());
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(folder.handle)));
+        NativeFileGuard pipe_reader;
+        NativeFileGuard pipe_writer;
+        QVERIFY(::CreatePipe(&pipe_reader.handle, &pipe_writer.handle, nullptr, 0));
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(pipe_reader.handle)));
+        NativeEventGuard event{::CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+        QVERIFY(event.handle);
+        QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(event.handle)));
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};
+        QVERIFY(file.valid());
+        QVERIFY(::SetHandleInformation(file.handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT));
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        QVERIFY(nonInheritable(*input));
+        DWORD flags = 0;
+        QVERIFY(::GetHandleInformation(file.handle, &flags));
+        QVERIFY(flags & HANDLE_FLAG_INHERIT);
+    }
+
+    void readInputIsReadOnlyAndUsesAnIndependentCursor() {
+        QTemporaryDir directory;
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};
+        QVERIFY(file.valid());
+        LARGE_INTEGER position{};
+        position.QuadPart = 5;
+        QVERIFY(::SetFilePointerEx(file.handle, position, nullptr, FILE_BEGIN));
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        const auto reduced = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(input->handleValue()));
+        QVERIFY(reduced != file.handle);
+        QVERIFY(nonInheritable(*input));
+        char bytes[6]{};
+        DWORD read = 0;
+        QVERIFY(::ReadFile(reduced, bytes, sizeof(bytes), &read, nullptr));
+        QCOMPARE(QByteArray(bytes, read), QByteArrayLiteral("leased"));
+        position.QuadPart = 0;
+        LARGE_INTEGER original_position{};
+        QVERIFY(::SetFilePointerEx(file.handle, position, &original_position, FILE_CURRENT));
+        QCOMPARE(original_position.QuadPart, LONGLONG{5});
+        DWORD written = 0;
+        QVERIFY(!::WriteFile(reduced, "X", 1, &written, nullptr));
+        QCOMPARE(::GetLastError(), DWORD{ERROR_ACCESS_DENIED});
+        QVERIFY(!::SetEndOfFile(reduced));
+        QCOMPARE(::GetLastError(), DWORD{ERROR_ACCESS_DENIED});
+        FILE_DISPOSITION_INFO disposition{TRUE};
+        QVERIFY(!::SetFileInformationByHandle(reduced, FileDispositionInfo, &disposition, sizeof(disposition)));
+        QCOMPARE(::GetLastError(), DWORD{ERROR_ACCESS_DENIED});
+    }
+
+    void readInputAcceptsAnEmptyRegularFile() {
+        QTemporaryDir directory;
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("empty.bin")), {})};
+        QVERIFY(file.valid());
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        QVERIFY(nonInheritable(*input));
+    }
+
+    void childReceivesOnlyTheSelectedReadHandleAfterTheSourceNameChanges() {
+        QTemporaryDir directory;
+        const auto path = directory.filePath(QStringLiteral("input.bin"));
+        NativeFileGuard file{fixtureFile(path)};
+        QVERIFY(file.valid());
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        file.close();
+        QVERIFY(QFile::rename(path, directory.filePath(QStringLiteral("renamed.bin"))));
+        SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+        NativeEventGuard canary{::CreateEventW(&attributes, TRUE, FALSE, nullptr)};
+        QVERIFY(canary.handle);
+        auto config =
+            configuration(directory, {QStringLiteral("read-file-handle"), QString::number(input->handleValue()),
+                                      QString::number(handleNumber(canary.handle))});
+        config.read_input = input;
+        WindowsDownloadProcess process;
+        QVERIFY(process.start(config, 0));
+        QVERIFY(nonInheritable(*input));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        const auto report = QJsonDocument::fromJson(result.output).object();
+        QCOMPARE(QByteArray::fromBase64(report.value(QStringLiteral("data")).toString().toLatin1()),
+                 QByteArrayLiteral("leased-file-input"));
+        QVERIFY(report.value(QStringLiteral("write_denied")).toBool());
+        QVERIFY(report.value(QStringLiteral("truncate_denied")).toBool());
+        QVERIFY(report.value(QStringLiteral("delete_denied")).toBool());
+        QCOMPARE(::WaitForSingleObject(canary.handle, 0), DWORD{WAIT_TIMEOUT});
+        QVERIFY(nonInheritable(*input));
+    }
+
+    void oneReadInputCannotBeUsedByAnotherChildUntilPhysicalDrain() {
+        QTemporaryDir directory;
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        auto config = configuration(directory, {QStringLiteral("hang")});
+        config.read_input = input;
+        WindowsDownloadProcess first;
+        WindowsDownloadProcess second;
+        QVERIFY(first.start(config, 0));
+        QVERIFY(nonInheritable(*input));
+        QVERIFY(!second.start(config, 0));
+        QCOMPARE(second.poll(0).error, WindowsDownloadProcessError::Isolation);
+        first.cancel();
+        QVERIFY(!second.start(config, 0));
+        Collected cancelled;
+        QVERIFY(collect(first, cancelled));
+        QCOMPARE(cancelled.update.state, WindowsDownloadProcessState::Cancelled);
+        config.arguments = {QStringLiteral("read-file-handle"), QString::number(input->handleValue()),
+                            QStringLiteral("0")};
+        QVERIFY(second.start(config, 0));
+        Collected completed;
+        QVERIFY(collect(second, completed));
+        QCOMPARE(completed.update.exit_code, std::optional<int>{0});
+        QVERIFY(nonInheritable(*input));
+    }
+
+    void readInputLeaseSurvivesCancellationUntilDrainAndThenPermitsJobDirectoryRemoval() {
+        QTemporaryDir directory;
+        const auto job = directory.filePath(QStringLiteral("job"));
+        QVERIFY(QDir().mkdir(job));
+        const auto path = QDir(job).filePath(QStringLiteral("input.bin"));
+        NativeFileGuard file{fixtureFile(path)};
+        auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        file.close();
+        std::weak_ptr<const WindowsDownloadReadInput> weak = input;
+        WindowsDownloadProcess process;
+        auto config = configuration(directory, {QStringLiteral("hang")});
+        config.working_directory = job;
+        config.read_input = input;
+        QVERIFY(process.start(config, 0));
+        WindowsDownloadProcess rejected;
+        QVERIFY(!rejected.start(config, 0));
+        QCOMPARE(rejected.poll(0).error, WindowsDownloadProcessError::Isolation);
+        config.read_input.reset();
+        input.reset();
+        QVERIFY(!weak.expired());
+        process.cancel();
+        QVERIFY(!weak.expired());
+        Collected stopped;
+        QVERIFY(collect(process, stopped));
+        QCOMPARE(stopped.update.state, WindowsDownloadProcessState::Cancelled);
+        // Match the workspace's non-POSIX delete contract. A read capability
+        // held after ACK keeps the file delete-pending and the job nonempty.
+        NativeFileGuard erased{::CreateFileW(path.toStdWString().c_str(), DELETE,
+                                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                             OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
+        QVERIFY(erased.valid());
+        FILE_DISPOSITION_INFO disposition{TRUE};
+        QVERIFY(::SetFileInformationByHandle(erased.handle, FileDispositionInfo, &disposition, sizeof(disposition)));
+        erased.close();
+        const bool removed = ::RemoveDirectoryW(job.toStdWString().c_str()) != FALSE;
+        const auto error = ::GetLastError();
+        QVERIFY2(removed, qPrintable(QStringLiteral("Job directory remains busy after data ACK: %1").arg(error)));
+        QVERIFY(weak.expired());
+    }
+
+    void failedLaunchRestoresReadInputInheritanceAndReleasesItsClaim() {
+        QTemporaryDir directory;
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        const auto invalid_executable = directory.filePath(QStringLiteral("invalid.exe"));
+        QFile invalid(invalid_executable);
+        QVERIFY(invalid.open(QIODevice::WriteOnly));
+        QCOMPARE(invalid.write("invalid exe"), qint64{11});
+        invalid.close();
+        auto config = configuration(directory, {QStringLiteral("read-file-handle"),
+                                                QString::number(input->handleValue()), QStringLiteral("0")});
+        config.executable = invalid_executable;
+        config.read_input = input;
+        WindowsDownloadProcess process;
+        QVERIFY(!process.start(config, 0));
+        QVERIFY(nonInheritable(*input));
+        config.executable = helperPath();
+        QVERIFY(process.start(config, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        QVERIFY(nonInheritable(*input));
+    }
+
     void startsIdleWithoutAChildOrOutput() {
         WindowsDownloadProcess process;
         const auto update = process.poll(0);

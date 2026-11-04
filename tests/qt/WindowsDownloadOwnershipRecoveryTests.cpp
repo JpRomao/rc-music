@@ -1,5 +1,6 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
+#include "adapters/WindowsDownloadReadInput.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -109,6 +110,17 @@ bool createFile(const QString& path, const QByteArray& content, PrivateSecurity&
 QByteArray readFile(const QString& path) {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
+
+QByteArray readCapability(const std::shared_ptr<const WindowsDownloadReadInput>& input, const DWORD wanted = 64) {
+    if (!input)
+        return {};
+    QByteArray bytes(static_cast<qsizetype>(wanted), '\0');
+    DWORD count = 0;
+    if (!ReadFile(reinterpret_cast<HANDLE>(input->handleValue()), bytes.data(), wanted, &count, nullptr))
+        return {};
+    bytes.resize(static_cast<qsizetype>(count));
+    return bytes;
 }
 
 bool changeBytes(const QString& path, const QByteArray& value) {
@@ -237,6 +249,37 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void finalReadCapabilityHasIndependentReadOnlyAccessWithoutDependingOnTheOriginalName() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        QVERIFY(f.removeTemps());
+        f.record.cleanup_complete = true;
+        auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), f.record);
+        QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QVERIFY(pinned.candidate);
+        auto first = pinned.candidate->readInput();
+        auto second = pinned.candidate->readInput();
+        QVERIFY(first);
+        QVERIFY(second);
+        const QByteArray expected(output_content);
+        QCOMPARE(readCapability(first, 2), expected.left(2));
+        QCOMPARE(readCapability(second, 2), expected.left(2));
+        DWORD written = 0;
+        SetLastError(ERROR_SUCCESS);
+        const bool wrote =
+            WriteFile(reinterpret_cast<HANDLE>(first->handleValue()), "x", 1, &written, nullptr) != FALSE;
+        const auto error = GetLastError();
+        QVERIFY(!wrote);
+        QCOMPARE(error, DWORD{ERROR_ACCESS_DENIED});
+        second.reset();
+        pinned.candidate.reset();
+        const auto renamed = f.final + QStringLiteral(".moved");
+        QVERIFY(MoveFileExW(native(f.final).c_str(), native(renamed).c_str(), 0));
+        QCOMPARE(readCapability(first), expected.mid(2));
+        QCOMPARE(readFile(renamed), expected);
+    }
+
     void finalPinRetainsDerivedPathDetachedEvidenceAndReadOnlyAccess_data() {
         QTest::addColumn<int>("kind");
         QTest::newRow("prepared-after-rename") << 0;
@@ -329,10 +372,12 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), f.record);
         QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
         QVERIFY(pinned.candidate);
+        QVERIFY(pinned.candidate->readInput());
         PrivateSecurity wrong_dacl(false);
         QVERIFY(wrong_dacl.valid());
         QVERIFY(replaceDacl(f.final, false, wrong_dacl));
         QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::Conflict);
+        QVERIFY(!pinned.candidate->readInput());
         QCOMPARE(readFile(f.final), QByteArray(output_content));
         // Restore the fixture's original explicit descriptor and ACE flags.
         // This is fixture restoration only; recovery never repairs permissions.
@@ -347,6 +392,7 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         }
         QCOMPARE(f.assess(), DownloadOwnershipAssessment::OwnedFinalCandidate);
         QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+        QVERIFY(pinned.candidate->readInput());
         QCOMPARE(pinned.candidate->record(), f.record);
     }
 

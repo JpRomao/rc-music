@@ -555,13 +555,14 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         (request.mode == MediaFoundationWorkerMode::Convert && !callbacks.write))
         return Exit::InvalidRequest;
     try {
-        static_assert(sizeof(wchar_t) == sizeof(char16_t));
-        std::wstring path{request.input_path.begin(), request.input_path.end()};
-        std::replace(path.begin(), path.end(), L'/', L'\\');
-        const auto native = std::wstring{L"\\\\?\\"} + path;
-        const Handle input{CreateFileW(native.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                                       OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN,
-                                       nullptr)};
+        const auto borrowed = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(request.input_handle));
+        HANDLE read_capability = nullptr;
+        constexpr DWORD read_access = FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+        if (GetFileType(borrowed) != FILE_TYPE_DISK ||
+            !DuplicateHandle(GetCurrentProcess(), borrowed, GetCurrentProcess(), &read_capability, read_access, FALSE,
+                             0))
+            return Exit::Input;
+        const Handle input{read_capability};
         BY_HANDLE_FILE_INFORMATION information{};
         LARGE_INTEGER size{};
         if (!input.valid() || GetFileType(input.get()) != FILE_TYPE_DISK ||
@@ -589,8 +590,7 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         if (!runtime.valid())
             return Exit::Unavailable;
         HANDLE duplicate = nullptr;
-        if (!DuplicateHandle(GetCurrentProcess(), input.get(), GetCurrentProcess(), &duplicate, 0, FALSE,
-                             DUPLICATE_SAME_ACCESS))
+        if (!DuplicateHandle(GetCurrentProcess(), input.get(), GetCurrentProcess(), &duplicate, read_access, FALSE, 0))
             return Exit::Input;
         Handle owned{duplicate};
         auto state = std::make_shared<StreamState>(std::move(owned), bytes);

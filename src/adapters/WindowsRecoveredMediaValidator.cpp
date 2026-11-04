@@ -79,7 +79,17 @@ RecoveredMediaValidationUpdate WindowsRecoveredMediaValidator::poll(qint64 now_m
         remaining.total_timeout_ms -= now_ms - started_ms_;
         validator_ = std::make_unique<WindowsLocalMp3Validator>(std::move(remaining));
         launch_pending_ = false;
-        static_cast<void>(validator_->start(candidate_->pathForValidation(), now_ms));
+        if (tools_.backend == WindowsLocalMediaBackend::MediaFoundation) {
+            auto input = candidate_->readInput();
+            if (!input) {
+                update_.ownership = candidate_->revalidate();
+                finish(RecoveredMediaValidationState::Failed, DownloadFailure::Publication);
+                return update_;
+            }
+            static_cast<void>(validator_->startReadInput(std::move(input), now_ms));
+        } else {
+            static_cast<void>(validator_->start(candidate_->pathForValidation(), now_ms));
+        }
     }
     const auto result = validator_->poll(now_ms);
     if (update_.state == RecoveredMediaValidationState::Stopping) {

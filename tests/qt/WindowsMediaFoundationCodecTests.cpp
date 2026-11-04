@@ -3,9 +3,11 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QtEndian>
+#include <qt_windows.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -19,14 +21,28 @@ struct Fixture final {
     QString path{directory.filePath(QStringLiteral("entrada com espaços e acentos.audio"))};
     QByteArray output;
     std::vector<std::uint64_t> progress;
+    mutable HANDLE input{INVALID_HANDLE_VALUE};
+    ~Fixture() { closeInput(); }
+    void closeInput() const {
+        if (input != INVALID_HANDLE_VALUE)
+            CloseHandle(input);
+        input = INVALID_HANDLE_VALUE;
+    }
     bool save(const QByteArray& bytes) const {
+        closeInput();
         QFile file{path};
-        return directory.isValid() && file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+        if (!directory.isValid() || !file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
+            return false;
+        file.close();
+        const auto native = QDir::toNativeSeparators(path).toStdWString();
+        input = CreateFileW(native.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        return input != INVALID_HANDLE_VALUE;
     }
     MediaFoundationWorkerRequest request(MediaFoundationWorkerMode mode = MediaFoundationWorkerMode::Convert) const {
         MediaFoundationWorkerRequest result;
         result.mode = mode;
-        result.input_path = path.toStdU16String();
+        result.input_handle = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(input));
         result.max_input_bytes = 1024 * 1024;
         result.max_output_bytes = 1024 * 1024;
         result.max_duration_us = 60 * 1000000;
@@ -204,14 +220,57 @@ class WindowsMediaFoundationCodecTests final : public QObject {
         callbacks.progress = [](std::uint64_t) { return false; };
         QCOMPARE(runWindowsMediaFoundationCodec(h.request(), callbacks), MediaFoundationWorkerExit::Output);
     }
-    void invalidRequestAndMissingInputFailBeforeOutput() {
+    void inputIsBorrowedWithoutClosingItOrChangingItsBytes() {
+        Fixture h;
+        const auto original = fixture("wav-pcm-mono.wav");
+        QVERIFY(h.save(original));
+        QCOMPARE(runWindowsMediaFoundationCodec(h.request(), h.callbacks()), MediaFoundationWorkerExit::Success);
+        BY_HANDLE_FILE_INFORMATION information{};
+        QVERIFY(GetFileInformationByHandle(h.input, &information));
+        QFile source{h.path};
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        QCOMPARE(source.readAll(), original);
+        QVERIFY(!h.output.isEmpty());
+    }
+    void inputObjectRemainsUsableAfterItsOriginalNameIsRemoved() {
+        Fixture h;
+        QVERIFY(h.save(fixture("wav-pcm-mono.wav")));
+        const auto moved = h.directory.filePath(QStringLiteral("renamed outside request.audio"));
+        QVERIFY(QFile::rename(h.path, moved));
+        QVERIFY(!QFile::exists(h.path));
+        QCOMPARE(runWindowsMediaFoundationCodec(h.request(), h.callbacks()), MediaFoundationWorkerExit::Success);
+        QVERIFY(!h.output.isEmpty());
+        BY_HANDLE_FILE_INFORMATION information{};
+        QVERIFY(GetFileInformationByHandle(h.input, &information));
+    }
+    void directoriesAndPipesAreNeverTreatedAsInputMedia() {
+        Fixture h;
+        const auto native = QDir::toNativeSeparators(h.directory.path()).toStdWString();
+        const HANDLE directory = CreateFileW(native.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                             nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        QVERIFY(directory != INVALID_HANDLE_VALUE);
+        const auto close_directory = qScopeGuard([directory] { CloseHandle(directory); });
+        auto request = h.request();
+        request.input_handle = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(directory));
+        QCOMPARE(runWindowsMediaFoundationCodec(request, h.callbacks()), MediaFoundationWorkerExit::Input);
+        HANDLE read = nullptr, write = nullptr;
+        QVERIFY(CreatePipe(&read, &write, nullptr, 0));
+        const auto close_pipe = qScopeGuard([read, write] {
+            CloseHandle(read);
+            CloseHandle(write);
+        });
+        request.input_handle = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(read));
+        QCOMPARE(runWindowsMediaFoundationCodec(request, h.callbacks()), MediaFoundationWorkerExit::Input);
+        QVERIFY(h.output.isEmpty());
+    }
+    void invalidRequestAndClosedInputFailBeforeOutput() {
         Fixture h;
         QVERIFY(h.save(fixture("wav-pcm-mono.wav")));
         auto request = h.request();
         request.max_duration_us = 0;
         QCOMPARE(runWindowsMediaFoundationCodec(request, h.callbacks()), MediaFoundationWorkerExit::InvalidRequest);
         request = h.request();
-        request.input_path = (h.directory.path() + "/missing.audio").toStdU16String();
+        h.closeInput();
         QCOMPARE(runWindowsMediaFoundationCodec(request, h.callbacks()), MediaFoundationWorkerExit::Input);
         QVERIFY(h.output.isEmpty());
     }

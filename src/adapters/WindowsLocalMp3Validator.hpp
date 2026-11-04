@@ -29,13 +29,18 @@ struct LocalMp3ValidationUpdate final {
 class WindowsLocalMp3Validator final {
   public:
     explicit WindowsLocalMp3Validator(WindowsLocalMp3ValidatorConfig config);
+    // Legacy path API. MF opens it only in the trusted parent; production pins
+    // supply startReadInput instead. No pathname is sent to the native worker.
     [[nodiscard]] bool start(const QString& local_mp3, qint64 now_ms);
+    // Media Foundation input supplied by trusted parent pins, never a path in
+    // the child request. The lease remains live until physical process drain.
+    [[nodiscard]] bool startReadInput(std::shared_ptr<const WindowsDownloadReadInput> input, qint64 now_ms);
     void cancel();
     [[nodiscard]] LocalMp3ValidationUpdate poll(qint64 now_ms);
 
   private:
     enum class Stage { Probe, Decode };
-    bool launch(Stage stage, qint64 now_ms);
+    bool launch(Stage stage, qint64 now_ms, std::shared_ptr<const WindowsDownloadReadInput> input = {});
     void stop(DownloadFailure error, bool cancelled = false);
     WindowsLocalMp3ValidatorConfig config_;
     WindowsDownloadProcess process_{};

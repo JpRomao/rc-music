@@ -141,7 +141,8 @@ MediaFoundationWorkerExit run(const MediaFoundationWorkerRequest& request, HANDL
 int main(int argc, char**) {
     using music_player::m0::MediaFoundationWorkerExit;
     try {
-        // The codec loads MF entry points explicitly from System32. No Qt,
+        // The codec loads MF entry points explicitly from System32 and borrows
+        // one parent-selected inherited read handle. No media path, Qt,
         // environment path, command argument or page can configure this worker.
         if (!SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32))
             return static_cast<int>(MediaFoundationWorkerExit::Unavailable);

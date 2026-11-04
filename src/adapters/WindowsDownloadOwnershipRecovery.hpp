@@ -29,6 +29,9 @@ class WindowsPinnedDownloadFinal final {
     WindowsPinnedDownloadFinal(const WindowsPinnedDownloadFinal&) = delete;
     WindowsPinnedDownloadFinal& operator=(const WindowsPinnedDownloadFinal&) = delete;
     [[nodiscard]] QString pathForValidation() const;
+    // Read only the already-pinned final object, without reopening its name.
+    // Full recovery assessment and media/import approval remain separate gates.
+    [[nodiscard]] std::shared_ptr<const WindowsDownloadReadInput> readInput() const;
     [[nodiscard]] const DownloadOwnershipRecord& record() const;
     [[nodiscard]] DownloadOwnershipAssessment revalidate() const noexcept;
 

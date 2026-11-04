@@ -9,6 +9,7 @@
 #include <optional>
 
 namespace music_player::m0 {
+class WindowsDownloadReadInput;
 
 inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
 inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
@@ -33,6 +34,11 @@ struct WindowsDownloadProcessConfig final {
     quint64 max_stderr_bytes{4ULL * 1024 * 1024};
     quint64 max_memory_bytes{512ULL * 1024 * 1024};
     qint64 total_timeout_ms{30 * 60 * 1000};
+    // Optional parent-owned file capability. Only this reduced read handle is
+    // added to the explicit inheritance list; it is never acquired by path.
+    // The process releases its reference after native process/pipe ACK so a
+    // delete-pending data file cannot block the workspace's directory cleanup.
+    std::shared_ptr<const WindowsDownloadReadInput> read_input{};
 };
 
 enum class WindowsDownloadProcessState { Idle, Running, Stopping, Exited, Failed, Cancelled };

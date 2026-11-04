@@ -9,6 +9,8 @@ target_link_libraries(rc_music_download_documents PUBLIC rc_music_downloads Qt6:
 rc_music_configure_cpp(rc_music_download_documents)
 if(WIN32)
     target_sources(rc_music_download_documents PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadReadInput.hpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadReadInput.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsPrivateDownloadDocument.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadOwnershipStore.cpp"

@@ -1,5 +1,6 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
+#include "adapters/WindowsDownloadReadInput.hpp"
 #include "adapters/WindowsDownloadWorkspace.hpp"
 
 #include <QCryptographicHash>
@@ -38,6 +39,17 @@ bool writeFile(const QString& path, const QByteArray& bytes) {
 QByteArray readFile(const QString& path) {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
+
+QByteArray readCapability(const std::shared_ptr<const WindowsDownloadReadInput>& input, const DWORD wanted = 64) {
+    if (!input)
+        return {};
+    QByteArray bytes(static_cast<qsizetype>(wanted), '\0');
+    DWORD count = 0;
+    if (!ReadFile(reinterpret_cast<HANDLE>(input->handleValue()), bytes.data(), wanted, &count, nullptr))
+        return {};
+    bytes.resize(static_cast<qsizetype>(count));
+    return bytes;
 }
 
 std::wstring nativePath(const QString& path) { return QDir::toNativeSeparators(path).toStdWString(); }
@@ -199,6 +211,80 @@ class WindowsDownloadWorkspaceTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void readCapabilitiesRequireTheirOwnSealAndDisappearAfterCleanup() {
+        Fixture fixture;
+        WindowsDownloadWorkspace workspace(fixture.config());
+        QVERIFY(!workspace.readInput());
+        QVERIFY(!workspace.readOutput());
+        QVERIFY(workspace.create());
+        QCOMPARE(workspace.inputSink()->write("input", 5), qint64{5});
+        QVERIFY(!workspace.readInput());
+        QVERIFY(!workspace.readOutput());
+        QCOMPARE(workspace.error(), DownloadFailure::None);
+        QVERIFY(workspace.sealInput());
+        QVERIFY(workspace.readInput());
+        QVERIFY(!workspace.readOutput());
+        QCOMPARE(workspace.outputSink()->write("synthetic-mp3", 13), qint64{13});
+        QVERIFY(!workspace.readOutput());
+        QVERIFY(workspace.sealOutput());
+        QVERIFY(workspace.readOutput());
+        QCOMPARE(workspace.error(), DownloadFailure::None);
+        QVERIFY(workspace.cleanup());
+        QVERIFY(!workspace.readInput());
+        QVERIFY(!workspace.readOutput());
+    }
+
+    void sealedReadCapabilitiesAreReadOnlyWithIndependentCursors_data() {
+        QTest::addColumn<bool>("output");
+        QTest::newRow("downloaded-input") << false;
+        QTest::newRow("converted-output") << true;
+    }
+    void sealedReadCapabilitiesAreReadOnlyWithIndependentCursors() {
+        QFETCH(bool, output);
+        Fixture fixture;
+        WindowsDownloadWorkspace workspace(fixture.config());
+        QVERIFY(workspace.create());
+        QVERIFY(fillAndSeal(workspace));
+        auto first = output ? workspace.readOutput() : workspace.readInput();
+        auto second = output ? workspace.readOutput() : workspace.readInput();
+        QVERIFY(first);
+        QVERIFY(second);
+        const QByteArray expected = output ? QByteArray("synthetic-mp3") : QByteArray("input");
+        QCOMPARE(readCapability(first, 2), expected.left(2));
+        QCOMPARE(readCapability(second, 2), expected.left(2));
+        QCOMPARE(readCapability(first, 2), expected.mid(2, 2));
+        DWORD written = 0;
+        SetLastError(ERROR_SUCCESS);
+        const bool wrote =
+            WriteFile(reinterpret_cast<HANDLE>(first->handleValue()), "x", 1, &written, nullptr) != FALSE;
+        const auto error = GetLastError();
+        QVERIFY(!wrote);
+        QCOMPARE(error, DWORD{ERROR_ACCESS_DENIED});
+        QCOMPARE(readFile(output ? workspace.outputPath() : workspace.inputPath()), expected);
+        first.reset();
+        second.reset();
+        QVERIFY(workspace.cleanup());
+    }
+
+    void outputReadCapabilityUsesTheSameFileObjectDuringValidationAndAfterPublication() {
+        Fixture fixture;
+        WindowsDownloadWorkspace workspace(fixture.config());
+        QVERIFY(workspace.create());
+        QVERIFY(fillAndSeal(workspace));
+        auto output = workspace.readOutput();
+        QVERIFY(output);
+        const auto final = workspace.validateAndPublish([&](const QString&) {
+            const auto validation_input = workspace.readOutput();
+            return validation_input && readCapability(validation_input) == QByteArray("synthetic-mp3");
+        });
+        QVERIFY(!final.isEmpty());
+        QVERIFY(!workspace.readOutput());
+        QCOMPARE(readCapability(output), QByteArray("synthetic-mp3"));
+        QCOMPARE(readFile(final), QByteArray("synthetic-mp3"));
+        output.reset();
+        QVERIFY(workspace.cleanup());
+    }
+
     void createGuardCleanupReturningTrueCannotResumeCreation_data() {
         QTest::addColumn<int>("guard_index");
         QTest::addColumn<bool>("real_store");
