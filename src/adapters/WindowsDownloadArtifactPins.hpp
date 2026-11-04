@@ -69,6 +69,12 @@ bool moduleMatches(const void* address, const Artifact& expected);
 // Copy reads only the held source capability; removal checks the recorded ID.
 bool createPrivateDirectory(const QString& path);
 bool copyPinned(const Artifact& source, Artifact& destination);
+// Opt-in runtime only: create the new objects with the final protected DACL,
+// granting this canonical AppContainer SID exactly read/execute. No parent or
+// source ACL is changed; existing destinations are never opened for mutation.
+bool createPrivateDirectory(const QString& path, const QByteArray& app_container_sid);
+bool copyPinned(const Artifact& source, Artifact& destination, const QByteArray& app_container_sid);
+bool runtimeDaclMatches(HANDLE handle, const QByteArray& app_container_sid);
 bool removeOwned(const QString& path, bool directory, const FILE_ID_INFO& expected, const QString& final_path);
 
 } // namespace music_player::m0::download_artifacts

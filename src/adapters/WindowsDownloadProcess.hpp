@@ -10,6 +10,7 @@
 
 namespace music_player::m0 {
 class WindowsDownloadReadInput;
+class WindowsDownloadAppContainer;
 
 inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
 inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
@@ -39,6 +40,12 @@ struct WindowsDownloadProcessConfig final {
     // The process releases its reference after native process/pipe ACK so a
     // delete-pending data file cannot block the workspace's directory cleanup.
     std::shared_ptr<const WindowsDownloadReadInput> read_input{};
+    // Trusted identity of a previously provisioned profile, with no granted
+    // capabilities. A non-null identity always requires AppContainer launch.
+    std::shared_ptr<const WindowsDownloadAppContainer> app_container{};
+    // Explicit opt-in survives a failed identity factory: required + null is
+    // Isolation before allocating native resources, never a legacy fallback.
+    bool require_app_container{false};
 };
 
 enum class WindowsDownloadProcessState { Idle, Running, Stopping, Exited, Failed, Cancelled };
@@ -60,6 +67,8 @@ struct WindowsDownloadProcessUpdate final {
 // Cancellation never means that unacknowledged I/O has already stopped.
 // Job Object restrictions bound resource use and lifecycle, not filesystem or
 // network permissions. The caller still owns trusted arguments/media policy.
+// Optional AppContainer creation is required when configured: verify the token
+// and Job before resuming its initial thread or sending a private request.
 class WindowsDownloadProcess final {
   public:
     WindowsDownloadProcess();

@@ -1,4 +1,5 @@
 #include "WindowsDownloadProcess.hpp"
+#include "WindowsDownloadAppContainer.hpp"
 #include "WindowsDownloadReadInput.hpp"
 
 #ifndef NOMINMAX
@@ -17,6 +18,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <utility>
@@ -44,6 +47,64 @@ class Handle final {
   private:
     HANDLE value_{nullptr};
 };
+
+constexpr std::size_t token_information_bytes = 64 * 1024;
+using TokenInformation = std::array<std::byte, token_information_bytes>;
+
+[[nodiscard]] bool readTokenInformation(HANDLE token, TOKEN_INFORMATION_CLASS kind, TokenInformation& storage,
+                                        const DWORD minimum, DWORD& used) noexcept {
+    DWORD required = 0;
+    if (::GetTokenInformation(token, kind, nullptr, 0, &required))
+        return false;
+    if (::GetLastError() != ERROR_INSUFFICIENT_BUFFER || required < minimum || required > storage.size())
+        return false;
+    used = 0;
+    return ::GetTokenInformation(token, kind, storage.data(), required, &used) && used >= minimum && used <= required;
+}
+
+[[nodiscard]] bool containedSid(PSID sid, const TokenInformation& storage, const DWORD used) noexcept {
+    const auto begin = reinterpret_cast<std::uintptr_t>(storage.data());
+    const auto position = reinterpret_cast<std::uintptr_t>(sid);
+    if (position < begin || position - begin > used || used - (position - begin) < 8)
+        return false;
+    const auto* bytes = reinterpret_cast<const BYTE*>(sid);
+    const auto count = bytes[1];
+    return count <= SID_MAX_SUB_AUTHORITIES && ::GetSidLengthRequired(count) <= used - (position - begin) &&
+           ::IsValidSid(sid);
+}
+
+[[nodiscard]] bool verifiedAppContainerProcess(HANDLE process, HANDLE job,
+                                               const WindowsDownloadAppContainer& identity) noexcept {
+    HANDLE raw = nullptr;
+    if (!::OpenProcessToken(process, TOKEN_QUERY, &raw))
+        return false;
+    const Handle token(raw);
+    DWORD is_app_container = 0, used = 0;
+    if (!token.valid() ||
+        !::GetTokenInformation(token.get(), TokenIsAppContainer, &is_app_container, sizeof(is_app_container), &used) ||
+        used != sizeof(is_app_container) || is_app_container == 0)
+        return false;
+    alignas(TOKEN_MANDATORY_LABEL) TokenInformation storage{};
+    if (!readTokenInformation(token.get(), TokenAppContainerSid, storage, sizeof(TOKEN_APPCONTAINER_INFORMATION), used))
+        return false;
+    const auto sid = reinterpret_cast<const TOKEN_APPCONTAINER_INFORMATION*>(storage.data())->TokenAppContainer;
+    if (!containedSid(sid, storage, used) || !::EqualSid(sid, const_cast<char*>(identity.sidBytes().constData())))
+        return false;
+    if (!readTokenInformation(token.get(), TokenIntegrityLevel, storage, sizeof(TOKEN_MANDATORY_LABEL), used))
+        return false;
+    const auto& label = reinterpret_cast<const TOKEN_MANDATORY_LABEL*>(storage.data())->Label;
+    alignas(DWORD) std::array<std::byte, SECURITY_MAX_SID_SIZE> low_sid{};
+    DWORD low_size = static_cast<DWORD>(low_sid.size());
+    if (!containedSid(label.Sid, storage, used) || !(label.Attributes & SE_GROUP_INTEGRITY) ||
+        !::CreateWellKnownSid(WinLowLabelSid, nullptr, low_sid.data(), &low_size) ||
+        !::EqualSid(label.Sid, low_sid.data()))
+        return false;
+    if (!readTokenInformation(token.get(), TokenCapabilities, storage, sizeof(DWORD), used) ||
+        reinterpret_cast<const TOKEN_GROUPS*>(storage.data())->GroupCount != 0)
+        return false;
+    BOOL in_job = FALSE;
+    return ::IsProcessInJob(process, job, &in_job) && in_job != FALSE;
+}
 
 class LocalAllocation final {
   public:
@@ -422,6 +483,7 @@ struct WindowsDownloadProcess::Impl final {
     NativePipe stderr_pipe{};
     NativeInput stdin_pipe{};
     STARTUPINFOEXW startup{};
+    SECURITY_CAPABILITIES security_capabilities{};
     std::array<HANDLE, 1> assigned_jobs{};
     std::array<HANDLE, 4> inherited{};
     QByteArray attribute_storage{};
@@ -460,6 +522,7 @@ struct WindowsDownloadProcess::Impl final {
             startup.lpAttributeList = nullptr;
         }
         attribute_storage.clear();
+        security_capabilities = {};
     }
 
     void release() {
@@ -478,6 +541,7 @@ struct WindowsDownloadProcess::Impl final {
         releaseInputUse();
         config.read_input.reset();
         releaseAttributes();
+        config.app_container.reset();
         created_information = nullptr;
         config.standard_input.clear();
     }
@@ -500,19 +564,30 @@ struct WindowsDownloadProcess::Impl final {
             (!config.standard_input.isEmpty() && !stdin_pipe.create(descriptor.value, config.standard_input)))
             return false;
         SIZE_T bytes = 0;
-        ::InitializeProcThreadAttributeList(nullptr, 2, 0, &bytes);
+        const DWORD count = config.app_container ? 3 : 2;
+        ::InitializeProcThreadAttributeList(nullptr, count, 0, &bytes);
         if (bytes == 0 || bytes > 64 * 1024)
             return false;
         attribute_storage = QByteArray(static_cast<qsizetype>(bytes), '\0');
         startup = {};
         auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());
-        if (!::InitializeProcThreadAttributeList(attributes, 2, 0, &bytes))
+        if (!::InitializeProcThreadAttributeList(attributes, count, 0, &bytes))
             return false;
         startup.lpAttributeList = attributes;
         // The attribute API borrows the value storage until DeleteAttributeList.
         assigned_jobs[0] = job.get();
-        return ::UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, assigned_jobs.data(),
-                                           sizeof(assigned_jobs), nullptr, nullptr) != FALSE;
+        if (!::UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, assigned_jobs.data(),
+                                         sizeof(assigned_jobs), nullptr, nullptr))
+            return false;
+        if (config.app_container) {
+            security_capabilities.AppContainerSid = const_cast<char*>(config.app_container->sidBytes().constData());
+            // The zero-initialized capability array/count/reserved grant none.
+            // Both the struct and immutable SID outlive DeleteAttributeList.
+            if (!::UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                                             &security_capabilities, sizeof(security_capabilities), nullptr, nullptr))
+                return false;
+        }
+        return true;
     }
 
     void stop(WindowsDownloadProcessState state, WindowsDownloadProcessError error) {
@@ -577,6 +652,11 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.started_ms = now_ms;
     value.last_ms = now_ms;
     value.stopped_state = WindowsDownloadProcessState::Exited;
+    if (config.require_app_container && !config.app_container) {
+        value.update.state = WindowsDownloadProcessState::Failed;
+        value.update.error = WindowsDownloadProcessError::Isolation;
+        return false;
+    }
     if (!validConfig(config)) {
         value.update.state = WindowsDownloadProcessState::Failed;
         value.update.error = WindowsDownloadProcessError::InvalidConfiguration;
@@ -640,6 +720,8 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
                                                        inherited_count * sizeof(HANDLE), nullptr, nullptr) != FALSE;
         arguments->startupInfo = &value.startup.StartupInfo;
         arguments->flags |= CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
+        if (value.config.app_container)
+            arguments->flags |= CREATE_SUSPENDED;
         arguments->inheritHandles = true;
         // Force failure rather than creating a child with incomplete attributes.
         arguments->applicationName = value.native_executable.c_str();
@@ -653,8 +735,9 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     if (value.process->state() == QProcess::NotRunning) {
         value.release();
         value.update.state = WindowsDownloadProcessState::Failed;
-        value.update.error = attributes_ready && inheritance_restored ? WindowsDownloadProcessError::Start
-                                                                      : WindowsDownloadProcessError::Isolation;
+        value.update.error = !config.app_container && attributes_ready && inheritance_restored
+                                 ? WindowsDownloadProcessError::Start
+                                 : WindowsDownloadProcessError::Isolation;
         return false;
     }
     HANDLE native_process = nullptr;
@@ -663,6 +746,13 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         ::DuplicateHandle(::GetCurrentProcess(), value.created_information->hProcess, ::GetCurrentProcess(),
                           &native_process, SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, 0);
     value.process_handle.reset(native_process);
+    // The initial thread must remain suspended until the kernel token and our
+    // Job are witnessed. No private stdin is written before start returns/poll.
+    const bool sandbox_ready =
+        !config.app_container ||
+        (monitored && inheritance_restored && value.created_information &&
+         verifiedAppContainerProcess(value.process_handle.get(), value.job.get(), *config.app_container) &&
+         ::ResumeThread(value.created_information->hThread) == 1);
     value.created_information = nullptr;
     value.releaseAttributes();
     value.stdout_pipe.releaseWriter();
@@ -670,7 +760,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.stdin_pipe.releaseReader();
     value.config.standard_input.clear();
     value.update.state = WindowsDownloadProcessState::Running;
-    if (!inheritance_restored)
+    if (!inheritance_restored || !sandbox_ready)
         value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Isolation);
     else if (!monitored)
         value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);

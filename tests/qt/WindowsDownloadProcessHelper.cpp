@@ -47,7 +47,17 @@ int inspect() {
         !::QueryInformationJobObject(nullptr, JobObjectExtendedLimitInformation, &information, sizeof(information),
                                      nullptr))
         return 73;
+    HANDLE token = nullptr;
+    if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token))
+        return 73;
+    DWORD app_container = 0, token_bytes = 0;
+    const bool token_read =
+        ::GetTokenInformation(token, TokenIsAppContainer, &app_container, sizeof(app_container), &token_bytes) != FALSE;
+    ::CloseHandle(token);
+    if (!token_read || token_bytes != sizeof(app_container))
+        return 73;
     QJsonObject object{{QStringLiteral("console"), ::GetConsoleWindow() != nullptr},
+                       {QStringLiteral("app_container"), app_container != 0},
                        {QStringLiteral("in_job"), in_job != FALSE},
                        {QStringLiteral("kill_on_close"),
                         (information.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) != 0},

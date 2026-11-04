@@ -5,10 +5,15 @@
 #include <memory>
 
 namespace music_player::m0 {
+class WindowsDownloadAppContainer;
 struct WindowsMediaFoundationLaunchConfig final {
     QString runtime_parent{};
     QString source_executable{};
     QByteArray source_sha256{};
+    // Trusted, already provisioned ordinary AppContainer profile SID. The
+    // capability validates SID shape, not profile existence. No capabilities.
+    std::shared_ptr<const WindowsDownloadAppContainer> app_container{};
+    bool require_app_container{false};
 };
 enum class WindowsMediaFoundationLaunchError { None, InvalidConfiguration, FileAccess, HashMismatch };
 

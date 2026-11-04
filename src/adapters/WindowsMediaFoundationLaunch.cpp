@@ -1,4 +1,5 @@
 #include "WindowsMediaFoundationLaunch.hpp"
+#include "WindowsDownloadAppContainer.hpp"
 #include "WindowsDownloadArtifactPins.hpp"
 
 #include <QUuid>
@@ -46,6 +47,7 @@ struct WindowsMediaFoundationLaunch::Impl final {
     std::vector<Handle> ancestors{};
     Artifact worker{};
     QString system_root{};
+    std::shared_ptr<const WindowsDownloadAppContainer> app_container{};
     ~Impl() {
         worker.handle = Handle{};
         ancestors.clear();
@@ -84,8 +86,8 @@ WindowsMediaFoundationLaunch::prepare(const WindowsMediaFoundationLaunchConfig& 
     try {
         QString parent;
         Artifact source;
-        if (!validPath(config.runtime_parent, parent) || !validPath(config.source_executable, source.path) ||
-            !validPin(config.source_sha256))
+        if ((config.require_app_container && !config.app_container) || !validPath(config.runtime_parent, parent) ||
+            !validPath(config.source_executable, source.path) || !validPin(config.source_sha256))
             return fail(WindowsMediaFoundationLaunchError::InvalidConfiguration);
         const auto prefix = QStringLiteral("rcmusic-media-");
         const auto tail = 1 + prefix.size() + 36 + 1 + worker_leaf.size();
@@ -98,6 +100,7 @@ WindowsMediaFoundationLaunch::prepare(const WindowsMediaFoundationLaunchConfig& 
             return fail(authenticated == Error::HashMismatch ? WindowsMediaFoundationLaunchError::HashMismatch
                                                              : WindowsMediaFoundationLaunchError::FileAccess);
         auto impl = std::make_unique<Impl>();
+        impl->app_container = config.app_container;
         if (!pinAncestors(parent + "/placeholder", impl->ancestors))
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         std::array<wchar_t, 32'768> system{};
@@ -106,25 +109,34 @@ WindowsMediaFoundationLaunch::prepare(const WindowsMediaFoundationLaunchConfig& 
             !validPath(QString::fromWCharArray(system.data(), count), impl->system_root))
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         impl->directory = parent + '/' + prefix + QUuid::createUuid().toString(QUuid::WithoutBraces);
-        if (!createPrivateDirectory(impl->directory))
+        const bool created = impl->app_container
+                                 ? createPrivateDirectory(impl->directory, impl->app_container->sidBytes())
+                                 : createPrivateDirectory(impl->directory);
+        if (!created)
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         impl->directory_pin = Handle(CreateFileW(
-            nativePath(impl->directory).c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY, FILE_SHARE_READ, nullptr,
-            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+            nativePath(impl->directory).c_str(),
+            FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | (impl->app_container ? READ_CONTROL : 0), FILE_SHARE_READ,
+            nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr));
         if (!impl->directory_pin.valid() || !information(impl->directory_pin.get(), true, impl->directory_identity))
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         impl->directory_final = finalPath(impl->directory_pin.get());
-        if (impl->directory_final.isEmpty())
+        if (impl->directory_final.isEmpty() ||
+            (impl->app_container && !runtimeDaclMatches(impl->directory_pin.get(), impl->app_container->sidBytes())))
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         impl->worker.path = impl->directory + '/' + worker_leaf;
         impl->worker.sha256 = source.sha256;
-        if (!copyPinned(source, impl->worker))
+        const bool copied = impl->app_container ? copyPinned(source, impl->worker, impl->app_container->sidBytes())
+                                                : copyPinned(source, impl->worker);
+        if (!copied)
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
         const auto identity = impl->worker.identity;
         const auto final_path = impl->worker.final_path;
         const auto pinned = pinAndHash(impl->worker, impl->ancestors);
         if (pinned != Error::None || !sameIdentity(identity, impl->worker.identity) ||
-            final_path != impl->worker.final_path || !exactContents(impl->directory))
+            final_path != impl->worker.final_path || !exactContents(impl->directory) ||
+            (impl->app_container && (!runtimeDaclMatches(impl->directory_pin.get(), impl->app_container->sidBytes()) ||
+                                     !runtimeDaclMatches(impl->worker.handle.get(), impl->app_container->sidBytes()))))
             return fail(pinned == Error::HashMismatch ? WindowsMediaFoundationLaunchError::HashMismatch
                                                       : WindowsMediaFoundationLaunchError::FileAccess);
         auto lease =
@@ -142,7 +154,10 @@ bool WindowsMediaFoundationLaunch::unchanged() const {
     return information(impl_->directory_pin.get(), true, identity) &&
            sameIdentity(identity, impl_->directory_identity) &&
            finalPath(impl_->directory_pin.get()) == impl_->directory_final && exactContents(impl_->directory) &&
-           download_artifacts::unchanged(impl_->worker);
+           download_artifacts::unchanged(impl_->worker) &&
+           (!impl_->app_container ||
+            (runtimeDaclMatches(impl_->directory_pin.get(), impl_->app_container->sidBytes()) &&
+             runtimeDaclMatches(impl_->worker.handle.get(), impl_->app_container->sidBytes())));
 }
 WindowsDownloadProcessConfig WindowsMediaFoundationLaunch::processConfig() const {
     WindowsDownloadProcessConfig config;
@@ -152,6 +167,8 @@ WindowsDownloadProcessConfig WindowsMediaFoundationLaunch::processConfig() const
     environment.insert("PATH", "");
     environment.insert("SystemRoot", impl_->system_root);
     config.environment = environment;
+    config.app_container = impl_->app_container;
+    config.require_app_container = impl_->app_container != nullptr;
     return config;
 }
 } // namespace music_player::m0

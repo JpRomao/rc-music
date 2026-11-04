@@ -71,7 +71,7 @@ if(BUILD_TESTING)
         rc_music_configure_cpp(rc_music_download_io_helper)
         add_executable(rc_music_download_process_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadProcessHelper.cpp")
-        target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core)
+        target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core advapi32)
         rc_music_configure_cpp(rc_music_download_process_helper)
         add_executable(rc_music_download_tls_runtime_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadTlsRuntimeHelper.cpp")

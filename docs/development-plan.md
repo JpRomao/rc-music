@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — composição durável dos downloads no player Windows
+### Checkpoint atual — preparo AppContainer e probe físico sujeito a autorização
+
+Incremento de 2026-11-04: o [suporte AppContainer opcional](download-conversion.md#appcontainer-opcional-do-worker-de-mídia), descrito no ADR-0011 Proposto, acrescenta identidade binária imutável, recusa sem capability obrigatória, `SECURITY_CAPABILITIES`, thread suspensa e conferência de token/SID/Low/capabilities/Job antes da retomada. Somente a nova folha do runtime e seu EXE recebem RX para o SID; suas ACLs são revalidadas por handle antes de cada filho. Nenhum perfil é criado automaticamente pelo player ou pelo CTest.
+
+Baseline 3/3 CTest/100 casos Qt. Red→Green: SID 19/2→21/21; supervisor 50/2→52/52; ACL 26/6→32/32. O [probe manual](../tests/windows/sandbox/README.md) tem guardas de argumentos/protocolo e cleanup: nomes DOS e ausência de ACK foram reproduzidos em Red, assim como relato de cleanup após criação falha. Fechamento **15/15 CTest, 463 casos Qt e quatro skips históricos**, autoteste puro incluído; Release opcional e persistência sem rede/zero testes, Lite/lint/grafo 255/zero testes e formato 395 C++/62 QML passaram. Evidências em `out/product/test-runs/media-appcontainer-20261104/`.
+
+O modo físico precisa de autorização específica para criar/remover perfil temporário do Windows (pastas/Registro), usa fixtures locais e controle positivo de loopback e preserva perfil/TEMP se o ACK ficar incerto. Ainda não foi executado. Compatibilidade real, política de escrita/cota/resíduos do armazenamento do perfil, distribuição/identidade, ingresso instalado e ativação normal continuam pendentes. Não declarar sandbox ou R1 concluídos; produção remota permanece OFF, Lite sem engine interna e YouTube separado preservados.
+
+### Checkpoint anterior — composição durável dos downloads no player Windows
 
 Incremento de 2026-11-04: o [proprietário opcional do player](download-jobs.md#composição-opcional-do-player-windows) reúne execução, importação `Session`, worker de checkpoint, serviço/controller e binding, sem duplicar processamento ou recibos. A tarefa preparada pode possuir seu journal no worker, recusando diretório/histórico inválido e ponteiro externo antes do preparo. O ensaio passa pela admissão Saved e liga processos MF, publicação/ownership/cleanup e fila+recibo Saved reais ao presenter de produção. Replay/restart sem restauração, retry de gravação e saída após bytes parciais transferidos conservam idempotência e drenagem.
 

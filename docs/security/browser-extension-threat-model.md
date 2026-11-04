@@ -1,5 +1,7 @@
 # Fronteira de segurança da extensão principal
 
+O [AppContainer opcional de mídia](../architecture/decisions/0011-media-worker-appcontainer.md) prepara token obrigatório, herança explícita e RX somente na folha nova do runtime, com revalidação por handle. Os checks automáticos não criam perfis. O ensaio físico depende de autorização específica para pastas/Registro e ainda está pendente; AppContainer comum conserva recursos de sistema e storage próprio, cujas escrita/cota/resíduos precisam de política antes de produção. A composição continua sem ingresso remoto normal ou aprovação global de sandbox.
+
 **Data:** 2026-11-04. **Estado:** R1.2/R1.7 em andamento; cliente, biblioteca Qt Core de admissão e host/IPC Native Messaging Windows opcionais, com [evidências e lacunas separadas](../browser-extension.md). O host de produção permanece desabilitado por configuração vazia e o player sem ingresso/serviço remoto ativo. Não há registro, extensão/host instalados ou prova no Brave real; download/conversão ainda exigem revisão própria.
 
 Contrato: [ADR-0007](../architecture/decisions/0007-main-extension-boundary.md), [escopo aceito](../architecture/decisions/0006-browser-editions-and-extensions.md), FR-050–053 e NFR-PRIV-001–004.

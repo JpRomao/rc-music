@@ -215,6 +215,32 @@ class WindowsDownloadProcessTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void missingRequiredAppContainerNeverFallsBackToLegacyLaunch() {
+        QTemporaryDir directory;
+        NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};
+        const auto input = WindowsDownloadReadInput::fromHandle(handleNumber(file.handle));
+        QVERIFY(input);
+        auto config = configuration(directory, {QStringLiteral("read-stdin")});
+        config.standard_input = QByteArrayLiteral("private request must never enter a legacy child");
+        config.read_input = input;
+        config.require_app_container = true;
+        WindowsDownloadProcess process;
+        QVERIFY(!process.start(config, 0));
+        const auto failed = process.poll(0);
+        QCOMPARE(failed.state, WindowsDownloadProcessState::Failed);
+        QCOMPARE(failed.error, WindowsDownloadProcessError::Isolation);
+        QVERIFY(failed.stdout_chunk.isEmpty());
+        QVERIFY(failed.stderr_chunk.isEmpty());
+        QVERIFY(nonInheritable(*input));
+        config.require_app_container = false;
+        QVERIFY(process.start(config, 0));
+        Collected completed;
+        QVERIFY(collect(process, completed));
+        QCOMPARE(completed.update.exit_code, std::optional<int>{0});
+        QCOMPARE(completed.output, config.standard_input);
+        QVERIFY(nonInheritable(*input));
+    }
+
     void readInputRejectsNonFileObjectsAndDoesNotChangeBorrowedHandleFlags() {
         QVERIFY(!WindowsDownloadReadInput::fromHandle(0));
         QVERIFY(!WindowsDownloadReadInput::fromHandle(handleNumber(INVALID_HANDLE_VALUE)));
@@ -689,6 +715,7 @@ class WindowsDownloadProcessTests final : public QObject {
         QCOMPARE(object.value(QStringLiteral("kill_on_close")).toBool(), true);
         QCOMPARE(object.value(QStringLiteral("active_process_limit")).toInt(), 1);
         QCOMPARE(object.value(QStringLiteral("memory_limit")).toString(), QString::number(config.max_memory_bytes));
+        QCOMPARE(object.value(QStringLiteral("app_container")).toBool(true), false);
     }
 
     void handlesQuotaBoundaries_data() {

@@ -32,6 +32,28 @@ target_sources(rc_music_download_network PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationLaunch.cpp")
 
 if(BUILD_TESTING)
+    # Only --self-test is registered with CTest. Host profile creation requires
+    # an explicit manual invocation after separate user authorization.
+    add_executable(rc_music_media_sandbox_helper
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerProbeHelper.cpp")
+    target_link_libraries(rc_music_media_sandbox_helper PRIVATE advapi32 ws2_32)
+    set_target_properties(rc_music_media_sandbox_helper PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    rc_music_configure_cpp(rc_music_media_sandbox_helper)
+    add_executable(rc_music_media_sandbox_probe
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerProbeMain.cpp")
+    target_link_libraries(rc_music_media_sandbox_probe PRIVATE rc_music_download_network userenv advapi32 ws2_32)
+    target_compile_definitions(rc_music_media_sandbox_probe PRIVATE
+        RC_MUSIC_TEST_SANDBOX_HELPER_PATH="$<TARGET_FILE:rc_music_media_sandbox_helper>"
+        RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>"
+        RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid"
+        RC_MUSIC_SANDBOX_WORKSPACE_ROOT="${RC_MUSIC_SOURCE_ROOT}")
+    rc_music_configure_cpp(rc_music_media_sandbox_probe)
+    add_dependencies(rc_music_media_sandbox_probe rc_music_media_sandbox_helper rc_music_media_foundation_worker)
+    add_test(NAME rc_music.download-network.MediaSandboxProbeParser COMMAND rc_music_media_sandbox_probe --self-test)
+    set_tests_properties(rc_music.download-network.MediaSandboxProbeParser PROPERTIES
+        LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     foreach(unit IN ITEMS MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")

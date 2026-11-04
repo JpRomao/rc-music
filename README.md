@@ -1,5 +1,7 @@
 # RC Music
 
+O [suporte AppContainer do worker de mídia](docs/architecture/decisions/0011-media-worker-appcontainer.md) foi preparado com token conferido antes de retomar a thread, herança limitada e runtime somente de leitura/execução. Os checks sem perfil passaram; a prova física Windows/MF usa um [probe manual](tests/windows/sandbox/README.md) que exige autorização específica para criar um perfil temporário no host. Isso ainda não habilita downloads ou encerra o gate de sandbox/disco.
+
 A [composição opcional de downloads no player](docs/download-jobs.md#composição-opcional-do-player-windows) une admissão durável, workers preparados, conversão MP3/MP4, publicação e importação com recibo `Saved`. O ensaio usa o presenter de produção e stores reais, com transferência local simulada; replay/restart, retry de gravação e cancelamento durante transferência passaram. Fechamento: **10/10 CTest, 321 casos Qt sem skips**, Release opcional sem testes e Lite preservada. Internet, sandbox, ingresso instalado e ativação no app normal continuam pendentes.
 
 O [instalador Lite local atualizado](docs/local-delivery-f14ab11-20261104.md) foi gerado do commit `f14ab11`, com inventário e hashes conferidos, sem instalar ou executar o setup. Navegação e downloads opcionais permanecem OFF no pacote.

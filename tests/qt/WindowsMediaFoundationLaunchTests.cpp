@@ -1,3 +1,4 @@
+#include "adapters/WindowsDownloadAppContainer.hpp"
 #include "adapters/WindowsMediaFoundationLaunch.hpp"
 
 #include <QCryptographicHash>
@@ -13,6 +14,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <winioctl.h>
 
 #include <cstddef>
@@ -23,6 +26,17 @@
 using namespace music_player::m0;
 namespace {
 const QByteArray synthetic_bytes{"trusted synthetic worker bytes, not an executable"};
+// Canonical SID bytes for ACL-only tests. No profile is created or launched.
+constexpr auto synthetic_container_sid = L"S-1-15-2-11-22-33-44-55-66-77";
+
+QByteArray containerSid() {
+    PSID sid = nullptr;
+    if (!ConvertStringSidToSidW(synthetic_container_sid, &sid))
+        return {};
+    const QByteArray bytes(static_cast<const char*>(sid), static_cast<qsizetype>(GetLengthSid(sid)));
+    LocalFree(sid);
+    return bytes;
+}
 
 QByteArray readFile(const QString& path) {
     QFile file{path};
@@ -50,6 +64,110 @@ struct OwnedHandle final {
             CloseHandle(value);
     }
 };
+
+QString securityText(const QString& path, const bool directory) {
+    const OwnedHandle handle{CreateFileW(QDir::toNativeSeparators(path).toStdWString().c_str(), READ_CONTROL,
+                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                         directory ? FILE_FLAG_BACKUP_SEMANTICS : 0, nullptr)};
+    if (handle.value == INVALID_HANDLE_VALUE)
+        return {};
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (GetSecurityInfo(handle.value, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, nullptr,
+                        nullptr, nullptr, nullptr, &descriptor) != ERROR_SUCCESS)
+        return {};
+    LPWSTR text = nullptr;
+    const bool converted = ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                               descriptor, SDDL_REVISION_1, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                               &text, nullptr) != FALSE;
+    const auto result = converted ? QString::fromWCharArray(text) : QString{};
+    LocalFree(text);
+    LocalFree(descriptor);
+    return result;
+}
+
+bool hasExactContainerAcl(const QString& path, const bool directory, const QByteArray& sid) {
+    const OwnedHandle handle{CreateFileW(QDir::toNativeSeparators(path).toStdWString().c_str(), READ_CONTROL,
+                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                         directory ? FILE_FLAG_BACKUP_SEMANTICS : 0, nullptr)};
+    if (handle.value == INVALID_HANDLE_VALUE)
+        return false;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    PACL dacl = nullptr;
+    PSID owner = nullptr;
+    if (GetSecurityInfo(handle.value, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner,
+                        nullptr, &dacl, nullptr, &descriptor) != ERROR_SUCCESS)
+        return false;
+    struct Guard final {
+        PSECURITY_DESCRIPTOR descriptor;
+        ~Guard() { LocalFree(descriptor); }
+    } guard{descriptor};
+    SECURITY_DESCRIPTOR_CONTROL control{};
+    DWORD revision = 0;
+    if (!dacl || dacl->AceCount != 3 || !GetSecurityDescriptorControl(descriptor, &control, &revision) ||
+        !(control & SE_DACL_PROTECTED))
+        return false;
+    bool found_owner = false, found_system = false, found_container = false;
+    for (DWORD index = 0; index < dacl->AceCount; ++index) {
+        void* raw = nullptr;
+        if (!GetAce(dacl, index, &raw))
+            return false;
+        const auto* ace = static_cast<const ACCESS_ALLOWED_ACE*>(raw);
+        if (ace->Header.AceType != ACCESS_ALLOWED_ACE_TYPE || ace->Header.AceFlags != 0)
+            return false;
+        auto* trustee = const_cast<DWORD*>(&ace->SidStart);
+        if (EqualSid(trustee, const_cast<char*>(sid.constData()))) {
+            if (found_container || ace->Mask != (FILE_GENERIC_READ | FILE_GENERIC_EXECUTE))
+                return false;
+            found_container = true;
+        } else if (IsWellKnownSid(trustee, WinLocalSystemSid)) {
+            if (found_system || ace->Mask != FILE_ALL_ACCESS)
+                return false;
+            found_system = true;
+        } else if (owner && EqualSid(trustee, owner)) {
+            if (found_owner || ace->Mask != FILE_ALL_ACCESS)
+                return false;
+            found_owner = true;
+        } else
+            return false;
+    }
+    return found_owner && found_system && found_container;
+}
+
+bool replaceContainerGrant(const QString& path, const bool directory, const DWORD mask) {
+    const OwnedHandle handle{CreateFileW(QDir::toNativeSeparators(path).toStdWString().c_str(),
+                                         READ_CONTROL | WRITE_DAC,
+                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                         directory ? FILE_FLAG_BACKUP_SEMANTICS : 0, nullptr)};
+    if (handle.value == INVALID_HANDLE_VALUE)
+        return false;
+    PSECURITY_DESCRIPTOR original = nullptr;
+    PSID owner = nullptr;
+    if (GetSecurityInfo(handle.value, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION, &owner, nullptr, nullptr, nullptr,
+                        &original) != ERROR_SUCCESS)
+        return false;
+    LPWSTR owner_text = nullptr;
+    const bool converted = ConvertSidToStringSidW(owner, &owner_text) != FALSE;
+    const auto owner_sid = converted ? QString::fromWCharArray(owner_text) : QString{};
+    LocalFree(owner_text);
+    LocalFree(original);
+    if (owner_sid.isEmpty())
+        return false;
+    const auto sddl = QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;") + owner_sid + QStringLiteral(")(A;;0x") +
+                      QString::number(mask, 16) + QStringLiteral(";;;") +
+                      QString::fromWCharArray(synthetic_container_sid) + ')';
+    PSECURITY_DESCRIPTOR replacement = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1,
+                                                              &replacement, nullptr))
+        return false;
+    PACL dacl = nullptr;
+    BOOL present = FALSE, defaulted = FALSE;
+    const bool success =
+        GetSecurityDescriptorDacl(replacement, &present, &dacl, &defaulted) && present && dacl &&
+        SetSecurityInfo(handle.value, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                        nullptr, nullptr, dacl, nullptr) == ERROR_SUCCESS;
+    LocalFree(replacement);
+    return success;
+}
 
 // This creates only an owned temporary directory junction. It neither requires
 // developer-mode file symlinks nor invokes a shell or changes host settings.
@@ -115,6 +233,66 @@ struct OwnedJunction final {
 class WindowsMediaFoundationLaunchTests final : public QObject {
     Q_OBJECT
   private slots:
+    void requiredContainerWithoutCapabilityIsRejectedBeforeCreation() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        auto config = h.config();
+        config.require_app_container = true;
+        WindowsMediaFoundationLaunchError error{};
+        QVERIFY(!WindowsMediaFoundationLaunch::prepare(config, &error));
+        QCOMPARE(error, WindowsMediaFoundationLaunchError::InvalidConfiguration);
+        QVERIFY(h.runtimes().isEmpty());
+    }
+    void containerRuntimeHasExactReadExecuteAclAndDoesNotChangeParentsOrSource() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        const auto parent_acl = securityText(h.parent.path(), true);
+        const auto runtime_parent_acl = securityText(h.runtime, true);
+        const auto source_acl = securityText(h.source, false);
+        QVERIFY(!parent_acl.isEmpty() && !runtime_parent_acl.isEmpty() && !source_acl.isEmpty());
+        auto config = h.config();
+        config.app_container = WindowsDownloadAppContainer::fromTrustedSid(containerSid());
+        QVERIFY(config.app_container);
+        auto lease = WindowsMediaFoundationLaunch::prepare(config);
+        QVERIFY(lease);
+        const auto process = lease->processConfig();
+        QVERIFY(hasExactContainerAcl(lease->directory(), true, config.app_container->sidBytes()));
+        QVERIFY(hasExactContainerAcl(process.executable, false, config.app_container->sidBytes()));
+        QVERIFY(lease->unchanged());
+        QCOMPARE(process.app_container, config.app_container);
+        QVERIFY(process.require_app_container);
+        QCOMPARE(securityText(h.parent.path(), true), parent_acl);
+        QCOMPARE(securityText(h.runtime, true), runtime_parent_acl);
+        QCOMPARE(securityText(h.source, false), source_acl);
+        const auto directory = lease->directory();
+        lease.reset();
+        QVERIFY(!QDir(directory).exists());
+    }
+    void containerAclMutationInvalidatesHeldRuntime_data() {
+        QTest::addColumn<bool>("directory");
+        QTest::addColumn<quint32>("mask");
+        QTest::newRow("directory overgrant") << true << quint32{FILE_ALL_ACCESS};
+        QTest::newRow("executable overgrant") << false << quint32{FILE_ALL_ACCESS};
+        QTest::newRow("directory loses execute") << true << quint32{FILE_GENERIC_READ};
+        QTest::newRow("executable loses execute") << false << quint32{FILE_GENERIC_READ};
+    }
+    void containerAclMutationInvalidatesHeldRuntime() {
+        QFETCH(bool, directory);
+        QFETCH(quint32, mask);
+        Fixture h;
+        QVERIFY(h.initialize());
+        auto config = h.config();
+        config.app_container = WindowsDownloadAppContainer::fromTrustedSid(containerSid());
+        QVERIFY(config.app_container);
+        auto lease = WindowsMediaFoundationLaunch::prepare(config);
+        QVERIFY(lease);
+        QVERIFY(lease->unchanged());
+        const auto target = directory ? lease->directory() : lease->processConfig().executable;
+        QVERIFY(replaceContainerGrant(target, directory, mask));
+        QVERIFY(!lease->unchanged());
+        QVERIFY(replaceContainerGrant(target, directory, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE));
+        QVERIFY(lease->unchanged());
+    }
     void refusesMissingAndMalformedTrust_data() {
         QTest::addColumn<int>("mutation");
         QTest::newRow("empty configuration") << 0;
@@ -216,6 +394,8 @@ class WindowsMediaFoundationLaunchTests final : public QObject {
         const auto directory = lease->directory();
         QVERIFY(directory.startsWith(h.runtime + '/'));
         const auto process = lease->processConfig();
+        QVERIFY(!process.app_container);
+        QVERIFY(!process.require_app_container);
         QCOMPARE(process.executable, directory + QStringLiteral("/RCMusicMediaWorker.exe"));
         QCOMPARE(process.working_directory, directory);
         QVERIFY(process.arguments.isEmpty());

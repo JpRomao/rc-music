@@ -23,6 +23,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0008](0008-download-job-service.md) | Aceito | Coordenação pura e apresentação de jobs, separadas do backend de execução |
 | [0009](0009-download-execution-backends.md) | Proposto | Avaliação de Qt Network/FFmpeg, segurança e distribuição; sem habilitar downloads reais |
 | [0010](0010-experimental-webview2-browser.md) | Proposto | Navegação Windows experimental WebView2 opt-in; Lite sem engine, sem downloads ou pacote Completa aprovado |
+| [0011](0011-media-worker-appcontainer.md) | Proposto | Isolamento AppContainer opcional do worker de mídia, perfil e prova física separados da ativação do produto |
 
 ## Processo
 
