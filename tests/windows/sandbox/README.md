@@ -105,7 +105,7 @@ O TEMP `RCMusic-AppContainer-Probe-SisyTE` foi preservado pelo resultado global 
 
 ## Inventário de metadados do storage
 
-O [modelo de inventário de segurança do storage](../../../docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) tem alvo isolado de teste, sem usar o probe ou criar perfis. Valida o consumidor de uma sessão confiável falsa. Os [bindings parciais de leitura](../../../docs/media-profile-lifecycle.md#bindings-parciais-de-leitura-win32) acrescentam coordenação com o owner/fence, consulta limitada de owner/DACL e leitura de `PackageRoot`/`AC`. Ainda falta a sessão nativa das quatro raízes, com Registro integrado, e não há aplicação de política:
+O [modelo de inventário de segurança do storage](../../../docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) tem alvo isolado de teste, sem usar o probe ou criar perfis. Valida o consumidor de uma sessão confiável falsa. Os [bindings parciais de leitura](../../../docs/media-profile-lifecycle.md#bindings-parciais-de-leitura-win32) acrescentam coordenação com o owner/fence, consulta limitada de owner/DACL e leitura de `PackageRoot`/`AC`. A implementação posterior de Registry/factory está abaixo; inventário físico em perfil e aplicação de política continuam pendentes:
 
 ```powershell
 cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageInventory_tests rc_music_AppContainerStorageSecurity_tests rc_music_AppContainerStorageFiles_tests rc_music_AppContainerStorageLiveSource_tests
@@ -122,6 +122,21 @@ ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profil
 ```
 
 `rc_music_registry_readonly_preflight.exe --readonly` é uma consulta manual a componentes fixos existentes. Não aceita paths/chaves adicionais e não escreve no Registro, cria perfil, lê dados de valores/SD, enumera ou solicita UAC. O diagnóstico local preserva somente retornos, tipo/tamanho do indicador reservado e fechamento de handles próprios; não qualifica link incompleto, identidade persistente de chave ou política. Sua execução não repete o ensaio WFP cuja autorização foi consumida.
+
+### Leitor de Registro e factory de sessão de quatro raízes
+
+`AppContainerStorageRegistry` e `appContainerRegistryNativeCalls()` acrescentam leitura de Registro em alvos de teste. A factory `appContainerStorageNativeSession()` copia os quatro locators e compõe Files/Registry na sessão existente, sem I/O ou proveniência nova na construção. O vínculo vivo continua dependendo do mesmo owner/backend e ticket de fence. Os limites são 512 objetos, profundidade 16, SD bruto de 64 KiB/cache variável de 4 MiB, componentes até 255 e NativeName até 32767 unidades UTF-16. Nomes/watch/rechecks não são identidade persistente, snapshot atômico ou detecção de ABA/RegRestoreKey.
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageRegistry_tests rc_music_AppContainerRegistryNative_tests rc_music_AppContainerStorageNativeSession_tests
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.(AppContainerStorageRegistry|AppContainerRegistryNative|AppContainerStorageNativeSession)$' --output-on-failure
+```
+
+Reader passou **100/100 Qt** usando Registry falso. Native admission passou **19/19 Qt** sem chamar open_software ou abrir chaves reais; NativeSession **7/7 Qt** usa arquivos/permissões reais somente em TEMP próprio e chamadas de perfil/Registro falsas. A seleção ampliada passou **9/9 CTest, 389 Qt + 13 casos puros de parser**, sem falhas/skips; Files reteve duas fixtures próprias intencionais, preservadas sem delete. Cobre cancelamento e manutenção da fence até Close explícito, inclusive retenção em fechamento incerto. Registre watches antes de info/enum/SD e preserve Changed/Unknown; enumerações comparam conjuntos e nunca aceitam MORE_DATA como nome truncado. Feche keys em ordem reversa uma vez antes de eventos; qualquer falha de Close de chave/ownership incerto retém os eventos, sem retry/destrutor. Erro de leitura com todos os recursos conhecidos fechados pode ter Closed/0.
+
+O diagnóstico separado `out/product/test-runs/media-storage-registry-binding-20261104/NativeBindingReadOnly.cpp` foi compilado/executado manualmente uma vez; fonte/objeto/imagem exata e recibos foram preservados. Aceita somente --readonly, sem path/chave livre, usando Software imediato sob HKCU_LOCAL_SETTINGS/OPEN_LINK e child Microsoft fixo. Bootstrap só consulta nome/watch; work keys usam Native DONT_REPARSE/opções 0 e recebem consultas/SD limitados. Há no máximo uma enumeração do primeiro child, sem imprimir/abrir o nome. Closes respeitam a origem Win32→RegCloseKey, Native→NtClose, evento→CloseHandle.
+
+`native-binding-readonly.json`/`native-binding-run.json` registram imagem SHA-256 `195a39eb6e0a4e9558d7dbbd13275d826c17d0f1e5357f3a5a11a52d639fc577`, exit 0, três Notify 0/polls Wait0 Unchanged, três key closes 0/três event closes 0 e apenas erros/contagens na saída. Não foi solicitado UAC e não houve captura de token, chamadas de perfil ou WFP. O resultado não qualifica mudança real pelos watches, tipo comum, links incompletos, identidade/atomicidade/ABA, MIC ou política. O preflight histórico --readonly e seus sete RegClose 0 não foram ampliados nem substituídos por esse diagnóstico. Inventário físico das quatro raízes em perfil, produção e demais gates continuam pendentes; ADR-0011 Proposto, downloads OFF e autorização WFP consumida.
 
 ## Conversão com o mesmo owner
 

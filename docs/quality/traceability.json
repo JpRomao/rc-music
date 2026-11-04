@@ -1396,6 +1396,22 @@
         {
           "path": "tests/qt/AppContainerStorageSessionTests.cpp",
           "marker": "composedFakeSessionFeedsTheExistingFourRootInventoryWithoutDuplicatingAc"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageRegistryTests.cpp",
+          "marker": "successfulRootBindsOnlyRelativeComponentsAndReusesItsAncestors"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageRegistryTests.cpp",
+          "marker": "softwareBootstrapIsWatchedAndNameComparedButOnlyWorkKeyGetsSecurityRead"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryNativeTests.cpp",
+          "marker": "factoryBindsEveryReadOnlyPort"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageNativeSessionTests.cpp",
+          "marker": "liveInventoryComposesRealFixtureFilesAndFakeRegistry"
         }
       ],
       "evidence": [
@@ -1414,6 +1430,14 @@
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Composição de sessão e consulta de Registro somente de leitura"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1938,6 +1962,22 @@
         {
           "path": "tests/qt/AppContainerStorageSessionTests.cpp",
           "marker": "unknownContradictoryAndThrowingCloseNeverRetryOrDestroyUncertainPorts"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageRegistryTests.cpp",
+          "marker": "unlistedWorkKeyCannotAcknowledgeClosureOrCloseAnUnownedHandle"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageRegistryTests.cpp",
+          "marker": "anyKeyCloseFailureRetainsAllEventsAndNeverRetries"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryNativeTests.cpp",
+          "marker": "unownedHandlesAreRefused"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageNativeSessionTests.cpp",
+          "marker": "uncertainRegistryCloseCannotAcknowledgeTheLiveFence"
         }
       ],
       "evidence": [
@@ -1956,6 +1996,14 @@
         {
           "path": "docs/development-plan.md",
           "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
         },
         {
           "path": "docs/process-tests.md",

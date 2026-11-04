@@ -32,6 +32,58 @@ target_sources(rc_music_download_network PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationLaunch.cpp")
 
 if(BUILD_TESTING)
+    add_executable(rc_music_AppContainerRegistryNative_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerRegistryNativeTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryNative.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSecurity.cpp")
+    target_include_directories(rc_music_AppContainerRegistryNative_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerRegistryNative_tests PRIVATE Qt6::Core Qt6::Test advapi32 ntdll)
+    set_target_properties(rc_music_AppContainerRegistryNative_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerRegistryNative_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerRegistryNative
+        COMMAND rc_music_AppContainerRegistryNative_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerRegistryNative PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(rc_music_AppContainerStorageRegistry_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageRegistryTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageRegistry.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSecurity.cpp")
+    target_include_directories(rc_music_AppContainerStorageRegistry_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageRegistry_tests PRIVATE Qt6::Core Qt6::Test advapi32)
+    set_target_properties(rc_music_AppContainerStorageRegistry_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageRegistry_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageRegistry
+        COMMAND rc_music_AppContainerStorageRegistry_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageRegistry PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(rc_music_AppContainerStorageNativeSession_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageNativeSessionTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageNativeSession.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSession.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageLiveSource.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageFiles.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageRegistry.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryNative.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSecurity.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageInventory.cpp")
+    target_include_directories(rc_music_AppContainerStorageNativeSession_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageNativeSession_tests PRIVATE
+        rc_music_download_documents Qt6::Test advapi32 ntdll)
+    set_target_properties(rc_music_AppContainerStorageNativeSession_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageNativeSession_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageNativeSession
+        COMMAND rc_music_AppContainerStorageNativeSession_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageNativeSession PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(rc_music_registry_readonly_preflight
         "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryReadOnlyPreflight.cpp")
     target_link_libraries(rc_music_registry_readonly_preflight PRIVATE advapi32 ntdll)
