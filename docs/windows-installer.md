@@ -62,6 +62,18 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
 
+## Instalador atualizado de c2d7c88
+
+Em 2026-11-03, a receita e o [runtime do commit limpo `c2d7c88`](windows-runtime.md#runtime-atualizado-de-c2d7c88) geraram `out/product/rc-music-installer/rc-music-windows-dev-c2d7c88-20261103/RCMusic-Setup.exe`. NSIS já provisionado, exit 0, `recipe_dirty=false`, associações OFF e nenhuma matriz antiga reaproveitada. Os dois arquivos parciais de testes da extensão ficaram fora da worktree usada na montagem.
+
+- Setup: **38.062.449 bytes**, SHA-256 `9c7342ed6956521fce7191f3561ac2a9c9e1e8bc8195bde036e3968c371e224a`, Authenticode **NotSigned**.
+- Receipt: SHA-256 `4ea1548583883409e439369ccc5517935c2196f1e3bfe9d2325a9d45b02d6181`.
+- Configuração: SHA-256 `e4800df775f3989ae7d6ef973c241749f083a41de6202112b96c6bfe85d20717`.
+
+A conferência independente validou os 554 arquivos físicos, as cinco fontes de receita do runtime, nove do instalador, compilador e recibos. O replano OFF sem escrita reproduziu payload ID `fddc5983762ee1c1633301a346ee0ff8828eac1d8953b0403172bbfc9d53ff44` e configuração integral, normalizando apenas o `OutFile` para o destino original de build registrado. Os três arquivos do setup foram movidos para a saída final sem alterar bytes; `installer-relocation.json` vincula os dois paths e hashes. O stub NSIS é x86 GUI; o player e seu runtime são x64.
+
+Checks puros: parser PE **5/5**, fontes NSIS **5/5**, receita do instalador **3/3**. Release/lint/grafo de produção passaram separadamente; a verificação completa foi repetida após a [limpeza](development-commands.md#limpeza-após-atualização-de-c2d7c88). Evidência ignorada em `out/product/installer-refresh-c2d7c88-20261103/`, especialmente `independent-verification.json` e `after-cleanup-verification.json`. Nenhum setup/player foi executado, instalado ou publicado, sem alteração de Registry/associações. O pacote entrega o player local com opcionais remotos OFF; assinatura, lifecycle e demais gates de distribuição continuam pendentes.
+
 ## Instalador atualizado de f589040
 
 Em 2026-11-03, o [runtime atualizado](windows-runtime.md#runtime-atualizado-de-f589040) e a receita do checkout limpo `f5890405e103d29591c5aca871318446ec6b0395` geraram o novo setup, com as ferramentas provisionadas:

@@ -53,6 +53,18 @@ O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
 
+## Runtime atualizado de c2d7c88
+
+Em 2026-11-03, o commit `c2d7c88ce32d5931e5128c64ab83c456fc06d48b` foi compilado em worktree limpa e isolada, preservando os dois arquivos de testes da extensão ainda pendentes no checkout principal. CMake Release/x64, `BUILD_TESTING=OFF` e todos os opcionais remotos OFF; SDKs existentes reutilizados, sem download ou reconstrução do Qt.
+
+Configure/build, `all_qmllint`, grafo de produção **253 comandos** e CTest com **zero testes** passaram. A receita `LocalRuntime.Tests.ps1` montou e verificou o runtime; após a montagem ele foi movido para `out/product/rc-music-local/rc-music-windows-dev-c2d7c88-20261103/app`. A conferência independente passou antes e depois da limpeza:
+
+- **554 arquivos / 96.338.039 bytes**, tamanhos e SHA-256 coincidentes com o manifesto; cinco fontes da receita conferidas, `recipe_dirty=false`.
+- `RCMusic.exe`: **2.104.320 bytes**, SHA-256 `046ab0b1e8064cc083e2278d88fa7196f91b84c8a6f411d2ec1ffbb77b2f1a51`; PE x64, subsistema Windows GUI (2), sem console automático.
+- Manifesto: SHA-256 `f580686e6cd0cb566ef2cdfe6db03aedb7d0f811cd52a8476ca70cf0c05b34a4`.
+
+O [setup correspondente](windows-installer.md#instalador-atualizado-de-c2d7c88) e o novo runtime permanecem íntegros. A worktree/cache temporários e os binários do runtime anterior foram removidos após a verificação, conservando evidências e instaladores históricos. Não houve execução do player/setup, smoke de áudio, instalação, Registry ou benchmark; produção remota e gates de distribuição continuam separados. Evidência ignorada em `out/product/installer-refresh-c2d7c88-20261103/`.
+
 ## Runtime atualizado de f589040
 
 Em 2026-11-03, o checkout limpo `f5890405e103d29591c5aca871318446ec6b0395` gerou o runtime `out/product/rc-music-local/rc-music-windows-dev-f589040-20261103/app`, pelo comando `LocalRuntime.Tests.ps1` acima, com o cache `out/product/m1-desktop-release-off-20260906`. Release/x64, `BUILD_TESTING=OFF`, opcionais remotos OFF e `recipe_dirty=false`; foram reutilizados os SDKs existentes.

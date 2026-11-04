@@ -234,3 +234,19 @@ A seleção literal limitou-se a binários/intermediários regeneráveis dos doi
 Antes de cada exclusão foram conferidos path canônico, confinamento, ausência de reparse point e SHA-256. A guarda de processos não encontrou escritor/app ativo. Após a operação: **zero candidatos restantes**, **834 arquivos versionados** e índice Git inalterados, setup e inventário completo do novo runtime reconferidos. Evidência ignorada em `out/product/installer-refresh-f589040-20261103/`: `prune-plan.json`, `prune-result.json` e `independent-verification.json`.
 
 Foram preservados SDK/dependências, caches ativos desktop ON/OFF e browser, backend TLS, fontes/licenças, fixtures/protocolos/evidências, todos os instaladores e dados pessoais. O cache temporário `installer-build-531c5cc-20261103` cujo delete anterior foi bloqueado não foi novamente selecionado. Não houve mudança de comportamento, nova suíte global, benchmark, instalação ou Registry.
+
+## Limpeza após atualização de c2d7c88
+
+Após gerar e verificar o [novo instalador](windows-installer.md#instalador-atualizado-de-c2d7c88), foram removidos **1.746 arquivos / 257.312.609 bytes** de conteúdo lógico (aproximadamente 257 MB), sem backup:
+
+| Seleção | Arquivos | Bytes removidos |
+|---|---:|---:|
+| Binários regeneráveis de quatro caches nativos | 251 | 78.078.992 |
+| Binários do runtime anterior `f589040/app` | 71 | 94.108.752 |
+| Worktree limpa e cache temporários `package-*-c2d7c88` | 1.424 | 85.124.865 |
+
+As quatro raízes nativas são `native-peer-check-tests-20261103`, `native-peer-process-tests-20261103`, `native-pipe-reservation-tests-20261103` e `native-messaging-release-off-20261002`, sob `out/product`. Somente extensões binárias inventariadas foram selecionadas nelas e no runtime antigo; configurações, fontes geradas, QML, manifests, resultados e logs permanecem. Os testes desses caches exigem recompilação para nova execução. Cada binário antigo do runtime possui contraparte no novo pacote.
+
+Paths absolutos, confinamento, ausência de reparse points, tamanhos e SHA-256 foram conferidos antes da exclusão. Não havia writer/app ativo. A worktree temporária limpa foi removida pelo Git; o cache temporário próprio foi removido após inventário, conservando cópias de `CMakeCache.txt` e `.ninja_log` na evidência. Os **847 arquivos versionados**, os **dois arquivos pendentes** e o índice permaneceram inalterados durante a limpeza; zero candidatos restantes. A verificação independente completa do novo runtime/setup passou novamente depois.
+
+Foram preservados SDKs/dependências em `q`/`out/m0`, caches desktop ON/OFF e browser, backend TLS, fontes/licenças, protocolos/fixtures/evidências M0, todos os instaladores e dados pessoais. A pasta `installer-build-531c5cc-20261103` anteriormente bloqueada ficou fora da seleção. Nenhuma suíte global, benchmark, instalação ou alteração de Registry foi realizada. Evidência ignorada em `out/product/installer-refresh-c2d7c88-20261103/`: `cleanup-native-candidates.json`, `temporary-files.json`, `prune-result.json` e `after-cleanup-verification.json`.
