@@ -211,6 +211,8 @@ Os binários removidos exigem rebuild ou reextração de seus archives; cópias 
 
 ## Limpeza após build do instalador — 2026-11-03
 
+Operação posterior: a [entrega de 2026-11-04, `2144cfd`](local-delivery-2144cfd-20261104.md#limpeza-posterior), gerou primeiro os setups Lite/Completa e depois removeu 527.998.627 bytes de artefatos descartáveis, preservando as alterações incompletas, SDKs e pacotes conferidos. Seus recibos e limites são próprios; os registros abaixo permanecem históricos.
+
 Após compilar e conferir o [novo setup de `531c5cc`](windows-installer.md#instalador-local-gerado-em-2026-11-03), a limpeza autorizada removeu **1.887 arquivos / 1.878.286.159 bytes** de binários antigos. A lista literal contém somente executáveis, DLLs, bibliotecas e intermediários recompiláveis em builds/packages históricos, cópias sintéticas de testes de instalação, caches auxiliares e payloads de runtimes substituídos. Os binários dos payloads `bfeb90f`, `1c79d81` e quatro cópias M0 antigas foram removidos; seus manifests, configurações, QML e registros históricos permanecem, sem constituir runtimes executáveis completos.
 
 O plano rejeitou arquivos versionados, paths fora das raízes autorizadas, reparse points e componentes protegidos. Cada candidato teve tamanho/SHA-256 conferido antes da exclusão literal, sem exclusão recursiva de raiz ou novo backup. Duas junctions históricas foram ignoradas. **829 arquivos versionados e os 14 arquivos pendentes** permaneceram byte a byte iguais, assim como o índice Git durante a operação e o hash do novo setup. Nenhum candidato da lista permaneceu.

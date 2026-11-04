@@ -1,5 +1,7 @@
 # RC Music
 
+Os [instaladores locais de `2144cfd`](docs/local-delivery-2144cfd-20261104.md), Lite e Completa experimental, foram compilados e conferidos sem instalar. Build Release, lint e checks de pacote passaram; a limpeza posterior removeu aproximadamente **504 MiB** de artefatos descartáveis, preservando SDKs, fontes, mudanças pendentes e os novos pacotes. Downloads e associações continuam OFF.
+
 A [Completa experimental de 51cd067](docs/local-delivery-complete-51cd067-20261104.md) tem runtime e setup privados gerados e conferidos, com 557 arquivos, notices do SDK e associações/downloads OFF. A [receita](docs/windows-installer.md#setup-da-completa-experimental) exige edição explícita e build Release sem testes; a Lite continua padrão. As edições compartilham a instalação e os dados; o setup informa substituição de versão e pré-requisito de WebView2 já instalado, sem baixar ou instalar a engine. Não houve instalação ou execução da engine. Navegação física, troca instalada, integração externa e downloads de produção continuam nos seus gates.
 
 O [suporte AppContainer do worker de mídia](docs/architecture/decisions/0011-media-worker-appcontainer.md) foi preparado com token conferido antes de retomar a thread, herança limitada e runtime somente de leitura/execução. Os checks sem perfil passaram; a prova física Windows/MF usa um [probe manual](tests/windows/sandbox/README.md) que exige autorização específica para criar um perfil temporário no host. Isso ainda não habilita downloads ou encerra o gate de sandbox/disco.

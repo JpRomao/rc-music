@@ -3,6 +3,8 @@
 **Estado:** runtimes privados Lite e Completa experimental montados e hashes conferidos em 2026-11-04, com setups gerados sem instalar. O smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-11-04.
 
+Os [runtimes mais recentes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados e montados em worktree isolada: Lite com 554 arquivos e Completa experimental com 557. Ambos permanecem íntegros após a limpeza; os payloads anteriores `4125f46`/`51cd067` foram substituídos, preservando seus manifests e setups históricos.
+
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime permaneceu íntegro após a limpeza inventariada. A receita adicional da Completa experimental está descrita abaixo, com evidência de montagem própria exigida para cada artefato.
 
 A [Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) contém **557 arquivos / 96.573.561 bytes**, incluindo os três notices adicionais, com inventário e hashes conferidos. A engine não foi iniciada; Evergreen é pré-requisito externo e os serviços remotos continuam OFF.
