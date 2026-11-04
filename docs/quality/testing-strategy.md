@@ -111,6 +111,12 @@ A [coordenação de jobs](../download-jobs.md) acrescenta Catch2 puro para reten
 - usar Arrange–Act–Assert ou Given–When–Then, sem comentários redundantes;
 - diferenças inevitáveis de harness ficam documentadas, mas resultado, tolerância e semântica esperados permanecem iguais.
 
+### Navegação experimental da Completa
+
+A [superfície WebView2 opt-in](../embedded-browser.md) exige testes distintos de policy, binding com porta falsa, adapter inerte e UI compartilhada. Cobrir HTTPS explícito/credenciais/escapes/ports/schemes recusados; construção sem I/O, owner ausente, retry/falha redigida, reentrada e destruição durante callback. Casos nativos sem QApplication só devem recusar owner inválido, sem criar janela/COM/engine. Quick deve provar ação ausente na Lite, abertura explícita e erro modal sem alterar playback; repetir a mesma falha após dispensar o aviso precisa reabrir o modal mesmo sem novo sinal de alteração do texto. Compile/link/lint ON e grafo OFF são provas separadas do comportamento real do WebView2. Testes falsos não comprovam rede/permissões, foco/DPI, privacidade, subprocessos ou limpeza de perfil do runtime.
+
+O planner Lite deve aceitar ausência/OFF e recusar ON/valor inválido sem mutar o cache. O SDK/loader são inputs explícitos e locais, nunca baixados ou instalados pelo build. Smoke real e empacotamento da Completa permanecem requisitos próprios; o [ADR-0010](../architecture/decisions/0010-experimental-webview2-browser.md) continua Proposto.
+
 ### Conversão nativa Windows com Media Foundation
 
 O [backend nativo opcional](../download-conversion.md#conversão-nativa-com-media-foundation) tem testes independentes do protocolo binário, main real, codec nativo e composição com supervisor/workspace. Fixtures autenticadas e cópias temporárias próprias cobrem MP3 CBR/VBR/Unicode, AAC/MP4 e WAV/resampling; a saída exige framing MP3 e decodificação integral até EOF em outro processo. Testar ausência de áudio, conteúdo disfarçado/truncado, limites, callback recusado, timeout/cancelamento com drenagem e ausência de fallback quando o worker falta. A recuperação deve conservar pins e a composição assíncrona deve publicar antes do handoff idempotente ao serviço. Regressões legadas e UI são evidências separadas; transferência helper e importador falso não provam mídia da internet ou jornada integral no app.

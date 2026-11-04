@@ -3,6 +3,10 @@
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
 #include "adapters/QtShellPlatform.hpp"
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+#include "adapters/WindowsWebView2Browser.hpp"
+#include "presentation/EmbeddedBrowserBinding.hpp"
+#endif
 #ifdef Q_OS_WIN
 #include "adapters/QtDiagnosticPrivacy.hpp"
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
@@ -558,6 +562,10 @@ int main(int argc, char* argv[]) {
                 presenter, backend, downloads_initial_session, config_root, options.smoke_native_downloads);
 #endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+        // The factory is inert: no browser, profile or COM resources at startup.
+        music_player::m0::EmbeddedBrowserBinding embedded_browser{music_player::m0::makeWindowsWebView2Browser};
+#endif
         QQmlApplicationEngine engine;
 #ifdef M0_QT_COMBINED_AUDIO
         engine.addImageProvider(music_player::m0::ArtworkImageProvider::providerId(),
@@ -617,6 +625,9 @@ int main(int argc, char* argv[]) {
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("startupReady"), false}};
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+        initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));
+#endif
 #ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
         if (downloads_smoke)
             initial_properties.insert(QStringLiteral("downloads"), QVariant::fromValue(downloads_smoke->binding()));
@@ -628,6 +639,9 @@ int main(int argc, char* argv[]) {
         auto* const window = qobject_cast<QWindow*>(engine.rootObjects().constFirst());
         if (window == nullptr)
             return 1;
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+        embedded_browser.setOwnerHandle(static_cast<std::uintptr_t>(window->winId()));
+#endif
         if (window->isVisible())
             throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
         (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);

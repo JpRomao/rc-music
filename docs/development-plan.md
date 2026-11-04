@@ -743,7 +743,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — runtime privado do conversor nativo
+### Checkpoint atual — navegação experimental da Completa
+
+Incremento de 2026-11-03: a [composição WebView2](embedded-browser.md), documentada no ADR-0010 Proposto, acrescenta `RC_MUSIC_BUILD_EMBEDDED_BROWSER=OFF` e SDK local explícito. Main recebe binding nullable; somente ON oferece Navegar e somente o clique pode criar a janela modeless com endereço/voltar/avançar/recarregar/parar. Porta pura, binding Qt e adapter nativo mantêm páginas separadas do presenter/filesystem/serviços. A janela usa STA e perfil próprio por instância, reutilizado ao reabrir; callbacks fracos/geração descartam resultados antigos. Policy aceita HTTPS explícito e configura recusas de permissões, popups, downloads, autenticação/certificados e protocolos externos, sem importar o perfil Brave.
+
+TDD inicial **0/3 CTest**: policy **39 passagens/14 falhas → 53/53**, binding **2/10 → 12/12** e adapter inerte **3/2 → 5/5**. Casos QML verificam ausência na Lite, clique explícito e falha sem alterar playback. A revisão reproduziu aviso ausente na repetição da mesma falha após dispensar o diálogo: Quick **271 passagens/1 falha → 272/272**, ShellUiContract **35/35**. O aviso reabre mesmo sem outro `errorChanged`, sem alterar o Q_PROPERTY. Evidência combinada: **377 casos Qt**, com os 70 contratos C++ inalterados e os 307 casos de UI reexecutados. Hashes e execuções estão no [registro próprio](embedded-browser.md#evidência-proporcional), sem transferir a prova para engine real.
+
+Build Release ON, UI/lint e Lite OFF passaram separadamente. O grafo Lite tem **255 comandos**, zero testes e nenhum módulo/loader WebView2. A receita de runtime Lite recusa ON: planner **66 passagens/12 falhas → 78/78**, receita **5/5**. SDK/loader existentes são inputs locais, sem instalação/download de dependências ou Registry. Evidências em `out/product/test-runs/embedded-browser-20261103/`.
+
+Nenhum WebView2 real ou site foi aberto. Restam smoke real, foco/DPI/acessibilidade, privacidade/ownership/limpeza do perfil, escolha/revisão de distribuição e fluxo interno de detecção/seleção pelos serviços comuns. Extensão/host instalados, execução remota protegida, recuperação/capacidade e instaladores Lite/Completa/YouTube separado seguem no pedido integral; benchmarks/Linux continuam adiados. O instalador local anterior mantém a Lite, sem este módulo. R1.9/R1.10 e o plano não estão concluídos por essa implementação/validação de contratos.
+
+### Checkpoint anterior — runtime privado do conversor nativo
 
 Incremento de 2026-11-03: o [runtime privado Media Foundation](download-conversion.md#runtime-privado-do-worker-media-foundation) autentica fonte/cópia por HANDLE+SHA-256, cria diretório próprio privado e retém pins de worker/ancestrais. O inventário fechado recusa entradas extras de loader; cleanup remove somente identidades próprias, preservando desconhecidos. Conversor e segundo validador derivam EXE/CWD/ambiente da mesma capability, revalidada antes de cada subprocesso. O overload preparado de `WindowsDownloadExecution` prepara rede+mídia na thread privada, conserva o prazo original e observa cancelamento antes de iniciar a sessão. A rota preparada antiga recusa MF por path bruto antes de criar recursos; compatibilidade dos ensaios locais legados permanece separada.
 

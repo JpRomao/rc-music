@@ -484,6 +484,44 @@ Write-Output 'ISOLATED_PRODUCT_PLANNER_OK'
             }
         }
     }
+    foreach ($entrypoint in @('product', 'legacy')) {
+        Test-Case "maps the $entrypoint Lite runtime with embedded browser explicitly OFF" {
+            $source = New-SourceRepository
+            $cache = @{ CMAKE_HOME_DIRECTORY = $source.Directory; CMAKE_BUILD_TYPE = 'Release'
+                BUILD_TESTING = 'OFF'; RC_MUSIC_BUILD_DESKTOP = 'ON'; RC_MUSIC_BUILD_EMBEDDED_BROWSER = 'OFF' }
+            if ($entrypoint -ceq 'legacy') {
+                $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'experiments/m0/candidates/qt/shell'
+                $cache.M0_QT_SHELL_SUPPORT = 'ON'
+                $cache.M0_QT_AUDIO_SUPPORT = 'ON'
+            }
+            $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $source.Directory
+            Assert-Equal $configuration.entrypoint $entrypoint
+            Assert-Equal $configuration.target 'm0_qt_shell'
+        }
+        foreach ($browser in @(
+                @{ Name = 'enabled'; Value = 'ON' },
+                @{ Name = 'lowercase off'; Value = 'off' },
+                @{ Name = 'unknown'; Value = 'INVALID' },
+                @{ Name = 'empty'; Value = '' },
+                @{ Name = 'null'; Value = $null },
+                @{ Name = 'boolean'; Value = $false })) {
+            Test-Case "rejects $entrypoint Lite runtime embedded browser: $($browser.Name)" {
+                $source = New-SourceRepository
+                $cache = @{ CMAKE_HOME_DIRECTORY = $source.Directory; CMAKE_BUILD_TYPE = 'Release'
+                    BUILD_TESTING = 'OFF'; RC_MUSIC_BUILD_DESKTOP = 'ON'; RC_MUSIC_BUILD_EMBEDDED_BROWSER = $browser.Value }
+                if ($entrypoint -ceq 'legacy') {
+                    $cache.CMAKE_HOME_DIRECTORY = Join-Path $source.Directory 'experiments/m0/candidates/qt/shell'
+                    $cache.M0_QT_SHELL_SUPPORT = 'ON'
+                    $cache.M0_QT_AUDIO_SUPPORT = 'ON'
+                }
+                $before = $cache.Clone()
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $source.Directory } `
+                    '^Unsupported desktop build configuration: RC_MUSIC_BUILD_EMBEDDED_BROWSER'
+                Assert-Equal $cache.Count $before.Count
+                foreach ($key in $before.Keys) { Assert-Equal $cache[$key] $before[$key] }
+            }
+        }
+    }
     foreach ($invalid in @('unknown entrypoint', 'missing product flag', 'disabled product flag', 'debug',
             'wrong testing mode', 'legacy missing audio', 'legacy missing shell', 'relative home')) {
         Test-Case "rejects unsupported desktop build: $invalid" {

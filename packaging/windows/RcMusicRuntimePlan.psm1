@@ -156,6 +156,13 @@ function Get-RcMusicDesktopBuildConfiguration {
             throw "Unsupported desktop build configuration: $($required.Key)"
         }
     }
+    # This recipe assembles only the local/Lite runtime. The experimental
+    # embedded browser needs a separately reviewed packaging contract.
+    if ($Cache.Contains('RC_MUSIC_BUILD_EMBEDDED_BROWSER') -and
+        ($Cache['RC_MUSIC_BUILD_EMBEDDED_BROWSER'] -isnot [string] -or
+            $Cache['RC_MUSIC_BUILD_EMBEDDED_BROWSER'] -cne 'OFF')) {
+        throw 'Unsupported desktop build configuration: RC_MUSIC_BUILD_EMBEDDED_BROWSER (local/Lite runtime requires OFF)'
+    }
     $sourceHome = $Cache['CMAKE_HOME_DIRECTORY']
     if ($sourceHome -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($sourceHome)) {
         throw 'Unsupported desktop build entrypoint path'

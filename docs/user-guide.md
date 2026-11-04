@@ -64,6 +64,12 @@ O menu da bandeja oferece **Mostrar/Ocultar**, transporte e **Sair**. Para encer
 
 **Abrir Aplicativos Padrão**, quando disponível em Geral, abre a tela oficial do Windows; não muda o aplicativo padrão sozinho. A presença do RC Music entre as opções depende do artefato e de seu registro. Este manual não instrui instalar ou registrar o app; veja as limitações do [instalador](windows-installer.md).
 
+## Navegação experimental
+
+O botão **Navegar** existe somente na [compilação experimental com navegador](embedded-browser.md), ainda fora do instalador local/Lite. Ele abre uma janela própria do RC Music: informe um endereço HTTPS e use Voltar, Avançar, Recarregar ou Parar. Fechar essa janela não encerra o player. Falha de abertura mostra orientação para tentar novamente, preservando a reprodução.
+
+Essa composição ainda não oferece detecção/seleção interna de mídia ou downloads pela página. Perfis do Brave não são importados; permissões, popups e downloads nativos ficam recusados. A execução real e o pacote da Completa ainda precisam de validação; o build opt-in não é uma release aprovada.
+
 ## Resolver problemas
 
 **Arquivo não encontrado, movido ou acesso negado:** verifique se o arquivo ou drive está disponível. Use **Tentar reproduzir novamente** para reabrir o mesmo caminho; essa ação explícita pode iniciar a reprodução. Se o arquivo mudou de lugar, use **Localizar arquivo…** na ocorrência afetada. A localização preserva sua posição na fila: se for a faixa atual em erro, tenta recuperá-la pausada e restaurar a posição; se for outra linha, não interrompe a faixa atual e pede uma tentativa de reprodução para verificar a nova origem. Cancelar a localização não troca o caminho. **Abrir outro áudio** continua sendo uma alternativa.

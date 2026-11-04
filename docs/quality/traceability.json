@@ -1326,6 +1326,18 @@
           "marker": "startPreparesBothCapabilitiesBeforeTheFirstSessionPoll"
         },
         {
+          "path": "tests/qt/EmbeddedBrowserBindingTests.cpp",
+          "marker": "constructionIsInertAndSuccessfulOpenReusesWindow"
+        },
+        {
+          "path": "tests/ui/quick/tst_embedded_browser.qml",
+          "marker": "test_liteHasNoVisibleNavigationAction"
+        },
+        {
+          "path": "tests/ui/quick/tst_embedded_browser.qml",
+          "marker": "test_optionalActionOpensOnlyAfterExplicitClick"
+        },
+        {
           "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
           "marker": "authenticatedSyntheticTransferConvertsThenPublishesOnlyInSeparatePhase"
         },
@@ -1850,6 +1862,18 @@
         {
           "path": "tests/qt/WindowsPreparedMediaDownloadTaskTests.cpp",
           "marker": "uiRemainsPromptWhileMediaPreparationIsBlocked"
+        },
+        {
+          "path": "tests/qt/BrowserNavigationPolicyTests.cpp",
+          "marker": "rejectsUnsafeOrAmbiguousNavigation"
+        },
+        {
+          "path": "tests/qt/EmbeddedBrowserBindingTests.cpp",
+          "marker": "factoryAndWindowFailuresAreRedactedAndAllowRetry"
+        },
+        {
+          "path": "tests/ui/quick/tst_embedded_browser.qml",
+          "marker": "test_repeatedSameFailureReopensTheDismissedWarning"
         }
       ],
       "evidence": [

@@ -22,6 +22,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0007](0007-main-extension-boundary.md) | Aceito | Cliente MV3 adotado com detecção temporária, seleção explícita e fronteira nativa; host/download ainda separados |
 | [0008](0008-download-job-service.md) | Aceito | Coordenação pura e apresentação de jobs, separadas do backend de execução |
 | [0009](0009-download-execution-backends.md) | Proposto | Avaliação de Qt Network/FFmpeg, segurança e distribuição; sem habilitar downloads reais |
+| [0010](0010-experimental-webview2-browser.md) | Proposto | Navegação Windows experimental WebView2 opt-in; Lite sem engine, sem downloads ou pacote Completa aprovado |
 
 ## Processo
 

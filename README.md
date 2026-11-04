@@ -1,5 +1,7 @@
 # RC Music
 
+A [navegação experimental da Completa](docs/embedded-browser.md) já possui botão **Navegar**, janela própria com endereço/voltar/avançar/recarregar/parar e adapter WebView2. É um build opt-in, sem engine na Lite e sem downloads nativos ou ponte da página para o player. Compilação ON/OFF, contratos e UI com engine falsa foram validados; WebView2 real, detecção interna de mídia e pacote da Completa continuam pendentes. O instalador local existente entrega a Lite.
+
 O [runtime privado do conversor nativo](docs/download-conversion.md#runtime-privado-do-worker-media-foundation) confere e copia o worker antes de usá-lo, mantendo o executável protegido até terminar conversão, validação e encerramento. O preparo ocorre na thread privada, com prazo/cancelamento preservados; **13/13 CTest, 309 casos Qt** passaram. Essa composição ainda depende dos gates de isolamento e integração para habilitar downloads no produto.
 
 A [conversão opcional com Media Foundation](docs/download-conversion.md#conversão-nativa-com-media-foundation) usa um worker nativo Windows, sem Qt ou CLI externo, e valida o MP3 em outro processo antes de liberar a publicação. Fixtures locais MP3, AAC/MP4 e WAV, limites, cancelamento e compatibilidade passaram em **11/11 CTest, 299 casos Qt**. O backend exige seleção explícita; o player local e o instalador existente mantêm os opcionais remotos OFF. Isolamento efetivo e composição protegida de produção continuam pendentes.

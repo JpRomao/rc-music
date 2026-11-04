@@ -9,6 +9,7 @@ ApplicationWindow {
     required property ShellUiContract uiContract
     required property PlayerPresenter presenter
     property var downloads: null
+    property var embeddedBrowser: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -43,13 +44,16 @@ ApplicationWindow {
     DownloadText {
         id: downloadText
     }
+    BrowserText {
+        id: browserText
+    }
     PlaybackAccessibilityStatus {
         contract: window.uiContract
         presenter: window.presenter
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: !downloadsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
@@ -329,6 +333,24 @@ ApplicationWindow {
                 enabled: visible && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
                 onClicked: window.openDownloads()
             }
+            AccessibleTransportButton {
+                id: browserButton
+                objectName: "embedded-browser"
+                anchors.top: parent.top
+                anchors.right: downloadsButton.visible ? downloadsButton.left : queueButton.left
+                anchors.rightMargin: window.uiContract.spacingUnit * 2
+                z: 20
+                contract: window.uiContract
+                text: browserText.navigate
+                accessibleName: text
+                visible: window.embeddedBrowser !== null
+                enabled: visible && !window.presenter.exiting
+                onClicked: {
+                    window.embeddedBrowser.open();
+                    if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
+                        browserError.open();
+                }
+            }
             Item {
                 id: stateLayer
                 objectName: "state-layer"
@@ -504,6 +526,28 @@ ApplicationWindow {
         onExitRequested: window.presenter.requestExit()
     }
 
+    Connections {
+        target: window.embeddedBrowser
+        function onErrorChanged() {
+            if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
+                browserError.open();
+        }
+    }
+    Dialog {
+        id: browserError
+        objectName: "embedded-browser-error"
+        anchors.centerIn: parent
+        width: Math.min(window.width - window.uiContract.spacingUnit * 8, 460)
+        title: browserText.unavailable
+        modal: true
+        standardButtons: Dialog.Ok
+        contentItem: Label {
+            text: window.embeddedBrowser !== null ? window.embeddedBrowser.errorText : ""
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+        }
+        onClosed: browserButton.forceActiveFocus()
+    }
     DropArea {
         id: sourceDropArea
         parent: window.contentItem
