@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — preparo AppContainer e probe físico sujeito a autorização
+### Checkpoint atual — detecção em frames acessíveis na Completa experimental
+
+Incremento de 2026-11-04: o [coletor do navegador interno](embedded-browser.md#detecção-e-seleção-de-mídia) passa a incluir documentos de frames acessíveis pela mesma origem. A entrada nativa pertence ao mesmo asset JavaScript da extensão e é executada no IIFE local; base/título, deduplicação e cotas são compartilhados pela coleta inteira. O host invalida a seleção no início e na conclusão de navegação de frame, inclusive erro, sem alterar o tracker da página principal ou reconhecer antecipadamente o fim do script.
+
+Baseline Node **162/162** e **4/4 CTest/55 casos Qt**. Red da coleta **162 passagens/5 falhas → 167/167**; painel **20/1 → 21/21**, com caracterizações da revogação de seleção confirmada e callback antigo com URL principal igual. Fechamento **7/7 CTest/191 casos Qt**, sem skips, app Release ON/lint, grafo Lite de 255 comandos/zero testes e formato **395 C++/62 QML** passaram. Evidências em `out/product/test-runs/browser-media-frames-20261104/`.
+
+Não houve engine real, perfil, site, instalação ou alteração de Registro. Frames inacessíveis, mudanças no mesmo documento/`srcdoc`, privacidade e distribuição mantêm limites e gates próprios. A prova física AppContainer abaixo aguarda a autorização específica solicitada; política de armazenamento do perfil, composição protegida normal e opcionais/instaladores Lite/Completa continuam pendentes. Downloads permanecem OFF; benchmarks e Linux seguem adiados.
+
+### Checkpoint anterior — preparo AppContainer e probe físico sujeito a autorização
 
 Incremento de 2026-11-04: o [suporte AppContainer opcional](download-conversion.md#appcontainer-opcional-do-worker-de-mídia), descrito no ADR-0011 Proposto, acrescenta identidade binária imutável, recusa sem capability obrigatória, `SECURITY_CAPABILITIES`, thread suspensa e conferência de token/SID/Low/capabilities/Job antes da retomada. Somente a nova folha do runtime e seu EXE recebem RX para o SID; suas ACLs são revalidadas por handle antes de cada filho. Nenhum perfil é criado automaticamente pelo player ou pelo CTest.
 

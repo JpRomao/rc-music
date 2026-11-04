@@ -47,7 +47,7 @@ BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(s
     scope->setObjectName(QStringLiteral("browser-media-scope"));
     scope->setTextFormat(Qt::PlainText);
     scope->setWordWrap(true);
-    scope->setToolTip(tr("Frames não são inspecionados nesta versão."));
+    scope->setToolTip(tr("Inclui frames acessíveis; frames de outra origem ou sandbox inacessíveis ficam de fora."));
     layout->addWidget(scope);
 
     auto* header = new QHBoxLayout;

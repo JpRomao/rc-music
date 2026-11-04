@@ -208,6 +208,55 @@ class BrowserMediaPanelTests final : public QObject {
         h.panel.completeProbe(second, snapshot());
         QCOMPARE(h.list()->count(), 2);
     }
+    void accessibleFrameScopeIsExplainedWithoutClaimingAllFrames() {
+        BrowserMediaPanel panel;
+        const auto* scope = panel.findChild<QLabel*>(QStringLiteral("browser-media-scope"));
+        QVERIFY(scope);
+        QVERIFY(scope->toolTip().contains(QStringLiteral("frames acessíveis")));
+        QVERIFY(scope->toolTip().contains(QStringLiteral("inacessíveis")));
+        QVERIFY(!scope->toolTip().contains(QStringLiteral("não são inspecionados")));
+    }
+    void frameNavigationWithTheSameTopUrlRevokesAnAlreadyConfirmedSelection() {
+        Harness h;
+        QVERIFY(h.load());
+        h.select(0);
+        h.confirm()->click();
+        h.panel.completeProbe(h.requests.back(), snapshot());
+        QVERIFY(h.status()->text().contains(QStringLiteral("conferid")));
+        const auto count = h.requests.size();
+        h.panel.setPage(page);
+        QCOMPARE(h.list()->count(), 0);
+        QVERIFY(!h.confirm()->isEnabled());
+        QVERIFY(!h.status()->text().contains(QStringLiteral("conferid")));
+        QCOMPARE(h.requests.size(), count);
+        QVERIFY(h.detect()->isEnabled());
+        QVERIFY(!h.download()->isEnabled());
+    }
+    void frameNavigationDuringConfirmationRetainsPhysicalSlotAndRejectsTheOldResult() {
+        Harness h;
+        QVERIFY(h.load());
+        h.select(0);
+        h.confirm()->click();
+        QVERIFY(h.panel.pendingProbe());
+        const auto operation = *h.panel.pendingProbe();
+        h.panel.setPage(page);
+        QCOMPARE(h.panel.pendingProbe(), std::optional{operation});
+        QVERIFY(!h.detect()->isEnabled());
+        QVERIFY(!h.confirm()->isEnabled());
+        h.panel.completeProbe(operation, snapshot());
+        QVERIFY(!h.panel.pendingProbe());
+        QCOMPARE(h.list()->count(), 0);
+        QVERIFY(!h.status()->text().contains(QStringLiteral("conferid")));
+        QVERIFY(h.detect()->isEnabled());
+        h.detect()->click();
+        const auto next = *h.panel.pendingProbe();
+        QVERIFY(next > operation);
+        h.panel.completeProbe(operation, snapshot());
+        QCOMPARE(h.panel.pendingProbe(), std::optional{next});
+        h.panel.completeProbe(next, snapshot());
+        QCOMPARE(h.list()->item(0)->checkState(), Qt::Unchecked);
+        QVERIFY(!h.confirm()->isEnabled());
+    }
     void timeoutNeverFreesAStillOutstandingScriptCallAndItsLateResultIsInert() {
         Harness h;
         QVERIFY(h.detect());

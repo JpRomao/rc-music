@@ -218,7 +218,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         // The declaration is local to this invocation. No page sentinel, host
         // object, WebMessage handler or persistent script is installed.
         const auto script = QStringLiteral("(() => {\n") + QString::fromUtf8(collector.readAll()) +
-                            QStringLiteral("\nreturn rcMusicCollectMedia(document, {includeFrames:false});\n})()");
+                            QStringLiteral("\nreturn rcMusicCollectNativeMedia(document);\n})()");
         const auto native = script.toStdWString();
         const auto weak = weak_from_this();
         const auto epoch = generation;
@@ -281,6 +281,11 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
                                 return;
                             }
                             state.navigation_tracker.begin(navigation_id);
+                        } else {
+                            // The top URL may be unchanged while its frame
+                            // document changes. Revoke logical data without
+                            // acknowledging an outstanding ExecuteScript call.
+                            state.setMediaPage(state.navigation_tracker.pending() ? QString{} : state.source());
                         }
                         LPWSTR raw = nullptr;
                         const auto uri = SUCCEEDED(args->get_Uri(&raw)) ? boundedUri(raw) : QString{};
@@ -303,6 +308,20 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         if (FAILED(webview->add_FrameNavigationStarting(navigation(false).Get(), &token)))
             return false;
         detach.push_back([view = webview, token] { (void)view->remove_FrameNavigationStarting(token); });
+        if (FAILED(webview->add_FrameNavigationCompleted(
+                Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                    [weak, epoch](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) noexcept {
+                        return dispatch(weak, epoch, [&](BrowserState& state) {
+                            // Both successful and failed frame navigations
+                            // retire prior media data. Never complete/cancel
+                            // the independent top-level navigation tracker.
+                            state.setMediaPage(state.navigation_tracker.pending() ? QString{} : state.source());
+                        });
+                    })
+                    .Get(),
+                &token)))
+            return false;
+        detach.push_back([view = webview, token] { (void)view->remove_FrameNavigationCompleted(token); });
 
         if (FAILED(webview->add_PermissionRequested(
                 Callback<ICoreWebView2PermissionRequestedEventHandler>(

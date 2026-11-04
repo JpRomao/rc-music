@@ -137,8 +137,8 @@ function rcMusicCollectMedia(document, options) {
         add(node.getAttribute("href"), "audio", node, context, true);
       }
       if (node.shadowRoot) enqueue(node.shadowRoot, context.owner);
-      // Native collection deliberately leaves frame discovery to a future
-      // native frame lifecycle; only the isolated extension opts into it.
+      // Only an explicit caller opts into accessible frame documents. The DOM
+      // enforces access; all documents share this call's aggregate budgets.
       if (options.includeFrames === true && (tag === "iframe" || tag === "frame")) {
         try {
           const child = node.contentDocument;
@@ -152,4 +152,10 @@ function rcMusicCollectMedia(document, options) {
     }
   }
   return snapshot;
+}
+
+// Native ExecuteScript invokes this entry inside its local IIFE. Keep its
+// discovery policy in the shared asset exercised by the DOM contract tests.
+function rcMusicCollectNativeMedia(document) {
+  return rcMusicCollectMedia(document, { includeFrames: true });
 }

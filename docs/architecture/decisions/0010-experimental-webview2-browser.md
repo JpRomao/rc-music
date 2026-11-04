@@ -22,7 +22,7 @@ SDK e loader estático são inputs locais: nenhuma busca/download automático, i
 
 - Qt WebEngine permanece alternativa de produto, com peso, dependências/licenças e manutenção Chromium próprios; não reconstruir o SDK para este experimento.
 - Browser externo continua integração da Lite, mas não satisfaz a navegação interna da Completa.
-- A janela nativa separa o HWND de conteúdo da cena Qt Quick e evita prometer composição de overlays QML sobre ele. A [detecção/seleção experimental](../../embedded-browser.md#detecção-e-seleção-de-mídia) reutiliza o coletor puro da extensão, com DTO validado e operações correlacionadas no host; envio e execução remota continuam pendentes. Tabs e cobertura interna de frames ficam para incrementos posteriores.
+- A janela nativa separa o HWND de conteúdo da cena Qt Quick e evita prometer composição de overlays QML sobre ele. A [detecção/seleção experimental](../../embedded-browser.md#detecção-e-seleção-de-mídia) reutiliza o coletor puro da extensão, com DTO validado e operações correlacionadas no host, incluindo coleta de frames acessíveis pela mesma origem. Navegação de frames invalida a seleção sem liberar callbacks pendentes. Tabs, frames inacessíveis, envio e execução remota continuam pendentes; navegações no mesmo documento/`srcdoc` não recebem garantia universal dos eventos do host.
 
 ## Validação e critérios de revisão
 

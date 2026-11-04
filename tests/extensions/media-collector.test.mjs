@@ -10,13 +10,14 @@ test("the native IIFE scopes the shared collector and returns serializable data 
   const env = native([element("audio", { src: "local-to-page.mp3", title: "Native probe" })]);
   const context = vm.createContext({ document: env.document, URL, TextEncoder, NodeFilter: { SHOW_ELEMENT: 1 } });
   const source = readFileSync(new URL("../../extensions/chromium/main/media-collector.js", import.meta.url), "utf8");
-  const value = vm.runInContext("(() => {\n" + source + "\nreturn rcMusicCollectMedia(document, { includeFrames: false });\n})()", context);
+  const value = vm.runInContext("(() => {\n" + source + "\nreturn rcMusicCollectNativeMedia(document);\n})()", context);
   assert.deepEqual(JSON.parse(JSON.stringify(value)), {
     pageUrl: env.location.href,
     candidates: [{ url: "https://cdn.example/media/local-to-page.mp3", title: "Native probe", kind: "audio" }],
     truncated: false,
   });
   assert.equal(Object.hasOwn(context, "rcMusicCollectMedia"), false);
+  assert.equal(Object.hasOwn(context, "rcMusicCollectNativeMedia"), false);
   assert.equal(Object.hasOwn(context, "chrome"), false);
   assert.equal(Object.hasOwn(context, "__rcMusicDetectionV2"), false);
   assert.equal(env.observers.length, 0);
@@ -50,7 +51,7 @@ test("native collection returns only bounded data without extension APIs, timers
   assert.equal(env.sentinel, undefined);
 });
 
-test("native collection never reads iframe documents and still traverses open shadow roots", () => {
+test("the collector can explicitly omit frame documents while traversing open shadow roots", () => {
   let frameReads = 0;
   const frame = element("iframe");
   Object.defineProperty(frame, "contentDocument", {
@@ -63,6 +64,88 @@ test("native collection never reads iframe documents and still traverses open sh
   const before = frameReads;
   assert.deepEqual(env.collect().candidates.map((item) => item.url), ["https://cdn.example/media/open.mp3"]);
   assert.equal(frameReads, before);
+});
+
+test("the native entry collects accessible nested frames with their own bases and titles", () => {
+  const nested = native([element("video", { src: "nested.mp4" })], {
+    href: "https://page.example/nested", baseURI: "https://cdn.example/nested/", title: "Nested clip",
+  });
+  const child = native([
+    element("audio", { src: "child.mp3" }),
+    element("iframe", {}, { contentDocument: nested.document }),
+    element("div", {}, { shadowRoot: shadowRoot([element("audio", { src: "shadow.mp3" })]) }),
+  ], { href: "https://page.example/child", baseURI: "https://cdn.example/child/", title: "Child song" });
+  const env = native([element("iframe", {}, { contentDocument: child.document })]);
+  assert.deepEqual(env.collectNative(), {
+    pageUrl: env.location.href,
+    candidates: [
+      { url: "https://cdn.example/child/child.mp3", title: "Child song", kind: "audio" },
+      { url: "https://cdn.example/nested/nested.mp4", title: "Nested clip", kind: "video" },
+      { url: "https://cdn.example/child/shadow.mp3", title: "Child song", kind: "audio" },
+    ],
+    truncated: false,
+  });
+  assert.equal(env.observers.length, 0);
+  assert.equal(env.clock.tasks.size, 0);
+  assert.equal(child.document.listenerCount, 0);
+  assert.equal(nested.document.listenerCount, 0);
+});
+
+test("the native entry ignores inaccessible and missing frame documents without losing accessible media", () => {
+  const blocked = element("iframe");
+  let reads = 0;
+  Object.defineProperty(blocked, "contentDocument", { get() { reads += 1; throw new Error("SecurityError"); } });
+  const child = native([element("audio", { src: "allowed.mp3" })]);
+  const env = native([blocked, element("frame", {}, { contentDocument: null }),
+    element("iframe", {}, { contentDocument: child.document })]);
+  assert.deepEqual(env.collectNative().candidates.map((item) => item.url), ["https://cdn.example/media/allowed.mp3"]);
+  assert.equal(reads, 1);
+  assert.equal(env.observers.length, 0);
+  assert.equal(env.clock.tasks.size, 0);
+});
+
+test("native frame discovery shares one document and candidate budget across the entire snapshot", () => {
+  const children = Array.from({ length: 32 }, (_, index) => native([element("audio", { src: `${index}.mp3` })]));
+  const documents = native(children.map((child) => element("iframe", {}, { contentDocument: child.document })));
+  const documentSnapshot = documents.collectNative();
+  assert.equal(documentSnapshot.candidates.length, 31);
+  assert.equal(documentSnapshot.truncated, true);
+  const groups = [0, 1].map((group) => native(Array.from({ length: 60 }, (_, index) =>
+    element("audio", { src: `${group}-${index}.mp3` }))));
+  const candidates = native(groups.map((child) => element("iframe", {}, { contentDocument: child.document })));
+  assert.equal(candidates.collectNative().candidates.length, 100);
+  assert.equal(candidates.collectNative().truncated, true);
+});
+
+test("native frame discovery shares the element budget rather than restarting it in each document", () => {
+  const children = [0, 1].map((group) => native([
+    ...Array.from({ length: 1000 }, () => element("span")), element("audio", { src: `${group}.mp3` }),
+  ]));
+  const env = native(children.map((child) => element("iframe", {}, { contentDocument: child.document })));
+  const result = env.collectNative();
+  assert.equal(result.truncated, true);
+  assert.deepEqual(result.candidates.map((item) => item.url), ["https://cdn.example/media/0.mp3"]);
+});
+
+test("native frame rescans replace removed documents and read changed sources freshly", () => {
+  const song = element("audio", { src: "before.mp3", title: "Before" });
+  const child = native([song]);
+  const frame = element("iframe", {}, { contentDocument: child.document });
+  const env = native([frame]);
+  const before = env.collectNative();
+  assert.equal(before.candidates.length, 1);
+  assert.equal(before.candidates[0].title, "Before");
+  song.setAttribute("src", "after.mp3");
+  song.setAttribute("title", "After");
+  assert.deepEqual(env.collectNative().candidates, [
+    { url: "https://cdn.example/media/after.mp3", title: "After", kind: "audio" },
+  ]);
+  frame.contentDocument = native([element("video", { src: "replacement.mp4" })]).document;
+  const replacement = env.collectNative();
+  assert.equal(replacement.candidates.length, 1);
+  assert.equal(replacement.candidates[0].kind, "video");
+  frame.contentDocument = null;
+  assert.deepEqual(env.collectNative().candidates, []);
 });
 
 test("native titles have safe nonempty fallbacks and remove controls, bidi and unpaired surrogates", () => {

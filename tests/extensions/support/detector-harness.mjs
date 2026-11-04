@@ -185,6 +185,7 @@ export function harness(nodes = [], options = {}) {
   return {
     clock, document, window, location, onConnect, observers, inject, port,
     collect(settings = {}) { return JSON.parse(JSON.stringify(sandbox.rcMusicCollectMedia(document, settings))); },
+    collectNative() { return JSON.parse(JSON.stringify(sandbox.rcMusicCollectNativeMedia(document))); },
     get treeReads() { return treeReads; },
     get inspected() { return inspected; },
     get sentinel() { return sandbox.__rcMusicDetectionV2; },
