@@ -51,12 +51,21 @@ struct WindowsDownloadProcessConfig final {
 enum class WindowsDownloadProcessState { Idle, Running, Stopping, Exited, Failed, Cancelled };
 enum class WindowsDownloadProcessError { None, InvalidConfiguration, Start, Isolation, Io, LimitExceeded, Timeout };
 
+// Notifications witnessed for this process's own Job. False means unobserved,
+// not proof that a limit was never exceeded. This is never a native/pipe ACK.
+struct WindowsDownloadJobEvidence final {
+    bool active_process_limit{false};
+    bool process_memory_limit{false};
+    bool job_memory_limit{false};
+};
+
 struct WindowsDownloadProcessUpdate final {
     WindowsDownloadProcessState state{WindowsDownloadProcessState::Idle};
     WindowsDownloadProcessError error{WindowsDownloadProcessError::None};
     QByteArray stdout_chunk{};
     QByteArray stderr_chunk{};
     std::optional<int> exit_code{};
+    WindowsDownloadJobEvidence job_evidence{};
 };
 
 // Construct/use/destroy on the download worker with a Qt event loop. poll is

@@ -138,10 +138,48 @@ DWORD networkAttempt(std::uint16_t port) {
     WSACleanup();
     return error;
 }
+DWORD udpAttempt(const std::uint16_t port, const std::array<std::uint8_t, 32>& challenge) {
+    WSADATA data{};
+    const auto startup = WSAStartup(MAKEWORD(2, 2), &data);
+    if (startup)
+        return static_cast<DWORD>(startup);
+    const auto socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    DWORD error = ERROR_SUCCESS;
+    if (socket == INVALID_SOCKET) {
+        error = static_cast<DWORD>(WSAGetLastError());
+    } else {
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(port);
+        const auto sent =
+            sendto(socket, reinterpret_cast<const char*>(challenge.data()), static_cast<int>(challenge.size()), 0,
+                   reinterpret_cast<const sockaddr*>(&address), sizeof(address));
+        if (sent == SOCKET_ERROR)
+            error = static_cast<DWORD>(WSAGetLastError());
+        closesocket(socket);
+    }
+    WSACleanup();
+    // Independent raw observation. UDP results never set the TCP or Job bits.
+    return error;
+}
 } // namespace
 
-int wmain(int argc, wchar_t**) {
-    if (argc != 1 || !SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) || !SetDllDirectoryW(L""))
+int wmain(int argc, wchar_t** argv) {
+    if (!SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) || !SetDllDirectoryW(L""))
+        return 64;
+    if (argc == 3 && std::wstring_view{argv[1]} == L"--hold-input" && validHoldNonce(argv[2])) {
+        std::string ready = "hold-ready:" + std::to_string(GetCurrentProcessId()) + ':';
+        for (const auto unit : std::wstring_view{argv[2]})
+            ready.push_back(static_cast<char>(unit));
+        ready.push_back('\n');
+        if (!writeAll(GetStdHandle(STD_OUTPUT_HANDLE),
+                      {reinterpret_cast<const std::uint8_t*>(ready.data()), ready.size()}))
+            return 68;
+        Sleep(INFINITE);
+        return 69;
+    }
+    if (argc != 1)
         return 64;
     std::vector<std::uint8_t> bytes;
     std::array<std::uint8_t, 4096> chunk{};
@@ -179,6 +217,7 @@ int wmain(int argc, wchar_t**) {
     report.errors[4] = deniedOpen(request->runtime + L"\\denied-write.tmp", GENERIC_WRITE, CREATE_NEW);
     report.errors[5] = childAttempt();
     report.errors[6] = networkAttempt(request->port);
+    report.udp_error = udpAttempt(request->udp_port, request->challenge);
     report.errors[8] = runtimeAuthority(request->runtime, WRITE_DAC);
     report.errors[9] = runtimeAuthority(request->runtime, WRITE_OWNER);
     report.errors[10] = runtimeAuthority(request->runtime, DELETE);

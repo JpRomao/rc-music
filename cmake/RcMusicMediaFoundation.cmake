@@ -54,7 +54,7 @@ if(BUILD_TESTING)
         LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    foreach(unit IN ITEMS MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
+    foreach(unit IN ITEMS AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")

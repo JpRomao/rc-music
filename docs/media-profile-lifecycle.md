@@ -1,10 +1,10 @@
 # Ciclo de vida privado do perfil de mídia Windows
 
-**Estado:** componentes implementados com porta de perfil falsa; prova física parcial, sem ativação no player.
+**Estado:** backend nativo e owner compostos no probe autorizado; prova física parcial, sem ativação no player.
 
 **Evidência:** 2026-11-04. A decisão de isolamento permanece [Proposta no ADR-0011](architecture/decisions/0011-media-worker-appcontainer.md).
 
-O incremento separa propriedade do perfil, persistência e confirmação de uso nativo. O [owner](../src/adapters/WindowsMediaProfileOwner.hpp), o [store Windows](../src/adapters/WindowsDownloadMediaProfileStore.hpp) e a [fence](../src/adapters/WindowsDownloadNativeUseFence.hpp) estão implementados. A porta `WindowsMediaProfilePlatform` ainda não tem implementação real de criação/remoção, e o owner não está composto em `src/app/main.cpp`. Downloads remotos continuam OFF por padrão. Os testes de componentes não autorizam provisionamento no host nem comprovam integração instalada.
+O incremento separa propriedade do perfil, persistência e confirmação de uso nativo. O [owner](../src/adapters/WindowsMediaProfileOwner.hpp), o [store Windows](../src/adapters/WindowsDownloadMediaProfileStore.hpp), a [fence](../src/adapters/WindowsDownloadNativeUseFence.hpp) e o [backend nativo](../src/adapters/WindowsNativeMediaProfile.hpp) estão implementados. O probe manual compõe esses componentes, mas o owner ainda não está composto em `src/app/main.cpp`. Downloads remotos continuam OFF por padrão. Os testes automáticos não criam perfis; o ensaio físico recebeu autorização específica e não comprova integração instalada.
 
 ## Documento separado e limites
 
@@ -53,7 +53,15 @@ Destruir ou sobrescrever um ticket pendente torna a incerteza permanente. Cancel
 
 O supervisor e o runtime conservam as verificações AppContainer, SID, integridade Low, capabilities vazias, Job e herança explícita. No caminho AppContainer, o runtime obtém `LOCALAPPDATA` por `SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY)`, sem criar pasta ou herdar o valor do ambiente pai. PATH vazio e SystemRoot explícito permanecem; esse ajuste não amplia capabilities ou ACLs.
 
-## Evidência automática
+## Backend nativo de perfil
+
+`WindowsNativeMediaProfile` admite uma única tentativa de criação e conserva somente o par nome/SID de uma criação própria com S_OK, SID canônico e liberação reconhecida de `FreeSid`. Colisão, exceção, outro HRESULT ou falha posterior à criação não autorizam adoção, remoção ou retry da API. O relatório conserva o evento S_OK mesmo quando a captura do SID/locator falha. Nome/SID divergentes não consomem a tentativa legítima de remoção. Construtor, factory e destrutor são inertes.
+
+O backend do sistema exige processo desktop do usuário atual, fora da sessão zero e sem impersonação. Antes de emitir o SID ao owner, captura KnownFolder e o path de `GetAppContainerFolderPath`, confere a relação esperada e retém a grafia real retornada pelo Windows para a observação posterior. A consulta de arquivos recusa ancestrais reparse e erros desconhecidos. As chaves SID exatas Mappings/Storage são consultadas por componentes, recusando links abaixo da âncora predefinida `HKEY_CURRENT_USER_LOCAL_SETTINGS`. Essa âncora evita atravessar o alias de sistema `HKCU\Software\Classes`; não concede permissão para seguir links arbitrários. [Chaves predefinidas](https://learn.microsoft.com/en-us/windows/win32/sysinfo/predefined-keys), [aliases do Registro](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys).
+
+Somente Delete S_OK inicia a observação de ausência nos locais capturados. Qualquer artefato presente ou erro de consulta impede ausência confirmada. A consulta não enumera todo o host e não reconstrói autoridade a partir de dados carregados. A falha continua incerta; não há segundo Delete, limpeza recursiva de perfil ou remoção direta de Registro.
+
+## Evidência automática anterior
 
 Capturas locais em `out/product/test-runs/media-profile-owner-20261104/`; os números incluem init/cleanup do Qt Test.
 
@@ -104,8 +112,35 @@ Cada `06-external-residue-check.json` posterior registra ausência do path de pa
 
 Os recibos contêm seus paths completos. `runtime_cleanup` e `workspace_cleanup` internos não equivalem à ausência dessas árvores TEMP, confirmada como `present` pela observação externa. Não houve remoção recursiva substituindo a API de perfil.
 
+Os três ensaios anteriores criavam diretamente `RCMusic.Test.<UUID>` e usavam capability sem a fence do owner. Seus recibos permanecem históricos: não são reinterpretados pela nova composição nem pelo protocolo v2.
+
+## Ensaio composto autorizado
+
+O novo [probe manual](../tests/windows/sandbox/README.md) compõe backend nativo, owner, store privado, lease e a mesma capability/fence para helper, conversão e segunda validação. A criação usa `RCMusic.Media.<UUID>` e o journal permanece em `profile-journal` junto dos recibos. A nova cobertura automática usa chamadas de perfil injetadas e preserva os Reds em `out/product/test-runs/native-profile-composition-20261104/`:
+
+| Contrato | Red observado | Green observado |
+|---|---|---|
+| Backend nativo: propriedade, chamada única, colisão, SID, exceções e ausência | 14 passagens / 25 falhas | 39/39 |
+| Protocolo v2: porta UDP, tamanho/versão e erros brutos independentes | 21 passagens / 11 falhas | 32/32 |
+| Notificação específica de limite de processos no Job | 58 passagens / 1 falha | 59/59 com supervisor |
+
+O fechamento `final-captured-path-regression.log` passou **20/20 CTest**, com **779 passagens Qt e dois skips históricos** de symlink do checkpoint. São 19 suítes Qt e o parser puro; não é a suíte inteira. `final-captured-path-build.log`, `final-documents-release-build.log` e `final-optional-player-release-build.log` registram builds Release com exit 0; os caches de produção registram zero testes. `final-format-checked.log` passou **414 C++/62 QML** e `lite-boundary.log` conferiu **255 comandos**. A validação documental passou **85 Markdown/83 requisitos/17 checks/80 etapas**, sem elevar requisitos a comprovados por esses testes. Não houve novo instalador, instalação ou benchmark.
+
+O supervisor associa uma completion port privada ao Job antes do launch e conserva os eventos observados até o próximo start. A notificação `JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT` identifica o limite de processos; ausência de mensagem é inconclusiva. Ela nunca promove estado terminal, ACK ou cleanup. No probe, erro bruto 1816 acompanhado desse evento e sem eventos de limite de memória confirma somente a restrição de descendentes pelo Job; `checks` bruto permanece preservado, ao lado de `effective_checks`. [Notificações de Job](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port).
+
+O ensaio `media-owner-native-authorized-20261104-01` recebeu Create S_OK, mas a captura do locator encontrou o alias REG_LINK em `HKCU\Software\Classes`. Antes de qualquer worker, o owner recusou a preparação e preservou Planned com SID nulo. Não houve Delete. O diagnóstico somente leitura motivou a correção para a âncora predefinida, mantendo a recusa de links abaixo dela. A conferência externa confirmou presentes o pacote, a chave Mappings e o TEMP `RCMusic-AppContainer-Probe-mXZJRp`; Storage estava ausente. O perfil **`RCMusic.Media.6a06e082-f85d-4d0d-97f0-f70f8bfd7c24` permanece preservado para revisão**. O diagnóstico de SID não autorizou adoção ou cleanup por Loaded.
+
+Os ensaios compostos 02 e 03, após essa correção, confirmaram os seguintes critérios pelos recibos. O 03 repetiu a jornada após conservar a grafia real do path retornado pelo Windows:
+
+- `05-no-child.json`: uma imagem própria existente e inválida falhou antes de admitir filho, com fence OpenIdle, journal InUse e runtime limpo;
+- `03-results.json`: MP3, AAC/M4A e WAV converteram e passaram por segunda validação independente com ACKs;
+- `07-cancel-and-drain.json`: helper vivo com stdin não lido, término nativo testemunhado antes do poll, owner Draining e journal InUse antes do ACK, novo launch recusado e fence ClosedQuiescent somente após drenagem;
+- `04-profile-cleanup.json`: Delete S_OK após ACKs, ausência confirmada e Removed Saved. A conferência externa posterior registrou pacote e chaves SID exatas ausentes.
+
+O helper conservou `checks=29695`, com `effective_checks=30719/32767` após a testemunha específica do Job. TCP retornou **10060** e permaneceu inconclusivo; o diagnóstico UDP retornou **0** em `sendto`, o que também não comprova negação nem entrega. Os controles positivos locais passaram. O check de rede não foi promovido, portanto `helper_passed=false` e `passed=false`, apesar dos critérios do owner e de mídia aprovados. Os TEMP `RCMusic-AppContainer-Probe-bfUghi` e `RCMusic-AppContainer-Probe-bxaqxi` foram preservados pela regra de falha global. [Contrato de sendto](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-sendto).
+
 ## Limites e próxima integração
 
-O probe cria diretamente seu perfil de teste `RCMusic.Test.<UUID>` e usa uma capability **sem a fence do novo owner**. Logo, o ensaio físico não valida os hooks de `WindowsMediaProfileOwner`, sua lease, seu journal ou seu protocolo de retry diante de APIs reais. O owner Green continua comprovado por porta de perfil falsa e store real, separado do probe físico.
+O owner/fence já foi exercitado com o backend nativo no probe; permanece ausente da composição normal do player/ingresso instalado. O cenário físico não ensaiou destruição com ticket abandonado, crash, escrita ambígua ou falha de Delete: esses casos conservam cobertura determinística com portas falsas, sem alegar aceitação física. A prova específica do Job não é prova de negação de descendentes pelo AppContainer.
 
-Permanecem pendentes a implementação da porta real de perfil e sua conferência de ausência, a composição do owner no worker/ingresso instalado, uma jornada autorizada atravessando owner + fence + supervisor reais, a conclusão estrita das duas provas do helper, política de resíduos/armazenamento privado do perfil e os demais gates do ADR-0009. Uma eventual repetição física mantém os critérios, os recibos anteriores e o escopo autorizado; nenhuma ampliação de capabilities, exceção loopback, ACL de ancestrais ou fallback legado decorre desses resultados. A proposta de isolamento e a produção remota permanecem abertas.
+Permanecem pendentes a conclusão da prova de rede, política de escrita/cotas/resíduos do armazenamento próprio do perfil, revisão do perfil preservado, composição instalada e os demais gates do ADR-0009. Os resultados não autorizam ampliação de capabilities, exceção loopback, ACL de ancestrais ou fallback legado. O ADR-0011 permanece Proposto e a produção remota OFF.

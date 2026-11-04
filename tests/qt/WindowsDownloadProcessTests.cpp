@@ -988,6 +988,46 @@ class WindowsDownloadProcessTests final : public QObject {
         QCOMPARE(result.output, QByteArrayLiteral("SPAWN_BLOCKED"));
     }
 
+    void witnessesTheActiveProcessLimitWithoutInventingAMemoryViolation() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        WindowsDownloadProcess process;
+        const auto initial = process.poll(0);
+        QVERIFY(!initial.job_evidence.active_process_limit);
+        QVERIFY(!initial.job_evidence.process_memory_limit);
+        QVERIFY(!initial.job_evidence.job_memory_limit);
+        // This existing legacy helper attempts a child under our Job limit of
+        // one. No AppContainer identity, profile or Registry operation is used.
+        QVERIFY(process.start(configuration(directory, {QStringLiteral("spawn-probe")}), 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(result.update.error, WindowsDownloadProcessError::None);
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        QCOMPARE(result.output, QByteArrayLiteral("SPAWN_BLOCKED"));
+        // Job notifications are asynchronous. Terminal polling may still collect
+        // evidence; the observed notification must never manufacture an ACK.
+        QTRY_VERIFY_WITH_TIMEOUT(process.poll(0).job_evidence.active_process_limit, 1000);
+        const auto witnessed = process.poll(0);
+        QCOMPARE(witnessed.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(witnessed.error, WindowsDownloadProcessError::None);
+        QVERIFY(witnessed.job_evidence.active_process_limit);
+        QVERIFY(!witnessed.job_evidence.process_memory_limit);
+        QVERIFY(!witnessed.job_evidence.job_memory_limit);
+        QVERIFY(witnessed.stdout_chunk.isEmpty());
+        QVERIFY(witnessed.stderr_chunk.isEmpty());
+
+        // A new launch owns a different Job and starts without old evidence.
+        QVERIFY(process.start(configuration(directory, {QStringLiteral("echo")}), 0));
+        Collected next;
+        QVERIFY(collect(process, next));
+        QCOMPARE(next.update.state, WindowsDownloadProcessState::Exited);
+        QCOMPARE(next.update.exit_code, std::optional<int>{0});
+        QVERIFY(!next.update.job_evidence.active_process_limit);
+        QVERIFY(!next.update.job_evidence.process_memory_limit);
+        QVERIFY(!next.update.job_evidence.job_memory_limit);
+    }
+
     void destructorStopsOnlyItsOwnedProcess() {
         QTemporaryDir directory;
         NativeProcessGuard child;

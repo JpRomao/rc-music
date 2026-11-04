@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -37,6 +38,7 @@ struct Request final {
     std::wstring sentinel;
     std::wstring runtime;
     std::uint16_t port{};
+    std::uint16_t udp_port{};
     bool operator==(const Request&) const = default;
 };
 struct Report final {
@@ -45,8 +47,17 @@ struct Report final {
     std::uint32_t integrity_rid{};
     // Token, input write, ambient read/write, runtime write, child, network, stdio.
     std::array<std::uint32_t, 11> errors{};
+    std::uint32_t udp_error{std::numeric_limits<std::uint32_t>::max()};
     bool operator==(const Report&) const = default;
 };
+inline bool validHoldNonce(const std::wstring_view value) noexcept {
+    if (value.size() != 32)
+        return false;
+    for (const auto unit : value)
+        if (!((unit >= L'0' && unit <= L'9') || (unit >= L'a' && unit <= L'f')))
+            return false;
+    return true;
+}
 inline void put(std::vector<std::uint8_t>& bytes, std::uint64_t value, std::size_t count) {
     for (std::size_t index = 0; index < count; ++index)
         bytes.push_back(static_cast<std::uint8_t>(value >> (index * 8)));
@@ -70,16 +81,16 @@ inline bool validPath(const std::wstring& path) {
 inline std::vector<std::uint8_t> encode(const Request& request) {
     if (request.sid.size() < 8 || request.sid.size() > 68 || !request.input_handle ||
         request.input_handle > static_cast<std::uint64_t>(std::numeric_limits<std::intptr_t>::max()) || !request.port ||
-        !validPath(request.sentinel) || !validPath(request.runtime))
+        !request.udp_port || !validPath(request.sentinel) || !validPath(request.runtime))
         return {};
     std::vector<std::uint8_t> bytes{'R', 'C', 'M', 'S', 'B', 'X', '0', '1'};
-    put(bytes, 1, 2);
+    put(bytes, 2, 2);
     put(bytes, request.sid.size(), 2);
     put(bytes, request.input_handle, 8);
     put(bytes, request.sentinel.size(), 2);
     put(bytes, request.runtime.size(), 2);
     put(bytes, request.port, 2);
-    put(bytes, 0, 2);
+    put(bytes, request.udp_port, 2);
     bytes.insert(bytes.end(), request.challenge.begin(), request.challenge.end());
     bytes.insert(bytes.end(), request.sid.begin(), request.sid.end());
     for (const auto& path : {request.sentinel, request.runtime})
@@ -95,7 +106,7 @@ inline std::optional<Request> decodeRequest(std::span<const std::uint8_t> bytes)
         if (bytes[index] != magic[index])
             return {};
     std::size_t at = 8;
-    if (take(bytes, at, 2) != 1)
+    if (take(bytes, at, 2) != 2)
         return {};
     const auto sid_size = take(bytes, at, 2);
     Request request;
@@ -103,7 +114,8 @@ inline std::optional<Request> decodeRequest(std::span<const std::uint8_t> bytes)
     const auto sentinel_size = take(bytes, at, 2);
     const auto runtime_size = take(bytes, at, 2);
     request.port = static_cast<std::uint16_t>(take(bytes, at, 2));
-    if (take(bytes, at, 2) || sid_size < 8 || sid_size > 68 || sentinel_size > 2048 || runtime_size > 2048 ||
+    request.udp_port = static_cast<std::uint16_t>(take(bytes, at, 2));
+    if (sid_size < 8 || sid_size > 68 || sentinel_size > 2048 || runtime_size > 2048 ||
         bytes.size() != 60 + sid_size + 2 * (sentinel_size + runtime_size))
         return {};
     for (auto& unit : request.challenge)
@@ -123,23 +135,24 @@ inline std::optional<Request> decodeRequest(std::span<const std::uint8_t> bytes)
 }
 inline std::vector<std::uint8_t> encode(const Report& report) {
     std::vector<std::uint8_t> bytes{'R', 'C', 'M', 'S', 'B', 'R', '0', '1'};
-    put(bytes, 1, 2);
+    put(bytes, 2, 2);
     put(bytes, report.passed, 4);
     put(bytes, report.capability_count, 4);
     put(bytes, report.integrity_rid, 4);
     for (const auto error : report.errors)
         put(bytes, error, 4);
+    put(bytes, report.udp_error, 4);
     return bytes;
 }
 inline std::optional<Report> decodeReport(std::span<const std::uint8_t> bytes) {
     constexpr std::array<std::uint8_t, 8> magic{'R', 'C', 'M', 'S', 'B', 'R', '0', '1'};
-    if (bytes.size() != 66)
+    if (bytes.size() != 70)
         return {};
     for (std::size_t index = 0; index < magic.size(); ++index)
         if (bytes[index] != magic[index])
             return {};
     std::size_t at = 8;
-    if (take(bytes, at, 2) != 1)
+    if (take(bytes, at, 2) != 2)
         return {};
     Report report;
     report.passed = static_cast<std::uint32_t>(take(bytes, at, 4));
@@ -147,6 +160,7 @@ inline std::optional<Report> decodeReport(std::span<const std::uint8_t> bytes) {
     report.integrity_rid = static_cast<std::uint32_t>(take(bytes, at, 4));
     for (auto& error : report.errors)
         error = static_cast<std::uint32_t>(take(bytes, at, 4));
+    report.udp_error = static_cast<std::uint32_t>(take(bytes, at, 4));
     return !(report.passed & ~all_checks) ? std::optional<Report>{report} : std::nullopt;
 }
 } // namespace music_player::sandbox_probe

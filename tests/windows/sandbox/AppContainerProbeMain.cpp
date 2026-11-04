@@ -2,15 +2,20 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
-#include <userenv.h>
 #include <winsock2.h>
+
+#include <Sddl.h>
 
 #include "AppContainerProbeProtocol.hpp"
 #include "adapters/WindowsDownloadAppContainer.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
+#include "adapters/WindowsDownloadMediaProfileStore.hpp"
+#include "adapters/WindowsDownloadNativeUseFence.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
 #include "adapters/WindowsLocalMediaConverter.hpp"
 #include "adapters/WindowsMediaFoundationLaunch.hpp"
+#include "adapters/WindowsMediaProfileOwner.hpp"
+#include "adapters/WindowsNativeMediaProfile.hpp"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -106,6 +111,7 @@ int selfTest() {
     request.sid = std::vector<std::uint8_t>(44, 1);
     request.input_handle = 4;
     request.port = 12345;
+    request.udp_port = 12346;
     request.sentinel = L"C:/private/sentinel.bin";
     request.runtime = L"C:/private/runtime";
     auto wire = protocol::encode(request);
@@ -115,7 +121,7 @@ int selfTest() {
     if (protocol::decodeRequest(wire))
         return 4;
     wire = protocol::encode(request);
-    wire[8] = 2;
+    wire[8] = 3;
     if (protocol::decodeRequest(wire))
         return 5;
     request.input_handle = 0;
@@ -201,52 +207,31 @@ void pump() {
     QCoreApplication::processEvents();
     QThread::msleep(5);
 }
-class Profile final {
-  public:
-    const QString name{QStringLiteral("RCMusic.Test.") + QUuid::createUuid().toString(QUuid::WithoutBraces)};
-    const std::wstring native_name{name.toStdWString()};
-    bool created{false};
-    bool native_acks{true};
-    bool cleanup_attempted{false};
-    bool sid_freed{true};
-    QByteArray sid;
-    ~Profile() {
-        // Exception fallback only. The last durable receipt remains uncertain;
-        // this cannot manufacture a passing cleanup receipt.
-        if (mayRemoveProfile(created, native_acks) && !cleanup_attempted)
-            static_cast<void>(DeleteAppContainerProfile(native_name.c_str()));
-    }
-    HRESULT create() {
-        PSID raw = nullptr;
-        const auto result =
-            CreateAppContainerProfile(native_name.c_str(), L"RC Music isolated test",
-                                      L"Explicit temporary media-worker isolation probe", nullptr, 0, &raw);
-        created = result == S_OK;
-        struct SidGuard final {
-            PSID value;
-            bool& freed;
-            ~SidGuard() {
-                if (value)
-                    freed = FreeSid(value) == nullptr;
-            }
-        } guard{raw, sid_freed};
-        if (created && raw && IsValidSid(raw)) {
-            const auto length = GetLengthSid(raw);
-            if (length <= SECURITY_MAX_SID_SIZE)
-                sid = QByteArray{static_cast<const char*>(raw), static_cast<qsizetype>(length)};
-        }
-        return result;
-    }
-    HRESULT remove() {
-        if (!mayRemoveProfile(created, native_acks))
-            return S_FALSE;
-        cleanup_attempted = true;
-        const auto result = DeleteAppContainerProfile(native_name.c_str());
-        if (result == S_OK)
-            created = false;
-        return result;
-    }
-};
+bool createJournalDirectory(const QString& directory) {
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
+        return false;
+    const download_artifacts::Handle token(raw);
+    DWORD size = 0;
+    static_cast<void>(GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size));
+    if (!size || size > 64 * 1024)
+        return false;
+    std::vector<unsigned char> bytes(size);
+    if (!GetTokenInformation(token.get(), TokenUser, bytes.data(), size, &size))
+        return false;
+    LPWSTR user = nullptr;
+    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(bytes.data())->User.Sid, &user))
+        return false;
+    const auto free_user = qScopeGuard([&] { LocalFree(user); });
+    const auto sddl = QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;") + QString::fromWCharArray(user) + ')';
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
+                                                              nullptr))
+        return false;
+    const auto free_descriptor = qScopeGuard([&] { LocalFree(descriptor); });
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    return CreateDirectoryW(download_artifacts::nativePath(directory).c_str(), &attributes) != FALSE;
+}
 
 // The listener stays alive during the sandbox attempt. A successful parent
 // connection is required first, so refusal cannot mean "no server existed".
@@ -317,8 +302,65 @@ class Loopback final {
     SOCKET listener_{INVALID_SOCKET};
 };
 
+class UdpLoopback final {
+  public:
+    ~UdpLoopback() {
+        if (listener_ != INVALID_SOCKET)
+            closesocket(listener_);
+        if (started_)
+            WSACleanup();
+    }
+    bool start() {
+        WSADATA data{};
+        started_ = WSAStartup(MAKEWORD(2, 2), &data) == 0;
+        if (!started_)
+            return false;
+        listener_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (listener_ == INVALID_SOCKET)
+            return false;
+        BOOL exclusive = TRUE;
+        if (setsockopt(listener_, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive),
+                       sizeof(exclusive)) != 0)
+            return false;
+        address_.sin_family = AF_INET;
+        address_.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(listener_, reinterpret_cast<const sockaddr*>(&address_), sizeof(address_)) != 0)
+            return false;
+        int size = sizeof(address_);
+        if (getsockname(listener_, reinterpret_cast<sockaddr*>(&address_), &size) != 0)
+            return false;
+        port = ntohs(address_.sin_port);
+        return positiveControl();
+    }
+    bool positiveControl() const {
+        const auto client = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (client == INVALID_SOCKET)
+            return false;
+        const auto close = qScopeGuard([&] { closesocket(client); });
+        const auto challenge = QUuid::createUuid().toRfc4122();
+        if (sendto(client, challenge.constData(), static_cast<int>(challenge.size()), 0,
+                   reinterpret_cast<const sockaddr*>(&address_), sizeof(address_)) != challenge.size())
+            return false;
+        fd_set ready;
+        FD_ZERO(&ready);
+        FD_SET(listener_, &ready);
+        timeval timeout{2, 0};
+        if (select(0, &ready, nullptr, nullptr, &timeout) != 1)
+            return false;
+        std::array<char, 64> received{};
+        const auto count = recvfrom(listener_, received.data(), static_cast<int>(received.size()), 0, nullptr, nullptr);
+        return count == challenge.size() && QByteArray{received.data(), count} == challenge;
+    }
+    std::uint16_t port{};
+
+  private:
+    bool started_{false};
+    SOCKET listener_{INVALID_SOCKET};
+    sockaddr_in address_{};
+};
+
 QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDownloadAppContainer>& container,
-                      std::uint16_t port, bool& passed, bool& native_acks) {
+                      std::uint16_t port, std::uint16_t udp_port, bool& passed, bool& native_acks) {
     require(native_acks, "helper refused after uncertain native ACK");
     const auto private_parent = root + QStringLiteral("/sentinel");
     const auto runtimes = root + QStringLiteral("/helper-runtimes");
@@ -355,6 +397,7 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     request.sentinel = sentinel.toStdWString();
     request.runtime = runtime->directory().toStdWString();
     request.port = port;
+    request.udp_port = udp_port;
     const auto wire = protocol::encode(request);
     require(!wire.empty(), "helper request encoding");
     auto config = runtime->processConfig();
@@ -405,8 +448,14 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
                      update.state == WindowsDownloadProcessState::Failed ||
                      update.state == WindowsDownloadProcessState::Cancelled;
     acknowledgement.complete(ack && (!report || report->errors[5] != ERROR_TIMEOUT));
+    // Quota is not itself a denial oracle. This separate kernel notification
+    // belongs to this supervisor's Job and identifies the active-process limit.
+    const bool job_limit_witnessed = report && report->errors[5] == ERROR_NOT_ENOUGH_QUOTA &&
+                                     update.job_evidence.active_process_limit &&
+                                     !update.job_evidence.process_memory_limit && !update.job_evidence.job_memory_limit;
+    const auto effective_checks = report ? report->passed | (job_limit_witnessed ? protocol::JobChildDenied : 0U) : 0U;
     passed = started && ack && update.state == WindowsDownloadProcessState::Exited && update.exit_code == 0 && report &&
-             report->passed == protocol::all_checks && report->capability_count == 0 &&
+             effective_checks == protocol::all_checks && report->capability_count == 0 &&
              report->integrity_rid == SECURITY_MANDATORY_LOW_RID && hashFile(sentinel) == before &&
              errors == QByteArray{"sandbox-probe=complete\n"} && runtime->unchanged();
     QJsonArray codes;
@@ -422,6 +471,12 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
                        {"stdout_bytes", output.size()},
                        {"stderr_bytes", errors.size()},
                        {"checks", report ? static_cast<qint64>(report->passed) : 0},
+                       {"effective_checks", static_cast<qint64>(effective_checks)},
+                       {"job_active_process_limit_witnessed", job_limit_witnessed},
+                       {"job_process_memory_limit", update.job_evidence.process_memory_limit},
+                       {"job_memory_limit", update.job_evidence.job_memory_limit},
+                       {"udp_error", report ? static_cast<qint64>(report->udp_error) : -1},
+                       {"udp_explicit_denial", report && report->udp_error == WSAEACCES},
                        {"win32_errors", codes},
                        {"sentinel_sha256_before", QString::fromLatin1(before)},
                        {"sentinel_sha256_after", QString::fromLatin1(hashFile(sentinel))},
@@ -578,21 +633,209 @@ bool runMedia(const QString& root, const std::shared_ptr<const WindowsDownloadAp
     return all_passed && entries(runtimes).isEmpty() && entries(staging).isEmpty() && entries(publication).isEmpty();
 }
 
+QJsonObject runNoChild(const QString& root, const std::shared_ptr<const WindowsDownloadAppContainer>& container,
+                       WindowsDownloadMediaProfileStore& journal, bool& native_acks) {
+    require(native_acks, "no-child refused after uncertainty");
+    const auto parent = root + QStringLiteral("/no-child-runtimes");
+    require(QDir{}.mkdir(parent), "no-child parent");
+    const auto image = root + QStringLiteral("/deliberately-invalid-image.exe");
+    {
+        QFile file(image);
+        const QByteArray bytes{"RCMusic inert invalid PE fixture"};
+        require(file.open(QIODevice::WriteOnly | QIODevice::NewOnly) && file.write(bytes) == bytes.size() &&
+                    file.flush(),
+                "invalid image fixture");
+    }
+    WindowsMediaFoundationLaunchConfig launch;
+    launch.runtime_parent = parent;
+    launch.source_executable = image;
+    launch.source_sha256 = hashFile(image);
+    launch.app_container = container;
+    launch.require_app_container = true;
+    auto runtime = WindowsMediaFoundationLaunch::prepare(launch);
+    require(runtime != nullptr, "no-child authenticated runtime");
+    struct Owners {
+        std::shared_ptr<const WindowsMediaFoundationLaunch> runtime;
+        WindowsDownloadProcess process;
+    };
+    NativeAcknowledgement acknowledgement(native_acks);
+    auto owners = std::make_unique<Owners>();
+    owners->runtime = runtime;
+    const auto preserve = qScopeGuard([&] {
+        if (!native_acks)
+            static_cast<void>(owners.release());
+    });
+    const bool started = owners->process.start(runtime->processConfig(), 0);
+    const auto update = owners->process.poll(0);
+    const bool idle = container->nativeUseFence()->state() == WindowsDownloadNativeUseFence::State::OpenIdle;
+    const auto current = journal.load();
+    bool passed = !started && update.state == WindowsDownloadProcessState::Failed &&
+                  update.error == WindowsDownloadProcessError::Isolation && idle && current.record &&
+                  current.record->stage == DownloadMediaProfileStage::InUse;
+    acknowledgement.complete(passed);
+    if (native_acks) {
+        owners.reset();
+        runtime.reset();
+    }
+    const bool clean = native_acks && entries(parent).isEmpty();
+    passed = passed && clean;
+    return {{"passed", passed},
+            {"started", started},
+            {"process_state", static_cast<int>(update.state)},
+            {"process_error", static_cast<int>(update.error)},
+            {"fence_open_idle", idle},
+            {"image_existed_and_was_invalid", true},
+            {"runtime_cleanup", clean},
+            {"all_native_acks", native_acks}};
+}
+
+bool expectedWitness(HANDLE process, const QString& image, const WindowsDownloadAppContainer& container) {
+    std::array<wchar_t, 32768> path{};
+    DWORD length = static_cast<DWORD>(path.size());
+    if (!QueryFullProcessImageNameW(process, 0, path.data(), &length) ||
+        QDir::fromNativeSeparators(QString::fromWCharArray(path.data(), length))
+                .compare(QDir::fromNativeSeparators(image), Qt::CaseInsensitive) != 0)
+        return false;
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(process, TOKEN_QUERY, &raw))
+        return false;
+    const download_artifacts::Handle token(raw);
+    DWORD size = 0;
+    static_cast<void>(GetTokenInformation(token.get(), TokenAppContainerSid, nullptr, 0, &size));
+    if (size < sizeof(TOKEN_APPCONTAINER_INFORMATION) || size > 64 * 1024)
+        return false;
+    std::vector<unsigned char> bytes(size);
+    if (!GetTokenInformation(token.get(), TokenAppContainerSid, bytes.data(), size, &size))
+        return false;
+    auto sid = reinterpret_cast<TOKEN_APPCONTAINER_INFORMATION*>(bytes.data())->TokenAppContainer;
+    return sid && IsValidSid(sid) && GetLengthSid(sid) == container.sidBytes().size() &&
+           EqualSid(sid, const_cast<char*>(container.sidBytes().constData()));
+}
+
+QJsonObject runCancellation(const QString& root, const std::shared_ptr<const WindowsDownloadAppContainer>& container,
+                            WindowsMediaProfileOwner& owner, WindowsDownloadMediaProfileStore& journal,
+                            WindowsNativeMediaProfile& platform, bool& native_acks) {
+    require(native_acks, "cancel scenario refused after uncertainty");
+    const auto parent = root + QStringLiteral("/cancel-runtimes");
+    require(QDir{}.mkdir(parent), "cancel parent");
+    WindowsMediaFoundationLaunchConfig launch;
+    launch.runtime_parent = parent;
+    launch.source_executable = QString::fromUtf8(RC_MUSIC_TEST_SANDBOX_HELPER_PATH);
+    launch.source_sha256 = hashFile(launch.source_executable);
+    launch.app_container = container;
+    launch.require_app_container = true;
+    auto runtime = WindowsMediaFoundationLaunch::prepare(launch);
+    require(runtime != nullptr, "cancel runtime");
+    auto config = runtime->processConfig();
+    const auto nonce = QUuid::createUuid().toRfc4122().toHex();
+    config.arguments = {QStringLiteral("--hold-input"), QString::fromLatin1(nonce)};
+    config.standard_input = QByteArray(download_process_max_input_bytes, 'x');
+    config.max_stdout_bytes = 1024;
+    config.max_stderr_bytes = 1024;
+    config.total_timeout_ms = 10'000;
+    struct Owners {
+        std::shared_ptr<const WindowsMediaFoundationLaunch> runtime;
+        WindowsDownloadProcess process;
+    };
+    NativeAcknowledgement acknowledgement(native_acks);
+    auto owners = std::make_unique<Owners>();
+    owners->runtime = runtime;
+    const auto preserve = qScopeGuard([&] {
+        if (!native_acks)
+            static_cast<void>(owners.release());
+    });
+    auto& process = owners->process;
+    QElapsedTimer timer;
+    timer.start();
+    require(process.start(config, 0), "hold-input start");
+    QByteArray output;
+    WindowsDownloadProcessUpdate update;
+    while (!output.contains('\n') && timer.elapsed() < 5000) {
+        update = process.poll(timer.elapsed());
+        output += update.stdout_chunk;
+        require(output.size() <= 128, "bounded hold readiness");
+        if (update.state != WindowsDownloadProcessState::Running)
+            break;
+        pump();
+    }
+    const auto parts = output.trimmed().split(':');
+    bool pid_valid = false;
+    const auto pid = parts.size() == 3 ? parts[1].toUInt(&pid_valid) : 0U;
+    require(parts.size() == 3 && parts[0] == "hold-ready" && parts[2] == nonce && pid_valid && pid != 0 &&
+                update.state == WindowsDownloadProcessState::Running,
+            "hold readiness identity");
+    download_artifacts::Handle witness(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+    require(witness.valid() && expectedWitness(witness.get(), config.executable, *container) &&
+                WaitForSingleObject(witness.get(), 0) == WAIT_TIMEOUT,
+            "running native witness");
+    require(container->nativeUseFence()->state() == WindowsDownloadNativeUseFence::State::OpenBusy,
+            "ticket busy before cancel");
+    process.cancel();
+    // Observe kernel exit without polling away the supervisor's pending pipes.
+    require(WaitForSingleObject(witness.get(), 5000) == WAIT_OBJECT_0, "native cancellation witness");
+    require(container->nativeUseFence()->state() == WindowsDownloadNativeUseFence::State::OpenBusy,
+            "native exit is not a ticket ACK");
+    require(!owner.close() && owner.state() == WindowsMediaProfileOwnerState::Draining &&
+                container->nativeUseFence()->state() == WindowsDownloadNativeUseFence::State::ClosingBusy &&
+                !platform.report().remove_attempted,
+            "owner must wait for supervisor ACK");
+    const auto before_ack = journal.load();
+    require(before_ack.record && before_ack.record->stage == DownloadMediaProfileStage::InUse,
+            "no cleanup record before ACK");
+    WindowsDownloadProcess denied;
+    require(!denied.start(config, timer.elapsed()) &&
+                denied.poll(timer.elapsed()).error == WindowsDownloadProcessError::Isolation,
+            "closed admission must reject another process");
+    do {
+        update = process.poll(timer.elapsed());
+        if (update.state == WindowsDownloadProcessState::Cancelled ||
+            update.state == WindowsDownloadProcessState::Failed || update.state == WindowsDownloadProcessState::Exited)
+            break;
+        pump();
+    } while (timer.elapsed() < 9000);
+    bool passed = update.state == WindowsDownloadProcessState::Cancelled &&
+                  container->nativeUseFence()->state() == WindowsDownloadNativeUseFence::State::ClosedQuiescent &&
+                  !platform.report().remove_attempted;
+    acknowledgement.complete(passed);
+    witness = download_artifacts::Handle{};
+    if (native_acks) {
+        owners.reset();
+        runtime.reset();
+    }
+    const bool clean = native_acks && entries(parent).isEmpty();
+    passed = passed && clean;
+    return {{"passed", passed},
+            {"native_exit_before_supervisor_ack", true},
+            {"owner_draining_before_ack", true},
+            {"journal_in_use_before_ack", true},
+            {"new_launch_refused", true},
+            {"fence_closed_quiescent", passed},
+            {"process_state", static_cast<int>(update.state)},
+            {"runtime_cleanup", clean},
+            {"all_native_acks", native_acks}};
+}
+
 int hostProbe(const Options& options) {
     std::vector<download_artifacts::Handle> parents;
     require(download_artifacts::pinAncestors(options.evidence, parents), "evidence ancestors unavailable/reparse");
     require(download_artifacts::createPrivateDirectory(options.evidence), "evidence must be a fresh directory");
-    Profile profile;
+    const auto operation = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    const auto name = QString::fromStdString(downloadMediaProfileName(operation));
+    const auto journal_directory = options.evidence + QStringLiteral("/profile-journal");
+    auto platform = WindowsNativeMediaProfile::system();
+    WindowsDownloadMediaProfileStore journal(journal_directory);
+    WindowsMediaProfileOwner owner(journal, *platform, {"native-probe", [operation] { return operation; }});
     QTemporaryDir temporary{QDir::tempPath() + QStringLiteral("/RCMusic-AppContainer-Probe-XXXXXX")};
     temporary.setAutoRemove(false); // Preserve uncertain resources on every failure.
     bool passed = false;
     QJsonObject results;
-    HRESULT creation = E_FAIL;
-    bool creation_attempted = false;
+    bool native_acks = true;
     try {
         const QJsonObject plan{
             {"schema_version", 1},
-            {"profile_name", profile.name},
+            {"profile_name", name},
+            {"journal_directory", journal_directory},
+            {"owner_composed", true},
             {"capabilities", QJsonArray{}},
             {"mode", "common-AppContainer-not-LPAC"},
             {"temporary", temporary.path()},
@@ -604,63 +847,85 @@ int hostProbe(const Options& options) {
                             "fixtures/loopback only; no universal FS/registry, LPAC or production approval."}};
         require(receipt(options.evidence, QStringLiteral("00-before-profile.json"), plan), "initial receipt");
         require(temporary.isValid(), "temporary directory");
+        require(createJournalDirectory(journal_directory), "private journal directory");
         Loopback loopback;
         require(loopback.start(), "loopback parent positive control failed");
-        creation_attempted = true;
-        creation = profile.create();
+        UdpLoopback udp;
+        require(udp.start(), "UDP parent positive control failed");
+        const bool prepared = owner.prepare();
+        const auto creation = platform->report();
         require(receipt(options.evidence, QStringLiteral("01-profile-result.json"),
-                        {{"profile_name", profile.name},
-                         {"creation_attempted", creation_attempted},
-                         {"create_hresult", static_cast<qint64>(creation)},
-                         {"created_by_this_run", profile.created},
-                         {"sid_freed", profile.sid_freed},
-                         {"sid_hex", QString::fromLatin1(profile.sid.toHex())}}),
+                        {{"profile_name", name},
+                         {"creation_attempted", creation.create_attempted},
+                         {"create_hresult", creation.create_hresult
+                                                ? QJsonValue{static_cast<qint64>(*creation.create_hresult)}
+                                                : QJsonValue{QJsonValue::Null}},
+                         {"created_by_this_run", creation.created},
+                         {"sid_freed", creation.sid_released},
+                         {"sid_hex", QString::fromLatin1(creation.sid.toHex())},
+                         {"owner_prepared", prepared},
+                         {"owner_state", static_cast<int>(owner.state())}}),
                 "profile receipt");
-        // Never derive/reuse an existing profile, including ERROR_ALREADY_EXISTS.
-        require(creation == S_OK && profile.created && profile.sid_freed,
-                "profile creation did not exclusively succeed");
-        auto container = WindowsDownloadAppContainer::fromTrustedSid(profile.sid);
-        require(container != nullptr, "profile SID capability");
+        require(prepared, "durable owner preparation failed; preserve uncertain history/profile");
+        const auto container = owner.capability();
+        require(container && container->nativeUseFence(), "owned profile SID/fence capability");
+        const auto no_child = runNoChild(temporary.path(), container, journal, native_acks);
+        require(receipt(options.evidence, QStringLiteral("05-no-child.json"), no_child), "no-child receipt");
+        require(native_acks && no_child.value("passed").toBool(), "no-child proof failed");
         bool helper_passed = false;
-        const auto helper = runHelper(temporary.path(), container, loopback.port, helper_passed, profile.native_acks);
+        const auto helper = runHelper(temporary.path(), container, loopback.port, udp.port, helper_passed, native_acks);
         require(receipt(options.evidence, QStringLiteral("02-helper-result.json"), helper), "helper receipt");
-        require(profile.native_acks, "helper ACK uncertain; remaining cases/profile cleanup refused");
+        require(native_acks, "helper ACK uncertain; remaining cases/profile cleanup refused");
+        require(udp.positiveControl(), "UDP parent post-control failed");
         QJsonArray media;
-        const bool media_passed = runMedia(temporary.path(), container, media, profile.native_acks);
-        results = {{"helper_passed", helper_passed}, {"media_passed", media_passed}, {"media", media}};
-        passed = helper_passed && media_passed;
+        const bool media_passed = runMedia(temporary.path(), container, media, native_acks);
+        results = {{"helper_passed", helper_passed},
+                   {"media_passed", media_passed},
+                   {"media", media},
+                   {"no_child_passed", no_child.value("passed")},
+                   {"udp_controls_passed", true}};
+        require(native_acks, "media ACK uncertain; cancellation/profile cleanup refused");
+        const auto cancellation = runCancellation(temporary.path(), container, owner, journal, *platform, native_acks);
+        require(receipt(options.evidence, QStringLiteral("07-cancel-and-drain.json"), cancellation), "cancel receipt");
+        results.insert(QStringLiteral("cancellation_passed"), cancellation.value("passed"));
+        passed =
+            helper_passed && media_passed && no_child.value("passed").toBool() && cancellation.value("passed").toBool();
     } catch (const std::exception& error) {
         results.insert(QStringLiteral("failure"), QString::fromLatin1(error.what()));
     } catch (...) {
         results.insert(QStringLiteral("failure"), QStringLiteral("unexpected exception"));
     }
-    // Only the explicit ACK aggregate permits cleanup. Destruction or elapsed
-    // deadlines cannot authorize removal. An uncertain owner is retained until
-    // this driver exits and the owned profile/TEMP are preserved for review.
+    // Only the explicit ACK aggregate permits asking the durable owner to
+    // close. Native process/runtime owners are retained on uncertainty; the
+    // profile owner's destructor revokes admission without deleting/writing.
+    const bool cleanup = native_acks && owner.close() && owner.state() == WindowsMediaProfileOwnerState::Removed;
+    const auto profile = platform->report();
     QJsonArray deletions;
-    for (int attempt = 0; mayRemoveProfile(profile.created, profile.native_acks) && attempt < 2; ++attempt)
-        deletions.append(static_cast<qint64>(profile.remove()));
-    const bool cleanup = confirmedProfileCleanup(creation == S_OK, profile.created, profile.native_acks);
-    const bool cleanup_receipt =
-        receipt(options.evidence, QStringLiteral("04-profile-cleanup.json"),
-                {{"profile_name", profile.name},
-                 {"creation_attempted", creation_attempted},
-                 {"created_by_this_run", creation == S_OK},
-                 {"delete_hresults", deletions},
-                 {"cleanup_confirmed_by_api", cleanup},
-                 {"all_native_acks", profile.native_acks},
-                 {"remaining_status", !creation_attempted    ? "creation-not-attempted-no-delete"
-                                      : creation != S_OK     ? "creation-failed-state-uncertain-no-delete"
-                                      : !profile.native_acks ? "native-ACK-uncertain-profile-preserved"
-                                      : profile.created      ? "undetermined-preserve-and-review"
-                                                             : "API-complete"}});
-    results.insert(QStringLiteral("passed"), passed && cleanup && cleanup_receipt);
+    if (profile.remove_hresult)
+        deletions.append(static_cast<qint64>(*profile.remove_hresult));
+    const auto final_record = journal.load();
+    const bool journal_removed =
+        final_record.record && final_record.record->stage == DownloadMediaProfileStage::Removed;
+    const bool cleanup_receipt = receipt(
+        options.evidence, QStringLiteral("04-profile-cleanup.json"),
+        {{"profile_name", name},
+         {"creation_attempted", profile.create_attempted},
+         {"created_by_this_run", profile.created},
+         {"delete_hresults", deletions},
+         {"cleanup_confirmed_by_api", cleanup},
+         {"all_native_acks", native_acks},
+         {"absence", static_cast<int>(profile.absence)},
+         {"journal_removed_saved", journal_removed},
+         {"owner_state", static_cast<int>(owner.state())},
+         {"remaining_status", cleanup && journal_removed ? "owner-removed-saved" : "unconfirmed-preserve-and-review"}});
+    results.insert(QStringLiteral("passed"), passed && cleanup && journal_removed && cleanup_receipt);
     results.insert(QStringLiteral("profile_cleanup"), cleanup);
-    results.insert(QStringLiteral("creation_attempted"), creation_attempted);
-    results.insert(QStringLiteral("all_native_acks"), profile.native_acks);
+    results.insert(QStringLiteral("creation_attempted"), profile.create_attempted);
+    results.insert(QStringLiteral("all_native_acks"), native_acks);
+    results.insert(QStringLiteral("owner_removed_saved"), journal_removed && cleanup);
     results.insert(QStringLiteral("temporary"), temporary.path());
     const bool result_receipt = receipt(options.evidence, QStringLiteral("03-results.json"), results);
-    const bool complete = passed && profile.native_acks && cleanup && cleanup_receipt && result_receipt;
+    const bool complete = passed && native_acks && cleanup && journal_removed && cleanup_receipt && result_receipt;
     if (complete)
         temporary.setAutoRemove(true);
     return complete ? 0 : 1;

@@ -7,7 +7,7 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
-Checkpoint de 2026-11-04: a [entrada por handle somente de leitura](download-conversion.md#entrada-de-mídia-por-capability-de-leitura) substitui caminhos no protocolo privado dos workers Media Foundation. Conversão, validação e recuperação usam os arquivos já retidos; a liberação no ACK físico permite a limpeza no NTFS. Fechamento focado: **14/14 CTest**, **494 casos Qt**, quatro skips históricos de symlink; o total combina 493 casos do fechamento com a reexecução de 23 casos da conversão após acrescentar a regressão de entrada ausente. Evidências em `out/product/test-runs/media-foundation-read-input-20261104/`. Sandbox efetiva, composição de produção, instalação e demais gates de R1 continuam pendentes; opcionais remotos permanecem OFF.
+Checkpoint de 2026-11-04: o [backend nativo de perfil e o owner durável](media-profile-lifecycle.md#ensaio-composto-autorizado) estão compostos no probe autorizado, com prova física de ausência de filho, cancelamento/drenagem, conversão/segunda validação de MP3/AAC/WAV e Removed Saved após ausência conferida. Fechamento focado **20/20 CTest**, **779 casos Qt**, dois skips históricos de symlink. A prova específica do limite do Job passou; rede, armazenamento/cotas/resíduos do perfil e composição instalada continuam pendentes. Um perfil da primeira tentativa foi preservado para revisão. Downloads de produção permanecem OFF.
 
 ## 1. Regras de uso
 
@@ -745,7 +745,21 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — propriedade durável de perfil e ensaio AppContainer autorizado
+### Checkpoint atual — backend nativo e owner no probe autorizado
+
+Incremento de 2026-11-04: `WindowsNativeMediaProfile` implementa a porta real, com criação única, recusa de colisão/adoção, SID liberado e autoridade somente do par próprio S_OK. Remoção única exige esse par; Delete S_OK é seguido por observação dos locais capturados, sem promover erro/desconhecido a ausência. O backend é limitado ao usuário desktop sem impersonação. O [probe](../tests/windows/sandbox/README.md) compõe owner, journal privado, lease e fence; o player normal ainda não usa esse owner.
+
+TDD: backend **14 passagens/25 falhas → 39/39**, protocolo v2 **21/11 → 32/32**, notificação de Job no supervisor **58/1 → 59/59**. Fechamento **20/20 CTest / 779 passagens Qt**, dois skips históricos de symlink; Release de documentos e do opcional/player, zero testes nos caches de produção, formato **414 C++/62 QML** e fronteira Lite **255 comandos** passaram. Logs em `out/product/test-runs/native-profile-composition-20261104/`; escopo focado, sem alegação de suíte inteira, instalação ou release.
+
+Os ensaios compostos `media-owner-native-authorized-20261104-{02,03}` passaram NoChild, cancelamento com término nativo antes do ACK, Draining com journal InUse, recusa de novo launch e ClosedQuiescent após drenagem. MP3/AAC/WAV converteram e passaram pela segunda validação. Cada perfil teve um Delete S_OK, ausência confirmada e Removed Saved; a conferência externa registrou pacote/chaves SID exatas ausentes. O helper manteve máscara bruta **29695**, efetiva **30719/32767**: raw 1816 acompanhado de `JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT` comprova o limite do Job; TCP **10060** e UDP `sendto=0` continuam sem prova de negação. Portanto `helper_passed=false` e `passed=false`; os TEMP foram preservados.
+
+O ensaio composto 01 recebeu Create S_OK e parou antes de qualquer worker porque a captura do locator recusou o alias REG_LINK de `HKCU\Software\Classes`. A correção usa a âncora predefinida `HKEY_CURRENT_USER_LOCAL_SETTINGS`, mantendo recusa de links abaixo dela e o path real retornado pelo Windows. O perfil **`RCMusic.Media.6a06e082-f85d-4d0d-97f0-f70f8bfd7c24`**, seu Planned e TEMP permanecem preservados para revisão, sem Delete ou adoção por Loaded. Os recibos e os limites físicos estão no [registro central](media-profile-lifecycle.md#ensaio-composto-autorizado).
+
+Próxima sequência: concluir a prova de rede e a política de escrita/cotas/resíduos do perfil, revisar o resíduo preservado e só então promover a composição protegida de produção. Integração instalada, engine física da Completa, opcionais/upgrade, acessibilidade, segurança/licenças e release mantêm seus gates. ADR-0011 permanece Proposto; downloads OFF, benchmarks e Linux adiados.
+
+<a id="checkpoint-atual--propriedade-durável-de-perfil-e-ensaio-appcontainer-autorizado"></a>
+
+### Checkpoint anterior — propriedade durável de perfil e ensaio AppContainer autorizado
 
 Incremento de 2026-11-04: o [ciclo de vida do perfil de mídia](media-profile-lifecycle.md) acrescenta um terceiro documento privado de 8 KiB, com slot único e nome derivado de UUID, sem alterar schemas/limites dos documentos existentes. A lease nativa de operação impede dois donos de atravessar a janela entre leitura e criação. O owner exige Planned Saved antes de criar, Created/InUse Saved antes de emitir capability e CleanupPending Saved antes de remover. Registro carregado ou criação incerta não reconstrói autoridade. Falha póscommit continua Failed até nova gravação reconhecida, sem repetir Create/Delete.
 

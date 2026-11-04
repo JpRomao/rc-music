@@ -479,6 +479,7 @@ struct WindowsDownloadProcess::Impl final {
     WindowsDownloadProcessConfig config{};
     std::unique_ptr<QProcess> process{};
     Handle job{};
+    Handle job_completion_port{};
     Handle process_handle{};
     NativePipe stdout_pipe{};
     NativePipe stderr_pipe{};
@@ -540,6 +541,7 @@ struct WindowsDownloadProcess::Impl final {
         process.reset();
         process_handle.reset();
         job.reset();
+        job_completion_port.reset();
         releaseInputUse();
         config.read_input.reset();
         releaseAttributes();
@@ -572,6 +574,17 @@ struct WindowsDownloadProcess::Impl final {
         limits.JobMemoryLimit = static_cast<SIZE_T>(config.max_memory_bytes);
         if (!::SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
             return false;
+        // Associate the private port while the Job is still inactive. Neither
+        // its handle nor any authority over the Job enters the child's list.
+        job_completion_port.reset(::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1));
+        if (!job_completion_port.valid())
+            return false;
+        JOBOBJECT_ASSOCIATE_COMPLETION_PORT notifications{};
+        notifications.CompletionKey = this;
+        notifications.CompletionPort = job_completion_port.get();
+        if (!::SetInformationJobObject(job.get(), JobObjectAssociateCompletionPortInformation, &notifications,
+                                       sizeof(notifications)))
+            return false;
         LocalAllocation descriptor;
         if (!userPipeSecurity(descriptor) || !stdout_pipe.create(descriptor.value) ||
             !stderr_pipe.create(descriptor.value) ||
@@ -602,6 +615,37 @@ struct WindowsDownloadProcess::Impl final {
                 return false;
         }
         return true;
+    }
+
+    void drainJobEvidence() {
+        if (!job_completion_port.valid())
+            return;
+        // Notifications are diagnostic and may be absent. Never use them to
+        // change process state, manufacture an ACK or authorize cleanup.
+        constexpr unsigned maximum_messages = 32;
+        for (unsigned index = 0; index < maximum_messages; ++index) {
+            DWORD message = 0;
+            ULONG_PTR key = 0;
+            OVERLAPPED* information = nullptr;
+            if (!::GetQueuedCompletionStatus(job_completion_port.get(), &message, &key, &information, 0))
+                break;
+            if (key != reinterpret_cast<ULONG_PTR>(this))
+                continue;
+            switch (message) {
+            case JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT:
+                if (!information)
+                    update.job_evidence.active_process_limit = true;
+                break;
+            case JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT:
+                update.job_evidence.process_memory_limit = true;
+                break;
+            case JOB_OBJECT_MSG_JOB_MEMORY_LIMIT:
+                update.job_evidence.job_memory_limit = true;
+                break;
+            default:
+                break;
+            }
+        }
     }
 
     void stop(WindowsDownloadProcessState state, WindowsDownloadProcessError error) {
@@ -807,8 +851,10 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
     auto& value = *impl_;
     value.update.stdout_chunk.clear();
     value.update.stderr_chunk.clear();
-    if (value.update.state == WindowsDownloadProcessState::Idle || terminal(value.update.state))
+    if (value.update.state == WindowsDownloadProcessState::Idle || terminal(value.update.state)) {
+        value.drainJobEvidence();
         return value.update;
+    }
     if (value.update.state == WindowsDownloadProcessState::Running) {
         if (now_ms < value.last_ms)
             value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::InvalidConfiguration);
@@ -847,6 +893,9 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
             }
         }
     }
+    // The private port survives terminal ACK until release/new start, so late
+    // diagnostic messages can also be collected by subsequent terminal polls.
+    value.drainJobEvidence();
     return value.update;
 }
 
