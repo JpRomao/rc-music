@@ -1,5 +1,7 @@
 # RC Music
 
+O [instalador Lite local atualizado](docs/local-delivery-f14ab11-20261104.md) foi gerado do commit `f14ab11`, com inventário e hashes conferidos, sem instalar ou executar o setup. Navegação e downloads opcionais permanecem OFF no pacote.
+
 A [entrada de mídia dos workers nativos](docs/download-conversion.md#entrada-de-mídia-por-capability-de-leitura) usa handles somente de leitura derivados dos arquivos já retidos pelo processo principal. Conversão, segunda validação e recuperação não enviam caminhos ao worker; o supervisor libera sua referência após encerrar o processo e drenar os pipes. Os checks focados passaram em **14/14 CTest**, com **494 casos Qt e quatro skips históricos de symlink**, incluindo a reexecução da validação de entrada ausente. Isso prepara o isolamento; sandbox e downloads de produção permanecem pendentes/OFF.
 
 A [recuperação de conflitos na identificação dos downloads](docs/download-jobs.md#recuperação-da-identificação-dos-próximos-downloads) preserva o histórico e reserva outra identificação somente para pedidos futuros. O painel instrumentado oferece **Recuperar histórico** quando essa ação pode resolver a causa; divergências entre recibos continuam bloqueadas para revisão. A ação usa os dados já carregados, sem baixar, importar ou gravar arquivos; produção remota permanece OFF.
