@@ -1412,6 +1412,22 @@
         {
           "path": "tests/qt/AppContainerStorageNativeSessionTests.cpp",
           "marker": "liveInventoryComposesRealFixtureFilesAndFakeRegistry"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageProbeOptionsTests.cpp",
+          "marker": "explicitProfileModeKeepsOnlyAnOwnedNormalizedEvidencePath"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryRunTests.cpp",
+          "marker": "snapshotIsRecordedWhileTheLeaseIsHeldBeforeRevalidationAndClose"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryJsonTests.cpp",
+          "marker": "boundedMetadataPreservesEveryFieldWithoutPolicyInterpretation"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageProbeEvidenceTests.cpp",
+          "marker": "journalIsAFreshFixedChildAndItsDaclIsAcceptedByTheRealStoreAndFakeOwner"
         }
       ],
       "evidence": [
@@ -1438,6 +1454,14 @@
         {
           "path": "docs/development-plan.md",
           "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Probe separado do inventário de storage"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "### Probe separado do inventário de storage"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1978,6 +2002,30 @@
         {
           "path": "tests/qt/AppContainerStorageNativeSessionTests.cpp",
           "marker": "uncertainRegistryCloseCannotAcknowledgeTheLiveFence"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageProbeOptionsTests.cpp",
+          "marker": "flagOrderAndCountCannotEnableOtherWork"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryRunTests.cpp",
+          "marker": "closeErrorsContradictionsBusyAndThrowsNeverBecomeAnAckOrAutomaticRetry"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryRunTests.cpp",
+          "marker": "cancellationWhileRecordingRevokesTheObservationAndDrainsOnlyAfterExplicitReadClose"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryJsonTests.cpp",
+          "marker": "observedAndClosedNeverGrantPolicyOrCleanupAuthority"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageProbeEvidenceTests.cpp",
+          "marker": "partialWriteWriteErrorFlushErrorAndCloseErrorArePreservedWithoutRetry"
+        },
+        {
+          "path": "tests/windows/sandbox/AppContainerStorageProbeMain.cpp",
+          "marker": "Pure receipt-correlation regression. Readback is never the owner's Saved"
         }
       ],
       "evidence": [
@@ -2004,6 +2052,14 @@
         {
           "path": "docs/quality/testing-strategy.md",
           "marker": "### Leitor de Registro e factory de sessão de quatro raízes"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Probe separado do inventário de storage"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Probe separado do inventário de storage"
         },
         {
           "path": "docs/process-tests.md",

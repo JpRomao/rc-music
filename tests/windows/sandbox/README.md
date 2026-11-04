@@ -138,6 +138,45 @@ O diagnóstico separado `out/product/test-runs/media-storage-registry-binding-20
 
 `native-binding-readonly.json`/`native-binding-run.json` registram imagem SHA-256 `195a39eb6e0a4e9558d7dbbd13275d826c17d0f1e5357f3a5a11a52d639fc577`, exit 0, três Notify 0/polls Wait0 Unchanged, três key closes 0/três event closes 0 e apenas erros/contagens na saída. Não foi solicitado UAC e não houve captura de token, chamadas de perfil ou WFP. O resultado não qualifica mudança real pelos watches, tipo comum, links incompletos, identidade/atomicidade/ABA, MIC ou política. O preflight histórico --readonly e seus sete RegClose 0 não foram ampliados nem substituídos por esse diagnóstico. Inventário físico das quatro raízes em perfil, produção e demais gates continuam pendentes; ADR-0011 Proposto, downloads OFF e autorização WFP consumida.
 
+### Probe separado do inventário de storage
+
+`rc_music_storage_inventory_probe` é outro executável, dedicado ao inventário do perfil próprio. Compõe Source viva, sessão nativa File/Registry, Recorder e owner durável; não depende do probe/helper WFP congelados ou de worker/rede. O modo de perfil **ainda não foi executado** e exige nova autorização específica após build/revisão/commit, conforme [ADR-0011](../../../docs/architecture/decisions/0011-media-worker-appcontainer.md#contexto). O `--allow-profile-changes` é somente uma opção de admissão, não substitui a autorização do mantenedor nem reutiliza o consentimento WFP consumido.
+
+Os comandos abaixo compilam/testam apenas a preparação. O CTest do probe chama exclusivamente `--self-test`, sem consultas de token, diretório, Registro, perfil ou storage nativo; help/recusas também não entram no modo host:
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_storage_inventory_probe rc_music_AppContainerStorageProbeOptions_tests rc_music_AppContainerStorageInventoryRun_tests rc_music_AppContainerStorageInventoryJson_tests rc_music_AppContainerStorageProbeEvidence_tests --parallel 3
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.(AppContainerStorage(ProbeOptions|InventoryRun|InventoryJson|ProbeEvidence)|StorageInventoryProbeSelfTest)$' --output-on-failure
+```
+
+Options passou **54/54 Qt**, Run **26/26**, JSON **44/44**, Evidence **25/25** e self-test **20/20 casos puros**. Chamadas de perfil/sessão são falsas no Run; Evidence usa filesystem/token somente em fixtures TEMP próprias, com store real/owner falso. Os detalhes de Red/Green e limites ficam no [registro central](../../../docs/media-profile-lifecycle.md#probe-separado-do-inventário-de-storage). Esses testes não confirmam um inventário AppContainer real ou sua política de escrita/MIC.
+
+O fechamento ampliado passou **14/14 CTest, 538 Qt + 33 casos puros**, sem falhas/skips, formato **473 C++/62 QML**, build Lite e fronteira de **255 comandos**. O executável preparado tem SHA-256 `5a1bc6d3985be5291e4da230eab3eb2e398116781cbe0f0d373dc36a00529d1e`; isso identifica o artefato para revisão, sem autorizar seu modo de perfil. As duas novas fixtures Files intencionais e as dez históricas continuam preservadas.
+
+O modo manual aceita somente `--allow-profile-changes --evidence-dir <nova folha absoluta no workspace compilado/out/product>`, sem nome/SID de perfil ou outros modos. Antes de qualquer preparação no host, exige processo primário Medium normal e ausência de token de thread. Deriva UUID internamente e só usa o locator do próprio backend S_OK. Não solicita elevação, instala, lança workers, acessa rede/WFP ou muda ACL/política do perfil. A pasta de evidência é criada NewOnly e permanece preservada; pins posteriores à criação não provam identidade atômica CreateDirectory→pin sob troca concorrente da folha.
+
+Depois da autorização específica para o novo binário e a execução, a forma do comando é:
+
+```powershell
+$rcEvidence = Join-Path (Get-Location).Path ('out/product/test-runs/storage-inventory-' + [Guid]::NewGuid().ToString('D'))
+& 'out/product/m1-desktop-release-on-20260906/rc_music_storage_inventory_probe.exe' --allow-profile-changes --evidence-dir $rcEvidence
+```
+
+O runtime Qt deve estar no PATH conforme o ambiente de build; o comando não baixa dependências. As folhas são fixas:
+
+| Folha | Conteúdo |
+|---|---|
+| `00-before-profile.json` | UUID, imagem/hash diagnóstico, contexto do processo e intenção antes de criar perfil |
+| `01-profile-result.json` | resultado do owner/criação e locator capturado da mesma operação/usuário |
+| `02-inventory.json` | snapshot privado com owner/SD/flags e erros parciais, gravado com lease de leitura viva |
+| `03-read-close.json` | pós-revalidação, fechamento e I/O do snapshot separados |
+| `04-profile-cleanup.json` | pedido ao mesmo owner, Delete/ausência e Removed Saved, sem fallback |
+| `05-result.json` | candidato `checks_passed_before_result_receipt`, antes de reconhecer a própria gravação |
+
+O journal fica no novo filho privado `profile-journal`, com DACL protegida usuário/SYSTEM e duas ACEs de flags 0. Cada folha aceita no máximo uma aquisição, sem overwrite/delete/retry; Saved exige write/flush/close explícitos. Erro de close conserva o handle no processo até exit, sem ACK por destrutor. Apenas stdout posterior inclui `result_receipt_saved` e `passed`; exit 0 exige também fwrite/fflush completos. Readback exige job/UUID/SID/Removed exatos e nunca promove Save ou owner.close falho.
+
+Run mantém observação, gravação e Closed/0 distintos; Recorder false/throw ainda fecha recursos conhecidos e cancelamento durante gravação resulta em Unknown/995 pela lease externa. Snapshot Incomplete não vira aprovação, mas pode permitir cleanup legítimo do perfil próprio após fechar as leituras. Storage/SID ausente continua Missing/Incomplete e não é criado para passar. A evidência/journal sempre é preservada, mesmo se o owner remover seu perfil com confirmação; incerteza preserva perfil/estado para revisão, sem limpeza recursiva de perfil/Registro. MIC, cotas/resíduos, política, rede e produção continuam pendentes; ADR-0011 Proposto e downloads OFF.
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.
