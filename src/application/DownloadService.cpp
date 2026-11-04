@@ -185,7 +185,7 @@ struct DownloadService::Impl {
     DownloadExecution& execution;
     DownloadImport& importer;
     DownloadRequestIdentity* const identity;
-    const std::string prefix;
+    std::string prefix;
     const DownloadServiceLimits limits;
     std::vector<Receipt> receipts;
     std::vector<Job> jobs;
@@ -421,17 +421,24 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint,
 
 DownloadRecoveryReport DownloadService::recoveryReport() const { return impl_->recovery_report; }
 
+bool DownloadService::restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint) {
+    return restoreImpl(checkpoint, {}, false, true);
+}
+bool DownloadService::restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint,
+                                                std::span<const DownloadImportReceipt> confirmed_imports) {
+    return restoreImpl(checkpoint, confirmed_imports, true, true);
+}
+
 bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
-                                  const std::span<const DownloadImportReceipt> confirmed_imports,
-                                  const bool reconcile) {
+                                  const std::span<const DownloadImportReceipt> confirmed_imports, const bool reconcile,
+                                  const bool fresh_namespace) {
     auto& state = *impl_;
     if (state.calling_port || state.closed || !state.valid_configuration || state.identity == nullptr ||
         state.restoration_performed || state.active.has_value() || !state.receipts.empty() || !state.jobs.empty())
         return false;
 
     const auto fail = [&](const DownloadRecoveryStatus status) {
-        if (reconcile)
-            state.recovery_report = {.status = status};
+        state.recovery_report = {.status = status};
         return false;
     };
     // Validate and allocate a complete replacement before committing any ownership.
@@ -441,14 +448,39 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
             checkpoint.jobs.size() > state.limits.max_jobs ||
             (reconcile && !isValidDownloadImportReceipts(confirmed_imports)))
             return fail(DownloadRecoveryStatus::InvalidHistory);
-        const auto namespace_prefix = state.prefix + '-';
-        if (std::ranges::any_of(
-                checkpoint.jobs,
-                [&](const DownloadJobSnapshot& job) { return job.job_id.starts_with(namespace_prefix); }) ||
-            std::ranges::any_of(confirmed_imports, [&](const DownloadImportReceipt& receipt) {
-                return receipt.job_id.starts_with(namespace_prefix);
-            }))
-            return fail(DownloadRecoveryStatus::NamespaceConflict);
+        auto prefix = state.prefix;
+        const auto conflicts = [&](const std::string& candidate) {
+            const auto family = candidate + '-';
+            return std::ranges::any_of(
+                       checkpoint.jobs,
+                       [&](const DownloadJobSnapshot& job) { return job.job_id.starts_with(family); }) ||
+                   std::ranges::any_of(confirmed_imports, [&](const DownloadImportReceipt& receipt) {
+                       return receipt.job_id.starts_with(family);
+                   });
+        };
+        if (conflicts(prefix)) {
+            if (!fresh_namespace)
+                return fail(DownloadRecoveryStatus::NamespaceConflict);
+            const auto base = prefix.substr(0, 35);
+            const auto maximum_choices = checkpoint.jobs.size() + confirmed_imports.size() + 1;
+            bool selected = false;
+            // Valid histories contain at most 128 jobs and 128 import receipts.
+            // Equal-width, '-' delimited families are pairwise disjoint: each
+            // retained ID can exclude at most one of these N+1 candidates.
+            for (std::size_t index = 1; index <= maximum_choices; ++index) {
+                const auto number = std::to_string(index);
+                if (number.size() > 3)
+                    return fail(DownloadRecoveryStatus::NamespaceConflict);
+                auto candidate = base + "-r" + std::string(3 - number.size(), '0') + number;
+                if (!conflicts(candidate)) {
+                    prefix = std::move(candidate);
+                    selected = true;
+                    break;
+                }
+            }
+            if (!selected)
+                return fail(DownloadRecoveryStatus::NamespaceConflict);
+        }
         std::size_t retained_bytes = 0;
         for (const auto& receipt : checkpoint.receipts) {
             if (receipt.retained_request_bytes > state.limits.max_retained_request_bytes - retained_bytes)
@@ -554,6 +586,7 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
                                 .recovered = true});
         }
 
+        state.prefix.swap(prefix);
         state.receipts.swap(receipts);
         state.jobs.swap(jobs);
         state.recovery_report = std::move(report);

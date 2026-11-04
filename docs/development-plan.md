@@ -743,7 +743,13 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — navegação experimental da Completa
+### Checkpoint atual — recuperação da identificação dos downloads
+
+Em 2026-11-04, o [contrato de recuperação](download-jobs.md#recuperação-da-identificação-dos-próximos-downloads) acrescenta uma ação explícita para `NamespaceConflict`: checkpoint e ledger já carregados são restaurados atomicamente, preservando IDs, recibos e quotas, com identificação nova somente para admissões futuras. O painel comum projeta **Recuperar histórico**; `ReceiptConflict` exige revisão e não oferece retry sem efeito. Não há reload/save, execução, importação ou acesso a arquivos nessa ação. Produção remota permanece OFF; divergências, composição protegida e distribuição continuam nos gates próprios.
+
+TDD do núcleo: Red de 16 casos/27 assertions falhas, Green de 16 casos/379 assertions e regressão atual **163/163 CTest**. UI: Red binding **80 passagens/7 falhas** e Quick **272/5**; Green **4/4 CTest, 407 casos Qt** (binding 87, validação recuperada 8, contrato 35, Quick 277). Release Lite OFF/lint, grafo de 255 comandos/zero testes e Release opcional/zero testes passaram; formato conferiu 368 fontes C++ e 62 QML. Evidências em `out/product/test-runs/download-namespace-recovery-20261103/`; o nome do diretório conserva a data de início do incremento. Empacotamento é registrado separadamente, sem transferir evidência para o produto instalado.
+
+### Checkpoint anterior — navegação experimental da Completa
 
 Incremento de 2026-11-03: a [composição WebView2](embedded-browser.md), documentada no ADR-0010 Proposto, acrescenta `RC_MUSIC_BUILD_EMBEDDED_BROWSER=OFF` e SDK local explícito. Main recebe binding nullable; somente ON oferece Navegar e somente o clique pode criar a janela modeless com endereço/voltar/avançar/recarregar/parar. Porta pura, binding Qt e adapter nativo mantêm páginas separadas do presenter/filesystem/serviços. A janela usa STA e perfil próprio por instância, reutilizado ao reabrir; callbacks fracos/geração descartam resultados antigos. Policy aceita HTTPS explícito e configura recusas de permissões, popups, downloads, autenticação/certificados e protocolos externos, sem importar o perfil Brave.
 

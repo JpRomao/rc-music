@@ -23,5 +23,6 @@ QtObject {
     readonly property string retryFinalSave: qsTr("Tentar salvar o histórico novamente")
     readonly property string retryImport: qsTr("Tentar importar novamente")
     readonly property string retryStartup: qsTr("Tentar carregar o histórico novamente")
+    readonly property string recoverHistory: qsTr("Recuperar histórico")
     readonly property string title: qsTr("Downloads")
 }

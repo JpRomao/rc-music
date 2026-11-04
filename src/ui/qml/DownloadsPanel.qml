@@ -28,6 +28,7 @@ Popup {
     readonly property bool retryAdmissionAvailable: downloads !== null && downloads.canRetryAdmission
     readonly property bool retryFinalSaveAvailable: downloads !== null && downloads.canRetryFinalSave
     readonly property bool retryStartupAvailable: downloads !== null && downloads.canRetryStartup
+    readonly property bool renewNamespaceAvailable: downloads !== null && downloads.canRenewNamespace
     readonly property string warning: downloads !== null ? downloads.warningText : ""
 
     signal exitRequested
@@ -169,7 +170,7 @@ Popup {
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
     function topControls() {
-        return [closeButton, retryStartupButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
+        return [closeButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -254,6 +255,23 @@ Popup {
             onClicked: {
                 if (root.retryStartupAvailable)
                     root.downloads.retryStartup();
+            }
+        }
+        AccessibleTransportButton {
+            id: renewNamespaceButton
+
+            KeyNavigation.backtab: root.nextTopControl(renewNamespaceButton, true)
+            KeyNavigation.tab: root.nextTopControl(renewNamespaceButton, false)
+            Layout.fillWidth: true
+            contract: root.contract
+            enabled: root.renewNamespaceAvailable
+            objectName: "downloads-renew-namespace"
+            text: labels.recoverHistory
+            visible: root.renewNamespaceAvailable
+
+            onClicked: {
+                if (root.renewNamespaceAvailable)
+                    root.downloads.renewNamespace();
             }
         }
         AccessibleTransportButton {

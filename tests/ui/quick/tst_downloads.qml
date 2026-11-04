@@ -409,6 +409,74 @@ TestCase {
             return !finalSave.visible || !finalSave.enabled;
         });
     }
+    function test_historyRecoveryUsesOnlyItsLiveCapability() {
+        downloads.canRenewNamespace = true;
+        downloads.warningText = "Os dados e as confirmações de importação serão preservados.";
+        const playback = presenter.playbackState;
+        const loads = driver.localLoadCount();
+        const panel = openDownloads();
+        const recover = findChild(shell, "downloads-renew-namespace");
+        verifyTarget(recover);
+        compare(recover.text, "Recuperar histórico");
+        compare(recover.Accessible.name, recover.text);
+        compare(findChild(shell, "downloads-retry-startup").visible, false);
+        compare(downloads.namespaceRenewals, 0);
+        mouseClick(recover);
+        compare(downloads.namespaceRenewals, 1);
+        compare(downloads.startupRetries, 0);
+        compare(presenter.playbackState, playback);
+        compare(driver.localLoadCount(), loads);
+        compare(jobs.count, 0);
+        verify(panel.visible);
+        downloads.canRenewNamespace = false;
+        tryVerify(function () {
+            return !recover.visible || !recover.enabled;
+        });
+        recover.clicked();
+        compare(downloads.namespaceRenewals, 1, "Revoked recovery must not dispatch another command");
+    }
+    function test_conflictingReceiptsDoNotExposeAnIneffectiveRecoveryAction() {
+        downloads.warningText = "O histórico diverge das confirmações de importação. Os dados foram preservados; revisão necessária.";
+        const panel = openDownloads();
+        const recover = findChild(shell, "downloads-renew-namespace");
+        verify(recover);
+        compare(recover.visible, false);
+        compare(findChild(shell, "downloads-retry-startup").visible, false);
+        compare(findChild(shell, "downloads-warning").textFormat, Text.PlainText);
+        compare(findChild(shell, "downloads-warning").text, downloads.warningText);
+        recover.clicked();
+        compare(downloads.namespaceRenewals, 0);
+        compare(downloads.startupRetries, 0);
+        verify(panel.visible);
+    }
+    function test_historyRecoveryFitsMinimumWindowAndKeepsKeyboardFocus(data) {
+        driver.setSystemAppearance(data.dark, false);
+        driver.setHighContrast(data.contrast, false);
+        downloads.canRenewNamespace = true;
+        downloads.warningText = "Não foi possível reconciliar o histórico. Selecione Recuperar histórico para verificar novamente. Os dados e as confirmações de importação serão preservados.";
+        const panel = openDownloads();
+        const recover = findChild(shell, "downloads-renew-namespace");
+        verifyTarget(recover);
+        verify(panel.width <= 672 && panel.height <= 472);
+        const position = recover.mapToItem(shell.contentItem, 0, 0);
+        verify(position.x >= 0 && position.y >= 0);
+        verify(position.x + recover.width <= shell.width + 0.5);
+        verify(position.y + recover.height <= shell.height + 0.5);
+        recover.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return findChild(shell, "downloads-list").activeFocus;
+        });
+        keyClick(Qt.Key_Backtab);
+        tryVerify(function () {
+            return recover.activeFocus;
+        });
+        verify(!visibleText(panel.contentItem).includes("namespace"));
+        compare(downloads.namespaceRenewals, 0);
+    }
+    function test_historyRecoveryFitsMinimumWindowAndKeepsKeyboardFocus_data() {
+        return test_smallWindowUsesThemeAndKeepsControlsVisible_data();
+    }
     function test_revokedCloseCapabilityCannotReuseConsent() {
         downloads.canCloseAfterFinalSaveFailure = true;
         openDownloads();
@@ -990,11 +1058,13 @@ TestCase {
             property bool canRetryAdmission: false
             property bool canRetryFinalSave: false
             property bool canRetryStartup: false
+            property bool canRenewNamespace: false
             property int finalSaveRetries: 0
             property bool exitObservedDuringAbandonment: false
             property int exitCallsObservedDuringAbandonment: -1
             property var jobsModel: jobs
             property int startupRetries: 0
+            property int namespaceRenewals: 0
             property var reviewedIds: []
             property var discardedIds: []
             property var validatedIds: []
@@ -1025,6 +1095,10 @@ TestCase {
             }
             function retryStartup() {
                 ++startupRetries;
+            }
+            function renewNamespace() {
+                ++namespaceRenewals;
+                return true;
             }
             function reviewFiles(jobId) {
                 reviewedIds = reviewedIds.concat([jobId]);

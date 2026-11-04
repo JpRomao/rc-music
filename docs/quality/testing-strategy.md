@@ -23,6 +23,8 @@ O estado Red é observado na execução local/CI focada e seu teste + motivo de 
 
 ## 2. Princípios
 
+O incremento de [recuperação da identificação](../download-jobs.md#recuperação-da-identificação-dos-próximos-downloads) verifica preservação de IDs/recibos/quotas, busca limitada no histórico cheio, rollback diante de divergência posterior e recusa após uso/saída/reentrada. O Red comportamental teve 16 casos falhos/27 assertions falhas; o Green teve 16 casos/379 assertions e o core recompilado passou 163/163 CTest. O baseline anterior de 126 casos veio de binário em cache e não representa a fonte atual. UI instrumentada, produção Lite e instalador têm verificações próprias.
+
 - testar comportamento público, não detalhes de implementação;
 - preferir testes pequenos e determinísticos a grandes testes frágeis;
 - manter domínio testável sem Qt, QML, Tauri, WebView, dispositivo, clock real ou arquivos pessoais;

@@ -86,6 +86,10 @@ Essa composição ainda não oferece detecção/seleção interna de mídia ou d
 
 **O app não inicia ou o Windows bloqueia o artefato:** registre a mensagem exata e consulte os [pré-requisitos e limites do runtime](windows-runtime.md) e do [instalador](windows-installer.md). Não desative antivírus/SmartScreen, não baixe DLLs avulsas e não apague configurações ou entradas de Registry para contornar o problema. Encaminhe a mensagem ao mantenedor.
 
+## Histórico de downloads instrumentados
+
+Na composição instrumentada de downloads, **Recuperar histórico** aparece quando é possível restaurar os registros preservados e reservar outra identificação para futuros pedidos. A ação não baixa, importa, apaga ou grava arquivos. Quando o aviso informa divergência entre histórico e confirmações da fila, os dados ficam preservados e precisam de revisão; repetir a leitura não resolve essa divergência. Downloads continuam desligados no player e no instalador Lite de produção.
+
 ## Diagnóstico local opcional
 
 Primeiro use **Detalhes da faixa → Mostrar diagnóstico**. Para investigar uma falha com o mantenedor, o executável Windows real aceita `--diagnostics`. Encerre a instância existente pelo próprio app; depois, em PowerShell aberto na pasta do runtime que contém `RCMusic.exe`, use:

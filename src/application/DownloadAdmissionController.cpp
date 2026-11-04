@@ -60,6 +60,8 @@ struct DownloadAdmissionController::Impl {
     bool reconcile_imports{false};
     bool import_history_healthy{false};
     std::vector<DownloadImportReceipt> import_receipts{};
+    std::optional<DownloadCheckpoint> namespace_checkpoint{};
+    DownloadRecoveryStatus blocked_recovery_status{DownloadRecoveryStatus::NotRequested};
 
     Impl(DownloadService& owner, DownloadCheckpointIo& storage, const DownloadFinalSavePolicy policy)
         : service(owner), io(storage), final_save_policy(policy) {
@@ -162,6 +164,8 @@ struct DownloadAdmissionController::Impl {
     }
     void observeLoad(DownloadCheckpointLoadResult loaded) {
         load_status = loaded.status;
+        namespace_checkpoint.reset();
+        blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
         if (closing)
             return;
         try {
@@ -195,6 +199,9 @@ struct DownloadAdmissionController::Impl {
             const bool restored =
                 reconcile_imports ? service.restore(*checkpoint, import_receipts) : service.restore(*checkpoint);
             if (!restored) {
+                blocked_recovery_status = service.recoveryReport().status;
+                if (blocked_recovery_status == DownloadRecoveryStatus::NamespaceConflict)
+                    namespace_checkpoint = *checkpoint;
                 state = DownloadAdmissionControllerState::Blocked;
                 return;
             }
@@ -202,6 +209,8 @@ struct DownloadAdmissionController::Impl {
             healthy_startup = true;
             state = DownloadAdmissionControllerState::Ready;
         } catch (...) {
+            namespace_checkpoint.reset();
+            blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
             load_status = DownloadCheckpointLoadStatus::Unreadable;
             state = DownloadAdmissionControllerState::Blocked;
         }
@@ -408,8 +417,14 @@ DownloadStartupRecoveryAction DownloadAdmissionController::startupRecoveryAction
     if (owner.operating || owner.closing || owner.healthy_startup || owner.operation ||
         owner.state != DownloadAdmissionControllerState::Blocked)
         return DownloadStartupRecoveryAction::None;
-    return owner.reconcile_imports && !owner.import_history_healthy ? DownloadStartupRecoveryAction::ReloadSession
-                                                                    : DownloadStartupRecoveryAction::RetryCheckpoint;
+    if (owner.reconcile_imports && !owner.import_history_healthy)
+        return DownloadStartupRecoveryAction::ReloadSession;
+    if (owner.blocked_recovery_status == DownloadRecoveryStatus::ReceiptConflict)
+        return DownloadStartupRecoveryAction::ReviewHistory;
+    if (owner.blocked_recovery_status == DownloadRecoveryStatus::NamespaceConflict)
+        return owner.namespace_checkpoint ? DownloadStartupRecoveryAction::RenewNamespace
+                                          : DownloadStartupRecoveryAction::None;
+    return DownloadStartupRecoveryAction::RetryCheckpoint;
 }
 bool DownloadAdmissionController::retryStartup() {
     auto& owner = *impl_;
@@ -417,6 +432,37 @@ bool DownloadAdmissionController::retryStartup() {
         return false;
     const Impl::Guard guard(owner);
     return owner.load();
+}
+bool DownloadAdmissionController::renewStartupNamespace() {
+    auto& owner = *impl_;
+    if (startupRecoveryAction() != DownloadStartupRecoveryAction::RenewNamespace)
+        return false;
+    const Impl::Guard guard(owner);
+    try {
+        std::vector<Impl::Receipt> receipts;
+        receipts.reserve(download_checkpoint_max_receipts);
+        for (const auto& receipt : owner.namespace_checkpoint->receipts)
+            receipts.push_back(
+                {receipt.request_id, {.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids}});
+        const bool restored =
+            owner.reconcile_imports
+                ? owner.service.restoreWithFreshNamespace(*owner.namespace_checkpoint, owner.import_receipts)
+                : owner.service.restoreWithFreshNamespace(*owner.namespace_checkpoint);
+        if (!restored) {
+            owner.blocked_recovery_status = owner.service.recoveryReport().status;
+            if (owner.blocked_recovery_status != DownloadRecoveryStatus::NamespaceConflict)
+                owner.namespace_checkpoint.reset();
+            return false;
+        }
+        owner.confirmed.swap(receipts);
+        owner.namespace_checkpoint.reset();
+        owner.blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
+        owner.healthy_startup = true;
+        owner.state = DownloadAdmissionControllerState::Ready;
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 void DownloadAdmissionController::shutdown() {
     auto& owner = *impl_;

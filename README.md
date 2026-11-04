@@ -1,5 +1,7 @@
 # RC Music
 
+A [recuperação de conflitos na identificação dos downloads](docs/download-jobs.md#recuperação-da-identificação-dos-próximos-downloads) preserva o histórico e reserva outra identificação somente para pedidos futuros. O painel instrumentado oferece **Recuperar histórico** quando essa ação pode resolver a causa; divergências entre recibos continuam bloqueadas para revisão. A ação usa os dados já carregados, sem baixar, importar ou gravar arquivos; produção remota permanece OFF.
+
 A [navegação experimental da Completa](docs/embedded-browser.md) já possui botão **Navegar**, janela própria com endereço/voltar/avançar/recarregar/parar e adapter WebView2. É um build opt-in, sem engine na Lite e sem downloads nativos ou ponte da página para o player. Compilação ON/OFF, contratos e UI com engine falsa foram validados; WebView2 real, detecção interna de mídia e pacote da Completa continuam pendentes. O instalador local existente entrega a Lite.
 
 O [runtime privado do conversor nativo](docs/download-conversion.md#runtime-privado-do-worker-media-foundation) confere e copia o worker antes de usá-lo, mantendo o executável protegido até terminar conversão, validação e encerramento. O preparo ocorre na thread privada, com prazo/cancelamento preservados; **13/13 CTest, 309 casos Qt** passaram. Essa composição ainda depende dos gates de isolamento e integração para habilitar downloads no produto.

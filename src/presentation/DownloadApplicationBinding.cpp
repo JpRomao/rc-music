@@ -94,6 +94,7 @@ struct DownloadApplicationBinding::Impl {
         QString status;
         QString warning;
         bool retry_startup{false};
+        bool renew_namespace{false};
         bool retry_admission{false};
         bool retry_final{false};
         bool close_failed{false};
@@ -515,6 +516,7 @@ QAbstractItemModel* DownloadApplicationBinding::jobsModel() const { return &impl
 QString DownloadApplicationBinding::statusText() const { return impl_->projection.status; }
 QString DownloadApplicationBinding::warningText() const { return impl_->projection.warning; }
 bool DownloadApplicationBinding::canRetryStartup() const { return impl_->projection.retry_startup; }
+bool DownloadApplicationBinding::canRenewNamespace() const { return impl_->projection.renew_namespace; }
 bool DownloadApplicationBinding::canRetryAdmission() const { return impl_->projection.retry_admission; }
 bool DownloadApplicationBinding::canRetryFinalSave() const { return impl_->projection.retry_final; }
 bool DownloadApplicationBinding::canCloseAfterFinalSaveFailure() const { return impl_->projection.close_failed; }
@@ -967,6 +969,13 @@ bool DownloadApplicationBinding::performControl(const std::function<bool()>& act
 bool DownloadApplicationBinding::retryStartup() {
     return performControl([this] { return !impl_->closing && impl_->controller.retryStartup(); });
 }
+bool DownloadApplicationBinding::renewNamespace() {
+    return performControl([this] {
+        return !impl_->closing &&
+               impl_->controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace &&
+               impl_->controller.renewStartupNamespace();
+    });
+}
 bool DownloadApplicationBinding::retryAdmission() {
     return performControl([this] { return !impl_->closing && impl_->controller.retryAdmission(); });
 }
@@ -1067,11 +1076,18 @@ void DownloadApplicationBinding::refreshProjection() {
         break;
     case DownloadAdmissionControllerState::Blocked:
         next.status = tr("Downloads bloqueados para preservar o histórico");
-        next.warning =
-            startup_action == DownloadStartupRecoveryAction::ReloadSession
-                ? tr("Reabra o RC Music para revisar a sessão da fila. Repetir a leitura de downloads não confirma "
-                     "essa sessão; os dados existentes foram preservados.")
-                : tr("Não foi possível reconciliar o histórico. Os dados existentes foram preservados.");
+        if (startup_action == DownloadStartupRecoveryAction::ReloadSession)
+            next.warning = tr("Reabra o RC Music para revisar a sessão da fila. Repetir a leitura de downloads não "
+                              "confirma essa sessão; os dados existentes foram preservados.");
+        else if (startup_action == DownloadStartupRecoveryAction::RenewNamespace)
+            next.warning = tr("Não foi possível reconciliar o histórico de downloads. Selecione Recuperar histórico "
+                              "para verificar novamente. Os dados e as confirmações de importação serão preservados.");
+        else if (startup_action == DownloadStartupRecoveryAction::ReviewHistory)
+            next.warning = tr("O histórico de downloads diverge das confirmações de importação da fila. Os dados "
+                              "foram preservados. É necessária uma revisão desses históricos antes de liberar novos "
+                              "downloads.");
+        else
+            next.warning = tr("Não foi possível reconciliar o histórico. Os dados existentes foram preservados.");
         break;
     case DownloadAdmissionControllerState::Stopping:
         next.status = tr("Encerrando downloads e salvando o histórico");
@@ -1111,6 +1127,7 @@ void DownloadApplicationBinding::refreshProjection() {
         next.warning = tr("A validação do MP3 foi interrompida. Reinicie o RC Music para verificar novamente; "
                           "não há confirmação de importação ou liberação do arquivo.");
     next.retry_startup = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RetryCheckpoint;
+    next.renew_namespace = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RenewNamespace;
     next.retry_admission = !impl_->closing && state == DownloadAdmissionControllerState::AdmissionFailed;
     next.retry_final = impl_->closing && state == DownloadAdmissionControllerState::FinalSaveFailed;
     next.close_failed = next.retry_final;

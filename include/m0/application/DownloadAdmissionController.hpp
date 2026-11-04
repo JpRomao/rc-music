@@ -20,7 +20,7 @@ enum class DownloadAdmissionControllerState {
 };
 
 enum class DownloadFinalSavePolicy { CloseAfterAttempt, HoldForDecision };
-enum class DownloadStartupRecoveryAction { None, RetryCheckpoint, ReloadSession };
+enum class DownloadStartupRecoveryAction { None, RetryCheckpoint, ReloadSession, RenewNamespace, ReviewHistory };
 
 // Single application-thread owner of admission, restoration and checkpoints.
 // Trusted job controls may use the service on that same thread, never submit or
@@ -51,6 +51,9 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     // checkpoint I/O cannot replace untrusted session evidence in this owner.
     [[nodiscard]] DownloadStartupRecoveryAction startupRecoveryAction() const;
     [[nodiscard]] bool retryStartup();
+    // Explicit pure recovery of the already loaded, bounded startup candidate.
+    // It changes only future IDs and never reloads/saves/executes/imports files.
+    [[nodiscard]] bool renewStartupNamespace();
     // HoldForDecision only, after physical service drain. Retry saves the final
     // history, never confirms a failed admission or restarts/imports its jobs.
     [[nodiscard]] bool retryFinalSave();

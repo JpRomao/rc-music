@@ -1313,6 +1313,149 @@ class DownloadApplicationBindingTests final : public QObject {
         QCOMPARE(h.importer.calls, 0);
         QVERIFY(h.io.saves.empty());
     }
+    void namespaceConflictOffersExplicitRecoveryWithoutChangingHistoricalEvidence() {
+        const SessionLoadResult session{
+            .snapshot = {.download_import_receipts = {{.job_id = "fresh-1", .source_path = path()}}},
+            .status = SessionLoadStatus::Loaded};
+        const auto original_session = session;
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {"fresh-2"},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = "fresh-2",
+                                                      .title = "Historical synthetic download",
+                                                      .completed_units = 2,
+                                                      .total_units = 9}}};
+        const auto original_checkpoint = checkpoint;
+        Harness h{session};
+        QVERIFY(h.binding.start());
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
+        QCOMPARE(h.controller.recoveryReport().status, DownloadRecoveryStatus::NamespaceConflict);
+        QVERIFY(h.binding.canRenewNamespace());
+        QVERIFY(!h.binding.canRetryStartup());
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("preservad")));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("fresh")));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("namespace"), Qt::CaseInsensitive));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("rc-music-synthetic")));
+        const auto loads = h.io.loads;
+        QVERIFY(h.binding.renewNamespace());
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+        QVERIFY(!h.binding.canRenewNamespace());
+        QVERIFY(!h.binding.canRetryStartup());
+        QVERIFY(!h.binding.renewNamespace());
+        QCOMPARE(h.io.loads, loads);
+        QVERIFY(h.io.saves.empty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(h.service.snapshot().size(), std::size_t{1});
+        QCOMPARE(h.service.snapshot()[0].job_id, std::string{"fresh-2"});
+        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        const auto restored = h.service.checkpoint();
+        QVERIFY(restored);
+        QCOMPARE(restored->receipts, checkpoint.receipts);
+        QCOMPARE(h.controller.recoveryReport().session_only_job_ids, std::vector<std::string>{"fresh-1"});
+        QCOMPARE(checkpoint, original_checkpoint);
+        QCOMPARE(session.snapshot, original_session.snapshot);
+        QCOMPARE(session.status, original_session.status);
+    }
+    void namespaceRecoveryRejectsReentryWrongThreadAndRevokedOwner() {
+        Harness h{{.snapshot = {.download_import_receipts = {{.job_id = "fresh-1", .source_path = path()}}},
+                   .status = SessionLoadStatus::Loaded}};
+        QVERIFY(h.binding.start());
+        h.io.loaded();
+        h.io.on_poll = [&] { QVERIFY(!h.binding.renewNamespace()); };
+        h.binding.poll();
+        h.io.on_poll = {};
+        QVERIFY(h.binding.canRenewNamespace());
+        const auto loads = h.io.loads;
+        bool accepted = true;
+        std::thread worker([&] { accepted = h.binding.renewNamespace(); });
+        worker.join();
+        QVERIFY(!accepted);
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
+        h.controller.shutdown();
+        // A cached UI capability cannot authorize a command after core shutdown.
+        QVERIFY(h.binding.canRenewNamespace());
+        QVERIFY(!h.binding.renewNamespace());
+        QVERIFY(!h.binding.canRenewNamespace());
+        QCOMPARE(h.io.loads, loads);
+        QVERIFY(h.io.saves.empty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void receiptConflictsRequireReviewInsteadOfOfferingAReadOrRecoveryLoop_data() {
+        QTest::addColumn<int>("state");
+        QTest::newRow("different candidate") << static_cast<int>(DownloadJobState::Completed);
+        QTest::newRow("failed with receipt") << static_cast<int>(DownloadJobState::Failed);
+        QTest::newRow("cancelled with receipt") << static_cast<int>(DownloadJobState::Cancelled);
+        QTest::newRow("cancelling with receipt") << static_cast<int>(DownloadJobState::Cancelling);
+    }
+    void receiptConflictsRequireReviewInsteadOfOfferingAReadOrRecoveryLoop() {
+        QFETCH(int, state);
+        const auto job_state = static_cast<DownloadJobState>(state);
+        Harness h{{.snapshot = {.download_import_receipts = {{.job_id = "old-1", .source_path = path()}}},
+                   .status = SessionLoadStatus::Loaded}};
+        DownloadCheckpoint checkpoint{
+            .receipts = {{.request_id = request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"old-1"},
+                          .retained_request_bytes = 128}},
+            .jobs = {{.job_id = "old-1", .title = "Historical conflict", .state = job_state}}};
+        if (job_state == DownloadJobState::Completed)
+            checkpoint.jobs[0].completed_mp3 = path().parent_path() / "never-display-conflict.mp3";
+        else if (job_state == DownloadJobState::Failed)
+            checkpoint.jobs[0].error = DownloadFailure::Publication;
+        const auto original = checkpoint;
+        QVERIFY(h.binding.start());
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.binding.poll();
+        QCOMPARE(h.controller.recoveryReport().status, DownloadRecoveryStatus::ReceiptConflict);
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("diverge")));
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("revis")));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("never-display")));
+        QVERIFY(!h.binding.warningText().contains(QStringLiteral("rc-music-synthetic")));
+        QVERIFY(!h.binding.canRetryStartup());
+        QVERIFY(!h.binding.canRenewNamespace());
+        const auto loads = h.io.loads;
+        QVERIFY(!h.binding.retryStartup());
+        QVERIFY(!h.binding.renewNamespace());
+        QCOMPARE(h.io.loads, loads);
+        QVERIFY(h.io.saves.empty());
+        QVERIFY(h.service.snapshot().empty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+        QCOMPARE(checkpoint, original);
+    }
+    void namespaceRecoveryCanRevealAReceiptConflictWithoutClaimingSuccess() {
+        Harness h{{.snapshot = {.download_import_receipts = {{.job_id = "fresh-1", .source_path = path()}}},
+                   .status = SessionLoadStatus::Loaded}};
+        const DownloadCheckpoint checkpoint{
+            .receipts = {{.request_id = request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"fresh-1"},
+                          .retained_request_bytes = 128}},
+            .jobs = {{.job_id = "fresh-1",
+                      .title = "Historical conflict",
+                      .state = DownloadJobState::Completed,
+                      .completed_mp3 = path().parent_path() / "never-display-conflict.mp3"}}};
+        QVERIFY(h.binding.start());
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.binding.poll();
+        QVERIFY(h.binding.canRenewNamespace());
+        QVERIFY(!h.binding.renewNamespace());
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
+        QCOMPARE(h.controller.recoveryReport().status, DownloadRecoveryStatus::ReceiptConflict);
+        QVERIFY(!h.binding.canRenewNamespace());
+        QVERIFY(!h.binding.canRetryStartup());
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("diverge")));
+        QCOMPARE(h.io.loads.size(), std::size_t{1});
+        QVERIFY(h.io.saves.empty());
+        QVERIFY(h.service.snapshot().empty());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
+    }
     void admissionFailureRetriesTheSameCheckpointBeforeStartingExecution() {
         Harness h;
         QVERIFY(h.ready());

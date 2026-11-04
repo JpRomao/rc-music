@@ -64,6 +64,12 @@ class DownloadService final : public DownloadSubmission {
     // validates files; recovered candidate paths remain private evidence.
     [[nodiscard]] bool restore(const DownloadCheckpoint& checkpoint,
                                std::span<const DownloadImportReceipt> confirmed_imports);
+    // Explicit trusted recovery: preserve every historical ID/receipt and choose
+    // a noncolliding prefix only for future jobs. Commit it with the restore,
+    // never before validation; compatible history keeps the original prefix.
+    [[nodiscard]] bool restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint);
+    [[nodiscard]] bool restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint,
+                                                 std::span<const DownloadImportReceipt> confirmed_imports);
     [[nodiscard]] DownloadRecoveryReport recoveryReport() const;
     // Trusted composition may suppress a new native start after a handoff
     // callback requests owner shutdown. Existing execution/import drains remain
@@ -90,7 +96,8 @@ class DownloadService final : public DownloadSubmission {
   private:
     [[nodiscard]] DownloadSubmissionResult submitImpl(const DownloadRequest& request, bool staged);
     [[nodiscard]] bool restoreImpl(const DownloadCheckpoint& checkpoint,
-                                   std::span<const DownloadImportReceipt> confirmed_imports, bool reconcile);
+                                   std::span<const DownloadImportReceipt> confirmed_imports, bool reconcile,
+                                   bool fresh_namespace = false);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

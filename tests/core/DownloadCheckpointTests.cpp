@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 
 namespace music_player::m0::test {
 namespace {
@@ -708,6 +709,285 @@ TEST_CASE("Live download checkpoints preserve phases without consulting executio
     REQUIRE(restored.service.snapshot()[0].state == DownloadJobState::Interrupted);
     restored.service.tick(2);
     REQUIRE(restored.execution.starts == 0);
+}
+
+namespace {
+std::string recoveryPrefix(const std::string_view original, const unsigned int ordinal) {
+    auto digits = std::to_string(ordinal);
+    digits.insert(0, 3 - digits.size(), '0');
+    return std::string{original.substr(0, 35)} + "-r" + digits;
+}
+DownloadCheckpoint namespaceHistory(const std::vector<std::string>& ids) {
+    DownloadCheckpoint result;
+    for (std::size_t index = 0; index < ids.size(); ++index) {
+        const auto request = input(static_cast<unsigned int>(index / 20 + 1));
+        if (index % 20 == 0)
+            result.receipts.push_back({.request_id = request.request_id,
+                                       .fingerprint = std::string(64, 'a'),
+                                       .retained_request_bytes = request.request_id.size()});
+        result.receipts.back().job_ids.push_back(ids[index]);
+        result.receipts.back().retained_request_bytes += request.items[0].url.size() + request.items[0].title.size();
+        result.jobs.push_back({.job_id = ids[index],
+                               .title = request.items[0].title,
+                               .state = DownloadJobState::Interrupted,
+                               .error = DownloadFailure::Unavailable});
+    }
+    return result;
+}
+} // namespace
+
+TEST_CASE("Fresh namespace recovery changes only future IDs and preserves historical replay",
+          "[download][checkpoint][namespace-recovery]") {
+    const bool reconcile = GENERATE(false, true);
+    auto checkpoint = saved(DownloadJobState::Completed);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    checkpoint.jobs[0].completed_units = 7;
+    checkpoint.jobs[0].total_units = 7;
+    const std::vector<DownloadImportReceipt> receipts{{"old-1", candidate()}};
+    Harness h({}, "old");
+    REQUIRE_FALSE((reconcile ? h.service.restore(checkpoint, receipts) : h.service.restore(checkpoint)));
+    REQUIRE(h.service.recoveryReport().status == DownloadRecoveryStatus::NamespaceConflict);
+    REQUIRE((reconcile ? h.service.restoreWithFreshNamespace(checkpoint, receipts)
+                       : h.service.restoreWithFreshNamespace(checkpoint)));
+    REQUIRE(h.identity.calls == 0);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.execution.polls == 0);
+    REQUIRE(h.execution.cancels == 0);
+    REQUIRE(h.importer.calls == 0);
+    const auto restored = h.service.checkpoint();
+    REQUIRE(restored);
+    REQUIRE(restored->receipts == checkpoint.receipts);
+    REQUIRE(restored->jobs[0].job_id == "old-1");
+    REQUIRE(restored->jobs[0].completed_mp3 == candidate());
+    REQUIRE(restored->jobs[0].completed_units == 7);
+    REQUIRE(restored->jobs[0].total_units == 7);
+    REQUIRE(h.service.snapshot()[0].completed_mp3.empty());
+    REQUIRE(h.service.snapshot()[0].state == (reconcile ? DownloadJobState::Imported : DownloadJobState::Completed));
+    REQUIRE(h.service.recoveryReport().status ==
+            (reconcile ? DownloadRecoveryStatus::Ready : DownloadRecoveryStatus::NotRequested));
+    REQUIRE(h.service.submit(input()).job_ids == std::vector<std::string>{"old-1"});
+    h.identity.result = std::string(64, 'b');
+    REQUIRE(h.service.submit(input()).error == DownloadSubmissionError::InvalidRequest);
+    h.identity.result = std::string(64, 'a');
+    REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-r001-1"});
+    REQUIRE(h.service.checkpoint()->receipts[0] == checkpoint.receipts[0]);
+    REQUIRE(h.service.snapshot()[0].job_id == "old-1");
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery keeps an already compatible namespace unchanged",
+          "[download][checkpoint][namespace-recovery]") {
+    const bool reconcile = GENERATE(false, true);
+    Harness h;
+    const auto checkpoint = saved();
+    REQUIRE((reconcile ? h.service.restoreWithFreshNamespace(checkpoint, {})
+                       : h.service.restoreWithFreshNamespace(checkpoint)));
+    REQUIRE(h.service.checkpoint()->receipts == checkpoint.receipts);
+    REQUIRE(h.service.snapshot()[0].job_id == "old-1");
+    REQUIRE(h.identity.calls == 0);
+    REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"new-1"});
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery skips colliding history and session-only namespace families",
+          "[download][checkpoint][namespace-recovery]") {
+    const auto checkpoint = namespaceHistory({"old-1", "old-r001-other", "old-r002-999"});
+    const std::vector<DownloadImportReceipt> receipts{{"old-r003-7", candidate()}, {"unrelated-1", candidate()}};
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    Harness h({}, "old");
+    REQUIRE(h.service.restoreWithFreshNamespace(checkpoint, receipts));
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{checkpoint});
+    REQUIRE(h.service.recoveryReport().session_only_job_ids == std::vector<std::string>{"old-r003-7", "unrelated-1"});
+    REQUIRE(h.identity.calls == 0);
+    REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-r004-1"});
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery reserves orphan receipts without consuming download capacity",
+          "[download][checkpoint][namespace-recovery]") {
+    const std::vector<DownloadImportReceipt> receipts{
+        {"old-99", candidate()}, {"old-r001-1", candidate()}, {"old-r002-extra", candidate()}};
+    Harness h({.max_jobs = 1, .max_requests = 1}, "old");
+    REQUIRE(h.service.restoreWithFreshNamespace({}, receipts));
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{DownloadCheckpoint{}});
+    REQUIRE(h.service.recoveryReport().session_only_job_ids ==
+            std::vector<std::string>{"old-99", "old-r001-1", "old-r002-extra"});
+    REQUIRE(h.identity.calls == 0);
+    REQUIRE(h.service.submit(input()).job_ids == std::vector<std::string>{"old-r003-1"});
+    REQUIRE(h.service.submit(input(2)).error == DownloadSubmissionError::LimitExceeded);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery preserves inclusive restored admission budgets",
+          "[download][checkpoint][namespace-recovery]") {
+    const auto budget = GENERATE(0, 1, 2);
+    const auto checkpoint = saved();
+    DownloadServiceLimits limits;
+    if (budget == 0)
+        limits.max_jobs = 1;
+    else if (budget == 1)
+        limits.max_requests = 1;
+    else
+        limits.max_retained_request_bytes = checkpoint.receipts[0].retained_request_bytes;
+    Harness h(limits, "old");
+    REQUIRE(h.service.restoreWithFreshNamespace(checkpoint));
+    REQUIRE(h.service.checkpoint()->receipts == checkpoint.receipts);
+    REQUIRE(h.service.submit(input(2)).error == DownloadSubmissionError::LimitExceeded);
+    REQUIRE(h.service.submit(input()).job_ids == std::vector<std::string>{"old-1"});
+    REQUIRE(h.service.snapshot().size() == 1);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery handles a forty-character prefix without renaming historical IDs",
+          "[download][checkpoint][namespace-recovery]") {
+    const std::string prefix = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN";
+    REQUIRE(prefix.size() == 40);
+    auto checkpoint = saved();
+    checkpoint.jobs[0].job_id = prefix + "-1";
+    checkpoint.receipts[0].job_ids = {checkpoint.jobs[0].job_id};
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    Harness h({}, prefix);
+    REQUIRE(h.service.restoreWithFreshNamespace(checkpoint));
+    REQUIRE(h.service.snapshot()[0].job_id == prefix + "-1");
+    REQUIRE(h.service.checkpoint()->receipts == checkpoint.receipts);
+    const auto result = h.service.submit(input(2));
+    REQUIRE(result.error == DownloadSubmissionError::None);
+    REQUIRE(result.job_ids == std::vector<std::string>{prefix.substr(0, 35) + "-r001-1"});
+    REQUIRE(result.job_ids[0].size() <= 64);
+}
+
+TEST_CASE("Fresh namespace recovery searches the bounded full history and ledger without eviction",
+          "[download][checkpoint][namespace-recovery]") {
+    std::vector<std::string> ids;
+    std::vector<DownloadImportReceipt> receipts;
+    for (unsigned int index = 1; index <= download_checkpoint_max_jobs; ++index)
+        ids.push_back(recoveryPrefix("old", index) + "-1");
+    for (unsigned int index = 1; index <= maximum_download_import_receipts; ++index)
+        receipts.push_back(
+            {recoveryPrefix("old", static_cast<unsigned int>(download_checkpoint_max_jobs) + index) + "-1",
+             candidate()});
+    const auto checkpoint = namespaceHistory(ids);
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    REQUIRE(isValidDownloadImportReceipts(receipts));
+    Harness h({}, "old");
+    REQUIRE(h.service.restoreWithFreshNamespace(checkpoint, receipts));
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{checkpoint});
+    REQUIRE(h.service.snapshot().size() == download_checkpoint_max_jobs);
+    REQUIRE(h.service.recoveryReport().session_only_job_ids.size() == maximum_download_import_receipts);
+    REQUIRE(h.service.submit(input(8)).error == DownloadSubmissionError::LimitExceeded);
+    REQUIRE(h.identity.calls == 0);
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.execution.polls == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery rolls back the prefix when later reconciliation fails",
+          "[download][checkpoint][namespace-recovery]") {
+    const auto failure = GENERATE(0, 1, 2);
+    auto checkpoint = saved(DownloadJobState::Completed);
+    checkpoint.jobs[0].completed_mp3 = candidate();
+    std::vector<DownloadImportReceipt> receipts{{"old-1", candidate()}};
+    DownloadServiceLimits limits;
+    DownloadRecoveryStatus expected = DownloadRecoveryStatus::InvalidHistory;
+    if (failure == 0) {
+        receipts[0].source_path = candidate().parent_path() / "different.mp3";
+        expected = DownloadRecoveryStatus::ReceiptConflict;
+    } else if (failure == 1) {
+        checkpoint = saved();
+        receipts[0].source_path = candidate().parent_path() / (std::string(30'001, 'x') + ".mp3");
+    } else {
+        limits.max_retained_request_bytes = checkpoint.receipts[0].retained_request_bytes;
+        ++checkpoint.receipts[0].retained_request_bytes;
+    }
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    REQUIRE(isValidDownloadImportReceipts(receipts));
+    Harness h(limits, "old");
+    REQUIRE_FALSE(h.service.restoreWithFreshNamespace(checkpoint, receipts));
+    REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{.status = expected});
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{DownloadCheckpoint{}});
+    REQUIRE(h.identity.calls == 0);
+    // A failed transaction neither reserves the proposed namespace nor IDs.
+    REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-1"});
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Fresh namespace recovery refuses owners that are no longer pristine",
+          "[download][checkpoint][namespace-recovery]") {
+    const bool reconcile = GENERATE(false, true);
+    Harness h({}, "old");
+    const auto restore = [&] {
+        return reconcile ? h.service.restoreWithFreshNamespace(saved(), {})
+                         : h.service.restoreWithFreshNamespace(saved());
+    };
+    SECTION("already admitted") {
+        REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-1"});
+        const auto before = h.service.checkpoint();
+        REQUIRE_FALSE(restore());
+        REQUIRE(h.service.checkpoint() == before);
+        REQUIRE(h.service.submit(input(3)).job_ids == std::vector<std::string>{"old-2"});
+    }
+    SECTION("already restored empty history") {
+        REQUIRE(h.service.restore({}));
+        REQUIRE_FALSE(restore());
+        REQUIRE(h.service.checkpoint() == std::optional<DownloadCheckpoint>{DownloadCheckpoint{}});
+        REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-1"});
+    }
+    SECTION("already restored a renewed namespace") {
+        REQUIRE(restore());
+        const auto before = h.service.checkpoint();
+        REQUIRE_FALSE(restore());
+        REQUIRE(h.service.checkpoint() == before);
+        REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-r001-1"});
+    }
+    SECTION("closed") {
+        h.service.shutdown();
+        REQUIRE_FALSE(restore());
+        REQUIRE(h.service.stopped());
+        REQUIRE(h.service.snapshot().empty());
+        REQUIRE(h.service.submit(input(2)).error == DownloadSubmissionError::NotAvailable);
+    }
+    SECTION("identity callback reentrancy") {
+        h.identity.callback = [&] {
+            REQUIRE_FALSE(restore());
+            REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{});
+            REQUIRE(h.service.snapshot().empty());
+        };
+        REQUIRE(h.service.submit(input(2)).job_ids == std::vector<std::string>{"old-1"});
+        h.identity.callback = {};
+        REQUIRE(h.service.submit(input(3)).job_ids == std::vector<std::string>{"old-2"});
+    }
+    REQUIRE(h.execution.starts == 0);
+    REQUIRE(h.execution.polls == 0);
+    REQUIRE(h.execution.cancels == 0);
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Legacy restore exposes typed refusal without changing its refusal or success semantics",
+          "[download][checkpoint][namespace-recovery]") {
+    auto checkpoint = saved();
+    SECTION("namespace refusal") {
+        Harness h({}, "old");
+        REQUIRE_FALSE(h.service.restore(checkpoint));
+        REQUIRE(h.service.recoveryReport() ==
+                DownloadRecoveryReport{.status = DownloadRecoveryStatus::NamespaceConflict});
+        REQUIRE(h.service.snapshot().empty());
+    }
+    SECTION("invalid history refusal") {
+        Harness h;
+        checkpoint.receipts[0].fingerprint = "invalid";
+        REQUIRE_FALSE(h.service.restore(checkpoint));
+        REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{.status = DownloadRecoveryStatus::InvalidHistory});
+        REQUIRE(h.service.restore(saved()));
+        REQUIRE(h.service.recoveryReport() == DownloadRecoveryReport{});
+    }
 }
 
 } // namespace music_player::m0::test

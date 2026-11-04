@@ -1304,4 +1304,158 @@ TEST_CASE("Download owner destructor does not invoke borrowed IO or execution po
     REQUIRE(execution.cancellations.empty());
 }
 
+TEST_CASE("Startup namespace recovery restores loaded history without another IO operation",
+          "[download][recovery-controller][namespace-recovery][FR-051]") {
+    const bool missing = GENERATE(false, true);
+    RecoveryAdmissionHarness h{healthyAdmissionSession("owner-1")};
+    h.load(missing ? DownloadCheckpointLoadResult{.status = DownloadCheckpointLoadStatus::Missing}
+                   : DownloadCheckpointLoadResult{.checkpoint = recoveryAdmissionCheckpoint(),
+                                                  .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.controller.loadStatus() ==
+            (missing ? DownloadCheckpointLoadStatus::Missing : DownloadCheckpointLoadStatus::Loaded));
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::Ready);
+    REQUIRE(h.controller.recoveryReport().session_only_job_ids == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.service.snapshot().size() == (missing ? 0 : 1));
+    if (!missing) {
+        REQUIRE(h.service.snapshot()[0].job_id == "prior-1");
+        REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+        const auto replay = h.controller.begin(admissionInput());
+        REQUIRE(replay.state == DownloadAdmissionState::Completed);
+        REQUIRE(replay.result.job_ids == std::vector<std::string>{"prior-1"});
+    }
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.polls.empty());
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE_FALSE(h.controller.retryStartup());
+    const auto next = h.controller.begin(admissionInput(2));
+    REQUIRE(next.state == DownloadAdmissionState::Pending);
+    REQUIRE(h.io.saves.size() == 1);
+    REQUIRE(h.io.saves.back().checkpoint.jobs.back().job_id == "owner-r001-1");
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Startup namespace recovery preserves the detached checkpoint and its acknowledgement IDs",
+          "[download][recovery-controller][namespace-recovery][FR-051]") {
+    auto checkpoint = recoveryAdmissionCheckpoint();
+    checkpoint.jobs[0].job_id = "owner-1";
+    checkpoint.receipts[0].job_ids[0] = "owner-1";
+    RecoveryAdmissionHarness h{{.status = SessionLoadStatus::Missing}};
+    h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    checkpoint.jobs.clear();
+    checkpoint.receipts.clear();
+    REQUIRE(h.controller.renewStartupNamespace());
+    REQUIRE(h.service.snapshot().size() == 1);
+    REQUIRE(h.service.snapshot()[0].job_id == "owner-1");
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    const auto acknowledgement = h.controller.poll(admissionInput().request_id);
+    REQUIRE(acknowledgement.has_value());
+    REQUIRE(acknowledgement->job_ids == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Legacy startup namespace recovery preserves its restore semantics",
+          "[download][recovery-controller][namespace-recovery][FR-053]") {
+    AdmissionHarness h;
+    auto checkpoint = recoveredAdmission();
+    checkpoint.jobs[0].job_id = "owner-1";
+    checkpoint.receipts[0].job_ids[0] = "owner-1";
+    REQUIRE(h.controller.start());
+    h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    h.controller.tick(0);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace);
+    REQUIRE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.service.snapshot()[0].job_id == "owner-1");
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Interrupted);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::NotRequested);
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Receipt conflicts require history review instead of ineffectual checkpoint retry",
+          "[download][recovery-controller][namespace-recovery][FR-053]") {
+    const auto state = GENERATE(DownloadJobState::Completed, DownloadJobState::Failed, DownloadJobState::Cancelled);
+    auto checkpoint = recoveryAdmissionCheckpoint(state);
+    if (state == DownloadJobState::Completed)
+        checkpoint.jobs[0].completed_mp3 = admissionFinalPath().parent_path() / "divergent.mp3";
+    RecoveryAdmissionHarness h{healthyAdmissionSession()};
+    h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::ReceiptConflict);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReviewHistory);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Namespace recovery cannot hide a later receipt conflict or partially restore history",
+          "[download][recovery-controller][namespace-recovery][FR-053]") {
+    auto checkpoint = recoveryAdmissionCheckpoint(DownloadJobState::Completed);
+    checkpoint.jobs[0].completed_mp3 = admissionFinalPath().parent_path() / "divergent.mp3";
+    RecoveryAdmissionHarness h{healthyAdmissionSession(), "prior"};
+    h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace);
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::ReceiptConflict);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReviewHistory);
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE(h.service.snapshot().empty());
+    const auto retained = h.service.checkpoint();
+    REQUIRE(retained.has_value());
+    REQUIRE(retained->receipts.empty());
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("Namespace recovery is unavailable before blocking while stopping or from IO callbacks",
+          "[download][recovery-controller][namespace-recovery][FR-053]") {
+    RecoveryAdmissionHarness h{healthyAdmissionSession("owner-1")};
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.start());
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    unsigned attempts = 0;
+    h.io.on_poll = [&] {
+        ++attempts;
+        REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+        REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    };
+    h.io.loaded({.status = DownloadCheckpointLoadStatus::Missing});
+    h.controller.tick(0);
+    REQUIRE(attempts == 1);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace);
+    h.controller.shutdown();
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::None);
+    h.io.on_poll = {};
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.importer.calls == 0);
+}
+
 } // namespace music_player::m0::test

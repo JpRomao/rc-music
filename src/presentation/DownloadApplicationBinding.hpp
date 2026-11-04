@@ -44,6 +44,7 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
     Q_PROPERTY(QString warningText READ warningText NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryStartup READ canRetryStartup NOTIFY stateChanged)
+    Q_PROPERTY(bool canRenewNamespace READ canRenewNamespace NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryAdmission READ canRetryAdmission NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryFinalSave READ canRetryFinalSave NOTIFY stateChanged)
     Q_PROPERTY(bool canCloseAfterFinalSaveFailure READ canCloseAfterFinalSaveFailure NOTIFY stateChanged)
@@ -61,6 +62,7 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString warningText() const;
     [[nodiscard]] bool canRetryStartup() const;
+    [[nodiscard]] bool canRenewNamespace() const;
     [[nodiscard]] bool canRetryAdmission() const;
     [[nodiscard]] bool canRetryFinalSave() const;
     [[nodiscard]] bool canCloseAfterFinalSaveFailure() const;
@@ -73,6 +75,7 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool start();
     void poll();
     Q_INVOKABLE bool retryStartup();
+    Q_INVOKABLE bool renewNamespace();
     Q_INVOKABLE bool retryAdmission();
     Q_INVOKABLE bool retryFinalSave();
     Q_INVOKABLE bool closeAfterFinalSaveFailure();
