@@ -40,6 +40,10 @@ O módulo opcional [de apresentação dos downloads](../download-jobs.md#painel-
 
 A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-cooperativa-do-dono) pertence ao adapter do servidor, não ao domínio ou à eleição `OpenSources`. A chave por SID do usuário/endpoint case-insensitive independe de origem, edição, perfil e CWD; criação atômica recusa concorrentes cooperativos antes do `listen`. Falha de `listen` libera a tentativa; sucesso retém a reserva até destruição do servidor, inclusive após ingresso `stopped`. A composição deve conservar servidor, serviço/controller e stores/workers vivos na ordem de drenagem, sem interpretar encerramento do socket como encerramento do dono. Não é autenticação, exclusividade contra pipe hostil ou escolha de identidade instalada entre Lite/Completa.
 
+### Composição opcional de downloads
+
+A [composição opcional de downloads do player](../download-jobs.md#composição-opcional-do-player-windows) possui execução, importador `Session`, worker de checkpoint, serviço, controlador de admissão e binding no mesmo proprietário. A UI e os adaptadores continuam usando os contratos existentes; o único ingresso exposto pelo proprietário é a admissão assíncrona. O journal do download pode ser possuído pela tarefa preparada no worker, em vez de emprestado pela UI. Cada variante do proprietário liga exatamente um ABI do presenter, mantendo os cenários fora da biblioteca de produção. A composição reutilizável ainda não é ativada no `main` normal; identidade instalada, ingresso, recuperação e sandbox conservam seus gates.
+
 ### Seleção de mídia no navegador experimental
 
 A [composição WebView2 opt-in](../embedded-browser.md) usa o [coletor compartilhado](../browser-extension.md#coletor-compartilhado-com-a-navegação-experimental) como recurso próprio, em chamada explícita e sem globals ou ponte da página. A detecção nativa atual alcança documento principal e Shadow DOM aberto; frames permanecem na cobertura da extensão isolada e exigem lifecycle nativo antes de entrarem nessa composição. Lite mantém engine e esse módulo fora do grafo padrão.

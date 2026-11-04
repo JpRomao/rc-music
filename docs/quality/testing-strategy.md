@@ -223,6 +223,8 @@ A composição de ensaio MP3/MP4→MP3→`DownloadService` deve passar pela port
 
 ### E2E e plataforma
 
+A [composição do player Windows](../download-jobs.md#composição-opcional-do-player-windows) deve usar o proprietário e o ABI de produção, com erro de compilação se cenários forem herdados. Exercitar admissão Saved antes da factory, MP3/MP4 por workers preparados, journal/publicação reais e fila+recibo Saved pelo writer/SessionAutosave reais. Segurar ACKs depois do commit para distinguir bytes legíveis de confirmação; testar retry explícito sem reconversão, replay/restart sem restauração e ausência de autoplay. Cancelamento de transferência exige progresso público positivo e arquivo parcial adquirido, não uma espera fixa ou somente o estado inicial Downloading; depois exigir drain, cleanup e nenhum sucessor/importação. DNS/transferência por helper não comprova bootstrap/payload/TLS público ou sandbox. A evidência de 2026-11-04 fecha 10/10 CTest e 321 casos Qt sem skips; builds e grafos ON/OFF têm provas separadas no registro central.
+
 O [transporte opcional](../download-network.md) separa testes de policy/HTTP/session com I/O falso, worker/proxy reais com DNS literal/HTTP loopback e testes de socket TLS com certificado sintético não secreto e confiança por instância. Exercitar bytes assinados, DNS misto/redirects, fronteiras/quota, EOF/TLS, corpo segmentado, cancelamento reentrante e backpressure, sem benchmarks. Não abrir exceção localhost na policy de produção. Sucesso DNS/EOF e parada exigem saída nativa e drenagem dos pipes; testes separados não provam a jornada completa DNS/TLS→conversão→importação, launcher, instalação, sandbox ou mídia da internet.
 
 - poucos cenários centrados em requisitos P0;

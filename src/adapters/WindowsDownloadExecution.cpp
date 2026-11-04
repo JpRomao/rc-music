@@ -1,6 +1,8 @@
 #include "WindowsDownloadExecution.hpp"
 
 #include "DownloadNetworkPolicy.hpp"
+#include "WindowsDownloadArtifactPins.hpp"
+#include "WindowsDownloadOwnershipStore.hpp"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -128,6 +130,13 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         media_ = std::move(media);
         media_prepare_ = std::move(media_prepare);
     }
+    PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsMediaFoundationLaunchConfig media,
+                        WindowsDownloadJobSessionConfig job, QString journal_directory,
+                        WindowsDownloadRuntimePreparer prepare, WindowsMediaFoundationRuntimePreparer media_prepare)
+        : PreparedSessionTask(std::move(launch), std::move(media), std::move(job), std::move(prepare),
+                              std::move(media_prepare)) {
+        journal_directory_ = std::move(journal_directory);
+    }
 
     bool start(const std::string& id, const DownloadItem& item, const qint64 now_ms) override {
         if (started_ || terminal(update_.state))
@@ -142,6 +151,21 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         item_ = item;
         started_ms_ = now_ms;
         try {
+            if (journal_directory_) {
+                QString directory;
+                if (job_.ownership_store || !download_artifacts::validPath(*journal_directory_, directory)) {
+                    fail(DownloadFailure::InvalidResult);
+                    return false;
+                }
+                ownership_store_ = std::make_unique<WindowsDownloadOwnershipStore>(std::move(directory));
+                const auto loaded = ownership_store_->load();
+                if (loaded.status != DownloadCheckpointLoadStatus::Missing &&
+                    (loaded.status != DownloadCheckpointLoadStatus::Loaded || !loaded.journal)) {
+                    fail(DownloadFailure::InvalidResult);
+                    return false;
+                }
+                job_.ownership_store = ownership_store_.get();
+            }
             lease_ = prepare_ ? prepare_(launch_) : WindowsDownloadNetworkLaunch::prepare(launch_);
             if (lease_ && media_) {
                 media_lease_ =
@@ -219,12 +243,15 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     WindowsDownloadRuntimePreparer prepare_;
     std::optional<WindowsMediaFoundationLaunchConfig> media_;
     WindowsMediaFoundationRuntimePreparer media_prepare_;
+    std::optional<QString> journal_directory_;
     DownloadExecutionUpdate update_;
     DownloadItem item_;
     qint64 started_ms_{0};
     bool started_{false}, session_start_attempted_{false};
-    // Reverse destruction: session, native IO/process, then final lease. The
-    // executor observes terminal ACK and destroys this task before publishing.
+    // Session/native IO is destroyed before its borrowed journal. Runtime
+    // capabilities retain their existing owners. The executor observes terminal
+    // ACK and destroys this task before publishing the terminal snapshot.
+    std::unique_ptr<WindowsDownloadOwnershipStore> ownership_store_;
     std::shared_ptr<const WindowsDownloadNetworkLaunch> lease_;
     std::shared_ptr<const WindowsMediaFoundationLaunch> media_lease_;
     std::unique_ptr<SessionTask> session_;
@@ -243,6 +270,16 @@ makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, Wind
                                 WindowsMediaFoundationRuntimePreparer media_prepare) {
     return std::make_unique<PreparedSessionTask>(std::move(network), std::move(media), std::move(job),
                                                  std::move(network_prepare), std::move(media_prepare));
+}
+
+std::unique_ptr<WindowsDownloadTask>
+makeWindowsOwnedPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network,
+                                     WindowsMediaFoundationLaunchConfig media, WindowsDownloadJobSessionConfig job,
+                                     QString journal_directory, WindowsDownloadRuntimePreparer network_prepare,
+                                     WindowsMediaFoundationRuntimePreparer media_prepare) {
+    return std::make_unique<PreparedSessionTask>(std::move(network), std::move(media), std::move(job),
+                                                 std::move(journal_directory), std::move(network_prepare),
+                                                 std::move(media_prepare));
 }
 
 struct WindowsDownloadExecution::Impl final {

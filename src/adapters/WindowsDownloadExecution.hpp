@@ -40,6 +40,14 @@ makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, Wind
                                 WindowsDownloadJobSessionConfig job,
                                 WindowsDownloadRuntimePreparer network_prepare = {},
                                 WindowsMediaFoundationRuntimePreparer media_prepare = {});
+// Owns the synchronous journal on the task's worker, after inert construction.
+// A borrowed job.ownership_store is rejected; the private existing directory is
+// validated before preparing either runtime. The store outlives the session.
+[[nodiscard]] std::unique_ptr<WindowsDownloadTask>
+makeWindowsOwnedPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network,
+                                     WindowsMediaFoundationLaunchConfig media, WindowsDownloadJobSessionConfig job,
+                                     QString journal_directory, WindowsDownloadRuntimePreparer network_prepare = {},
+                                     WindowsMediaFoundationRuntimePreparer media_prepare = {});
 
 // Prompt UI port with one pending task and one coalesced snapshot. Factory,
 // task methods, filesystem/native I/O and destruction run in a private Qt loop.

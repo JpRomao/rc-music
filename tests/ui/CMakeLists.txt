@@ -92,6 +92,39 @@ if(WIN32 AND TARGET rc_music_download_documents AND TARGET rc_music_download_per
     set_tests_properties(rc_music.ui.download-recovery-review PROPERTIES
         LABELS "ui;qt;downloads;persistence;windows;FR-051;FR-053")
 endif()
+if(WIN32 AND TARGET rc_music_player_downloads)
+    rc_music_add_player_downloads(rc_music_test_player_downloads rc_music_test_ui)
+    target_link_libraries(rc_music_test_player_downloads PRIVATE rc_music_ui_scenario_support)
+    add_ui_test(rc_music_ui_player_downloads_tests rc_music.ui.player-downloads
+        qtest/WindowsPlayerDownloadsTests.cpp rc_music_test_player_downloads)
+    set_tests_properties(rc_music.ui.player-downloads PROPERTIES
+        LABELS "ui;qt;downloads;persistence;lifecycle;windows;FR-051;FR-053")
+    if(RC_MUSIC_DOWNLOAD_TEST_CRT_DIR AND RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
+        # Exercise the production presenter ABI and owner. Only DNS/transfer
+        # come from the framed fixture helper; conversion/publication/import
+        # and both persistence acknowledgements use their real adapters.
+        add_executable(rc_music_player_downloads_composition_tests qtest/PlayerDownloadsCompositionTests.cpp)
+        target_link_libraries(rc_music_player_downloads_composition_tests PRIVATE
+            rc_music_player_downloads m0_qt_session_persistence Qt6::Test Qt6::Quick Advapi32)
+        rc_music_configure_cpp(rc_music_player_downloads_composition_tests)
+        set_target_properties(rc_music_player_downloads_composition_tests PROPERTIES AUTOMOC ON)
+        target_compile_definitions(rc_music_player_downloads_composition_tests PRIVATE
+            RC_MUSIC_TEST_IO_HELPER_PATH="$<TARGET_FILE:rc_music_download_io_helper>"
+            RC_MUSIC_TEST_PAYLOAD_PATH="$<TARGET_FILE:rc_music_download_network_payload>"
+            RC_MUSIC_TEST_TLS_CORE_PATH="$<TARGET_FILE:Qt6::Core>"
+            RC_MUSIC_TEST_TLS_NETWORK_PATH="$<TARGET_FILE:Qt6::Network>"
+            RC_MUSIC_TEST_TLS_PLUGIN_PATH="${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
+            RC_MUSIC_TEST_CRT_DIR="${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}"
+            RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>")
+        add_dependencies(rc_music_player_downloads_composition_tests
+            rc_music_download_io_helper rc_music_download_network_payload rc_music_media_foundation_worker)
+        add_test(NAME rc_music.ui.player-downloads-composition COMMAND rc_music_player_downloads_composition_tests -o -,txt)
+        set_tests_properties(rc_music.ui.player-downloads-composition PROPERTIES
+            LABELS "ui;qt;downloads;persistence;process;lifecycle;windows;FR-051;FR-053" TIMEOUT 90
+            ENVIRONMENT "${ui_environment}"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+endif()
 if(WIN32 AND TARGET rc_music_download_network AND TARGET rc_music_download_persistence AND
         RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)
     add_ui_test(rc_music_ui_download_recovery_validation_tests rc_music.ui.download-recovery-validation

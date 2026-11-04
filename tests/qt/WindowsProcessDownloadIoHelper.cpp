@@ -47,7 +47,8 @@ int main(int argc, char* argv[]) {
     const auto scenario = request->mode == DownloadWorkerMode::Resolve
                               ? request->host
                               : QString::fromLatin1(request->endpoint.request_target);
-    if (scenario.contains("stall") || scenario.contains("timeout")) {
+    const bool stall_after_data = request->mode == DownloadWorkerMode::Stream && scenario.contains("stall-after-data");
+    if ((!stall_after_data && scenario.contains("stall")) || scenario.contains("timeout")) {
         QTimer keep_alive;
         keep_alive.start(10);
         return app.exec();
@@ -83,6 +84,18 @@ int main(int argc, char* argv[]) {
             scenario.contains("eof")
                 ? QByteArray("HTTP/1.1 200 OK\r\n\r\n") + content
                 : "HTTP/1.1 200 OK\r\nContent-Length: " + QByteArray::number(content.size()) + "\r\n\r\n" + content;
+        if (stall_after_data) {
+            // Deliver a real partial body before staying alive. Public progress
+            // then proves transfer began; no terminal/EOF can authorize sealing,
+            // conversion or publication before the owner's explicit cancellation.
+            const auto partial = response.first(response.size() - 1);
+            for (qsizetype offset = 0; offset < partial.size(); offset += download_worker_max_data_bytes)
+                if (!emitFrame(DownloadWorkerFrameKind::Data, partial.mid(offset, download_worker_max_data_bytes)))
+                    return 84;
+            QTimer keep_alive;
+            keep_alive.start(10);
+            return app.exec();
+        }
         if (scenario.contains("flood")) {
             for (int index = 0; index < 256; ++index)
                 if (!emitFrame(DownloadWorkerFrameKind::Data, QByteArray(download_worker_max_data_bytes, 'x')))

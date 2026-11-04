@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — detecção e seleção de mídia no navegador interno
+### Checkpoint atual — composição durável dos downloads no player Windows
+
+Incremento de 2026-11-04: o [proprietário opcional do player](download-jobs.md#composição-opcional-do-player-windows) reúne execução, importação `Session`, worker de checkpoint, serviço/controller e binding, sem duplicar processamento ou recibos. A tarefa preparada pode possuir seu journal no worker, recusando diretório/histórico inválido e ponteiro externo antes do preparo. O ensaio passa pela admissão Saved e liga processos MF, publicação/ownership/cleanup e fila+recibo Saved reais ao presenter de produção. Replay/restart sem restauração, retry de gravação e saída após bytes parciais transferidos conservam idempotência e drenagem.
+
+Baseline **4/4 CTest, 195 casos Qt**; Red→Green: journal **20/10 → 30/30**, proprietário **3/3 → 6/6**, composição **2/4 → 6/6**. A regressão de cancelamento exige progresso maior que zero, com **5/1 → 6/6**, eliminando espera fixa durante o preparo. Fechamento **10/10 CTest, 321 casos Qt sem skips**, Release opcional/OFF com grafo de 238 comandos/zero testes, Lite/lint com grafo de 255 comandos/zero testes e formato 389 C++/62 QML. Evidências em `out/product/test-runs/player-downloads-composition-20261104/`.
+
+O helper substitui DNS/transferência e o bootstrap de rede no perfil autenticado; payload/TLS e rede pública não são exercitados por esse ensaio. O proprietário ainda não é ativado no `main` normal. Próximos gates: sandbox efetiva/perfil, identidade/ingresso instalados, resíduos e recuperação/capacidade integrados, validação real da engine, opcionais e instaladores de ambas as edições. Produção remota continua OFF; Lite sem engine interna e YouTube separado permanecem no escopo. Não houve instalação/Registry, browser real, mídia pública/pessoal ou benchmarks.
+
+### Checkpoint anterior — detecção e seleção de mídia no navegador interno
 
 Incremento de 2026-11-04: a [navegação experimental](embedded-browser.md#detecção-e-seleção-de-mídia) passa a compor coletor DOM compartilhado, codec estrito, seleção limitada e painel Widgets. Detectar e conferir são ações explícitas; somente tuples escolhidas devem permanecer iguais na nova coleta. O host invalida contexto após navegação/mudança de fonte e limita chamadas pendentes; páginas não recebem comandos, objetos Qt ou acesso ao player. A lista não habilita downloads de produção nem substitui a integração protegida ainda pendente. Lite e o instalador existente ficam sem engine interna; frames, engine real, privacidade e distribuição mantêm seus gates.
 
