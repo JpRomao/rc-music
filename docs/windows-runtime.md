@@ -1,7 +1,9 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime local atualizado em 2026-11-03, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
-**Data:** 2026-11-03.
+**Estado:** runtime Lite atualizado em 2026-11-04, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Data:** 2026-11-04.
+
+A [entrega atual de `d51c18c`](local-delivery-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime novo permaneceu íntegro após remover o payload anterior e os caches obsoletos inventariados.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
 

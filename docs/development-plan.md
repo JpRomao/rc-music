@@ -745,6 +745,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — recuperação da identificação dos downloads
 
+A solicitação posterior de build/limpeza gerou a [entrega Lite local de 2026-11-04](local-delivery-20261104.md), vinculada ao commit limpo `d51c18c`: setup compilado sem instalar, inventário íntegro e 338,9 MB de artefatos obsoletos removidos com preservação conferida. Isso não encerra os gates de instalação, integração remota ou release.
+
 Em 2026-11-04, o [contrato de recuperação](download-jobs.md#recuperação-da-identificação-dos-próximos-downloads) acrescenta uma ação explícita para `NamespaceConflict`: checkpoint e ledger já carregados são restaurados atomicamente, preservando IDs, recibos e quotas, com identificação nova somente para admissões futuras. O painel comum projeta **Recuperar histórico**; `ReceiptConflict` exige revisão e não oferece retry sem efeito. Não há reload/save, execução, importação ou acesso a arquivos nessa ação. Produção remota permanece OFF; divergências, composição protegida e distribuição continuam nos gates próprios.
 
 TDD do núcleo: Red de 16 casos/27 assertions falhas, Green de 16 casos/379 assertions e regressão atual **163/163 CTest**. UI: Red binding **80 passagens/7 falhas** e Quick **272/5**; Green **4/4 CTest, 407 casos Qt** (binding 87, validação recuperada 8, contrato 35, Quick 277). Release Lite OFF/lint, grafo de 255 comandos/zero testes e Release opcional/zero testes passaram; formato conferiu 368 fontes C++ e 62 QML. Evidências em `out/product/test-runs/download-namespace-recovery-20261103/`; o nome do diretório conserva a data de início do incremento. Empacotamento é registrado separadamente, sem transferir evidência para o produto instalado.

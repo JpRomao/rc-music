@@ -1,7 +1,9 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setup privado atualizado em 2026-11-03 compilado com associações OFF; os setups históricos OFF/v2 foram preservados. Execução/lifecycle e gates de distribuição ainda pendentes.
-**Data:** 2026-11-03.
+**Estado:** setup Lite privado atualizado em 2026-11-04, compilado e conferido sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Data:** 2026-11-04.
+
+A [entrega atual de `d51c18c`](local-delivery-20261104.md) registra o setup de 38.064.613 bytes, inventário/hashes, checks e limpeza posterior de 338,9 MB. Os registros abaixo preservam as entregas anteriores e seus próprios limites.
 
 ## Fonte única e proveniência
 
