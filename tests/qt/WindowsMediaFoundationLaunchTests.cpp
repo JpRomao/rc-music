@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -13,6 +14,7 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <ShlObj.h>
 #include <Windows.h>
 #include <aclapi.h>
 #include <sddl.h>
@@ -267,6 +269,41 @@ class WindowsMediaFoundationLaunchTests final : public QObject {
         const auto directory = lease->directory();
         lease.reset();
         QVERIFY(!QDir(directory).exists());
+    }
+    void containerProcessEnvironmentUsesKnownLocalAppDataWithoutInheritingHostValues() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        PWSTR local_app_data = nullptr;
+        const auto status = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, nullptr, &local_app_data);
+        const auto free_path = qScopeGuard([&] { CoTaskMemFree(local_app_data); });
+        QVERIFY(SUCCEEDED(status));
+        QVERIFY(local_app_data);
+        const auto expected = QDir::fromNativeSeparators(QString::fromWCharArray(local_app_data));
+        QVERIFY(!expected.isEmpty() && QDir::isAbsolutePath(expected));
+
+        const auto previous = qgetenv("LOCALAPPDATA");
+        const bool previously_set = qEnvironmentVariableIsSet("LOCALAPPDATA");
+        const auto restore_environment = qScopeGuard([&] {
+            if (previously_set)
+                qputenv("LOCALAPPDATA", previous);
+            else
+                qunsetenv("LOCALAPPDATA");
+        });
+        const auto untrusted = h.parent.filePath(QStringLiteral("must-not-be-inherited"));
+        QVERIFY(qputenv("LOCALAPPDATA", untrusted.toUtf8()));
+
+        auto config = h.config();
+        config.app_container = WindowsDownloadAppContainer::fromTrustedSid(containerSid());
+        QVERIFY(config.app_container);
+        auto lease = WindowsMediaFoundationLaunch::prepare(config);
+        QVERIFY(lease);
+        const auto process = lease->processConfig();
+        QVERIFY(process.environment);
+        QCOMPARE(process.environment->keys().size(), 3);
+        QCOMPARE(process.environment->value(QStringLiteral("PATH")), QString{});
+        QVERIFY(!process.environment->value(QStringLiteral("SystemRoot")).isEmpty());
+        QCOMPARE(QDir::fromNativeSeparators(process.environment->value(QStringLiteral("LOCALAPPDATA"))), expected);
+        QVERIFY(lease->unchanged());
     }
     void containerAclMutationInvalidatesHeldRuntime_data() {
         QTest::addColumn<bool>("directory");

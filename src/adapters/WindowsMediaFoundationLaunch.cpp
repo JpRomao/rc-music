@@ -2,7 +2,10 @@
 #include "WindowsDownloadAppContainer.hpp"
 #include "WindowsDownloadArtifactPins.hpp"
 
+#include <QScopeGuard>
 #include <QUuid>
+
+#include <ShlObj.h>
 
 #include <array>
 
@@ -47,6 +50,7 @@ struct WindowsMediaFoundationLaunch::Impl final {
     std::vector<Handle> ancestors{};
     Artifact worker{};
     QString system_root{};
+    QString local_app_data{};
     std::shared_ptr<const WindowsDownloadAppContainer> app_container{};
     ~Impl() {
         worker.handle = Handle{};
@@ -108,6 +112,15 @@ WindowsMediaFoundationLaunch::prepare(const WindowsMediaFoundationLaunchConfig& 
         if (!count || count >= system.size() ||
             !validPath(QString::fromWCharArray(system.data(), count), impl->system_root))
             return fail(WindowsMediaFoundationLaunchError::FileAccess);
+        if (impl->app_container) {
+            // Windows needs the current-user base for AppContainer redirection.
+            // Retrieve it without inheriting parent values or creating a folder.
+            PWSTR local_app_data = nullptr;
+            const auto release = qScopeGuard([&] { CoTaskMemFree(local_app_data); });
+            if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, nullptr, &local_app_data)) ||
+                !local_app_data || !validPath(QString::fromWCharArray(local_app_data), impl->local_app_data))
+                return fail(WindowsMediaFoundationLaunchError::FileAccess);
+        }
         impl->directory = parent + '/' + prefix + QUuid::createUuid().toString(QUuid::WithoutBraces);
         const bool created = impl->app_container
                                  ? createPrivateDirectory(impl->directory, impl->app_container->sidBytes())
@@ -166,6 +179,8 @@ WindowsDownloadProcessConfig WindowsMediaFoundationLaunch::processConfig() const
     QProcessEnvironment environment;
     environment.insert("PATH", "");
     environment.insert("SystemRoot", impl_->system_root);
+    if (impl_->app_container)
+        environment.insert("LOCALAPPDATA", impl_->local_app_data);
     config.environment = environment;
     config.app_container = impl_->app_container;
     config.require_app_container = impl_->app_container != nullptr;

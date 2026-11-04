@@ -31,11 +31,39 @@ O Windows documenta que a ausência da capability de rede restringe rede e que o
 
 ## Validação e operação
 
+### Dono durável e confirmação de uso — componentes implementados
+
+O [contrato e a evidência do ciclo de vida](../../media-profile-lifecycle.md) detalham o modelo/JSON, store, lease, owner e fence implementados. A porta de perfil é falsa nos testes; sua implementação real e a composição do owner no player permanecem pendentes. Isso não promove o estado Proposto deste ADR nem ativa produção remota.
+
+Usar um terceiro documento privado fixo, `download-media-profile.json`, limitado a 8 KiB e a uma operação. Checkpoint e journal de arquivos mantêm seus schemas, nomes e limites. O registro contém somente owner/schema, job ID, UUID v4 de operação, estágio e SID canônico quando criado; nome é derivado internamente como `RCMusic.Media.<UUID>`, sem caminho ou nome livre vindo da UI.
+
+O fluxo é `Planned → Created → InUse → CleanupPending → Removed`. `Planned → Abandoned` é permitido exclusivamente quando o dono vivo sabe que nunca chamou a API de criação; esse fato é registrado antes de liberar o slot. Não usar Abandoned para uma chamada falha/incerta ou colisão. `Created → CleanupPending` permite abortar antes do uso. Um registro terminal Removed/Abandoned permite outro Planned com UUID diferente; nenhuma operação pendente é expulsa. Replay idêntico exige nova gravação Saved.
+
+Além do lock curto de gravação, uma lease exclusiva mantém `download-media-profile-owner.lock` aberto durante a operação viva. Isso impede dois donos, inclusive com a mesma identidade de operação, de atravessarem a janela entre ler o journal e criar o perfil. Liberar o handle após estado terminal Saved permite outra operação; destruição sem confirmação apenas libera a lease, conservando o registro ativo que bloqueará o próximo startup. O arquivo de lock vazio e privado não é removido por PID nem interpretado como perfil. Dados desconhecidos são inspecionados antes de tentar criar essa lease.
+
+Criar somente após Planned Saved; emitir a capability somente após Created e InUse Saved. O dono conserva em memória a prova da própria criação bem-sucedida. Loaded não terminal, SID inválido, criação incerta, colisão ou escrita ambígua bloqueiam novos perfis e nunca autorizam adotar/remover o perfil encontrado. Crash entre criação e Created Saved deixa Planned incerto; readback não confirma um Failed do dono vivo. Retry de persistência deve executar outra gravação, sem repetir chamadas incertas de sistema.
+
+A capability emitida pelo dono compartilha uma fence de uso nativo. O supervisor adquire um ticket antes da possibilidade de criar filho e confirma explicitamente ausência de filho ou parada nativa com os três pipes drenados. Destruir ticket pendente marca incerteza permanente; cancelamento, timeout, contagem de referências e destrutores não são ACK. O fechamento da admissão é irreversível e sincronizado com aquisição; somente a fence fechada e quiescente permite prosseguir.
+
+Cleanup exige a prova viva de criação S_OK, CleanupPending Saved, remoção reconhecida e ausência confirmada por uma porta confiável, seguida de Removed Saved. A fence sozinha não autoriza remover perfil e protege a instância emitida pelo dono, não todo uso possível do mesmo SID no host. O owner foi exercitado com porta de perfil falsa e store real em árvores de teste próprias: 49/49 casos Qt do owner e 31/31 do store. Loaded não reconstrói autoridade de cleanup. Nenhuma API real é habilitada pela implementação dessa porta abstrata ou por este contrato.
+
+A capability do owner compartilha a fence com o supervisor. Construtor/destrutor não chamam portas de perfil ou persistência; destruição fecha admissão e libera a lease sem inventar ACK, Removed ou Abandoned. Reentrada é limitada: close durante callback é retido e fecha admissão antes da continuação. Retry explícito de Failed regrava o mesmo registro pendente, sem repetir chamadas Create/Delete já executadas. BlockedByExistingData preserva o conflito.
+
 Os testes automáticos comuns validam SID binário, recusa sem capability obrigatória, ACLs de folhas novas, alteração de ACL e compatibilidade legada. SIDs sintéticos usados nessas provas não podem ser lançados como perfis.
 
 O probe manual deve exigir uma opção explícita e destino de evidência novo no workspace. Cria apenas perfil de teste com GUID interno, sem aceitar nome externo ou adotar perfil existente. Deve provar stdio/handle de leitura, negação de leitura/escrita em sentinela externo, escrita/alteração de ACL no runtime, rede com controle positivo local, Job e conversão/segunda validação de fixtures MP3/AAC/WAV. Timeout ou erro inespecífico não confirma negação de acesso.
 
 Depois do ACK e fechamento dos handles, remover apenas o perfil criado nesta execução por `DeleteAppContainerProfile`, registrando HRESULT e resíduos. Falha deixa estado indeterminado; não substituir por remoção recursiva ou limpeza de Registro por nome. [Remoção oficial](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deleteappcontainerprofile).
+
+### Evidência de 2026-11-04 e gate físico parcial
+
+O fechamento focado passou 18/18 CTest, com 707 passagens Qt e dois skips históricos de symlink do checkpoint; o parser puro do probe passou 1/1. O TDD preserva Reds de modelo/JSON, fence, store, lease, owner e supervisor. A regressão do ambiente MF passou de 32 passagens/1 falha para 33/33: no caminho AppContainer, LOCALAPPDATA vem de KnownFolder, sem criar pasta ou herdar valores do pai. Release dos documentos, da biblioteca opcional e do executável passou, com zero testes registrados nos dois caches de produção; formato e fronteira Lite passaram. Os logs e limites estão no documento de ciclo de vida. Este resultado não equivale à suíte inteira ou à integração instalada.
+
+Após autorização específica, três probes físicos criaram perfis de teste novos e fizeram Delete S_OK depois dos ACKs. Conferências externas posteriores registraram ausência dos três paths de pacote exatos e das chaves SID exatas Mappings/Storage; os três diretórios TEMP de fixture continuavam presentes e foram preservados. A prova é limitada a esses paths/chaves, sem alegação universal de resíduos.
+
+Os ensaios 01/02 falharam antes da execução. No 03, após corrigir o ambiente LOCALAPPDATA, as três fixtures MP3, AAC/M4A e WAV passaram por conversão e segunda validação independente. O helper permaneceu reprovado: máscara 29695/32767, faltando JobChildDenied (erro 1816 de quota) e LoopbackDenied (erro 10060 de timeout). Nenhum dos dois foi reclassificado como negação estrita; `media_passed=true` conserva `helper_passed=false` e `passed=false`.
+
+O probe usa capability sem a fence do owner e não atravessa seu journal/lease ou sua porta abstrata. Portanto, os hooks de propriedade/uso do owner não foram validados fisicamente, nem sua integração no player. Os recibos de `media-appcontainer-native-authorized-20261104-{01,02,03}` e a [descrição do resultado parcial](../../media-profile-lifecycle.md#ensaio-físico-autorizado-resultado-parcial) permanecem evidência; LPAC, negação de rede concluída e produção não são aprovados por esses ensaios.
 
 ## Consequências e critérios de revisão
 

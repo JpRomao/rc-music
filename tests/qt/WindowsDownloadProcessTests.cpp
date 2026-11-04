@@ -1,3 +1,5 @@
+#include "WindowsDownloadAppContainer.hpp"
+#include "WindowsDownloadNativeUseFence.hpp"
 #include "WindowsDownloadProcess.hpp"
 #include "WindowsDownloadReadInput.hpp"
 
@@ -27,6 +29,17 @@
 using namespace music_player::m0;
 
 namespace {
+QByteArray syntheticProfileSid() {
+    // Parsing/preflight only; no test may launch this synthetic identity.
+    QByteArray bytes(40, '\0');
+    bytes[0] = 1;
+    bytes[1] = 8;
+    bytes[7] = 15;
+    bytes[8] = 2;
+    for (int index = 0; index < 7; ++index)
+        bytes[12 + 4 * index] = static_cast<char>(index + 1);
+    return bytes;
+}
 
 QString helperPath() { return QString::fromUtf8(RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH); }
 
@@ -215,6 +228,75 @@ class WindowsDownloadProcessTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void unavailableFenceRefusesBeforeEvenInvalidExecutable_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("closed quiescent") << 0;
+        QTest::newRow("busy") << 1;
+        QTest::newRow("closing busy") << 2;
+        QTest::newRow("uncertain") << 3;
+    }
+    void unavailableFenceRefusesBeforeEvenInvalidExecutable() {
+        QFETCH(int, kind);
+        using State = WindowsDownloadNativeUseFence::State;
+        auto fence = std::make_shared<WindowsDownloadNativeUseFence>();
+        std::optional<WindowsDownloadNativeUseFence::Ticket> ticket;
+        if (kind == 0) {
+            QCOMPARE(fence->closeAdmission(), State::ClosedQuiescent);
+        } else {
+            ticket = fence->begin();
+            QVERIFY(ticket);
+            if (kind == 2)
+                QCOMPARE(fence->closeAdmission(), State::ClosingBusy);
+            else if (kind == 3)
+                ticket.reset();
+        }
+        const auto before = fence->state();
+        const auto identity = WindowsDownloadAppContainer::fromTrustedSid(syntheticProfileSid(), fence);
+        QVERIFY(identity);
+        QTemporaryDir directory;
+        auto config = configuration(directory, {QStringLiteral("hang")});
+        config.executable.clear(); // Invalid before all resource allocation/CreateProcess, even in Red.
+        config.app_container = identity;
+        config.require_app_container = true;
+        {
+            WindowsDownloadProcess process;
+            QVERIFY(!process.start(config, 0));
+            const auto update = process.poll(0);
+            QCOMPARE(update.state, WindowsDownloadProcessState::Failed);
+            QCOMPARE(update.error, WindowsDownloadProcessError::Isolation);
+            QVERIFY(update.stdout_chunk.isEmpty());
+            QVERIFY(update.stderr_chunk.isEmpty());
+        }
+        QCOMPARE(fence->state(), before);
+        if (ticket)
+            QVERIFY(ticket->acknowledgeNoChild());
+    }
+    void idleOrAbsentFenceDoesNotAcquireBeforeConfigurationValidation_data() {
+        QTest::addColumn<bool>("fenced");
+        QTest::newRow("unfenced legacy identity") << false;
+        QTest::newRow("open idle fence") << true;
+    }
+    void idleOrAbsentFenceDoesNotAcquireBeforeConfigurationValidation() {
+        QFETCH(bool, fenced);
+        auto fence = fenced ? std::make_shared<WindowsDownloadNativeUseFence>() : nullptr;
+        const auto identity = WindowsDownloadAppContainer::fromTrustedSid(syntheticProfileSid(), fence);
+        QVERIFY(identity);
+        QCOMPARE(identity->nativeUseFence(), fence);
+        QTemporaryDir directory;
+        auto config = configuration(directory, {});
+        config.executable.clear();
+        config.app_container = identity;
+        config.require_app_container = true;
+        {
+            WindowsDownloadProcess process;
+            QVERIFY(!process.start(config, 0));
+            QCOMPARE(process.poll(0).error, WindowsDownloadProcessError::InvalidConfiguration);
+        }
+        if (fence) {
+            QCOMPARE(fence->state(), WindowsDownloadNativeUseFence::State::OpenIdle);
+            QCOMPARE(fence->closeAdmission(), WindowsDownloadNativeUseFence::State::ClosedQuiescent);
+        }
+    }
     void missingRequiredAppContainerNeverFallsBackToLegacyLaunch() {
         QTemporaryDir directory;
         NativeFileGuard file{fixtureFile(directory.filePath(QStringLiteral("input.bin")))};

@@ -7,12 +7,15 @@
 #include <QString>
 
 #include <functional>
+#include <memory>
 
 namespace music_player::m0 {
 
-// Private native primitive for precisely these two fixed documents, not a
+class DownloadMediaProfileLease;
+
+// Private native primitive for precisely these three fixed documents, not a
 // general filesystem API. All calls and callbacks belong to one worker.
-enum class WindowsPrivateDownloadDocumentKind { Checkpoint, Ownership };
+enum class WindowsPrivateDownloadDocumentKind { Checkpoint, Ownership, MediaProfile };
 enum class WindowsPrivateDownloadFaultPoint { BeforeCommit, AfterCommit };
 
 struct WindowsPrivateDownloadDocumentOptions final {
@@ -40,6 +43,9 @@ class WindowsPrivateDownloadDocument final {
     // The current document is inspected and the mutation runs under the same
     // exclusive native lock as replacement. Only Saved with valid bytes writes.
     [[nodiscard]] DownloadCheckpointSaveStatus update(const Mutation& mutation);
+    // The media-profile operation has one live owner, independently of the
+    // short document writer lock. Releasing this lease never deletes a file.
+    [[nodiscard]] static std::unique_ptr<DownloadMediaProfileLease> acquireMediaProfileLease(QString directory);
 
   private:
     QString directory_;

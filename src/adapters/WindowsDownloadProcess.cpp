@@ -1,5 +1,6 @@
 #include "WindowsDownloadProcess.hpp"
 #include "WindowsDownloadAppContainer.hpp"
+#include "WindowsDownloadNativeUseFence.hpp"
 #include "WindowsDownloadReadInput.hpp"
 
 #ifndef NOMINMAX
@@ -496,6 +497,7 @@ struct WindowsDownloadProcess::Impl final {
     WindowsDownloadProcessState stopped_state{WindowsDownloadProcessState::Exited};
     bool read_input_acquired{false};
     bool read_input_inheritable{false};
+    std::optional<WindowsDownloadNativeUseFence::Ticket> native_use{};
 
     ~Impl() { release(); }
 
@@ -544,6 +546,18 @@ struct WindowsDownloadProcess::Impl final {
         config.app_container.reset();
         created_information = nullptr;
         config.standard_input.clear();
+        // Teardown is not an acknowledgement, even if its best-effort waits
+        // happened to finish. A pending ticket makes the owner uncertain.
+        native_use.reset();
+    }
+
+    void releaseNoChild() {
+        // Only explicit pre-launch/FailedToStart proof may take this path.
+        // Close all resources before publishing that no native child escaped.
+        auto no_child_use = std::move(native_use);
+        release();
+        if (no_child_use)
+            static_cast<void>(no_child_use->acknowledgeNoChild());
     }
 
     [[nodiscard]] bool prepare() {
@@ -657,17 +671,34 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.update.error = WindowsDownloadProcessError::Isolation;
         return false;
     }
+    const auto native_fence = config.app_container ? config.app_container->nativeUseFence() : nullptr;
+    if (native_fence && native_fence->state() != WindowsDownloadNativeUseFence::State::OpenIdle) {
+        value.update.state = WindowsDownloadProcessState::Failed;
+        value.update.error = WindowsDownloadProcessError::Isolation;
+        return false;
+    }
     if (!validConfig(config)) {
         value.update.state = WindowsDownloadProcessState::Failed;
         value.update.error = WindowsDownloadProcessError::InvalidConfiguration;
         return false;
     }
     value.config = config;
+    if (native_fence) {
+        // This acquisition is atomic with owner admission closure. The earlier
+        // query only provides error precedence; it never reserves permission.
+        value.native_use = native_fence->begin();
+        if (!value.native_use) {
+            value.release();
+            value.update.state = WindowsDownloadProcessState::Failed;
+            value.update.error = WindowsDownloadProcessError::Isolation;
+            return false;
+        }
+    }
     if (config.read_input) {
         if (!config.read_input->acquireUse()) {
             // Rejection has no child and owns no claim. Do not keep the other
             // owner's file alive after that owner has acknowledged its exit.
-            value.config.read_input.reset();
+            value.releaseNoChild();
             value.update.state = WindowsDownloadProcessState::Failed;
             value.update.error = WindowsDownloadProcessError::Isolation;
             return false;
@@ -675,7 +706,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.read_input_acquired = true;
     }
     if (!value.prepare()) {
-        value.release();
+        value.releaseNoChild();
         value.update.state = WindowsDownloadProcessState::Failed;
         value.update.error = WindowsDownloadProcessError::Isolation;
         return false;
@@ -733,7 +764,12 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.process->setCreateProcessArgumentsModifier({});
     const auto inheritance_restored = value.restoreInputInheritance();
     if (value.process->state() == QProcess::NotRunning) {
-        value.release();
+        // QProcess's Windows start is synchronous. FailedToStart is explicit
+        // proof that no CreateProcess child was admitted; other states are not.
+        if (value.process->error() == QProcess::FailedToStart)
+            value.releaseNoChild();
+        else
+            value.release();
         value.update.state = WindowsDownloadProcessState::Failed;
         value.update.error = !config.app_container && attributes_ready && inheritance_restored
                                  ? WindowsDownloadProcessError::Start
@@ -802,6 +838,14 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
         // Data handles must leave before the workspace removes its job tree.
         // A delete-shared handle can still keep a legacy unlink delete-pending.
         value.config.read_input.reset();
+        if (value.native_use) {
+            const bool acknowledged = value.native_use->acknowledgeNativeStopped();
+            value.native_use.reset();
+            if (!acknowledged && value.update.error == WindowsDownloadProcessError::None) {
+                value.update.state = WindowsDownloadProcessState::Failed;
+                value.update.error = WindowsDownloadProcessError::Isolation;
+            }
+        }
     }
     return value.update;
 }

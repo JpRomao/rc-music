@@ -745,7 +745,23 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — receitas Lite e Completa experimental
+### Checkpoint atual — propriedade durável de perfil e ensaio AppContainer autorizado
+
+Incremento de 2026-11-04: o [ciclo de vida do perfil de mídia](media-profile-lifecycle.md) acrescenta um terceiro documento privado de 8 KiB, com slot único e nome derivado de UUID, sem alterar schemas/limites dos documentos existentes. A lease nativa de operação impede dois donos de atravessar a janela entre leitura e criação. O owner exige Planned Saved antes de criar, Created/InUse Saved antes de emitir capability e CleanupPending Saved antes de remover. Registro carregado ou criação incerta não reconstrói autoridade. Falha póscommit continua Failed até nova gravação reconhecida, sem repetir Create/Delete.
+
+A capability compartilha uma fence cujo ticket só reconhece ausência de filho ou parada nativa e drenagem dos três pipes. Fechamento bloqueia novos tickets; destruição pendente mantém incerteza, sem usar refcount como prova. A API especializada de perfil ainda usa plataforma falsa nos testes do owner; não há implementação de perfil habilitada no player nem composição normal dessa lease. Os hooks do supervisor têm testes de recusa antes do launch; sua combinação com o novo owner/fence ainda requer prova física própria.
+
+TDD: codec **92 passagens/22 falhas → 114/114**, fence **3/12 → 15/15**, store **6/18 → 24/24**, lease **29/2 → 31/31**, owner **12/37 → 49/49**. A fixture real do owner inicialmente tinha ACL herdável incompatível com o store; foi corrigida para a política exata, e o Red foi repetido antes de restaurar o Green. A execução física autorizada expôs `CreateProcess` recusado por ambiente: `LOCALAPPDATA` ausente. Regressão inerte **32/1 → 33/33** fixa Known Folders antes de criar o runtime, conservando o ambiente fechado e o legado de duas chaves. Diagnósticos temporários foram removidos.
+
+Fechamento focado **18/18 CTest**, **707 casos Qt aprovados**, **dois skips históricos de symlink** no checkpoint e autoteste puro do probe aprovado. Evidências em `out/product/test-runs/media-profile-owner-20261104/`. A validação Release sem testes, formato e documentação têm seus resultados no registro central do incremento; não há novo instalador por este trabalho.
+
+Após autorização explícita do mantenedor, os três ensaios físicos criaram somente perfis GUID próprios e os removeram via API após os ACKs. O terceiro converteu e validou separadamente MP3, AAC/MP4 e WAV no Windows atual. O helper estrito não passou: mask **29695/32767**, com **1816** na tentativa de filho e **10060** no loopback. Não reclassificar quota/timeout como sucesso de negação. Recibos e TEMP de falhas foram preservados; os paths de pacote e as chaves exatas de Mapping/Storage dos SIDs de teste foram conferidos ausentes após a saída. Isso não comprova ausência universal de resíduos ou política de disco do perfil.
+
+Próxima sequência: obter evidência específica para descendentes/rede, exercitar o owner e a fence juntos com o backend de perfil nativo e fechar armazenamento/cotas/resíduos antes de promover a composição protegida de produção. Integração instalada, engine física da Completa, opcionais/upgrade, acessibilidade, segurança/licenças e release mantêm seus gates. Downloads continuam OFF; benchmarks e Linux permanecem adiados.
+
+<a id="checkpoint-atual--receitas-lite-e-completa-experimental"></a>
+
+### Checkpoint anterior — receitas Lite e Completa experimental
 
 Incremento de 2026-11-04: as [receitas de runtime](windows-runtime.md#edições-e-montagem-da-completa-experimental) e [instalador](windows-installer.md#setup-da-completa-experimental) reconhecem `Lite` padrão e opt-in `CompleteExperimental`, com par canônico de manifesto/receipt, identidade de payload incluindo a edição, SDK/notices verificados e cinco módulos remotos OFF. O [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md) limita a entrega privada a uma instalação compartilhada com troca de payload, sem coexistência ou migração de dados. O setup explica a edição e o WebView2 já instalado; não baixa/instala runtime.
 

@@ -3,6 +3,7 @@ include_guard(GLOBAL)
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core)
 add_library(rc_music_download_documents STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadCheckpointJson.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadMediaProfileJson.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadOwnershipJson.cpp")
 target_include_directories(rc_music_download_documents PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_download_documents PUBLIC rc_music_downloads Qt6::Core)
@@ -11,6 +12,9 @@ if(WIN32)
     target_sources(rc_music_download_documents PRIVATE
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadAppContainer.hpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadAppContainer.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNativeUseFence.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadMediaProfileStore.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaProfileOwner.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadReadInput.hpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadReadInput.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadArtifactPins.cpp"
@@ -23,9 +27,9 @@ endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
-    set(rc_music_document_units DownloadCheckpointJson DownloadOwnershipJson)
+    set(rc_music_document_units DownloadCheckpointJson DownloadOwnershipJson DownloadMediaProfileJson)
     if(WIN32)
-        list(APPEND rc_music_document_units WindowsDownloadOwnershipStore WindowsDownloadOwnershipRecovery WindowsDownloadRecoveryReview WindowsDownloadAppContainer)
+        list(APPEND rc_music_document_units WindowsDownloadOwnershipStore WindowsDownloadOwnershipRecovery WindowsDownloadRecoveryReview WindowsDownloadAppContainer WindowsDownloadNativeUseFence WindowsDownloadMediaProfileStore WindowsMediaProfileOwner)
     endif()
     foreach(unit IN LISTS rc_music_document_units)
         set(target "rc_music_${unit}_tests")

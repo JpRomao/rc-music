@@ -1,4 +1,5 @@
 #include "adapters/WindowsPrivateDownloadDocument.hpp"
+#include "adapters/DownloadMediaProfile.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 
 #include <QDir>
@@ -31,6 +32,9 @@ std::optional<Policy> documentPolicy(const WindowsPrivateDownloadDocumentKind ki
         return Policy{"download-checkpoint.json", "download-checkpoint.lock", "download-checkpoint-", 2 * 1024 * 1024};
     case WindowsPrivateDownloadDocumentKind::Ownership:
         return Policy{"download-ownership.json", "download-ownership.lock", "download-ownership-", 256 * 1024};
+    case WindowsPrivateDownloadDocumentKind::MediaProfile:
+        return Policy{"download-media-profile.json", "download-media-profile.lock", "download-media-profile-",
+                      8 * 1024};
     }
     return std::nullopt;
 }
@@ -246,6 +250,18 @@ Handle writerLock(const PrivateDirectory& directory, PrivateSecurity& security, 
     return handle;
 }
 
+class MediaProfileOperationLease final : public DownloadMediaProfileLease {
+  public:
+    MediaProfileOperationLease(PrivateDirectory directory, Handle lock)
+        : directory_(std::move(directory)), lock_(std::move(lock)) {}
+
+  private:
+    // The exclusive handle closes before the pins. Releasing the lease never
+    // unlinks a name or grants authority to remove an AppContainer profile.
+    PrivateDirectory directory_;
+    Handle lock_;
+};
+
 class FreshTemporary final {
   public:
     Handle pin{};
@@ -332,6 +348,26 @@ WindowsPrivateDownloadDocument::WindowsPrivateDownloadDocument(QString directory
                                                                Validator validator,
                                                                WindowsPrivateDownloadDocumentOptions options)
     : directory_(std::move(directory)), kind_(kind), validator_(std::move(validator)), options_(std::move(options)) {}
+
+std::unique_ptr<DownloadMediaProfileLease>
+WindowsPrivateDownloadDocument::acquireMediaProfileLease(QString configured) {
+    try {
+        PrivateSecurity security;
+        PrivateDirectory directory;
+        if (!pinDirectory(configured, security, directory))
+            return {};
+        auto policy = documentPolicy(WindowsPrivateDownloadDocumentKind::MediaProfile);
+        if (!policy)
+            return {};
+        policy->lock_leaf = "download-media-profile-owner.lock";
+        auto lock = writerLock(directory, security, *policy);
+        if (!lock.valid() || !directory.unchanged(security))
+            return {};
+        return std::make_unique<MediaProfileOperationLease>(std::move(directory), std::move(lock));
+    } catch (...) {
+        return {};
+    }
+}
 
 WindowsPrivateDownloadDocumentResult WindowsPrivateDownloadDocument::load() {
     try {
