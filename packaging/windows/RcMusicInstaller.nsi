@@ -4,6 +4,26 @@ SetCompressor zlib
 !error "RcMusicInstaller.nsi requires RCMUSIC_CONFIG"
 !endif
 !include "${RCMUSIC_CONFIG}"
+; Historical configs remain Lite. New plans always provide both fields.
+!ifndef RCMUSIC_EDITION
+!define RCMUSIC_EDITION "Lite"
+!endif
+!ifndef RCMUSIC_REQUIRES_WEBVIEW2
+!define RCMUSIC_REQUIRES_WEBVIEW2 0
+!endif
+!if "${RCMUSIC_EDITION}" == "CompleteExperimental"
+    !if ${RCMUSIC_REQUIRES_WEBVIEW2} != 1
+        !error "CompleteExperimental requires the existing WebView2 prerequisite"
+    !endif
+    !define RCMUSIC_EDITION_WELCOME "Edição Completa experimental.$\r$\nA navegação requer WebView2 Evergreen x64 já instalado. Não baixa nem instala o runtime.$\r$\nTrocar de edição substitui a versão atual de RC Music, preservando dados e preferências.$\r$\n$\r$\n"
+!else if "${RCMUSIC_EDITION}" == "Lite"
+    !if ${RCMUSIC_REQUIRES_WEBVIEW2} != 0
+        !error "Lite cannot require a browser runtime"
+    !endif
+    !define RCMUSIC_EDITION_WELCOME "Edição Lite, sem navegador interno.$\r$\nTrocar de edição substitui a versão atual de RC Music, preservando dados e preferências.$\r$\n$\r$\n"
+!else
+    !error "Unknown RC Music installer edition"
+!endif
 !ifndef RCMUSIC_SHORTCUT_ROOT
 !error "RcMusicInstaller.nsi requires an explicit RCMUSIC_SHORTCUT_ROOT"
 !endif
@@ -26,14 +46,17 @@ SetCompressor zlib
 !define RCMUSIC_RESERVED_MARKER ".rcmusic-install.ini"
 
 Name "RC Music"
+!if "${RCMUSIC_EDITION}" == "CompleteExperimental"
+Caption "RC Music — Completa experimental"
+!endif
 OutFile "${RCMUSIC_OUTPUT}"
 RequestExecutionLevel user
 ShowInstDetails show
 ShowUninstDetails show
 !if ${RCMUSIC_ASSOCIATIONS_ENABLED} == 0
-!define MUI_WELCOMEPAGE_TEXT "Versão experimental para uso local, não destinada à distribuição.$\r$\n$\r$\nRequer Windows x64 e Microsoft Visual C++ Redistributable compatível.$\r$\n$\r$\nSeus dados pessoais e preferências são preservados. As associações de arquivos estão desabilitadas neste artefato."
+!define MUI_WELCOMEPAGE_TEXT "${RCMUSIC_EDITION_WELCOME}Uso experimental local, não destinado à distribuição.$\r$\n$\r$\nRequer Windows x64 e Microsoft Visual C++ Redistributable compatível.$\r$\n$\r$\nAs associações de arquivos estão desabilitadas neste artefato."
 !else
-!define MUI_WELCOMEPAGE_TEXT "Versão experimental para uso local, não destinada à distribuição.$\r$\n$\r$\nRequer Windows x64 e Microsoft Visual C++ Redistributable compatível.$\r$\n$\r$\nSeus dados pessoais e preferências são preservados. O aplicativo não altera a escolha de player padrão do Windows."
+!define MUI_WELCOMEPAGE_TEXT "${RCMUSIC_EDITION_WELCOME}Uso experimental local, não destinado à distribuição.$\r$\n$\r$\nRequer Windows x64 e Microsoft Visual C++ Redistributable compatível.$\r$\n$\r$\nO aplicativo não altera a escolha de player padrão do Windows."
 !endif
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES

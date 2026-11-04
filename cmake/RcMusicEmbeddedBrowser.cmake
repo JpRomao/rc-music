@@ -17,6 +17,9 @@ foreach(input IN ITEMS build/native/include/WebView2.h build/native/include/WebV
     endif()
 endforeach()
 
+# Desktop Qt imports live in its source subdirectory. This root-level optional
+# module must declare Widgets itself, including when BUILD_TESTING is OFF.
+find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Widgets)
 include("${CMAKE_CURRENT_LIST_DIR}/RcMusicMediaData.cmake")
 add_library(rc_music_embedded_browser_binding STATIC
     "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/EmbeddedBrowserWindow.hpp"
@@ -47,7 +50,9 @@ set_target_properties(rc_music_webview2_loader PROPERTIES IMPORTED_LOCATION
     "${RC_MUSIC_WEBVIEW2_SDK_ROOT}/build/native/x64/WebView2LoaderStatic.lib")
 add_library(rc_music_embedded_browser STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Browser.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Browser.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Browser.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Options.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Options.cpp")
 target_include_directories(rc_music_embedded_browser SYSTEM PRIVATE
     "${RC_MUSIC_WEBVIEW2_SDK_ROOT}/build/native/include")
 target_link_libraries(rc_music_embedded_browser PUBLIC rc_music_browser_media_panel
@@ -69,6 +74,8 @@ if(BUILD_TESTING)
         target_link_libraries(${target} PRIVATE rc_music_embedded_browser_binding Qt6::Test)
         if(unit STREQUAL "WindowsWebView2Browser")
             target_link_libraries(${target} PRIVATE rc_music_embedded_browser)
+            target_include_directories(${target} SYSTEM PRIVATE
+                "${RC_MUSIC_WEBVIEW2_SDK_ROOT}/build/native/include")
         elseif(unit STREQUAL "BrowserMediaPanel")
             target_link_libraries(${target} PRIVATE rc_music_browser_media_panel)
         endif()

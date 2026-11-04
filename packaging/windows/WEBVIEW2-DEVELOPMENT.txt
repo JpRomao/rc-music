@@ -1,0 +1,21 @@
+RC Music - edicao Completa experimental Windows x64
+
+Inclui navegacao interna e deteccao de midia em build opcional. Downloads,
+Native Messaging e extensoes instaladas permanecem desabilitados neste pacote.
+
+A navegacao requer Microsoft Edge WebView2 Evergreen Runtime x64 ja instalado.
+Este pacote nao inclui, baixa, instala ou atualiza o runtime. O loader estatico
+do SDK faz parte do executavel; sua licenca e notices acompanham o aplicativo.
+Nao copie pastas de runtime de outra instalacao para este pacote.
+
+Lite e Completa experimental compartilham a mesma identidade e instalacao.
+Trocar a edicao substitui o payload ativo pelo fluxo normal de upgrade;
+nao cria coexistencia independente nem migra/apaga dados MusicPlayer/MusicPlayer.
+Desinstalacao remove somente arquivos e registros que o instalador reconhece
+como proprios, preservando dados pessoais, perfis e runtime compartilhado.
+
+O WebView2 e iniciado somente pela acao Navegar. Perfil interno e separado do
+Brave. Ausencia/falha da engine deve conservar o player local utilizavel.
+Selecao de canal, overrides de politicas do host, privacidade, isolamento,
+acessibilidade, licencas completas e instalacao/upgrade/uninstall reais ainda
+precisam dos seus gates. Nao distribuir este artefato como release aprovada.

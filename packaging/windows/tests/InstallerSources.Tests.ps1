@@ -6,10 +6,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $sourceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-# Byte-for-byte promotion baseline, recorded from clean commit
-# 3f539d6ed39d5e990fa736e3b324fa3de67a8fc2. This test never invokes Git or NSIS.
+# Reviewed product snapshot. Three includes preserve the promotion baseline
+# from 3f539d6ed39d5e990fa736e3b324fa3de67a8fc2; the main script adds explicit
+# edition/prerequisite text and guards, covered by InstallerEdition.Tests.ps1.
+# This inventory test never invokes Git or NSIS.
 $sources = [ordered]@{
-    'RcMusicInstaller.nsi' = '343c9754e00012062528509507f9cac3059fcd537ce8de5b0be8cbbddbbebbf0'
+    'RcMusicInstaller.nsi' = '81fbe70017a54c5838393f8e1da36c82e48705c81c4e04b529e4cfd73c3f4ba7'
     'RcMusicInstallerFiles.nsh' = '530f28af503ae23c54461c57a82d95802d44ed9e129edbb3d842b1322469bb06'
     'RcMusicAssociationSections.nsh' = '67174c0a56f73049fc3cb4dd13e064ec41f60fdc0ab5c1f65ccd787b5e6a585d'
     'RcMusicAssociations.nsh' = '56321242fad0615189474d63a6f32d81d5cc5e92a7a38158a5d9eb9cb760baca'

@@ -3,7 +3,7 @@
 **Estado:** runtime Lite atualizado em 2026-11-04, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-11-04.
 
-A [entrega atual de `d51c18c`](local-delivery-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime novo permaneceu íntegro após remover o payload anterior e os caches obsoletos inventariados.
+A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime permaneceu íntegro após a limpeza inventariada. A receita adicional da Completa experimental está descrita abaixo, com evidência de montagem própria exigida para cada artefato.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
 
@@ -15,7 +15,27 @@ O build é explícito na entrada de produto: somente Release, `BUILD_TESTING=OFF
 
 O snapshot usa o entrypoint validado. Produto verifica `CMakeLists.txt`, `cmake`, `include`, `src`, `tests`, `tools`, `assets` e `packaging/windows`; histórico conserva também seus três inputs M0. Alterações staged, unstaged ou untracked nesses inputs impedem atribuir um runtime ao commit limpo. Não há autenticação de publicador ou proteção contra escritor hostil concorrente.
 
-O manifesto mantém schema 1 e campos de compatibilidade, acrescentando `parser_sha256`, `recipe_path_base=repository` e cinco paths/hashes reais da receita, módulos e arquivos de configuração, revalidados antes de publicar o manifesto. O instalador histórico inclui o hash do planejador promovido na identidade/recibo, além das oito chaves anteriores. O builder comparativo identifica seus sete inputs de receita relativamente à raiz. Nenhum manifesto, protocolo, corpus, matriz ou pacote histórico é reescrito ou aprovado retroativamente.
+O manifesto mantém schema 1 e campos de compatibilidade, acrescentando `parser_sha256`, `recipe_path_base=repository`, `edition` e `browser_runtime_requirement`. Há cinco paths/hashes de receita na Lite e seis na Completa experimental, que inclui seu aviso próprio; são revalidados antes de publicar o manifesto. O instalador histórico inclui o hash do planejador promovido na identidade/recibo, além das oito chaves anteriores. O builder comparativo identifica seus sete inputs de receita relativamente à raiz. Nenhum manifesto, protocolo, corpus, matriz ou pacote histórico é reescrito ou aprovado retroativamente.
+
+## Edições e montagem da Completa experimental
+
+`-Edition Lite` é o padrão e continua recusando um cache com navegador ON. `-Edition CompleteExperimental` exige o entrypoint raiz, navegador ON, SDK local explícito e integração/downloads/Native Messaging OFF, conforme o [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md). A receita sempre exige `BUILD_TESTING=OFF`; permitir ON explicitamente na API de inspeção não autoriza empacotar testes.
+
+Com o build OFF da [navegação](embedded-browser.md#inputs-e-composição) preparado, fontes commitadas e destino inexistente:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicLocalRuntime.ps1 -Edition CompleteExperimental -BuildDirectory out/product/complete-experimental-release-20261104 -OutputDirectory out/product/rc-music-local/nova-completa-experimental
+```
+
+Além do mesmo núcleo Qt/Multimedia/TagLib, são copiados `WEBVIEW2-DEVELOPMENT.txt`, `notices/WebView2-SDK-LICENSE.txt` e `notices/WebView2-SDK-NOTICE.txt`. Bytes, origem e hashes entram no inventário. O loader WebView2 é estático; o runtime Evergreen do host não é copiado. O pré-requisito registrado é `existing-webview2-evergreen-x64`; o pacote não baixa/instala o runtime. Navegação continua opt-in e downloads permanecem OFF. O setup correspondente também precisa receber a edição explicitamente.
+
+O grafo de produção é inspecionado com a edição correspondente. O helper confere também os inputs do link, pois os comandos podem usar RSP e ocultar bibliotecas:
+
+```powershell
+pwsh -NoProfile -File scripts/Test-ProductionBoundary.ps1 -Edition CompleteExperimental -BuildDirectory out/product/complete-experimental-release-20261104
+```
+
+Na Lite, o mesmo helper sem `-Edition` recusa fontes e loader de navegação. TDD do boundary passou 8/8 → Red 10 passagens/17 falhas → Green 27/27; os grafos reais aprovados têm 255 comandos Lite e 289 Completa. Configuração/runtime planner passou 115/115; receita 7/7. O build Completa/OFF passou após declarar Qt Widgets no escopo raiz, com lint e zero testes registrados. São checks de construção e fronteira, separados do smoke da engine e da instalação.
 
 ## Checks sintéticos
 

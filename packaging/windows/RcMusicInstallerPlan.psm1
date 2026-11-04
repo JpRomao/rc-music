@@ -43,7 +43,8 @@ function Get-RcMusicInstallerRecipeHashes {
 function New-RcMusicInstallerPlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $RuntimeDirectory,
-        [Parameter(Mandatory)][string] $OutputDirectory, [string] $FormatMatrix, [switch] $LegacyBaseline)
+        [Parameter(Mandatory)][string] $OutputDirectory, [string] $FormatMatrix, [switch] $LegacyBaseline,
+        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite')
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
     $output = [IO.Path]::GetFullPath($OutputDirectory, $repository)
     $outputRoots = @('out/product/', 'out/m0/') | ForEach-Object { Join-Path $repository $_ }
@@ -64,6 +65,29 @@ function New-RcMusicInstallerPlan {
         $manifest.distribution -cne 'private-local-development-only') {
         throw 'Installer requires a clean private production-mode x64 runtime manifest'
     }
+    $canonicalEdition = if ($Edition -ieq 'CompleteExperimental') { 'CompleteExperimental' } else { 'Lite' }
+    $editionProperty = $manifest.PSObject.Properties['edition']
+    $manifestEdition = 'Lite'
+    if ($null -ne $editionProperty) {
+        if ($editionProperty.Value -isnot [string] -or
+            ($editionProperty.Value -cne 'Lite' -and $editionProperty.Value -cne 'CompleteExperimental')) {
+            throw 'Runtime manifest edition must be canonical Lite or CompleteExperimental'
+        }
+        $manifestEdition = $editionProperty.Value
+    }
+    if ($manifestEdition -cne $canonicalEdition) { throw 'Runtime manifest edition does not match the requested installer edition' }
+    $requirementProperty = $manifest.PSObject.Properties['browser_runtime_requirement']
+    $browserRequirement = 'none'
+    if ($canonicalEdition -ceq 'CompleteExperimental') {
+        $browserRequirement = 'existing-webview2-evergreen-x64'
+        if ($null -eq $editionProperty -or $null -eq $requirementProperty -or
+            $requirementProperty.Value -isnot [string] -or $requirementProperty.Value -cne $browserRequirement) {
+            throw 'CompleteExperimental requires explicit edition and existing WebView2 Evergreen x64 prerequisite'
+        }
+    } elseif ($null -ne $requirementProperty -and
+        ($requirementProperty.Value -isnot [string] -or $requirementProperty.Value -cne 'none')) {
+        throw 'Lite runtime cannot require a browser runtime'
+    }
     $mappings = foreach ($entry in $manifest.files) {
         if ($entry.relative_path -isnot [string] -or $entry.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
             $entry.relative_path -match '^(?i:Uninstall\.exe|\.rcmusic-install\.ini)(?:[\\/]|$)') {
@@ -79,7 +103,11 @@ function New-RcMusicInstallerPlan {
             throw "Runtime bytes no longer match the manifest: $($actual.relative_path)"
         }
     }
-    foreach ($required in @('RCMusic.exe', 'qt.conf', 'LOCAL-DEVELOPMENT.txt')) {
+    $requiredFiles = @('RCMusic.exe', 'qt.conf', 'LOCAL-DEVELOPMENT.txt')
+    if ($canonicalEdition -ceq 'CompleteExperimental') {
+        $requiredFiles += @('notices/WebView2-SDK-LICENSE.txt', 'notices/WebView2-SDK-NOTICE.txt', 'WEBVIEW2-DEVELOPMENT.txt')
+    }
+    foreach ($required in $requiredFiles) {
         if ($verified.files.relative_path -cnotcontains $required) { throw "Missing required runtime file: $required" }
     }
     $files = @($verified.files | Sort-Object -Property relative_path -CaseSensitive -Culture '')
@@ -95,7 +123,8 @@ function New-RcMusicInstallerPlan {
     }) -Compress
     $formatSignature = Get-RcMusicTextSha256 $associationJson
     $packageIdentity = [ordered]@{ inventory = $identity; format_signature = $formatSignature
-        format_matrix_sha256 = $(if ($declaration) { $declaration.sha256 } else { $null }) } | ConvertTo-Json -Compress
+        format_matrix_sha256 = $(if ($declaration) { $declaration.sha256 } else { $null })
+        edition = $canonicalEdition; browser_runtime_requirement = $browserRequirement } | ConvertTo-Json -Compress
     $payloadId = Get-RcMusicInstallerIdentity -InventoryJson $packageIdentity -RecipeHashes $recipeHashes
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('; Generated from verified runtime bytes. Private local development only.')
@@ -103,6 +132,8 @@ function New-RcMusicInstallerPlan {
     $lines.Add('!define RCMUSIC_INSTALL_ROOT "$LOCALAPPDATA\Programs\RC Music"')
     $lines.Add('!define RCMUSIC_SHORTCUT_ROOT "$SMPROGRAMS"')
     $lines.Add('!define RCMUSIC_REGISTRY_BASE "Software"')
+    $lines.Add('!define RCMUSIC_EDITION "' + $canonicalEdition + '"')
+    $lines.Add('!define RCMUSIC_REQUIRES_WEBVIEW2 ' + [int] ($canonicalEdition -ceq 'CompleteExperimental'))
     $lines.Add('!define RCMUSIC_PAYLOAD_ID "' + $payloadId + '"')
     $lines.Add('!define RCMUSIC_FORMAT_SIGNATURE "' + $formatSignature + '"')
     # No declaration is inferred when the explicit validated matrix is absent.
@@ -155,6 +186,7 @@ function New-RcMusicInstallerPlan {
     }
     $lines.Add('!macroend')
     return [pscustomobject]@{ output = $output; runtime = $runtime; runtime_manifest = $manifestPath
+        edition = $canonicalEdition; browser_runtime_requirement = $browserRequirement
         runtime_manifest_sha256 = $manifestHash
         source_commit = $manifest.source_commit; payload_id = $payloadId; files = $files; recipe_hashes = $recipeHashes
         associations_enabled = ($formats.Count -gt 0); format_signature = $formatSignature; formats = $formats

@@ -2,18 +2,17 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-// SDK forward declarations require COM before WebView2, and its options header
-// must precede Qt's __has_attribute fallback on MSVC.
+// SDK forward declarations require COM before WebView2.
 // clang-format off
 #include <Windows.h>
 #include <objbase.h>
 #include <wrl.h>
 #include <WebView2.h>
-#include <WebView2EnvironmentOptions.h>
 // clang-format on
 
 #include "adapters/BrowserNavigationPolicy.hpp"
 #include "adapters/BrowserNavigationTracker.hpp"
+#include "adapters/WindowsWebView2Options.hpp"
 #include "presentation/BrowserMediaPanel.hpp"
 
 #include <QApplication>
@@ -487,13 +486,8 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
                 return;
             }
         }
-        auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-        ComPtr<ICoreWebView2EnvironmentOptions2> exclusive;
-        ComPtr<ICoreWebView2EnvironmentOptions6> extensions;
-        if (!options || FAILED(options.As(&exclusive)) || FAILED(options.As(&extensions)) ||
-            FAILED(options->put_AllowSingleSignOnUsingOSPrimaryAccount(FALSE)) ||
-            FAILED(exclusive->put_ExclusiveUserDataFolderAccess(TRUE)) ||
-            FAILED(extensions->put_AreBrowserExtensionsEnabled(FALSE))) {
+        auto options = makeWindowsWebView2Options();
+        if (!options) {
             unavailable();
             return;
         }

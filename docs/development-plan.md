@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — detecção em frames acessíveis na Completa experimental
+### Checkpoint atual — receitas Lite e Completa experimental
+
+Incremento de 2026-11-04: as [receitas de runtime](windows-runtime.md#edições-e-montagem-da-completa-experimental) e [instalador](windows-installer.md#setup-da-completa-experimental) reconhecem `Lite` padrão e opt-in `CompleteExperimental`, com par canônico de manifesto/receipt, identidade de payload incluindo a edição, SDK/notices verificados e cinco módulos remotos OFF. O [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md) limita a entrega privada a uma instalação compartilhada com troca de payload, sem coexistência ou migração de dados. O setup explica a edição e o WebView2 já instalado; não baixa/instala runtime.
+
+TDD: configuração **78/78 → Red 79/36 → Green 115/115**; planner do instalador **35/35 → 37/33 → 70/70**; receitas **5/2 → 7/7** e **3/1 → 4/4**; pré-processador NSIS **0/3 → 3/3**. Factory WebView2: **5/5 → 6/1 → 7/7**, com máscara padrão 31 recusada em favor de STABLE 1, mantendo privacidade. Boundary: **8/8 → 10/17 → 27/27**, com query de dependências para ambas as edições, inclusive loader escondido no RSP. Grafos reais Lite **255** e Completa **289** comandos passaram. Regressão de navegação **7/7 CTest/193 casos Qt**, sem skips; formato **397 C++/62 QML**. Matriz de formatos **24/24**, parser PE **5/5** e inventário de fontes NSIS **5/5** passaram. O `check -Diagnostics` consolidado passou **382/382** casos de scripts usando o arquivo de ferramentas versionado explícito; a primeira tentativa sem configuração local foi recusada no preflight. Evidências em `out/product/test-runs/complete-packaging-20261104/` e `out/product/validation-runs/run-25518bcdac654a20b8f696a0cbac2172/`.
+
+O primeiro configure Completa/OFF falhou pela ausência do target Qt Widgets no escopo raiz; a dependência explícita no módulo opcional corrigiu configure e build Release/lint, com zero testes registrados. A geração de cada runtime/setup precisa de fontes commitadas, inventário e hashes próprios; testes de receita não aprovam o artefato por si sós. Engine/site reais, identidade efetiva, troca instalada/rollback/uninstall, privacidade/perfis, sandbox, extensão instalada e integração remota continuam pendentes. A autorização específica de AppContainer permanece solicitada e sem resposta; downloads seguem OFF, benchmarks e Linux adiados.
+
+### Checkpoint anterior — detecção em frames acessíveis na Completa experimental
 
 Incremento de 2026-11-04: o [coletor do navegador interno](embedded-browser.md#detecção-e-seleção-de-mídia) passa a incluir documentos de frames acessíveis pela mesma origem. A entrada nativa pertence ao mesmo asset JavaScript da extensão e é executada no IIFE local; base/título, deduplicação e cotas são compartilhados pela coleta inteira. O host invalida a seleção no início e na conclusão de navegação de frame, inclusive erro, sem alterar o tracker da página principal ou reconhecer antecipadamente o fim do script.
 

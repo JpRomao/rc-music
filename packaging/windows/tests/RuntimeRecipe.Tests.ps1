@@ -34,7 +34,7 @@ function Read-Ast([string] $Path) {
     if ($parseErrors.Count -ne 0) { throw "Invalid PowerShell: $Path" }
     return $ast
 }
-function Read-RecipeFiles {
+function Read-RecipeFiles([string] $Edition = 'Lite') {
     $ast = Read-Ast $exportedRecipe
     $functions = @($ast.FindAll({ param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-RuntimeRecipeFiles'
@@ -42,7 +42,7 @@ function Read-RecipeFiles {
     Assert-Equal $functions.Count 1
     # Execute only this inventory function, never the script body. The AST keeps
     # the exported file identity so PSScriptRoot resolves beside the five copies.
-    return @(& $functions[0].Body.GetScriptBlock())
+    return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition)
 }
 function Invoke-RecipeChild([string[]] $Arguments) {
     $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
@@ -90,6 +90,7 @@ try {
         Copy-Item -LiteralPath $original -Destination $copy
         Assert-Equal ((Get-FileHash -LiteralPath $copy).Hash) ((Get-FileHash -LiteralPath $original).Hash)
     }
+    Copy-Item -LiteralPath (Join-Path $repository 'packaging/windows/WEBVIEW2-DEVELOPMENT.txt') -Destination $exportDirectory
     $exportedRecipe = Join-Path $exportDirectory 'New-RcMusicLocalRuntime.ps1'
     $cache = "CMAKE_BUILD_TYPE:STRING=Debug`nBUILD_TESTING:BOOL=OFF`nCMAKE_HOME_DIRECTORY:INTERNAL=$exportRoot`nRC_MUSIC_BUILD_DESKTOP:BOOL=ON`n"
     [IO.File]::WriteAllText((Join-Path $buildDirectory 'CMakeCache.txt'), $cache, [Text.UTF8Encoding]::new($false))
@@ -123,6 +124,30 @@ try {
             if ($entry.sha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Invalid recipe SHA256.' }
             Assert-Equal $entry.sha256 ((Get-FileHash -LiteralPath (Join-Path $exportRoot $entry.path)).Hash.ToLowerInvariant())
         }
+    }
+    Test-Case 'Complete explicitly reaches its SDK preflight before any tool, output or Git operation' {
+        $cacheFile = Join-Path $buildDirectory 'CMakeCache.txt'
+        $previousCache = [IO.File]::ReadAllText($cacheFile)
+        try {
+            $completeCache = "CMAKE_BUILD_TYPE:STRING=Release`nBUILD_TESTING:BOOL=OFF`nCMAKE_HOME_DIRECTORY:INTERNAL=$exportRoot`nRC_MUSIC_BUILD_DESKTOP:BOOL=ON`nRC_MUSIC_BUILD_EMBEDDED_BROWSER:BOOL=ON`n"
+            foreach ($option in @('BROWSER_INTEGRATION', 'DOWNLOADS', 'DOWNLOAD_NETWORK', 'DOWNLOAD_PERSISTENCE', 'NATIVE_MESSAGING')) {
+                $completeCache += "RC_MUSIC_BUILD_$($option):BOOL=OFF`n"
+            }
+            [IO.File]::WriteAllText($cacheFile, $completeCache, [Text.UTF8Encoding]::new($false))
+            $result = Invoke-RecipeChild @('-Edition', 'CompleteExperimental', '-BuildDirectory', $buildDirectory, '-OutputDirectory', 'out/product/rejected-complete')
+            Assert-Equal $result.ExitCode 1
+            Assert-Equal $result.Stdout ''
+            if ($result.Stderr -notmatch 'RC_MUSIC_WEBVIEW2_SDK_ROOT') { throw "Wrong Complete preflight: $($result.Stderr)" }
+            Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-complete')) $false
+        } finally { [IO.File]::WriteAllText($cacheFile, $previousCache, [Text.UTF8Encoding]::new($false)) }
+    }
+    Test-Case 'Complete recipe provenance additionally binds its own exported prerequisite notice' {
+        $files = @(Read-RecipeFiles -Edition CompleteExperimental)
+        Assert-Equal $files.Count 6
+        $extra = @($files | Where-Object path -CEQ 'packaging/windows/WEBVIEW2-DEVELOPMENT.txt')
+        Assert-Equal $extra.Count 1
+        Assert-Equal $extra[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory 'WEBVIEW2-DEVELOPMENT.txt')).Hash.ToLowerInvariant())
+        Assert-Equal @(Read-RecipeFiles -Edition Lite).Count 5
     }
     Test-Case 'changing only the exported parser changes only that recorded hash' {
         $before = @(Read-RecipeFiles)

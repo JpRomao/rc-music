@@ -98,6 +98,13 @@ try {
         Assert-True ($result.ExitCode -eq 1 -and $result.Stderr -match 'MakeNsis') 'Missing explicit compiler was not rejected'
         Assert-True (-not (Test-Path -LiteralPath $output)) 'Missing compiler created output'
     }
+    Test-Case 'Complete request refuses a Lite manifest before inspecting or executing the compiler' {
+        $result = Invoke-Recipe @('-RuntimeDirectory', $app, '-OutputDirectory', $output, '-MakeNsis', $compiler, '-Edition', 'CompleteExperimental')
+        Assert-True ($result.ExitCode -eq 1 -and $result.Stdout -ceq '') 'Complete preflight did not fail cleanly'
+        Assert-True ($result.Stderr -match '(?i)edition') "Wrong Complete rejection: $($result.Stderr)"
+        Assert-True ($result.Stderr -notmatch 'NSIS compiler does not match') 'Edition was ignored until compiler verification'
+        Assert-True (-not (Test-Path -LiteralPath $output)) 'Mismatched edition created output'
+    }
     Test-Case 'builder and planner share the real recipe inventory before and after compilation' {
         $parseErrors = $null
         $ast = [Management.Automation.Language.Parser]::ParseFile($recipe, [ref]$null, [ref]$parseErrors)

@@ -148,7 +148,8 @@ function Get-RcMusicDesktopBuildConfiguration {
     param(
         [Parameter(Mandatory)][Collections.IDictionary] $Cache,
         [Parameter(Mandatory)][string] $RepositoryRoot,
-        [ValidateSet('ON', 'OFF')][string] $BuildTesting = 'OFF'
+        [ValidateSet('ON', 'OFF')][string] $BuildTesting = 'OFF',
+        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite'
     )
     $root = Get-RcMusicRuntimeAbsolutePath $RepositoryRoot
     foreach ($required in @{ CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = $BuildTesting }.GetEnumerator()) {
@@ -156,9 +157,10 @@ function Get-RcMusicDesktopBuildConfiguration {
             throw "Unsupported desktop build configuration: $($required.Key)"
         }
     }
-    # This recipe assembles only the local/Lite runtime. The experimental
-    # embedded browser needs a separately reviewed packaging contract.
-    if ($Cache.Contains('RC_MUSIC_BUILD_EMBEDDED_BROWSER') -and
+    $complete = $Edition -ieq 'CompleteExperimental'
+    # Preserve the default Lite contract, including historical caches without
+    # an embedded-browser key. Only the explicit edition opts into the engine.
+    if (-not $complete -and $Cache.Contains('RC_MUSIC_BUILD_EMBEDDED_BROWSER') -and
         ($Cache['RC_MUSIC_BUILD_EMBEDDED_BROWSER'] -isnot [string] -or
             $Cache['RC_MUSIC_BUILD_EMBEDDED_BROWSER'] -cne 'OFF')) {
         throw 'Unsupported desktop build configuration: RC_MUSIC_BUILD_EMBEDDED_BROWSER (local/Lite runtime requires OFF)'
@@ -180,7 +182,43 @@ function Get-RcMusicDesktopBuildConfiguration {
         }
         $entrypoint = 'legacy'
     } else { throw 'Unsupported desktop build entrypoint' }
+    $browserSdkRoot = $null
+    if ($complete) {
+        if ($entrypoint -cne 'product') {
+            throw 'CompleteExperimental requires the product desktop entrypoint'
+        }
+        $options = [ordered]@{
+            RC_MUSIC_BUILD_EMBEDDED_BROWSER = 'ON'
+            RC_MUSIC_BUILD_BROWSER_INTEGRATION = 'OFF'
+            RC_MUSIC_BUILD_DOWNLOADS = 'OFF'
+            RC_MUSIC_BUILD_DOWNLOAD_NETWORK = 'OFF'
+            RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = 'OFF'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF'
+        }
+        foreach ($option in $options.GetEnumerator()) {
+            if (-not $Cache.Contains($option.Key) -or $Cache[$option.Key] -isnot [string] -or
+                $Cache[$option.Key] -cne $option.Value) {
+                throw "Unsupported desktop build configuration: $($option.Key) (CompleteExperimental requires $($option.Value))"
+            }
+        }
+        try {
+            $browserSdkRoot = Get-RcMusicRuntimeAbsolutePath $Cache['RC_MUSIC_WEBVIEW2_SDK_ROOT']
+            if (-not [IO.Directory]::Exists($browserSdkRoot)) { throw 'SDK root must be an existing directory' }
+            foreach ($relative in @('build/native/include/WebView2.h', 'build/native/include/WebView2EnvironmentOptions.h',
+                    'build/native/x64/WebView2LoaderStatic.lib', 'LICENSE.txt', 'NOTICE.txt')) {
+                $artifact = Get-RcMusicRuntimeAbsolutePath (Join-Path $browserSdkRoot $relative)
+                if (-not [IO.File]::Exists($artifact)) { throw "SDK artifact must be an existing file: $relative" }
+            }
+        } catch {
+            throw "Unsupported desktop build configuration: RC_MUSIC_WEBVIEW2_SDK_ROOT (SDK: $($_.Exception.Message))"
+        }
+    }
+    # Explicit ON remains available to inspection/smoke callers. Runtime
+    # packaging requests OFF and cannot silently accept an instrumented cache.
     return [pscustomobject]@{
+        edition = if ($complete) { 'CompleteExperimental' } else { 'Lite' }
+        browser_sdk_root = $browserSdkRoot
+        browser_runtime_requirement = if ($complete) { 'existing-webview2-evergreen-x64' } else { 'none' }
         entrypoint = $entrypoint
         target = 'm0_qt_shell'
         executable = 'm0_qt_shell.exe'

@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string] $OutputDirectory,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $MakeNsis,
     [string] $FormatMatrix,
-    [switch] $LegacyBaseline
+    [switch] $LegacyBaseline,
+    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -13,7 +14,7 @@ if (-not $IsWindows -or -not [Environment]::Is64BitProcess) { throw 'Windows x64
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Import-Module (Join-Path $PSScriptRoot 'RcMusicInstallerPlan.psm1') -Force
 $plan = New-RcMusicInstallerPlan -RuntimeDirectory $RuntimeDirectory -OutputDirectory $OutputDirectory `
-    -FormatMatrix $FormatMatrix -LegacyBaseline:$LegacyBaseline
+    -FormatMatrix $FormatMatrix -LegacyBaseline:$LegacyBaseline -Edition $Edition
 $MakeNsis = (Resolve-Path -LiteralPath $MakeNsis).ProviderPath
 $toolchain = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'nsis-toolchain.json') -Raw | ConvertFrom-Json
 $compilerHash = (Get-FileHash -LiteralPath $MakeNsis -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -85,6 +86,7 @@ if ($null -ne $plan.format_matrix -and
 $receiptPath = Join-Path $plan.output 'installer-receipt.json'
 $receipt = [ordered]@{
     schema_version = 1; name = 'RC Music'; distribution = 'private-local-development-only'
+    edition = $plan.edition; browser_runtime_requirement = $plan.browser_runtime_requirement
     associations_enabled = $plan.associations_enabled; payload_id = $plan.payload_id
     format_signature = $plan.format_signature; formats = $plan.formats; format_matrix = $plan.format_matrix
     runtime_source_commit = $plan.source_commit; runtime_manifest_sha256 = $plan.runtime_manifest_sha256
@@ -93,7 +95,8 @@ $receipt = [ordered]@{
     compiler_sha256 = $compilerHash; config_sha256 = $configHash
     installer_sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     files = $plan.files
-    prerequisites = 'Windows x64 and compatible Microsoft Visual C++ Redistributable; no runtime PowerShell dependency'
+    prerequisites = 'Windows x64 and compatible Microsoft Visual C++ Redistributable; no runtime PowerShell dependency' +
+        $(if ($plan.edition -ceq 'CompleteExperimental') { '; internal navigation requires existing WebView2 Evergreen Runtime x64; runtime is not bundled or installed' })
 }
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
 [pscustomobject]@{ installer = $installerPath; receipt = $receiptPath; payload_id = $plan.payload_id }

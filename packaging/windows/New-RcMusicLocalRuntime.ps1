@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $OutputDirectory,
-    [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $BuildDirectory
+    [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $BuildDirectory,
+    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite'
 )
 
 Set-StrictMode -Version Latest
@@ -21,13 +22,16 @@ Import-Module (Join-Path $PSScriptRoot 'PeDependencyReport.psm1') -Force
 
 # Record the actual implementation and data files, never just a legacy wrapper.
 function Get-RuntimeRecipeFiles {
-    @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
-        'qt.conf', 'LOCAL-DEVELOPMENT.txt') | ForEach-Object {
+    param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite')
+    $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
+        'qt.conf', 'LOCAL-DEVELOPMENT.txt')
+    if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
+    $names | ForEach-Object {
         [pscustomobject]@{ path = ('packaging/windows/' + $_)
             sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
 }
-$recipeFiles = @(Get-RuntimeRecipeFiles)
+$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition)
 $recipeBefore = ConvertTo-Json -InputObject $recipeFiles -Compress
 
 function Invoke-RuntimeTool([string] $Program, [string[]] $Arguments) {
@@ -60,7 +64,7 @@ $cache = @{}
 foreach ($line in (Get-Content -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))) {
     if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $cache[$Matches[1]] = $Matches[2] }
 }
-$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $repository -BuildTesting 'OFF'
+$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $repository -BuildTesting 'OFF' -Edition $Edition
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
@@ -90,6 +94,11 @@ function Add-RuntimeFile([string] $SourceFile, [string] $RelativePath) {
 Add-RuntimeFile (Join-Path $BuildDirectory $configuration.executable) 'RCMusic.exe'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'qt.conf') 'qt.conf'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'LOCAL-DEVELOPMENT.txt') 'LOCAL-DEVELOPMENT.txt'
+if ($configuration.edition -ceq 'CompleteExperimental') {
+    Add-RuntimeFile (Join-Path $PSScriptRoot 'WEBVIEW2-DEVELOPMENT.txt') 'WEBVIEW2-DEVELOPMENT.txt'
+    Add-RuntimeFile (Join-Path $configuration.browser_sdk_root 'LICENSE.txt') 'notices/WebView2-SDK-LICENSE.txt'
+    Add-RuntimeFile (Join-Path $configuration.browser_sdk_root 'NOTICE.txt') 'notices/WebView2-SDK-NOTICE.txt'
+}
 foreach ($plugin in @('platforms/qwindows.dll', 'platforms/qoffscreen.dll', 'imageformats/qjpeg.dll',
         'imageformats/qico.dll', 'imageformats/qsvg.dll', 'iconengines/qsvgicon.dll')) {
     Add-RuntimeFile (Join-Path $qt ('plugins/' + $plugin)) ('plugins/' + $plugin)
@@ -143,17 +152,20 @@ while ($peQueue.Count -gt 0) {
     }
 }
 $payload = Join-Path $OutputDirectory 'app'
-$plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot) -Destination $payload
+$allowedRoots = @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot)
+if ($configuration.browser_sdk_root) { $allowedRoots += $configuration.browser_sdk_root }
+$plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots $allowedRoots -Destination $payload
 $null = Copy-RcMusicRuntimePlan -Plan $plan
 $afterCopy = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterCopy.commit) { throw 'Source commit changed while collecting the runtime' }
-if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles) -Compress) -cne $recipeBefore) {
+if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition) -Compress) -cne $recipeBefore) {
     throw 'Runtime recipe changed while collecting the runtime'
 }
 $recipeStatus = Invoke-RuntimeTool 'git' @('status', '--porcelain', '--', 'packaging/windows')
 $manifestPath = Join-Path $OutputDirectory 'runtime-manifest.json'
 $manifest = [ordered]@{
     schema_version = 1; name = 'RC Music'; architecture = 'x64'; build_testing = $false
+    edition = $configuration.edition; browser_runtime_requirement = $configuration.browser_runtime_requirement
     source_commit = $sourceSnapshot.commit; source_inputs = $sourceSnapshot.input_paths
     recipe_dirty = -not [string]::IsNullOrWhiteSpace($recipeStatus)
     recipe_sha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()

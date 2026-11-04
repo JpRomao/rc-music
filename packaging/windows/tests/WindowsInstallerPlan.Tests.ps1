@@ -86,6 +86,24 @@ function New-Fixture {
     Save-Manifest $fixture
     return $fixture
 }
+function Set-FixtureEdition($Fixture, $Edition, $Requirement) {
+    Add-Member -InputObject $Fixture.Manifest -MemberType NoteProperty -Name edition -Value $Edition -Force
+    Add-Member -InputObject $Fixture.Manifest -MemberType NoteProperty -Name browser_runtime_requirement -Value $Requirement -Force
+    Save-Manifest $Fixture
+}
+function New-CompleteFixture {
+    $fixture = New-Fixture
+    foreach ($relative in @('notices/WebView2-SDK-LICENSE.txt', 'notices/WebView2-SDK-NOTICE.txt', 'WEBVIEW2-DEVELOPMENT.txt')) {
+        $path = Join-Path $fixture.App $relative
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+        [IO.File]::WriteAllText($path, 'Synthetic packaging notice fixture: ' + $relative)
+        $fixture.Manifest.files += [pscustomobject]@{ relative_path = $relative; source = 'synthetic fixture only'
+            size_bytes = (Get-Item -LiteralPath $path).Length
+            sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    Set-FixtureEdition $fixture 'CompleteExperimental' 'existing-webview2-evergreen-x64'
+    return $fixture
+}
 function New-FormatMatrix($Fixture) {
     $catalogPath = Join-Path $repository 'tests/audio/corpus/catalog.v1.json'
     $testPath = Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp'
@@ -125,6 +143,105 @@ function Invoke-ExportedPlan($Export, $Fixture, [string] $Matrix) {
 }
 $exportJunctions = [Collections.Generic.List[string]]::new()
 try {
+    Test-Case 'legacy manifests default to canonical Lite with no browser prerequisite' {
+        $f = New-Fixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($p.edition -ceq 'Lite' -and $p.browser_runtime_requirement -ceq 'none') 'Legacy runtime did not resolve to Lite/none'
+        Assert-True ($p.config.Contains('!define RCMUSIC_EDITION "Lite"')) 'Lite edition define missing'
+        Assert-True ($p.config.Contains('!define RCMUSIC_REQUIRES_WEBVIEW2 0')) 'Lite unexpectedly requires a browser runtime'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Edition planning created output'
+    }
+    Test-Case 'explicit Lite metadata and legacy metadata share the same payload identity' {
+        $f = New-Fixture
+        $legacy = New-RcMusicInstallerPlan $f.App $f.Output
+        Set-FixtureEdition $f 'Lite' 'none'
+        $explicit = New-RcMusicInstallerPlan $f.App $f.Output -Edition lite
+        Assert-True ($explicit.edition -ceq 'Lite' -and $explicit.browser_runtime_requirement -ceq 'none') 'Requested edition was not canonicalized'
+        Assert-True ($legacy.payload_id -ceq $explicit.payload_id) 'Equivalent Lite manifests changed package identity'
+        $f.Manifest.PSObject.Properties.Remove('browser_runtime_requirement')
+        Save-Manifest $f
+        $compatible = New-RcMusicInstallerPlan $f.App $f.Output -Edition Lite
+        Assert-True ($compatible.payload_id -ceq $legacy.payload_id) 'Optional legacy Lite requirement became mandatory'
+    }
+    Test-Case 'CompleteExperimental requires explicit matching metadata and emits its prerequisite' {
+        $f = New-CompleteFixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output -Edition completeexperimental
+        Assert-True ($p.edition -ceq 'CompleteExperimental') 'Complete edition was not canonicalized'
+        Assert-True ($p.browser_runtime_requirement -ceq 'existing-webview2-evergreen-x64') 'Exact existing-runtime prerequisite lost'
+        Assert-True ($p.config.Contains('!define RCMUSIC_EDITION "CompleteExperimental"')) 'Complete edition define missing'
+        Assert-True ($p.config.Contains('!define RCMUSIC_REQUIRES_WEBVIEW2 1')) 'Complete browser prerequisite not emitted'
+        Assert-True ($p.config.Contains('!define RCMUSIC_INSTALL_ROOT "$LOCALAPPDATA\Programs\RC Music"')) 'Complete silently selected another installation identity'
+        Assert-True ($p.config.Contains('!define RCMUSIC_REGISTRY_BASE "Software"')) 'Complete changed per-user registration root'
+        Assert-True (-not $p.associations_enabled) 'Complete inferred unverified associations'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Complete planning created output'
+    }
+    Test-Case 'identical verified file inventories cannot reuse Lite and Complete package identities' {
+        $f = New-CompleteFixture
+        $complete = New-RcMusicInstallerPlan $f.App $f.Output -Edition CompleteExperimental
+        Set-FixtureEdition $f 'Lite' 'none'
+        $lite = New-RcMusicInstallerPlan $f.App $f.Output -Edition Lite
+        Assert-True (($lite.files | ConvertTo-Json -Compress) -ceq ($complete.files | ConvertTo-Json -Compress)) 'Fixture inventories were not identical'
+        Assert-True (($lite.recipe_hashes | ConvertTo-Json -Compress) -ceq ($complete.recipe_hashes | ConvertTo-Json -Compress)) 'Fixture recipes changed during identity comparison'
+        Assert-True ($lite.payload_id -cne $complete.payload_id) 'Edition/prerequisite metadata was omitted from payload identity'
+    }
+    foreach ($edition in @('CompleteExperimental', 'Unknown', 'lite', '', $null, 7, @('Lite'), @{ edition = 'Lite' })) {
+        Test-Case ('Lite rejects unknown mismatching or malformed manifest edition: ' + ($edition | ConvertTo-Json -Compress)) {
+            $f = New-Fixture
+            Set-FixtureEdition $f $edition 'none'
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Rejected edition created output'
+        }
+    }
+    foreach ($requirement in @('existing-webview2-evergreen-x64', 'unknown', 'None', "none`n", '', $null, 7, @('none'))) {
+        Test-Case ('Lite rejects a noncanonical or malformed browser prerequisite: ' + ($requirement | ConvertTo-Json -Compress)) {
+            $f = New-Fixture
+            Set-FixtureEdition $f 'Lite' $requirement
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition Lite }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Rejected Lite prerequisite created output'
+        }
+    }
+    foreach ($change in @('legacy-edition', 'Lite-edition', 'unknown-edition', 'missing-requirement', 'none', 'unknown-requirement',
+            'requirement-case', 'null-requirement', 'number-requirement', 'array-requirement')) {
+        Test-Case "CompleteExperimental rejects incompatible runtime metadata: $change" {
+            $f = New-CompleteFixture
+            switch ($change) {
+                'legacy-edition' { $f.Manifest.PSObject.Properties.Remove('edition') }
+                'Lite-edition' { $f.Manifest.edition = 'Lite' }
+                'unknown-edition' { $f.Manifest.edition = 'Unknown' }
+                'missing-requirement' { $f.Manifest.PSObject.Properties.Remove('browser_runtime_requirement') }
+                'none' { $f.Manifest.browser_runtime_requirement = 'none' }
+                'unknown-requirement' { $f.Manifest.browser_runtime_requirement = 'download-evergreen' }
+                'requirement-case' { $f.Manifest.browser_runtime_requirement = 'Existing-WebView2-Evergreen-x64' }
+                'null-requirement' { $f.Manifest.browser_runtime_requirement = $null }
+                'number-requirement' { $f.Manifest.browser_runtime_requirement = 7 }
+                'array-requirement' { $f.Manifest.browser_runtime_requirement = @('existing-webview2-evergreen-x64') }
+            }
+            Save-Manifest $f
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition CompleteExperimental }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Rejected Complete metadata created output'
+        }
+    }
+    foreach ($required in @('notices/WebView2-SDK-LICENSE.txt', 'notices/WebView2-SDK-NOTICE.txt', 'WEBVIEW2-DEVELOPMENT.txt')) {
+        Test-Case "CompleteExperimental requires its verified inventory notice: $required" {
+            $f = New-CompleteFixture
+            $f.Manifest.files = @($f.Manifest.files | Where-Object { $_.relative_path -cne $required })
+            Save-Manifest $f
+            Assert-True (Test-Path -LiteralPath (Join-Path $f.App $required)) 'Fixture must retain the unlisted file physically'
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition CompleteExperimental }
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Missing inventory notice created output'
+        }
+    }
+    Test-Case 'CompleteExperimental notices remain covered by runtime hash verification' {
+        $f = New-CompleteFixture
+        [IO.File]::AppendAllText((Join-Path $f.App 'notices/WebView2-SDK-LICENSE.txt'), ' changed synthetic fixture')
+        Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition CompleteExperimental }
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Changed notice created output'
+    }
+    Test-Case 'unsupported requested editions are rejected without output' {
+        $f = New-Fixture
+        Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition Unknown }
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Unsupported requested edition created output'
+    }
     foreach ($change in @('null', 'number', 'array', 'traversal', 'absolute', 'ads', 'missing', 'duplicate')) {
         Test-Case "export validates the whole catalog before copying: $change" {
             $caseRoot = Join-Path $testRoot ([Guid]::NewGuid().ToString('N') + ' export-safety')
@@ -282,7 +399,8 @@ try {
             [ordered]@{ path = $_.relative_path; size = $_.size_bytes; sha256 = $_.sha256 }
         }) | ConvertTo-Json -Depth 4 -Compress
         $packageIdentity = [ordered]@{ inventory = $inventory; format_signature = $p.format_signature
-            format_matrix_sha256 = $null } | ConvertTo-Json -Compress
+            format_matrix_sha256 = $null; edition = $p.edition
+            browser_runtime_requirement = $p.browser_runtime_requirement } | ConvertTo-Json -Compress
         $before = Get-RcMusicInstallerIdentity -InventoryJson $packageIdentity -RecipeHashes $p.recipe_hashes
         Assert-True ($before -ceq $p.payload_id) 'The real package identity ignored its reported recipe'
         $changed = @($p.recipe_hashes | ForEach-Object {

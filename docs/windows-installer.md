@@ -3,17 +3,30 @@
 **Estado:** setup Lite privado atualizado em 2026-11-04, compilado e conferido sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-11-04.
 
-A [entrega atual de `d51c18c`](local-delivery-20261104.md) registra o setup de 38.064.613 bytes, inventário/hashes, checks e limpeza posterior de 338,9 MB. Os registros abaixo preservam as entregas anteriores e seus próprios limites.
+A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 ## Fonte única e proveniência
 
-[`packaging/windows`](../packaging/windows/New-RcMusicInstaller.ps1) reúne o builder, o planejador, o leitor de formatos e os quatro templates/helpers NSIS. A geração da configuração e os quatro arquivos NSIS preservam a lógica anterior; os NSIS foram comparados byte a byte à revisão `3f539d6`. LF é fixado por `.gitattributes` para conservar esses bytes em outro checkout.
+[`packaging/windows`](../packaging/windows/New-RcMusicInstaller.ps1) reúne o builder, o planejador, o leitor de formatos e os quatro templates/helpers NSIS. Os três includes conservam os bytes promovidos de `3f539d6`; o script principal acrescenta os gates/textos de edição e pré-requisito. O fluxo de ownership, handoff e limpeza permanece compartilhado. LF é fixado por `.gitattributes` para conservar os bytes em outro checkout.
 
 O produto não importa o experimento. Os caminhos antigos são encaminhadores, e a compatibilidade com a declaração v1 é explícita. O template corrente do harness histórico aponta diretamente para a fonte promovida; os snapshots de versões antigas continuam vindo de seus commits fixos. Os includes dos encaminhadores são ancorados em `__FILEDIR__`, com diretório de busca explícito, conforme a [documentação do pré-processador NSIS](https://nsis.sourceforge.io/Docs/Chapter5.html). Os encaminhadores foram inspecionados estaticamente; sua compilação não foi exercitada. A compilação direta da receita de produto está registrada abaixo.
 
 `Get-RcMusicInstallerRecipeHashes` é o inventário único de nove fontes reais, com caminhos relativos à raiz e SHA-256. Planejamento, identidade do payload, builder e revalidação pós-compilação usam essa mesma lista, não hashes dos encaminhadores. O recibo mantém schema 1 e acrescenta `recipe_path_base=repository`. Corrigir somente um helper muda a identidade; runtime e recibos antigos não são reatribuídos a um commit novo.
 
 O builder exige `-MakeNsis` explícito e confere seu hash contra a cópia byte-idêntica de `nsis-toolchain.json`. Esse recibo conserva a observação histórica, não autentica publicador nem autoriza instalação/download. PowerShell/NSIS são ferramentas de build, não dependências do player entregue.
+
+## Setup da Completa experimental
+
+`-Edition Lite` continua padrão; manifestos antigos sem edição são Lite. `-Edition CompleteExperimental` exige o manifesto correspondente, o pré-requisito `existing-webview2-evergreen-x64` e os três notices do [runtime](windows-runtime.md#edições-e-montagem-da-completa-experimental). Metadados divergentes ou inválidos são recusados antes do compilador. Edição e pré-requisito entram na identidade do payload e no receipt; os nove inputs da receita continuam conferidos antes/depois da compilação.
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -Edition CompleteExperimental -RuntimeDirectory out/product/rc-music-local/nova-completa-experimental/app -OutputDirectory out/product/rc-music-installer/nova-completa-experimental -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+pwsh -NoProfile -File packaging/windows/tests/InstallerEdition.Tests.ps1 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe
+```
+
+O segundo comando usa somente `/SAFEPPO` sobre fixtures sintéticas; confere textos/guards NSIS sem gerar ou executar um setup. O compilador precisa ter o hash provisionado. Esse check manual complementa os testes puros e não é dependência do runner diário sem NSIS.
+
+O setup informa edição, substituição da versão atual e necessidade de WebView2 já instalado para navegar; não baixa/instala esse runtime. Lite e Completa experimental compartilham a identidade, root, atalho, mutex e único payload ativo; não criam coexistência ou migração de dados. A política está no [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md). Troca instalada, preservação física de dados, rollback/uninstall e apresentação nativa ainda precisam de provas próprias. Sem matriz explícita, associações continuam OFF; integração externa e YouTube separado permanecem pendentes.
 
 ## Catálogo factual e declaração por runtime
 

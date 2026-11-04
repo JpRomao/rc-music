@@ -74,6 +74,27 @@ function New-Plan($Scenario) {
     New-RcMusicRuntimePlan -Files $Scenario.Files -AllowedSourceRoots @($Scenario.Qt, $Scenario.Build) `
         -Destination $Scenario.Destination
 }
+function New-CompleteScenario {
+    $s = New-Scenario
+    $root = Join-Path $s.Base 'product source'
+    $sdk = Join-Path $s.Base 'SDK parent/WebView2 SDK 日本'
+    $null = New-Item -ItemType Directory -Path $root
+    $artifacts = @('build/native/include/WebView2.h', 'build/native/include/WebView2EnvironmentOptions.h',
+        'build/native/x64/WebView2LoaderStatic.lib', 'LICENSE.txt', 'NOTICE.txt')
+    foreach ($relative in $artifacts) {
+        $path = Join-Path $sdk $relative
+        $null = New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($path)) -Force
+        [IO.File]::WriteAllText($path, "synthetic SDK input: $relative")
+    }
+    return [pscustomobject]@{
+        Root = $root; Sdk = $sdk; Scenario = $s; Artifacts = $artifacts
+        Cache = @{ CMAKE_HOME_DIRECTORY = $root; CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = 'OFF'
+            RC_MUSIC_BUILD_DESKTOP = 'ON'; RC_MUSIC_BUILD_EMBEDDED_BROWSER = 'ON'; RC_MUSIC_WEBVIEW2_SDK_ROOT = $sdk
+            RC_MUSIC_BUILD_BROWSER_INTEGRATION = 'OFF'; RC_MUSIC_BUILD_DOWNLOADS = 'OFF'
+            RC_MUSIC_BUILD_DOWNLOAD_NETWORK = 'OFF'; RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = 'OFF'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF' }
+    }
+}
 function New-TestJunction([string] $Path, [string] $Target) {
     foreach ($value in @($Path, $Target)) {
         if (-not [IO.Path]::GetFullPath($value).StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar,
@@ -468,6 +489,9 @@ Write-Output 'ISOLATED_PRODUCT_PLANNER_OK'
                 $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache `
                     -RepositoryRoot $source.Directory -BuildTesting $testing
                 Assert-Equal $configuration.entrypoint $entrypoint
+                Assert-Equal $configuration.edition 'Lite'
+                Assert-Equal $configuration.browser_sdk_root $null
+                Assert-Equal $configuration.browser_runtime_requirement 'none'
                 Assert-Equal $configuration.target 'm0_qt_shell'
                 Assert-Equal $configuration.executable 'm0_qt_shell.exe'
                 Assert-Equal $configuration.qml_source (Join-Path $source.Directory 'src/ui/qml')
@@ -482,6 +506,117 @@ Write-Output 'ISOLATED_PRODUCT_PLANNER_OK'
                     Assert-Equal $configuration.audio_integration_executable 'm0_qt_local_audio_integration_tests.exe'
                 }
             }
+        }
+    }
+    foreach ($testing in @('OFF', 'ON')) {
+        Test-Case "maps CompleteExperimental inspection with BUILD_TESTING=$testing without writing SDK or payload" {
+            $s = New-CompleteScenario
+            $s.Cache.BUILD_TESTING = $testing
+            $before = $s.Cache.Clone()
+            $hashes = @($s.Artifacts | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $s.Sdk $_)).Hash })
+            $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                -Edition CompleteExperimental -BuildTesting $testing
+            Assert-Equal $configuration.edition 'CompleteExperimental'
+            Assert-Equal $configuration.entrypoint 'product'
+            Assert-Equal $configuration.browser_sdk_root ([IO.Path]::GetFullPath($s.Sdk))
+            Assert-Equal $configuration.browser_runtime_requirement 'existing-webview2-evergreen-x64'
+            Assert-Equal $configuration.target 'm0_qt_shell'
+            Assert-Equal $configuration.executable 'm0_qt_shell.exe'
+            Assert-Equal $configuration.qml_source (Join-Path $s.Root 'src/ui/qml')
+            Assert-Equal $configuration.instrumented_executable $(if ($testing -ceq 'OFF') { $null } else { 'tests/process/rc_music_test_shell.exe' })
+            Assert-Equal $configuration.audio_integration_executable $(if ($testing -ceq 'OFF') { $null } else { 'rc_music_local_audio_integration_tests.exe' })
+            Assert-Equal $s.Cache.Count $before.Count
+            foreach ($key in $before.Keys) { Assert-Equal $s.Cache[$key] $before[$key] }
+            $after = @($s.Artifacts | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $s.Sdk $_)).Hash })
+            Assert-Equal ($after -join ',') ($hashes -join ',')
+            Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+        }
+    }
+    Test-Case 'canonicalizes CompleteExperimental edition and normalizes the explicit SDK path' {
+        $s = New-CompleteScenario
+        $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = $s.Sdk.Replace('\', '/') + '/'
+        $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+            -Edition completeexperimental
+        Assert-Equal $configuration.edition 'CompleteExperimental'
+        Assert-Equal $configuration.browser_sdk_root $s.Sdk
+    }
+    Test-Case 'CompleteExperimental runtime default still refuses a testing ON cache' {
+        $s = New-CompleteScenario
+        $s.Cache.BUILD_TESTING = 'ON'
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+            -Edition CompleteExperimental } '^Unsupported desktop build configuration: BUILD_TESTING'
+    }
+    Test-Case 'CompleteExperimental refuses the legacy entrypoint' {
+        $s = New-CompleteScenario
+        $s.Cache.CMAKE_HOME_DIRECTORY = Join-Path $s.Root 'experiments/m0/candidates/qt/shell'
+        $s.Cache.M0_QT_SHELL_SUPPORT = 'ON'
+        $s.Cache.M0_QT_AUDIO_SUPPORT = 'ON'
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+            -Edition CompleteExperimental } 'CompleteExperimental.*product'
+    }
+    foreach ($value in @('OFF', $false, $null)) {
+        Test-Case "CompleteExperimental requires embedded browser ON (value '$value')" {
+            $s = New-CompleteScenario
+            if ($null -eq $value) { $s.Cache.Remove('RC_MUSIC_BUILD_EMBEDDED_BROWSER') }
+            else { $s.Cache.RC_MUSIC_BUILD_EMBEDDED_BROWSER = $value }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                -Edition CompleteExperimental } 'RC_MUSIC_BUILD_EMBEDDED_BROWSER'
+        }
+    }
+    foreach ($flag in @('RC_MUSIC_BUILD_BROWSER_INTEGRATION', 'RC_MUSIC_BUILD_DOWNLOADS',
+            'RC_MUSIC_BUILD_DOWNLOAD_NETWORK', 'RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE', 'RC_MUSIC_BUILD_NATIVE_MESSAGING')) {
+        foreach ($value in @('ON', $false, $null)) {
+            Test-Case "CompleteExperimental requires explicit remote OFF: $flag (value '$value')" {
+                $s = New-CompleteScenario
+                if ($null -eq $value) { $s.Cache.Remove($flag) }
+                else { $s.Cache[$flag] = $value }
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                    -Edition CompleteExperimental } $flag
+            }
+        }
+    }
+    foreach ($invalid in @('missing', 'null', 'boolean', 'relative', 'nonexistent', 'file')) {
+        Test-Case "CompleteExperimental refuses invalid explicit SDK: $invalid" {
+            $s = New-CompleteScenario
+            switch ($invalid) {
+                'missing' { $s.Cache.Remove('RC_MUSIC_WEBVIEW2_SDK_ROOT') }
+                'null' { $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = $null }
+                'boolean' { $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = $true }
+                'relative' { $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = 'relative-sdk' }
+                'nonexistent' { $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = Join-Path $s.Scenario.Base 'missing-sdk' }
+                'file' { $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = Join-Path $s.Sdk 'LICENSE.txt' }
+            }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                -Edition CompleteExperimental } 'SDK|RC_MUSIC_WEBVIEW2_SDK_ROOT'
+        }
+    }
+    foreach ($relative in @('build/native/include/WebView2.h', 'build/native/include/WebView2EnvironmentOptions.h',
+            'build/native/x64/WebView2LoaderStatic.lib', 'LICENSE.txt', 'NOTICE.txt')) {
+        Test-Case "CompleteExperimental refuses missing SDK artifact: $relative" {
+            $s = New-CompleteScenario
+            Remove-Item -LiteralPath (Join-Path $s.Sdk $relative)
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                -Edition CompleteExperimental } 'SDK|RC_MUSIC_WEBVIEW2_SDK_ROOT'
+        }
+    }
+    foreach ($junction in @('root', 'ancestor', 'artifact')) {
+        Test-Case "CompleteExperimental refuses SDK reparse at $junction" {
+            $s = New-CompleteScenario
+            $alias = Join-Path $s.Scenario.Base 'SDK alias'
+            switch ($junction) {
+                'root' { New-TestJunction $alias $s.Sdk; $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = $alias }
+                'ancestor' {
+                    New-TestJunction $alias ([IO.Path]::GetDirectoryName($s.Sdk))
+                    $s.Cache.RC_MUSIC_WEBVIEW2_SDK_ROOT = Join-Path $alias ([IO.Path]::GetFileName($s.Sdk))
+                }
+                'artifact' {
+                    $artifact = Join-Path $s.Sdk 'LICENSE.txt'
+                    Remove-Item -LiteralPath $artifact
+                    New-TestJunction $artifact $s.Scenario.Outside
+                }
+            }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root `
+                -Edition CompleteExperimental } 'reparse'
         }
     }
     foreach ($entrypoint in @('product', 'legacy')) {
