@@ -121,13 +121,21 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
                         WindowsDownloadRuntimePreparer prepare)
         : launch_(std::move(launch)), job_(std::move(job)), prepare_(std::move(prepare)) {}
+    PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsMediaFoundationLaunchConfig media,
+                        WindowsDownloadJobSessionConfig job, WindowsDownloadRuntimePreparer prepare,
+                        WindowsMediaFoundationRuntimePreparer media_prepare)
+        : PreparedSessionTask(std::move(launch), std::move(job), std::move(prepare)) {
+        media_ = std::move(media);
+        media_prepare_ = std::move(media_prepare);
+    }
 
     bool start(const std::string& id, const DownloadItem& item, const qint64 now_ms) override {
         if (started_ || terminal(update_.state))
             return false;
         started_ = true;
         update_.job_id = id;
-        if (!validId(id) || !validItem(item) || now_ms < 0 || job_.total_timeout_ms <= 0) {
+        if (!validId(id) || !validItem(item) || now_ms < 0 || job_.total_timeout_ms <= 0 ||
+            (!media_ && job_.converter.backend == WindowsLocalMediaBackend::MediaFoundation)) {
             fail(DownloadFailure::InvalidResult);
             return false;
         }
@@ -135,12 +143,23 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         started_ms_ = now_ms;
         try {
             lease_ = prepare_ ? prepare_(launch_) : WindowsDownloadNetworkLaunch::prepare(launch_);
+            if (lease_ && media_) {
+                media_lease_ =
+                    media_prepare_ ? media_prepare_(*media_) : WindowsMediaFoundationLaunch::prepare(*media_);
+                if (media_lease_) {
+                    job_.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
+                    job_.converter.ffmpeg_executable.clear();
+                    job_.converter.ffprobe_executable.clear();
+                    job_.converter.media_foundation_executable.clear();
+                    job_.converter.prepared_launch = media_lease_;
+                }
+            }
         } catch (...) {
             // Trusted preparer guarantees no escaped work on an exception.
             fail(DownloadFailure::InvalidResult);
             return false;
         }
-        if (!lease_) {
+        if (!lease_ || (media_ && !media_lease_)) {
             fail(DownloadFailure::Unavailable);
             return false;
         }
@@ -198,6 +217,8 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     WindowsDownloadNetworkLaunchConfig launch_;
     WindowsDownloadJobSessionConfig job_;
     WindowsDownloadRuntimePreparer prepare_;
+    std::optional<WindowsMediaFoundationLaunchConfig> media_;
+    WindowsMediaFoundationRuntimePreparer media_prepare_;
     DownloadExecutionUpdate update_;
     DownloadItem item_;
     qint64 started_ms_{0};
@@ -205,6 +226,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     // Reverse destruction: session, native IO/process, then final lease. The
     // executor observes terminal ACK and destroys this task before publishing.
     std::shared_ptr<const WindowsDownloadNetworkLaunch> lease_;
+    std::shared_ptr<const WindowsMediaFoundationLaunch> media_lease_;
     std::unique_ptr<SessionTask> session_;
 };
 } // namespace
@@ -213,6 +235,14 @@ std::unique_ptr<WindowsDownloadTask> makeWindowsPreparedDownloadTask(WindowsDown
                                                                      WindowsDownloadJobSessionConfig job,
                                                                      WindowsDownloadRuntimePreparer prepare) {
     return std::make_unique<PreparedSessionTask>(std::move(launch), std::move(job), std::move(prepare));
+}
+
+std::unique_ptr<WindowsDownloadTask>
+makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
+                                WindowsDownloadJobSessionConfig job, WindowsDownloadRuntimePreparer network_prepare,
+                                WindowsMediaFoundationRuntimePreparer media_prepare) {
+    return std::make_unique<PreparedSessionTask>(std::move(network), std::move(media), std::move(job),
+                                                 std::move(network_prepare), std::move(media_prepare));
 }
 
 struct WindowsDownloadExecution::Impl final {
@@ -408,6 +438,12 @@ WindowsDownloadExecution::WindowsDownloadExecution(WindowsDownloadNetworkLaunchC
                                                    WindowsDownloadJobSessionConfig job)
     : WindowsDownloadExecution([launch = std::move(launch), job = std::move(job)] {
           return makeWindowsPreparedDownloadTask(launch, job);
+      }) {}
+WindowsDownloadExecution::WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig network,
+                                                   WindowsMediaFoundationLaunchConfig media,
+                                                   WindowsDownloadJobSessionConfig job)
+    : WindowsDownloadExecution([network = std::move(network), media = std::move(media), job = std::move(job)] {
+          return makeWindowsPreparedDownloadTask(network, media, job);
       }) {}
 WindowsDownloadExecution::~WindowsDownloadExecution() {
     shutdown();

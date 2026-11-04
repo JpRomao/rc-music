@@ -230,11 +230,14 @@ class WindowsProcessDownloadJobTests final : public QObject {
     }
     void asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce_data() {
         QTest::addColumn<bool>("native_conversion");
-        QTest::newRow("legacy trusted-fixture CLI") << false;
-        QTest::newRow("native Media Foundation without converter CLI") << true;
+        QTest::addColumn<bool>("prepared_runtime");
+        QTest::newRow("legacy trusted-fixture CLI") << false << false;
+        QTest::newRow("native Media Foundation without converter CLI") << true << false;
+        QTest::newRow("authenticated native converter runtime") << true << true;
     }
     void asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce() {
         QFETCH(bool, native_conversion);
+        QFETCH(bool, prepared_runtime);
         Harness h;
         QVERIFY(h.directory.isValid());
         // Only the framed synthetic helper transfers bytes. This exercises the real
@@ -245,8 +248,19 @@ class WindowsProcessDownloadJobTests final : public QObject {
             configuration.converter = {};
             configuration.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
             configuration.converter.media_foundation_executable = QString::fromUtf8(RC_MUSIC_TEST_MF_WORKER_PATH);
+            if (prepared_runtime) {
+                QFile source(configuration.converter.media_foundation_executable);
+                QVERIFY(source.open(QIODevice::ReadOnly));
+                const auto pin = QCryptographicHash::hash(source.readAll(), QCryptographicHash::Sha256).toHex();
+                source.close();
+                configuration.converter.prepared_launch = WindowsMediaFoundationLaunch::prepare(
+                    {h.directory.path(), configuration.converter.media_foundation_executable, pin});
+                QVERIFY(configuration.converter.prepared_launch);
+                configuration.converter.media_foundation_executable = h.directory.filePath("not-a-worker.exe");
+            }
         }
         WindowsDownloadExecution execution(ioConfiguration(h.directory.path()), configuration);
+        configuration.converter.prepared_launch.reset();
         ObservedImport importer(execution, h);
         DownloadService service(execution, importer, "real-composition");
         QElapsedTimer clock;

@@ -1,5 +1,7 @@
 # RC Music
 
+O [runtime privado do conversor nativo](docs/download-conversion.md#runtime-privado-do-worker-media-foundation) confere e copia o worker antes de usá-lo, mantendo o executável protegido até terminar conversão, validação e encerramento. O preparo ocorre na thread privada, com prazo/cancelamento preservados; **13/13 CTest, 309 casos Qt** passaram. Essa composição ainda depende dos gates de isolamento e integração para habilitar downloads no produto.
+
 A [conversão opcional com Media Foundation](docs/download-conversion.md#conversão-nativa-com-media-foundation) usa um worker nativo Windows, sem Qt ou CLI externo, e valida o MP3 em outro processo antes de liberar a publicação. Fixtures locais MP3, AAC/MP4 e WAV, limites, cancelamento e compatibilidade passaram em **11/11 CTest, 299 casos Qt**. O backend exige seleção explícita; o player local e o instalador existente mantêm os opcionais remotos OFF. Isolamento efetivo e composição protegida de produção continuam pendentes.
 
 A [descoberta da extensão](docs/browser-extension.md#descoberta-em-documentos-e-shadow-dom-aberto) agora alcança Shadow DOM aberto e frames acessíveis pela mesma origem, sem ampliar permissões. Antes do envio, o popup confere novamente as fontes selecionadas e revoga consentimento alterado, inclusive quando a mudança chega durante a verificação final. Os **150 testes locais da extensão** passaram com DOM/Chrome simulados; produção remota, instalação no Brave, frames inacessíveis/roots fechados e demais gates do plano continuam pendentes.

@@ -2,6 +2,7 @@
 
 #include "WindowsDownloadJobSession.hpp"
 #include "WindowsDownloadNetworkLaunch.hpp"
+#include "WindowsMediaFoundationLaunch.hpp"
 #include "WindowsProcessDownloadIo.hpp"
 
 #include <functional>
@@ -29,9 +30,16 @@ class WindowsDownloadTask {
 // first uncancelled poll; the original clock includes preparation time.
 using WindowsDownloadRuntimePreparer =
     std::function<std::shared_ptr<const WindowsDownloadNetworkLaunch>(const WindowsDownloadNetworkLaunchConfig&)>;
+using WindowsMediaFoundationRuntimePreparer =
+    std::function<std::shared_ptr<const WindowsMediaFoundationLaunch>(const WindowsMediaFoundationLaunchConfig&)>;
 [[nodiscard]] std::unique_ptr<WindowsDownloadTask>
 makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
                                 WindowsDownloadRuntimePreparer prepare = {});
+[[nodiscard]] std::unique_ptr<WindowsDownloadTask>
+makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
+                                WindowsDownloadJobSessionConfig job,
+                                WindowsDownloadRuntimePreparer network_prepare = {},
+                                WindowsMediaFoundationRuntimePreparer media_prepare = {});
 
 // Prompt UI port with one pending task and one coalesced snapshot. Factory,
 // task methods, filesystem/native I/O and destruction run in a private Qt loop.
@@ -47,6 +55,8 @@ class WindowsDownloadExecution final : public DownloadExecution {
     explicit WindowsDownloadExecution(TaskFactory factory);
     WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job);
+    WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
+                             WindowsDownloadJobSessionConfig job);
     ~WindowsDownloadExecution() override;
     WindowsDownloadExecution(const WindowsDownloadExecution&) = delete;
     WindowsDownloadExecution& operator=(const WindowsDownloadExecution&) = delete;

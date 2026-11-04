@@ -12,6 +12,8 @@ struct WindowsLocalMp3ValidatorConfig final {
     qint64 total_timeout_ms{30 * 60 * 1000};
     WindowsLocalMediaBackend backend{WindowsLocalMediaBackend::FfmpegLegacy};
     QString media_foundation_executable{};
+    // Retains the same authenticated runtime through decode and pipe teardown.
+    std::shared_ptr<const WindowsMediaFoundationLaunch> prepared_launch{};
 };
 enum class LocalMp3ValidationState { Idle, Validating, Stopping, Validated, Failed, Cancelled };
 struct LocalMp3ValidationUpdate final {

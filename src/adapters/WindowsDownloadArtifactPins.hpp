@@ -65,5 +65,10 @@ bool pinAncestors(const QString& path, std::vector<Handle>& pins);
 bool unchanged(const Artifact& artifact);
 Error pinAndHash(Artifact& artifact, std::vector<Handle>& ancestors);
 bool moduleMatches(const void* address, const Artifact& expected);
+// Private child creation/copy/removal used by the reviewed download runtimes.
+// Copy reads only the held source capability; removal checks the recorded ID.
+bool createPrivateDirectory(const QString& path);
+bool copyPinned(const Artifact& source, Artifact& destination);
+bool removeOwned(const QString& path, bool directory, const FILE_ID_INFO& expected, const QString& final_path);
 
 } // namespace music_player::m0::download_artifacts

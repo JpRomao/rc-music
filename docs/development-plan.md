@@ -743,7 +743,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — conversão nativa Windows e validação em processo separado
+### Checkpoint atual — runtime privado do conversor nativo
+
+Incremento de 2026-11-03: o [runtime privado Media Foundation](download-conversion.md#runtime-privado-do-worker-media-foundation) autentica fonte/cópia por HANDLE+SHA-256, cria diretório próprio privado e retém pins de worker/ancestrais. O inventário fechado recusa entradas extras de loader; cleanup remove somente identidades próprias, preservando desconhecidos. Conversor e segundo validador derivam EXE/CWD/ambiente da mesma capability, revalidada antes de cada subprocesso. O overload preparado de `WindowsDownloadExecution` prepara rede+mídia na thread privada, conserva o prazo original e observa cancelamento antes de iniciar a sessão. A rota preparada antiga recusa MF por path bruto antes de criar recursos; compatibilidade dos ensaios locais legados permanece separada.
+
+TDD: launcher **13 passagens/13 falhas → 26/26**, conversor preparado **16/3 → 19/19** e tarefa preparada **3/14 → 17/17**. Baseline dos helpers extraídos passou **2/2** antes e depois. Fechamento proporcional **13/13 CTest, 309 casos Qt**, zero skips, incluindo compatibilidade legada, deadlines, drenagem e cancelamento/shutdown durante preparo bloqueado. A composição assíncrona MP3/MP4→serviço passou com o conversor preparado real, transferência helper e importador falso; não é jornada de internet/UI integral. Build Release opcional com `BUILD_TESTING=OFF` passou, sem testes registrados. Evidências em `out/product/test-runs/media-foundation-launch-20261103/`.
+
+Produção remota permanece OFF e ADR-0009 Proposto. Hashes comprovam consistência com a configuração confiável, sem aprovação de publicador/PE arbitrário ou sandbox. Perfil de distribuição, isolamento efetivo, resíduos de runtime e composição protegida de rede/ownership/importação/recuperação/capacidade continuam pendentes; navegação da Completa e opcionais/instaladores seguem como entregas próprias. Lite sem engine, integração externa opcional em ambas e YouTube separado conservam o escopo integral. Não houve mídia pública/pessoal, instalação, Registry ou benchmark; o instalador anterior não foi recompilado.
+
+### Checkpoint anterior — conversão nativa Windows e validação em processo separado
 
 Incremento de 2026-11-03: a [alternativa Media Foundation](download-conversion.md#conversão-nativa-com-media-foundation) implementa worker próprio x64 sem Qt/CLI externo, protocolo privado limitado e backend explícito no conversor/validador compartilhados. A entrada local selada é lida por HANDLE retido e byte stream anônimo; a conversão devolve MP3 ao sink do proprietário e só libera Validated após outro processo conferir framing e decodificar até EOF. Sucesso exige exit zero, marcador final e drenagem física. Timeout/cancelamento conservam o deadline e esperam parada; recuperação mantém pins. Não há fallback implícito ou mudança de Qt Multimedia/FFmpeg do playback.
 

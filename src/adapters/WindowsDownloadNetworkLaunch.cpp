@@ -4,8 +4,6 @@
 #include <QDir>
 #include <QUuid>
 
-#include <sddl.h>
-
 #include <algorithm>
 #include <vector>
 
@@ -21,45 +19,6 @@ constexpr std::array<const char*, download_launch_artifact_count> leaves{"RCMusi
                                                                          "vcruntime140.dll",
                                                                          "vcruntime140_1.dll",
                                                                          "qrcmusicschanneloffline.dll"};
-
-// No inherited ACL, no broad Everyone/Users grant; this is privacy, not a
-// boundary against the current user, administrators or the trusted host OS.
-class PrivateSecurity final {
-  public:
-    ~PrivateSecurity() {
-        if (descriptor_)
-            LocalFree(descriptor_);
-    }
-    bool initialize() {
-        HANDLE raw = nullptr;
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
-            return false;
-        Handle token(raw);
-        DWORD size = 0;
-        GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size);
-        if (size == 0 || size > 64 * 1024)
-            return false;
-        std::vector<std::byte> bytes(size);
-        if (!GetTokenInformation(token.get(), TokenUser, bytes.data(), size, &size))
-            return false;
-        const auto* user = reinterpret_cast<const TOKEN_USER*>(bytes.data());
-        LPWSTR sid = nullptr;
-        if (!IsValidSid(user->User.Sid) || !ConvertSidToStringSidW(user->User.Sid, &sid))
-            return false;
-        const std::unique_ptr<wchar_t, decltype(&LocalFree)> sid_owner(sid, &LocalFree);
-        const auto text = QStringLiteral("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;") + QString::fromWCharArray(sid) + ')';
-        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(text.toStdWString().c_str(), SDDL_REVISION_1,
-                                                                  &descriptor_, nullptr))
-            return false;
-        attributes_ = {sizeof(SECURITY_ATTRIBUTES), descriptor_, FALSE};
-        return true;
-    }
-    SECURITY_ATTRIBUTES* attributes() { return &attributes_; }
-
-  private:
-    PSECURITY_DESCRIPTOR descriptor_{nullptr};
-    SECURITY_ATTRIBUTES attributes_{};
-};
 
 bool exactContents(const QString& directory) {
     WIN32_FIND_DATAW entry{};
@@ -101,41 +60,6 @@ bool exactContents(const QString& directory) {
     return valid && last == ERROR_NO_MORE_FILES && count == leaves.size();
 }
 
-bool copyPinned(const Artifact& source, Artifact& destination) {
-    // CREATE_NEW never overwrites or reuses an existing artifact. Copy from the
-    // authenticated handle, not a reopened source pathname.
-    Handle output(CreateFileW(nativePath(destination.path).c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
-                              nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-    if (!output.valid() || !information(output.get(), false, destination.identity))
-        return false;
-    destination.final_path = finalPath(output.get());
-    LARGE_INTEGER zero{};
-    if (!SetFilePointerEx(source.handle.get(), zero, nullptr, FILE_BEGIN))
-        return false;
-    std::array<char, 64 * 1024> block{};
-    quint64 copied = 0;
-    while (copied < source.bytes) {
-        const auto wanted = static_cast<DWORD>(std::min<quint64>(block.size(), source.bytes - copied));
-        DWORD read = 0, written = 0;
-        if (!ReadFile(source.handle.get(), block.data(), wanted, &read, nullptr) || read == 0 || read > wanted ||
-            !WriteFile(output.get(), block.data(), read, &written, nullptr) || written != read)
-            return false;
-        copied += read;
-    }
-    return FlushFileBuffers(output.get()) && unchanged(source);
-}
-
-bool removeOwned(const QString& path, bool directory, const FILE_ID_INFO& expected, const QString& final_path) {
-    Handle handle(CreateFileW(nativePath(path).c_str(), FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ, nullptr,
-                              OPEN_EXISTING,
-                              FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr));
-    FILE_ID_INFO actual{};
-    if (!handle.valid() || !information(handle.get(), directory, actual) || !sameIdentity(expected, actual) ||
-        finalPath(handle.get()) != final_path)
-        return false;
-    FILE_DISPOSITION_INFO disposition{TRUE};
-    return SetFileInformationByHandle(handle.get(), FileDispositionInfo, &disposition, sizeof(disposition)) != FALSE;
-}
 } // namespace
 
 struct WindowsDownloadNetworkLaunch::Impl final {
@@ -221,11 +145,8 @@ WindowsDownloadNetworkLaunch::prepare(const WindowsDownloadNetworkLaunchConfig& 
         if (count == 0 || count >= system.size() ||
             !validPath(QString::fromWCharArray(system.data(), count), impl->system_root))
             return fail(WindowsDownloadLaunchError::FileAccess);
-        PrivateSecurity security;
-        if (!security.initialize())
-            return fail(WindowsDownloadLaunchError::FileAccess);
         impl->directory = parent + "/rcmusic-network-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
-        if (!CreateDirectoryW(nativePath(impl->directory).c_str(), security.attributes()))
+        if (!createPrivateDirectory(impl->directory))
             return fail(WindowsDownloadLaunchError::FileAccess);
         impl->directory_pin = Handle(CreateFileW(
             nativePath(impl->directory).c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY, FILE_SHARE_READ, nullptr,

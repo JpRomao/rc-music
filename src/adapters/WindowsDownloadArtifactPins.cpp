@@ -3,11 +3,75 @@
 #include <QCryptographicHash>
 #include <QDir>
 
+#include <sddl.h>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <memory>
 
 namespace music_player::m0::download_artifacts {
+
+bool createPrivateDirectory(const QString& path) {
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
+        return false;
+    Handle token(raw);
+    DWORD size = 0;
+    GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size);
+    if (size == 0 || size > 64 * 1024)
+        return false;
+    std::vector<std::byte> bytes(size);
+    if (!GetTokenInformation(token.get(), TokenUser, bytes.data(), size, &size))
+        return false;
+    const auto* user = reinterpret_cast<const TOKEN_USER*>(bytes.data());
+    LPWSTR sid = nullptr;
+    if (!IsValidSid(user->User.Sid) || !ConvertSidToStringSidW(user->User.Sid, &sid))
+        return false;
+    const std::unique_ptr<wchar_t, decltype(&LocalFree)> sid_owner(sid, &LocalFree);
+    const auto text = QStringLiteral("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;") + QString::fromWCharArray(sid) + ')';
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(text.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
+                                                              nullptr))
+        return false;
+    const std::unique_ptr<void, decltype(&LocalFree)> descriptor_owner(descriptor, &LocalFree);
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    return CreateDirectoryW(nativePath(path).c_str(), &attributes) != FALSE;
+}
+
+bool copyPinned(const Artifact& source, Artifact& destination) {
+    Handle output(CreateFileW(nativePath(destination.path).c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
+                              nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    if (!output.valid() || !information(output.get(), false, destination.identity))
+        return false;
+    destination.final_path = finalPath(output.get());
+    LARGE_INTEGER zero{};
+    if (!SetFilePointerEx(source.handle.get(), zero, nullptr, FILE_BEGIN))
+        return false;
+    std::array<char, 64 * 1024> block{};
+    quint64 copied = 0;
+    while (copied < source.bytes) {
+        const auto wanted = static_cast<DWORD>(std::min<quint64>(block.size(), source.bytes - copied));
+        DWORD read = 0, written = 0;
+        if (!ReadFile(source.handle.get(), block.data(), wanted, &read, nullptr) || read == 0 || read > wanted ||
+            !WriteFile(output.get(), block.data(), read, &written, nullptr) || written != read)
+            return false;
+        copied += read;
+    }
+    return FlushFileBuffers(output.get()) && unchanged(source);
+}
+
+bool removeOwned(const QString& path, const bool directory, const FILE_ID_INFO& expected, const QString& final_path) {
+    Handle handle(CreateFileW(nativePath(path).c_str(), FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING,
+                              FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr));
+    FILE_ID_INFO actual{};
+    if (!handle.valid() || !information(handle.get(), directory, actual) || !sameIdentity(expected, actual) ||
+        finalPath(handle.get()) != final_path)
+        return false;
+    FILE_DISPOSITION_INFO disposition{TRUE};
+    return SetFileInformationByHandle(handle.get(), FileDispositionInfo, &disposition, sizeof(disposition)) != FALSE;
+}
 
 std::wstring nativePath(const QString& path) {
     return (QStringLiteral("\\\\?\\") + QDir::toNativeSeparators(path)).toStdWString();

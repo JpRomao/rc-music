@@ -1318,6 +1318,14 @@
           "marker": "convertsLocalFixturesAndValidatesInASeparateWorker"
         },
         {
+          "path": "tests/qt/WindowsMediaFoundationLaunchTests.cpp",
+          "marker": "preparesOneAuthenticatedCopyWithFixedProcessConfiguration"
+        },
+        {
+          "path": "tests/qt/WindowsPreparedMediaDownloadTaskTests.cpp",
+          "marker": "startPreparesBothCapabilitiesBeforeTheFirstSessionPoll"
+        },
+        {
           "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
           "marker": "authenticatedSyntheticTransferConvertsThenPublishesOnlyInSeparatePhase"
         },
@@ -1826,6 +1834,22 @@
         {
           "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
           "marker": "cancellingConversionWaitsForTheOwnedWorker"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationLaunchTests.cpp",
+          "marker": "refusesExtraLoaderControlAndPreservesUnknownFiles"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
+          "marker": "preparedRuntimeOwnsBothConversionAndValidationUntilDestruction"
+        },
+        {
+          "path": "tests/qt/WindowsPreparedMediaDownloadTaskTests.cpp",
+          "marker": "oldPreparedFactoryRejectsRawMediaFoundationBeforeAnyPreparation"
+        },
+        {
+          "path": "tests/qt/WindowsPreparedMediaDownloadTaskTests.cpp",
+          "marker": "uiRemainsPromptWhileMediaPreparationIsBlocked"
         }
       ],
       "evidence": [

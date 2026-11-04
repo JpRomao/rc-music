@@ -1,6 +1,7 @@
 #include "WindowsLocalMp3Validator.hpp"
 
 #include "MediaFoundationWorkerProtocol.hpp"
+#include "WindowsMediaFoundationLaunch.hpp"
 
 #include <QFileInfo>
 #include <qt_windows.h>
@@ -83,12 +84,23 @@ bool WindowsLocalMp3Validator::launch(Stage stage, qint64 now_ms) {
     WindowsDownloadProcessConfig process;
     const bool foundation = config_.backend == WindowsLocalMediaBackend::MediaFoundation;
     const bool probe = stage == Stage::Probe;
-    process.executable = foundation ? config_.media_foundation_executable
-                                    : (probe ? config_.ffprobe_executable : config_.ffmpeg_executable);
+    if (foundation && config_.prepared_launch) {
+        if (!config_.prepared_launch->unchanged()) {
+            update_.state = LocalMp3ValidationState::Failed;
+            update_.error = DownloadFailure::InvalidResult;
+            return false;
+        }
+        process = config_.prepared_launch->processConfig();
+    } else {
+        process.executable = foundation ? config_.media_foundation_executable
+                                        : (probe ? config_.ffprobe_executable : config_.ffmpeg_executable);
+        process.working_directory = QFileInfo(path_).absolutePath();
+    }
     if (foundation) {
         const auto bytes = encodeMediaFoundationWorkerRequest(
             {.mode = MediaFoundationWorkerMode::Validate, .input_path = path_.toStdU16String()});
-        process.environment = mediaFoundationEnvironment();
+        if (!config_.prepared_launch)
+            process.environment = mediaFoundationEnvironment();
         if (bytes.empty() || !process.environment || !QFileInfo(process.executable).isFile()) {
             update_.state = LocalMp3ValidationState::Failed;
             update_.error = bytes.empty() ? DownloadFailure::InvalidResult : DownloadFailure::Unavailable;
@@ -98,7 +110,6 @@ bool WindowsLocalMp3Validator::launch(Stage stage, qint64 now_ms) {
             QByteArray(reinterpret_cast<const char*>(bytes.data()), static_cast<qsizetype>(bytes.size()));
     } else
         process.arguments = probe ? downloadProbeArguments(path_) : downloadValidationArguments(path_);
-    process.working_directory = QFileInfo(path_).absolutePath();
     process.max_memory_bytes = config_.max_process_memory_bytes;
     process.total_timeout_ms = config_.total_timeout_ms - (now_ms - started_ms_);
     process.max_stdout_bytes = probe ? 16384 : 1;

@@ -1,5 +1,6 @@
 #include "WindowsLocalMediaConverter.hpp"
 #include "WindowsLocalMp3Validator.hpp"
+#include "WindowsMediaFoundationLaunch.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -112,6 +113,88 @@ class WindowsMediaFoundationConversionTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void preparedRuntimeOwnsBothConversionAndValidationUntilDestruction() {
+        Workspace owned;
+        QVERIFY(owned.prepare(fixture(QStringLiteral("m4a-aac-lc.m4a"))));
+        QFile executable(workerPath());
+        QVERIFY(executable.open(QIODevice::ReadOnly));
+        const auto pin = QCryptographicHash::hash(executable.readAll(), QCryptographicHash::Sha256).toHex();
+        executable.close();
+        auto lease = WindowsMediaFoundationLaunch::prepare({owned.directory.path(), workerPath(), pin});
+        QVERIFY(lease);
+        const auto runtime = lease->directory();
+        const auto copied = lease->processConfig().executable;
+        auto config = conversionConfig();
+        config.media_foundation_executable = owned.directory.filePath(QStringLiteral("must-not-be-opened.exe"));
+        config.prepared_launch = lease;
+        {
+            WindowsLocalMediaConverter converter{config};
+            config.prepared_launch.reset();
+            lease.reset();
+            QVERIFY(converter.start(owned.workspace, 0));
+            const auto result = finish(converter);
+            QCOMPARE(result.error, DownloadFailure::None);
+            QCOMPARE(result.state, LocalMediaConversionState::Validated);
+            QVERIFY(QFileInfo::exists(copied));
+            QFile writer(copied);
+            QVERIFY(!writer.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QVERIFY(!QFile::remove(copied));
+        }
+        QVERIFY(!QDir(runtime).exists());
+        QVERIFY(QFileInfo::exists(workerPath()));
+    }
+
+    void preparedValidatorRejectsExtraFilesBeforeLaunchWithoutRawFallback() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto input = directory.filePath(QStringLiteral("candidate.mp3"));
+        QVERIFY(write(input, fixture(QStringLiteral("mp3-unicode-tags.mp3"))));
+        QFile executable(workerPath());
+        QVERIFY(executable.open(QIODevice::ReadOnly));
+        const auto pin = QCryptographicHash::hash(executable.readAll(), QCryptographicHash::Sha256).toHex();
+        executable.close();
+        auto lease = WindowsMediaFoundationLaunch::prepare({directory.path(), workerPath(), pin});
+        QVERIFY(lease);
+        const auto extra = lease->directory() + QStringLiteral("/unexpected.dll");
+        QVERIFY(write(extra, "unknown bytes"));
+        QVERIFY(!lease->unchanged());
+        auto config = validationConfig();
+        config.prepared_launch = lease;
+        WindowsLocalMp3Validator validator{config};
+        QVERIFY(!validator.start(input, 0));
+        QCOMPARE(validator.poll(0).state, LocalMp3ValidationState::Failed);
+        QCOMPARE(validator.poll(0).error, DownloadFailure::InvalidResult);
+        QCOMPARE(read(input), fixture(QStringLiteral("mp3-unicode-tags.mp3")));
+        QVERIFY(QFile::remove(extra));
+    }
+
+    void preparedRuntimeRemainsPinnedUntilCancelledConverterIsDestroyed() {
+        Workspace owned;
+        QVERIFY(owned.prepare(fixture(QStringLiteral("mp3-unicode-tags.mp3"))));
+        QFile executable(workerPath());
+        QVERIFY(executable.open(QIODevice::ReadOnly));
+        const auto pin = QCryptographicHash::hash(executable.readAll(), QCryptographicHash::Sha256).toHex();
+        executable.close();
+        auto lease = WindowsMediaFoundationLaunch::prepare({owned.directory.path(), workerPath(), pin});
+        QVERIFY(lease);
+        const auto runtime = lease->directory();
+        auto config = conversionConfig();
+        config.media_foundation_executable.clear();
+        config.prepared_launch = lease;
+        {
+            WindowsLocalMediaConverter converter{config};
+            config.prepared_launch.reset();
+            lease.reset();
+            QVERIFY(converter.start(owned.workspace, 0));
+            converter.cancel();
+            QVERIFY(QDir(runtime).exists());
+            QCOMPARE(finish(converter).state, LocalMediaConversionState::Cancelled);
+            QVERIFY(QDir(runtime).exists());
+            QVERIFY(owned.workspace.outputPath().isEmpty());
+        }
+        QVERIFY(!QDir(runtime).exists());
+    }
+
     void legacyAggregateConfigurationsKeepTheirBackend() {
         const WindowsLocalMediaConverterConfig conversion{QStringLiteral("ffmpeg"), QStringLiteral("ffprobe"), 1, 2};
         const WindowsLocalMp3ValidatorConfig validation{QStringLiteral("ffmpeg"), QStringLiteral("ffprobe"), 1, 2};

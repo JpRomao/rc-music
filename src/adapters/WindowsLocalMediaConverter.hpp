@@ -15,6 +15,9 @@ struct WindowsLocalMediaConverterConfig final {
     qint64 total_timeout_ms{30 * 60 * 1000};
     WindowsLocalMediaBackend backend{WindowsLocalMediaBackend::FfmpegLegacy};
     QString media_foundation_executable{};
+    // With a prepared lease, executable/CWD/environment come only from it.
+    // Raw paths remain solely for the trusted local-fixture composition.
+    std::shared_ptr<const WindowsMediaFoundationLaunch> prepared_launch{};
 };
 enum class LocalMediaConversionState {
     Idle,
