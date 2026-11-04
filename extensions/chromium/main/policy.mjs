@@ -60,6 +60,12 @@ function cleanTitle(title, kind) {
     || (kind === 'audio' ? 'Áudio' : 'Vídeo');
 }
 
+function validSourceId(value) {
+  if (typeof value !== 'string') return false;
+  const parts = /^c([1-9][0-9]{0,15}):d([1-9][0-9]{0,15})$/.exec(value);
+  return parts !== null && Number.isSafeInteger(Number(parts[1])) && Number.isSafeInteger(Number(parts[2]));
+}
+
 export function normalizeSnapshot(raw) {
   if (!exactKeys(raw, ['type', 'pageUrl', 'candidates', 'truncated']) || raw.type !== 'snapshot'
     || !Array.isArray(raw.candidates) || typeof raw.truncated !== 'boolean' || !withinBytes(raw, 1024 * 1024)) {
@@ -70,24 +76,75 @@ export function normalizeSnapshot(raw) {
   const candidates = [];
   const seen = new Set();
   for (const item of raw.candidates.slice(0, MAX_CANDIDATES)) {
-    if (!exactKeys(item, ['url', 'title', 'kind']) || typeof item.title !== 'string'
-      || (item.kind !== 'audio' && item.kind !== 'video')) throw protocolError('invalid_snapshot');
+    if (!exactKeys(item, ['url', 'title', 'kind', 'sourceId']) || typeof item.title !== 'string'
+      || (item.kind !== 'audio' && item.kind !== 'video') || !validSourceId(item.sourceId)) {
+      throw protocolError('invalid_snapshot');
+    }
     const url = mediaUrl(item.url);
     if (!url || seen.has(url.href)) continue;
     seen.add(url.href);
-    candidates.push({ url: url.href, title: cleanTitle(item.title, item.kind), kind: item.kind, origin: url.origin });
+    candidates.push({ url: url.href, title: cleanTitle(item.title, item.kind), kind: item.kind,
+      sourceId: item.sourceId, origin: url.origin });
   }
   return { pageUrl: page.href, candidates, truncated: raw.truncated || raw.candidates.length > MAX_CANDIDATES };
 }
 
+function rawSnapshot(snapshot) {
+  if (snapshot !== null && typeof snapshot === 'object' && Object.hasOwn(snapshot, 'type')) return snapshot;
+  if (!exactKeys(snapshot, ['pageUrl', 'candidates', 'truncated']) || !Array.isArray(snapshot.candidates)) {
+    throw protocolError('invalid_snapshot');
+  }
+  return { type: 'snapshot', pageUrl: snapshot.pageUrl, truncated: snapshot.truncated,
+    candidates: Array.from(snapshot.candidates, item => {
+      if (!exactKeys(item, ['url', 'title', 'kind', 'sourceId', 'origin'])) throw protocolError('invalid_snapshot');
+      const { url, title, kind, sourceId } = item;
+      return { url, title, kind, sourceId };
+    }) };
+}
+
+function validSelection(selectedUrls) {
+  if (!Array.isArray(selectedUrls) || selectedUrls.length === 0 || selectedUrls.length > MAX_BATCH) return false;
+  for (const url of selectedUrls) {
+    if (typeof url !== 'string') return false;
+  }
+  return new Set(selectedUrls).size === selectedUrls.length;
+}
+
+function uniqueSelectedUrls(raw, selectedUrls) {
+  const counts = new Map(selectedUrls.map(url => [url, 0]));
+  for (const item of raw.candidates) {
+    const url = mediaUrl(item?.url);
+    if (url && counts.has(url.href)) counts.set(url.href, counts.get(url.href) + 1);
+  }
+  return selectedUrls.every(url => counts.get(url) === 1);
+}
+
+export function isSelectionCurrent(snapshot, fresh, selectedUrls) {
+  try {
+    if (!validSelection(selectedUrls) || snapshot?.pageUrl !== fresh?.pageUrl) return false;
+    const previousRaw = rawSnapshot(snapshot);
+    const currentRaw = rawSnapshot(fresh);
+    const previous = normalizeSnapshot(previousRaw);
+    const current = normalizeSnapshot(currentRaw);
+    if (previous.pageUrl !== current.pageUrl || !uniqueSelectedUrls(previousRaw, selectedUrls)
+      || !uniqueSelectedUrls(currentRaw, selectedUrls)) return false;
+    return selectedUrls.every(url => {
+      const before = previous.candidates.find(item => item.url === url);
+      const after = current.candidates.find(item => item.url === url);
+      return before !== undefined && after !== undefined
+        && ['url', 'title', 'kind', 'sourceId'].every(field => before[field] === after[field]);
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function buildDownloadRequest(snapshot, selectedUrls, requestId) {
-  if (!Array.isArray(selectedUrls) || selectedUrls.length === 0 || selectedUrls.length > MAX_BATCH
-    || new Set(selectedUrls).size !== selectedUrls.length || !Array.isArray(snapshot?.candidates)) {
+  if (!validSelection(selectedUrls) || !Array.isArray(snapshot?.candidates)) {
     throw protocolError('invalid_selection');
   }
   const selected = new Set(selectedUrls);
-  const clean = normalizeSnapshot({ type: 'snapshot', pageUrl: snapshot.pageUrl, truncated: snapshot.truncated,
-    candidates: snapshot.candidates.map(({ url, title, kind }) => ({ url, title, kind })) });
+  const clean = normalizeSnapshot(rawSnapshot(snapshot));
   const items = clean.candidates.filter(item => selected.has(item.url)).map(({ url, title, kind }) => ({ url, title, kind }));
   if (items.length !== selected.size) throw protocolError('invalid_selection');
   return validateDownloadRequest({ schemaVersion: 1, type: 'download.request', requestId, items });

@@ -1178,8 +1178,24 @@
           "marker": "discovers media sources and direct links with absolute deduplicated URLs"
         },
         {
+          "path": "tests/extensions/detector.test.mjs",
+          "marker": "discovers media in nested open shadow roots"
+        },
+        {
+          "path": "tests/extensions/detector.test.mjs",
+          "marker": "discovers accessible nested frames including inherited blank documents"
+        },
+        {
           "path": "tests/extensions/popup.test.mjs",
           "marker": "explicit authorized submit sends exactly the selection and reports accepted, not completed"
+        },
+        {
+          "path": "tests/extensions/popup.test.mjs",
+          "marker": "submit scans selected sources again before native transmission without relying on stream updates"
+        },
+        {
+          "path": "tests/extensions/context-integration.test.mjs",
+          "marker": "real detector, policy and controller send only explicitly consented nested-context media as Native v1"
         },
         {
           "path": "tests/qt/NativeDownloadSessionTests.cpp",
@@ -1406,6 +1422,14 @@
         {
           "path": "tests/extensions/native-client.test.mjs",
           "marker": "timeout cleans channel and ignores late replies without retry"
+        },
+        {
+          "path": "tests/extensions/popup.test.mjs",
+          "marker": "timeout or disposal during a fresh scan makes its late result inert"
+        },
+        {
+          "path": "tests/extensions/context-integration.test.mjs",
+          "marker": "a real context stream update during final tab verification revokes only selected submissions"
         },
         {
           "path": "tests/extensions/policy.test.mjs",

@@ -1,163 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { harness, element, frameDocument, shadowRoot, assertStopped, extensionId, popupUrl } from "./support/detector-harness.mjs";
+test("discovers media in nested open shadow roots", () => {
+  const nested = shadowRoot([element("audio", { src: "shadow-song.mp3" })]);
+  const outer = shadowRoot([element("section", {}, { shadowRoot: nested })]);
+  const env = harness([element("div", {}, { shadowRoot: outer })]);
+  assert.deepEqual(env.port().messages[0].candidates.map((item) => item.url), ["https://cdn.example/media/shadow-song.mp3"]);
+});
 
-const detectorPath = new URL("../../extensions/chromium/main/detector.js", import.meta.url);
-const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const popupUrl = `chrome-extension://${extensionId}/popup.html`;
-
-class FakeEvent {
-  listeners = new Set();
-  addListener(listener) { this.listeners.add(listener); }
-  removeListener(listener) { this.listeners.delete(listener); }
-  emit(...args) { for (const listener of [...this.listeners]) listener(...args); }
-}
-
-class FakeTarget {
-  listeners = new Map();
-  addEventListener(type, listener, capture = false) {
-    const entries = this.listeners.get(type) ?? [];
-    entries.push({ listener, capture });
-    this.listeners.set(type, entries);
-  }
-  removeEventListener(type, listener, capture = false) {
-    this.listeners.set(type, (this.listeners.get(type) ?? []).filter(
-      (entry) => entry.listener !== listener || entry.capture !== capture,
-    ));
-  }
-  emit(type) { for (const { listener } of [...(this.listeners.get(type) ?? [])]) listener(); }
-  get listenerCount() { return [...this.listeners.values()].reduce((sum, entries) => sum + entries.length, 0); }
-}
-
-class FakeClock {
-  now = 0;
-  nextId = 1;
-  tasks = new Map();
-  setTimeout = (callback, delay) => this.schedule(callback, delay, false);
-  setInterval = (callback, delay) => this.schedule(callback, delay, true);
-  clearTimeout = (id) => this.tasks.delete(id);
-  clearInterval = (id) => this.tasks.delete(id);
-  schedule(callback, delay, repeat) {
-    const id = this.nextId++;
-    this.tasks.set(id, { callback, delay, repeat, at: this.now + delay });
-    return id;
-  }
-  advance(milliseconds) {
-    const end = this.now + milliseconds;
-    for (;;) {
-      const due = [...this.tasks.entries()].filter(([, task]) => task.at <= end)
-        .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
-      if (!due) break;
-      const [id, task] = due;
-      this.now = task.at;
-      if (task.repeat) task.at += task.delay;
-      else this.tasks.delete(id);
-      task.callback();
-    }
-    this.now = end;
-  }
-}
-
-function element(tagName, attributes = {}, properties = {}, children = []) {
-  const node = {
-    tagName: tagName.toUpperCase(),
-    currentSrc: "",
-    parentElement: null,
-    textContent: "",
-    children,
-    getAttribute: (name) => attributes[name] ?? null,
-    setAttribute: (name, value) => { attributes[name] = value; },
-    ...properties,
-  };
-  for (const child of children) child.parentElement = node;
-  return node;
-}
-
-function harness(nodes = [], options = {}) {
-  const clock = new FakeClock();
-  const document = new FakeTarget();
-  const window = new FakeTarget();
-  const location = { href: options.href ?? "https://page.example/watch#part-one" };
-  const onConnect = new FakeEvent();
-  const observers = [];
-  let inspected = 0;
-  let treeReads = 0;
-  document.title = options.title ?? "Document title";
-  document.baseURI = options.baseURI ?? "https://cdn.example/media/";
-  document.documentElement = element("html", {}, {}, nodes);
-  document.createTreeWalker = (root, show) => {
-    assert.equal(show, 1);
-    treeReads += 1;
-    const all = [];
-    const flatten = (node) => { all.push(node); for (const child of node.children) flatten(child); };
-    if (root === document) flatten(document.documentElement);
-    else for (const child of root.children) flatten(child);
-    let index = 0;
-    return { nextNode: () => {
-      const node = all[index++] ?? null;
-      if (!node) return null;
-      return new Proxy(node, { get: (target, key) => {
-        if (key === "tagName") inspected += 1;
-        return target[key];
-      } });
-    } };
-  };
-  window.top = window;
-  const sandbox = {
-    document, window, location, URL, TextEncoder,
-    NodeFilter: { SHOW_ELEMENT: 1 },
-    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
-    setInterval: clock.setInterval, clearInterval: clock.clearInterval,
-    chrome: { runtime: { id: extensionId, getURL: (path) => `chrome-extension://${extensionId}/${path}`, onConnect } },
-    MutationObserver: class {
-      constructor(callback) { this.callback = callback; this.active = false; observers.push(this); }
-      observe(target, config) {
-        if (options.observeThrows) throw new Error("document unavailable");
-        assert.equal(target, document);
-        assert.equal(config.subtree, true);
-        assert.equal(config.childList, true);
-        assert.equal(config.attributes, true);
-        assert.ok(config.attributeFilter.includes("src"));
-        assert.ok(config.attributeFilter.includes("href"));
-        this.active = true;
-      }
-      disconnect() { this.active = false; }
-    },
-  };
-  const context = vm.createContext(sandbox);
-  const inject = () => vm.runInContext(readFileSync(detectorPath, "utf8"), context, { filename: "detector.js" });
-  const port = (overrides = {}) => {
-    const channel = {
-      name: "rc-music-detection-v1",
-      sender: { id: extensionId, url: popupUrl },
-      messages: [],
-      disconnectCount: 0,
-      onDisconnect: new FakeEvent(),
-      postMessage(message) { this.messages.push(JSON.parse(JSON.stringify(message))); },
-      disconnect() { this.disconnectCount += 1; this.onDisconnect.emit(); },
-      ...overrides,
-    };
-    onConnect.emit(channel);
-    return channel;
-  };
-  inject();
-  return {
-    clock, document, window, location, onConnect, observers, inject, port,
-    get treeReads() { return treeReads; },
-    get inspected() { return inspected; },
-    mutate() { for (const observer of observers.filter((item) => item.active)) observer.callback([]); },
-    replaceNodes(replacements) { document.documentElement = element("html", {}, {}, replacements); },
-  };
-}
-
-function assertStopped(env, channel) {
-  assert.equal(env.observers.filter((observer) => observer.active).length, 0);
-  assert.equal(env.clock.tasks.size, 0);
-  assert.equal(env.document.listenerCount, 0);
-  assert.equal(env.window.listenerCount, 0);
-  assert.equal(channel.onDisconnect.listeners.size, 0);
-}
+test("discovers accessible nested frames including inherited blank documents", () => {
+  const nested = frameDocument([element("audio", { src: "inherited.mp3" })], {
+    href: "about:blank", baseURI: "https://page.example/inherited/", title: "Inherited frame",
+  });
+  const child = frameDocument([element("iframe", {}, { contentDocument: nested })]);
+  const env = harness([element("iframe", {}, { contentDocument: child })]);
+  assert.deepEqual(env.port().messages[0].candidates.map((item) => item.url), ["https://page.example/inherited/inherited.mp3"]);
+});
 
 test("injection is idle and repeated injection registers one runtime listener", () => {
   const env = harness();
@@ -204,12 +62,12 @@ test("discovers media sources and direct links with absolute deduplicated URLs",
     type: "snapshot",
     pageUrl: "https://page.example/watch#part-one",
     candidates: [
-      { url: "https://cdn.example/media/song.mp3", title: "Song", kind: "audio" },
-      { url: "https://cdn.example/live", title: "A video", kind: "video" },
-      { url: "https://cdn.example/media/fallback.mp4", title: "A video", kind: "video" },
-      { url: "https://cdn.example/media/alternate.mp4", title: "A video", kind: "video" },
-      { url: "https://cdn.example/music.M4A?token=test", title: "Audio link", kind: "audio" },
-      { url: "https://cdn.example/clip.MP4?download=1", title: "Document title", kind: "video" },
+      { url: "https://cdn.example/media/song.mp3", title: "Song", kind: "audio", sourceId: "c1:d1" },
+      { url: "https://cdn.example/live", title: "A video", kind: "video", sourceId: "c1:d1" },
+      { url: "https://cdn.example/media/fallback.mp4", title: "A video", kind: "video", sourceId: "c1:d1" },
+      { url: "https://cdn.example/media/alternate.mp4", title: "A video", kind: "video", sourceId: "c1:d1" },
+      { url: "https://cdn.example/music.M4A?token=test", title: "Audio link", kind: "audio", sourceId: "c1:d1" },
+      { url: "https://cdn.example/clip.MP4?download=1", title: "Document title", kind: "video", sourceId: "c1:d1" },
     ],
     truncated: false,
   }]);
@@ -346,7 +204,7 @@ test("base URI changes replace resolved sources without retaining old candidates
   env.mutate();
   env.clock.advance(200);
   assert.deepEqual(channel.messages.at(-1).candidates, [{
-    url: "https://other-cdn.example/collection/relative.mp3", title: "Document title", kind: "audio",
+    url: "https://other-cdn.example/collection/relative.mp3", title: "Document title", kind: "audio", sourceId: "c1:d1",
   }]);
 });
 
@@ -468,4 +326,222 @@ test("an overlong page URL is rejected without serializing page data", () => {
   assert.equal(channel.disconnectCount, 1);
   assert.equal(env.treeReads, 0);
   assertStopped(env, channel);
+});
+
+test("V2 exposes a frozen readonly fresh snapshot only during the active session", () => {
+  const media = element("audio", { src: "one.mp3" });
+  const env = harness([media]);
+  assert.equal(env.snapshot(), null);
+  assert.equal(Object.isFrozen(env.sentinel), true);
+  assert.equal(env.descriptor().writable, false);
+  assert.equal(env.descriptor().configurable, false);
+  assert.equal(env.port({ name: "rc-music-detection-v1" }).messages.length, 0);
+  const channel = env.port();
+  const first = env.snapshot();
+  const again = env.snapshot();
+  assert.notEqual(first, again);
+  assert.notEqual(first.candidates, again.candidates);
+  assert.deepEqual(Object.keys(first).sort(), ["candidates", "pageUrl", "truncated", "type"]);
+  assert.deepEqual(Object.keys(first.candidates[0]).sort(), ["kind", "sourceId", "title", "url"]);
+  assert.equal(first.candidates[0].sourceId, "c1:d1");
+  first.candidates[0].title = "caller mutation";
+  media.setAttribute("src", "two.mp3");
+  const fresh = env.execute(() => globalThis.__rcMusicDetectionV2.snapshot());
+  assert.equal(fresh.candidates[0].url, "https://cdn.example/media/two.mp3");
+  assert.equal(fresh.candidates[0].title, "Document title");
+  assert.equal(channel.messages.length, 1, "the snapshot probe does not publish or submit work");
+  channel.onDisconnect.emit();
+  assert.equal(env.snapshot(), null);
+  assertStopped(env, channel);
+});
+
+test("V2 source identities are stable and change across popup connections", () => {
+  const env = harness([element("audio", { src: "one.mp3" })]);
+  const first = env.port();
+  assert.equal(env.snapshot().candidates[0].sourceId, "c1:d1");
+  env.clock.advance(1500);
+  assert.equal(first.messages.length, 1);
+  assert.equal(env.snapshot().candidates[0].sourceId, "c1:d1");
+  const second = env.port();
+  assert.equal(first.disconnectCount, 1);
+  assert.equal(second.messages[0].candidates[0].sourceId, "c2:d1");
+  const [connection, document] = second.messages[0].candidates[0].sourceId.match(/[0-9]+/gu).map(Number);
+  assert.equal(Number.isSafeInteger(connection), true);
+  assert.equal(Number.isSafeInteger(document), true);
+  assert.ok(connection > 0 && document > 0);
+});
+
+test("each frame and its shadow roots use their own base URI and document title", () => {
+  const root = shadowRoot([element("audio", { src: "relative.mp3" })]);
+  const child = frameDocument([element("section", {}, { shadowRoot: root })], {
+    href: "about:srcdoc", baseURI: "https://page.example/embedded/", title: "Embedded title",
+  });
+  const env = harness([element("iframe", {}, { contentDocument: child }), element("audio", { src: "top.mp3" })]);
+  const candidates = env.port().messages[0].candidates;
+  assert.equal(candidates[0].sourceId, "c1:d1");
+  assert.equal(candidates[1].url, "https://page.example/embedded/relative.mp3");
+  assert.equal(candidates[1].title, "Embedded title");
+  assert.equal(candidates[1].sourceId, "c1:d2");
+});
+
+test("inaccessible frame getters and closed shadow roots are ignored", () => {
+  const hidden = element("iframe");
+  Object.defineProperty(hidden, "contentDocument", { get() { throw new Error("SecurityError"); } });
+  const env = harness([
+    hidden, element("iframe", {}, { contentDocument: null }),
+    element("div", {}, { shadowRoot: null, closedShadowRoot: shadowRoot([element("audio", { src: "closed.mp3" })]) }),
+    element("audio", { src: "visible.mp3" }),
+  ]);
+  const channel = env.port();
+  assert.deepEqual(channel.messages[0].candidates.map((item) => item.url), ["https://cdn.example/media/visible.mp3"]);
+  assert.equal(env.observers.filter((item) => item.active).length, 1);
+  assert.equal(channel.messages[0].truncated, false);
+});
+
+test("a late open shadow root is found by the bounded periodic scan without DOM patches", () => {
+  const host = element("section");
+  const env = harness([host]);
+  const channel = env.port();
+  host.shadowRoot = shadowRoot([element("audio", { src: "late.mp3" })]);
+  env.clock.advance(499);
+  assert.equal(channel.messages.length, 1);
+  env.clock.advance(1);
+  assert.equal(channel.messages.at(-1).candidates[0].url, "https://cdn.example/media/late.mp3");
+  assert.equal(env.observers.filter((item) => item.active).length, 2);
+  channel.onDisconnect.emit();
+  assert.equal(host.shadowRoot.listenerCount, 0);
+  assertStopped(env, channel);
+});
+
+test("fresh probes replace child-document source IDs before a streamed update arrives", () => {
+  const child = frameDocument([element("audio", { src: "same.mp3" })]);
+  const frame = element("frame", {}, { contentDocument: child });
+  const env = harness([frame]);
+  const channel = env.port();
+  assert.equal(channel.messages[0].candidates[0].sourceId, "c1:d2");
+  child.location.href = "https://page.example/child-spa";
+  assert.equal(env.snapshot().candidates[0].sourceId, "c1:d3");
+  assert.equal(channel.messages.length, 1);
+  frame.contentDocument = frameDocument([element("audio", { src: "same.mp3" })], { href: child.location.href });
+  assert.equal(env.snapshot().candidates[0].sourceId, "c1:d4");
+  assert.equal(child.listenerCount, 0);
+  env.clock.advance(500);
+  assert.equal(channel.messages.at(-1).candidates[0].sourceId, "c1:d4");
+});
+
+test("global URL deduplication changes source identity when its first source is removed", () => {
+  const first = frameDocument([element("audio", { src: "https://cdn.example/same.mp3" })]);
+  const second = frameDocument([element("audio", { src: "https://cdn.example/same.mp3" })]);
+  const secondFrame = element("iframe", {}, { contentDocument: second });
+  const env = harness([element("iframe", {}, { contentDocument: first }), secondFrame]);
+  const channel = env.port();
+  assert.equal(channel.messages[0].candidates.length, 1);
+  assert.equal(channel.messages[0].candidates[0].sourceId, "c1:d2");
+  env.replaceNodes([secondFrame]);
+  const fresh = env.snapshot();
+  assert.equal(fresh.candidates.length, 1);
+  assert.equal(fresh.candidates[0].sourceId, "c1:d3");
+  assert.equal(first.listenerCount, 0);
+  assert.equal(env.observers.filter((item) => item.active).length, 2);
+});
+
+test("metadata duration and frame load events are observed on every root and retired on detach", () => {
+  const media = element("audio");
+  const shadow = shadowRoot([media]);
+  const child = frameDocument([element("div", {}, { shadowRoot: shadow })]);
+  const env = harness([element("iframe", {}, { contentDocument: child })]);
+  const channel = env.port();
+  for (const root of [env.document, child, shadow]) {
+    for (const event of ["loadedmetadata", "durationchange", "load"]) {
+      assert.equal(root.listeners.get(event).length, 1);
+      assert.equal(root.listeners.get(event)[0].capture, true);
+    }
+  }
+  media.currentSrc = "https://cdn.example/updated.mp3";
+  shadow.emit("loadedmetadata");
+  env.clock.advance(200);
+  assert.equal(channel.messages.at(-1).candidates[0].url, media.currentSrc);
+  env.replaceNodes([]);
+  env.mutate(env.document);
+  env.clock.advance(200);
+  assert.equal(shadow.listenerCount, 0);
+  assert.equal(child.listenerCount, 0);
+  assert.equal(env.observers.filter((item) => item.active).length, 1);
+  shadow.emit("durationchange");
+  child.emit("load");
+  assert.equal(env.clock.tasks.size, 1);
+  channel.onDisconnect.emit();
+  assertStopped(env, channel);
+});
+
+test("the root budget includes documents and never observes over 64 roots", () => {
+  const roots = Array.from({ length: 64 }, (_, index) => shadowRoot([element("audio", { src: `${index}.mp3` })]));
+  const env = harness(roots.map((root) => element("div", {}, { shadowRoot: root })));
+  const channel = env.port();
+  assert.equal(channel.messages[0].candidates.length, 63);
+  assert.equal(channel.messages[0].truncated, true);
+  assert.equal(env.observers.filter((item) => item.active).length, 64);
+  assert.equal(roots.at(-1).listenerCount, 0);
+  channel.onDisconnect.emit();
+  for (const root of roots) assert.equal(root.listenerCount, 0);
+  assertStopped(env, channel);
+});
+
+test("the document budget includes the top document and accepts at most 31 child documents", () => {
+  const children = Array.from({ length: 32 }, (_, index) => frameDocument([element("audio", { src: `${index}.mp3` })]));
+  const env = harness(children.map((child) => element("iframe", {}, { contentDocument: child })));
+  const channel = env.port();
+  assert.equal(channel.messages[0].candidates.length, 31);
+  assert.equal(channel.messages[0].truncated, true);
+  assert.equal(env.observers.filter((item) => item.active).length, 32);
+  assert.equal(children.at(-1).listenerCount, 0);
+  channel.onDisconnect.emit();
+  for (const child of children) assert.equal(child.listenerCount, 0);
+  assertStopped(env, channel);
+});
+
+test("element and candidate budgets aggregate across document and shadow roots", () => {
+  const child = frameDocument([
+    ...Array.from({ length: 1997 }, () => element("div")), element("audio", { src: "beyond.mp3" }),
+  ]);
+  const env = harness([element("iframe", {}, { contentDocument: child })]);
+  const snapshot = env.port().messages[0];
+  assert.equal(env.inspected, 2000);
+  assert.equal(snapshot.candidates.length, 0);
+  assert.equal(snapshot.truncated, true);
+  const many = frameDocument(Array.from({ length: 60 }, (_, index) => element("audio", { src: `frame-${index}.mp3` })));
+  const other = harness([
+    ...Array.from({ length: 60 }, (_, index) => element("audio", { src: `top-${index}.mp3` })),
+    element("iframe", {}, { contentDocument: many }),
+  ]);
+  assert.equal(other.port().messages[0].candidates.length, 100);
+  assert.equal(other.snapshot().truncated, true);
+});
+
+test("the fresh API invalidates top navigation and does not retain DOM references", () => {
+  const env = harness([element("audio", { src: "one.mp3" })]);
+  const channel = env.port();
+  assert.doesNotThrow(() => JSON.stringify(env.snapshot()));
+  env.location.href = "https://page.example/other";
+  assert.equal(env.snapshot(), null);
+  assert.equal(channel.disconnectCount, 1);
+  assertStopped(env, channel);
+});
+
+test("child href and base URI limits reject the root before retaining source context", () => {
+  for (const oversized of ["href", "baseURI"]) {
+    const child = frameDocument([element("audio", { src: "https://cdn.example/one.mp3" })], {
+      [oversized]: "https://page.example/" + "x".repeat(8192),
+    });
+    const env = harness([element("iframe", {}, { contentDocument: child })]);
+    const channel = env.port();
+    assert.equal(channel.messages[0].candidates.length, 0);
+    assert.equal(channel.messages[0].truncated, true);
+    assert.equal(child.listenerCount, 0);
+    if (oversized === "href") child.location.href = "https://page.example/safe-child";
+    else child.baseURI = "https://cdn.example/safe/";
+    const fresh = env.snapshot();
+    assert.equal(fresh.candidates[0].sourceId, "c1:d2");
+    assert.equal(fresh.truncated, false);
+  }
 });

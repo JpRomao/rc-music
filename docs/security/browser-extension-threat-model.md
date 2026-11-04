@@ -10,6 +10,7 @@ Contrato: [ADR-0007](../architecture/decisions/0007-main-extension-boundary.md),
 |---|---|---|
 | Página envia comando privilegiado | Detector só relata, popup próprio único produtor de pedido, sem mensagens externas ou executores genéricos | Origem instalada autorizada, schema estrito, capacidades por cliente, nunca confiar em flag da página |
 | Navegação/SPA troca seleção por outra mídia | Fixar tab/documentId/pageUrl, invalidar sessão e revalidar antes de enviar | ID de pedido para idempotência; não reutilizar consentimento de outro lote |
+| Frame navega ou troca Document sem navegação principal | sourceId por conexão/Document/URL, snapshot fresco no mundo isolado antes do envio, comparar os selecionados e revogar consentimento alterado | Fonte/URL continua não confiável; revalidar provedor, DNS, redirects e bytes sem alegar imutabilidade após a leitura |
 | Título/URL hostil e excesso de dados | Texto via textContent, limites e seleção vazia por padrão | Nenhuma concatenação de shell; parâmetros tipados e nomes de arquivo próprios |
 | Acesso a serviço local/credenciais | Somente HTTP(S), sem userinfo, IP literal, host local ou porta não padrão; rejeitar esquemas especiais | Resolver DNS e verificar todos os endereços, conexão e cada redirect; bloquear privados/reservados/rebinding e downgrade HTTPS; cota/timeout/redirects finitos |
 | YouTube oferecido indiretamente | Recusar domínios conhecidos de página e mídia; sem encaminhamento | Revalidar provedor/redirects/capacidades; proxies arbitrários não são reconhecíveis somente pelo hostname |
@@ -21,12 +22,13 @@ O filtro de host no navegador é defesa adicional, não prova de endereço públ
 
 ## Limites iniciais do cliente
 
-- 100 candidatos por snapshot, 2.000 elementos inspecionados por varredura; indicar truncamento.
+- 100 candidatos por snapshot, 2.000 elementos, 64 roots e 32 documentos agregados por varredura; indicar truncamento. Apenas Shadow DOM aberto e frames cujo DOM esteja acessível pela mesma origem; sem novas permissões.
 - URL de até 8.192 caracteres, título de até 200 caracteres, snapshot serializado até 1 MiB.
 - Lote de 1–20 URLs únicas, até 256 KiB UTF-8; IDs UUID; nenhuma chave desconhecida.
 - URLs absolutas normalizadas sem fragmento, query preservada para funcionamento mas não exibida/logada.
 - Sem userinfo, NUL/controles, IP literal, host de um rótulo/local, porta não padrão ou esquema diferente de HTTP(S).
-- Detector efêmero com coalescência de 200 ms durante popup aberto, sem adiar indefinidamente por mutações contínuas; navegação/desconexão desfaz timers/observadores. Reabrir não acumula observadores.
+- Detector efêmero com coalescência de 200 ms e scan limitado a cada 500 ms durante popup aberto, sem adiar indefinidamente por mutações contínuas; roots destacados e navegação/desconexão desfazem listeners/observadores aplicáveis. Reabrir não acumula recursos.
+- sourceId canônico positivo/seguro é metadado efêmero do canal privado v2, não credencial. Coleta fresca não expõe DOM nem inicia downloads; protocolo nativo v1 omite IDs de contexto, URLs de frames e itens não selecionados.
 - Timeout da resposta nativa de 5 s, cancelamento de observação e resultado incerto sem reenvio.
 
 Esses são limites de segurança/UX, não benchmarks nem garantia de consumo da engine. Ajustes precisam de testes de fronteira, sem usar páginas pessoais.

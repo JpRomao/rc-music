@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createPopupController } from '../../extensions/chromium/main/popup-controller.mjs';
 import { mountPopup } from '../../extensions/chromium/main/popup.mjs';
 import { normalizeSnapshot, buildDownloadRequest } from '../../extensions/chromium/main/policy.mjs';
+import * as policy from '../../extensions/chromium/main/policy.mjs';
 import { sendDownloadRequest } from '../../extensions/chromium/main/native-client.mjs';
 
 const pageUrl = 'https://example.com/listen?private=page#track';
@@ -10,10 +11,14 @@ const media = (index) => ({
   url: `https://media.example.com/${index}.mp3?private=media`,
   title: `Faixa ${index}`,
   kind: 'audio',
+  sourceId: 'c1:d1',
   origin: 'https://media.example.com',
 });
 const snapshot = (count = 2) => ({
-  type: 'snapshot', pageUrl, candidates: Array.from({ length: count }, (_, i) => media(i)), truncated: false,
+  type: 'snapshot', pageUrl, candidates: Array.from({ length: count }, (_, i) => {
+    const { url, title, kind, sourceId } = media(i);
+    return { url, title, kind, sourceId };
+  }), truncated: false,
 });
 const deferred = () => {
   let resolve;
@@ -40,6 +45,7 @@ function harness(overrides = {}) {
   const states = [];
   const timers = new Map();
   let nextTimer = 0;
+  let freshSnapshot = snapshot();
   const currentTab = { id: 7, windowId: 3, url: pageUrl, active: true };
   const chrome = {
     tabs: {
@@ -47,7 +53,10 @@ function harness(overrides = {}) {
       get: async () => ({ ...currentTab }),
       onUpdated: event(), onRemoved: event(), onActivated: event(),
       connect(tabId, options) {
-        const port = { tabId, options, onMessage: event(), onDisconnect: event(), closed: 0,
+        const onMessage = event();
+        const emit = onMessage.emit;
+        onMessage.emit = (raw) => { freshSnapshot = structuredClone(raw); emit(raw); };
+        const port = { tabId, options, onMessage, onDisconnect: event(), closed: 0,
           disconnect() { this.closed += 1; this.onDisconnect.emit(); } };
         ports.push(port);
         return port;
@@ -56,7 +65,9 @@ function harness(overrides = {}) {
     scripting: {
       async executeScript(options) {
         injections.push(options);
-        return [{ frameId: 0, documentId: 'document-1', result: options.func ? currentTab.url : undefined }];
+        const result = options.func?.toString().includes('__rcMusicDetectionV2')
+          ? structuredClone(freshSnapshot) : options.func ? currentTab.url : undefined;
+        return [{ frameId: 0, documentId: 'document-1', result }];
       },
     },
   };
@@ -64,12 +75,14 @@ function harness(overrides = {}) {
     chrome,
     normalizeSnapshot(raw) {
       if (raw.type !== 'snapshot' || !Array.isArray(raw.candidates)) throw Object.assign(new Error('secret'), { code: 'invalid_snapshot' });
-      return structuredClone({ pageUrl: raw.pageUrl, candidates: raw.candidates, truncated: raw.truncated });
+      return structuredClone({ pageUrl: raw.pageUrl,
+        candidates: raw.candidates.map((item) => ({ ...item, origin: new URL(item.url).origin })), truncated: raw.truncated });
     },
     buildDownloadRequest(data, selected, requestId) {
       return { schemaVersion: 1, type: 'download.request', requestId,
         items: data.candidates.filter((item) => selected.includes(item.url)).map(({ url, title, kind }) => ({ url, title, kind })) };
     },
+    isSelectionCurrent: (...args) => policy.isSelectionCurrent(...args),
     async sendDownloadRequest(_chrome, request) {
       sends.push(structuredClone(request));
       return { status: 'accepted', requestId: request.requestId, jobIds: request.items.map((_, i) => `job-${i}`) };
@@ -83,6 +96,8 @@ function harness(overrides = {}) {
   const controller = createPopupController(options);
   return {
     controller, chrome, ports, injections, sends, states, timers, currentTab,
+    get freshSnapshot() { return freshSnapshot; },
+    set freshSnapshot(value) { freshSnapshot = structuredClone(value); },
     async ready(count = 2) {
       await controller.refresh();
       ports.at(-1).onMessage.emit(snapshot(count));
@@ -96,7 +111,7 @@ test('detection opens only the top isolated document and never sends implicitly'
   const h = harness();
   await h.ready();
   assert.deepEqual(h.injections[0], { target: { tabId: 7, frameIds: [0] }, world: 'ISOLATED', files: ['detector.js'] });
-  assert.deepEqual(h.ports[0].options, { documentId: 'document-1', name: 'rc-music-detection-v1' });
+  assert.deepEqual(h.ports[0].options, { documentId: 'document-1', name: 'rc-music-detection-v2' });
   assert.equal(h.controller.getState().status, 'ready');
   assert.equal(h.controller.getState().pageOrigin, 'https://example.com');
   assert.deepEqual(h.controller.getState().selectedUrls, []);
@@ -126,6 +141,163 @@ test('explicit authorized submit sends exactly the selection and reports accepte
   await h.controller.submit();
   assert.equal(h.sends.length, 1);
   h.controller.dispose();
+});
+
+test('a changed selected source revokes consent even when its URL and label remain the same', async () => {
+  const h = harness();
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  const next = snapshot();
+  next.candidates[0].sourceId = 'c1:d2';
+  h.ports[0].onMessage.emit(next);
+  await flush();
+  assert.equal(h.controller.getState().authorized, false);
+  assert.equal(h.controller.getState().canSend, false);
+  await h.controller.submit();
+  assert.equal(h.sends.length, 0);
+  h.controller.dispose();
+});
+
+test('submit scans selected sources again before native transmission without relying on stream updates', async () => {
+  for (const change of [
+    (raw) => { raw.candidates[0].sourceId = 'c1:d9'; },
+    (raw) => { raw.candidates[0].sourceId = 'c2:d1'; },
+    (raw) => { raw.candidates[0].title = 'Replaced title'; },
+    (raw) => { raw.candidates[0].kind = 'video'; },
+    (raw) => { raw.candidates.shift(); },
+  ]) {
+    const h = harness();
+    await h.ready();
+    h.controller.setSelected(media(0).url, true);
+    h.controller.setAuthorized(true);
+    change(h.freshSnapshot);
+    await h.controller.submit();
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.controller.getState().status, 'error');
+    assert.equal(h.controller.getState().authorized, false);
+    assert.match(h.controller.getState().message, /fonte|sele[cç][aã]o|Atualizar/i);
+    h.controller.dispose();
+  }
+});
+
+test('fresh inspection ignores changes to unselected candidates and is bound to the exact top document', async () => {
+  const h = harness();
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  h.freshSnapshot.candidates[1].sourceId = 'c1:d9';
+  await h.controller.submit();
+  assert.equal(h.sends.length, 1);
+  const fresh = h.injections.filter((injection) => injection.func?.toString().includes('__rcMusicDetectionV2'));
+  assert.equal(fresh.length, 1);
+  assert.deepEqual(fresh[0].target, { tabId: 7, documentIds: ['document-1'] });
+  assert.equal(fresh[0].world, 'ISOLATED');
+  assert.deepEqual(Object.keys(h.sends[0].items[0]).sort(), ['kind', 'title', 'url']);
+  h.controller.dispose();
+});
+
+test('fresh probe cannot substitute another frame, document, page or an inactive detector', async () => {
+  for (const result of [
+    [{ frameId: 1, documentId: 'document-1', result: snapshot() }],
+    [{ frameId: 0, documentId: 'document-2', result: snapshot() }],
+    [{ frameId: 0, documentId: 'document-1', result: { ...snapshot(), pageUrl: `${pageUrl}changed` } }],
+    [{ frameId: 0, documentId: 'document-1', result: null }],
+    [],
+  ]) {
+    const h = harness();
+    await h.ready();
+    const execute = h.chrome.scripting.executeScript;
+    h.chrome.scripting.executeScript = (options) => options.func?.toString().includes('__rcMusicDetectionV2')
+      ? Promise.resolve(result) : execute(options);
+    h.controller.setSelected(media(0).url, true);
+    h.controller.setAuthorized(true);
+    await h.controller.submit();
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.controller.getState().authorized, false);
+    assert.ok(['error', 'disconnected'].includes(h.controller.getState().status));
+    h.controller.dispose();
+  }
+});
+
+test('a navigation after the fresh scan is rechecked before handing off a native request', async () => {
+  const h = harness();
+  await h.ready();
+  const execute = h.chrome.scripting.executeScript;
+  h.chrome.scripting.executeScript = async (options) => {
+    const result = await execute(options);
+    if (options.func?.toString().includes('__rcMusicDetectionV2')) h.currentTab.url = 'https://example.com/changed';
+    return result;
+  };
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  await h.controller.submit();
+  assert.equal(h.sends.length, 0);
+  assert.equal(h.controller.getState().status, 'disconnected');
+  h.controller.dispose();
+});
+
+test('duplicate selected URLs in the fresh result are rejected before normalization can hide them', async () => {
+  const h = harness({ normalizeSnapshot, buildDownloadRequest });
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  h.freshSnapshot.candidates.push({ ...h.freshSnapshot.candidates[0] });
+  await h.controller.submit();
+  assert.equal(h.sends.length, 0);
+  assert.equal(h.controller.getState().status, 'error');
+  h.controller.dispose();
+});
+
+test('a selected-source update observed during the final page check cancels the unsent captured batch', async () => {
+  for (const selectedChanges of [true, false]) {
+    const h = harness();
+    await h.ready();
+    const pending = deferred();
+    let checks = 0;
+    h.chrome.tabs.get = async () => {
+      checks += 1;
+      return checks === 2 ? pending.promise : { ...h.currentTab };
+    };
+    h.controller.setSelected(media(0).url, true);
+    h.controller.setAuthorized(true);
+    const sending = h.controller.submit();
+    await flush();
+    assert.equal(checks, 2);
+    assert.equal(h.sends.length, 0);
+    const next = snapshot();
+    next.candidates[selectedChanges ? 0 : 1].sourceId = 'c1:d9';
+    h.ports[0].onMessage.emit(next);
+    pending.resolve({ ...h.currentTab });
+    await sending;
+    assert.equal(h.sends.length, selectedChanges ? 0 : 1);
+    assert.equal(h.controller.getState().status, selectedChanges ? 'error' : 'accepted');
+    h.controller.dispose();
+  }
+});
+
+test('timeout or disposal during a fresh scan makes its late result inert', async () => {
+  for (const end of [(h) => h.expire(), (h) => h.controller.dispose()]) {
+    const h = harness();
+    await h.ready();
+    const pending = deferred();
+    const execute = h.chrome.scripting.executeScript;
+    h.chrome.scripting.executeScript = (options) => options.func?.toString().includes('__rcMusicDetectionV2')
+      ? pending.promise : execute(options);
+    h.controller.setSelected(media(0).url, true);
+    h.controller.setAuthorized(true);
+    const sending = h.controller.submit();
+    await flush();
+    assert.equal(h.sends.length, 0);
+    end(h);
+    const count = h.states.length;
+    pending.resolve([{ frameId: 0, documentId: 'document-1', result: snapshot() }]);
+    await sending;
+    assert.equal(h.states.length, count);
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.timers.size, 0);
+    h.controller.dispose();
+  }
 });
 
 test('selection is limited to twenty known unique candidates', async () => {
@@ -433,7 +605,7 @@ test('production policy and native client compose with the controller over fake 
   h.chrome.runtime = { connectNative(name) { assert.equal(name, 'com.rcmusic.media'); return nativePort; } };
   await h.controller.refresh();
   const raw = snapshot(2);
-  raw.candidates = raw.candidates.map(({ url, title, kind }) => ({ url, title, kind }));
+  raw.candidates = raw.candidates.map(({ url, title, kind, sourceId }) => ({ url, title, kind, sourceId }));
   h.ports[0].onMessage.emit(raw);
   await flush();
   assert.equal(h.controller.getState().status, 'ready');

@@ -8,12 +8,26 @@ Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extension
 
 O diretório [extensions/chromium/main](../extensions/chromium/main/manifest.json) contém o pacote-fonte MV3, sem build npm, bibliotecas externas, rede própria ou engine embarcada. Não foi carregado no Brave do usuário nem incluído nos instaladores. O playback e os dados `MusicPlayer` permanecem intactos; o cliente será compartilhado pelas edições Lite/Completa quando a ponte comum estiver integrada.
 
-- Abrir o popup permite inspecionar temporariamente a página principal autorizada. Áudios, vídeos, elementos `source` e links MP3/MP4/M4A geram candidatos deduplicados, não downloads.
+- Abrir o popup permite inspecionar temporariamente a página principal autorizada, Shadow DOM aberto e frames acessíveis pela política de mesma origem. Áudios, vídeos, elementos `source` e links MP3/MP4/M4A geram candidatos deduplicados, não downloads.
 - Enquanto o popup está aberto, alterações DOM/eventos de mídia atualizam a lista de forma limitada. Ao fechar ou navegar, observadores/timers são encerrados. Reinjeção não duplica a infraestrutura. Um único listener inerte de conexão permanece no mundo isolado até o documento ser descartado, sem observação, coleta ou timer na ausência do popup.
 - Lista com checkboxes, seleção individual/múltipla até 20, confirmação de uso autorizado, contador, truncamento e mensagens pt-BR. Títulos são texto literal; não renderizar HTML, previews remotos ou query strings da página.
-- Somente “Baixar selecionados” produz pedido. O popup verifica aba, documento e URL atuais antes de enviar; novos itens não entram na seleção automaticamente e remoção/mudança relevante invalida consentimento.
+- Somente “Baixar selecionados” produz pedido. O popup verifica aba, documento e URL atuais e coleta uma lista fresca antes de enviar; novos itens não entram na seleção automaticamente e remoção/mudança relevante da fonte selecionada invalida consentimento.
 - `policy.mjs` valida URLs/schema/limites; `native-client.mjs` abre o canal fixo somente no envio, valida resposta correlacionada e encerra sem retry automático. Nenhum comando arbitrário, path de saída, cookie ou header atravessa o contrato.
 - Host ausente, resposta malformada, timeout e desconexão aparecem como falha/recebimento não confirmado. ACK significa apenas pedido aceito; conclusão/conversão/importação pertencem ao serviço futuro do app.
+
+## Descoberta em documentos e Shadow DOM aberto
+
+A caminhada iterativa visita roots abertos e `iframe`/`frame` cujo `contentDocument` esteja acessível, inclusive documentos `about:blank`/`srcdoc` herdados quando o navegador permitir. URL relativa e título usam base e documento da própria fonte. O acesso depende da política de mesma origem do DOM; não há injeção em todos os frames, concessão de origens adicionais, patch de `attachShadow` ou código no mundo MAIN. [contentDocument](https://developer.mozilla.org/en-US/docs/Web/API/HTMLIFrameElement/contentDocument), [shadowRoot](https://developer.mozilla.org/en-US/docs/Web/API/Element/shadowRoot), [mundo isolado](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts).
+
+Os limites são agregados por varredura: **2.000 elementos, 64 roots, 32 documentos, 100 candidatos e 1 MiB**. A lista indica truncamento. Observação por root e debounce de 200 ms acompanham alterações; uma varredura limitada a cada 500 ms encontra roots anexados posteriormente e mudanças de documentos sem patch na página. Roots destacados perdem observadores/listeners; fechar o popup ou navegar encerra a sessão. Esses limites não comprovam budgets do navegador ou desempenho do app.
+
+O canal privado detector/popup usa `rc-music-detection-v2`. Cada candidato tem `sourceId` opaco `c<conexão>:d<documento>`, com inteiros positivos seguros: a geração muda ao reabrir a conexão, substituir o Document ou mudar sua URL observada. O método `snapshot()` do objeto congelado `__rcMusicDetectionV2`, apenas no mundo isolado, coleta novamente enquanto a sessão está ativa e retorna null após parada/navegação. Não expõe referências DOM ou ações de download.
+
+O popup consulta esse método no `documentId` principal fixado, revalida os dados e compara URL, título, tipo e sourceId somente dos itens selecionados. Alterar uma fonte não selecionada não invalida o lote; fonte selecionada removida ou diferente exige nova revisão/consentimento. A aba/documento/URL principal são conferidos antes e depois dessa coleta. É uma conferência no instante da leitura, sem garantir imutabilidade posterior da página, URL ou resposta remota. sourceId não autentica o conteúdo ou o titular. URLs de frames e sourceIds ficam locais e efêmeros; o pedido nativo v1 continua somente URL/título/tipo dos selecionados.
+
+A comparação fresca usa os dados brutos antes da deduplicação, recusando ambiguidade nos selecionados. Atualizações recebidas durante a verificação final também revogam o lote se uma fonte selecionada mudou e a entrega ao canal nativo ainda não ocorreu. Depois do handoff, uma atualização não cancela o pedido já enviado nem fabrica rejeição; incerteza/resposta continuam os contratos do cliente nativo.
+
+Frames de outra origem/sandbox inacessíveis, Shadow DOM fechado, tráfego anterior ao clique, blob/MSE, HLS/DASH, live e conteúdo protegido continuam lacunas explícitas. A concessão temporária [activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab) e as permissões do manifesto permanecem iguais. Esta cobertura incremental não encerra R1.7/FR-051–053 nem substitui validação no Brave real.
 
 ## Protocolo nativo de desenvolvimento
 
@@ -49,6 +63,8 @@ git diff --check
 ```
 
 O runner de extensão é separado dos comandos C++: Node é ferramenta de desenvolvimento deste componente opcional, não dependência de compilação ou execução da Lite. Alterar a extensão exige seus checks acima. Nenhum QML mudou neste incremento; lint/testes de UI nativa e instalação continuam gates separados.
+
+Incremento de descoberta de 2026-11-03: **150/150 testes**, sem skips: detector **41**, policy/vetores **59**, popup/DOM **33**, composição JS **7**, cliente nativo **7** e manifesto **3**. Detector teve Red **26 passagens/2 falhas** para shadow/frame e **40/1** para URL/base de documento excessivas; policy **38/21**, popup **25/6**. Dois achados de revisão tiveram regressões **31/2 → 33/33**: duplicatas ocultadas pela normalização e mudança observada durante a verificação final. A composição usa detector em VM, policy/controller/native-client reais e DOM/Chrome falsos; não comprova SOP/permissões/DOM no Brave real. Sintaxe dos **12 arquivos JS/MJS**, documentação/rastreabilidade, diff e revisão independente são checks separados. Evidência ignorada em `out/product/test-runs/extension-context-discovery-20261103/`; os ensaios não abriram páginas de mídia reais nem acessaram mídia pessoal, rede do navegador ou Registry. Não houve instalação ou novo build C++/instalador, pois fontes e protocolo nativo v1 permaneceram inalterados.
 
 ### Biblioteca nativa Windows
 

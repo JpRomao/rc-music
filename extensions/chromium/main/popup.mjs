@@ -1,5 +1,5 @@
 import { createPopupController } from './popup-controller.mjs';
-import { normalizeSnapshot, buildDownloadRequest } from './policy.mjs';
+import { normalizeSnapshot, buildDownloadRequest, isSelectionCurrent } from './policy.mjs';
 import { sendDownloadRequest } from './native-client.mjs';
 
 export function mountPopup(document, controller) {
@@ -102,7 +102,7 @@ export function mountPopup(document, controller) {
 if (globalThis.document && globalThis.chrome?.tabs) {
   let view;
   const controller = createPopupController({
-    chrome: globalThis.chrome, normalizeSnapshot, buildDownloadRequest, sendDownloadRequest,
+    chrome: globalThis.chrome, normalizeSnapshot, buildDownloadRequest, isSelectionCurrent, sendDownloadRequest,
     newRequestId: () => crypto.randomUUID(), onState: (state) => view?.render(state),
   });
   view = mountPopup(globalThis.document, controller);

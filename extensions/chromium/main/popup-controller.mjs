@@ -9,12 +9,13 @@ const messages = {
   invalid_response: 'O app não confirmou uma resposta válida. Confira a fila no app antes de reenviar.',
   rejected: 'O app recusou o pedido. Verifique a integração e faça uma nova seleção.',
   invalid_selection: 'A seleção deixou de ser válida. Clique em Atualizar e escolha os itens novamente.',
+  source_changed: 'Uma fonte selecionada mudou. Clique em Atualizar e revise a seleção antes de autorizar novamente.',
   invalid_request: 'Não foi possível validar o pedido. Clique em Atualizar e faça uma nova seleção.',
 };
 const messageFor = (code, fallback) => Object.hasOwn(messages, code) ? messages[code] : fallback;
 
 export function createPopupController({
-  chrome, normalizeSnapshot, buildDownloadRequest, sendDownloadRequest, newRequestId,
+  chrome, normalizeSnapshot, buildDownloadRequest, isSelectionCurrent, sendDownloadRequest, newRequestId,
   onState = () => {}, setTimer = setTimeout, clearTimer = clearTimeout, timeoutMs = 5000,
 }) {
   let disposed = false;
@@ -27,6 +28,7 @@ export function createPopupController({
   let currentSnapshot = null;
   let pendingSnapshot = null;
   let checkingSnapshot = false;
+  let submission = null;
   let state = {
     status: 'idle', candidates: [], selectedUrls: [], authorized: false,
     truncated: false, pageOrigin: '', acceptedCount: 0,
@@ -64,6 +66,7 @@ export function createPopupController({
     currentSnapshot = null;
     pendingSnapshot = null;
     checkingSnapshot = false;
+    submission = null;
   }
 
   function finish(status, message, { acceptedCount = 0, retainList = false } = {}) {
@@ -109,6 +112,24 @@ export function createPopupController({
     }
   }
 
+  async function verifySelectedSources(token, snapshot, selected) {
+    const expected = binding;
+    if (!live(token) || !expected) throw staleError();
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: expected.tabId, documentIds: [expected.documentId] },
+      world: 'ISOLATED', func: () => globalThis.__rcMusicDetectionV2?.snapshot() ?? null,
+    });
+    if (!live(token) || result.length !== 1 || result[0].frameId !== 0
+      || result[0].documentId !== expected.documentId) throw staleError();
+    if (result[0].result === null) throw Object.assign(new Error('Inactive detection'), { code: 'source_changed' });
+    const fresh = normalizeSnapshot(result[0].result);
+    if (fresh.pageUrl !== expected.pageUrl) throw staleError();
+    // Compare the raw result too: normalization deliberately deduplicates URLs.
+    if (!isSelectionCurrent(snapshot, result[0].result, selected)) {
+      throw Object.assign(new Error('Selected source changed'), { code: 'source_changed' });
+    }
+  }
+
   async function consumeSnapshots(token) {
     if (checkingSnapshot || !pendingSnapshot || !live(token)) return;
     checkingSnapshot = true;
@@ -126,7 +147,7 @@ export function createPopupController({
         const selectionChanged = selectedUrls.length !== state.selectedUrls.length || selectedUrls.some((url) => {
           const previous = state.candidates.find((item) => item.url === url);
           const candidate = candidates.find((item) => item.url === url);
-          return previous.title !== candidate.title || previous.kind !== candidate.kind;
+          return previous.title !== candidate.title || previous.kind !== candidate.kind || previous.sourceId !== candidate.sourceId;
         });
         currentSnapshot = next;
         publish({ candidates, selectedUrls, truncated: next.truncated,
@@ -153,7 +174,12 @@ export function createPopupController({
     try {
       const next = normalizeSnapshot(raw);
       if (next.pageUrl !== binding?.pageUrl) { invalidate(); return; }
-      if (state.status === 'sending') return;
+      if (state.status === 'sending') {
+        if (submission && !submission.sent && !isSelectionCurrent(submission.snapshot, raw, submission.selected)) {
+          finish('error', messages.source_changed);
+        }
+        return;
+      }
       pendingSnapshot = next;
       void consumeSnapshots(token);
     } catch (error) {
@@ -184,7 +210,7 @@ export function createPopupController({
       binding.documentId = result[0].documentId;
       await verifyCurrent(token);
       if (!live(token)) return;
-      port = chrome.tabs.connect(tab.id, { documentId: binding.documentId, name: 'rc-music-detection-v1' });
+      port = chrome.tabs.connect(tab.id, { documentId: binding.documentId, name: 'rc-music-detection-v2' });
       portMessage = (raw) => receive(raw, token);
       portDisconnect = () => {
         void chrome.runtime?.lastError;
@@ -220,15 +246,20 @@ export function createPopupController({
     const token = epoch;
     const snapshot = structuredClone(currentSnapshot);
     const selected = [...state.selectedUrls];
+    const attempt = { snapshot, selected, sent: false };
+    submission = attempt;
     publish({ status: 'sending', message: 'Validando a página e enviando a seleção…' });
     armDeadline(token, 'bridge_timeout');
-    let sent = false;
     try {
       const request = buildDownloadRequest(snapshot, selected, newRequestId());
       await verifyCurrent(token);
       if (!live(token)) return;
+      await verifySelectedSources(token, snapshot, selected);
+      if (!live(token)) return;
+      await verifyCurrent(token);
+      if (!live(token)) return;
       armDeadline(token, 'bridge_timeout');
-      sent = true;
+      attempt.sent = true;
       const response = await sendDownloadRequest(chrome, request, { timeoutMs });
       if (!live(token)) return;
       finish('accepted', 'Pedidos aceitos pelo RC Music. Acompanhe os downloads e a conversão no app.', {
@@ -236,7 +267,7 @@ export function createPopupController({
       });
     } catch (error) {
       if (!live(token)) return;
-      if (error?.code === 'navigation' || (!sent && !Object.hasOwn(messages, error?.code))) invalidate();
+      if (error?.code === 'navigation' || (!attempt.sent && !Object.hasOwn(messages, error?.code))) invalidate();
       else finish(error?.code === 'bridge_unavailable' ? 'disconnected' : 'error', messageFor(error?.code, messages.invalid_response));
     }
   }
