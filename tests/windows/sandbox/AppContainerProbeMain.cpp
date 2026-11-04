@@ -7,6 +7,12 @@
 #include <Sddl.h>
 
 #include "AppContainerNetworkObserver.hpp"
+#include "AppContainerObserverActor.hpp"
+#include "AppContainerObserverDriver.hpp"
+#include "AppContainerObserverFiles.hpp"
+#include "AppContainerObserverIdentity.hpp"
+#include "AppContainerObserverProcess.hpp"
+#include "AppContainerObserverProtocol.hpp"
 #include "AppContainerProbeProtocol.hpp"
 #include "adapters/WindowsDownloadAppContainer.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
@@ -41,12 +47,19 @@
 using namespace music_player::m0;
 namespace protocol = music_player::sandbox_probe;
 using NetworkObserver = protocol::AppContainerNetworkObserver;
+using ObserverActor = protocol::AppContainerObserverActor;
+using ObserverDriver = protocol::AppContainerObserverDriver;
+using ObserverFiles = protocol::AppContainerObserverFiles;
+using ObserverIdentity = protocol::AppContainerObserverIdentity;
+using ObserverProcess = protocol::AppContainerObserverProcess;
+using ObserverProtocol = protocol::AppContainerObserverProtocol;
 namespace {
-enum class Mode { Refuse, Help, SelfTest, NetworkPreflight, HostProbe };
+enum class Mode { Refuse, Help, SelfTest, NetworkPreflight, HostProbe, ObserverActor };
 struct Options final {
     Mode mode{Mode::Refuse};
     QString evidence;
     NetworkObserver::EvidenceKind network_kind{NetworkObserver::EvidenceKind::CapabilityDrop};
+    bool external_observer{false};
 };
 bool mayRemoveProfile(bool created, bool native_acks) { return created && native_acks; }
 bool confirmedProfileCleanup(bool create_succeeded, bool remains_owned, bool native_acks) {
@@ -100,12 +113,23 @@ Options parse(const QStringList& arguments) {
         return {Mode::NetworkPreflight, {}};
     if (arguments == QStringList{QStringLiteral("--network-preflight-classify")})
         return {Mode::NetworkPreflight, {}, NetworkObserver::EvidenceKind::ClassifyIsolation};
-    if ((arguments.size() == 3 || (arguments.size() == 4 && arguments[3] == QStringLiteral("--classify-isolation"))) &&
+    if (arguments.size() == 3 && arguments[0] == QStringLiteral("--allow-wfp-subscription") &&
+        arguments[1] == QStringLiteral("--observer-request") && evidencePath(arguments[2])) {
+        const auto path = QDir::fromNativeSeparators(arguments[2]);
+        if (path.endsWith(QStringLiteral("/wfp-request.json")))
+            return {Mode::ObserverActor, path.left(path.lastIndexOf(QLatin1Char('/'))),
+                    NetworkObserver::EvidenceKind::ClassifyIsolation};
+        return {};
+    }
+    if ((arguments.size() == 3 ||
+         (arguments.size() == 4 && (arguments[3] == QStringLiteral("--classify-isolation") ||
+                                    arguments[3] == QStringLiteral("--external-classify-observer")))) &&
         arguments[0] == QStringLiteral("--allow-profile-changes") && arguments[1] == QStringLiteral("--evidence-dir") &&
         evidencePath(arguments[2]))
         return {Mode::HostProbe, QDir::fromNativeSeparators(arguments[2]),
                 arguments.size() == 4 ? NetworkObserver::EvidenceKind::ClassifyIsolation
-                                      : NetworkObserver::EvidenceKind::CapabilityDrop};
+                                      : NetworkObserver::EvidenceKind::CapabilityDrop,
+                arguments.size() == 4 && arguments[3] == QStringLiteral("--external-classify-observer")};
     return {};
 }
 int selfTest() {
@@ -284,6 +308,37 @@ int selfTest() {
     }
     if (failures)
         return 20 + failures;
+    int composition_failures = 0;
+    const auto actor = parse({QStringLiteral("--allow-wfp-subscription"), QStringLiteral("--observer-request"),
+                              evidence + QStringLiteral("/wfp-request.json")});
+    if (actor.mode != Mode::ObserverActor || actor.evidence != evidence || actor.external_observer) {
+        std::puts("FAIL parser refuses the standalone, explicit observer actor request");
+        ++composition_failures;
+    }
+    const auto external = parse({QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), evidence,
+                                 QStringLiteral("--external-classify-observer")});
+    if (external.mode != Mode::HostProbe || !external.external_observer ||
+        external.network_kind != NetworkObserver::EvidenceKind::ClassifyIsolation) {
+        std::puts("FAIL parser refuses external ClassifyIsolation while retaining the normal driver");
+        ++composition_failures;
+    }
+    const std::array invalid_composition{
+        QStringList{QStringLiteral("--observer-request"), evidence + QStringLiteral("/wfp-request.json")},
+        QStringList{QStringLiteral("--allow-wfp-subscription"), QStringLiteral("--observer-request"),
+                    evidence + QStringLiteral("/result.json")},
+        QStringList{QStringLiteral("--allow-wfp-subscription"), QStringLiteral("--observer-request"),
+                    evidence + QStringLiteral("/wfp-request.json"), QStringLiteral("--allow-profile-changes")},
+        QStringList{QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), evidence,
+                    QStringLiteral("--external-classify-observer"), QStringLiteral("--classify-isolation")},
+        QStringList{QStringLiteral("--allow-wfp-subscription"), QStringLiteral("--observer-request"),
+                    workspace() + QStringLiteral("/out/product/../wfp-request.json")}};
+    for (const auto& arguments : invalid_composition)
+        if (parse(arguments).mode != Mode::Refuse) {
+            std::puts("FAIL parser accepts mixed, incomplete or unsafe observer arguments");
+            ++composition_failures;
+        }
+    if (composition_failures)
+        return 45;
     std::puts("Sandbox probe parser/protocol self-test passed; no host operations performed.");
     return 0;
 }
@@ -482,6 +537,222 @@ bool createJournalDirectory(const QString& directory) {
 
 // The listener stays alive during the sandbox attempt. A successful parent
 // connection is required first, so refusal cannot mean "no server existed".
+QByteArray sidArray(const std::span<const std::uint8_t> bytes) {
+    return {reinterpret_cast<const char*>(bytes.data()), static_cast<qsizetype>(bytes.size())};
+}
+QJsonObject tokenReport(const ObserverIdentity::Snapshot& token) {
+    QJsonArray privileges, restricted;
+    for (const auto& privilege : token.enabled_privileges)
+        privileges.append(QJsonObject{{"name", QString::fromStdWString(privilege.name)},
+                                      {"attributes", static_cast<qint64>(privilege.attributes)}});
+    for (const auto& group : token.restricted_sids)
+        restricted.append(QJsonObject{{"sid_hex", QString::fromLatin1(sidArray(group.sid).toHex())},
+                                      {"attributes", static_cast<qint64>(group.attributes)}});
+    return {{"complete", token.complete},
+            {"error", networkError(token.error)},
+            {"failed_information_class", static_cast<qint64>(token.failed_information_class)},
+            {"user_sid_hex", QString::fromLatin1(sidArray(token.user_sid).toHex())},
+            {"session_id", static_cast<qint64>(token.session_id)},
+            {"elevated", token.elevated},
+            {"elevation_type", static_cast<int>(token.elevation_type)},
+            {"integrity_rid", static_cast<qint64>(token.integrity_rid)},
+            {"ui_access", token.ui_access},
+            {"app_container", token.app_container},
+            {"app_container_sid_hex", QString::fromLatin1(sidArray(token.app_container_sid).toHex())},
+            {"capability_count", static_cast<qint64>(token.capability_count)},
+            {"administrators_group_present", token.administrators_group_present},
+            {"administrators_group_attributes", static_cast<qint64>(token.administrators_group_attributes)},
+            {"restricted_sids", restricted},
+            {"enabled_privileges", privileges}};
+}
+QJsonObject imageReport(const download_artifacts::Artifact& artifact) {
+    return {{"path", artifact.path},
+            {"final_path", artifact.final_path},
+            {"sha256", QString::fromLatin1(artifact.sha256)},
+            {"bytes", QString::number(artifact.bytes)},
+            {"volume_serial", QString::number(artifact.identity.VolumeSerialNumber)},
+            {"file_id_hex",
+             QString::fromLatin1(
+                 QByteArray{reinterpret_cast<const char*>(artifact.identity.FileId.Identifier), 16}.toHex())}};
+}
+bool createObserverDirectory(const QString& path, const QByteArray& driver_sid) {
+    LPWSTR text = nullptr;
+    if (driver_sid.isEmpty() || !ConvertSidToStringSidW(const_cast<char*>(driver_sid.constData()), &text))
+        return false;
+    const auto release_text = qScopeGuard([&] { LocalFree(text); });
+    const auto owner = QString::fromWCharArray(text);
+    const auto sddl =
+        QStringLiteral("O:") + owner + QStringLiteral("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;") + owner + ')';
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
+                                                              nullptr))
+        return false;
+    const auto release_descriptor = qScopeGuard([&] { LocalFree(descriptor); });
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    return CreateDirectoryW(download_artifacts::nativePath(path).c_str(), &attributes) != FALSE;
+}
+
+// This adapter only publishes a request and observes a separately launched
+// actor. It never elevates, launches, terminates or retries another process.
+class ExternalNetworkObserver final {
+  public:
+    ExternalNetworkObserver(QString directory, ObserverProcess::Snapshot driver)
+        : directory_(std::move(directory)), driver_(std::move(driver)),
+          files_({directory_, sidArray(driver_.token.user_sid)}) {}
+    bool prepare(const QString& helper, const QByteArray& helper_hash, const QByteArray& package_sid,
+                 const std::uint16_t port) {
+        require(!coordinator_, "external observer transport is one-shot");
+        require(createObserverDirectory(directory_, sidArray(driver_.token.user_sid)), "fresh observer directory");
+        require(files_.open().status == ObserverFiles::OpenStatus::Opened, "private observer directory");
+        image_.path = QCoreApplication::applicationFilePath();
+        image_.sha256 = hashFile(image_.path);
+        require(download_artifacts::pinAndHash(image_, image_ancestors_) == download_artifacts::Error::None,
+                "probe image authentication");
+        ObserverProtocol::Request request;
+        request.nonce = QUuid::createUuid().toString(QUuid::Id128);
+        request.driver_user_sid = sidArray(driver_.token.user_sid);
+        request.driver_pid = driver_.pid;
+        request.driver_creation_filetime = driver_.creation_filetime;
+        request.probe_sha256 = QByteArray::fromHex(image_.sha256);
+        request.helper_path = helper;
+        request.helper_sha256 = QByteArray::fromHex(helper_hash);
+        request.package_sid = package_sid;
+        request.loopback_tcp_port = port;
+        const auto bytes = ObserverProtocol::encodeRequest(request);
+        require(!bytes.isEmpty(), "external observer request encoding");
+        timer_.start();
+        coordinator_ = std::make_unique<ObserverDriver>(
+            ObserverDriver::Config{request, ObserverProtocol::requestSha256(bytes), driver_, 0});
+        require(coordinator_->state() == ObserverDriver::State::AwaitingReady, "external driver admission");
+        require(files_.writeNew(ObserverFiles::Slot::Request, bytes).status == ObserverFiles::WriteStatus::Written,
+                "external observer request publication");
+        const auto sealed = files_.read(ObserverFiles::Slot::Request);
+        require(sealed.status == ObserverFiles::ReadStatus::Ready && sealed.bytes == bytes,
+                "external observer request seal");
+        request_lease_ = sealed.lease;
+        const auto message =
+            QByteArray{"observer-request:"} + (directory_ + QStringLiteral("/wfp-request.json")).toUtf8() + '\n';
+        return std::fwrite(message.constData(), 1, static_cast<std::size_t>(message.size()), stdout) ==
+                   static_cast<std::size_t>(message.size()) &&
+               std::fflush(stdout) == 0;
+    }
+    bool waitReady() {
+        while (coordinator_->state() == ObserverDriver::State::AwaitingReady) {
+            const auto frame = files_.read(ObserverFiles::Slot::Ready);
+            if (frame.status == ObserverFiles::ReadStatus::Ready) {
+                const auto ready = ObserverProtocol::decodeReady(frame.bytes);
+                const auto peer = observePeer(ready ? ready->observer_pid : 0);
+                if (coordinator_->ready(frame.bytes, peer, timer_.elapsed(), currentFiletime())) {
+                    ready_lease_ = frame.lease;
+                    return true;
+                }
+                break;
+            }
+            if (!pending(frame.status)) {
+                coordinator_->transportFailure();
+                break;
+            }
+            readResult(); // Startup failures can have Result without Ready.
+            if (coordinator_->state() != ObserverDriver::State::AwaitingReady)
+                break;
+            static_cast<void>(coordinator_->tick(timer_.elapsed()));
+            pump();
+        }
+        if (coordinator_->state() == ObserverDriver::State::AwaitingExit)
+            finish();
+        return false;
+    }
+    bool takeLaunchPermission() { return coordinator_ && coordinator_->takeLaunchPermission(); }
+    void finish() {
+        while (coordinator_ && coordinator_->state() != ObserverDriver::State::Complete &&
+               coordinator_->state() != ObserverDriver::State::Uncertain) {
+            if (coordinator_->state() == ObserverDriver::State::AwaitingExit) {
+                const auto peer = observePeer(peer_ ? peer_->snapshot().pid : 0);
+                if (peer.poll.state == ObserverProcess::State::Stopped ||
+                    peer.poll.state == ObserverProcess::State::Unknown)
+                    static_cast<void>(coordinator_->stopped(peer, timer_.elapsed()));
+            } else {
+                readResult();
+            }
+            static_cast<void>(coordinator_->tick(timer_.elapsed()));
+            if (coordinator_->state() != ObserverDriver::State::Complete &&
+                coordinator_->state() != ObserverDriver::State::Uncertain)
+                pump();
+        }
+    }
+    bool canCleanup() const { return coordinator_ && coordinator_->canCleanup(); }
+    bool proofEligible() const { return coordinator_ && coordinator_->proofEligible(); }
+    const std::optional<ObserverProtocol::Ready>& ready() const { return coordinator_->acceptedReady(); }
+    NetworkObserver::Report report() const {
+        return coordinator_ && coordinator_->result() && coordinator_->result()->report
+                   ? *coordinator_->result()->report
+                   : NetworkObserver::Report{};
+    }
+    QJsonObject diagnostic() const {
+        return {
+            {"external", true},
+            {"request_path", directory_ + QStringLiteral("/wfp-request.json")},
+            {"state", coordinator_ ? static_cast<int>(coordinator_->state()) : -1},
+            {"reason", coordinator_ ? static_cast<int>(coordinator_->reason()) : -1},
+            {"observer_pid", peer_ ? static_cast<qint64>(peer_->snapshot().pid) : 0},
+            {"observer_creation_filetime", peer_ ? QString::number(peer_->snapshot().creation_filetime) : QString{}},
+            {"observer_token", peer_ ? QJsonValue{tokenReport(peer_->snapshot().token)} : QJsonValue{QJsonValue::Null}},
+            {"observer_process_image", peer_ ? QString::fromStdWString(peer_->snapshot().image_path) : QString{}},
+            {"trusted_probe_image", imageReport(image_)},
+            {"observer_image", imageReport(peer_image_)},
+            {"observer_image_pinned", peer_image_pinned_},
+            {"observer_exit_code", coordinator_ && coordinator_->exitCode()
+                                       ? QJsonValue{static_cast<qint64>(*coordinator_->exitCode())}
+                                       : QJsonValue{QJsonValue::Null}},
+            {"physical_and_transport_ack", canCleanup()},
+            {"proof_eligible", proofEligible()}};
+    }
+
+  private:
+    static bool pending(const ObserverFiles::ReadStatus status) {
+        return status == ObserverFiles::ReadStatus::Missing || status == ObserverFiles::ReadStatus::Busy;
+    }
+    ObserverDriver::Peer observePeer(const std::uint32_t pid) {
+        if (!pid || (peer_ && peer_->snapshot().pid != pid))
+            return {};
+        if (!peer_) {
+            peer_ = std::make_unique<ObserverProcess>(pid);
+            const auto& snapshot = peer_->open();
+            if (snapshot.complete) {
+                peer_image_.path = QString::fromStdWString(snapshot.image_path);
+                peer_image_.sha256 = image_.sha256;
+                peer_image_pinned_ =
+                    download_artifacts::pinAndHash(peer_image_, peer_ancestors_) == download_artifacts::Error::None &&
+                    download_artifacts::sameIdentity(peer_image_.identity, image_.identity);
+            }
+        }
+        const bool unchanged =
+            peer_image_pinned_ && download_artifacts::unchanged(image_) && download_artifacts::unchanged(peer_image_);
+        return {peer_->snapshot(), QByteArray::fromHex(image_.sha256), unchanged, peer_->poll()};
+    }
+    void readResult() {
+        const auto frame = files_.read(ObserverFiles::Slot::Result);
+        if (frame.status == ObserverFiles::ReadStatus::Ready) {
+            const auto result = ObserverProtocol::decodeResult(frame.bytes);
+            const auto peer = observePeer(result ? result->observer_pid : 0);
+            if (coordinator_->result(frame.bytes, peer, timer_.elapsed()))
+                result_lease_ = frame.lease;
+        } else if (!pending(frame.status)) {
+            coordinator_->transportFailure();
+        }
+    }
+    QString directory_;
+    ObserverProcess::Snapshot driver_;
+    ObserverFiles files_;
+    QElapsedTimer timer_;
+    download_artifacts::Artifact image_{}, peer_image_{};
+    std::vector<download_artifacts::Handle> image_ancestors_{}, peer_ancestors_{};
+    std::unique_ptr<ObserverDriver> coordinator_{};
+    std::unique_ptr<ObserverProcess> peer_{};
+    bool peer_image_pinned_{false};
+    std::shared_ptr<const ObserverFiles::ReadLease> request_lease_{}, ready_lease_{}, result_lease_{};
+};
+
 class Loopback final {
   public:
     ~Loopback() {
@@ -607,8 +878,8 @@ class UdpLoopback final {
 };
 
 QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDownloadAppContainer>& container,
-                      std::uint16_t port, std::uint16_t udp_port, NetworkObserver::EvidenceKind network_kind,
-                      bool& passed, bool& native_acks) {
+                      std::uint16_t port, std::uint16_t udp_port, const Options& options,
+                      const ObserverProcess::Snapshot& driver, bool& passed, bool& native_acks) {
     require(native_acks, "helper refused after uncertain native ACK");
     const auto private_parent = root + QStringLiteral("/sentinel");
     const auto runtimes = root + QStringLiteral("/helper-runtimes");
@@ -656,23 +927,17 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     config.max_stderr_bytes = 1024;
     config.max_memory_bytes = 64 * 1024 * 1024;
     config.total_timeout_ms = 5000;
-    const auto begin_filetime = currentFiletime();
-    const auto end_filetime =
-        begin_filetime <= std::numeric_limits<std::uint64_t>::max() - NetworkObserver::maximum_window_ticks
-            ? begin_filetime + NetworkObserver::maximum_window_ticks
-            : 0;
-    NetworkObserver network({QDir::toNativeSeparators(config.executable).toStdWString(), request.sid, currentUserSid(),
-                             port, begin_filetime, end_filetime, network_kind},
-                            NetworkObserver::systemCalls());
-    const auto network_started = network.start();
+    std::uint64_t begin_filetime{}, end_filetime{};
     QByteArray output, errors;
     WindowsDownloadProcessUpdate update;
     bool started = false;
     struct Owners final {
         std::shared_ptr<const WindowsMediaFoundationLaunch> runtime;
         WindowsDownloadProcess process;
+        std::unique_ptr<NetworkObserver> network{};
+        std::unique_ptr<ExternalNetworkObserver> external{};
     };
-    NativeAcknowledgement acknowledgement{native_acks};
+    NativeAcknowledgement aggregate{native_acks};
     auto owners = std::make_unique<Owners>();
     owners->runtime = runtime;
     const auto preserve_uncertain = qScopeGuard([&] {
@@ -681,6 +946,37 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
         if (!native_acks)
             static_cast<void>(owners.release());
     });
+    bool observation_started = false;
+    if (options.external_observer) {
+        owners->external =
+            std::make_unique<ExternalNetworkObserver>(options.evidence + QStringLiteral("/observer-handoff"), driver);
+        require(owners->external->prepare(config.executable, launch.source_sha256, container->sidBytes(), port),
+                "external observer request output");
+        require(receipt(options.evidence, QStringLiteral("06-observer-request.json"), owners->external->diagnostic()),
+                "observer request receipt");
+        if (!owners->external->waitReady()) {
+            aggregate.complete(owners->external->canCleanup());
+            throw std::runtime_error{"external observer did not provide authenticated live Ready; inspect handoff"};
+        }
+        require(owners->external->takeLaunchPermission(), "external observer launch permission");
+        begin_filetime = owners->external->ready()->window_begin_filetime;
+        end_filetime = owners->external->ready()->window_end_filetime;
+        observation_started = true;
+    } else {
+        begin_filetime = currentFiletime();
+        end_filetime =
+            begin_filetime <= std::numeric_limits<std::uint64_t>::max() - NetworkObserver::maximum_window_ticks
+                ? begin_filetime + NetworkObserver::maximum_window_ticks
+                : 0;
+        owners->network = std::make_unique<NetworkObserver>(
+            NetworkObserver::Config{QDir::toNativeSeparators(config.executable).toStdWString(), request.sid,
+                                    currentUserSid(), port, begin_filetime, end_filetime, options.network_kind},
+            NetworkObserver::systemCalls());
+        const auto started_report = owners->network->start();
+        observation_started = started_report.available && started_report.state == NetworkObserver::State::Observing;
+    }
+    bool helper_acks = true;
+    NativeAcknowledgement acknowledgement{helper_acks};
     {
         auto& process = owners->process;
         QElapsedTimer timer;
@@ -707,20 +1003,33 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     acknowledgement.complete(ack && (!report || report->errors[5] != ERROR_TIMEOUT));
     // A late WFP callback may still describe the bounded attempt. Missing
     // events remain inconclusive; this wait is never a process/pipe ACK.
-    if (network_started.state == NetworkObserver::State::Observing && ack) {
+    if (owners->network && observation_started && ack) {
         QElapsedTimer drain;
         drain.start();
-        while (!network.snapshot().matched && drain.elapsed() < 1000)
+        while (!owners->network->snapshot().matched && drain.elapsed() < 1000)
             pump();
     }
-    const auto network_stopped = network.stop();
+    NetworkObserver::Report network_stopped;
+    bool observer_acks = false, proof_eligible = true;
+    if (owners->external) {
+        owners->external->finish();
+        network_stopped = owners->external->report();
+        observer_acks = owners->external->canCleanup();
+        proof_eligible = owners->external->proofEligible();
+    } else {
+        network_stopped = owners->network->stop();
+        observer_acks = !network_stopped.context_retained &&
+                        network_stopped.state != NetworkObserver::State::StopUnconfirmed &&
+                        network_stopped.state != NetworkObserver::State::Observing &&
+                        network_stopped.state != NetworkObserver::State::Idle;
+    }
+    aggregate.complete(helper_acks && observer_acks);
     // Quota is not itself a denial oracle. This separate kernel notification
     // belongs to this supervisor's Job and identifies the active-process limit.
     const bool job_limit_witnessed = report && report->errors[5] == ERROR_NOT_ENOUGH_QUOTA &&
                                      update.job_evidence.active_process_limit &&
                                      !update.job_evidence.process_memory_limit && !update.job_evidence.job_memory_limit;
-    const bool network_denied = started && ack && report && network_started.available &&
-                                network_started.state == NetworkObserver::State::Observing &&
+    const bool network_denied = started && ack && report && observation_started && proof_eligible &&
                                 witnessedNetworkDenial(report->errors[6], network_stopped);
     const auto effective_checks = report ? report->passed | (job_limit_witnessed ? protocol::JobChildDenied : 0U) |
                                                (network_denied ? protocol::LoopbackDenied : 0U)
@@ -728,8 +1037,9 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     passed = started && ack && update.state == WindowsDownloadProcessState::Exited && update.exit_code == 0 && report &&
              effective_checks == protocol::all_checks && report->capability_count == 0 &&
              report->integrity_rid == SECURITY_MANDATORY_LOW_RID && hashFile(sentinel) == before &&
-             errors == QByteArray{"sandbox-probe=complete\n"} && runtime->unchanged() &&
-             !network_stopped.context_retained && network_stopped.state != NetworkObserver::State::StopUnconfirmed;
+             errors == QByteArray{"sandbox-probe=complete\n"} && runtime->unchanged() && native_acks &&
+             proof_eligible && !network_stopped.context_retained &&
+             network_stopped.state != NetworkObserver::State::StopUnconfirmed;
     QJsonArray codes;
     if (report)
         for (const auto code : report->errors)
@@ -740,6 +1050,8 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     network_result.insert(QStringLiteral("expected_tcp_port"), port);
     network_result.insert(QStringLiteral("begin_filetime"), QString::number(begin_filetime));
     network_result.insert(QStringLiteral("end_filetime"), QString::number(end_filetime));
+    if (owners->external)
+        network_result.insert(QStringLiteral("handoff"), owners->external->diagnostic());
     QJsonObject result{{"passed", passed},
                        {"started", started},
                        {"physical_ack", ack},
@@ -1096,9 +1408,15 @@ QJsonObject runCancellation(const QString& root, const std::shared_ptr<const Win
 }
 
 int hostProbe(const Options& options) {
+    ObserverProcess current_process{GetCurrentProcessId()};
+    const auto& driver = current_process.open();
+    require(driver.complete && ObserverIdentity::normalDriver(driver.token),
+            "profile driver must be a normal interactive Medium process without elevation");
     std::vector<download_artifacts::Handle> parents;
     require(download_artifacts::pinAncestors(options.evidence, parents), "evidence ancestors unavailable/reparse");
-    require(download_artifacts::createPrivateDirectory(options.evidence), "evidence must be a fresh directory");
+    require(options.external_observer ? createObserverDirectory(options.evidence, sidArray(driver.token.user_sid))
+                                      : download_artifacts::createPrivateDirectory(options.evidence),
+            "evidence must be a fresh directory");
     const auto operation = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
     const auto name = QString::fromStdString(downloadMediaProfileName(operation));
     const auto journal_directory = options.evidence + QStringLiteral("/profile-journal");
@@ -1119,6 +1437,11 @@ int hostProbe(const Options& options) {
             {"capabilities", QJsonArray{}},
             {"mode", "common-AppContainer-not-LPAC"},
             {"network_oracle", networkKind(options.network_kind)},
+            {"external_observer", options.external_observer},
+            {"driver_pid", static_cast<qint64>(driver.pid)},
+            {"driver_creation_filetime", QString::number(driver.creation_filetime)},
+            {"driver_process_image", QString::fromStdWString(driver.image_path)},
+            {"driver_token", tokenReport(driver.token)},
             {"temporary", temporary.path()},
             {"windows_kernel", QSysInfo::kernelVersion()},
             {"driver_sha256", QString::fromLatin1(hashFile(QCoreApplication::applicationFilePath()))},
@@ -1154,7 +1477,7 @@ int hostProbe(const Options& options) {
         require(receipt(options.evidence, QStringLiteral("05-no-child.json"), no_child), "no-child receipt");
         require(native_acks && no_child.value("passed").toBool(), "no-child proof failed");
         bool helper_passed = false;
-        const auto helper = runHelper(temporary.path(), container, loopback.port, udp.port, options.network_kind,
+        const auto helper = runHelper(temporary.path(), container, loopback.port, udp.port, options, driver,
                                       helper_passed, native_acks);
         require(receipt(options.evidence, QStringLiteral("02-helper-result.json"), helper), "helper receipt");
         require(native_acks, "helper ACK uncertain; remaining cases/profile cleanup refused");
@@ -1222,14 +1545,15 @@ int wmain(int argc, wchar_t** argv) {
     if (options.mode == Mode::Help) {
         std::puts("AppContainer probe: --self-test | --network-preflight | --network-preflight-classify | --help | "
                   "--allow-profile-changes --evidence-dir <fresh workspace out/product directory> "
-                  "[--classify-isolation]");
+                  "[--classify-isolation | --external-classify-observer] | "
+                  "--allow-wfp-subscription --observer-request <workspace out/product directory/wfp-request.json>");
         return 0;
     }
     if (options.mode == Mode::SelfTest)
         return selfTest();
     if (options.mode == Mode::NetworkPreflight)
         return networkPreflight(options.network_kind);
-    if (options.mode != Mode::HostProbe) {
+    if (options.mode != Mode::HostProbe && options.mode != Mode::ObserverActor) {
         std::fputs("Refused: explicit profile-change flag and fresh workspace evidence path are required.\n", stderr);
         return 64;
     }
@@ -1238,6 +1562,22 @@ int wmain(int argc, wchar_t** argv) {
     char* application_argv[]{name, nullptr};
     QCoreApplication application{application_argc, application_argv};
     try {
+        if (options.mode == Mode::ObserverActor) {
+            ObserverActor actor({workspace(), options.evidence, QCoreApplication::applicationFilePath(),
+                                 QString::fromUtf8(RC_MUSIC_TEST_SANDBOX_HELPER_PATH)},
+                                ObserverActor::systemCalls());
+            const auto result = actor.run();
+            const auto bytes = QJsonDocument{QJsonObject{{"exit_code", result.exit_code},
+                                                         {"reason", static_cast<int>(result.reason)},
+                                                         {"ready_written", result.ready_written},
+                                                         {"result_written", result.result_written},
+                                                         {"resources_retained", result.resources_retained}}}
+                                   .toJson();
+            return std::fwrite(bytes.constData(), 1, static_cast<std::size_t>(bytes.size()), stdout) ==
+                           static_cast<std::size_t>(bytes.size())
+                       ? result.exit_code
+                       : 2;
+        }
         return hostProbe(options);
     } catch (...) {
         std::fputs(

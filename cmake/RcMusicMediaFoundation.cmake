@@ -41,7 +41,13 @@ if(BUILD_TESTING)
     rc_music_configure_cpp(rc_music_media_sandbox_helper)
     add_executable(rc_music_media_sandbox_probe
         "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerProbeMain.cpp"
-        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp")
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProtocol.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverFiles.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverIdentity.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProcess.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverActor.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverDriver.cpp")
     target_link_libraries(rc_music_media_sandbox_probe PRIVATE rc_music_download_network userenv advapi32 ws2_32 fwpuclnt)
     target_compile_definitions(rc_music_media_sandbox_probe PRIVATE
         RC_MUSIC_TEST_SANDBOX_HELPER_PATH="$<TARGET_FILE:rc_music_media_sandbox_helper>"
@@ -55,7 +61,7 @@ if(BUILD_TESTING)
         LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerObserverProtocol AppContainerObserverFiles AppContainerObserverIdentity AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
+    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerObserverProtocol AppContainerObserverFiles AppContainerObserverIdentity AppContainerObserverProcess AppContainerObserverDriver AppContainerObserverActor AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
@@ -73,6 +79,32 @@ if(BUILD_TESTING)
         if(unit STREQUAL "AppContainerObserverFiles" OR unit STREQUAL "AppContainerObserverIdentity")
             target_sources(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/${unit}.cpp")
             target_link_libraries(${target} PRIVATE advapi32)
+        endif()
+        if(unit STREQUAL "AppContainerObserverProcess")
+            target_sources(${target} PRIVATE
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProcess.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverIdentity.cpp")
+            target_link_libraries(${target} PRIVATE advapi32)
+            target_compile_definitions(${target} PRIVATE
+                RC_MUSIC_TEST_SANDBOX_HELPER_PATH="$<TARGET_FILE:rc_music_media_sandbox_helper>")
+            add_dependencies(${target} rc_music_media_sandbox_helper)
+        endif()
+        if(unit STREQUAL "AppContainerObserverDriver")
+            target_sources(${target} PRIVATE
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverDriver.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProtocol.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverIdentity.cpp")
+            target_link_libraries(${target} PRIVATE advapi32)
+        endif()
+        if(unit STREQUAL "AppContainerObserverActor")
+            target_sources(${target} PRIVATE
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverActor.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProcess.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverIdentity.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProtocol.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverFiles.cpp"
+                "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp")
+            target_link_libraries(${target} PRIVATE advapi32 fwpuclnt)
         endif()
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters"
             "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")

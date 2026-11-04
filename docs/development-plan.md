@@ -7,7 +7,7 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
-Checkpoint de 2026-11-04: a [preparação do observador separado](media-profile-lifecycle.md#preparação-do-transporte-separado) implementa mensagens limitadas, arquivos privados com pins/lease, captura do token e janela deferida até Subscribe. Fechamento **10/10 CTest / 570 casos Qt**, sem skips. Os componentes estão somente nos testes, ainda sem composição executável ou nova elevação. Assinatura real com driver/worker normais, armazenamento/cotas/resíduos e composição instalada continuam pendentes. Downloads de produção permanecem OFF.
+Checkpoint de 2026-11-04: o [ensaio separado](media-profile-lifecycle.md#composição-separada-do-ensaio) compõe driver normal, request/Ready/Result privados e observador temporário com identidade, imagem, janela e ACK nativo conferidos. A regressão focada passou **13/13 CTest / 722 casos Qt**, sem skips, com WFP injetado e fixtures próprias. Não houve nova elevação, assinatura ou perfil. Ensaio físico autorizado, armazenamento/cotas/resíduos e composição instalada continuam pendentes. Downloads de produção permanecem OFF.
 
 ## 1. Regras de uso
 
@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — transporte do observador separado
+### Checkpoint atual — composição manual do observador separado
+
+Incremento de 2026-11-04: o [probe manual](../tests/windows/sandbox/README.md#driver-normal-e-observador-separado) liga o transporte ao driver normal e ao ator de leitura WFP, sem autoelevar/lançar processos ou alterar opções. Host exige token primário Medium normal antes de criar seu perfil. O driver sela request, espera Ready autêntico e vivo por até 120 s, concede launch uma vez com pelo menos 10 s na janela e observa Result/saída por até 20 s desde Ready. Ator confere raiz/FILE_ID, usuário/sessão, PID/criação e imagem do driver e helper privado, publica Ready só após Subscribe, encerra antes de Result e mantém recursos na incerteza. Aggregate dos ACKs do helper e observador controla cleanup pelo mesmo owner; timeout não confirma parada.
+
+TDD: Process **2 passagens/7 falhas → 9/9**, Driver **3/89 → 92/92**, seguido de regressão temporal **92/1 → 93/93**, e Actor **4/42 → 46/46**, seguido de revisão **46/4 → 50/50**. Dois Reds do parser comprovaram os novos modos explícitos. As quatro falhas de revisão reproduziram `product`/`PRODUCT` com FILE_IDs distintos no Windows e relógio inválido durante Stop. As três falhas intermediárias de fixture do Actor foram corrigidas sem alterar seus oráculos. Composição **4/4 CTest / 152 Qt**, sem skips, com chamadas WFP e snapshots injetados, filesystem real próprio e testemunhas de processo; evidências em `out/product/test-runs/media-observer-composition-20261104/`.
+
+Fechamento: **13/13 CTest / 722 Qt, sem skips**, Release do probe/alvos focados e Lite, formato **435 C++/62 QML** e grafo Lite **255 comandos** passaram. As fixtures de retenção foram limpas após saída dos processos e inspeção, sem atingir o perfil preservado. Próximo passo: executar esse caminho físico somente após autorização específica para assinatura pelo observador elevado temporário. Driver/owner/worker devem permanecer normais, e recibos/erro bruto/evento/regra/ACK/ausência precisam ser conferidos separadamente. Outra conta de UAC pode falhar por AccessDenied sem fallback ou alteração de ACL. O perfil preservado anterior não é fixture. Escrita/cotas/resíduos, composição instalada e demais gates do ADR-0011 Proposto continuam pendentes; a autorização consumida do preflight não se estende à assinatura e downloads permanecem OFF.
+
+### Checkpoint anterior — transporte do observador separado
 
 Incremento de 2026-11-04: três [componentes exclusivos de teste](media-profile-lifecycle.md#preparação-do-transporte-separado) preparam request/ready/result fechados de 16 KiB, nonce/SHA dos bytes exatos, identidade tipada e arquivos novos com owner/DACL protegida de três ACEs. Pins/lease impedem escrita/troca durante leitura; reparse, hardlink, segurança alterada e frames inválidos são recusados sem reparo. Captura somente leitura do token separa driver normal, observador elevado e vínculo SID/sessão. O observador calcula opcionalmente uma janela de 15 s imediatamente antes de Subscribe; filtro/callback/report usam o mesmo intervalo. O codec transporta diagnósticos, sem autenticar processos ou fabricar ACK/prova.
 

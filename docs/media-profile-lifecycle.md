@@ -198,6 +198,40 @@ O Green inicial dos arquivos foi **31/34** por três problemas de fixture: Creat
 
 `final-docs.log` validou **85 Markdown/83 requisitos/17 checks/80 etapas**. `final-traceability.json` conserva 83 registros e `allRequirementsProven=false`; este incremento não promove estados de requisitos ou aprovação de release. A conferência final não encontrou processos do workspace ainda em execução.
 
+### Composição separada do ensaio
+
+O incremento posterior liga esses componentes somente ao probe manual. O driver usa `--allow-profile-changes --evidence-dir <raiz nova> --external-classify-observer`; o ator separado usa `--allow-wfp-subscription --observer-request <raiz nova>/observer-handoff/wfp-request.json`. Nenhum modo eleva ou lança o outro processo automaticamente. Parser recusa mistura de flags, request com outro nome e escapes do diretório permitido. Os modos de preflight continuam isolados e não criam perfil ou assinatura.
+
+Antes de criar o perfil, o driver exige snapshot completo do próprio processo, sessão interativa, token primário Medium não elevado e os demais predicados de driver normal. O diretório de evidência do modo externo e seu filho de troca são novos, com DACL protegida usuário/SYSTEM/Administrators; o journal continua privado com sua própria DACL de duas ACEs. O driver prepara o runtime privado do helper e sela os bytes exatos do request com uma lease. Espera Ready por até 120 s, sem executar o helper durante UAC. Só concede uma permissão de launch, após conferir o processo do observador ainda vivo, PID/criação, token elevado na mesma sessão, imagem com o mesmo FILE_ID/volume e SHA do próprio probe e pelo menos 10 s restantes na janela anunciada.
+
+O ator confirma por handles que o diretório do request está sob o `out/product` confiável; igualdade textual sem diferenciar maiúsculas não basta em diretórios Windows case sensitive. Valida owner/DACL e request/nonce/hash, driver normal vivo e sua imagem, além do usuário e sessão reais do driver. O SID do usuário do UAC pode ser diferente, mas AccessDenied ao consultar token ou runtime permanece falha, sem ajuste de privilégios ou reparo de ACL. Não há garantia de compatibilidade com toda elevação para outra conta.
+
+A imagem do helper e seu diretório privado imediato exigem owner do driver e exatamente as ACEs usuário/SYSTEM com FA e pacote com RX, sem herança; a validação precede a leitura/hash do path recebido. Ancestrais e objetos ficam pinados e sem reparse; arquivo exige link único. SHA precisa corresponder ao helper de origem fixado no build. O runtime pode ficar no TEMP próprio fora da raiz de evidência, como nos ensaios anteriores. Ator não executa esse helper, cria perfil ou aceita um conversor indicado pelo request.
+
+Somente após Subscribe reconhecido publica Ready com a janela efetiva. O loop é limitado a 15 s e termina no primeiro candidato ou em falha de driver/relógio; chamadas nativas de início/encerramento continuam exigindo seus retornos, sem transformar prazo em ACK. Stop precede Result. Erro do relógio durante Stop conserva o relatório nativo fiel, inclusive match, mas impede exit 0. O driver exige também esse exit 0 para elegibilidade da prova. O gate Winsock anterior continua separado: evento/regra/teardown só complementam 10060, sem aprovar conexão bem-sucedida ou alterar erro bruto.
+
+O driver observa Result e término por até 20 s desde Ready, sem renovar o prazo ao receber um frame. Resultado com peer já parado ainda precisa da etapa explícita de ACK pelo mesmo handle. Result não substitui Ready nunca aceito; Unavailable anterior a Subscribe não pode suceder Ready. Cleanup exige resultado terminal saudável, sem contexto retido, e sinal nativo com exit code conhecido. Código não zero pode confirmar parada/cleanup, mas não prova de rede. Ausência, frame inválido, PID/identidade divergente, prazo ou estado desconhecido mantêm Uncertain e preservam perfil/runtime para revisão.
+
+`AppContainerObserverProcess` abre uma única testemunha não herdável, conserva o mesmo objeto mesmo após falha parcial e não reabre por PID. Snapshot de criação/imagem/token é imutável, sem alegar imutabilidade posterior do token. Poll só reconhece Stopped após sinal do objeto; o valor 259 de exit code não significa Running nesse caso. Seu destrutor fecha somente a testemunha e nunca mata o peer. Os recibos registram SID/sessão/elevação/IL/UIAccess/AppContainer, grupo Administrators, grupos restritos e privilégios habilitados, além de paths, FILE_ID/volume e hashes efetivamente pinados.
+
+O agregado de ACKs do helper e do observador controla a saída do runtime e o fechamento do owner. Se ficar incerto, os proprietários nativos são conservados até o término do driver, sem Delete ou cleanup por Loaded. A composição ainda precisa de execução física autorizada: a única elevação anterior consultou opções e já foi consumida. Nenhuma nova assinatura ou perfil foi executado para implementar esse fluxo, que permanece fora do player/worker/instaladores e não habilita downloads de produção.
+
+Evidência em `out/product/test-runs/media-observer-composition-20261104/`:
+
+| Contrato | Red observado | Green observado |
+|---|---|---|
+| Testemunha de processo, snapshot/handle e término com exit 259 | 2 passagens / 7 falhas | 9/9 |
+| Coordenador puro de Ready, Result, janela e ACK | 3 passagens / 89 falhas | 92/92 |
+| Unavailable anterior a Subscribe após Ready já aceito | 92 passagens / 1 falha | 93/93 |
+| Ator com Files/pins reais e WFP/identidades injetados | 4 passagens / 42 falhas | 46/46 |
+| Root `product`/`PRODUCT` e relógio falho durante Stop | 46 passagens / 4 falhas | 50/50 |
+
+`process-parser-red.log` registra também dois Reds do parser, sem operações de perfil. O Green inicial do ator foi 43/46: três fixtures tentavam alterar ACLs depois dos pins e foram corrigidas retendo previamente o handle de mutação e inspecionando o descritor físico, sem alterar os oráculos de recusa. `actor-fixture-green.log` passou 46/46 antes da revisão. O Windows permitiu case mode somente no TEMP próprio do novo teste; IDs distintos comprovaram o problema real, sem skip ou alteração de diretório do projeto.
+
+`final-build.log` e `final-regression.log` passaram **13/13 CTest / 722 passagens Qt, sem skips, em 7,51 s**, com init/cleanup, no probe Release e alvos afetados. É a seleção proporcional, não a suíte inteira nem a execução WFP física. `final-format.log` passou **435 C++/62 QML**, `lite-build.log` passou e `lite-boundary.log` conferiu **255 comandos**. Revisões independentes do Actor e do Main não deixaram bloqueadores de lifecycle/ACK. As cinco fixtures de retenção criadas nas capturas foram removidas somente depois do término dos processos Qt, por folhas inspecionadas e diretórios vazios sem remoção recursiva; os recibos `retained-fixture-cleanup-01.json` e `retained-fixture-cleanup-final.json` confirmam ausência. Não houve cleanup do perfil preservado anterior.
+
+O probe compilado tem SHA-256 `d008cafab583c48464e98618514077baa925ae14bcdc3a570f85d37476023c07`; o helper suspenso/confiável tem SHA-256 `ab2ee3d1b0d8cabc3002f0ad6636d9b1da25bd7516d2e16ca0c88d5f12235f2d`. Esses hashes identificam a preparação compilada, sem autorizar sua elevação ou aprovar rede/produção. Nenhum ensaio privilegiado foi executado por esse fechamento.
+
 ## Restrição de armazenamento ainda pendente
 
 O Job atual não impõe cota física de disco ao armazenamento do perfil. `IoWriteBytesLimit` em limites de notificação não impede que o processo continue escrevendo; observar ou matar depois do excesso não equivale a impedir a alocação. Quotas NTFS são cobradas ao owner por volume e não constituem um limite separado para esse perfil ou para o Registro. Não alterar a quota do usuário para resolver o gate do worker. [Limites de notificação](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_notification_limit_information), [cobrança de quota NTFS](https://learn.microsoft.com/en-us/windows/win32/fileio/disk-quota-limits).

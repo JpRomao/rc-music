@@ -66,16 +66,34 @@ Um candidato CLASSIFY_DROP exige todas as identidades/tupla/janela e ainda layer
 
 O preflight Classify compilado e executado normalmente retornou AccessDenied 5; nenhum evento real foi aceito. Executar todo o driver elevado provaria somente esse contexto. O próximo ensaio deve manter driver/owner/worker normais e usar observador elevado separado, após composição/testes e autorização específica. A única leitura elevada anterior já foi consumida; este modo não concede elevação, instala serviços ou altera permissões WFP.
 
-### Componentes de troca ainda sem composição
+### Preparação anterior dos componentes de troca
 
-Os testes `AppContainerObserverProtocol`, `AppContainerObserverFiles` e `AppContainerObserverIdentity` preparam [mensagens, arquivos privados e leitura de token](../../../docs/media-profile-lifecycle.md#preparação-do-transporte-separado). São alvos exclusivos de `BUILD_TESTING`, ainda sem link ou novos argumentos no probe. Não iniciam observador elevado nem autorizam sua execução. A janela opcional do observador começa imediatamente antes de Subscribe, com relógio injetado nos testes.
+No incremento `1c6dfd6`, os testes `AppContainerObserverProtocol`, `AppContainerObserverFiles` e `AppContainerObserverIdentity` prepararam [mensagens, arquivos privados e leitura de token](../../../docs/media-profile-lifecycle.md#preparação-do-transporte-separado), então sem link no probe. A composição posterior abaixo continua restrita a `BUILD_TESTING` e não autoriza execução elevada. A janela opcional do observador começa imediatamente antes de Subscribe, com relógio injetado nos testes.
 
 ```powershell
 cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerObserverProtocol_tests rc_music_AppContainerObserverFiles_tests rc_music_AppContainerObserverIdentity_tests rc_music_AppContainerNetworkObserver_tests
 ctest --test-dir out/product/m1-desktop-release-on-20260906 -R 'rc_music.download-network.(AppContainerObserver(Protocol|Files|Identity)|AppContainerNetworkObserver)$' --output-on-failure
 ```
 
-O codec é puro. Os testes de arquivos criam somente fixtures TEMP próprias, inclusive hardlinks/junctions entre objetos da mesma fixture e ACLs para testar recusa; os testes de identidade leem o token do próprio processo. Nenhum deles cria perfil, assina WFP, eleva, modifica privilégios ou usa arquivos pessoais. Caminhos/SIDs autenticados, nascimento/imagem dos processos, Ready antes do helper, Result após Stop e ACK físico ainda precisam ser compostos no fluxo manual. Outro usuário de UAC e writers SYSTEM/Administrators não foram exercitados fisicamente; recusa de acesso deve permanecer falha, sem reparo de permissões.
+O codec é puro. Os testes de arquivos criam somente fixtures TEMP próprias, inclusive hardlinks/junctions entre objetos da mesma fixture e ACLs para testar recusa; os testes de identidade leem o token do próprio processo. Nenhum deles cria perfil, assina WFP, eleva, modifica privilégios ou usa arquivos pessoais. Outro usuário de UAC e writers SYSTEM/Administrators não foram exercitados fisicamente; recusa de acesso deve permanecer falha, sem reparo de permissões.
+
+### Driver normal e observador separado
+
+O [fluxo composto](../../../docs/media-profile-lifecycle.md#composição-separada-do-ensaio) possui dois modos manuais, que só devem ser executados após a autorização correspondente. Eles não se lançam nem elevam automaticamente. No processo normal:
+
+```powershell
+& 'out/product/m1-desktop-release-on-20260906/rc_music_media_sandbox_probe.exe' --allow-profile-changes --evidence-dir '<novo path absoluto sob workspace/out/product>' --external-classify-observer
+```
+
+O driver cria seu próprio perfil/journal, prepara o helper e escreve `observer-request:<path absoluto>` em stdout com flush. Conserva o runtime e aguarda Ready. O processo separado com elevação temporária autorizada recebe exatamente o path publicado:
+
+```powershell
+& 'out/product/m1-desktop-release-on-20260906/rc_music_media_sandbox_probe.exe' --allow-wfp-subscription --observer-request '<path absoluto publicado>'
+```
+
+O path publicado já inclui `wfp-request.json`; passe-o inteiro, sem acrescentar outra folha. O ator valida raiz, arquivos, processos e imagens antes de assinar WFP. Request/Ready/Result têm nomes fixos e não são substituídos. O driver exige observador ainda vivo e janela com headroom antes do helper; ACK de saída usa o mesmo handle aberto. Consultas/assinatura não alteram coleta, keywords, regras ou auditoria. A autorização anterior de leitura do preflight já foi consumida e não permite esse novo ensaio.
+
+Os testes `AppContainerObserverActor` e `AppContainerObserverDriver` usam WFP/processos injetados, frames e arquivos reais próprios; o teste `AppContainerObserverProcess` consulta o próprio processo e cria um helper somente suspenso, que não é retomado, para verificar sinal nativo e exit code 259. O cenário de Stop incerto conserva pins até o fim do executável Qt e publica `actor-retained-fixture:<TEMP próprio>`; somente após confirmar o término do processo e inventariar essa árvore sem reparse é possível limpar a fixture, preservando seu recibo. Não usar esse marcador para remover perfis ou outros diretórios.
 
 ## Conversão com o mesmo owner
 
