@@ -1,9 +1,11 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtime Lite atualizado em 2026-11-04, montado e hashes verificados, com setup privado gerado; o smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtimes privados Lite e Completa experimental montados e hashes conferidos em 2026-11-04, com setups gerados sem instalar. O smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 **Data:** 2026-11-04.
 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime permaneceu íntegro após a limpeza inventariada. A receita adicional da Completa experimental está descrita abaixo, com evidência de montagem própria exigida para cada artefato.
+
+A [Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) contém **557 arquivos / 96.573.561 bytes**, incluindo os três notices adicionais, com inventário e hashes conferidos. A engine não foi iniciada; Evergreen é pré-requisito externo e os serviços remotos continuam OFF.
 
 O [inventário de componentes e rascunho de notices](delivery/runtime-3f22fda-notices.md) trata especificamente o runtime local `3f22fda`. Documentos/textos ficam separados do payload já gerado; identificações por origem e relações do fornecedor não substituem correspondência binária, SBOM completo, revisão de segurança ou autorização de distribuição.
 

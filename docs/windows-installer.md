@@ -1,9 +1,11 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setup Lite privado atualizado em 2026-11-04, compilado e conferido sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Estado:** setups privados Lite e Completa experimental compilados e conferidos em 2026-11-04 sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-11-04.
 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
+
+A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
 
 ## Fonte única e proveniência
 
