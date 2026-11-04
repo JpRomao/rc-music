@@ -3,6 +3,7 @@
 #include "FfmpegDownloadCodec.hpp"
 #include "WindowsDownloadProcess.hpp"
 #include "WindowsDownloadWorkspace.hpp"
+#include "WindowsLocalMediaBackend.hpp"
 #include "WindowsLocalMp3Validator.hpp"
 
 namespace music_player::m0 {
@@ -12,6 +13,8 @@ struct WindowsLocalMediaConverterConfig final {
     QString ffprobe_executable{};
     quint64 max_process_memory_bytes{512 * 1024 * 1024};
     qint64 total_timeout_ms{30 * 60 * 1000};
+    WindowsLocalMediaBackend backend{WindowsLocalMediaBackend::FfmpegLegacy};
+    QString media_foundation_executable{};
 };
 enum class LocalMediaConversionState {
     Idle,

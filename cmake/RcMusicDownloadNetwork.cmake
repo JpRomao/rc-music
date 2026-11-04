@@ -50,6 +50,7 @@ if(WIN32)
     target_compile_definitions(rc_music_download_network_payload PRIVATE RC_MUSIC_DOWNLOAD_NETWORK_PAYLOAD)
     target_link_libraries(rc_music_download_network_payload PRIVATE rc_music_download_network)
     rc_music_configure_cpp(rc_music_download_network_payload)
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicMediaFoundation.cmake")
 endif()
 
 if(BUILD_TESTING)
@@ -149,9 +150,11 @@ if(BUILD_TESTING)
                 target_compile_definitions(${target} PRIVATE
                     RC_MUSIC_TEST_IO_HELPER_PATH="$<TARGET_FILE:rc_music_download_io_helper>")
                 if(unit STREQUAL "WindowsProcessDownloadJob")
+                    add_dependencies(${target} rc_music_media_foundation_worker)
                     target_compile_definitions(${target} PRIVATE
                         RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"
-                        RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}")
+                        RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}"
+                        RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>")
                 endif()
             endif()
             target_compile_definitions(${target} PRIVATE
@@ -173,6 +176,11 @@ if(BUILD_TESTING)
         elseif(unit STREQUAL "WindowsLocalMediaConverter" OR unit STREQUAL "WindowsLocalMp3Validator" OR
                unit STREQUAL "WindowsRecoveredMediaValidator" OR unit STREQUAL "WindowsDownloadJobSession")
             add_dependencies(${target} rc_music_download_converter_helper)
+            if(unit STREQUAL "WindowsRecoveredMediaValidator")
+                add_dependencies(${target} rc_music_media_foundation_worker)
+                target_compile_definitions(${target} PRIVATE
+                    RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>")
+            endif()
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_TEST_FFMPEG_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFMPEG}"
                 RC_MUSIC_TEST_FFPROBE_PATH="${RC_MUSIC_DOWNLOAD_TEST_FFPROBE}"

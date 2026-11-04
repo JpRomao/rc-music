@@ -1,6 +1,11 @@
 #include "WindowsLocalMediaConverter.hpp"
 
+#include "MediaFoundationWorkerProtocol.hpp"
+
 #include <QFileInfo>
+#include <qt_windows.h>
+
+#include <array>
 
 namespace music_player::m0 {
 namespace {
@@ -21,6 +26,38 @@ DownloadFailure failure(WindowsDownloadProcessError error) {
         return DownloadFailure::InvalidResult;
     return DownloadFailure::Conversion;
 }
+DownloadFailure mediaFoundationFailure(const int code) {
+    switch (static_cast<MediaFoundationWorkerExit>(code)) {
+    case MediaFoundationWorkerExit::InvalidRequest:
+        return DownloadFailure::InvalidResult;
+    case MediaFoundationWorkerExit::Input:
+    case MediaFoundationWorkerExit::Unavailable:
+        return DownloadFailure::Unavailable;
+    case MediaFoundationWorkerExit::NoAudio:
+        return DownloadFailure::NoAudio;
+    case MediaFoundationWorkerExit::Unsupported:
+        return DownloadFailure::UnsupportedMedia;
+    case MediaFoundationWorkerExit::LimitExceeded:
+        return DownloadFailure::LimitExceeded;
+    case MediaFoundationWorkerExit::Conversion:
+    case MediaFoundationWorkerExit::Validation:
+    case MediaFoundationWorkerExit::Output:
+        return DownloadFailure::Conversion;
+    case MediaFoundationWorkerExit::Success:
+        break;
+    }
+    return DownloadFailure::InvalidResult;
+}
+std::optional<QProcessEnvironment> mediaFoundationEnvironment() {
+    std::array<wchar_t, 32'768> directory{};
+    const auto size = GetWindowsDirectoryW(directory.data(), static_cast<UINT>(directory.size()));
+    if (size == 0 || size >= directory.size())
+        return std::nullopt;
+    QProcessEnvironment environment;
+    environment.insert(QStringLiteral("SystemRoot"), QString::fromWCharArray(directory.data(), size));
+    environment.insert(QStringLiteral("PATH"), QString{});
+    return environment;
+}
 } // namespace
 
 WindowsLocalMediaConverter::WindowsLocalMediaConverter(WindowsLocalMediaConverterConfig config)
@@ -28,33 +65,54 @@ WindowsLocalMediaConverter::WindowsLocalMediaConverter(WindowsLocalMediaConverte
 bool WindowsLocalMediaConverter::start(WindowsDownloadWorkspace& workspace, qint64 now_ms) {
     if (update_.state != LocalMediaConversionState::Idle || now_ms < 0 || config_.total_timeout_ms <= 0 ||
         config_.max_process_memory_bytes == 0 || workspace.error() != DownloadFailure::None ||
+        (config_.backend != WindowsLocalMediaBackend::FfmpegLegacy &&
+         config_.backend != WindowsLocalMediaBackend::MediaFoundation) ||
         workspace.inputPath().isEmpty() || !workspace.outputPath().isEmpty() || !workspace.outputSink() ||
         !workspace.outputSink()->isWritable() || workspace.outputSink()->size() != 0)
         return false;
     workspace_ = &workspace;
     started_ms_ = previous_ms_ = now_ms;
-    return launch(Stage::InputProbe, now_ms);
+    return launch(config_.backend == WindowsLocalMediaBackend::MediaFoundation ? Stage::Conversion : Stage::InputProbe,
+                  now_ms);
 }
 
 bool WindowsLocalMediaConverter::launch(Stage stage, qint64 now_ms) {
     stage_ = stage;
     probe_bytes_.clear();
     WindowsDownloadProcessConfig process_config;
+    const bool foundation = config_.backend == WindowsLocalMediaBackend::MediaFoundation;
     const bool probe = stage == Stage::InputProbe;
-    process_config.executable = probe ? config_.ffprobe_executable : config_.ffmpeg_executable;
+    process_config.executable = foundation ? config_.media_foundation_executable
+                                           : (probe ? config_.ffprobe_executable : config_.ffmpeg_executable);
     const auto path = workspace_->inputPath();
     process_config.working_directory = QFileInfo(path).absolutePath();
     process_config.max_memory_bytes = config_.max_process_memory_bytes;
     process_config.total_timeout_ms = config_.total_timeout_ms - (now_ms - started_ms_);
     process_config.max_stdout_bytes = probe ? 16384 : 512ULL * 1024 * 1024;
     process_config.max_stderr_bytes = probe ? 16384 : 4 * 1024 * 1024;
-    if (probe)
+    if (foundation) {
+        const MediaFoundationWorkerRequest request{.mode = MediaFoundationWorkerMode::Convert,
+                                                   .input_path = path.toStdU16String()};
+        const auto bytes = encodeMediaFoundationWorkerRequest(request);
+        process_config.environment = mediaFoundationEnvironment();
+        if (bytes.empty() || !process_config.environment || !QFileInfo(process_config.executable).isFile()) {
+            update_.state = LocalMediaConversionState::Failed;
+            update_.error = bytes.empty() ? DownloadFailure::InvalidResult : DownloadFailure::Unavailable;
+            return false;
+        }
+        process_config.standard_input =
+            QByteArray(reinterpret_cast<const char*>(bytes.data()), static_cast<qsizetype>(bytes.size()));
+    } else if (probe)
         process_config.arguments = downloadProbeArguments(path);
     else
         process_config.arguments = downloadConversionArguments(path, input_container_);
-    if (process_config.arguments.isEmpty() || !process_.start(process_config, now_ms)) {
+    if ((!foundation && process_config.arguments.isEmpty()) || !process_.start(process_config, now_ms)) {
         update_.state = LocalMediaConversionState::Failed;
-        update_.error = failure(process_.poll(now_ms).error);
+        const auto error = process_.poll(now_ms).error;
+        update_.error = foundation && (error == WindowsDownloadProcessError::Start ||
+                                       error == WindowsDownloadProcessError::Isolation)
+                            ? DownloadFailure::Unavailable
+                            : failure(error);
         return false;
     }
     update_.state = probe ? LocalMediaConversionState::Inspecting : LocalMediaConversionState::Converting;
@@ -145,7 +203,10 @@ LocalMediaConversionUpdate WindowsLocalMediaConverter::poll(qint64 now_ms) {
         return update_;
     if (!result.exit_code || *result.exit_code != 0) {
         update_.state = LocalMediaConversionState::Failed;
-        update_.error = stage_ == Stage::InputProbe ? DownloadFailure::UnsupportedMedia : DownloadFailure::Conversion;
+        update_.error =
+            config_.backend == WindowsLocalMediaBackend::MediaFoundation
+                ? (result.exit_code ? mediaFoundationFailure(*result.exit_code) : DownloadFailure::InvalidResult)
+                : (stage_ == Stage::InputProbe ? DownloadFailure::UnsupportedMedia : DownloadFailure::Conversion);
         return update_;
     }
     if (stage_ == Stage::InputProbe) {
@@ -166,7 +227,8 @@ LocalMediaConversionUpdate WindowsLocalMediaConverter::poll(qint64 now_ms) {
         } else {
             validator_ = std::make_unique<WindowsLocalMp3Validator>(WindowsLocalMp3ValidatorConfig{
                 config_.ffmpeg_executable, config_.ffprobe_executable, config_.max_process_memory_bytes,
-                config_.total_timeout_ms - (now_ms - started_ms_)});
+                config_.total_timeout_ms - (now_ms - started_ms_), config_.backend,
+                config_.media_foundation_executable});
             stage_ = Stage::Validation;
             update_.state = LocalMediaConversionState::Validating;
             if (!validator_->start(workspace_->outputPath(), now_ms)) {

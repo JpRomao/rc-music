@@ -126,11 +126,15 @@ class WindowsRecoveredMediaValidatorTests final : public QObject {
   private slots:
     void validatesRealMp3WithPinsAndNeverPromotesPublication_data() {
         QTest::addColumn<bool>("published");
-        QTest::newRow("Published") << true;
-        QTest::newRow("Prepared without publication acknowledgement") << false;
+        QTest::addColumn<bool>("native_conversion");
+        QTest::newRow("Published") << true << false;
+        QTest::newRow("Prepared without publication acknowledgement") << false << false;
+        QTest::newRow("Published native validation") << true << true;
+        QTest::newRow("Prepared native validation without publication acknowledgement") << false << true;
     }
     void validatesRealMp3WithPinsAndNeverPromotesPublication() {
         QFETCH(bool, published);
+        QFETCH(bool, native_conversion);
         Fixture f;
         const auto bytes = trustedMp3();
         QVERIFY(f.prepare(bytes, published));
@@ -139,7 +143,13 @@ class WindowsRecoveredMediaValidatorTests final : public QObject {
         QCOMPARE(f.record.stage,
                  published ? DownloadOwnershipStage::Published : DownloadOwnershipStage::PublicationPrepared);
         {
-            WindowsRecoveredMediaValidator validator(f.config(), tools());
+            auto configuration = tools();
+            if (native_conversion) {
+                configuration = {};
+                configuration.backend = WindowsLocalMediaBackend::MediaFoundation;
+                configuration.media_foundation_executable = QString::fromUtf8(RC_MUSIC_TEST_MF_WORKER_PATH);
+            }
+            WindowsRecoveredMediaValidator validator(f.config(), configuration);
             QVERIFY(validator.start(f.record, 0));
             QVERIFY(!validator.validatedCandidate());
             QVERIFY(!writable(f.final));

@@ -228,13 +228,25 @@ class WindowsProcessDownloadJobTests final : public QObject {
         QVERIFY(io.stopped_before_conversion);
         QVERIFY(io.io.pollStop().stopped);
     }
+    void asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce_data() {
+        QTest::addColumn<bool>("native_conversion");
+        QTest::newRow("legacy trusted-fixture CLI") << false;
+        QTest::newRow("native Media Foundation without converter CLI") << true;
+    }
     void asynchronousExecutionPublishesMp3AndMp4AndServiceImportsEachJobOnlyOnce() {
+        QFETCH(bool, native_conversion);
         Harness h;
         QVERIFY(h.directory.isValid());
         // Only the framed synthetic helper transfers bytes. This exercises the real
         // async port, native processes, filesystem and converter, not public TLS or
         // the still-open pre-launch authentication/tool-isolation/player gates.
-        WindowsDownloadExecution execution(ioConfiguration(h.directory.path()), h.configuration());
+        auto configuration = h.configuration();
+        if (native_conversion) {
+            configuration.converter = {};
+            configuration.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
+            configuration.converter.media_foundation_executable = QString::fromUtf8(RC_MUSIC_TEST_MF_WORKER_PATH);
+        }
+        WindowsDownloadExecution execution(ioConfiguration(h.directory.path()), configuration);
         ObservedImport importer(execution, h);
         DownloadService service(execution, importer, "real-composition");
         QElapsedTimer clock;

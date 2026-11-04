@@ -1310,6 +1310,14 @@
           "marker": "convertsAndFullyValidatesSyntheticLocalAudio"
         },
         {
+          "path": "tests/qt/WindowsMediaFoundationCodecTests.cpp",
+          "marker": "convertsTrustedLocalFormatsIntoNativelyValidatedMp3"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
+          "marker": "convertsLocalFixturesAndValidatesInASeparateWorker"
+        },
+        {
           "path": "tests/qt/WindowsDownloadJobSessionTests.cpp",
           "marker": "authenticatedSyntheticTransferConvertsThenPublishesOnlyInSeparatePhase"
         },
@@ -1798,6 +1806,26 @@
         {
           "path": "tools/download-tls/tests/RestrictedTlsTests.cpp",
           "marker": "incompleteAiaChainCannotFetchTrapOrSendMediaGet"
+        },
+        {
+          "path": "tests/qt/MediaFoundationWorkerProtocolTests.cpp",
+          "marker": "workerRejectsMalformedOrNonEofRequestsSilently"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationCodecTests.cpp",
+          "marker": "rejectsDisguisedAndTruncatedMp3WithoutWriting"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
+          "marker": "missingWorkerNeverFallsBackToTheLegacyFields"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
+          "marker": "sharedWorkspaceQuotaStopsConversionAndNeverPublishes"
+        },
+        {
+          "path": "tests/qt/WindowsMediaFoundationConversionTests.cpp",
+          "marker": "cancellingConversionWaitsForTheOwnedWorker"
         }
       ],
       "evidence": [

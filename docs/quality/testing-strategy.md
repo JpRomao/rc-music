@@ -111,6 +111,12 @@ A [coordenação de jobs](../download-jobs.md) acrescenta Catch2 puro para reten
 - usar Arrange–Act–Assert ou Given–When–Then, sem comentários redundantes;
 - diferenças inevitáveis de harness ficam documentadas, mas resultado, tolerância e semântica esperados permanecem iguais.
 
+### Conversão nativa Windows com Media Foundation
+
+O [backend nativo opcional](../download-conversion.md#conversão-nativa-com-media-foundation) tem testes independentes do protocolo binário, main real, codec nativo e composição com supervisor/workspace. Fixtures autenticadas e cópias temporárias próprias cobrem MP3 CBR/VBR/Unicode, AAC/MP4 e WAV/resampling; a saída exige framing MP3 e decodificação integral até EOF em outro processo. Testar ausência de áudio, conteúdo disfarçado/truncado, limites, callback recusado, timeout/cancelamento com drenagem e ausência de fallback quando o worker falta. A recuperação deve conservar pins e a composição assíncrona deve publicar antes do handoff idempotente ao serviço. Regressões legadas e UI são evidências separadas; transferência helper e importador falso não provam mídia da internet ou jornada integral no app.
+
+Fechamento de 2026-11-03: **11/11 CTest, 299 casos Qt**, sem skips; compatibilidade da recuperação na UI **1/1 CTest, 8 casos Qt**. Release opcional com `BUILD_TESTING=OFF` lista zero testes; desktop padrão continua sem backend remoto. Inspeção PE confere worker x64 com imports diretos OS-only, sem imports diretos de MF anteriores à main. Ambiente sem componentes/encoder MF, fixture DRM e clones de IStream intercalados não foram exercitados diretamente. Job/processo não é sandbox e os testes não aprovam produção remota ou distribuição.
+
 ### Host Native Messaging e transporte privado Windows
 
 O [host opcional separado](../browser-extension.md#host-e-transporte-native-messaging-windows) exige Red→Green por fronteira, sem confundir seu alvo real com instalação. `RC_MUSIC_BUILD_NATIVE_MESSAGING` é OFF por padrão; a configuração confiável de produção é vazia, e o processo deve recusar antes de abrir I/O/conexão. Testar origem exata e endpoint limitado de build/composição, sem adotar argv, ambiente ou JSON como configuração. `--parent-window` aceita somente uint64 decimal canônico como metadata inerte: os testes não provam a representação signed intptr_t emitida pelo Chromium, HWND ou Brave reais. O componente Qt Network é separado da biblioteca Qt Core, não acrescenta engine à Lite nem muda `OpenSources` local.

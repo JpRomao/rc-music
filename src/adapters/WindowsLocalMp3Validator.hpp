@@ -2,6 +2,7 @@
 
 #include "FfmpegDownloadCodec.hpp"
 #include "WindowsDownloadProcess.hpp"
+#include "WindowsLocalMediaBackend.hpp"
 
 namespace music_player::m0 {
 struct WindowsLocalMp3ValidatorConfig final {
@@ -9,6 +10,8 @@ struct WindowsLocalMp3ValidatorConfig final {
     QString ffprobe_executable{};
     quint64 max_process_memory_bytes{512 * 1024 * 1024};
     qint64 total_timeout_ms{30 * 60 * 1000};
+    WindowsLocalMediaBackend backend{WindowsLocalMediaBackend::FfmpegLegacy};
+    QString media_foundation_executable{};
 };
 enum class LocalMp3ValidationState { Idle, Validating, Stopping, Validated, Failed, Cancelled };
 struct LocalMp3ValidationUpdate final {
@@ -36,6 +39,7 @@ class WindowsLocalMp3Validator final {
     WindowsDownloadProcess process_{};
     QString path_{};
     QByteArray probe_bytes_{};
+    DownloadProgressCodec progress_{};
     LocalMp3ValidationUpdate update_{};
     Stage stage_{Stage::Probe};
     qint64 started_ms_{0};
