@@ -235,6 +235,23 @@ Antes de cada exclusão foram conferidos path canônico, confinamento, ausência
 
 Foram preservados SDK/dependências, caches ativos desktop ON/OFF e browser, backend TLS, fontes/licenças, fixtures/protocolos/evidências, todos os instaladores e dados pessoais. O cache temporário `installer-build-531c5cc-20261103` cujo delete anterior foi bloqueado não foi novamente selecionado. Não houve mudança de comportamento, nova suíte global, benchmark, instalação ou Registry.
 
+## Limpeza após atualização de bb826b4
+
+Após compilar e verificar o [instalador de `bb826b4`](windows-installer.md#instalador-atualizado-de-bb826b4), a limpeza autorizada removeu **2.141 arquivos / 307.200.630 bytes** de conteúdo lógico (aproximadamente 307 MB), sem backup:
+
+| Seleção | Arquivos | Bytes removidos |
+|---|---:|---:|
+| Binários de `download-network-release` | 71 | 29.927.682 |
+| Binários de dois probes Media Foundation | 17 | 1.312.481 |
+| Binários substituídos de `c2d7c88/app` | 71 | 94.108.240 |
+| Worktree/cache temporários `package-*-bb826b4` | 1.982 | 181.852.227 |
+
+Os probes são `main-red-build` e `root-codec-probe-build` sob `out/product/test-runs/media-foundation-conversion-20261103`. Somente binários inventariados foram removidos desses caches e do runtime antigo; fontes, configurações, QML, manifests, logs e resultados permanecem. Os caches limpos precisam recompilar antes de nova execução. Cada binário antigo do runtime possui contraparte verificada no novo pacote.
+
+Antes da exclusão foram conferidos caminhos canônicos confinados, ausência de reparse points, ignore do Git, tamanhos, hashes e ausência de writers. A worktree limpa foi removida pelo Git, e o cache temporário próprio após inventário. Preservaram-se snapshots de `CMakeCache.txt` e `.ninja_log`. Após a limpeza, zero candidatos restantes, **849 arquivos versionados**, **17 arquivos pendentes** e índice inalterados; 1.308 artefatos preservados foram reconferidos. A verificação independente completa do novo runtime/setup passou novamente.
+
+SDKs/dependências em `q`/`out/m0`, caches desktop/browser ativos, backend TLS, fontes/licenças, protocolos/fixtures/evidências, todos os instaladores e dados pessoais ficaram preservados. A pasta `installer-build-531c5cc-20261103` anteriormente bloqueada permaneceu fora da seleção. Evidência ignorada em `out/product/installer-refresh-bb826b4-20261103/`: plano, script, inventário temporário, resultado e verificação posterior. Não houve mudança de comportamento, suíte global nova, benchmark, instalação ou Registry.
+
 ## Limpeza após atualização de c2d7c88
 
 Após gerar e verificar o [novo instalador](windows-installer.md#instalador-atualizado-de-c2d7c88), foram removidos **1.746 arquivos / 257.312.609 bytes** de conteúdo lógico (aproximadamente 257 MB), sem backup:

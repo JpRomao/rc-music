@@ -62,6 +62,18 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicInstaller.ps1 -RuntimeDirecto
 
 O caminho do compilador no exemplo é o provisionamento local existente, não dependência de código/fixtures M0. Outro ambiente fornece explicitamente seu caminho verificado. `-FormatMatrix` somente deve apontar para uma declaração revisada para aquele runtime; sem argumento, associações ficam OFF. O diretório de saída deve ser novo sob `out/product` ou `out/m0` para compatibilidade. Falhas podem deixar saída parcial sem receipt aprovado; não há rollback, reutilização ou limpeza automática.
 
+## Instalador atualizado de bb826b4
+
+Em 2026-11-03, o [runtime do commit limpo `bb826b4`](windows-runtime.md#runtime-atualizado-de-bb826b4) gerou `out/product/rc-music-installer/rc-music-windows-dev-bb826b4-20261103/RCMusic-Setup.exe`. A compilação direta usou NSIS já provisionado, sem `-FormatMatrix`, com exit 0, `recipe_dirty=false` e associações OFF. As 17 alterações de desenvolvimento do backend Media Foundation foram preservadas fora da worktree de origem e não integram esse pacote.
+
+- Setup: **38.062.463 bytes**, SHA-256 `b7b48018a91003aa6a575af6b5b2df9686d9c87a280c5e82821e1e8f39229a70`, Authenticode **NotSigned**.
+- Receipt: SHA-256 `4652e1758101550e59820a4d70057c9d3b7c1f761e2bdba8acb3f63eb64ba3d6`.
+- Configuração: SHA-256 `495cec5d752ae53502b64cf8820ddfeaad4b57cf170ea1bdabf8a7b3e40c1622`.
+
+A verificação independente conferiu os 554 arquivos físicos, cinco fontes da receita do runtime, nove do instalador, compilador e recibos. O replano OFF sem escrita reproduziu a configuração completa e payload ID `fc14f97fd2b35c879f45d6af0f4817d005a3e83b64dc3f265866f089c5e66c03`. O stub NSIS é x86 GUI; o player é x64 GUI, sem console. Helpers remotos, engine de navegação, extensões e CLI de conversão estão ausentes do payload.
+
+Parser PE **5/5**, fontes NSIS **5/5**, receita **3/3**, Release, lint e grafo de produção passaram. Inventário/hashes foram reconferidos após a [limpeza de 307 MB](development-commands.md#limpeza-após-atualização-de-bb826b4). Evidências em `out/product/installer-refresh-bb826b4-20261103/`, incluindo `independent-verification.json`, `after-cleanup-verification.json` e logs de build. Nenhum setup/player foi iniciado; não houve instalação, Registry, benchmark ou smoke novo de áudio. Lifecycle, assinatura e demais gates de distribuição permanecem pendentes.
+
 ## Instalador atualizado de c2d7c88
 
 Em 2026-11-03, a receita e o [runtime do commit limpo `c2d7c88`](windows-runtime.md#runtime-atualizado-de-c2d7c88) geraram `out/product/rc-music-installer/rc-music-windows-dev-c2d7c88-20261103/RCMusic-Setup.exe`. NSIS já provisionado, exit 0, `recipe_dirty=false`, associações OFF e nenhuma matriz antiga reaproveitada. Os dois arquivos parciais de testes da extensão ficaram fora da worktree usada na montagem.

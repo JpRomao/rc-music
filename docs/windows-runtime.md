@@ -53,6 +53,18 @@ O primeiro compila incrementalmente o app OFF e monta arquivos explícitos de Qt
 
 O smoke usa ambiente reconstruído/offscreen. Build raiz ON seleciona `tests/process/rc_music_test_shell.exe` e `rc_music_local_audio_integration_tests.exe`; histórico mantém nomes anteriores. Nunca trata o app real como instrumentado. O app do payload deve recusar hooks; probes e Qt Test ficam fora dele. A cópia inicial reutiliza o planejador de paths/hashes antes da primeira escrita. Áudio mutado não comprova audibilidade, Explorer, máquina limpa ou inspeção nativa.
 
+## Runtime atualizado de bb826b4
+
+Em 2026-11-03, o commit `bb826b4b00b55ddfa9a3516770ed6a2d15d42ed7` foi compilado em worktree limpa e isolada, preservando os 17 arquivos de desenvolvimento pendentes no checkout principal. CMake Release/x64, `BUILD_TESTING=OFF` e opcionais remotos OFF; SDKs existentes reutilizados. Configure/build, `all_qmllint`, grafo de produção de **253 comandos** e listagem CTest com **zero testes** passaram.
+
+`New-RcMusicLocalRuntime.ps1` montou o runtime dentro da worktree; a cópia final para `out/product/rc-music-local/rc-music-windows-dev-bb826b4-20261103/app` preservou todos os bytes. Conferência independente antes e depois da limpeza:
+
+- **554 arquivos / 96.338.039 bytes**, inventário físico, tamanhos e SHA-256 coincidentes; cinco fontes da receita conferidas e `recipe_dirty=false`.
+- `RCMusic.exe`: **2.104.320 bytes**, SHA-256 `37437fbadb29e5fd75a0aa754e1d1f1f3a712bac9ad7d55f48868dc4272b8d5b`; PE x64, Windows GUI (2), sem console automático.
+- Manifesto: SHA-256 `62ced215b47b980a3cfb8970166d0fe71b267bca0e7539be5ab30b5df784dc9d`.
+
+O runtime completo e o [setup correspondente](windows-installer.md#instalador-atualizado-de-bb826b4) foram preservados. Worktree/cache temporários e binários substituídos foram removidos somente após verificação. Evidência em `out/product/installer-refresh-bb826b4-20261103/`; `runtime-relocation.json` registra a cópia e seus hashes. Não houve execução do player/setup, smoke novo de áudio, instalação, Registry ou benchmark. Produção remota e distribuição continuam em seus gates próprios.
+
 ## Runtime atualizado de c2d7c88
 
 Em 2026-11-03, o commit `c2d7c88ce32d5931e5128c64ab83c456fc06d48b` foi compilado em worktree limpa e isolada, preservando os dois arquivos de testes da extensão ainda pendentes no checkout principal. CMake Release/x64, `BUILD_TESTING=OFF` e todos os opcionais remotos OFF; SDKs existentes reutilizados, sem download ou reconstrução do Qt.
