@@ -95,6 +95,15 @@ O path publicado já inclui `wfp-request.json`; passe-o inteiro, sem acrescentar
 
 Os testes `AppContainerObserverActor` e `AppContainerObserverDriver` usam WFP/processos injetados, frames e arquivos reais próprios; o teste `AppContainerObserverProcess` consulta o próprio processo e cria um helper somente suspenso, que não é retomado, para verificar sinal nativo e exit code 259. O cenário de Stop incerto conserva pins até o fim do executável Qt e publica `actor-retained-fixture:<TEMP próprio>`; somente após confirmar o término do processo e inventariar essa árvore sem reparse é possível limpar a fixture, preservando seu recibo. Não usar esse marcador para remover perfis ou outros diretórios.
 
+## Inventário de metadados do storage
+
+O [modelo de inventário de segurança do storage](../../../docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) tem alvo isolado de teste, sem usar o probe ou criar perfis. Valida somente o consumidor de uma sessão confiável falsa; ainda não possui binding Win32 ou aplicação de política:
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageInventory_tests
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.AppContainerStorageInventory$' --output-on-failure
+```
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.

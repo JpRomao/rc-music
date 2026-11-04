@@ -1368,9 +1368,21 @@
         {
           "path": "tests/qt/WindowsDownloadNetworkLaunchTests.cpp",
           "marker": "activeStreamRetainsPinsThroughCancelAcknowledgement"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
+          "marker": "fourFixedRootsAndTheExpectedAcOverlapAreCountedOnlyOnce"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
+          "marker": "loadedRevokedAndUnknownSourcesNeverReadObjects"
         }
       ],
       "evidence": [
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Modelo limitado de captura de metadados"
+        },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
           "marker": "## Decisão proposta"
@@ -1874,9 +1886,21 @@
         {
           "path": "tests/ui/quick/tst_embedded_browser.qml",
           "marker": "test_repeatedSameFailureReopensTheDismissedWarning"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
+          "marker": "closeDuringValidationIsBusyAndCannotDestroyTheActiveSession"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
+          "marker": "unknownContradictoryOrThrowingCloseRetainsTheSessionWithoutRetry"
         }
       ],
       "evidence": [
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Modelo limitado de captura de metadados"
+        },
         {
           "path": "docs/development-plan.md",
           "marker": "| R1.5 | Harness de timeout, cancelamento, live, privado, headers, expiração e sem seek"
