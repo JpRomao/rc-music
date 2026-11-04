@@ -151,7 +151,11 @@ As capturas de `out/product/test-runs/media-isolation-network-20261104/` registr
 
 `final-regression.log` passou **7/7 CTest**, com **269 passagens Qt e nenhum skip**: observador, protocolo do probe, supervisor, backend nativo, owner, fence e parser puro. É a seleção afetada, não a suíte inteira. `optional-release-build.log` e `lite-release-build.log` passaram; o cache de produção opcional registrou zero testes. Formato **417 C++/62 QML** e fronteira Lite **255 comandos** passaram. A revisão não alterou código do player ou worker de produção.
 
-O `compiled-native-preflight-run.json` registra o executável SHA-256 **`151abba1a1f8d36801db7ae966f4bd0478d05877667b8b6192f606676be81a51`**, exit 1: open **0**, query **5 (AccessDenied)**, close **0**, sem contexto retido, assinatura, perfil ou alteração de política. A consulta da máscara não chegou a ser executada. Uma leitura elevada ainda precisa de autorização; não houve UAC, nova execução física de worker ou criação de perfil neste incremento. O evento real correlacionado permanece sem aceitação, e a produção remota continua OFF.
+O `compiled-native-preflight-run.json` registra a execução inicial sem elevação do executável SHA-256 **`151abba1a1f8d36801db7ae966f4bd0478d05877667b8b6192f606676be81a51`**, exit 1: open **0**, query **5 (AccessDenied)**, close **0**, sem contexto retido, assinatura, perfil ou alteração de política. A consulta da máscara não chegou a ser executada nessa chamada.
+
+Após autorização explícita de uma única leitura elevada, o launcher revisado conferiu esse mesmo hash e executou somente `--network-preflight`. `elevated-preflight-01/run.json` e `stdout.json` registram open, ambas as queries e close **0**, valores U32 de coleta **1** e máscara **0**, exit 1/`KeywordDisabled`, sem contexto retido ou timeout. O launcher PID 46628 e o preflight PID 50780 terminaram. Não houve assinatura de eventos, worker, perfil, instalação ou alteração de firewall/auditoria. A autorização de leitura foi consumida nessa execução; não autoriza habilitar a máscara global.
+
+O evento real correlacionado permanece sem aceitação. O próximo caminho a investigar é uma prova de CLASSIFY_DROP já coletado, com correlação completa e consulta da regra concreta de isolamento, preservando a rejeição atual enquanto o novo contrato não estiver provado. Não substituir a evidência por timeout, ausência de pacote ou inferência estática. A produção remota continua OFF.
 
 ## Restrição de armazenamento ainda pendente
 
