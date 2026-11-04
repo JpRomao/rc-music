@@ -7,7 +7,7 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
-Checkpoint de 2026-11-04: o [oráculo CLASSIFY_DROP do ensaio](media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento) exige evento correlacionado e consulta da regra concreta de App Isolation, sem alterar opções WFP. Fechamento **7/7 CTest / 342 casos Qt**, sem skips. O preflight sem elevação recebeu **acesso negado (5)**; assinatura real com observador separado e driver/worker normais ainda depende de composição e autorização próprias. A prova física de rede, armazenamento/cotas/resíduos e composição instalada continuam pendentes. Downloads de produção permanecem OFF.
+Checkpoint de 2026-11-04: a [preparação do observador separado](media-profile-lifecycle.md#preparação-do-transporte-separado) implementa mensagens limitadas, arquivos privados com pins/lease, captura do token e janela deferida até Subscribe. Fechamento **10/10 CTest / 570 casos Qt**, sem skips. Os componentes estão somente nos testes, ainda sem composição executável ou nova elevação. Assinatura real com driver/worker normais, armazenamento/cotas/resíduos e composição instalada continuam pendentes. Downloads de produção permanecem OFF.
 
 ## 1. Regras de uso
 
@@ -745,7 +745,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — CLASSIFY_DROP e regra concreta de App Isolation
+### Checkpoint atual — transporte do observador separado
+
+Incremento de 2026-11-04: três [componentes exclusivos de teste](media-profile-lifecycle.md#preparação-do-transporte-separado) preparam request/ready/result fechados de 16 KiB, nonce/SHA dos bytes exatos, identidade tipada e arquivos novos com owner/DACL protegida de três ACEs. Pins/lease impedem escrita/troca durante leitura; reparse, hardlink, segurança alterada e frames inválidos são recusados sem reparo. Captura somente leitura do token separa driver normal, observador elevado e vínculo SID/sessão. O observador calcula opcionalmente uma janela de 15 s imediatamente antes de Subscribe; filtro/callback/report usam o mesmo intervalo. O codec transporta diagnósticos, sem autenticar processos ou fabricar ACK/prova.
+
+TDD: janela **154 passagens/27 falhas → 181/181**, protocolo **105/8 → 113/113**, identidade **37/11 → 48/48** e arquivos **15/19 → 34/34**. Três falhas intermediárias de fixtures foram corrigidas conferindo a ACL física normalizada pelo Windows e retendo o handle de mutação antes dos pins; não houve relaxamento do contrato ou mudança do código de arquivos para acomodá-las. Fechamento **10/10 CTest / 570 passagens Qt, sem skips**, Release do probe/alvos focados e Lite, formato **426 C++/62 QML** e grafo Lite **255 comandos** passaram. Evidências em `out/product/test-runs/media-observer-handoff-20261104/`; o registro central detalha limites e revisões.
+
+Próximo passo: compor esses componentes no fluxo manual, verificando PID/criação/imagem/token do driver e observador, raiz fresca, helper autenticado, Ready antes do launch, Result após Stop e término físico antes de cleanup. Ainda não há novos argumentos, autoelevação ou link desses três componentes no probe. O token atual foi lido nos testes; outro usuário de UAC e writers SYSTEM/Administrators não foram exercitados. A autorização anterior do preflight foi consumida e não autoriza assinatura. Rede física, política de escrita/cotas/resíduos, perfil preservado e composição instalada continuam abertos; ADR-0011 Proposto e downloads OFF.
+
+### Checkpoint anterior — CLASSIFY_DROP e regra concreta de App Isolation
 
 Incremento de 2026-11-04: o [oráculo separado ClassifyIsolation](media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento) admite máscara zero com coleta ligada, preservando CAPABILITY_DROP como padrão. Um candidato precisa de todas as identidades/tupla/janela, direção 0x3901 e loopback explícito. Depois de Unsubscribe reconhecido, queries exatas Filter/Layer na mesma engine exigem IDs iguais, filtro habilitado BLOCK, provider/sublayer App Isolation e ambas as camadas ALE_AUTH_CONNECT_V4. Erro, ausência, divergência, callout ou Close incerto não produzem prova. Nenhuma consulta ocorre no callback; metadados atuais não são snapshot histórico.
 

@@ -42,7 +42,8 @@ class AppContainerNetworkObserver final {
         FilterQuery,
         LayerQuery,
         IsolationRule,
-        Exception
+        Exception,
+        WindowClock
     };
     struct Config final {
         std::wstring executable{};
@@ -50,6 +51,7 @@ class AppContainerNetworkObserver final {
         std::uint16_t remote_port{};
         std::uint64_t begin_filetime{}, end_filetime{};
         EvidenceKind evidence_kind{EvidenceKind::CapabilityDrop};
+        bool window_at_subscribe{false};
     };
     enum HeaderField : std::uint32_t {
         IpVersion = 1,
@@ -126,6 +128,7 @@ class AppContainerNetworkObserver final {
         bool rule_verified{false};
         FilterResult filter_result{};
         LayerResult layer_result{};
+        std::uint64_t window_begin_filetime{}, window_end_filetime{};
     };
     struct PreflightReport final {
         bool available{false}, context_retained{false};
@@ -175,6 +178,7 @@ class AppContainerNetworkObserver final {
         std::function<std::uint32_t(Handle)> close{};
         std::function<FilterResult(Handle, std::uint64_t)> get_filter{};
         std::function<LayerResult(Handle, std::uint16_t)> get_layer{};
+        std::function<std::uint64_t()> current_filetime{};
     };
 
     // These factories bind functions only. Only start/preflight call the OS.

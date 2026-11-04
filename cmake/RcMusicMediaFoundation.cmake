@@ -55,7 +55,7 @@ if(BUILD_TESTING)
         LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
+    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerObserverProtocol AppContainerObserverFiles AppContainerObserverIdentity AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
@@ -67,7 +67,15 @@ if(BUILD_TESTING)
             target_sources(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp")
             target_link_libraries(${target} PRIVATE fwpuclnt advapi32)
         endif()
-        target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
+        if(unit STREQUAL "AppContainerObserverProtocol")
+            target_sources(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerObserverProtocol.cpp")
+        endif()
+        if(unit STREQUAL "AppContainerObserverFiles" OR unit STREQUAL "AppContainerObserverIdentity")
+            target_sources(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/${unit}.cpp")
+            target_link_libraries(${target} PRIVATE advapi32)
+        endif()
+        target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
         set_target_properties(${target} PROPERTIES AUTOMOC ON)
         rc_music_configure_cpp(${target})
         target_compile_definitions(${target} PRIVATE

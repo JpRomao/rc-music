@@ -47,10 +47,12 @@ bool validKind(const Observer::EvidenceKind kind) {
     return kind == Observer::EvidenceKind::CapabilityDrop || kind == Observer::EvidenceKind::ClassifyIsolation;
 }
 bool validConfig(const Observer::Config& config) {
+    const bool valid_window = config.window_at_subscribe
+                                  ? config.begin_filetime == 0 && config.end_filetime == 0
+                                  : config.begin_filetime <= config.end_filetime &&
+                                        config.end_filetime - config.begin_filetime <= Observer::maximum_window_ticks;
     return validExecutable(config.executable) && profileSid(config.package_sid) && validSid(config.user_sid) &&
-           config.remote_port != 0 && config.begin_filetime <= config.end_filetime &&
-           config.end_filetime - config.begin_filetime <= Observer::maximum_window_ticks &&
-           validKind(config.evidence_kind);
+           config.remote_port != 0 && valid_window && validKind(config.evidence_kind);
 }
 bool same(const std::span<const std::uint8_t> left, const std::span<const std::uint8_t> right) {
     return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin());
@@ -187,7 +189,7 @@ struct AppContainerNetworkObserver::Impl final {
         if (!accepting || report.matched || report.first_candidate ||
             (event.fields & required_fields) != required_fields || event.ip_version != 4 || event.protocol != 6 ||
             event.remote_ipv4 != loopback_ipv4 || event.remote_port != config.remote_port ||
-            event.timestamp < config.begin_filetime || event.timestamp > config.end_filetime ||
+            event.timestamp < report.window_begin_filetime || event.timestamp > report.window_end_filetime ||
             event.is_loopback != 1 || !event.filter_id || !same(event.app_id, app_id) ||
             !same(event.user_sid, config.user_sid) || !same(event.package_sid, config.package_sid))
             return;
@@ -325,6 +327,7 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
             return snapshot();
         }
         if (!preflightCalls(value.calls) || !value.calls.app_id || !value.calls.subscribe || !value.calls.unsubscribe ||
+            (value.config.window_at_subscribe && !value.calls.current_filetime) ||
             (value.config.evidence_kind == EvidenceKind::ClassifyIsolation &&
              (!value.calls.get_filter || !value.calls.get_layer))) {
             report.reason = Reason::MissingCall;
@@ -353,6 +356,27 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
             value.failed(report);
             return snapshot();
         }
+        auto begin = value.config.begin_filetime;
+        auto end = value.config.end_filetime;
+        if (value.config.window_at_subscribe) {
+            std::uint64_t now{};
+            try {
+                now = value.calls.current_filetime();
+            } catch (...) {
+                report.reason = Reason::WindowClock;
+                value.failed(report);
+                return snapshot();
+            }
+            if (!now || now > std::numeric_limits<std::uint64_t>::max() - maximum_window_ticks) {
+                report.reason = Reason::WindowClock;
+                value.failed(report);
+                return snapshot();
+            }
+            begin = now;
+            end = now + maximum_window_ticks;
+        }
+        report.window_begin_filetime = begin;
+        report.window_end_filetime = end;
         const SubscriptionFilter filter{value.app_id,
                                         loopback_ipv4,
                                         6,
@@ -360,8 +384,8 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
                                         value.config.evidence_kind == EvidenceKind::CapabilityDrop
                                             ? EventKind::CapabilityDrop
                                             : EventKind::ClassifyDrop,
-                                        value.config.begin_filetime,
-                                        value.config.end_filetime};
+                                        begin,
+                                        end};
         // All immutable identity storage and the accepting context exist before
         // Subscribe: the callback may run before that call returns.
         report.state = State::Observing;
@@ -681,6 +705,7 @@ AppContainerNetworkObserver::Calls AppContainerNetworkObserver::systemCalls() {
                 return static_cast<std::uint32_t>(FwpmEngineClose0(reinterpret_cast<HANDLE>(engine)));
             },
         .get_filter = [](const Handle engine, const std::uint64_t id) { return nativeFilter(engine, id); },
-        .get_layer = [](const Handle engine, const std::uint16_t id) { return nativeLayer(engine, id); }};
+        .get_layer = [](const Handle engine, const std::uint16_t id) { return nativeLayer(engine, id); },
+        .current_filetime = [] { return currentFiletime(); }};
 }
 } // namespace music_player::sandbox_probe

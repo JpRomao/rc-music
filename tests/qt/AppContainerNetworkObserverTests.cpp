@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 using Observer = music_player::sandbox_probe::AppContainerNetworkObserver;
@@ -48,6 +49,10 @@ struct Fake final {
     std::uint16_t queried_layer{};
     bool throw_filter{false}, throw_layer{false};
     std::function<void()> during_filter{}, during_layer{};
+    std::uint64_t clock_value{200'000'000};
+    unsigned clock_calls{};
+    bool throw_clock{false};
+    std::function<void()> during_clock{};
     void deliver(const Observer::EventView& value) {
         if (callback)
             callback(context, value);
@@ -126,6 +131,16 @@ Observer::Calls calls(const std::shared_ptr<Fake>& fake) {
                 if (fake->throw_layer)
                     throw std::runtime_error("layer query");
                 return fake->layer_result;
+            },
+        .current_filetime =
+            [fake] {
+                fake->log.push_back("clock");
+                ++fake->clock_calls;
+                if (fake->during_clock)
+                    fake->during_clock();
+                if (fake->throw_clock)
+                    throw std::runtime_error("window clock");
+                return fake->clock_value;
             }};
 }
 struct Harness final {
@@ -149,6 +164,11 @@ struct Harness final {
                 1};
     }
     void classify() { config.evidence_kind = Observer::EvidenceKind::ClassifyIsolation; }
+    void deferredWindow() {
+        config.begin_filetime = 0;
+        config.end_filetime = 0;
+        config.window_at_subscribe = true;
+    }
     Observer::EventView classifyEvent() const {
         auto result = event();
         result.kind = Observer::EventKind::ClassifyDrop;
@@ -996,6 +1016,280 @@ class AppContainerNetworkObserverTests final : public QObject {
         QCOMPARE(report.filter_result.query_end_filetime, std::uint64_t{151'000'010});
         QCOMPARE(report.layer_result.query_begin_filetime, std::uint64_t{151'000'020});
         QCOMPARE(report.layer_result.query_end_filetime, std::uint64_t{151'000'030});
+    }
+    void explicitWindowsReportTheirBoundsWithoutRequiringOrReadingAClock_data() {
+        QTest::addColumn<bool>("classify");
+        QTest::newRow("capability") << false;
+        QTest::newRow("classify") << true;
+    }
+    void explicitWindowsReportTheirBoundsWithoutRequiringOrReadingAClock() {
+        QFETCH(bool, classify);
+        Harness h;
+        if (classify)
+            h.classify();
+        auto injected = calls(h.fake);
+        injected.current_filetime = {};
+        h.observer = std::make_unique<Observer>(h.config, std::move(injected));
+        QCOMPARE(h.observer->snapshot().window_begin_filetime, std::uint64_t{0});
+        const auto started = h.observer->start();
+        QVERIFY(started.available);
+        QCOMPARE(started.window_begin_filetime, h.config.begin_filetime);
+        QCOMPARE(started.window_end_filetime, h.config.end_filetime);
+        const auto stopped = h.observer->stop();
+        QCOMPARE(stopped.window_begin_filetime, started.window_begin_filetime);
+        QCOMPARE(stopped.window_end_filetime, started.window_end_filetime);
+        QCOMPARE(h.fake->clock_calls, 0U);
+    }
+    void deferredConstructionAndPreflightNeverReadTheClock() {
+        Harness h;
+        h.deferredWindow();
+        const auto bound = calls(h.fake);
+        QVERIFY(h.fake->log.empty());
+        h.observer = std::make_unique<Observer>(h.config, bound);
+        QCOMPARE(h.observer->snapshot().state, Observer::State::Idle);
+        QCOMPARE(h.observer->snapshot().window_begin_filetime, std::uint64_t{0});
+        QCOMPARE(h.observer->snapshot().window_end_filetime, std::uint64_t{0});
+        const auto report = Observer::preflight(bound);
+        QVERIFY(report.available);
+        h.observer.reset();
+        QCOMPARE(h.fake->clock_calls, 0U);
+        QVERIFY((h.fake->log == std::vector<std::string>{"open", "collection", "keywords", "close"}));
+    }
+    void deferredClockIsReadExactlyOnceAfterQueriesAndBeforeSubscribe_data() {
+        QTest::addColumn<bool>("classify");
+        QTest::newRow("capability") << false;
+        QTest::newRow("classify") << true;
+    }
+    void deferredClockIsReadExactlyOnceAfterQueriesAndBeforeSubscribe() {
+        QFETCH(bool, classify);
+        Harness h;
+        if (classify)
+            h.classify();
+        h.deferredWindow();
+        h.construct();
+        const auto started = h.observer->start();
+        QVERIFY(started.available);
+        QCOMPARE(h.fake->clock_calls, 1U);
+        QCOMPARE(started.window_begin_filetime, h.fake->clock_value);
+        QCOMPARE(started.window_end_filetime, h.fake->clock_value + Observer::maximum_window_ticks);
+        QCOMPARE(h.fake->filter.begin_filetime, started.window_begin_filetime);
+        QCOMPARE(h.fake->filter.end_filetime, started.window_end_filetime);
+        QVERIFY((h.fake->log ==
+                 std::vector<std::string>{"app-id", "open", "collection", "keywords", "clock", "subscribe"}));
+        QCOMPARE(h.observer->start().state, Observer::State::Observing);
+        const auto stopped = h.observer->stop();
+        QCOMPARE(stopped.state, Observer::State::Stopped);
+        QCOMPARE(stopped.window_begin_filetime, started.window_begin_filetime);
+        QCOMPARE(stopped.window_end_filetime, started.window_end_filetime);
+        QCOMPARE(h.fake->clock_calls, 1U);
+    }
+    void deferredWindowsRequireZeroExplicitBoundsBeforeAnyCall_data() {
+        QTest::addColumn<int>("kind");
+        for (int i = 0; i < 3; ++i)
+            QTest::newRow(qPrintable(QString::number(i))) << i;
+    }
+    void deferredWindowsRequireZeroExplicitBoundsBeforeAnyCall() {
+        QFETCH(int, kind);
+        Harness h;
+        h.deferredWindow();
+        h.config.begin_filetime = kind == 0 ? 0 : 1;
+        h.config.end_filetime = kind == 1 ? 0 : 1;
+        h.construct();
+        const auto report = h.observer->start();
+        QCOMPARE(report.reason, Observer::Reason::InvalidConfiguration);
+        QVERIFY(!report.available);
+        QVERIFY(h.fake->log.empty());
+    }
+    void deferredWindowsRequireTheClockPortBeforeOpeningAnything() {
+        Harness h;
+        h.deferredWindow();
+        auto injected = calls(h.fake);
+        injected.current_filetime = {};
+        h.observer = std::make_unique<Observer>(h.config, std::move(injected));
+        const auto report = h.observer->start();
+        QCOMPARE(report.reason, Observer::Reason::MissingCall);
+        QVERIFY(!report.available);
+        QVERIFY(h.fake->log.empty());
+    }
+    void deferredClockIsNotReadWhenAdmissionFailsEarlier_data() {
+        QTest::addColumn<int>("kind");
+        for (int i = 0; i < 4; ++i)
+            QTest::newRow(qPrintable(QString::number(i))) << i;
+    }
+    void deferredClockIsNotReadWhenAdmissionFailsEarlier() {
+        QFETCH(int, kind);
+        Harness h;
+        h.deferredWindow();
+        if (kind == 0)
+            h.fake->application.error = 5;
+        if (kind == 1)
+            h.fake->engine = {5, 0};
+        if (kind == 2)
+            h.fake->collection.error = 5;
+        if (kind == 3)
+            h.fake->keywords.error = 5;
+        h.construct();
+        const auto report = h.observer->start();
+        QVERIFY(!report.available);
+        QCOMPARE(h.fake->clock_calls, 0U);
+        QCOMPARE(report.window_begin_filetime, std::uint64_t{0});
+        QCOMPARE(report.window_end_filetime, std::uint64_t{0});
+        QCOMPARE(std::count(h.fake->log.begin(), h.fake->log.end(), "subscribe"), 0);
+    }
+    void deferredClockRejectsZeroOverflowAndExceptionsBeforeSubscribe_data() {
+        QTest::addColumn<int>("kind");
+        for (int i = 0; i < 4; ++i)
+            QTest::newRow(qPrintable(QString::number(i))) << i;
+    }
+    void deferredClockRejectsZeroOverflowAndExceptionsBeforeSubscribe() {
+        QFETCH(int, kind);
+        Harness h;
+        h.deferredWindow();
+        if (kind == 0)
+            h.fake->clock_value = 0;
+        if (kind == 1)
+            h.fake->clock_value = std::numeric_limits<std::uint64_t>::max() - Observer::maximum_window_ticks + 1;
+        if (kind == 2)
+            h.fake->clock_value = std::numeric_limits<std::uint64_t>::max();
+        if (kind == 3)
+            h.fake->throw_clock = true;
+        h.construct();
+        const auto report = h.observer->start();
+        QCOMPARE(report.state, Observer::State::Unavailable);
+        QCOMPARE(report.reason, Observer::Reason::WindowClock);
+        QVERIFY(!report.available && !report.matched && !report.context_retained);
+        QCOMPARE(report.window_begin_filetime, std::uint64_t{0});
+        QCOMPARE(report.window_end_filetime, std::uint64_t{0});
+        QCOMPARE(report.close_error, 0U);
+        QCOMPARE(report.subscribe_error, Observer::not_called);
+        QCOMPARE(h.fake->clock_calls, 1U);
+        QVERIFY(
+            (h.fake->log == std::vector<std::string>{"app-id", "open", "collection", "keywords", "clock", "close"}));
+    }
+    void deferredClockAcceptsBothNonoverflowingExtremes_data() {
+        QTest::addColumn<bool>("maximum");
+        QTest::newRow("minimum") << false;
+        QTest::newRow("maximum") << true;
+    }
+    void deferredClockAcceptsBothNonoverflowingExtremes() {
+        QFETCH(bool, maximum);
+        Harness h;
+        h.deferredWindow();
+        h.fake->clock_value = maximum ? std::numeric_limits<std::uint64_t>::max() - Observer::maximum_window_ticks : 1;
+        h.construct();
+        const auto report = h.observer->start();
+        QVERIFY(report.available);
+        QCOMPARE(report.window_begin_filetime, h.fake->clock_value);
+        QCOMPARE(report.window_end_filetime, h.fake->clock_value + Observer::maximum_window_ticks);
+    }
+    void deferredClockFailurePreservesUnconfirmedEngineCleanupWithoutRetry() {
+        Harness h;
+        h.deferredWindow();
+        h.fake->clock_value = 0;
+        h.fake->close_error = 5;
+        h.construct();
+        const auto report = h.observer->start();
+        QCOMPARE(report.state, Observer::State::StopUnconfirmed);
+        QCOMPARE(report.reason, Observer::Reason::Close);
+        QVERIFY(report.context_retained && !report.available && !report.matched);
+        QCOMPARE(report.close_error, 5U);
+        const auto count = h.fake->log.size();
+        h.observer.reset();
+        QCOMPARE(h.fake->log.size(), count);
+        QCOMPARE(h.fake->clock_calls, 1U);
+    }
+    void deferredClockReentryCannotSubscribeOrReadTheClockAgain() {
+        Harness h;
+        h.deferredWindow();
+        bool idle = false;
+        h.fake->during_clock = [&] {
+            const auto before = h.observer->snapshot();
+            const auto nestedStart = h.observer->start();
+            const auto nestedStop = h.observer->stop();
+            idle = before.state == Observer::State::Idle && before.window_begin_filetime == 0 &&
+                   nestedStart.state == Observer::State::Idle && nestedStop.state == Observer::State::Idle;
+        };
+        h.construct();
+        QVERIFY(h.observer->start().available);
+        QVERIFY(idle);
+        QCOMPARE(h.fake->clock_calls, 1U);
+        QCOMPARE(std::count(h.fake->log.begin(), h.fake->log.end(), "subscribe"), 1);
+    }
+    void deferredMatcherUsesTheEffectiveInclusiveWindow_data() {
+        QTest::addColumn<bool>("classify");
+        QTest::addColumn<int>("edge");
+        for (bool classify : {false, true})
+            for (int edge = 0; edge < 4; ++edge)
+                QTest::newRow(qPrintable(QString::number(classify) + "-" + QString::number(edge))) << classify << edge;
+    }
+    void deferredMatcherUsesTheEffectiveInclusiveWindow() {
+        QFETCH(bool, classify);
+        QFETCH(int, edge);
+        Harness h;
+        if (classify)
+            h.classify();
+        h.deferredWindow();
+        h.construct();
+        const auto started = h.observer->start();
+        QVERIFY(started.available);
+        auto event = classify ? h.classifyEvent() : h.event();
+        event.timestamp = edge < 2 ? h.fake->clock_value : h.fake->clock_value + Observer::maximum_window_ticks;
+        if (edge == 0)
+            --event.timestamp;
+        if (edge == 3)
+            ++event.timestamp;
+        h.fake->deliver(event);
+        const auto stopped = h.observer->stop();
+        const bool expected = edge == 1 || edge == 2;
+        QCOMPARE(stopped.matched, expected);
+        QCOMPARE(stopped.first_match.has_value(), expected);
+        QCOMPARE(stopped.rule_verified, classify && expected);
+        QCOMPARE(stopped.window_begin_filetime, h.fake->clock_value);
+        QCOMPARE(stopped.window_end_filetime, h.fake->clock_value + Observer::maximum_window_ticks);
+    }
+    void deferredWindowIsPublishedBeforeReentrantOrConcurrentSubscribeCallbacks_data() {
+        QTest::addColumn<bool>("classify");
+        QTest::addColumn<bool>("concurrent");
+        for (bool classify : {false, true})
+            for (bool concurrent : {false, true})
+                QTest::newRow(qPrintable(QString::number(classify) + "-" + QString::number(concurrent)))
+                    << classify << concurrent;
+    }
+    void deferredWindowIsPublishedBeforeReentrantOrConcurrentSubscribeCallbacks() {
+        QFETCH(bool, classify);
+        QFETCH(bool, concurrent);
+        Harness h;
+        if (classify)
+            h.classify();
+        h.deferredWindow();
+        bool coherent = false;
+        auto callback = [&] {
+            const auto ready = h.observer->snapshot();
+            auto event = classify ? h.classifyEvent() : h.event();
+            event.timestamp = h.fake->clock_value;
+            h.fake->deliver(event);
+            const auto after = h.observer->snapshot();
+            coherent = ready.state == Observer::State::Observing &&
+                       ready.window_begin_filetime == h.fake->filter.begin_filetime &&
+                       ready.window_end_filetime == h.fake->filter.end_filetime &&
+                       after.window_begin_filetime == h.fake->clock_value &&
+                       (classify ? after.first_candidate.has_value() && !after.matched : after.matched);
+        };
+        h.fake->during_subscribe = [&] {
+            if (concurrent) {
+                std::thread worker(callback);
+                worker.join();
+            } else {
+                callback();
+            }
+        };
+        h.construct();
+        QVERIFY(h.observer->start().available);
+        QVERIFY(coherent);
+        const auto report = h.observer->stop();
+        QVERIFY(report.matched && report.first_match);
+        QCOMPARE(report.first_match->timestamp, h.fake->clock_value);
+        QCOMPARE(h.fake->clock_calls, 1U);
     }
     void activeDestructionStopsOnceAndInjectedExceptionsDoNotEscape() {
         Harness h;

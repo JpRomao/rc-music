@@ -66,6 +66,17 @@ Um candidato CLASSIFY_DROP exige todas as identidades/tupla/janela e ainda layer
 
 O preflight Classify compilado e executado normalmente retornou AccessDenied 5; nenhum evento real foi aceito. Executar todo o driver elevado provaria somente esse contexto. O próximo ensaio deve manter driver/owner/worker normais e usar observador elevado separado, após composição/testes e autorização específica. A única leitura elevada anterior já foi consumida; este modo não concede elevação, instala serviços ou altera permissões WFP.
 
+### Componentes de troca ainda sem composição
+
+Os testes `AppContainerObserverProtocol`, `AppContainerObserverFiles` e `AppContainerObserverIdentity` preparam [mensagens, arquivos privados e leitura de token](../../../docs/media-profile-lifecycle.md#preparação-do-transporte-separado). São alvos exclusivos de `BUILD_TESTING`, ainda sem link ou novos argumentos no probe. Não iniciam observador elevado nem autorizam sua execução. A janela opcional do observador começa imediatamente antes de Subscribe, com relógio injetado nos testes.
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerObserverProtocol_tests rc_music_AppContainerObserverFiles_tests rc_music_AppContainerObserverIdentity_tests rc_music_AppContainerNetworkObserver_tests
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R 'rc_music.download-network.(AppContainerObserver(Protocol|Files|Identity)|AppContainerNetworkObserver)$' --output-on-failure
+```
+
+O codec é puro. Os testes de arquivos criam somente fixtures TEMP próprias, inclusive hardlinks/junctions entre objetos da mesma fixture e ACLs para testar recusa; os testes de identidade leem o token do próprio processo. Nenhum deles cria perfil, assina WFP, eleva, modifica privilégios ou usa arquivos pessoais. Caminhos/SIDs autenticados, nascimento/imagem dos processos, Ready antes do helper, Result após Stop e ACK físico ainda precisam ser compostos no fluxo manual. Outro usuário de UAC e writers SYSTEM/Administrators não foram exercitados fisicamente; recusa de acesso deve permanecer falha, sem reparo de permissões.
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.
