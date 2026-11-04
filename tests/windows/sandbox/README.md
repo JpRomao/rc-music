@@ -7,8 +7,8 @@ Este programa prepara o ensaio físico do [ADR-0011](../../../docs/architecture/
 No [ambiente MSVC/Qt existente](../../../docs/desktop-build.md), com os opcionais de rede e testes configurados:
 
 ```powershell
-cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_media_sandbox_probe rc_music_AppContainerProbeProtocol_tests --parallel 3
-ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music\.download-network\.(MediaSandboxProbeParser|AppContainerProbeProtocol)$' -V
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_media_sandbox_probe rc_music_AppContainerProbeProtocol_tests rc_music_AppContainerNetworkObserver_tests --parallel 3
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music\.download-network\.(MediaSandboxProbeParser|AppContainerProbeProtocol|AppContainerNetworkObserver)$' -V
 ```
 
 O helper é Win32 `/MT`, sem Qt; o driver usa os adapters do produto. `--help`, argumentos ausentes/inválidos e `--self-test` não alcançam o modo que altera o host. O autoteste trata nomes DOS reservados, formato e limites do protocolo e confirmação de limpeza somente após criação bem-sucedida e ACKs.
@@ -33,6 +33,24 @@ O teste confere token/SID/Low/capabilities vazias, stdio e entrada de leitura; t
 A restrição de descendentes pertence ao Job Object. O erro bruto 1816 (`ERROR_NOT_ENOUGH_QUOTA`) não comprova sozinho qual quota atuou. O supervisor associa uma completion port privada ao Job antes da execução e pode observar `JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT`. O driver aceita essa evidência específica junto de 1816 somente sem notificações de limite de memória de processo/Job; registra `job_active_process_limit_witnessed`, os flags de memória e `effective_checks`, preservando `checks` e o erro bruto. A notificação é evidência de limite, nunca ACK de processo/pipes; ausência da mensagem significa não observada, sem aprovação por inferência.
 
 UDP é um diagnóstico separado: o helper faz `sendto` somente para `127.0.0.1:udp_port`, e `udp_explicit_denial` exige `WSAEACCES` explícito. Sucesso do envio ou qualquer outro erro não confirma negação. UDP não preenche `LoopbackDenied`, não altera `errors[6]` e não transforma timeout TCP em aprovação. O resultado global continua exigindo os checks estritos, as jornadas do owner/mídia e cleanup reconhecido.
+
+## Observação de bloqueio de rede pelo Windows
+
+O driver possui um observador WFP somente para o ensaio. A biblioteca, as APIs e o link `fwpuclnt` ficam nos alvos de teste, fora do player, worker de mídia e instaladores. O preflight abaixo abre uma sessão local, consulta coleta e máscara existentes e fecha a sessão; não cria perfil, assinatura de eventos ou listener:
+
+```powershell
+& 'out/product/m1-desktop-release-on-20260906/rc_music_media_sandbox_probe.exe' --network-preflight
+```
+
+O JSON registra erros Win32 de abertura, consultas e fechamento. `available` exige coleta U32 igual a 1, bit `FWPM_NET_EVENT_KEYWORD_CAPABILITY_DROP` na máscara U32 e fechamento confirmado. Isso avalia os pré-requisitos de leitura; `network_isolation_passed` continua falso. Coleta desligada, tipo desconhecido, acesso negado ou erro preservam a indisponibilidade. Não há `SetOption`, mudança de ACL, regra ou configuração de firewall. O preflight aceita somente esse argumento isolado, sem destino ou opções de perfil.
+
+No ensaio físico, o driver tenta observar somente `CAPABILITY_DROP`, com filtro nativo por app ID do executável privado, TCP, destino `127.0.0.1` e porta efêmera do listener. O callback exige os flags de versão/protocolo/destino/porta/app ID/usuário/pacote, compara binariamente os três identificadores e confere uma janela FILETIME de até 15 segundos. A capability ausente precisa ser conhecida, o filter ID não nulo e `isLoopback` exatamente TRUE. São retidos somente timestamp, filter ID e capability ID da primeira correspondência; não há gravação ou cópia de tráfego de outras aplicações. `CLASSIFY_DROP` e eventos de allow são recusados. O evento aceito prova bloqueio do tráfego correlacionado por capability ausente; sua estrutura não identifica direção, PID ou layer. [Evento de bloqueio](https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_net_event_capability_drop0), [campos de identidade](https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_net_event_header2).
+
+Uma correspondência só complementa o timeout TCP 10060 depois de start e stop confirmados. Nunca altera o erro bruto nem aprova uma conexão que teve sucesso. Sem evento ou com teardown incerto, timeout permanece inconclusivo. `WSAEACCES` conserva o oráculo original, sem exigir WFP. O observador não reconhece parada de processo/pipes e não concede autoridade de cleanup de perfil.
+
+O contexto está completo antes da assinatura, inclusive se o callback competir com o retorno de Subscribe. Unsubscribe ocorre fora do callback e sem seus locks; sucesso aguarda callbacks ativos. Falha conserva contexto, engine e assinatura até a saída do driver, fecha admissão de correspondências e não é repetida pelo destrutor. Os testes automáticos injetam chamadas e eventos; não consultam WFP real. [Contrato de unsubscribe](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmneteventunsubscribe0).
+
+## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.
 

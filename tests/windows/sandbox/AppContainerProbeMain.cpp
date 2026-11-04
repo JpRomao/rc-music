@@ -6,6 +6,7 @@
 
 #include <Sddl.h>
 
+#include "AppContainerNetworkObserver.hpp"
 #include "AppContainerProbeProtocol.hpp"
 #include "adapters/WindowsDownloadAppContainer.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
@@ -39,8 +40,9 @@
 
 using namespace music_player::m0;
 namespace protocol = music_player::sandbox_probe;
+using NetworkObserver = protocol::AppContainerNetworkObserver;
 namespace {
-enum class Mode { Refuse, Help, SelfTest, HostProbe };
+enum class Mode { Refuse, Help, SelfTest, NetworkPreflight, HostProbe };
 struct Options final {
     Mode mode{Mode::Refuse};
     QString evidence;
@@ -48,6 +50,11 @@ struct Options final {
 bool mayRemoveProfile(bool created, bool native_acks) { return created && native_acks; }
 bool confirmedProfileCleanup(bool create_succeeded, bool remains_owned, bool native_acks) {
     return create_succeeded && !remains_owned && native_acks;
+}
+bool witnessedNetworkDenial(DWORD error, const NetworkObserver::Report& report) {
+    return error == WSAETIMEDOUT && report.state == NetworkObserver::State::Stopped && report.available &&
+           report.matched && report.first_match && report.reason == NetworkObserver::Reason::None &&
+           !report.context_retained && report.unsubscribe_error == ERROR_SUCCESS && report.close_error == ERROR_SUCCESS;
 }
 QString workspace() { return QDir::fromNativeSeparators(QString::fromUtf8(RC_MUSIC_SANDBOX_WORKSPACE_ROOT)); }
 
@@ -80,6 +87,8 @@ Options parse(const QStringList& arguments) {
         return {Mode::Help, {}};
     if (arguments == QStringList{QStringLiteral("--self-test")})
         return {Mode::SelfTest, {}};
+    if (arguments == QStringList{QStringLiteral("--network-preflight")})
+        return {Mode::NetworkPreflight, {}};
     if (arguments.size() == 3 && arguments[0] == QStringLiteral("--allow-profile-changes") &&
         arguments[1] == QStringLiteral("--evidence-dir") && evidencePath(arguments[2]))
         return {Mode::HostProbe, QDir::fromNativeSeparators(arguments[2])};
@@ -92,6 +101,8 @@ int selfTest() {
         QStringList{QStringLiteral("--allow-profile-changes")},
         QStringList{QStringLiteral("--evidence-dir"), evidence},
         QStringList{QStringLiteral("--self-test"), QStringLiteral("--allow-profile-changes")},
+        QStringList{QStringLiteral("--network-preflight"), QStringLiteral("--allow-profile-changes")},
+        QStringList{QStringLiteral("--network-preflight"), QStringLiteral("--evidence-dir"), evidence},
         QStringList{QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), evidence,
                     QStringLiteral("--profile-name"), QStringLiteral("existing-profile")},
         QStringList{QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), QStringLiteral(".")},
@@ -107,6 +118,60 @@ int selfTest() {
         parse({QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), evidence}).mode !=
             Mode::HostProbe)
         return 2;
+    if (parse({QStringLiteral("--network-preflight")}).mode != Mode::NetworkPreflight) {
+        std::puts("FAIL parser refuses the standalone read-only network preflight");
+        return 30;
+    }
+    NetworkObserver::Report network;
+    network.state = NetworkObserver::State::Stopped;
+    network.available = true;
+    network.matched = true;
+    network.unsubscribe_error = ERROR_SUCCESS;
+    network.close_error = ERROR_SUCCESS;
+    network.first_match = NetworkObserver::Match{1, 2, 0};
+    if (!witnessedNetworkDenial(WSAETIMEDOUT, network)) {
+        std::puts("FAIL a correlated capability drop with confirmed teardown cannot complement timeout");
+        return 31;
+    }
+    if (witnessedNetworkDenial(ERROR_SUCCESS, network)) {
+        std::puts("FAIL network evidence overrides a successful connection");
+        return 32;
+    }
+    for (const auto state : {NetworkObserver::State::Idle, NetworkObserver::State::Observing,
+                             NetworkObserver::State::Unavailable, NetworkObserver::State::StopUnconfirmed}) {
+        auto partial = network;
+        partial.state = state;
+        if (witnessedNetworkDenial(WSAETIMEDOUT, partial))
+            return 33;
+    }
+    for (int missing = 0; missing < 7; ++missing) {
+        auto partial = network;
+        switch (missing) {
+        case 0:
+            partial.available = false;
+            break;
+        case 1:
+            partial.matched = false;
+            break;
+        case 2:
+            partial.first_match.reset();
+            break;
+        case 3:
+            partial.context_retained = true;
+            break;
+        case 4:
+            partial.unsubscribe_error = ERROR_ACCESS_DENIED;
+            break;
+        case 5:
+            partial.close_error = ERROR_ACCESS_DENIED;
+            break;
+        case 6:
+            partial.reason = NetworkObserver::Reason::Exception;
+            break;
+        }
+        if (witnessedNetworkDenial(WSAETIMEDOUT, partial))
+            return 34;
+    }
     protocol::Request request;
     request.sid = std::vector<std::uint8_t>(44, 1);
     request.input_handle = 4;
@@ -202,6 +267,82 @@ bool receipt(const QString& directory, const QString& leaf, QJsonObject object) 
     const auto bytes = QJsonDocument{object}.toJson();
     QFile file{directory + QLatin1Char('/') + leaf};
     return file.open(QIODevice::WriteOnly | QIODevice::NewOnly) && file.write(bytes) == bytes.size() && file.flush();
+}
+QJsonValue networkError(std::uint32_t value) {
+    return value == NetworkObserver::not_called ? QJsonValue{QJsonValue::Null} : QJsonValue{static_cast<qint64>(value)};
+}
+QJsonObject networkPreflightReport(const NetworkObserver::PreflightReport& report) {
+    return {{"mode", "read-only-wfp-network-preflight"},
+            {"available", report.available},
+            {"reason", static_cast<int>(report.reason)},
+            {"engine_open_error", networkError(report.open_error)},
+            {"collection_query_error", networkError(report.query_error)},
+            {"keyword_query_error", networkError(report.keyword_query_error)},
+            {"engine_close_error", networkError(report.close_error)},
+            {"collection_is_uint32", report.value_is_uint32},
+            {"collection_value", static_cast<qint64>(report.collection_value)},
+            {"keywords_is_uint32", report.keywords_is_uint32},
+            {"keywords_value", static_cast<qint64>(report.keywords_value)},
+            {"context_retained", report.context_retained},
+            {"profile_changes", false},
+            {"policy_changes", false},
+            {"subscription_created", false},
+            {"network_isolation_passed", false}};
+}
+QJsonObject networkReport(const NetworkObserver::Report& report) {
+    QJsonObject result{{"state", static_cast<int>(report.state)},
+                       {"reason", static_cast<int>(report.reason)},
+                       {"available", report.available},
+                       {"matched", report.matched},
+                       {"context_retained", report.context_retained},
+                       {"app_id_error", networkError(report.app_id_error)},
+                       {"engine_open_error", networkError(report.open_error)},
+                       {"collection_query_error", networkError(report.query_error)},
+                       {"keyword_query_error", networkError(report.keyword_query_error)},
+                       {"subscribe_error", networkError(report.subscribe_error)},
+                       {"unsubscribe_error", networkError(report.unsubscribe_error)},
+                       {"engine_close_error", networkError(report.close_error)},
+                       {"collection_is_uint32", report.value_is_uint32},
+                       {"collection_value", static_cast<qint64>(report.collection_value)},
+                       {"keywords_is_uint32", report.keywords_is_uint32},
+                       {"keywords_value", static_cast<qint64>(report.keywords_value)}};
+    if (report.first_match)
+        result.insert(QStringLiteral("first_match"),
+                      QJsonObject{{"filetime", QString::number(report.first_match->timestamp)},
+                                  {"filter_id", QString::number(report.first_match->filter_id)},
+                                  {"capability_id", static_cast<qint64>(report.first_match->capability_id)}});
+    return result;
+}
+int networkPreflight() {
+    const auto report = NetworkObserver::nativePreflight();
+    const auto bytes = QJsonDocument{networkPreflightReport(report)}.toJson();
+    if (std::fwrite(bytes.constData(), 1, static_cast<std::size_t>(bytes.size()), stdout) !=
+        static_cast<std::size_t>(bytes.size()))
+        return 2;
+    return report.available ? 0 : 1;
+}
+std::uint64_t currentFiletime() {
+    FILETIME value{};
+    GetSystemTimeAsFileTime(&value);
+    return (static_cast<std::uint64_t>(value.dwHighDateTime) << 32) | value.dwLowDateTime;
+}
+NetworkObserver::Bytes currentUserSid() {
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
+        return {};
+    const download_artifacts::Handle token(raw);
+    DWORD size = 0;
+    static_cast<void>(GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size));
+    if (!size || size > 64 * 1024)
+        return {};
+    std::vector<unsigned char> bytes(size);
+    if (!GetTokenInformation(token.get(), TokenUser, bytes.data(), size, &size))
+        return {};
+    const auto sid = reinterpret_cast<TOKEN_USER*>(bytes.data())->User.Sid;
+    if (!sid || !IsValidSid(sid) || GetLengthSid(sid) > SECURITY_MAX_SID_SIZE)
+        return {};
+    const auto begin = static_cast<const std::uint8_t*>(sid);
+    return {begin, begin + GetLengthSid(sid)};
 }
 void pump() {
     QCoreApplication::processEvents();
@@ -408,6 +549,15 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
     config.max_stderr_bytes = 1024;
     config.max_memory_bytes = 64 * 1024 * 1024;
     config.total_timeout_ms = 5000;
+    const auto begin_filetime = currentFiletime();
+    const auto end_filetime =
+        begin_filetime <= std::numeric_limits<std::uint64_t>::max() - NetworkObserver::maximum_window_ticks
+            ? begin_filetime + NetworkObserver::maximum_window_ticks
+            : 0;
+    NetworkObserver network({QDir::toNativeSeparators(config.executable).toStdWString(), request.sid, currentUserSid(),
+                             port, begin_filetime, end_filetime},
+                            NetworkObserver::systemCalls());
+    const auto network_started = network.start();
     QByteArray output, errors;
     WindowsDownloadProcessUpdate update;
     bool started = false;
@@ -448,20 +598,41 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
                      update.state == WindowsDownloadProcessState::Failed ||
                      update.state == WindowsDownloadProcessState::Cancelled;
     acknowledgement.complete(ack && (!report || report->errors[5] != ERROR_TIMEOUT));
+    // A late WFP callback may still describe the bounded attempt. Missing
+    // events remain inconclusive; this wait is never a process/pipe ACK.
+    if (network_started.state == NetworkObserver::State::Observing && ack) {
+        QElapsedTimer drain;
+        drain.start();
+        while (!network.snapshot().matched && drain.elapsed() < 1000)
+            pump();
+    }
+    const auto network_stopped = network.stop();
     // Quota is not itself a denial oracle. This separate kernel notification
     // belongs to this supervisor's Job and identifies the active-process limit.
     const bool job_limit_witnessed = report && report->errors[5] == ERROR_NOT_ENOUGH_QUOTA &&
                                      update.job_evidence.active_process_limit &&
                                      !update.job_evidence.process_memory_limit && !update.job_evidence.job_memory_limit;
-    const auto effective_checks = report ? report->passed | (job_limit_witnessed ? protocol::JobChildDenied : 0U) : 0U;
+    const bool network_denied = started && ack && report && network_started.available &&
+                                network_started.state == NetworkObserver::State::Observing &&
+                                witnessedNetworkDenial(report->errors[6], network_stopped);
+    const auto effective_checks = report ? report->passed | (job_limit_witnessed ? protocol::JobChildDenied : 0U) |
+                                               (network_denied ? protocol::LoopbackDenied : 0U)
+                                         : 0U;
     passed = started && ack && update.state == WindowsDownloadProcessState::Exited && update.exit_code == 0 && report &&
              effective_checks == protocol::all_checks && report->capability_count == 0 &&
              report->integrity_rid == SECURITY_MANDATORY_LOW_RID && hashFile(sentinel) == before &&
-             errors == QByteArray{"sandbox-probe=complete\n"} && runtime->unchanged();
+             errors == QByteArray{"sandbox-probe=complete\n"} && runtime->unchanged() &&
+             !network_stopped.context_retained && network_stopped.state != NetworkObserver::State::StopUnconfirmed;
     QJsonArray codes;
     if (report)
         for (const auto code : report->errors)
             codes.append(static_cast<qint64>(code));
+    auto network_result = networkReport(network_stopped);
+    network_result.insert(QStringLiteral("expected_executable"), config.executable);
+    network_result.insert(QStringLiteral("expected_tcp_destination"), QStringLiteral("127.0.0.1"));
+    network_result.insert(QStringLiteral("expected_tcp_port"), port);
+    network_result.insert(QStringLiteral("begin_filetime"), QString::number(begin_filetime));
+    network_result.insert(QStringLiteral("end_filetime"), QString::number(end_filetime));
     QJsonObject result{{"passed", passed},
                        {"started", started},
                        {"physical_ack", ack},
@@ -477,6 +648,8 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
                        {"job_memory_limit", update.job_evidence.job_memory_limit},
                        {"udp_error", report ? static_cast<qint64>(report->udp_error) : -1},
                        {"udp_explicit_denial", report && report->udp_error == WSAEACCES},
+                       {"network_observer", network_result},
+                       {"wfp_loopback_denial_witnessed", network_denied},
                        {"win32_errors", codes},
                        {"sentinel_sha256_before", QString::fromLatin1(before)},
                        {"sentinel_sha256_after", QString::fromLatin1(hashFile(sentinel))},
@@ -938,12 +1111,15 @@ int wmain(int argc, wchar_t** argv) {
         arguments.push_back(QString::fromWCharArray(argv[index]));
     const auto options = parse(arguments);
     if (options.mode == Mode::Help) {
-        std::puts("AppContainer probe: --self-test | --help | --allow-profile-changes --evidence-dir <fresh workspace "
+        std::puts("AppContainer probe: --self-test | --network-preflight | --help | --allow-profile-changes "
+                  "--evidence-dir <fresh workspace "
                   "out/product directory>");
         return 0;
     }
     if (options.mode == Mode::SelfTest)
         return selfTest();
+    if (options.mode == Mode::NetworkPreflight)
+        return networkPreflight();
     if (options.mode != Mode::HostProbe) {
         std::fputs("Refused: explicit profile-change flag and fresh workspace evidence path are required.\n", stderr);
         return 64;

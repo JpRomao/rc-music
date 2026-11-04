@@ -7,7 +7,7 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
-Checkpoint de 2026-11-04: o [backend nativo de perfil e o owner durável](media-profile-lifecycle.md#ensaio-composto-autorizado) estão compostos no probe autorizado, com prova física de ausência de filho, cancelamento/drenagem, conversão/segunda validação de MP3/AAC/WAV e Removed Saved após ausência conferida. Fechamento focado **20/20 CTest**, **779 casos Qt**, dois skips históricos de symlink. A prova específica do limite do Job passou; rede, armazenamento/cotas/resíduos do perfil e composição instalada continuam pendentes. Um perfil da primeira tentativa foi preservado para revisão. Downloads de produção permanecem OFF.
+Checkpoint de 2026-11-04: o [observador de rede do ensaio](media-profile-lifecycle.md#observador-de-eventos-de-rede-do-ensaio) acrescenta preflight somente leitura e prova WFP correlacionada, com **7/7 CTest / 269 casos Qt**, sem skips. O executável compilado abriu a sessão, recebeu **acesso negado (5)** na consulta e fechou-a, sem perfil/assinatura ou mudança de firewall. A prova física de rede e a política de armazenamento do perfil continuam pendentes, assim como a composição instalada. O backend/owner do checkpoint anterior mantém sua evidência física parcial, com um perfil inicial preservado para revisão. Downloads de produção permanecem OFF.
 
 ## 1. Regras de uso
 
@@ -745,7 +745,19 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — backend nativo e owner no probe autorizado
+### Checkpoint atual — observador WFP somente no ensaio
+
+Incremento de 2026-11-04: o [observador de eventos do probe](../tests/windows/sandbox/README.md#observação-de-bloqueio-de-rede-pelo-windows) usa somente leitura WFP. O preflight consulta coleta e keyword existentes, sem perfil/assinatura e sem SetOption/ACL/firewall. A assinatura filtra app ID privado, TCP, destino/porta e CAPABILITY_DROP; o callback confere flags, SID de usuário/perfil e janela de até 15 segundos. Somente correspondência após start/stop reconhecidos complementa 10060, preservando o erro bruto. Não promove conexão bem-sucedida, CLASSIFY_DROP ou falta de evento, e não confirma ACK/cleanup de perfil.
+
+TDD: observador **3 passagens/71 falhas → 74/74**; revisão independente expôs o contexto escapado após Subscribe falho, com regressão **73/2 → 75/75**. O parser teve Red por recusar o preflight isolado e depois por não admitir evidência correlacionada; ambos ficaram Green. Qualquer Subscribe falho/incerto, Unsubscribe ou Close não reconhecido conserva contexto/Calls/engine/bridge até a saída, sem retry destrutivo. Os testes não consultam WFP ou criam perfis.
+
+Fechamento proporcional **7/7 CTest / 269 passagens Qt, sem skips**; Release opcional/player/worker e Lite, zero testes no cache opcional, formato **417 C++/62 QML** e grafo Lite **255 comandos** passaram. Evidências em `out/product/test-runs/media-isolation-network-20261104/`. O preflight compilado retornou open 0, query **5**, close 0 e `available=false`; nenhuma assinatura ou perfil foi criado. Uma leitura elevada requer autorização específica e ainda não foi executada. Isso não aprova a prova física nem altera a configuração do host.
+
+A investigação de armazenamento confirmou que limites de notificação de I/O do Job não são cotas físicas por perfil. A próxima alternativa é ensaiar negação de escrita no storage de um perfil novo, com inventário/controle positivo, Registry e direitos de owner avaliados separadamente; nenhuma ACL foi modificada neste incremento. Os critérios estão no [registro central](media-profile-lifecycle.md#restrição-de-armazenamento-ainda-pendente). Rede, armazenamento/cotas/resíduos, perfil preservado, composição instalada e demais gates de segurança/acessibilidade/distribuição continuam abertos. ADR-0011 segue Proposto; downloads OFF, benchmarks e Linux adiados.
+
+<a id="checkpoint-atual--backend-nativo-e-owner-no-probe-autorizado"></a>
+
+### Checkpoint anterior — backend nativo e owner no probe autorizado
 
 Incremento de 2026-11-04: `WindowsNativeMediaProfile` implementa a porta real, com criação única, recusa de colisão/adoção, SID liberado e autoridade somente do par próprio S_OK. Remoção única exige esse par; Delete S_OK é seguido por observação dos locais capturados, sem promover erro/desconhecido a ausência. O backend é limitado ao usuário desktop sem impersonação. O [probe](../tests/windows/sandbox/README.md) compõe owner, journal privado, lease e fence; o player normal ainda não usa esse owner.
 

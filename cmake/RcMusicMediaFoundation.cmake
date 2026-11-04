@@ -40,8 +40,9 @@ if(BUILD_TESTING)
     set_target_properties(rc_music_media_sandbox_helper PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded")
     rc_music_configure_cpp(rc_music_media_sandbox_helper)
     add_executable(rc_music_media_sandbox_probe
-        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerProbeMain.cpp")
-    target_link_libraries(rc_music_media_sandbox_probe PRIVATE rc_music_download_network userenv advapi32 ws2_32)
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerProbeMain.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp")
+    target_link_libraries(rc_music_media_sandbox_probe PRIVATE rc_music_download_network userenv advapi32 ws2_32 fwpuclnt)
     target_compile_definitions(rc_music_media_sandbox_probe PRIVATE
         RC_MUSIC_TEST_SANDBOX_HELPER_PATH="$<TARGET_FILE:rc_music_media_sandbox_helper>"
         RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>"
@@ -54,13 +55,17 @@ if(BUILD_TESTING)
         LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    foreach(unit IN ITEMS AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
+    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_link_libraries(${target} PRIVATE rc_music_download_network Qt6::Test)
         if(unit STREQUAL "WindowsMediaFoundationCodec")
             target_link_libraries(${target} PRIVATE rc_music_media_foundation_codec)
+        endif()
+        if(unit STREQUAL "AppContainerNetworkObserver")
+            target_sources(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerNetworkObserver.cpp")
+            target_link_libraries(${target} PRIVATE fwpuclnt advapi32)
         endif()
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
         set_target_properties(${target} PROPERTIES AUTOMOC ON)

@@ -1,5 +1,7 @@
 # RC Music
 
+O [observador de rede do probe](docs/media-profile-lifecycle.md#observador-de-eventos-de-rede-do-ensaio) agora aceita evidência WFP estritamente correlacionada, mantendo timeout isolado como inconclusivo. A regressão focada passou em **7/7 CTest / 269 casos Qt**, sem skips; builds Release, formato e fronteira Lite passaram. O preflight compilado recebeu **acesso negado (5)** ao consultar eventos, sem criar perfil ou alterar firewall. A prova física de rede continua pendente; downloads de produção permanecem OFF.
+
 O [ciclo de vida dos perfis de mídia](docs/media-profile-lifecycle.md#ensaio-composto-autorizado) agora compõe backend nativo, owner durável e confirmação de uso no probe autorizado. A regressão passou em **20/20 CTest / 779 casos Qt**, com dois skips históricos. As jornadas de ausência de filho, cancelamento/drenagem, conversão e segunda validação de MP3/AAC/WAV e remoção reconhecida passaram; o limite de descendentes teve testemunha específica do Job. A prova de rede continua inconclusiva, e um perfil da tentativa inicial foi preservado para revisão. O player ainda não compõe esse owner; downloads de produção permanecem OFF.
 
 Os [instaladores locais de `2144cfd`](docs/local-delivery-2144cfd-20261104.md), Lite e Completa experimental, foram compilados e conferidos sem instalar. Build Release, lint e checks de pacote passaram; a limpeza posterior removeu aproximadamente **504 MiB** de artefatos descartáveis, preservando SDKs, fontes, mudanças pendentes e os novos pacotes. Downloads e associações continuam OFF.

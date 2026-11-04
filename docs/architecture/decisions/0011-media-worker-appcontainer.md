@@ -81,6 +81,8 @@ A rede continuou inconclusiva: TCP retornou 10060 e UDP retornou sucesso de envi
 
 ## Consequências e critérios de revisão
 
+O [observador WFP do ensaio](../../media-profile-lifecycle.md#observador-de-eventos-de-rede-do-ensaio) acrescenta evidência correlacionada de CAPABILITY_DROP sem mudar firewall/coleta/ACL. A implementação e o protocolo de retenção foram validados por chamadas/eventos injetados; o preflight real abriu/fechou a sessão, mas a consulta retornou AccessDenied 5. Nenhum novo perfil foi criado e nenhum evento real foi aceito. Timeout isolado continua inconclusivo; somente testemunha estrita com start/stop reconhecidos pode complementar 10060. Isso não promove este ADR nem ativa o owner no player.
+
 O perfil adiciona ciclo de vida e armazenamento próprios que precisam ser geridos no produto/instalador. A criação transitória de teste não decide a política de perfis da distribuição. Compatibilidade com codecs Windows, negações reais, resíduos, execução interrompida e ausência de componentes continuam exigindo evidência específica. Adoção global, suporte universal e release não decorrem de testes de sintaxe/ACL ou de um único host.
 
 As cotas atuais dos sinks não abrangem o armazenamento próprio do perfil. Sua política de escrita, limite de disco e resíduos precisa ser fechada antes da produção; este componente e o ensaio transitório não dispensam esses requisitos.
