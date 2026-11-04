@@ -1404,6 +1404,10 @@
           "marker": "### Bindings parciais de leitura Win32"
         },
         {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Ensaio separado autorizado sem evento correlacionado"
+        },
+        {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
           "marker": "## Decisão proposta"
         },
@@ -1932,6 +1936,10 @@
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Bindings parciais de leitura Win32"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Ensaio separado autorizado sem evento correlacionado"
         },
         {
           "path": "docs/development-plan.md",

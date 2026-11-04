@@ -1,6 +1,6 @@
 # Probe manual do worker em AppContainer
 
-Este programa prepara o ensaio físico do [ADR-0011](../../../docs/architecture/decisions/0011-media-worker-appcontainer.md). O driver compõe owner, store, fence e porta nativa de perfil; ele não integra o player ou o instalador. Somente os autotestes puros de parser/protocolo/política de cleanup são registrados como modos automáticos do probe; não criam perfil, diretório, token ou entrada de Registro. O modo físico exige autorização específica.
+Este programa executa o ensaio físico do [ADR-0011](../../../docs/architecture/decisions/0011-media-worker-appcontainer.md). O driver compõe owner, store, fence e porta nativa de perfil; ele não integra o player ou o instalador. Somente os autotestes puros de parser/protocolo/política de cleanup são registrados como modos automáticos do probe; não criam perfil, diretório, token ou entrada de Registro. O [ensaio separado autorizado mais recente](../../../docs/media-profile-lifecycle.md#ensaio-separado-autorizado-sem-evento-correlacionado) reconheceu transporte/encerramento, sem evento de rede correlacionado; sua autorização foi consumida. Cada nova execução física exige autorização específica.
 
 ## Compilação e autoteste
 
@@ -64,7 +64,7 @@ Para escolher o oráculo no ensaio de perfil autorizado, acrescentar `--classify
 
 Um candidato CLASSIFY_DROP exige todas as identidades/tupla/janela e ainda layerID não nulo, direção 0x3901 e loopback exatamente TRUE. Ele não é prova antes de Unsubscribe. Depois, na mesma engine e antes de Close, o driver consulta exatamente o filtro e a camada informados. Só aprova com IDs iguais, filtro habilitado e BLOCK exato, provider/sublayer App Isolation e ambas as camadas ALE_AUTH_CONNECT_V4. Metadata divergente/ausente, outro provider, callout, erro ou Close incerto conservam a inconclusão. O callback não faz essas consultas. A prova se limita à tentativa correlacionada e à regra atual observada, sem snapshot retroativo ou diagnóstico de capability ausente. `capability_id` é nulo nesse modo; candidato, regra verificada, GUIDs brutos SDK, IDs e horários são registrados separadamente. [Contrato e resultados](../../../docs/media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento).
 
-O preflight Classify compilado e executado normalmente retornou AccessDenied 5; nenhum evento real foi aceito. Executar todo o driver elevado provaria somente esse contexto. O próximo ensaio deve manter driver/owner/worker normais e usar observador elevado separado, após composição/testes e autorização específica. A única leitura elevada anterior já foi consumida; este modo não concede elevação, instala serviços ou altera permissões WFP.
+O preflight Classify compilado e executado normalmente retornou AccessDenied 5; nenhum evento real foi aceito. Executar todo o driver elevado provaria somente esse contexto. O ensaio posterior manteve driver/owner/worker normais e usou observador elevado separado, após composição/testes e autorização específica, sem obter evento correlacionado. A autorização da leitura elevada anterior e a autorização posterior do observador foram consumidas em execuções distintas; este modo não concede elevação, instala serviços ou altera permissões WFP.
 
 ### Preparação anterior dos componentes de troca
 
@@ -91,9 +91,17 @@ O driver cria seu próprio perfil/journal, prepara o helper e escreve `observer-
 & 'out/product/m1-desktop-release-on-20260906/rc_music_media_sandbox_probe.exe' --allow-wfp-subscription --observer-request '<path absoluto publicado>'
 ```
 
-O path publicado já inclui `wfp-request.json`; passe-o inteiro, sem acrescentar outra folha. O ator valida raiz, arquivos, processos e imagens antes de assinar WFP. Request/Ready/Result têm nomes fixos e não são substituídos. O driver exige observador ainda vivo e janela com headroom antes do helper; ACK de saída usa o mesmo handle aberto. Consultas/assinatura não alteram coleta, keywords, regras ou auditoria. A autorização anterior de leitura do preflight já foi consumida e não permite esse novo ensaio.
+O path publicado já inclui `wfp-request.json`; passe-o inteiro, sem acrescentar outra folha. O ator valida raiz, arquivos, processos e imagens antes de assinar WFP. Request/Ready/Result têm nomes fixos e não são substituídos. O driver exige observador ainda vivo e janela com headroom antes do helper; ACK de saída usa o mesmo handle aberto. Consultas/assinatura não alteram coleta, keywords, regras ou auditoria. A autorização anterior do preflight cobria somente leitura; a execução separada abaixo recebeu outra autorização específica, agora também consumida. Esses comandos não autorizam sua repetição.
 
 Os testes `AppContainerObserverActor` e `AppContainerObserverDriver` usam WFP/processos injetados, frames e arquivos reais próprios; o teste `AppContainerObserverProcess` consulta o próprio processo e cria um helper somente suspenso, que não é retomado, para verificar sinal nativo e exit code 259. O cenário de Stop incerto conserva pins até o fim do executável Qt e publica `actor-retained-fixture:<TEMP próprio>`; somente após confirmar o término do processo e inventariar essa árvore sem reparse é possível limpar a fixture, preservando seu recibo. Não usar esse marcador para remover perfis ou outros diretórios.
+
+### Execução separada autorizada de 2026-11-04
+
+Uma execução dos binários/launcher congelados de `48d8542` usou driver Medium/não elevado e observador High via UAC, com hashes preservados. Os recibos em `out/product/test-runs/media-observer-native-authorized-20261104-01/` e `out/product/test-runs/media-observer-composition-20261104/elevated-actor-01/` registram Ready/Result e peer ACK reconhecidos, janela de 15 s e Subscribe/Unsubscribe/EngineClose 0. Ator/launcher exit 0 confirmam seu encerramento; driver exit 1 conserva o resultado global falso.
+
+`proof_eligible=true` não é match: candidato e correspondência ficaram nulos, `matched=false` e `rule_verified=false`. TCP 10060, UDP 0 e helper bruto/efetivo 29695/30719 não demonstram negação; a rede continua inconclusiva. MP3/AAC/WAV 3/3, NoChild e cancelamento/drenagem passaram, com `all_native_acks=true`. O perfil próprio `RCMusic.Media.2f038dbf-921a-4bee-a105-23048f26a23e` teve Delete 0/Removed Saved, e `08-independent-postflight.json` confirmou ausência das folhas exatas de pacote/Mappings/Storage, RegClose 0 e nenhum processo remanescente.
+
+O TEMP `RCMusic-AppContainer-Probe-SisyTE` foi preservado pelo resultado global falso, sem cleanup adicional ou alteração de firewall/coleta/auditoria. A autorização foi consumida; não há execução elevada pendente de aprovação para repetir esse mesmo ensaio. [Resultado completo e limites](../../../docs/media-profile-lifecycle.md#ensaio-separado-autorizado-sem-evento-correlacionado). Inventário nativo de Registro/quatro raízes, política de storage/MIC, composição instalada e aprovação de produção continuam pendentes; downloads OFF e ADR-0011 Proposto.
 
 ## Inventário de metadados do storage
 
