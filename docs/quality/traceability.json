@@ -1464,6 +1464,14 @@
           "marker": "### Probe separado do inventário de storage"
         },
         {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Inventário autorizado com Storage ausente"
+        },
+        {
+          "path": "docs/development-plan.md",
+          "marker": "### Inventário autorizado com Storage ausente"
+        },
+        {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
           "marker": "## Decisão proposta"
         },
@@ -2060,6 +2068,14 @@
         {
           "path": "docs/quality/testing-strategy.md",
           "marker": "### Probe separado do inventário de storage"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Inventário autorizado com Storage ausente"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Inventário autorizado com Storage ausente"
         },
         {
           "path": "docs/process-tests.md",
