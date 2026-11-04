@@ -32,6 +32,51 @@ target_sources(rc_music_download_network PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationLaunch.cpp")
 
 if(BUILD_TESTING)
+    add_executable(rc_music_AppContainerStorageFiles_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageFilesTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageFiles.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSecurity.cpp")
+    target_include_directories(rc_music_AppContainerStorageFiles_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageFiles_tests PRIVATE Qt6::Core Qt6::Test advapi32 ntdll)
+    set_target_properties(rc_music_AppContainerStorageFiles_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageFiles_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageFiles
+        COMMAND rc_music_AppContainerStorageFiles_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageFiles PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(rc_music_AppContainerStorageSecurity_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageSecurityTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSecurity.cpp")
+    target_include_directories(rc_music_AppContainerStorageSecurity_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageSecurity_tests PRIVATE Qt6::Core Qt6::Test advapi32)
+    set_target_properties(rc_music_AppContainerStorageSecurity_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageSecurity_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageSecurity
+        COMMAND rc_music_AppContainerStorageSecurity_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageSecurity PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    # Test-only live-owner bridge. No dependency on the native probe/helper:
+    # those executables remain frozen for their separately authorized run.
+    add_executable(rc_music_AppContainerStorageLiveSource_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageLiveSourceTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageLiveSource.cpp")
+    target_include_directories(rc_music_AppContainerStorageLiveSource_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageLiveSource_tests PRIVATE rc_music_download_documents Qt6::Test)
+    set_target_properties(rc_music_AppContainerStorageLiveSource_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageLiveSource_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageLiveSource
+        COMMAND rc_music_AppContainerStorageLiveSource_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageLiveSource PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # Pure storage-inventory seam. Keep it independent of the native probe and
     # media/network libraries while their separate physical run is pending.
     add_executable(rc_music_AppContainerStorageInventory_tests

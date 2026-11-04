@@ -17,10 +17,18 @@ class WindowsNativeMediaProfile final : public WindowsMediaProfilePlatform {
         QByteArray sid{};
         bool sid_released{true};
     };
+    // Captured metadata only. This DTO cannot establish live ownership, adopt
+    // a loaded operation or grant storage mutation/profile cleanup authority.
+    struct StorageLocation final {
+        QString name{};
+        QByteArray sid{}, creator_user_sid{};
+        QString package_root{}, ac_path{}, mappings_key{}, storage_key{};
+    };
     struct Calls final {
         std::function<Result(const QString&)> create{};
         std::function<qint32(const QString&)> remove{};
         std::function<WindowsMediaProfileAbsence(const QString&, const QByteArray&)> observe{};
+        std::function<std::optional<StorageLocation>(const QString&, const QByteArray&)> location{};
     };
     struct Report final {
         QString name{};
@@ -48,6 +56,9 @@ class WindowsNativeMediaProfile final : public WindowsMediaProfilePlatform {
     // Calls and never use a profile.
     [[nodiscard]] static std::unique_ptr<WindowsNativeMediaProfile> system();
     [[nodiscard]] Report report() const;
+    // No discovery/fallback. Only the captured locator of this successful live
+    // creation may be returned, before any legitimate removal attempt.
+    [[nodiscard]] std::optional<StorageLocation> capturedStorageLocation() const noexcept;
     [[nodiscard]] WindowsMediaProfileCreateResult create(const QString& derived_name) override;
     [[nodiscard]] WindowsMediaProfileRemovalResult remove(const QString& derived_name,
                                                           const QByteArray& live_created_sid) override;

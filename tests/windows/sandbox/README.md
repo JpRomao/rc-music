@@ -97,12 +97,14 @@ Os testes `AppContainerObserverActor` e `AppContainerObserverDriver` usam WFP/pr
 
 ## Inventário de metadados do storage
 
-O [modelo de inventário de segurança do storage](../../../docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) tem alvo isolado de teste, sem usar o probe ou criar perfis. Valida somente o consumidor de uma sessão confiável falsa; ainda não possui binding Win32 ou aplicação de política:
+O [modelo de inventário de segurança do storage](../../../docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) tem alvo isolado de teste, sem usar o probe ou criar perfis. Valida o consumidor de uma sessão confiável falsa. Os [bindings parciais de leitura](../../../docs/media-profile-lifecycle.md#bindings-parciais-de-leitura-win32) acrescentam coordenação com o owner/fence, consulta limitada de owner/DACL e leitura de `PackageRoot`/`AC`. Ainda falta a sessão nativa das quatro raízes, com Registro integrado, e não há aplicação de política:
 
 ```powershell
-cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageInventory_tests
-ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.AppContainerStorageInventory$' --output-on-failure
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageInventory_tests rc_music_AppContainerStorageSecurity_tests rc_music_AppContainerStorageFiles_tests rc_music_AppContainerStorageLiveSource_tests
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.AppContainerStorage(Inventory|Security|Files|LiveSource)$' --output-on-failure
 ```
+
+Os alvos não dependem do probe/helper WFP congelados. Security/Files usam somente fixtures TEMP próprias para operações de arquivo; `RegGetKeySecurity` é compilado, mas suas chamadas são falsas nos testes. LiveSource usa owner/backend com portas de perfil falsas, compara a mesma instância e reserva um ticket até Close explícito. Não há execução de perfil, Registro, elevação, WFP, instalação ou alteração de ACL de dados pessoais por esses alvos. Fixtures de fechamento incerto são identificadas no output e ficam preservadas até uma limpeza autorizada após a saída física do processo Qt; o destrutor não inventa ACK.
 
 ## Conversão com o mesmo owner
 

@@ -1376,12 +1376,32 @@
         {
           "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
           "marker": "loadedRevokedAndUnknownSourcesNeverReadObjects"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageLiveSourceTests.cpp",
+          "marker": "aDifferentBackendCannotBorrowAnotherOwnersLiveFenceEvenWithTheSameSid"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageSecurityTests.cpp",
+          "marker": "nativeFileAndDirectorySecurityAreReadWithoutClosingBorrowedHandles"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageFilesTests.cpp",
+          "marker": "metadataReadsDoNotRequireOrOpenFileData"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageFilesTests.cpp",
+          "marker": "ancestorSwapBeforeOpenNeverReadsSecurityFromTheJunctionTarget"
         }
       ],
       "evidence": [
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Modelo limitado de captura de metadados"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Bindings parciais de leitura Win32"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1894,12 +1914,24 @@
         {
           "path": "tests/qt/AppContainerStorageInventoryTests.cpp",
           "marker": "unknownContradictoryOrThrowingCloseRetainsTheSessionWithoutRetry"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageLiveSourceTests.cpp",
+          "marker": "unknownCloseOrAbandonedSessionNeverAcknowledgesTheFence"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageFilesTests.cpp",
+          "marker": "uncertainCloseAndAbandonmentRetainHandlesWithoutDestructorRetry"
         }
       ],
       "evidence": [
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Modelo limitado de captura de metadados"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Bindings parciais de leitura Win32"
         },
         {
           "path": "docs/development-plan.md",

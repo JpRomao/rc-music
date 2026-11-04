@@ -1,6 +1,6 @@
 # RC Music
 
-O [modelo de inventário do perfil](docs/media-profile-lifecycle.md#modelo-limitado-de-captura-de-metadados) captura metadados limitados das quatro raízes, correlaciona `AC` e exige fechamento explícito da sessão. Passou **107 casos Qt**, sem skips, com fonte falsa e alvo independente. Ainda não há binding Win32 ou política de escrita aplicada; os binários do ensaio WFP permanecem congelados enquanto a autorização está pendente.
+O [inventário do perfil](docs/media-profile-lifecycle.md#bindings-parciais-de-leitura-win32) reserva a fence do owner vivo, usa o localizador capturado pelo mesmo backend e lê arquivos de pacote/`AC` por handles relativos. A regressão focada passou **7/7 CTest / 360 casos Qt**, sem skips: chamadas de perfil/Registro são falsas, enquanto arquivos e permissões usam fixtures TEMP próprias. Sessão nativa das quatro raízes, política de escrita e ensaio em perfil continuam pendentes; os binários WFP permanecem congelados enquanto a autorização específica está pendente.
 
 O [ensaio com observador separado](docs/media-profile-lifecycle.md#composição-separada-do-ensaio) agora compõe driver normal, troca autenticada por arquivos privados, observador WFP temporário e ACK por handle do processo. A regressão focada passou em **13/13 CTest / 722 casos Qt**, sem skips, com WFP/identidades injetados e fixtures locais. A execução física elevada ainda depende de autorização própria; não houve nova assinatura WFP ou perfil por esse incremento. Downloads de produção permanecem OFF.
 

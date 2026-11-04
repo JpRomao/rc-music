@@ -9,6 +9,8 @@
 #include <userenv.h>
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -26,6 +28,65 @@ bool validName(const QString& name) {
 }
 bool canonicalSid(const QByteArray& sid) { return WindowsDownloadAppContainer::fromTrustedSid(sid) != nullptr; }
 qint32 code(const HRESULT value) { return static_cast<qint32>(value); }
+bool userSid(const QByteArray& sid) {
+    if (sid.size() < 8 || sid.size() > SECURITY_MAX_SID_SIZE || sid[0] != SID_REVISION)
+        return false;
+    const auto count = static_cast<unsigned char>(sid[1]);
+    return count <= SID_MAX_SUB_AUTHORITIES && sid.size() == 8 + 4 * count;
+}
+QString profileSidText(const QByteArray& sid) {
+    if (!canonicalSid(sid))
+        return {};
+    QString text = QStringLiteral("S-1-15");
+    for (qsizetype index = 0; index < 8; ++index) {
+        quint32 value = 0;
+        for (qsizetype byte = 0; byte < 4; ++byte)
+            value |= quint32{static_cast<unsigned char>(sid[8 + 4 * index + byte])} << (8 * byte);
+        text += QLatin1Char('-') + QString::number(value);
+    }
+    return text;
+}
+bool storagePath(const QString& original, QString& normalized) {
+    if (original.size() < 4 || original.size() > 32767 || !original.isValidUtf16() || original[1] != QLatin1Char(':') ||
+        (original[2] != QLatin1Char('/') && original[2] != QLatin1Char('\\')) ||
+        !((original[0] >= QLatin1Char('A') && original[0] <= QLatin1Char('Z')) ||
+          (original[0] >= QLatin1Char('a') && original[0] <= QLatin1Char('z'))))
+        return false;
+    normalized = QDir::fromNativeSeparators(original);
+    const auto components = normalized.mid(3).split(QLatin1Char('/'));
+    if (components.size() > 256)
+        return false;
+    for (const auto& component : components) {
+        if (component.isEmpty() || component == QStringLiteral(".") || component == QStringLiteral("..") ||
+            component.endsWith(QLatin1Char('.')) || component.endsWith(QLatin1Char(' ')))
+            return false;
+        for (const auto unit : component)
+            if (unit.category() == QChar::Other_Control || QStringLiteral(":<>\"|?*").contains(unit))
+                return false;
+    }
+    return true;
+}
+bool validLocation(const Native::StorageLocation& location, const QString& name, const QByteArray& sid) {
+    if (location.name != name || !validName(location.name) || location.sid != sid || !canonicalSid(location.sid) ||
+        !userSid(location.creator_user_sid))
+        return false;
+    QString package, ac;
+    if (!storagePath(location.package_root, package) || !storagePath(location.ac_path, ac) ||
+        !package.endsWith(QStringLiteral("/Packages/") + name, Qt::CaseInsensitive) ||
+        ac.compare(package + QStringLiteral("/AC"), Qt::CaseInsensitive) != 0)
+        return false;
+    const auto base = QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\AppContainer\\");
+    const auto text = profileSidText(sid);
+    return !text.isEmpty() && location.mappings_key == base + QStringLiteral("Mappings\\") + text &&
+           location.storage_key == base + QStringLiteral("Storage\\") + text;
+}
+Native::StorageLocation ownedLocation(const Native::StorageLocation& value) {
+    const auto string = [](const QString& text) { return QString(text.constData(), text.size()); };
+    const auto bytes = [](const QByteArray& data) { return QByteArray(data.constData(), data.size()); };
+    return {string(value.name),         bytes(value.sid),      bytes(value.creator_user_sid),
+            string(value.package_root), string(value.ac_path), string(value.mappings_key),
+            string(value.storage_key)};
+}
 
 bool missing(const DWORD error) { return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND; }
 
@@ -39,6 +100,32 @@ bool currentDesktopUser() {
         return false;
     }
     return GetLastError() == ERROR_NO_TOKEN;
+}
+QByteArray currentDesktopUserSid() {
+    if (!currentDesktopUser())
+        return {};
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
+        return {};
+    const Handle token(raw);
+    std::array<unsigned char, sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE> storage{};
+    DWORD used = 0;
+    if (!GetTokenInformation(token.get(), TokenUser, storage.data(), static_cast<DWORD>(storage.size()), &used) ||
+        used < sizeof(TOKEN_USER) || used > storage.size())
+        return {};
+    TOKEN_USER user{};
+    std::memcpy(&user, storage.data(), sizeof(user));
+    const auto base = reinterpret_cast<std::uintptr_t>(storage.data());
+    const auto address = reinterpret_cast<std::uintptr_t>(user.User.Sid);
+    if (!user.User.Sid || address < base || address - base > used || used - (address - base) < 8)
+        return {};
+    const auto offset = address - base;
+    const auto count = storage[offset + 1];
+    const auto length = 8 + 4 * std::size_t{count};
+    if (count > SID_MAX_SUB_AUTHORITIES || length > used - offset)
+        return {};
+    const QByteArray sid(reinterpret_cast<const char*>(storage.data() + offset), static_cast<qsizetype>(length));
+    return userSid(sid) ? sid : QByteArray{};
 }
 
 // Query each component without traversing a reparse point. Ancestors stay
@@ -122,19 +209,14 @@ Absence registryPresence(const QString& path) {
     return Absence::Present;
 }
 
-struct ProfileLocator final {
-    QString name{};
-    QByteArray sid{};
-    QString package_root{};
-    QString mappings_key{};
-    QString storage_key{};
-};
+using ProfileLocator = Native::StorageLocation;
 struct SystemState final {
     std::optional<ProfileLocator> locator{};
 };
 
-std::optional<ProfileLocator> locateCreatedProfile(const QString& name, const QByteArray& sid) {
-    if (!validName(name) || !canonicalSid(sid))
+std::optional<ProfileLocator> locateCreatedProfile(const QString& name, const QByteArray& sid,
+                                                   const QByteArray& creator_sid) {
+    if (!validName(name) || !canonicalSid(sid) || !userSid(creator_sid))
         return {};
     LPWSTR sid_text = nullptr;
     if (!ConvertSidToStringSidW(const_cast<char*>(sid.constData()), &sid_text))
@@ -155,6 +237,9 @@ std::optional<ProfileLocator> locateCreatedProfile(const QString& name, const QB
     ProfileLocator result;
     result.name = name;
     result.sid = sid;
+    result.creator_user_sid = creator_sid;
+    // Preserve the exact OS result independently of the derived package parent.
+    result.ac_path = QString::fromWCharArray(folder);
     result.package_root = normalized_base + QStringLiteral("/Packages/") + name;
     if (normalized_folder.compare(result.package_root + QStringLiteral("/AC"), Qt::CaseInsensitive) != 0)
         return {};
@@ -176,7 +261,8 @@ std::optional<ProfileLocator> locateCreatedProfile(const QString& name, const QB
 
 Native::Result createSystemProfile(const QString& name, SystemState& state) {
     Native::Result result;
-    if (!currentDesktopUser()) {
+    const auto creator_sid = currentDesktopUserSid();
+    if (creator_sid.isEmpty()) {
         result.hresult = code(E_ACCESSDENIED);
         return result;
     }
@@ -190,7 +276,7 @@ Native::Result createSystemProfile(const QString& name, SystemState& state) {
     try {
         if (result.hresult == code(S_OK) && raw && IsValidSid(raw) && GetLengthSid(raw) == 40) {
             const QByteArray sid(static_cast<const char*>(raw), 40);
-            state.locator = locateCreatedProfile(name, sid);
+            state.locator = locateCreatedProfile(name, sid, creator_sid);
             if (state.locator)
                 result.sid = sid;
         }
@@ -230,6 +316,7 @@ struct WindowsNativeMediaProfile::Impl final {
     Report report{};
     bool create_entered{false};
     bool owns_pair{false};
+    bool locating{false};
     explicit Impl(Calls value) : calls(std::move(value)) {}
 };
 
@@ -245,10 +332,41 @@ std::unique_ptr<WindowsNativeMediaProfile> WindowsNativeMediaProfile::system() {
                         return code(DeleteAppContainerProfile(name.toStdWString().c_str()));
                     },
                 .observe = [state](const QString& name,
-                                   const QByteArray& sid) { return observeCreatedProfile(name, sid, *state); }};
+                                   const QByteArray& sid) { return observeCreatedProfile(name, sid, *state); },
+                .location = [state](const QString& name, const QByteArray& sid) -> std::optional<StorageLocation> {
+                    if (!state->locator || state->locator->name != name || state->locator->sid != sid ||
+                        currentDesktopUserSid() != state->locator->creator_user_sid)
+                        return {};
+                    // Read only the locator captured by this S_OK creation;
+                    // never query KnownFolder, the profile API or Registry.
+                    return state->locator;
+                }};
     return std::make_unique<WindowsNativeMediaProfile>(std::move(calls));
 }
 WindowsNativeMediaProfile::Report WindowsNativeMediaProfile::report() const { return impl_->report; }
+std::optional<WindowsNativeMediaProfile::StorageLocation>
+WindowsNativeMediaProfile::capturedStorageLocation() const noexcept {
+    auto& value = *impl_;
+    const auto eligible = [&] {
+        return value.owns_pair && value.report.create_attempted && value.report.created && value.report.sid_released &&
+               value.report.create_hresult == code(S_OK) && !value.report.remove_attempted;
+    };
+    if (!eligible() || value.locating || !value.calls.location)
+        return {};
+    value.locating = true;
+    const auto release = qScopeGuard([&] { value.locating = false; });
+    try {
+        const QString name(value.report.name.constData(), value.report.name.size());
+        const QByteArray sid(value.report.sid.constData(), value.report.sid.size());
+        const auto captured = value.calls.location(name, sid);
+        if (!captured || !eligible() || value.report.name != name || value.report.sid != sid ||
+            !validLocation(*captured, name, sid))
+            return {};
+        return ownedLocation(*captured);
+    } catch (...) {
+        return {};
+    }
+}
 WindowsMediaProfileCreateResult WindowsNativeMediaProfile::create(const QString& derived_name) {
     auto& value = *impl_;
     if (value.create_entered)

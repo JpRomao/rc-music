@@ -74,6 +74,9 @@ class WindowsMediaProfileOwner final {
     [[nodiscard]] bool canRetryPersistence() const;
     [[nodiscard]] WindowsMediaProfileOwnerState state() const;
     [[nodiscard]] std::shared_ptr<const WindowsDownloadAppContainer> capability() const;
+    // Passive identity check for trusted composition; does not grant use or
+    // establish creation/cleanup authority on its own.
+    [[nodiscard]] bool usesPlatform(const WindowsMediaProfilePlatform& platform) const noexcept;
 
   private:
     struct Impl;

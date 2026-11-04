@@ -217,6 +217,9 @@ WindowsMediaProfileOwner::WindowsMediaProfileOwner(DownloadMediaProfileStore& st
                                                    WindowsMediaProfileOwnerConfig config)
     : impl_(std::make_unique<Impl>(store, platform, std::move(config))) {}
 WindowsMediaProfileOwner::~WindowsMediaProfileOwner() = default;
+bool WindowsMediaProfileOwner::usesPlatform(const WindowsMediaProfilePlatform& platform) const noexcept {
+    return &impl_->platform == &platform;
+}
 bool WindowsMediaProfileOwner::prepare() {
     auto& value = *impl_;
     if (value.busy)
