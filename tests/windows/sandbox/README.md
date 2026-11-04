@@ -52,6 +52,20 @@ Uma correspondência só complementa o timeout TCP 10060 depois de start e stop 
 
 O contexto está completo antes da assinatura, inclusive se o callback competir com o retorno de Subscribe. Unsubscribe ocorre fora do callback e sem seus locks; sucesso aguarda callbacks ativos. Falha conserva contexto, engine e assinatura até a saída do driver, fecha admissão de correspondências e não é repetida pelo destrutor. Os testes automáticos injetam chamadas e eventos; não consultam WFP real. [Contrato de unsubscribe](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmneteventunsubscribe0).
 
+### Oráculo separado de ClassifyIsolation
+
+O padrão CAPABILITY_DROP continua exigindo keyword 4 e recusa CLASSIFY_DROP. O modo explícito separado usa coleta geral ligada e registra a máscara existente sem exigir esse bit. Seu preflight também é isolado, sem perfil/assinatura:
+
+```powershell
+& 'out/product/m1-desktop-release-on-20260906/rc_music_media_sandbox_probe.exe' --network-preflight-classify
+```
+
+Para escolher o oráculo no ensaio de perfil autorizado, acrescentar `--classify-isolation` no fim dos três argumentos existentes. Não há escolha automática em caso de indisponibilidade; os modos não reinterpretam recibos anteriores.
+
+Um candidato CLASSIFY_DROP exige todas as identidades/tupla/janela e ainda layerID não nulo, direção 0x3901 e loopback exatamente TRUE. Ele não é prova antes de Unsubscribe. Depois, na mesma engine e antes de Close, o driver consulta exatamente o filtro e a camada informados. Só aprova com IDs iguais, filtro habilitado e BLOCK exato, provider/sublayer App Isolation e ambas as camadas ALE_AUTH_CONNECT_V4. Metadata divergente/ausente, outro provider, callout, erro ou Close incerto conservam a inconclusão. O callback não faz essas consultas. A prova se limita à tentativa correlacionada e à regra atual observada, sem snapshot retroativo ou diagnóstico de capability ausente. `capability_id` é nulo nesse modo; candidato, regra verificada, GUIDs brutos SDK, IDs e horários são registrados separadamente. [Contrato e resultados](../../../docs/media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento).
+
+O preflight Classify compilado e executado normalmente retornou AccessDenied 5; nenhum evento real foi aceito. Executar todo o driver elevado provaria somente esse contexto. O próximo ensaio deve manter driver/owner/worker normais e usar observador elevado separado, após composição/testes e autorização específica. A única leitura elevada anterior já foi consumida; este modo não concede elevação, instala serviços ou altera permissões WFP.
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.

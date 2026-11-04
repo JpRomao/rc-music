@@ -43,10 +43,14 @@ bool validExecutable(const std::wstring_view path) {
     }
     return true;
 }
+bool validKind(const Observer::EvidenceKind kind) {
+    return kind == Observer::EvidenceKind::CapabilityDrop || kind == Observer::EvidenceKind::ClassifyIsolation;
+}
 bool validConfig(const Observer::Config& config) {
     return validExecutable(config.executable) && profileSid(config.package_sid) && validSid(config.user_sid) &&
            config.remote_port != 0 && config.begin_filetime <= config.end_filetime &&
-           config.end_filetime - config.begin_filetime <= Observer::maximum_window_ticks;
+           config.end_filetime - config.begin_filetime <= Observer::maximum_window_ticks &&
+           validKind(config.evidence_kind);
 }
 bool same(const std::span<const std::uint8_t> left, const std::span<const std::uint8_t> right) {
     return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin());
@@ -55,7 +59,8 @@ bool validAppId(const Observer::Bytes& bytes) {
     return !bytes.empty() && bytes.size() <= maximum_app_id_bytes && bytes.size() % 2 == 0;
 }
 template <typename Report>
-bool queryOptions(const Observer::Calls& calls, const Observer::Handle engine, Report& report) {
+bool queryOptions(const Observer::Calls& calls, const Observer::Handle engine, Report& report,
+                  const Observer::EvidenceKind kind) {
     report.query_error = ERROR_GEN_FAILURE;
     const auto collection = calls.get_collection(engine);
     report.query_error = collection.error;
@@ -86,7 +91,7 @@ bool queryOptions(const Observer::Calls& calls, const Observer::Handle engine, R
         report.reason = Reason::KeywordType;
         return false;
     }
-    if (!(keywords.value & Observer::capability_drop_keyword)) {
+    if (kind == Observer::EvidenceKind::CapabilityDrop && !(keywords.value & Observer::capability_drop_keyword)) {
         report.reason = Reason::KeywordDisabled;
         return false;
     }
@@ -115,7 +120,9 @@ struct AppContainerNetworkObserver::Impl final {
     std::atomic_bool busy{false};
     Report report{};
     bool accepting{false};
-    Impl(Config value, Calls functions) : config(std::move(value)), calls(std::move(functions)) {}
+    Impl(Config value, Calls functions) : config(std::move(value)), calls(std::move(functions)) {
+        report.evidence_kind = config.evidence_kind;
+    }
     Report snapshot() const {
         const std::lock_guard lock(mutex);
         return report;
@@ -146,6 +153,7 @@ struct AppContainerNetworkObserver::Impl final {
         value.context_retained = true;
         value.matched = false;
         value.first_match.reset();
+        value.rule_verified = false;
         publish(value);
     }
     void failed(Report value) {
@@ -153,6 +161,7 @@ struct AppContainerNetworkObserver::Impl final {
         value.available = false;
         value.matched = false;
         value.first_match.reset();
+        value.rule_verified = false;
         if (engine) {
             value.close_error = ERROR_GEN_FAILURE;
             try {
@@ -175,15 +184,65 @@ struct AppContainerNetworkObserver::Impl final {
     }
     void consume(const EventView& event) {
         const std::lock_guard lock(mutex);
-        if (!accepting || report.matched || event.kind != EventKind::CapabilityDrop ||
+        if (!accepting || report.matched || report.first_candidate ||
             (event.fields & required_fields) != required_fields || event.ip_version != 4 || event.protocol != 6 ||
             event.remote_ipv4 != loopback_ipv4 || event.remote_port != config.remote_port ||
             event.timestamp < config.begin_filetime || event.timestamp > config.end_filetime ||
-            event.is_loopback != 1 || event.capability_id > 2 || !event.filter_id || !same(event.app_id, app_id) ||
+            event.is_loopback != 1 || !event.filter_id || !same(event.app_id, app_id) ||
             !same(event.user_sid, config.user_sid) || !same(event.package_sid, config.package_sid))
             return;
-        report.matched = true;
-        report.first_match = Match{event.timestamp, event.filter_id, event.capability_id};
+        if (config.evidence_kind == EvidenceKind::CapabilityDrop) {
+            if (event.kind != EventKind::CapabilityDrop || event.capability_id > 2)
+                return;
+            report.matched = true;
+            report.first_match = Match{event.timestamp, event.filter_id, event.capability_id};
+        } else if (event.kind == EventKind::ClassifyDrop && event.layer_id &&
+                   event.ms_direction == classify_outbound_direction) {
+            report.first_candidate =
+                Match{event.timestamp, event.filter_id, not_called, event.layer_id, event.ms_direction};
+        }
+    }
+    void verifyIsolationRule(Report& value) {
+        if (config.evidence_kind != EvidenceKind::ClassifyIsolation || !value.first_candidate)
+            return;
+        const auto candidate = *value.first_candidate;
+        // These are current-object reads on the subscription's engine, after
+        // callback quiescence. They are not a historical policy snapshot.
+        value.filter_result.error = ERROR_GEN_FAILURE;
+        try {
+            value.filter_result = calls.get_filter(engine, candidate.filter_id);
+        } catch (...) {
+            value.reason = Reason::Exception;
+        }
+        value.layer_result.error = ERROR_GEN_FAILURE;
+        try {
+            value.layer_result = calls.get_layer(engine, candidate.layer_id);
+        } catch (...) {
+            value.reason = Reason::Exception;
+        }
+        if (value.reason == Reason::Exception)
+            return;
+        const auto& filter = value.filter_result;
+        const auto& layer = value.layer_result;
+        if (filter.error != ERROR_SUCCESS || !filter.present) {
+            value.reason = Reason::FilterQuery;
+            return;
+        }
+        if (layer.error != ERROR_SUCCESS || !layer.present) {
+            value.reason = Reason::LayerQuery;
+            return;
+        }
+        value.rule_verified =
+            filter.filter_id == candidate.filter_id && !filter.disabled && filter.action == FilterAction::Block &&
+            filter.provider == ProviderIdentity::AppIsolation && filter.sublayer == SublayerIdentity::AppIsolation &&
+            filter.layer == LayerIdentity::AleAuthConnectV4 && layer.layer == LayerIdentity::AleAuthConnectV4 &&
+            layer.layer_id == candidate.layer_id;
+        if (value.rule_verified) {
+            value.matched = true;
+            value.first_match = candidate;
+        } else {
+            value.reason = Reason::IsolationRule;
+        }
     }
 };
 AppContainerNetworkObserver::AppContainerNetworkObserver(Config config, Calls calls)
@@ -194,14 +253,20 @@ AppContainerNetworkObserver::~AppContainerNetworkObserver() {
     if (impl_->snapshot().context_retained)
         static_cast<void>(impl_.release());
 }
-AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::preflight(Calls calls) noexcept {
+AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::preflight(Calls calls,
+                                                                                    EvidenceKind kind) noexcept {
     PreflightReport report;
+    report.evidence_kind = kind;
     struct Resources final {
         Calls calls;
         Handle engine{};
     };
     std::unique_ptr<Resources> resources;
     try {
+        if (!validKind(kind)) {
+            report.reason = Reason::InvalidConfiguration;
+            return report;
+        }
         if (!preflightCalls(calls)) {
             report.reason = Reason::MissingCall;
             return report;
@@ -213,7 +278,7 @@ AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::prefli
         resources->engine = opened.handle;
         if (opened.error != ERROR_SUCCESS || !opened.handle)
             report.reason = Reason::Engine;
-        else if (queryOptions(resources->calls, opened.handle, report))
+        else if (queryOptions(resources->calls, opened.handle, report, kind))
             report.available = true;
     } catch (...) {
         report.available = false;
@@ -234,11 +299,12 @@ AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::prefli
     }
     return report;
 }
-AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::nativePreflight() noexcept {
+AppContainerNetworkObserver::PreflightReport AppContainerNetworkObserver::nativePreflight(EvidenceKind kind) noexcept {
     try {
-        return preflight(systemCalls());
+        return preflight(systemCalls(), kind);
     } catch (...) {
         PreflightReport report;
+        report.evidence_kind = kind;
         report.reason = Reason::Exception;
         return report;
     }
@@ -258,7 +324,9 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
             value.failed(report);
             return snapshot();
         }
-        if (!preflightCalls(value.calls) || !value.calls.app_id || !value.calls.subscribe || !value.calls.unsubscribe) {
+        if (!preflightCalls(value.calls) || !value.calls.app_id || !value.calls.subscribe || !value.calls.unsubscribe ||
+            (value.config.evidence_kind == EvidenceKind::ClassifyIsolation &&
+             (!value.calls.get_filter || !value.calls.get_layer))) {
             report.reason = Reason::MissingCall;
             value.failed(report);
             return snapshot();
@@ -281,7 +349,7 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
             value.failed(report);
             return snapshot();
         }
-        if (!queryOptions(value.calls, value.engine, report)) {
+        if (!queryOptions(value.calls, value.engine, report, value.config.evidence_kind)) {
             value.failed(report);
             return snapshot();
         }
@@ -289,7 +357,9 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::start() noexcep
                                         loopback_ipv4,
                                         6,
                                         value.config.remote_port,
-                                        EventKind::CapabilityDrop,
+                                        value.config.evidence_kind == EvidenceKind::CapabilityDrop
+                                            ? EventKind::CapabilityDrop
+                                            : EventKind::ClassifyDrop,
                                         value.config.begin_filetime,
                                         value.config.end_filetime};
         // All immutable identity storage and the accepting context exist before
@@ -351,6 +421,7 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::stop() noexcept
         return snapshot();
     }
     value.subscription = 0;
+    value.verifyIsolationRule(report);
     report.close_error = ERROR_GEN_FAILURE;
     try {
         report.close_error = value.calls.close(value.engine);
@@ -362,7 +433,6 @@ AppContainerNetworkObserver::Report AppContainerNetworkObserver::stop() noexcept
     }
     value.engine = 0;
     report.state = State::Stopped;
-    report.reason = Reason::None;
     value.publish(report);
     return snapshot();
 }
@@ -382,6 +452,77 @@ Observer::OptionResult nativeOption(const Observer::Handle engine, const FWPM_EN
     const bool typed = raw && raw->type == FWP_UINT32;
     return {error, typed, typed ? raw->uint32 : 0};
 }
+std::uint64_t currentFiletime() {
+    FILETIME value{};
+    GetSystemTimeAsFileTime(&value);
+    return (std::uint64_t{value.dwHighDateTime} << 32) | value.dwLowDateTime;
+}
+Observer::GuidBytes guidBytes(const GUID& guid) {
+    static_assert(sizeof(GUID) == 16);
+    Observer::GuidBytes result{};
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(&guid), result.size(), result.begin());
+    return result;
+}
+Observer::LayerIdentity layerIdentity(const GUID& guid) {
+    if (IsEqualGUID(guid, FWPM_LAYER_ALE_AUTH_CONNECT_V4))
+        return Observer::LayerIdentity::AleAuthConnectV4;
+    if (IsEqualGUID(guid, FWPM_LAYER_ALE_AUTH_CONNECT_V6))
+        return Observer::LayerIdentity::AleAuthConnectV6;
+    return Observer::LayerIdentity::Unknown;
+}
+Observer::FilterResult nativeFilter(const Observer::Handle engine, const std::uint64_t id) {
+    Observer::FilterResult result;
+    result.query_begin_filetime = currentFiletime();
+    FWPM_FILTER0* raw = nullptr;
+    result.error = FwpmFilterGetById0(reinterpret_cast<HANDLE>(engine), id, &raw);
+    const WfpMemory memory{raw};
+    if (result.error == ERROR_SUCCESS && raw) {
+        result.present = true;
+        result.filter_id = raw->filterId;
+        result.flags = raw->flags;
+        result.disabled = (raw->flags & FWPM_FILTER_FLAG_DISABLED) != 0;
+        result.action_type = raw->action.type;
+        if (raw->action.type == FWP_ACTION_BLOCK)
+            result.action = Observer::FilterAction::Block;
+        else if (raw->action.type == FWP_ACTION_PERMIT)
+            result.action = Observer::FilterAction::Permit;
+        else if (raw->action.type == FWP_ACTION_CALLOUT_TERMINATING ||
+                 raw->action.type == FWP_ACTION_CALLOUT_INSPECTION || raw->action.type == FWP_ACTION_CALLOUT_UNKNOWN)
+            result.action = Observer::FilterAction::Callout;
+        if (raw->providerKey) {
+            result.provider_guid = guidBytes(*raw->providerKey);
+            if (IsEqualGUID(*raw->providerKey, FWPM_PROVIDER_MPSSVC_APP_ISOLATION))
+                result.provider = Observer::ProviderIdentity::AppIsolation;
+            else if (IsEqualGUID(*raw->providerKey, FWPM_PROVIDER_MPSSVC_WF))
+                result.provider = Observer::ProviderIdentity::WindowsFirewall;
+        }
+        result.sublayer_guid = guidBytes(raw->subLayerKey);
+        if (IsEqualGUID(raw->subLayerKey, FWPM_SUBLAYER_MPSSVC_APP_ISOLATION))
+            result.sublayer = Observer::SublayerIdentity::AppIsolation;
+        else if (IsEqualGUID(raw->subLayerKey, FWPM_SUBLAYER_MPSSVC_WF))
+            result.sublayer = Observer::SublayerIdentity::WindowsFirewall;
+        result.layer = layerIdentity(raw->layerKey);
+        result.layer_guid = guidBytes(raw->layerKey);
+        result.filter_key = guidBytes(raw->filterKey);
+    }
+    result.query_end_filetime = currentFiletime();
+    return result;
+}
+Observer::LayerResult nativeLayer(const Observer::Handle engine, const std::uint16_t id) {
+    Observer::LayerResult result;
+    result.query_begin_filetime = currentFiletime();
+    FWPM_LAYER0* raw = nullptr;
+    result.error = FwpmLayerGetById0(reinterpret_cast<HANDLE>(engine), id, &raw);
+    const WfpMemory memory{raw};
+    if (result.error == ERROR_SUCCESS && raw) {
+        result.present = true;
+        result.layer_id = raw->layerId;
+        result.layer = layerIdentity(raw->layerKey);
+        result.layer_guid = guidBytes(raw->layerKey);
+    }
+    result.query_end_filetime = currentFiletime();
+    return result;
+}
 std::span<const std::uint8_t> nativeSid(const SID* sid) {
     if (!sid || !IsValidSid(const_cast<SID*>(sid)))
         return {};
@@ -396,7 +537,9 @@ struct NativeBridge final {
     Observer::Handle subscription{};
 };
 void CALLBACK nativeEvent(void* context, const FWPM_NET_EVENT2* event) noexcept {
-    if (!context || !event || event->type != FWPM_NET_EVENT_TYPE_CAPABILITY_DROP || !event->capabilityDrop)
+    if (!context || !event ||
+        !((event->type == FWPM_NET_EVENT_TYPE_CAPABILITY_DROP && event->capabilityDrop) ||
+          (event->type == FWPM_NET_EVENT_TYPE_CLASSIFY_DROP && event->classifyDrop)))
         return;
     constexpr std::uint32_t needed = FWPM_NET_EVENT_FLAG_IP_VERSION_SET | FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET |
                                      FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET | FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET |
@@ -406,21 +549,30 @@ void CALLBACK nativeEvent(void* context, const FWPM_NET_EVENT2* event) noexcept 
     if ((header.flags & needed) != needed || header.ipVersion != FWP_IP_VERSION_V4 || !header.appId.data ||
         !header.appId.size || header.appId.size > maximum_app_id_bytes)
         return;
-    const auto& drop = *event->capabilityDrop;
-    const Observer::EventView view{Observer::EventKind::CapabilityDrop,
-                                   Observer::required_fields,
-                                   (std::uint64_t{header.timeStamp.dwHighDateTime} << 32) |
-                                       header.timeStamp.dwLowDateTime,
-                                   4,
-                                   header.remoteAddrV4,
-                                   header.ipProtocol,
-                                   header.remotePort,
-                                   {header.appId.data, header.appId.size},
-                                   nativeSid(header.userId),
-                                   nativeSid(header.packageSid),
-                                   static_cast<std::uint32_t>(drop.networkCapabilityId),
-                                   drop.filterId,
-                                   drop.isLoopback};
+    Observer::EventView view;
+    view.fields = Observer::required_fields;
+    view.timestamp = (std::uint64_t{header.timeStamp.dwHighDateTime} << 32) | header.timeStamp.dwLowDateTime;
+    view.ip_version = 4;
+    view.remote_ipv4 = header.remoteAddrV4;
+    view.protocol = header.ipProtocol;
+    view.remote_port = header.remotePort;
+    view.app_id = {header.appId.data, header.appId.size};
+    view.user_sid = nativeSid(header.userId);
+    view.package_sid = nativeSid(header.packageSid);
+    if (event->type == FWPM_NET_EVENT_TYPE_CAPABILITY_DROP) {
+        const auto& drop = *event->capabilityDrop;
+        view.kind = Observer::EventKind::CapabilityDrop;
+        view.capability_id = static_cast<std::uint32_t>(drop.networkCapabilityId);
+        view.filter_id = drop.filterId;
+        view.is_loopback = drop.isLoopback;
+    } else {
+        const auto& drop = *event->classifyDrop;
+        view.kind = Observer::EventKind::ClassifyDrop;
+        view.filter_id = drop.filterId;
+        view.is_loopback = drop.isLoopback;
+        view.layer_id = drop.layerId;
+        view.ms_direction = drop.msFwpDirection;
+    }
     const auto& bridge = *static_cast<NativeBridge*>(context);
     bridge.callback(bridge.context, view);
 }
@@ -432,8 +584,9 @@ FILETIME filetime(const std::uint64_t value) { return {static_cast<DWORD>(value)
 Observer::SubscribeResult nativeSubscribe(const std::shared_ptr<NativeBindings>& bindings,
                                           const Observer::Handle engine, const Observer::SubscriptionFilter& filter,
                                           const Observer::Callback callback, void* context) {
-    if (!callback || !context || filter.kind != Observer::EventKind::CapabilityDrop || filter.app_id.empty() ||
-        filter.app_id.size() > maximum_app_id_bytes || filter.app_id.size() % 2 != 0 ||
+    if (!callback || !context ||
+        (filter.kind != Observer::EventKind::CapabilityDrop && filter.kind != Observer::EventKind::ClassifyDrop) ||
+        filter.app_id.empty() || filter.app_id.size() > maximum_app_id_bytes || filter.app_id.size() % 2 != 0 ||
         filter.remote_ipv4 != Observer::loopback_ipv4 || filter.protocol != 6 || !filter.remote_port ||
         filter.begin_filetime > filter.end_filetime ||
         filter.end_filetime - filter.begin_filetime > Observer::maximum_window_ticks)
@@ -456,7 +609,9 @@ Observer::SubscribeResult nativeSubscribe(const std::shared_ptr<NativeBindings>&
     conditions[3].conditionValue.uint16 = filter.remote_port;
     conditions[4].fieldKey = FWPM_CONDITION_NET_EVENT_TYPE;
     conditions[4].conditionValue.type = FWP_UINT32;
-    conditions[4].conditionValue.uint32 = FWPM_NET_EVENT_TYPE_CAPABILITY_DROP;
+    conditions[4].conditionValue.uint32 = filter.kind == Observer::EventKind::CapabilityDrop
+                                              ? FWPM_NET_EVENT_TYPE_CAPABILITY_DROP
+                                              : FWPM_NET_EVENT_TYPE_CLASSIFY_DROP;
     FWPM_NET_EVENT_ENUM_TEMPLATE0 selection{};
     selection.startTime = filetime(filter.begin_filetime);
     selection.endTime = filetime(filter.end_filetime);
@@ -524,6 +679,8 @@ AppContainerNetworkObserver::Calls AppContainerNetworkObserver::systemCalls() {
         .close =
             [](const Handle engine) {
                 return static_cast<std::uint32_t>(FwpmEngineClose0(reinterpret_cast<HANDLE>(engine)));
-            }};
+            },
+        .get_filter = [](const Handle engine, const std::uint64_t id) { return nativeFilter(engine, id); },
+        .get_layer = [](const Handle engine, const std::uint16_t id) { return nativeLayer(engine, id); }};
 }
 } // namespace music_player::sandbox_probe

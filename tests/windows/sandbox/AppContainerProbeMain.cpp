@@ -46,15 +46,24 @@ enum class Mode { Refuse, Help, SelfTest, NetworkPreflight, HostProbe };
 struct Options final {
     Mode mode{Mode::Refuse};
     QString evidence;
+    NetworkObserver::EvidenceKind network_kind{NetworkObserver::EvidenceKind::CapabilityDrop};
 };
 bool mayRemoveProfile(bool created, bool native_acks) { return created && native_acks; }
 bool confirmedProfileCleanup(bool create_succeeded, bool remains_owned, bool native_acks) {
     return create_succeeded && !remains_owned && native_acks;
 }
 bool witnessedNetworkDenial(DWORD error, const NetworkObserver::Report& report) {
-    return error == WSAETIMEDOUT && report.state == NetworkObserver::State::Stopped && report.available &&
-           report.matched && report.first_match && report.reason == NetworkObserver::Reason::None &&
-           !report.context_retained && report.unsubscribe_error == ERROR_SUCCESS && report.close_error == ERROR_SUCCESS;
+    if (error != WSAETIMEDOUT || report.state != NetworkObserver::State::Stopped || !report.available ||
+        !report.matched || !report.first_match || report.reason != NetworkObserver::Reason::None ||
+        report.context_retained || report.unsubscribe_error != ERROR_SUCCESS || report.close_error != ERROR_SUCCESS)
+        return false;
+    switch (report.evidence_kind) {
+    case NetworkObserver::EvidenceKind::CapabilityDrop:
+        return report.first_match->capability_id <= 2;
+    case NetworkObserver::EvidenceKind::ClassifyIsolation:
+        return report.rule_verified && report.first_match->capability_id == NetworkObserver::not_called;
+    }
+    return false;
 }
 QString workspace() { return QDir::fromNativeSeparators(QString::fromUtf8(RC_MUSIC_SANDBOX_WORKSPACE_ROOT)); }
 
@@ -89,9 +98,14 @@ Options parse(const QStringList& arguments) {
         return {Mode::SelfTest, {}};
     if (arguments == QStringList{QStringLiteral("--network-preflight")})
         return {Mode::NetworkPreflight, {}};
-    if (arguments.size() == 3 && arguments[0] == QStringLiteral("--allow-profile-changes") &&
-        arguments[1] == QStringLiteral("--evidence-dir") && evidencePath(arguments[2]))
-        return {Mode::HostProbe, QDir::fromNativeSeparators(arguments[2])};
+    if (arguments == QStringList{QStringLiteral("--network-preflight-classify")})
+        return {Mode::NetworkPreflight, {}, NetworkObserver::EvidenceKind::ClassifyIsolation};
+    if ((arguments.size() == 3 || (arguments.size() == 4 && arguments[3] == QStringLiteral("--classify-isolation"))) &&
+        arguments[0] == QStringLiteral("--allow-profile-changes") && arguments[1] == QStringLiteral("--evidence-dir") &&
+        evidencePath(arguments[2]))
+        return {Mode::HostProbe, QDir::fromNativeSeparators(arguments[2]),
+                arguments.size() == 4 ? NetworkObserver::EvidenceKind::ClassifyIsolation
+                                      : NetworkObserver::EvidenceKind::CapabilityDrop};
     return {};
 }
 int selfTest() {
@@ -103,6 +117,9 @@ int selfTest() {
         QStringList{QStringLiteral("--self-test"), QStringLiteral("--allow-profile-changes")},
         QStringList{QStringLiteral("--network-preflight"), QStringLiteral("--allow-profile-changes")},
         QStringList{QStringLiteral("--network-preflight"), QStringLiteral("--evidence-dir"), evidence},
+        QStringList{QStringLiteral("--network-preflight-classify"), QStringLiteral("--allow-profile-changes")},
+        QStringList{QStringLiteral("--classify-isolation")},
+        QStringList{QStringLiteral("--network-preflight"), QStringLiteral("--classify-isolation")},
         QStringList{QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), evidence,
                     QStringLiteral("--profile-name"), QStringLiteral("existing-profile")},
         QStringList{QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), QStringLiteral(".")},
@@ -203,6 +220,42 @@ int selfTest() {
     if (protocol::decodeReport(reply))
         return 9;
     int failures = 0;
+    const auto classify_preflight = parse({QStringLiteral("--network-preflight-classify")});
+    if (classify_preflight.mode != Mode::NetworkPreflight ||
+        classify_preflight.network_kind != NetworkObserver::EvidenceKind::ClassifyIsolation) {
+        std::puts("FAIL parser refuses the standalone classify-isolation preflight");
+        ++failures;
+    }
+    const auto classify_host = parse({QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"),
+                                      evidence, QStringLiteral("--classify-isolation")});
+    if (classify_host.mode != Mode::HostProbe ||
+        classify_host.network_kind != NetworkObserver::EvidenceKind::ClassifyIsolation) {
+        std::puts("FAIL parser refuses explicit classify-isolation selection for the authorized probe");
+        ++failures;
+    }
+    auto classify_network = network;
+    classify_network.evidence_kind = NetworkObserver::EvidenceKind::ClassifyIsolation;
+    classify_network.first_match->capability_id = NetworkObserver::not_called;
+    if (witnessedNetworkDenial(WSAETIMEDOUT, classify_network)) {
+        std::puts("FAIL classify event is promoted without verification of the isolation rule");
+        ++failures;
+    }
+    classify_network.rule_verified = true;
+    if (!witnessedNetworkDenial(WSAETIMEDOUT, classify_network) ||
+        witnessedNetworkDenial(ERROR_SUCCESS, classify_network)) {
+        std::puts("FAIL verified classify evidence must complement only timeout");
+        ++failures;
+    }
+    classify_network.first_match->capability_id = 0;
+    if (witnessedNetworkDenial(WSAETIMEDOUT, classify_network)) {
+        std::puts("FAIL classify proof is mislabeled as an identified missing capability");
+        ++failures;
+    }
+    classify_network.evidence_kind = static_cast<NetworkObserver::EvidenceKind>(99);
+    if (witnessedNetworkDenial(WSAETIMEDOUT, classify_network)) {
+        std::puts("FAIL unknown evidence kind is accepted");
+        ++failures;
+    }
     for (const auto* component : {"NUL", "CON.txt", "COM1"}) {
         const auto path = workspace() + QStringLiteral("/out/product/") + QString::fromLatin1(component);
         if (parse({QStringLiteral("--allow-profile-changes"), QStringLiteral("--evidence-dir"), path}).mode !=
@@ -271,8 +324,31 @@ bool receipt(const QString& directory, const QString& leaf, QJsonObject object) 
 QJsonValue networkError(std::uint32_t value) {
     return value == NetworkObserver::not_called ? QJsonValue{QJsonValue::Null} : QJsonValue{static_cast<qint64>(value)};
 }
+QString networkKind(NetworkObserver::EvidenceKind kind) {
+    switch (kind) {
+    case NetworkObserver::EvidenceKind::CapabilityDrop:
+        return QStringLiteral("capability-drop");
+    case NetworkObserver::EvidenceKind::ClassifyIsolation:
+        return QStringLiteral("classify-app-isolation");
+    }
+    return QStringLiteral("unknown");
+}
+QString rawGuid(const NetworkObserver::GuidBytes& value) {
+    return QString::fromLatin1(
+        QByteArray{reinterpret_cast<const char*>(value.data()), static_cast<qsizetype>(value.size())}.toHex());
+}
+QJsonObject networkMatch(const NetworkObserver::Match& match, NetworkObserver::EvidenceKind kind) {
+    const bool classify = kind == NetworkObserver::EvidenceKind::ClassifyIsolation;
+    return {{"filetime", QString::number(match.timestamp)},
+            {"filter_id", QString::number(match.filter_id)},
+            {"capability_id", networkError(match.capability_id)},
+            {"layer_id", classify ? QJsonValue{match.layer_id} : QJsonValue{QJsonValue::Null}},
+            {"ms_fwp_direction",
+             classify ? QJsonValue{static_cast<qint64>(match.ms_direction)} : QJsonValue{QJsonValue::Null}}};
+}
 QJsonObject networkPreflightReport(const NetworkObserver::PreflightReport& report) {
     return {{"mode", "read-only-wfp-network-preflight"},
+            {"evidence_kind", networkKind(report.evidence_kind)},
             {"available", report.available},
             {"reason", static_cast<int>(report.reason)},
             {"engine_open_error", networkError(report.open_error)},
@@ -291,6 +367,8 @@ QJsonObject networkPreflightReport(const NetworkObserver::PreflightReport& repor
 }
 QJsonObject networkReport(const NetworkObserver::Report& report) {
     QJsonObject result{{"state", static_cast<int>(report.state)},
+                       {"evidence_kind", networkKind(report.evidence_kind)},
+                       {"rule_verified", report.rule_verified},
                        {"reason", static_cast<int>(report.reason)},
                        {"available", report.available},
                        {"matched", report.matched},
@@ -307,14 +385,42 @@ QJsonObject networkReport(const NetworkObserver::Report& report) {
                        {"keywords_is_uint32", report.keywords_is_uint32},
                        {"keywords_value", static_cast<qint64>(report.keywords_value)}};
     if (report.first_match)
-        result.insert(QStringLiteral("first_match"),
-                      QJsonObject{{"filetime", QString::number(report.first_match->timestamp)},
-                                  {"filter_id", QString::number(report.first_match->filter_id)},
-                                  {"capability_id", static_cast<qint64>(report.first_match->capability_id)}});
+        result.insert(QStringLiteral("first_match"), networkMatch(*report.first_match, report.evidence_kind));
+    if (report.first_candidate)
+        result.insert(QStringLiteral("first_candidate"), networkMatch(*report.first_candidate, report.evidence_kind));
+    if (report.evidence_kind == NetworkObserver::EvidenceKind::ClassifyIsolation) {
+        const auto& filter = report.filter_result;
+        result.insert(QStringLiteral("filter"),
+                      QJsonObject{{"error", networkError(filter.error)},
+                                  {"present", filter.present},
+                                  {"filter_id", QString::number(filter.filter_id)},
+                                  {"disabled", filter.disabled},
+                                  {"action", static_cast<int>(filter.action)},
+                                  {"provider", static_cast<int>(filter.provider)},
+                                  {"sublayer", static_cast<int>(filter.sublayer)},
+                                  {"layer", static_cast<int>(filter.layer)},
+                                  {"provider_guid_raw_sdk_bytes", rawGuid(filter.provider_guid)},
+                                  {"sublayer_guid_raw_sdk_bytes", rawGuid(filter.sublayer_guid)},
+                                  {"layer_guid_raw_sdk_bytes", rawGuid(filter.layer_guid)},
+                                  {"filter_key_raw_sdk_bytes", rawGuid(filter.filter_key)},
+                                  {"flags", static_cast<qint64>(filter.flags)},
+                                  {"action_type", static_cast<qint64>(filter.action_type)},
+                                  {"query_begin_filetime", QString::number(filter.query_begin_filetime)},
+                                  {"query_end_filetime", QString::number(filter.query_end_filetime)}});
+        const auto& layer = report.layer_result;
+        result.insert(QStringLiteral("layer"),
+                      QJsonObject{{"error", networkError(layer.error)},
+                                  {"present", layer.present},
+                                  {"layer_id", layer.layer_id},
+                                  {"layer", static_cast<int>(layer.layer)},
+                                  {"layer_guid_raw_sdk_bytes", rawGuid(layer.layer_guid)},
+                                  {"query_begin_filetime", QString::number(layer.query_begin_filetime)},
+                                  {"query_end_filetime", QString::number(layer.query_end_filetime)}});
+    }
     return result;
 }
-int networkPreflight() {
-    const auto report = NetworkObserver::nativePreflight();
+int networkPreflight(NetworkObserver::EvidenceKind kind) {
+    const auto report = NetworkObserver::nativePreflight(kind);
     const auto bytes = QJsonDocument{networkPreflightReport(report)}.toJson();
     if (std::fwrite(bytes.constData(), 1, static_cast<std::size_t>(bytes.size()), stdout) !=
         static_cast<std::size_t>(bytes.size()))
@@ -501,7 +607,8 @@ class UdpLoopback final {
 };
 
 QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDownloadAppContainer>& container,
-                      std::uint16_t port, std::uint16_t udp_port, bool& passed, bool& native_acks) {
+                      std::uint16_t port, std::uint16_t udp_port, NetworkObserver::EvidenceKind network_kind,
+                      bool& passed, bool& native_acks) {
     require(native_acks, "helper refused after uncertain native ACK");
     const auto private_parent = root + QStringLiteral("/sentinel");
     const auto runtimes = root + QStringLiteral("/helper-runtimes");
@@ -555,7 +662,7 @@ QJsonObject runHelper(const QString& root, const std::shared_ptr<const WindowsDo
             ? begin_filetime + NetworkObserver::maximum_window_ticks
             : 0;
     NetworkObserver network({QDir::toNativeSeparators(config.executable).toStdWString(), request.sid, currentUserSid(),
-                             port, begin_filetime, end_filetime},
+                             port, begin_filetime, end_filetime, network_kind},
                             NetworkObserver::systemCalls());
     const auto network_started = network.start();
     QByteArray output, errors;
@@ -1011,6 +1118,7 @@ int hostProbe(const Options& options) {
             {"owner_composed", true},
             {"capabilities", QJsonArray{}},
             {"mode", "common-AppContainer-not-LPAC"},
+            {"network_oracle", networkKind(options.network_kind)},
             {"temporary", temporary.path()},
             {"windows_kernel", QSysInfo::kernelVersion()},
             {"driver_sha256", QString::fromLatin1(hashFile(QCoreApplication::applicationFilePath()))},
@@ -1046,7 +1154,8 @@ int hostProbe(const Options& options) {
         require(receipt(options.evidence, QStringLiteral("05-no-child.json"), no_child), "no-child receipt");
         require(native_acks && no_child.value("passed").toBool(), "no-child proof failed");
         bool helper_passed = false;
-        const auto helper = runHelper(temporary.path(), container, loopback.port, udp.port, helper_passed, native_acks);
+        const auto helper = runHelper(temporary.path(), container, loopback.port, udp.port, options.network_kind,
+                                      helper_passed, native_acks);
         require(receipt(options.evidence, QStringLiteral("02-helper-result.json"), helper), "helper receipt");
         require(native_acks, "helper ACK uncertain; remaining cases/profile cleanup refused");
         require(udp.positiveControl(), "UDP parent post-control failed");
@@ -1111,15 +1220,15 @@ int wmain(int argc, wchar_t** argv) {
         arguments.push_back(QString::fromWCharArray(argv[index]));
     const auto options = parse(arguments);
     if (options.mode == Mode::Help) {
-        std::puts("AppContainer probe: --self-test | --network-preflight | --help | --allow-profile-changes "
-                  "--evidence-dir <fresh workspace "
-                  "out/product directory>");
+        std::puts("AppContainer probe: --self-test | --network-preflight | --network-preflight-classify | --help | "
+                  "--allow-profile-changes --evidence-dir <fresh workspace out/product directory> "
+                  "[--classify-isolation]");
         return 0;
     }
     if (options.mode == Mode::SelfTest)
         return selfTest();
     if (options.mode == Mode::NetworkPreflight)
-        return networkPreflight();
+        return networkPreflight(options.network_kind);
     if (options.mode != Mode::HostProbe) {
         std::fputs("Refused: explicit profile-change flag and fresh workspace evidence path are required.\n", stderr);
         return 64;

@@ -7,7 +7,7 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
-Checkpoint de 2026-11-04: o [observador de rede do ensaio](media-profile-lifecycle.md#observador-de-eventos-de-rede-do-ensaio) acrescenta preflight somente leitura e prova WFP correlacionada, com **7/7 CTest / 269 casos Qt**, sem skips. Sem elevação, a consulta recebeu **acesso negado (5)**. A única leitura elevada autorizada confirmou coleta geral **1** e máscara `CAPABILITY_DROP` **0**, com fechamento reconhecido e sem perfil/assinatura ou mudança de firewall. A prova física de rede e a política de armazenamento do perfil continuam pendentes, assim como a composição instalada. O backend/owner do checkpoint anterior mantém sua evidência física parcial, com um perfil inicial preservado para revisão. Downloads de produção permanecem OFF.
+Checkpoint de 2026-11-04: o [oráculo CLASSIFY_DROP do ensaio](media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento) exige evento correlacionado e consulta da regra concreta de App Isolation, sem alterar opções WFP. Fechamento **7/7 CTest / 342 casos Qt**, sem skips. O preflight sem elevação recebeu **acesso negado (5)**; assinatura real com observador separado e driver/worker normais ainda depende de composição e autorização próprias. A prova física de rede, armazenamento/cotas/resíduos e composição instalada continuam pendentes. Downloads de produção permanecem OFF.
 
 ## 1. Regras de uso
 
@@ -745,7 +745,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — observador WFP somente no ensaio
+### Checkpoint atual — CLASSIFY_DROP e regra concreta de App Isolation
+
+Incremento de 2026-11-04: o [oráculo separado ClassifyIsolation](media-profile-lifecycle.md#bloqueio-por-regra-de-isolamento) admite máscara zero com coleta ligada, preservando CAPABILITY_DROP como padrão. Um candidato precisa de todas as identidades/tupla/janela, direção 0x3901 e loopback explícito. Depois de Unsubscribe reconhecido, queries exatas Filter/Layer na mesma engine exigem IDs iguais, filtro habilitado BLOCK, provider/sublayer App Isolation e ambas as camadas ALE_AUTH_CONNECT_V4. Erro, ausência, divergência, callout ou Close incerto não produzem prova. Nenhuma consulta ocorre no callback; metadados atuais não são snapshot histórico.
+
+TDD **106 passagens/42 falhas → 148/148** no observador, preservando os 75 CAP. Cinco Reds do parser cobriram modos explícitos, prova sem regra, rótulo indevido de capability e tipo desconhecido. Fechamento **7/7 CTest / 342 passagens Qt, sem skips**, build Release do probe/alvos focados e fronteira Lite **255 comandos** passaram. Evidências em `out/product/test-runs/media-isolation-classify-20261104/`. O preflight compilado selecionou ClassifyIsolation e retornou open/close0, query5 e exit1, sem assinatura ou perfil. Não houve nova elevação ou alteração de firewall/coleta.
+
+Próximo passo: compor observador elevado one-shot separado, mantendo driver/owner/worker normais, com request/ready/result limitados, nonce/hash e identidade/lifetime conferidos. Executar todo o driver elevado comprovaria apenas aquele token/contexto; Low/AppContainer não demonstram equivalência com o app normal. A autorização anterior foi somente uma leitura elevada e já foi consumida. Nenhum novo ensaio privilegiado está autorizado por este checkpoint. Rede física, escrita/cotas/resíduos do perfil, perfil preservado e composição instalada continuam abertos; ADR-0011 Proposto e downloads OFF.
+
+<a id="checkpoint-atual--observador-wfp-somente-no-ensaio"></a>
+
+### Checkpoint anterior — observador WFP somente no ensaio
 
 Incremento de 2026-11-04: o [observador de eventos do probe](../tests/windows/sandbox/README.md#observação-de-bloqueio-de-rede-pelo-windows) usa somente leitura WFP. O preflight consulta coleta e keyword existentes, sem perfil/assinatura e sem SetOption/ACL/firewall. A assinatura filtra app ID privado, TCP, destino/porta e CAPABILITY_DROP; o callback confere flags, SID de usuário/perfil e janela de até 15 segundos. Somente correspondência após start/stop reconhecidos complementa 10060, preservando o erro bruto. Não promove conexão bem-sucedida, CLASSIFY_DROP ou falta de evento, e não confirma ACK/cleanup de perfil.
 
