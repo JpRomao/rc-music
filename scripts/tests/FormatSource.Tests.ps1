@@ -55,6 +55,7 @@ function New-Fixture {
     $config = @{
         ClangVersion = 'clang-format version 19.1.1'; QmlVersion = 'qmlformat 6.11.2'
         ClangVersionExit = 0; QmlVersionExit = 0; ClangExit = 0; QmlExit = 0
+        MaxCommandLineCharacters = 0; ClangFailurePath = ''
     }
     $configFile = Join-Path $tools 'configuration.json'
     Set-File $configFile (ConvertTo-Json $config)
@@ -68,9 +69,21 @@ if ($args.Count -eq 1 -and $args[0] -ceq '--version') {
     $global:LASTEXITCODE = $settings."${kind}VersionExit"
     return
 }
+# Script fakes do not pass through CreateProcess. Enforce its Windows command
+# line ceiling here, independently of how the caller groups source arguments.
+$lineCharacters = $PSCommandPath.Length + 3
+foreach ($argument in $args) { $lineCharacters += ([string]$argument).Length + 3 }
+if ($settings.MaxCommandLineCharacters -gt 0 -and $lineCharacters -gt $settings.MaxCommandLineCharacters) {
+    $global:LASTEXITCODE = 206
+    return
+}
 $global:LASTEXITCODE = $settings."${kind}Exit"
 if ($global:LASTEXITCODE -ne 0) { return }
 $files = @($args | Where-Object { [IO.File]::Exists($_) })
+if ($kind -ceq 'Clang' -and $settings.ClangFailurePath -and $files -ccontains $settings.ClangFailurePath) {
+    $global:LASTEXITCODE = 7
+    return
+}
 if ($args -contains '-i') {
     foreach ($file in $files) {
         $text = [IO.File]::ReadAllText($file).Replace("`r`n", "`n").Replace("`r", "`n").Replace('BAD', 'GOOD')
@@ -98,6 +111,36 @@ function Get-Calls($Fixture) {
     }
 }
 function Save-Config($Fixture) { Set-File $Fixture.ConfigFile (ConvertTo-Json $Fixture.Config) }
+function New-LargeFixture {
+    $fixture = New-Fixture
+    $files = @($fixture.CppFile, $fixture.Header)
+    for ($index = 0; $index -lt 180; $index++) {
+        $leaf = 'format path ' + ('x' * 28) + (' {0:D3} 日本.cpp' -f $index)
+        $path = Join-Path $fixture.Source ('src/arguments 日本 with spaces/' + $leaf)
+        Set-File $path "BAD`r`n"
+        $files += $path
+    }
+    $fixture.ExpectedCppFiles = @($files | Sort-Object)
+    $fixture.Config.MaxCommandLineCharacters = 32767
+    Save-Config $fixture
+    $characters = $fixture.Clang.Length + 3
+    foreach ($path in $files) { $characters += $path.Length + 3 }
+    Assert-True ($characters -gt 32767) 'Fixture does not exceed the Windows command line ceiling'
+    return $fixture
+}
+function Assert-ExactCppCoverage($Fixture, [string] $RequiredFlag) {
+    $calls = @(Get-Calls $Fixture | Where-Object { $_.kind -ceq 'Clang' -and $_.arguments -notcontains '--version' })
+    $actual = @()
+    foreach ($call in $calls) {
+        Assert-True ($call.arguments -contains $RequiredFlag) 'A C++ invocation lost its formatting mode'
+        $characters = $Fixture.Clang.Length + 3
+        foreach ($argument in $call.arguments) { $characters += $argument.Length + 3 }
+        Assert-True ($characters -le 32767) 'C++ invocation exceeds the Windows command line ceiling'
+        $actual += @($call.arguments | Where-Object { [IO.File]::Exists($_) })
+    }
+    Assert-True ($actual.Count -eq $Fixture.ExpectedCppFiles.Count) 'C++ files were omitted or checked more than once'
+    Assert-True ((@($actual | Sort-Object) -join "`n") -ceq ($Fixture.ExpectedCppFiles -join "`n")) 'C++ argument bytes or coverage changed'
+}
 function Assert-Rejected([scriptblock] $Operation, [string] $Pattern) {
     try { & $Operation | Out-Null }
     catch {
@@ -206,6 +249,32 @@ try {
         $calls = @(Get-Calls $fixture | Where-Object { $_.arguments -notcontains '--version' })
         Assert-True ($calls.Count -eq 2) 'Unexpected Apply command count'
         foreach ($call in $calls) { Assert-True ($call.arguments -contains '-i') 'Apply did not pass -i' }
+    }
+    Test-Case 'check covers a source inventory larger than the Windows command line ceiling exactly once' {
+        $fixture = New-LargeFixture
+        $before = @($fixture.ExpectedCppFiles | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash }) -join '|'
+        $result = @(Invoke-Formatter $fixture)
+        Assert-True (($result -join ' ') -match '182 C\+\+.*1 QML') 'Large inventory lost its exact source counts'
+        Assert-ExactCppCoverage $fixture '--dry-run'
+        $after = @($fixture.ExpectedCppFiles | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash }) -join '|'
+        Assert-True ($before -ceq $after) 'Large check changed source bytes'
+    }
+    Test-Case 'Apply formats every source beyond the Windows command line ceiling exactly once' {
+        $fixture = New-LargeFixture
+        Invoke-Formatter $fixture -Apply | Out-Null
+        Assert-ExactCppCoverage $fixture '-i'
+        foreach ($path in $fixture.ExpectedCppFiles | Where-Object { $_ -ne $fixture.CppFile -and $_ -ne $fixture.Header }) {
+            Assert-True ([IO.File]::ReadAllText($path) -ceq "GOOD`n") 'Large Apply skipped a C++ source'
+        }
+    }
+    Test-Case 'failure in a later C++ invocation is propagated before QML starts' {
+        $fixture = New-LargeFixture
+        $fixture.Config.ClangFailurePath = $fixture.ExpectedCppFiles[-1]
+        Save-Config $fixture
+        Assert-Rejected { Invoke-Formatter $fixture } 'code 7:'
+        $calls = @(Get-Calls $fixture | Where-Object { $_.arguments -notcontains '--version' })
+        Assert-True (@($calls | Where-Object kind -CEQ 'Clang').Count -gt 1) 'Failure did not exercise a later invocation'
+        Assert-True (@($calls | Where-Object kind -CEQ 'Qml').Count -eq 0) 'QML ran after a C++ failure'
     }
     Test-Case 'QML mismatch rejects without modifying the file' {
         $fixture = New-Fixture

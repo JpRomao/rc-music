@@ -95,6 +95,8 @@ O recibo `out/product/validation-runs/run-d6a077deddec4ec88d982a552db91a3c/run.j
 
 ## Formato sem alteração implícita
 
+O inventário C++ é dividido em chamadas com orçamento de 30.000 unidades UTF-16, incluindo executável, flags e aspas, para respeitar o [limite de linha de comando do Windows](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw). Cada arquivo continua conferido uma vez; qualquer lote falho impede a etapa QML. A regressão de 2026-11-04 teve baseline 18/18, Red 18 passagens/3 falhas e Green 21/21; Check/Apply cobrem 182 paths longos com espaços/Unicode, sem perda, duplicação ou escrita no Check. A conferência real passou em 383 fontes C++ e 62 QML. Evidências: `out/product/test-runs/browser-media-discovery-20261104/format-source-*.log`.
+
 [Format-Source.ps1](../scripts/Format-Source.ps1) enumera `.cpp` e `.hpp` em `include`, `src`, `tests` e `tools`, e `.qml` em `src/ui/qml` e `tests/ui/quick`. Exclui segmentos `experiments` e `out`, inclusive se estiverem dentro dessas raízes. Usa `rg` primeiro e enumeração PowerShell quando `rg` não está disponível. Um inventário C++ ou QML vazio é erro, não sucesso.
 
 O check C++ chama clang-format com `--dry-run --Werror`. O qmlformat **não oferece `--check`** nessa versão: o runner chama `--newline unix` e compara o stdout com a fonte, normalizando finais de linha para LF sem escrever no arquivo original. Uma diferença, inclusive a ausência de newline final, faz o check falhar. `-Apply` usa `-i` explicitamente nas duas ferramentas. Argumentos são passados em arrays, preservando espaços e Unicode nos caminhos.

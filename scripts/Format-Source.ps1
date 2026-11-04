@@ -68,7 +68,31 @@ $qmlVersion = (Invoke-SourceTool $QmlFormat @('--version')) -join "`n"
 if ($qmlVersion -notmatch '\bqmlformat 6\.11\.2(?:\s|\z)') { throw 'Expected qmlformat version 6.11.2' }
 
 [string[]] $clangArguments = if ($Apply) { @('-i') } else { @('--dry-run', '--Werror') }
-Invoke-SourceTool $ClangFormat ($clangArguments + $cppFiles) | Out-Null
+# Windows limits the complete process command line to 32767 UTF-16 units.
+# Count executable/flags and quoted file arguments, leaving headroom for launch
+# quoting. Arrays still preserve each literal path when an inventory needs more
+# than one invocation; every batch must succeed before continuing to QML.
+$maximumCommandCharacters = 30000
+$clangPrefixCharacters = $ClangFormat.Length + 3
+foreach ($argument in $clangArguments) { $clangPrefixCharacters += $argument.Length + 3 }
+$clangBatch = [Collections.Generic.List[string]]::new()
+$clangCharacters = $clangPrefixCharacters
+foreach ($file in $cppFiles) {
+    $fileCharacters = $file.Length + 3
+    if ($clangPrefixCharacters + $fileCharacters -gt $maximumCommandCharacters) {
+        throw "C++ formatter input exceeds the Windows command line budget: $file"
+    }
+    if ($clangBatch.Count -gt 0 -and $clangCharacters + $fileCharacters -gt $maximumCommandCharacters) {
+        Invoke-SourceTool $ClangFormat ($clangArguments + $clangBatch.ToArray()) | Out-Null
+        $clangBatch.Clear()
+        $clangCharacters = $clangPrefixCharacters
+    }
+    $clangBatch.Add($file)
+    $clangCharacters += $fileCharacters
+}
+if ($clangBatch.Count -gt 0) {
+    Invoke-SourceTool $ClangFormat ($clangArguments + $clangBatch.ToArray()) | Out-Null
+}
 foreach ($file in $qmlFiles) {
     if ($Apply) {
         Invoke-SourceTool $QmlFormat @('-i', '--newline', 'unix', $file) | Out-Null
