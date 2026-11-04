@@ -203,7 +203,7 @@ export function createPopupController({
       normalizeSnapshot({ type: 'snapshot', pageUrl: tab.url, candidates: [], truncated: false });
       binding = { tabId: tab.id, windowId: tab.windowId, pageUrl: tab.url, documentId: null };
       const result = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['detector.js'],
+        target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['media-collector.js', 'detector.js'],
       });
       if (!live(token)) return;
       if (result.length !== 1 || result[0].frameId !== 0 || typeof result[0].documentId !== 'string' || !result[0].documentId) throw staleError();

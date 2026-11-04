@@ -2,7 +2,7 @@
 
 **Estado:** arquitetura vigente da stack aceita; núcleo e composição gráfica promovidos, cobertura restante e gates M1 pendentes
 **Stack do produto:** C++20 + Qt 6 Quick/QML, Qt Multimedia/FFmpeg e TagLib
-**Última revisão:** 2026-11-03
+**Última revisão:** 2026-11-04
 
 O [ADR-0005](decisions/0005-windows-product-stack.md) registra a escolha explícita do mantenedor, sem exigir A/B antes do desenvolvimento Windows. As invariantes de domínio, portas, concorrência, privacidade local e integração por capabilities permanecem independentes do toolkit. O mapeamento Qt passa a ser a direção do produto; Tauri permanece somente como alternativa histórica, não dependência a implementar. Aceitação técnica não encerra migração, benchmarks, acessibilidade nativa, Linux ou distribuição.
 
@@ -39,6 +39,14 @@ O aplicativo é uma instância desktop única do ponto de vista do usuário. A q
 O módulo opcional [de apresentação dos downloads](../download-jobs.md#painel-compartilhado-e-preparação-de-saída) é compartilhado entre Lite e Completa: binding/timer/model e painel QML não dependem de engine de navegação. O presenter usa preparação de saída C++ tipada, separada de source-drain e da persistência local; aprovação exige parada física e Saved ou abandono explícito confirmado. A composição completa atual existe somente no shell instrumentado, com stores/workers reais e publicação sintética. O [host e IPC Native Messaging Windows](../browser-extension.md#host-e-transporte-native-messaging-windows) existem em alvo opcional separado, com identidade de produção vazia/desabilitada. O produto continua sem ingresso remoto/serviço ativados; isso não fecha ownership, namespace/identidade instalada entre processos, ferramenta/sandbox ou distribuição.
 
 A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-cooperativa-do-dono) pertence ao adapter do servidor, não ao domínio ou à eleição `OpenSources`. A chave por SID do usuário/endpoint case-insensitive independe de origem, edição, perfil e CWD; criação atômica recusa concorrentes cooperativos antes do `listen`. Falha de `listen` libera a tentativa; sucesso retém a reserva até destruição do servidor, inclusive após ingresso `stopped`. A composição deve conservar servidor, serviço/controller e stores/workers vivos na ordem de drenagem, sem interpretar encerramento do socket como encerramento do dono. Não é autenticação, exclusividade contra pipe hostil ou escolha de identidade instalada entre Lite/Completa.
+
+### Seleção de mídia no navegador experimental
+
+A [composição WebView2 opt-in](../embedded-browser.md) usa o [coletor compartilhado](../browser-extension.md#coletor-compartilhado-com-a-navegação-experimental) como recurso próprio, em chamada explícita e sem globals ou ponte da página. A detecção nativa atual alcança documento principal e Shadow DOM aberto; frames permanecem na cobertura da extensão isolada e exigem lifecycle nativo antes de entrarem nessa composição. Lite mantém engine e esse módulo fora do grafo padrão.
+
+[`rc_music_media_data`](../../cmake/RcMusicMediaData.cmake) concentra o preflight Unicode/JSON estrito e a policy de URL canônica, extraídos do Native codec sem alterar seu contrato. É biblioteca Qt Core sem serviço de jobs, transporte, execução ou UI. `NativeDownloadCodec` e `BrowserMediaSnapshotCodec` aplicam seus schemas/limites próprios sobre esses helpers; o segundo recebe somente dados não autenticados do script, preservando page URL/fragmento para comparação exata e URLs de mídia assinadas sem renormalização.
+
+`BrowserMediaSelection`, na apresentação, coordena tokens fornecidos pelo host, invalidação por navegação, seleção de até 20 itens e confirmação por varredura fresca das tuplas escolhidas. Seu estado puro não inicia script, rede, download ou importação. O painel Qt Widgets projeta esse estado, enquanto o adapter Win32/WebView2 controla HWND, eventos, chamada assíncrona e lifetime do engine. O limite de chamadas nativas pendentes pertence ao adapter/painel, separado do token lógico da seleção. Nenhuma regra de engine ou Qt entra no domínio; o ingresso/download protegido de produção continua desligado.
 
 ## 3. Componentes do produto e alternativa histórica
 

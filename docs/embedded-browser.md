@@ -1,6 +1,6 @@
 # Navegação interna Windows opcional
 
-**Estado:** vertical experimental opt-in implementada; compilação e testes de contrato são separados do smoke com engine real, não executado neste incremento.
+**Estado:** navegação e detecção/seleção de mídia experimentais opt-in; compilação e testes de contrato são separados do smoke com engine real. Downloads de produção permanecem desligados.
 
 O [ADR-0010](architecture/decisions/0010-experimental-webview2-browser.md) propõe WebView2 para a primeira vertical visível da Completa, preservando o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md). O build padrão/Lite não compila nem linka a engine. Navegação não ativa download, importação ou Native Messaging.
 
@@ -31,7 +31,23 @@ O adapter escolhe **um diretório próprio por instância**, sob CacheLocation/E
 
 Os testes de contrato usam janela falsa e não iniciam WebView2. Build ON comprova compilação/link da composição; grafo OFF comprova ausência do módulo. Smoke visual com runtime real, sites, foco/DPI/acessibilidade, privacidade, permissões, autenticação do runtime e distribuição permanecem evidências separadas. Nenhum teste falso comprova essas propriedades do engine real.
 
-## Evidência proporcional
+## Detecção e seleção de mídia
+
+Na janela experimental, **Mídia → Detectar mídia** coleta candidatos da página principal e de Shadow DOM aberto. A lista permite escolher até 20 itens; **Conferir seleção** faz outra coleta e exige URL, título e tipo iguais para cada item escolhido. Mudanças em itens não selecionados ou na ordem não ampliam nem revogam a seleção por si só. Fonte selecionada alterada/removida exige nova detecção e escolha. **Baixar selecionados** permanece desabilitado, com a razão visível: a composição protegida de downloads ainda não está habilitada. A conferência não importa, baixa ou grava mídia e não vale como autorização permanente de envio futuro.
+
+O mesmo `extensions/chromium/main/media-collector.js` atende a extensão e o recurso embutido no C++. A função é pura, sem chrome, timers, listeners ou estado persistente. A extensão conserva sua sessão V2 no mundo isolado e habilita frames acessíveis; o wrapper nativo cria um escopo local e usa `includeFrames:false`, sem sentinel global. Frames internos, roots fechados, blob/MSE, HLS/DASH, live e DRM continuam fora desta cobertura. YouTube não se torna elegível na principal por aparecer numa página ou nesta lista.
+
+O host usa `ExecuteScript` apenas por ação explícita. O resultado é JSON não confiável, com schema fechado, UTF-8/strings/keys estritos, até 1 MiB, 100 candidatos, URL de 8.192 unidades e título de 200. Policy de URL e preflight JSON são compartilhados com o codec Native Messaging, sem incorporar serviço, rede ou host à navegação. URLs assinadas são conservadas na memória; a lista mostra título, tipo e host, sem query. A página não recebe objetos Qt, comandos ou serviços.
+
+Tokens de operação e lifecycle pertencem ao host. Navegação principal, mudança de fonte, fechamento e falha invalidam dados e seleção; completions antigas são inertes. O adapter correlaciona `NavigationId` e também observa `SourceChanged`, pois mudança de fragmento pode ocorrer sem novo ID. Há uma única chamada de script pendente por engine; timeout de cinco segundos revoga o resultado, mas conserva o slot físico até callback ou fechamento do engine. Não há retry automático. A Microsoft documenta [ExecuteScript](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2#executescript) e a [ordem de eventos de navegação](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/navigation-events).
+
+Esse script roda no contexto da página, não no mundo isolado da extensão. DOM e APIs JavaScript podem ser controlados pela página; limites e contexto no host não autenticam o conteúdo ou provam isolamento do runtime. Nenhum WebView2 real, perfil ou site foi iniciado neste incremento. A futura ação Baixar deve realizar conferência fresca e handoff autorizado no mesmo fluxo, com os gates próprios de execução remota.
+
+Evidências em `out/product/test-runs/browser-media-discovery-20261104/`: extensão baseline 150/150; coletor novo Red 1 passagem/10 falhas, Green 162/162 incluindo caracterização posterior do wrapper IIFE. Codec Native Messaging passou 188/188 antes/depois da extração. Novos codec/seleção tiveram Red 44/23 e 8/17, seguido de Green 68/68 e 25/25. Painel teve Red 2/15 e a regressão de aviso após timeout/navegação 17/1 → 18/18; tracker cancelado 6/1 → 7/7. Fechamento 7/7 CTest, 188 casos Qt, com painel reexecutado em 340 × 360/fontes Windows/falha em warnings inesperados. Builds/lint ON, Lite OFF/grafo 255/zero testes, biblioteca opcional Release OFF/zero testes e formato 383 C++/62 QML passaram. A única mensagem esperada do painel offscreen é a limitação exata de size hints; warnings de fonte ou de aplicação não são ignorados.
+
+`verification.json` registra o grafo ON de 287 comandos com coletor/codec/painel e sem ingresso/execução de downloads. O executável experimental mantém x64 GUI (subsistema 2), com 2.330.112 bytes e SHA-256 `0e8b65ecdd24f23029ed41f1c890dbd448d1b08514ff906c6ed08af6f1cd8669`. O receipt final vincula as fontes commitadas; nenhum instalador foi atualizado neste incremento.
+
+## Evidência anterior da navegação
 
 Registros em `out/product/test-runs/embedded-browser-20261103`: Red comportamental **0/3 CTest**, com policy **39 passagens/14 falhas**, binding **2/10** e contrato nativo inerte **3/2**. Green inicial **3/3 CTest, 70 casos Qt** (policy 53, binding 12, contrato nativo 5), sem engine ou janela nativa criada. O contrato nativo usa QCoreApplication e owners inválidos, sem tentar inicializar WebView2; o binding usa uma porta falsa. Essas provas não simulam os efeitos reais de permissões/COM/network do runtime.
 

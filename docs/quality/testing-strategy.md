@@ -1,7 +1,7 @@
 # Estratégia de testes e TDD
 
 **Estado:** contrato de qualidade inicial  
-**Última revisão:** 2026-10-02
+**Última revisão:** 2026-11-04
 **Escopo:** domínio, aplicação, adapters, UI, plataforma e distribuição
 
 ## 1. Objetivo
@@ -37,6 +37,10 @@ O incremento de [recuperação da identificação](../download-jobs.md#recupera�
 - cobertura ajuda a encontrar lacunas, mas não mede qualidade sozinha.
 
 ## 3. Pirâmide e responsabilidades
+
+No incremento de [coleta e seleção internas](../browser-extension.md#coletor-compartilhado-com-a-navegação-experimental), a extração de `StrictJson`/`DirectMediaPolicy` preservou **188/188 casos Qt do Native codec antes e depois**, recompilados no cache da biblioteca. O novo codec teve Red **44 passagens/23 falhas** e Green **68/68**, incluindo um caso adicional de BOM bruto em string; a representação escapada `\uFEFF` conserva o mesmo valor Unicode no caso de normalização, sem aceitar o lexema bruto que o Qt pode remover. O controller teve Red **8/17** e Green **25/25**, cobrindo tokens antigos, navegação com URL igual/fragmento, limite de seleção, mudança somente de fontes não selecionadas, recusa/timeout e consumo único da confirmação.
+
+O baseline Node **150/150** e fechamento **162/162** preservam o detector v2 e exercitam o coletor compartilhado em VM sem globals/API de extensão/frames no wrapper nativo. O painel usa bridge falsa e Qt Widgets offscreen: Red **2 passagens/15 falhas**, regressão de aviso após timeout/navegação **17/1 → 18/18**, em 340 × 360/fontes Windows. `failOnWarning` rejeita mensagens inesperadas; só o warning exato de size hints do plugin offscreen é esperado junto aos shows. Tracker de navegação cancelada teve **6/1 → 7/7**. O fechamento reúne **7/7 CTest/188 casos Qt**, build/lint ON, Lite OFF/grafo 255/zero testes, biblioteca opcional Release OFF/zero testes e formato **383 C++/62 QML**. Evidências em `out/product/test-runs/browser-media-discovery-20261104/`. Nenhum desses checks inicia WebView2 real, faz download, altera Registry ou prova isolamento físico/consumo da engine; navegação, perfil, permissões e distribuição continuam gates distintos.
 
 Na [descoberta da extensão](../browser-extension.md#descoberta-em-documentos-e-shadow-dom-aberto), testar detector isolado com frames/Shadow DOM abertos aninhados, base/título por documento, DOM inacessível/fechado, limites agregados e cleanup de roots destacados. Relógio falso cobre debounce sem starvation e descoberta periódica de roots tardios. Compor detector, policy e controller reais em VM Node sobre DOM/Chrome falsos para provar que mudança de URL/Document/conexão da fonte selecionada bloqueia o envio sem depender de evento da lista; alterações não selecionadas não bloqueiam e o DTO nativo não carrega sourceId ou dados adicionais. Cobrir documento principal exato, timeout/dispose e resposta tardia da coleta. São contratos determinísticos, sem alegar prova de SOP, permissões, DOM ou integração no Brave real; manifesto e gates nativos têm evidência própria.
 

@@ -86,7 +86,7 @@ function integration(nodes, options = {}) {
         assert.equal(settings.target.tabId, tab.id);
         if (settings.files) {
           assert.deepEqual(settings.target, { tabId: tab.id, frameIds: [0] });
-          assert.deepEqual(settings.files, ["detector.js"]);
+          assert.deepEqual(settings.files, ["media-collector.js", "detector.js"]);
           injections.push(clone(settings));
           env.inject();
           return [{ frameId: 0, documentId }];
@@ -207,7 +207,7 @@ test("real detector, policy and controller send only explicitly consented nested
   t.after(() => h.dispose());
   await h.ready();
   assert.deepEqual(h.injections[0], {
-    target: { tabId: 7, frameIds: [0] }, world: "ISOLATED", files: ["detector.js"],
+    target: { tabId: 7, frameIds: [0] }, world: "ISOLATED", files: ["media-collector.js", "detector.js"],
   });
   assert.deepEqual(h.links[0].settings, { documentId: "top-document-1", name: "rc-music-detection-v2" });
   assert.deepEqual(new Set(h.controller.getState().candidates.map((candidate) => candidate.url)), new Set([

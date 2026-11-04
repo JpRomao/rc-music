@@ -1,6 +1,6 @@
 # Extensão principal Brave/Chromium
 
-**Estado:** cliente, biblioteca Qt Core de recepção e host/transporte Native Messaging Windows opcionais implementados. A configuração de produção do host fica vazia/desabilitada e o player de produção continua sem ingresso/serviço remoto ativo. Não há extensão/host instalados, download remoto ativado, engine interna ou prova no Brave real; não é uma entrega funcional instalada nem extensão publicada.
+**Estado:** cliente, biblioteca Qt Core de recepção e host/transporte Native Messaging Windows opcionais implementados. A configuração de produção do host fica vazia/desabilitada e o player de produção continua sem ingresso/serviço remoto ativo. Não há extensão/host instalados ou prova no Brave real; a [navegação interna experimental](embedded-browser.md) tem composição opt-in própria e não ativa essa ponte. Não é uma entrega funcional instalada nem extensão publicada.
 
 Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. YouTube segue extensão independente, ainda não implementada.
 
@@ -28,6 +28,16 @@ O popup consulta esse método no `documentId` principal fixado, revalida os dado
 A comparação fresca usa os dados brutos antes da deduplicação, recusando ambiguidade nos selecionados. Atualizações recebidas durante a verificação final também revogam o lote se uma fonte selecionada mudou e a entrega ao canal nativo ainda não ocorreu. Depois do handoff, uma atualização não cancela o pedido já enviado nem fabrica rejeição; incerteza/resposta continuam os contratos do cliente nativo.
 
 Frames de outra origem/sandbox inacessíveis, Shadow DOM fechado, tráfego anterior ao clique, blob/MSE, HLS/DASH, live e conteúdo protegido continuam lacunas explícitas. A concessão temporária [activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab) e as permissões do manifesto permanecem iguais. Esta cobertura incremental não encerra R1.7/FR-051–053 nem substitui validação no Brave real.
+
+## Coletor compartilhado com a navegação experimental
+
+O incremento de 2026-11-04 extrai a caminhada para [media-collector.js](../extensions/chromium/main/media-collector.js), sem dependências do Chrome, timers, listeners ou retenção de documentos fora da chamada. O popup injeta **`media-collector.js` e depois `detector.js`**, na mesma ordem, somente no documento principal e no mundo `ISOLATED`. Permissões, host, protocolo nativo e identidade da extensão permanecem os mesmos.
+
+O detector v2 conserva seu canal/sentinela de mundo isolado, geração por conexão, WeakMap de Document/URL, sourceId, observação de roots e encerramento de recursos. Ele chama o coletor com frames acessíveis habilitados e a preparação anterior dos títulos; policy e popup continuam validando/normalizando antes de apresentar ou enviar. O coletor contabiliza também os 18 bytes do envelope `type: "snapshot"`, preservando o teto de 1 MiB. As URLs resolvidas conservam query e escapes, removendo somente o fragmento da mídia.
+
+A composição WebView2 embute esse mesmo arquivo como recurso, mas usa uma IIFE sem instalar função/sentinela global. Cada ação pede dados frescos com `includeFrames:false`: documento principal e Shadow DOM aberto, sem ler `contentDocument`, criar observadores ou receber APIs da extensão. Retorna apenas `pageUrl`, `candidates` e `truncated`; a página não fornece tokens de navegação/operação nem autoridade para download. O [modelo de ameaças](security/browser-extension-threat-model.md#coleta-nativa-experimental-da-completa) distingue o contexto de página do mundo isolado e os gates ainda abertos.
+
+Baseline de **150 testes Node** e fechamento **162/162**, sem skips, incluem os contratos v2 existentes e 12 casos do coletor nativo: IIFE sem globals, ausência de frames/APIs/timers, Shadow DOM aberto, fonte fresca, query assinada, títulos e limites. São DOM/Chrome simulados, sem execução do Brave ou WebView2 real. Evidências em `out/product/test-runs/browser-media-discovery-20261104/`; detecção interna não ativa downloads protegidos, instala componentes ou conclui FR-051–053.
 
 ## Protocolo nativo de desenvolvimento
 

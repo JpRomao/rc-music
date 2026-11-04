@@ -13,10 +13,13 @@
 // clang-format on
 
 #include "adapters/BrowserNavigationPolicy.hpp"
+#include "adapters/BrowserNavigationTracker.hpp"
+#include "presentation/BrowserMediaPanel.hpp"
 
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
+#include <QFile>
 #include <QFocusEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -24,6 +27,7 @@
 #include <QMoveEvent>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QResource>
 #include <QStandardPaths>
 #include <QThread>
 #include <QUuid>
@@ -33,6 +37,8 @@
 #include <functional>
 #include <string>
 #include <vector>
+
+static void initializeBrowserMediaResource() { Q_INIT_RESOURCE(rc_music_browser_media); }
 
 namespace music_player::m0 {
 namespace {
@@ -102,12 +108,15 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
     QPushButton* reload{};
     QPushButton* stop{};
     QPushButton* go{};
+    BrowserMediaPanel* media{};
     Surface* surface{};
     ComPtr<ICoreWebView2Environment> environment;
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
     std::vector<std::function<void()>> detach;
     std::uint64_t generation{};
+    BrowserNavigationTracker navigation_tracker;
+    QString media_source;
     QString profile;
     bool starting{};
     bool apartment{};
@@ -142,6 +151,10 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
     void closeEngine() noexcept {
         ++generation;
         starting = false;
+        navigation_tracker.cancel();
+        media_source.clear();
+        if (media)
+            media->resetEngine();
         for (auto& remove : detach)
             remove();
         detach.clear();
@@ -181,6 +194,55 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
             message(L"Não foi possível abrir este endereço.");
     }
 
+    void setMediaPage(QString source = {}) {
+        media_source = std::move(source);
+        media->setPage(media_source);
+    }
+
+    QString source() const {
+        LPWSTR raw = nullptr;
+        return webview && SUCCEEDED(webview->get_Source(&raw)) ? boundedUri(raw) : QString{};
+    }
+
+    void probeMedia(const std::uint64_t operation) {
+        const auto expected_source = media_source;
+        if (!webview || navigation_tracker.pending() || expected_source.isEmpty() || source() != expected_source) {
+            media->failProbe(operation);
+            return;
+        }
+        QFile collector{QStringLiteral(":/rcmusic/browser/media-collector.js")};
+        if (!collector.open(QIODevice::ReadOnly) || collector.size() > 128 * 1024) {
+            media->failProbe(operation);
+            return;
+        }
+        // The declaration is local to this invocation. No page sentinel, host
+        // object, WebMessage handler or persistent script is installed.
+        const auto script = QStringLiteral("(() => {\n") + QString::fromUtf8(collector.readAll()) +
+                            QStringLiteral("\nreturn rcMusicCollectMedia(document, {includeFrames:false});\n})()");
+        const auto native = script.toStdWString();
+        const auto weak = weak_from_this();
+        const auto epoch = generation;
+        const auto result = webview->ExecuteScript(
+            native.c_str(),
+            Callback<ICoreWebView2ExecuteScriptCompletedHandler>([weak, epoch, operation, expected_source](
+                                                                     HRESULT result, LPCWSTR json) noexcept {
+                return dispatch(weak, epoch, [&](BrowserState& state) {
+                    constexpr std::size_t maximum_units = 1024 * 1024;
+                    const auto units = json ? wcsnlen_s(json, maximum_units + 1) : 0;
+                    if (FAILED(result) || !json || units > maximum_units || state.navigation_tracker.pending() ||
+                        state.media_source != expected_source || state.source() != expected_source) {
+                        state.media->failProbe(operation);
+                        return;
+                    }
+                    // Callback text is borrowed from COM, not CoTaskMem-owned.
+                    state.media->completeProbe(operation,
+                                               QString::fromWCharArray(json, static_cast<qsizetype>(units)).toUtf8());
+                });
+            }).Get());
+        if (FAILED(result))
+            media->failProbe(operation);
+    }
+
     bool configure() {
         ComPtr<ICoreWebView2Settings> settings;
         ComPtr<ICoreWebView2Settings4> settings4;
@@ -205,23 +267,40 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         const auto weak = weak_from_this();
         const auto epoch = generation;
         EventRegistrationToken token{};
-        const auto navigation = Callback<ICoreWebView2NavigationStartingEventHandler>(
-            [weak, epoch](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) noexcept {
-                return dispatch(weak, epoch, [&](BrowserState& state) {
-                    LPWSTR raw = nullptr;
-                    const auto uri = SUCCEEDED(args->get_Uri(&raw)) ? boundedUri(raw) : QString{};
-                    if (!browserNavigationAllowed(uri)) {
-                        (void)args->put_Cancel(TRUE);
-                        state.message(L"Navegação bloqueada: este navegador aceita somente HTTPS.");
-                    } else {
-                        state.message(L"Carregando…");
-                    }
+        const auto navigation = [weak, epoch](const bool top_level) {
+            return Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [weak, epoch, top_level](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) noexcept {
+                    return dispatch(weak, epoch, [&](BrowserState& state) {
+                        if (top_level) {
+                            state.setMediaPage();
+                            UINT64 navigation_id = 0;
+                            if (FAILED(args->get_NavigationId(&navigation_id))) {
+                                (void)args->put_Cancel(TRUE);
+                                state.navigation_tracker.cancel();
+                                state.setMediaPage(state.source());
+                                return;
+                            }
+                            state.navigation_tracker.begin(navigation_id);
+                        }
+                        LPWSTR raw = nullptr;
+                        const auto uri = SUCCEEDED(args->get_Uri(&raw)) ? boundedUri(raw) : QString{};
+                        if (!browserNavigationAllowed(uri)) {
+                            (void)args->put_Cancel(TRUE);
+                            if (top_level) {
+                                state.navigation_tracker.cancel();
+                                state.setMediaPage(state.source());
+                            }
+                            state.message(L"Navegação bloqueada: este navegador aceita somente HTTPS.");
+                        } else {
+                            state.message(L"Carregando…");
+                        }
+                    });
                 });
-            });
-        if (FAILED(webview->add_NavigationStarting(navigation.Get(), &token)))
+        };
+        if (FAILED(webview->add_NavigationStarting(navigation(true).Get(), &token)))
             return false;
         detach.push_back([view = webview, token] { (void)view->remove_NavigationStarting(token); });
-        if (FAILED(webview->add_FrameNavigationStarting(navigation.Get(), &token)))
+        if (FAILED(webview->add_FrameNavigationStarting(navigation(false).Get(), &token)))
             return false;
         detach.push_back([view = webview, token] { (void)view->remove_FrameNavigationStarting(token); });
 
@@ -297,18 +376,25 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
             return false;
         detach.push_back([view = webview, token] { (void)view->remove_HistoryChanged(token); });
         if (FAILED(webview->add_SourceChanged(
-                Callback<ICoreWebView2SourceChangedEventHandler>([weak, epoch](
-                                                                     ICoreWebView2*,
-                                                                     ICoreWebView2SourceChangedEventArgs*) noexcept {
-                    return dispatch(weak, epoch, [](BrowserState& state) {
-                        LPWSTR raw = nullptr;
-                        if (SUCCEEDED(state.webview->get_Source(&raw))) {
-                            const auto uri = boundedUri(raw);
-                            if (browserNavigationAllowed(uri))
-                                state.address->setText(uri);
-                        }
-                    });
-                }).Get(),
+                Callback<ICoreWebView2SourceChangedEventHandler>(
+                    [weak, epoch](ICoreWebView2*, ICoreWebView2SourceChangedEventArgs* args) noexcept {
+                        return dispatch(weak, epoch, [&](BrowserState& state) {
+                            // SourceChanged also covers fragment/history changes,
+                            // which need not create a new NavigationId.
+                            state.setMediaPage();
+                            LPWSTR raw = nullptr;
+                            if (SUCCEEDED(state.webview->get_Source(&raw))) {
+                                const auto uri = boundedUri(raw);
+                                if (browserNavigationAllowed(uri))
+                                    state.address->setText(uri);
+                                BOOL new_document = TRUE;
+                                if (!state.navigation_tracker.pending() &&
+                                    SUCCEEDED(args->get_IsNewDocument(&new_document)) && !new_document)
+                                    state.setMediaPage(uri);
+                            }
+                        });
+                    })
+                    .Get(),
                 &token)))
             return false;
         detach.push_back([view = webview, token] { (void)view->remove_SourceChanged(token); });
@@ -316,8 +402,13 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
                 Callback<ICoreWebView2NavigationCompletedEventHandler>(
                     [weak, epoch](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args) noexcept {
                         return dispatch(weak, epoch, [&](BrowserState& state) {
+                            UINT64 navigation_id = 0;
+                            if (FAILED(args->get_NavigationId(&navigation_id)) ||
+                                !state.navigation_tracker.complete(navigation_id))
+                                return;
                             BOOL success = FALSE;
                             (void)args->get_IsSuccess(&success);
+                            state.setMediaPage(success ? state.source() : QString{});
                             state.message(success ? L"Página carregada." : L"A página não pôde ser carregada.");
                             state.buttons();
                         });
@@ -472,15 +563,23 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         address->setPlaceholderText(QStringLiteral("Endereço HTTPS"));
         address->setAccessibleName(QStringLiteral("Endereço HTTPS"));
         go = new QPushButton(QStringLiteral("Ir"), window.get());
+        auto* show_media = new QPushButton(QStringLiteral("Mídia"), window.get());
         for (auto* button : {back, forward, reload, stop})
             toolbar->addWidget(button);
         toolbar->addWidget(address, 1);
         toolbar->addWidget(go);
+        toolbar->addWidget(show_media);
         layout->addLayout(toolbar);
         surface = new Surface(window.get());
         surface->setAttribute(Qt::WA_NativeWindow);
         surface->setFocusPolicy(Qt::StrongFocus);
-        layout->addWidget(surface, 1);
+        auto* content = new QHBoxLayout;
+        content->addWidget(surface, 1);
+        media = new BrowserMediaPanel(window.get());
+        media->setMaximumWidth(340);
+        media->hide();
+        content->addWidget(media);
+        layout->addLayout(content, 1);
         status = new QLabel(QStringLiteral("Preparando navegação…"), window.get());
         status->setWordWrap(true);
         status->setTextFormat(Qt::PlainText);
@@ -490,6 +589,14 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         if (SetWindowLongPtrW(native, GWLP_HWNDPARENT, static_cast<LONG_PTR>(owner)) == 0 && GetLastError() != 0)
             return false;
         const auto weak = weak_from_this();
+        media->setProbeHandler([weak](const std::uint64_t operation) {
+            if (const auto state = weak.lock())
+                state->probeMedia(operation);
+        });
+        QObject::connect(show_media, &QPushButton::clicked, window.get(), [weak] {
+            if (const auto state = weak.lock())
+                state->media->setVisible(!state->media->isVisible());
+        });
         window->closed = [weak] {
             if (const auto state = weak.lock()) {
                 state->closeEngine();
@@ -583,6 +690,7 @@ class WindowsWebView2Browser final : public EmbeddedBrowserWindow {
 };
 } // namespace
 std::unique_ptr<EmbeddedBrowserWindow> makeWindowsWebView2Browser() {
+    initializeBrowserMediaResource();
     return std::make_unique<WindowsWebView2Browser>();
 }
 } // namespace music_player::m0

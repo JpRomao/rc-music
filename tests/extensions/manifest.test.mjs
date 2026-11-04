@@ -25,7 +25,7 @@ test('popup CSP blocks network, remote scripts, frames and embedding', () => {
 });
 
 test('extension resources are local and present, with no script text evaluation or remote display assets', () => {
-  const names = ['popup.html', 'popup.css', 'popup.mjs', 'popup-controller.mjs', 'policy.mjs', 'native-client.mjs', 'detector.js'];
+  const names = ['popup.html', 'popup.css', 'popup.mjs', 'popup-controller.mjs', 'policy.mjs', 'native-client.mjs', 'media-collector.js', 'detector.js'];
   for (const name of names) assert.equal(existsSync(new URL(name, root)), true, name);
   for (const name of ['popup.html', 'popup.css', 'popup.mjs']) {
     const source = readFileSync(new URL(name, root), 'utf8');

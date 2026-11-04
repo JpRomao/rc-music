@@ -1,6 +1,6 @@
 # Fronteira de segurança da extensão principal
 
-**Data:** 2026-11-03. **Estado:** R1.2/R1.7 em andamento; cliente, biblioteca Qt Core de admissão e host/IPC Native Messaging Windows opcionais, com [evidências e lacunas separadas](../browser-extension.md). O host de produção permanece desabilitado por configuração vazia e o player sem ingresso/serviço remoto ativo. Não há registro, extensão/host instalados ou prova no Brave real; download/conversão ainda exigem revisão própria.
+**Data:** 2026-11-04. **Estado:** R1.2/R1.7 em andamento; cliente, biblioteca Qt Core de admissão e host/IPC Native Messaging Windows opcionais, com [evidências e lacunas separadas](../browser-extension.md). O host de produção permanece desabilitado por configuração vazia e o player sem ingresso/serviço remoto ativo. Não há registro, extensão/host instalados ou prova no Brave real; download/conversão ainda exigem revisão própria.
 
 Contrato: [ADR-0007](../architecture/decisions/0007-main-extension-boundary.md), [escopo aceito](../architecture/decisions/0006-browser-editions-and-extensions.md), FR-050–053 e NFR-PRIV-001–004.
 
@@ -32,6 +32,16 @@ O filtro de host no navegador é defesa adicional, não prova de endereço públ
 - Timeout da resposta nativa de 5 s, cancelamento de observação e resultado incerto sem reenvio.
 
 Esses são limites de segurança/UX, não benchmarks nem garantia de consumo da engine. Ajustes precisam de testes de fronteira, sem usar páginas pessoais.
+
+## Coleta nativa experimental da Completa
+
+O [coletor compartilhado](../browser-extension.md#coletor-compartilhado-com-a-navegação-experimental) é executado por ação do host via `ExecuteScript`, em uma IIFE local no contexto da página. Isso difere do `ISOLATED` da extensão: a página pode adulterar APIs DOM/JavaScript e o resultado. O retorno é dado não autenticado; contagem, origem/título declarados ou uma varredura fresca não atestam conteúdo ou titular. O coletor não instala objeto global, listener, ponte de mensagens ou comando. Host objects e WebMessage continuam desligados; a página não recebe filesystem, presenter ou serviços do player.
+
+Essa composição coleta somente documento principal e Shadow DOM aberto. `includeFrames:false` evita ler documentos filhos; ampliar frames dependerá de identidade/lifecycle nativos próprios. Não reutilizar o sourceId v2 da extensão como autoridade de um documento WebView2. Geração do engine, eventos de navegação/origem e tokens de operação vêm do host; fechar, navegar ou mudar a fonte revoga lista/seleção e resultados antigos não confirmam operações novas.
+
+O callback limita o texto UTF-16 que será copiado, e o codec compartilhado aceita no máximo **1 MiB UTF-8, 100 candidatos, URLs de 8.192 unidades e títulos de 200 unidades**, com schema fechado, lexemas Unicode/JSON válidos e chaves únicas. A policy comum recusa contextos/pedidos inelegíveis, inclusive YouTube e hosts locais; preserva a URL assinada validada, sem reescrever query. Fontes inelegíveis são omitidas; duplicata elegível é ambiguidade e recusa o snapshot. Esses limites descrevem dados aceitos e a caminhada própria; não provam um limite físico absoluto de memória/CPU ou a honestidade de APIs do engine/contexto remoto.
+
+A seleção é vazia por padrão, limitada a 20 e precisa de nova leitura antes da confirmação. Compara apenas as tuplas selecionadas no mesmo contexto do host; confirmação é consumível uma vez, sem iniciar I/O. Uma chamada pendente ao engine tem tratamento nativo próprio de timeout/completion, separado do estado lógico. A produção continua sem composição de download habilitada; isolamento real, runtime, privacidade de perfil, instalação e distribuição mantêm seus gates. Testes de codec/controller e VM/offscreen não substituem um smoke com WebView2 real.
 
 ## Biblioteca C++ de admissão e riscos residuais
 

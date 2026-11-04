@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const detectorPath = new URL("../../../extensions/chromium/main/detector.js", import.meta.url);
+const collectorPath = new URL("../../../extensions/chromium/main/media-collector.js", import.meta.url);
 export const extensionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const popupUrl = `chrome-extension://${extensionId}/popup.html`;
 
@@ -133,7 +134,9 @@ export function harness(nodes = [], options = {}) {
   function prepareNode(node, owner) {
     node.ownerDocument = owner;
     if (node.shadowRoot) prepare(node.shadowRoot, owner);
-    try { if (node.contentDocument) prepare(node.contentDocument, node.contentDocument); } catch { /* Inaccessible. */ }
+    if (!options.nativeOnly) {
+      try { if (node.contentDocument) prepare(node.contentDocument, node.contentDocument); } catch { /* Inaccessible. */ }
+    }
   }
   prepare(document, document);
   window.top = window;
@@ -158,8 +161,14 @@ export function harness(nodes = [], options = {}) {
       disconnect() { this.active = false; }
     },
   };
+  if (options.nativeOnly) {
+    for (const name of ["chrome", "MutationObserver", "setTimeout", "clearTimeout", "setInterval", "clearInterval"]) delete sandbox[name];
+  }
   const context = vm.createContext(sandbox);
-  const inject = () => vm.runInContext(readFileSync(detectorPath, "utf8"), context, { filename: "detector.js" });
+  const inject = () => {
+    vm.runInContext(readFileSync(collectorPath, "utf8"), context, { filename: "media-collector.js" });
+    if (!options.nativeOnly) vm.runInContext(readFileSync(detectorPath, "utf8"), context, { filename: "detector.js" });
+  };
   const port = (overrides = {}) => {
     const channel = {
       name: options.portName ?? "rc-music-detection-v2",
@@ -175,6 +184,7 @@ export function harness(nodes = [], options = {}) {
   inject();
   return {
     clock, document, window, location, onConnect, observers, inject, port,
+    collect(settings = {}) { return JSON.parse(JSON.stringify(sandbox.rcMusicCollectMedia(document, settings))); },
     get treeReads() { return treeReads; },
     get inspected() { return inspected; },
     get sentinel() { return sandbox.__rcMusicDetectionV2; },

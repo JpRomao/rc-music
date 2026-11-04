@@ -743,7 +743,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
-### Checkpoint atual — recuperação da identificação dos downloads
+### Checkpoint atual — detecção e seleção de mídia no navegador interno
+
+Incremento de 2026-11-04: a [navegação experimental](embedded-browser.md#detecção-e-seleção-de-mídia) passa a compor coletor DOM compartilhado, codec estrito, seleção limitada e painel Widgets. Detectar e conferir são ações explícitas; somente tuples escolhidas devem permanecer iguais na nova coleta. O host invalida contexto após navegação/mudança de fonte e limita chamadas pendentes; páginas não recebem comandos, objetos Qt ou acesso ao player. A lista não habilita downloads de produção nem substitui a integração protegida ainda pendente. Lite e o instalador existente ficam sem engine interna; frames, engine real, privacidade e distribuição mantêm seus gates.
+
+Baseline extensão **150/150**; Red coletor **1 passagem/10 falhas**, Green **162/162**, incluindo wrapper IIFE. Refatoração de helpers manteve Native codec **188/188** antes/depois. Red codec/seleção **44/23 e 8/17 → Green 68/68 e 25/25**. Painel teve Red **2 passagens/15 falhas**, e a regressão de aviso após timeout/navegação **17/1 → 18/18**. Tracker de navegação teve **6/1 → 7/7**, impedindo que completion de navegação cancelada retire a página elegível.
+
+Fechamento **7/7 CTest, 188 casos Qt**, zero falhas/skips: policy 53, binding 12, contrato nativo inerte 5, codec 68, seleção 25, painel 18 e tracker 7. O painel foi reexecutado em **340 × 360**, com fontes Windows, teclado/mouse e falha em warnings inesperados; somente a limitação exata de size hints do plugin offscreen é esperada. Build/lint ON, Lite OFF com grafo 255/zero testes e biblioteca opcional Release OFF/zero testes passaram. Formato real **383 C++/62 QML** passou após [corrigir o limite de argumentos do runner](development-commands.md#formato-sem-alteração-implícita), com regressão **18/3 → 21/21**. Evidências em `out/product/test-runs/browser-media-discovery-20261104/`.
+
+### Checkpoint anterior — recuperação da identificação dos downloads
 
 A solicitação posterior de build/limpeza gerou a [entrega Lite local de 2026-11-04](local-delivery-20261104.md), vinculada ao commit limpo `d51c18c`: setup compilado sem instalar, inventário íntegro e 338,9 MB de artefatos obsoletos removidos com preservação conferida. Isso não encerra os gates de instalação, integração remota ou release.
 

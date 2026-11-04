@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DirectMediaPolicy.hpp"
 #include "m0/ports/DownloadSubmission.hpp"
 
 #include <QByteArray>
@@ -15,9 +16,6 @@ struct NativeDownloadDecodingResult final {
     DownloadSubmissionError error{DownloadSubmissionError::InvalidRequest};
     DownloadRequest request{};
 };
-
-// Shared canonical direct-media URL policy; DNS/connection/redirect checks remain separate.
-[[nodiscard]] bool isAllowedDirectMediaUrl(const QString& raw);
 
 // Wire payload only: Native Messaging framing and caller authorization belong to the session.
 [[nodiscard]] NativeDownloadDecodingResult decodeNativeDownloadRequest(const QByteArray& payload);

@@ -68,7 +68,7 @@ O menu da bandeja oferece **Mostrar/Ocultar**, transporte e **Sair**. Para encer
 
 O botão **Navegar** existe somente na [compilação experimental com navegador](embedded-browser.md), ainda fora do instalador local/Lite. Ele abre uma janela própria do RC Music: informe um endereço HTTPS e use Voltar, Avançar, Recarregar ou Parar. Fechar essa janela não encerra o player. Falha de abertura mostra orientação para tentar novamente, preservando a reprodução.
 
-Essa composição ainda não oferece detecção/seleção interna de mídia ou downloads pela página. Perfis do Brave não são importados; permissões, popups e downloads nativos ficam recusados. A execução real e o pacote da Completa ainda precisam de validação; o build opt-in não é uma release aprovada.
+Nessa composição, use **Mídia → Detectar mídia** para listar áudio/vídeo da página principal e de componentes acessíveis. Marque até 20 itens e use **Conferir seleção** para verificar se as fontes escolhidas continuam iguais; mudança de página ou fonte exige nova escolha. **Baixar selecionados** permanece indisponível nesta versão. Perfis do Brave não são importados; permissões, popups e downloads nativos ficam recusados. Frames internos, execução real e pacote da Completa ainda precisam de validação; o build opt-in não é uma release aprovada.
 
 ## Resolver problemas
 

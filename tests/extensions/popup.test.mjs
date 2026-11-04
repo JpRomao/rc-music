@@ -110,7 +110,7 @@ function harness(overrides = {}) {
 test('detection opens only the top isolated document and never sends implicitly', async () => {
   const h = harness();
   await h.ready();
-  assert.deepEqual(h.injections[0], { target: { tabId: 7, frameIds: [0] }, world: 'ISOLATED', files: ['detector.js'] });
+  assert.deepEqual(h.injections[0], { target: { tabId: 7, frameIds: [0] }, world: 'ISOLATED', files: ['media-collector.js', 'detector.js'] });
   assert.deepEqual(h.ports[0].options, { documentId: 'document-1', name: 'rc-music-detection-v2' });
   assert.equal(h.controller.getState().status, 'ready');
   assert.equal(h.controller.getState().pageOrigin, 'https://example.com');
