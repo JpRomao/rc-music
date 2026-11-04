@@ -1174,6 +1174,26 @@
       "verification": "mixed",
       "tests": [
         {
+          "path": "tests/qt/AppContainerRegistryLocationProtocolTests.cpp",
+          "marker": "bothNameQueryStagesPreserveEveryRawBit"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationProtocolTests.cpp",
+          "marker": "capturedNameRejectsContradictoryNativeQuerySizes"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationQueryTests.cpp",
+          "marker": "closeFailurePreservesTheAlreadyCapturedNameWithoutAcknowledgingClosure"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationQueryTests.cpp",
+          "marker": "expectedSidIsOwnedBeforeACallbackCanChangeTheCallersBuffer"
+        },
+        {
+          "path": "tests/windows/sandbox/AppContainerRegistryLocationHelper.cpp",
+          "marker": "int selfTest()"
+        },
+        {
           "path": "tests/extensions/detector.test.mjs",
           "marker": "discovers media sources and direct links with absolute deduplicated URLs"
         },
@@ -1433,6 +1453,14 @@
       "evidence": [
         {
           "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Consulta contextual do Registro"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Consulta contextual do Registro"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
           "marker": "### Modelo limitado de captura de metadados"
         },
         {
@@ -1547,6 +1575,26 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        {
+          "path": "tests/qt/AppContainerRegistryLocationProtocolTests.cpp",
+          "marker": "bothNameQueryStagesPreserveEveryRawBit"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationProtocolTests.cpp",
+          "marker": "capturedNameRejectsContradictoryNativeQuerySizes"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationQueryTests.cpp",
+          "marker": "closeFailurePreservesTheAlreadyCapturedNameWithoutAcknowledgingClosure"
+        },
+        {
+          "path": "tests/qt/AppContainerRegistryLocationQueryTests.cpp",
+          "marker": "expectedSidIsOwnedBeforeACallbackCanChangeTheCallersBuffer"
+        },
+        {
+          "path": "tests/windows/sandbox/AppContainerRegistryLocationHelper.cpp",
+          "marker": "int selfTest()"
+        },
         {
           "path": "tests/extensions/native-client.test.mjs",
           "marker": "timeout cleans channel and ignores late replies without retry"
@@ -2037,6 +2085,14 @@
         }
       ],
       "evidence": [
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Consulta contextual do Registro"
+        },
+        {
+          "path": "docs/quality/testing-strategy.md",
+          "marker": "### Consulta contextual do Registro"
+        },
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Modelo limitado de captura de metadados"

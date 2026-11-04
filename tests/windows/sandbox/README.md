@@ -187,6 +187,23 @@ O perfil próprio `RCMusic.Media.edae67c8-7800-47e4-a251-9ff76ff44ee5` teve Crea
 
 `07-independent-postflight.json` observou os quatro destinos exatos: PackageRoot erro **2**, `AC` erro **3**, opens OPEN_LINK dos paths completos Mappings/SID e Storage/SID erro **2**, sem HKEY/RegClose, e PID 48884 ausente. A primeira tentativa do script de leitura falhou por variável PowerShell reservada e só o postflight somente de leitura foi repetido; o probe não foi repetido. A conferência não prova universalmente não seguimento, resíduos ou atomicidade. Evidência/journal, perfil antigo e doze fixtures históricas continuam preservados; não houve cleanup alternativo. Storage ausente não foi criado ou tolerado para passar, e política/MIC, inventário completo, rede e produção continuam pendentes, com downloads OFF.
 
+### Consulta contextual do Registro
+
+`rc_music_registry_location_helper` é um helper separado, Win32 `/MT` sem Qt, preparado para consultar `GetAppContainerRegistryLocation` no próprio contexto AppContainer. Seu core `AppContainerRegistryLocationQuery` e o protocolo usam somente a biblioteca padrão. O binding Native não faz I/O ao ser construído. Esta preparação não executou `--query-context-registry`, worker ou perfil e não renovou as autorizações consumidas dos ensaios anteriores. A [descrição central](../../../docs/media-profile-lifecycle.md#consulta-contextual-do-registro) registra os contratos e limites.
+
+Os comandos abaixo compilam a preparação e executam somente testes puros/falsos. No CTest, o helper recebe exclusivamente `--self-test`: parser, troca com portas falsas e três entradas Native que retornam antes de APIs. Os alvos Qt também usam token/Registro falsos, sem entrar no modo contextual:
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_registry_location_helper rc_music_AppContainerRegistryLocationProtocol_tests rc_music_AppContainerRegistryLocationQuery_tests --parallel 3
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -L registry-location --output-on-failure
+```
+
+O modo de consulta aceita somente pipes, request completo e EOF. O wire contém SID canônico de **40 bytes**, nonce de **32 bytes** e nome contado de até **32767 unidades UTF-16**, com tamanho/UTF-16 validados. Preserva HRESULT/NTSTATUS/Win32 brutos, inclusive `0xFFFFFFFF`, e distingue campo não observado de chamada que retornou esse valor. O core exige token primário AppContainer Low com SID correspondente, zero capabilities e ausência de token de thread; não faz impersonação. Solicita `KEY_READ`, sem `RegCreate*`, `RegSet*`, `RegDelete*`, SACL ou alteração de segurança. A documentação da API não garante ausência de efeitos de inicialização; não há qualificação de consulta somente de leitura.
+
+O nome capturado permanece diagnóstico se o fechamento for incerto. Não há retry, ACK por destrutor, autoridade de cleanup por Reply ou inferência de negação a partir de timeout. O parent ainda precisa integrar `WindowsDownloadProcess`, runtime pinado/autenticado, capability/fence do mesmo owner, SID/nonce, timeout e ACK nativo de processo e pipes antes de um novo inventário por nova Source. Só depois dessa composição revisada/buildada/commitada poderá ocorrer um ensaio especificamente autorizado; não há comando automático de execução contextual nesta preparação.
+
+Storage/SID Missing permanece sem solução, as quatro raízes continuam obrigatórias e nenhum canário foi implementado. DACL/MIC/política de storage, compatibilidade MF, rede e produção seguem sem aprovação; downloads OFF. `out/product/test-runs/media-registry-location-20261104/` conserva Reds e fechamento **3/3 CTest / 108 Qt + 25 casos puros**, sem falhas/skips. Formato **482 C++/62 QML**, build Lite e fronteira dos grafos passaram; o helper importa somente DLLs do Windows, sem Qt/CRT redistribuível. Esses checks não executam o modo contextual nem aprovam perfil/storage ou produção.
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.

@@ -32,6 +32,34 @@ target_sources(rc_music_download_network PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationLaunch.cpp")
 
 if(BUILD_TESTING)
+    add_executable(rc_music_registry_location_helper
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryLocationHelper.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryLocationProtocol.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryLocationQuery.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryLocationNative.cpp")
+    target_link_libraries(rc_music_registry_location_helper PRIVATE advapi32 userenv ntdll)
+    set_target_properties(rc_music_registry_location_helper PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    rc_music_configure_cpp(rc_music_registry_location_helper)
+    add_test(NAME rc_music.registry-location.HelperSelfTest COMMAND rc_music_registry_location_helper --self-test)
+    set_tests_properties(rc_music.registry-location.HelperSelfTest PROPERTIES
+        LABELS "registry-location;security;parser;windows" TIMEOUT 15)
+    # The context-query helper is a test-only diagnostic. Neither this protocol
+    # nor its fake-call query tests belong to the production worker or player.
+    foreach(unit IN ITEMS AppContainerRegistryLocationProtocol AppContainerRegistryLocationQuery)
+        set(target "rc_music_${unit}_tests")
+        add_executable(${target}
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/${unit}.cpp")
+        target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+        target_link_libraries(${target} PRIVATE Qt6::Core Qt6::Test)
+        set_target_properties(${target} PROPERTIES AUTOMOC ON)
+        rc_music_configure_cpp(${target})
+        add_test(NAME "rc_music.registry-location.${unit}" COMMAND ${target} -o -,txt)
+        set_tests_properties("rc_music.registry-location.${unit}" PROPERTIES
+            LABELS "registry-location;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+            ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
     foreach(unit IN ITEMS AppContainerStorageInventoryJson AppContainerStorageProbeOptions)
         set(target "rc_music_${unit}_tests")
         add_executable(${target}
