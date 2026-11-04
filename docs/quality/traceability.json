@@ -1392,6 +1392,10 @@
         {
           "path": "tests/qt/AppContainerStorageFilesTests.cpp",
           "marker": "ancestorSwapBeforeOpenNeverReadsSecurityFromTheJunctionTarget"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageSessionTests.cpp",
+          "marker": "composedFakeSessionFeedsTheExistingFourRootInventoryWithoutDuplicatingAc"
         }
       ],
       "evidence": [
@@ -1406,6 +1410,10 @@
         {
           "path": "docs/media-profile-lifecycle.md",
           "marker": "### Ensaio separado autorizado sem evento correlacionado"
+        },
+        {
+          "path": "docs/media-profile-lifecycle.md",
+          "marker": "### Composição de sessão e consulta de Registro somente de leitura"
         },
         {
           "path": "docs/architecture/decisions/0003-local-first-and-remote-sources.md",
@@ -1926,6 +1934,10 @@
         {
           "path": "tests/qt/AppContainerStorageFilesTests.cpp",
           "marker": "uncertainCloseAndAbandonmentRetainHandlesWithoutDestructorRetry"
+        },
+        {
+          "path": "tests/qt/AppContainerStorageSessionTests.cpp",
+          "marker": "unknownContradictoryAndThrowingCloseNeverRetryOrDestroyUncertainPorts"
         }
       ],
       "evidence": [

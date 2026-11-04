@@ -114,6 +114,15 @@ ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profil
 
 Os alvos não dependem do probe/helper WFP congelados. Security/Files usam somente fixtures TEMP próprias para operações de arquivo; `RegGetKeySecurity` é compilado, mas suas chamadas são falsas nos testes. LiveSource usa owner/backend com portas de perfil falsas, compara a mesma instância e reserva um ticket até Close explícito. Não há execução de perfil, Registro, elevação, WFP, instalação ou alteração de ACL de dados pessoais por esses alvos. Fixtures de fechamento incerto são identificadas no output e ficam preservadas até uma limpeza autorizada após a saída física do processo Qt; o destrutor não inventa ACK.
 
+O [compositor de sessão](../../../docs/media-profile-lifecycle.md#composição-de-sessão-e-consulta-de-registro-somente-de-leitura) namespaceia refs/identidades de duas portas falsas e exige Close reconhecido por ambas; não implementa o leitor nativo de Registry. O preflight separado só registra o parser como teste automático:
+
+```powershell
+cmake --build out/product/m1-desktop-release-on-20260906 --target rc_music_AppContainerStorageSession_tests rc_music_registry_readonly_preflight
+ctest --test-dir out/product/m1-desktop-release-on-20260906 -R '^rc_music.profile-storage.(AppContainerStorageSession|RegistryReadOnlyPreflightParser)$' --output-on-failure
+```
+
+`rc_music_registry_readonly_preflight.exe --readonly` é uma consulta manual a componentes fixos existentes. Não aceita paths/chaves adicionais e não escreve no Registro, cria perfil, lê dados de valores/SD, enumera ou solicita UAC. O diagnóstico local preserva somente retornos, tipo/tamanho do indicador reservado e fechamento de handles próprios; não qualifica link incompleto, identidade persistente de chave ou política. Sua execução não repete o ensaio WFP cuja autorização foi consumida.
+
 ## Conversão com o mesmo owner
 
 MP3, AAC/MP4 e WAV são convertidos e validados pelos workers reais com a mesma capability e fence do owner, sob sua lease. Isso avalia perfis específicos do Windows atual, não suporte universal, LPAC ou ausência universal de escrita. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; escrita/cota/resíduos desse armazenamento mantêm gate antes da produção.

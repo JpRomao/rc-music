@@ -32,6 +32,29 @@ target_sources(rc_music_download_network PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationLaunch.cpp")
 
 if(BUILD_TESTING)
+    add_executable(rc_music_registry_readonly_preflight
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryReadOnlyPreflight.cpp")
+    target_link_libraries(rc_music_registry_readonly_preflight PRIVATE advapi32 ntdll)
+    rc_music_configure_cpp(rc_music_registry_readonly_preflight)
+    add_test(NAME rc_music.profile-storage.RegistryReadOnlyPreflightParser
+        COMMAND rc_music_registry_readonly_preflight --self-test)
+    set_tests_properties(rc_music.profile-storage.RegistryReadOnlyPreflightParser PROPERTIES
+        LABELS "profile-storage;security;parser;windows" TIMEOUT 15)
+    add_executable(rc_music_AppContainerStorageSession_tests
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageSessionTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageSession.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageInventory.cpp")
+    target_include_directories(rc_music_AppContainerStorageSession_tests PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox")
+    target_link_libraries(rc_music_AppContainerStorageSession_tests PRIVATE Qt6::Core Qt6::Test)
+    set_target_properties(rc_music_AppContainerStorageSession_tests PROPERTIES AUTOMOC ON)
+    rc_music_configure_cpp(rc_music_AppContainerStorageSession_tests)
+    add_test(NAME rc_music.profile-storage.AppContainerStorageSession
+        COMMAND rc_music_AppContainerStorageSession_tests -o -,txt)
+    set_tests_properties(rc_music.profile-storage.AppContainerStorageSession PROPERTIES
+        LABELS "profile-storage;security;qt;windows;FR-051;FR-053" TIMEOUT 60
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(rc_music_AppContainerStorageFiles_tests
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/AppContainerStorageFilesTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageFiles.cpp"
