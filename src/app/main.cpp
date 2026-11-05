@@ -2,6 +2,13 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+#if !defined(Q_OS_WIN) || !defined(M0_QT_COMBINED_AUDIO)
+#error The configured player downloads composition requires the Windows audio shell
+#endif
+#include "PlayerDownloadsBuildProfile.hpp"
+#include "adapters/WindowsDownloadCheckpointStore.hpp"
+#endif
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
 #include "adapters/QtLidarrService.hpp"
@@ -417,7 +424,7 @@ int main(int argc, char* argv[]) {
             session_store, loaded_preferences.preferences.restore_last_session, true);
         music_player::m0::SingleWorkerSessionWriter session_writer(session_store);
         music_player::m0::SessionAutosave session_autosave(session_writer, loaded_session.snapshot);
-#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+#if defined(RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE) || defined(RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED)
         const auto downloads_initial_session = loaded_session;
 #endif
         presenter_preferences.session = {
@@ -581,6 +588,44 @@ int main(int argc, char* argv[]) {
             downloads_smoke = std::make_unique<music_player::m0::DownloadsShellSmoke>(
                 presenter, backend, downloads_initial_session, config_root, options.smoke_native_downloads);
 #endif
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        // One owner uses the same presenter/session/writer and survives until
+        // after the QML roots die. The legacy test composition owns its own
+        // exit hook, so it can never coexist with this optional bootstrap.
+        std::unique_ptr<music_player::m0::WindowsPlayerDownloads> player_downloads;
+#ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
+        if (!downloads_smoke)
+#endif
+        {
+            try {
+                auto profile = music_player::m0::playerDownloadsBuildProfile(config_root);
+                if (profile) {
+                    auto execution =
+                        music_player::m0::makeWindowsConfiguredDownloadExecution(std::move(profile->execution));
+                    if (execution) {
+                        // QString::fromRawData may still borrow provider memory.
+                        // The worker receives an independent owned path snapshot.
+                        const QString checkpoint_directory{profile->checkpoint_directory.constData(),
+                                                           profile->checkpoint_directory.size()};
+                        profile->options.lyrics_writer = &lyrics_binding;
+                        player_downloads = std::make_unique<music_player::m0::WindowsPlayerDownloads>(
+                            presenter, downloads_initial_session, std::move(execution),
+                            [checkpoint_directory] {
+                                return std::make_unique<music_player::m0::WindowsDownloadCheckpointStore>(
+                                    checkpoint_directory);
+                            },
+                            std::move(profile->options));
+                    } else {
+                        qInfo("The configured download profile is unavailable");
+                    }
+                }
+            } catch (...) {
+                // Optional acquisition must not prevent the local player from
+                // starting. No alternate source of configuration is consulted.
+                qInfo("The configured download composition is unavailable");
+            }
+        }
+#endif
         // Destroy QML roots before the C++ objects referenced by their required properties.
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         // The factory is inert: no browser, profile or COM resources at startup.
@@ -702,6 +747,10 @@ int main(int argc, char* argv[]) {
         if (downloads_smoke)
             initial_properties.insert(QStringLiteral("downloads"), QVariant::fromValue(downloads_smoke->binding()));
 #endif
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        if (player_downloads)
+            initial_properties.insert(QStringLiteral("downloads"), QVariant::fromValue(player_downloads->binding()));
+#endif
         engine.setInitialProperties(initial_properties);
         engine.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));
         if (engine.rootObjects().isEmpty())
@@ -736,6 +785,13 @@ int main(int argc, char* argv[]) {
 #endif
         const InitialWindowDisposition initial_window_disposition = resolveInitialWindowDisposition(
             presenter.startMinimized(), platform.trayAvailable(), has_explicit_startup_sources);
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        // A false result may follow installation of the exit gate (for example,
+        // a listener collision). Keep this single owner for history and drain;
+        // never destroy it, replace its hook or start it a second time here.
+        if (player_downloads)
+            static_cast<void>(player_downloads->start());
+#endif
         if (!window->setProperty("startupReady", true)) {
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
         }

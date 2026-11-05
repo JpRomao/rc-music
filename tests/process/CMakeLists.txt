@@ -69,6 +69,79 @@ if(TARGET rc_music_download_persistence AND TARGET rc_music_browser_integration)
 endif()
 add_dependencies(rc_music_shell_executable_smoke_tests rc_music_fixture_test_shell)
 
+if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
+   TARGET rc_music_download_io_helper AND TARGET rc_music_media_foundation_worker AND
+   RC_MUSIC_DOWNLOAD_TEST_CRT_DIR AND RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
+    add_executable(rc_music_configured_downloads_profile_tests
+        qtest/ConfiguredDownloadsProfileTests.cpp
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
+    target_link_libraries(rc_music_configured_downloads_profile_tests PRIVATE rc_music_player_downloads Qt6::Test)
+    target_compile_definitions(rc_music_configured_downloads_profile_tests PRIVATE
+        RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")
+    rc_music_configure_cpp(rc_music_configured_downloads_profile_tests)
+    set_target_properties(rc_music_configured_downloads_profile_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME rc_music.process.configured-downloads-profile COMMAND rc_music_configured_downloads_profile_tests -o -,txt)
+    set_tests_properties(rc_music.process.configured-downloads-profile PROPERTIES TIMEOUT 15
+        LABELS "windows;desktop;qt;downloads;bootstrap"
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    # Same main, production presenter ABI and real owner; no legacy smoke
+    # composition, command flag or replacement executor enters these targets.
+    string(SHA256 configured_downloads_identity "${CMAKE_BINARY_DIR}")
+    string(SUBSTRING "${configured_downloads_identity}" 0 16 configured_downloads_identity)
+    set(configured_downloads_profile "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/ConfiguredDownloadsFixtureProfile.hpp")
+    set(configured_downloads_template "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsFixtureProfile.hpp.in")
+    add_custom_command(OUTPUT "${configured_downloads_profile}"
+        COMMAND "${CMAKE_COMMAND}"
+            "-DOUTPUT=${configured_downloads_profile}" "-DTEMPLATE=${configured_downloads_template}"
+            "-DBOOTSTRAP=$<TARGET_FILE:rc_music_download_io_helper>"
+            "-DPAYLOAD=$<TARGET_FILE:rc_music_download_network_payload>"
+            "-DCORE=$<TARGET_FILE:Qt6::Core>" "-DNETWORK=$<TARGET_FILE:Qt6::Network>"
+            "-DCRT_DIR=${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}" "-DPLUGIN=${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
+            "-DMEDIA=$<TARGET_FILE:rc_music_media_foundation_worker>"
+            "-DENDPOINT=rc-music-configured-downloads-${configured_downloads_identity}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsProfile.cmake"
+        DEPENDS rc_music_download_io_helper rc_music_download_network_payload rc_music_media_foundation_worker
+            Qt6::Core Qt6::Network "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
+            "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/msvcp140.dll" "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/msvcp140_1.dll"
+            "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/vcruntime140.dll" "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/vcruntime140_1.dll"
+            "${configured_downloads_template}" "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsProfile.cmake"
+        VERBATIM)
+    set_source_files_properties("${configured_downloads_profile}" PROPERTIES GENERATED TRUE)
+    add_custom_target(rc_music_configured_downloads_profile DEPENDS "${configured_downloads_profile}")
+    foreach(mode IN ITEMS configured none off)
+        set(target rc_music_${mode}_downloads_shell)
+        qt_add_executable(${target}
+            "${RC_MUSIC_SOURCE_ROOT}/src/app/main.cpp"
+            support/ConfiguredDownloadsObservation.cpp "${process_resource}")
+        add_dependencies(${target} m0_qt_windows_icon)
+        rc_music_link_shell(${target} m0_qt_shell_ui m0_qt_shell_support m0_qt_diagnostic_binding)
+        rc_music_link_shell_audio(${target})
+        target_link_libraries(${target} PRIVATE rc_music_player_downloads rc_music_native_messaging)
+        target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support")
+        target_compile_definitions(${target} PRIVATE M0_QT_SHELL_TEST_HOOKS
+            RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING=$<IF:$<STREQUAL:${mode},configured>,1,0>)
+        if(mode STREQUAL "configured")
+            add_dependencies(${target} rc_music_configured_downloads_profile)
+            rc_music_configure_player_downloads(${target} "${configured_downloads_profile}")
+        elseif(mode STREQUAL "none")
+            rc_music_configure_player_downloads(${target}
+                "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsNoneProfile.hpp")
+        endif()
+    endforeach()
+    add_executable(rc_music_configured_downloads_bootstrap_tests qtest/ConfiguredDownloadsBootstrapTests.cpp)
+    target_link_libraries(rc_music_configured_downloads_bootstrap_tests PRIVATE
+        m0_qt_preferences_persistence m0_qt_session_persistence rc_music_download_persistence
+        rc_music_download_network Qt6::Test Advapi32)
+    rc_music_configure_cpp(rc_music_configured_downloads_bootstrap_tests)
+    set_target_properties(rc_music_configured_downloads_bootstrap_tests PROPERTIES AUTOMOC ON)
+    add_dependencies(rc_music_configured_downloads_bootstrap_tests
+        rc_music_configured_downloads_shell rc_music_none_downloads_shell rc_music_off_downloads_shell)
+    add_test(NAME rc_music.process.configured-downloads-bootstrap COMMAND rc_music_configured_downloads_bootstrap_tests
+        "$<TARGET_FILE:rc_music_configured_downloads_shell>"
+        "$<TARGET_FILE:rc_music_none_downloads_shell>" "$<TARGET_FILE:rc_music_off_downloads_shell>")
+endif()
+
 # The corpus was authenticated by RcMusicDesktopTests before this directory.
 set(process_wav "${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/wav-pcm-mono.wav")
 add_test(NAME rc_music.process.preferences-restart COMMAND rc_music_preferences_restart_tests
@@ -104,6 +177,9 @@ endif()
 if(TARGET rc_music_native_downloads_composition_tests)
     list(APPEND process_combined_tests rc_music.process.native-downloads-composition)
 endif()
+if(TARGET rc_music_configured_downloads_bootstrap_tests)
+    list(APPEND process_combined_tests rc_music.process.configured-downloads-bootstrap)
+endif()
 set(process_fixture_tests rc_music.process.error-recovery rc_music.process.tray-lifecycle)
 set_tests_properties(${process_combined_tests} ${process_fixture_tests} PROPERTIES
     LABELS "windows;desktop;qt;process" TIMEOUT 25)
@@ -123,6 +199,12 @@ if(TARGET rc_music_native_downloads_composition_tests)
     set_tests_properties(rc_music.process.native-downloads-composition PROPERTIES TIMEOUT 150
         RESOURCE_LOCK "rc_music_native_host_test_endpoint")
     set_property(TEST rc_music.process.native-downloads-composition APPEND PROPERTY LABELS "native;downloads;session;FR-051;FR-053")
+endif()
+if(TARGET rc_music_configured_downloads_bootstrap_tests)
+    set_tests_properties(rc_music.process.configured-downloads-bootstrap PROPERTIES TIMEOUT 120
+        RESOURCE_LOCK "rc_music_configured_downloads_endpoint")
+    set_property(TEST rc_music.process.configured-downloads-bootstrap APPEND PROPERTY LABELS
+        "native;downloads;session;bootstrap;FR-051;FR-053")
 endif()
 set_tests_properties(rc_music.process.single-instance rc_music.process.diagnostics PROPERTIES TIMEOUT 45)
 set_property(TEST rc_music.process.preferences-restart APPEND PROPERTY LABELS "preferences;restart;FR-042")

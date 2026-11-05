@@ -22,3 +22,33 @@ function(rc_music_add_player_downloads target ui)
     endif()
     rc_music_configure_cpp(${target})
 endfunction()
+
+# Explicit opt-in for one executable, after its owner and UI ABI exist. This is
+# a reviewed C++ provider, not a runtime manifest/CLI/environment authority.
+function(rc_music_configure_player_downloads target profile_header)
+    if("${profile_header}" STREQUAL "")
+        return()
+    endif()
+    if(NOT TARGET ${target} OR NOT TARGET rc_music_player_downloads)
+        message(FATAL_ERROR "A player download profile requires its executable and Windows owner")
+    endif()
+    if(NOT IS_ABSOLUTE "${profile_header}" OR IS_DIRECTORY "${profile_header}")
+        message(FATAL_ERROR "Player download profile must name an absolute reviewed C++ header")
+    endif()
+    get_source_file_property(profile_generated "${profile_header}" GENERATED)
+    if(NOT EXISTS "${profile_header}" AND NOT profile_generated)
+        message(FATAL_ERROR "Player download profile header does not exist")
+    endif()
+    get_target_property(already_configured ${target} RC_MUSIC_PLAYER_DOWNLOAD_PROFILE)
+    if(already_configured)
+        message(FATAL_ERROR "Player download profile may be configured only once per executable")
+    endif()
+    set_property(TARGET ${target} PROPERTY RC_MUSIC_PLAYER_DOWNLOAD_PROFILE "${profile_header}")
+    target_sources(${target} PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.hpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp"
+        "${profile_header}")
+    target_link_libraries(${target} PRIVATE rc_music_player_downloads)
+    target_compile_definitions(${target} PRIVATE RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${profile_header}")
+endfunction()

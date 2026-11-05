@@ -33,6 +33,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRecoveredMediaValidator.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadRecoveryValidation.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadExecution.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsConfiguredDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
     target_link_libraries(rc_music_download_network PRIVATE Advapi32)
@@ -68,7 +69,7 @@ if(BUILD_TESTING)
             WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime YoutubeRuntimeReceipt WindowsYoutubeExecution WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
-            WindowsPreparedMediaDownloadTask)
+            WindowsPreparedMediaDownloadTask WindowsConfiguredDownloadExecution)
         add_executable(rc_music_download_io_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
         target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)

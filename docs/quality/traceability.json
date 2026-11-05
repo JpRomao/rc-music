@@ -1153,6 +1153,12 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "directRequestsInAMixedProfileUseOnlyTheExistingPreparedWorker" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "configurationSnapshotsNetworkMediaAndJournalBeforeAdmission" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "youtubePreparationFailureNeverFallsBackToDirectAcquisition" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "activeYoutubeIngressWithoutResolverIsRefused" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "configuredMainUsesRealOwnerExecutionPersistenceAndReplay" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "noConfiguredHeaderOrExplicitNoneKeepsLocalPlayerWithoutWork" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeProfilesArePassiveAndOwnTheirCapturedTransportStringsBeforeStart" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "bothNativePortsWaitForTheSharedCheckpointBeforeReply" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeIngressClosesBeforeExecutionCancellationAndRetainsBothNamesThroughDrain" },
@@ -1181,6 +1187,9 @@
         { "path": "tests/extensions/youtube-native-client.test.mjs", "marker": "YouTube bridge is separate and acknowledges admission rather than completion" }
       ],
       "evidence": [
+        { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
+        { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
+        { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Factory do executor configurado" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Composição opcional do ingresso no owner" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Runtime real no ensaio offline" },
         {
@@ -1205,7 +1214,7 @@
         }
       ],
       "remaining": [
-          "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. O ensaio offline separado executou Python/yt-dlp, Node e EJS reais fixados sob broker com processos irmãos Job=1/NoChild, cinco vetores sintéticos, ausência observada de HTTP/socket/inicialização remota e encerramento reconhecido. A composição opcional de WindowsPlayerDownloads também passou com host/servidor reais, perfis próprios, checkpoint/Session reais e duas barreiras Saved; usa resolver fixture e helper de DNS/transferência com AAC licenciado, seguido de Media Foundation, validação MP3, publicação/importação e replay/reinício reais em TEMP. Essas duas provas são distintas e não comprovam aquisição de vídeo público. Letras após publicação reconhecida têm fallback LRCLIB, preview e salvamento explícito no catálogo; sua prova usa rede falsa e JSON TEMP real. O inventário privado autentica/copia fontes declaradas, mas hashes/execução offline não qualificam segurança, publisher ou distribuição do perfil do produto. Faltam composição instalada de produção, host/origens confiáveis, Brave, opcionais, pacote e os gates próprios de ferramentas/licenças/privacidade/isolamento. Letras primário depende de acesso/contrato compatível e continua sem parser funcional. O app normal mantém perfis/downloads remotos OFF e a principal continua separada."
+          "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. O bootstrap opcional no main real agora aceita perfil C++ revisado, com factory configurada, captura própria e preparo por job na worker; ausência de header ou retorno None mantém o player local sem criar owner/listeners/trabalho. Ingresso YouTube ativo exige perfil de resolver explícito. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. O ensaio offline separado executou Python/yt-dlp, Node e EJS reais fixados sob broker com processos irmãos Job=1/NoChild, cinco vetores sintéticos, ausência observada de HTTP/socket/inicialização remota e encerramento reconhecido. A composição opcional de WindowsPlayerDownloads também passou com host/servidor reais, perfis próprios, checkpoint/Session reais e duas barreiras Saved; usa resolver fixture e helper de DNS/transferência com AAC licenciado, seguido de Media Foundation, validação MP3, publicação/importação e replay/reinício reais em TEMP. O novo ensaio do main configurado valida executor, ownership, persistência e replay locais, sem promover essa prova a aquisição de vídeo público. Letras após publicação reconhecida têm fallback LRCLIB, preview e salvamento explícito no catálogo; sua prova usa rede falsa e JSON TEMP real. O inventário privado autentica/copia fontes declaradas, mas hashes/execução offline não qualificam segurança, publisher ou distribuição do perfil do produto. Faltam perfil real de distribuição e composição instalada de produção, host/origens confiáveis, Brave, opcionais, pacote e os gates próprios de ferramentas/licenças/privacidade/isolamento. O gerador do pacote separado mantém identity_pending e não instala/registra o host. Letras primário depende de acesso/contrato compatível após HTTP 403 e continua sem parser funcional. O app distribuído mantém perfis/downloads remotos OFF e a principal continua separada."
       ]
     },
     {
@@ -1214,6 +1223,12 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "directRequestsInAMixedProfileUseOnlyTheExistingPreparedWorker" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "configurationSnapshotsNetworkMediaAndJournalBeforeAdmission" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "youtubePreparationFailureNeverFallsBackToDirectAcquisition" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "activeYoutubeIngressWithoutResolverIsRefused" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "configuredMainUsesRealOwnerExecutionPersistenceAndReplay" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "noConfiguredHeaderOrExplicitNoneKeepsLocalPlayerWithoutWork" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeProfilesArePassiveAndOwnTheirCapturedTransportStringsBeforeStart" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "bothNativePortsWaitForTheSharedCheckpointBeforeReply" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeIngressClosesBeforeExecutionCancellationAndRetainsBothNamesThroughDrain" },
@@ -1498,6 +1513,9 @@
         }
       ],
       "evidence": [
+        { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
+        { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
+        { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Factory do executor configurado" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Composição opcional do ingresso no owner" },
         {
           "path": "docs/media-profile-lifecycle.md",
@@ -1623,6 +1641,12 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "directRequestsInAMixedProfileUseOnlyTheExistingPreparedWorker" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "configurationSnapshotsNetworkMediaAndJournalBeforeAdmission" },
+        { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "youtubePreparationFailureNeverFallsBackToDirectAcquisition" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "activeYoutubeIngressWithoutResolverIsRefused" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "configuredMainUsesRealOwnerExecutionPersistenceAndReplay" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsBootstrapTests.cpp", "marker": "noConfiguredHeaderOrExplicitNoneKeepsLocalPlayerWithoutWork" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeProfilesArePassiveAndOwnTheirCapturedTransportStringsBeforeStart" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "bothNativePortsWaitForTheSharedCheckpointBeforeReply" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "nativeIngressClosesBeforeExecutionCancellationAndRetainsBothNamesThroughDrain" },
@@ -2139,6 +2163,9 @@
         }
       ],
       "evidence": [
+        { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
+        { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
+        { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Factory do executor configurado" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Composição opcional do ingresso no owner" },
         {
           "path": "docs/media-profile-lifecycle.md",

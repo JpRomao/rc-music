@@ -1,0 +1,37 @@
+#pragma once
+
+#include "adapters/NativeDownloadPeerImages.hpp"
+
+#include <QDir>
+
+void configuredDownloadsProfileObserved();
+
+namespace music_player::m0 {
+inline NativeHostConfiguration configuredDownloadsFixtureNativeProfile() {
+    const auto self = nativeDownloadSiblingImages({QStringLiteral("rc_music_configured_downloads_shell.exe")});
+    return {QStringLiteral("chrome-extension://dddddddddddddddddddddddddddddddd/"),
+            QStringLiteral("@fixture_endpoint@"), self, self};
+}
+inline std::optional<WindowsPlayerDownloadProfile> configuredPlayerDownloadsBuildProfile(const QString& root) {
+    configuredDownloadsProfileObserved();
+    WindowsPlayerDownloadProfile profile;
+    profile.checkpoint_directory = QDir{root}.filePath(QStringLiteral("private"));
+    profile.execution.journal_directory = profile.checkpoint_directory;
+    profile.execution.network.runtime_parent = QDir{root}.filePath(QStringLiteral("network"));
+    // clang-format off
+    profile.execution.network.artifacts = {{
+@fixture_artifacts@
+    }};
+    // clang-format on
+    profile.execution.media = {QDir{root}.filePath(QStringLiteral("media")), QStringLiteral("@fixture_media@"),
+                               QByteArrayLiteral("@fixture_media_hash@")};
+    profile.execution.job.workspace = {QDir{root}.filePath(QStringLiteral("staging")),
+                                       QDir{root}.filePath(QStringLiteral("published")), 2 * 1024 * 1024};
+    profile.execution.job.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
+    profile.execution.job.total_timeout_ms = 15'000;
+    WindowsPlayerNativeIngressOptions ingress;
+    ingress.principal = configuredDownloadsFixtureNativeProfile();
+    profile.options.native_ingress = std::move(ingress);
+    return profile;
+}
+} // namespace music_player::m0
