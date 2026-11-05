@@ -40,6 +40,16 @@ O provider é chamado uma vez pelo bootstrap. `config_root` é o diretório de c
 
 Com `prepare_storage=false`, os diretórios continuam sendo entradas confiáveis previamente provisionadas. Com a opção ligada, o worker pode criar somente os diretórios do [layout privado fixo](player-download-storage.md#configuração-e-layout), a partir do `config_root` existente. O bootstrap não instala ferramentas, registra hosts ou repara ACLs. Hashes e identidades de arquivo não equivalem a confiança no publisher, autenticação do Brave ou sandbox.
 
+## Perfil relocável do pacote
+
+A [receita do perfil empacotado](packaged-download-profile.md) gera um provider C++ com os tipos existentes e paths de origem relativos: nove artefatos em `download-tools/network`, o worker em `download-tools/media/RCMusicMediaWorker.exe` e, quando selecionado, o inventário em `download-tools/youtube`. Hashes são fixados durante o build; o player não os calcula na UI nem carrega um manifesto como autoridade. O provider chama `makePackagedPlayerDownloadProfile(std::move(profile), config_root)`.
+
+A sobrecarga de quatro argumentos recebe também `application_directory` e `windows_directory`, permitindo compor um perfil com raízes ainda inexistentes. Faz somente validação lexical e junção: recusa fontes absolutas, traversal, ADS, nomes reservados, controles e pins fora de SHA-256 hexadecimal minúsculo. Rebasa as origens de rede/mídia e `source_path` do YouTube; `relative_path` do inventário privado, roles, pins, limites e opções Native são preservados. Caminhos e pins Qt, inclusive dados originalmente emprestados, são copiados para memória própria.
+
+A sobrecarga usada pelo provider obtém os paths reais com `GetModuleFileNameW` e `GetWindowsDirectoryW`, em buffers limitados. Não deriva localizações de CWD, argv ou ambiente e não usa stat, hashing ou consulta ao drive. Raiz de drive permanece absoluta, sem duplicar separadores; namespace não suportado é recusado sem fallback. Existência, identidade, permissões e hashes físicos continuam nos preparadores da worker.
+
+O helper liga `prepare_storage` e aplica o mesmo layout privado puro, deixando o perfil utilizável também antes do getter. Quando o resolver YouTube já existe, reconstrói o ambiente com somente `PATH` vazio e `SystemRoot` explícito normalizado, e fornece clock UTC por callback. Ambiente e clock do prototype não são herdados. O provider usa `compiledPlayerNativeIngressProfiles()`; no perfil direto, desliga explicitamente o canal YouTube quando não há resolver. O default sem header continua sem downloads.
+
 ## Armazenamento privado opt-in
 
 `playerDownloadsBuildProfile()` aplica o layout puro quando `prepare_storage=true`: checkpoint e journal usam `downloads/state`; os pais dos runtimes são `downloads/network`, `downloads/media` e, quando há resolver YouTube, `downloads/youtube`; o workspace usa `downloads/staging` e `downloads/published`. Pins, limites, backend de conversão, identidades Native e demais opções são preservados. Derivar esses caminhos não abre arquivos ou consulta o drive, nem cria um resolver ausente.
@@ -110,6 +120,14 @@ O perfil teve Red de **21 casos Qt passados/7 falhos**, preservando os 20 anteri
 A jornada do bootstrap teve Red **4 passados/1 falho**, pela ausência de `downloads/state`, e passou **5/5 Qt** após a integração. O driver agora não precria as pastas geridas: exige `downloads/state`, os demais pais fixos e ausência dos caminhos antigos, mantendo as verificações de persistência e replay. O adaptador de storage passou **22/22 Qt**, com sua [evidência própria](player-download-storage.md#evidência-do-adaptador).
 
 O fechamento integrado deste recorte passou **8/8 CTest, 143 Qt**, sem falhas, com dois skips antigos de symlink do checkpoint por política do host; os junctions novos passaram sem skip. Formato dos **9 C++** e player Release Native OFF com provider independente `None`, depois restaurado/recompilado com cache vazio e zero CTest, passaram. Esses resultados são separados do fechamento histórico de **36 Qt** acima. Não ativam o perfil distribuído, instalação ou aquisição pública. Recibos e limites ficam no [guia do storage](player-download-storage.md#evidência-do-adaptador).
+
+### Perfil relocável e header gerado real
+
+O helper teve Red de **55 casos Qt passados/5 falhos**, com os 28 oráculos anteriores preservados; os cinco positivos novos receberam `None` contra os stubs. O Green passou **60/60 Qt**. A seleção inicial passou **4/4 CTest, 68 Qt**, incluindo os **3** casos sem header e os **5** do bootstrap, sem falhas/skips. A receita Python passou **18 testes**; suas evidências e o candidato físico pertencem ao [guia do pacote](packaged-download-profile.md).
+
+A fixture do `main` agora compila o header real emitido pela receita Python em `--plan-only`, com fontes relativas copiadas após o build das dependências. Os dois canais Native estão ativos somente na configuração de teste; o provider direto faz opt-out do YouTube sem resolver e mantém a principal funcional. O driver lança o processo com CWD no TEMP de configuração, conservando a jornada de execução, persistência e replay. Isso testa a relocação efetiva e a composição do header, sem executar o runtime YouTube ou adquirir mídia pública.
+
+O fechamento passou **4/4 CTest, 68 Qt**, sem falhas/skips, com formato dos **5 C++**. O header completo do candidato real compilou no player Release sem testes/Native OFF; depois o cache foi restaurado ao header vazio e o app recompilado, com zero CTest e grafo de **337 comandos** sem perfil/Native/hooks/Qt Test. O executável de produção não foi iniciado. Os fechamentos históricos acima permanecem separados; identidade real da extensão e aquisição pública não foram ativadas por esses testes. A [receita e seus limites](packaged-download-profile.md#evidência-da-receita-e-candidato-local) também registram Python 3.13+ na geração da fixture, independente do local do build.
 
 ## Limites de aceitação
 

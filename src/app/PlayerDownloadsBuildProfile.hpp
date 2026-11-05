@@ -33,6 +33,19 @@ using WindowsPlayerDownloadStoragePreparer = std::function<bool(const QString&)>
 makePlayerDownloadCheckpointFactory(const WindowsPlayerDownloadProfile& profile, const QString& config_root,
                                     WindowsPlayerDownloadStoragePreparer prepare = prepareWindowsDownloadStorage);
 
+// Trusted compiled prototype with package-relative source paths. Pure overload
+// rebases sources without filesystem inspection/hashing, snapshots Qt paths and
+// pins, enables fixed private storage and supplies an explicit YouTube
+// environment/UTC clock when the resolver is already present. Other roles,
+// limits, options and Native identities retain their existing contracts.
+[[nodiscard]] std::optional<WindowsPlayerDownloadProfile>
+makePackagedPlayerDownloadProfile(WindowsPlayerDownloadProfile profile, const QString& config_root,
+                                  const QString& application_directory, const QString& windows_directory);
+// Reads only bounded process-image/Windows-directory Win32 path values; never
+// derives either location from CWD, argv or inherited environment.
+[[nodiscard]] std::optional<WindowsPlayerDownloadProfile>
+makePackagedPlayerDownloadProfile(WindowsPlayerDownloadProfile profile, const QString& config_root);
+
 // Trusted compiled Native identities only. Missing support or two disabled
 // channels returns nullopt. Providers may use this directly without repeating
 // origins/endpoints/image allowlists; peer-check callbacks remain unconfigured.

@@ -1153,6 +1153,13 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileRelocatesOnlySourcesAcrossTwoAbsentUnicodeRoots" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedRelativeSourcesRejectAmbiguityBeforeJoining" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileOwnsEveryRawPathAndPinBeforeReturning" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedActualPathsIgnoreWorkingDirectoryAndInheritedEnvironment" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_direct_plan_is_read_only_and_emits_one_relative_inventory_and_header" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_each_plan_uses_the_same_current_planner_bytes_recorded_in_its_recipe_snapshot" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_cli_ascii_stdout_emits_lossless_json_for_unicode_configuration_paths" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "freshStorageHasExactSecurityAndBothRealStoresCanUseState" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "broaderOrInheritableExistingSecurityIsRefusedWithoutRepair" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "partialProgressAndUnknownFilesSurviveALaterFailure" },
@@ -1201,6 +1208,7 @@
         { "path": "tests/extensions/youtube-native-client.test.mjs", "marker": "YouTube bridge is separate and acknowledges admission rather than completion" }
       ],
       "evidence": [
+        { "path": "docs/packaged-download-profile.md", "marker": "# Perfil de downloads com caminhos relativos ao pacote" },
         { "path": "docs/player-download-storage.md", "marker": "# Armazenamento privado do bootstrap de downloads" },
         { "path": "docs/youtube-native-manifest.md", "marker": "# Manifesto candidato do host YouTube" },
         { "path": "docs/native-host-build-profile.md", "marker": "# Recibo do perfil compilado dos hosts nativos" },
@@ -1231,6 +1239,7 @@
         }
       ],
       "remaining": [
+        "O perfil empacotado relocável e a receita de header/inventário relativos já foram exercitados com paths/pins próprios, ambiente explícito e main real em CWD distinto; os preparadores mantêm a qualificação física na worker e o default sem header permanece OFF, sem concluir identidade real, perfil distribuível, segurança ou aquisição pública.",
         "O storage privado opt-in está implementado com layout fixo e preparo no worker de checkpoint, retry por load explícito e cache após sucesso, preservando os providers de caminhos existentes. A jornada do main configurado prepara as pastas em TEMP e valida AAC→Media Foundation/MP3, sessão e replay. Qualificação física do perfil distribuído e os gates externos de ferramentas, navegador, instalação e distribuição permanecem pendentes.",
         "O gerador de manifesto YouTube está implementado e validado com fixtures locais, produzindo candidato installation_pending; ID real da extensão, manifesto da configuração real, pacote e instalação/ativação permanecem pendentes.",
         "O matching dos canais ativos já recusa divergências entre provider e perfis Native compilados, e os recibos de build registram a consistência dos dados CMake/header com hash e tamanho do executável, mantendo os defaults de produção desabilitados; autenticação do Brave/publisher, perfil real e instalação continuam pendentes.",
@@ -1243,6 +1252,13 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileRelocatesOnlySourcesAcrossTwoAbsentUnicodeRoots" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedRelativeSourcesRejectAmbiguityBeforeJoining" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileOwnsEveryRawPathAndPinBeforeReturning" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedActualPathsIgnoreWorkingDirectoryAndInheritedEnvironment" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_direct_plan_is_read_only_and_emits_one_relative_inventory_and_header" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_each_plan_uses_the_same_current_planner_bytes_recorded_in_its_recipe_snapshot" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_cli_ascii_stdout_emits_lossless_json_for_unicode_configuration_paths" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "freshStorageHasExactSecurityAndBothRealStoresCanUseState" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "broaderOrInheritableExistingSecurityIsRefusedWithoutRepair" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "partialProgressAndUnknownFilesSurviveALaterFailure" },
@@ -1539,6 +1555,7 @@
         }
       ],
       "evidence": [
+        { "path": "docs/packaged-download-profile.md", "marker": "# Perfil de downloads com caminhos relativos ao pacote" },
         { "path": "docs/player-download-storage.md", "marker": "# Armazenamento privado do bootstrap de downloads" },
         { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
         { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
@@ -1622,6 +1639,7 @@
         }
       ],
       "remaining": [
+        "O perfil empacotado relocável e a receita de header/inventário relativos já foram exercitados com paths/pins próprios, ambiente explícito e main real em CWD distinto; os preparadores mantêm a qualificação física na worker e o default sem header permanece OFF, sem concluir identidade real, perfil distribuível, segurança ou aquisição pública.",
         "O storage privado opt-in está implementado com layout fixo e preparo no worker de checkpoint, retry por load explícito e cache após sucesso, preservando os providers de caminhos existentes. A jornada do main configurado prepara as pastas em TEMP e valida AAC→Media Foundation/MP3, sessão e replay. Qualificação física do perfil distribuído e os gates externos de ferramentas, navegador, instalação e distribuição permanecem pendentes.",
         "Cliente, recepção, serviço idempotente e worker/proxy diskless implementados; socket real somente HTTP loopback/DNS literal. Porta Windows rápida prepara capability por job e conserva tarefa/I/O/destruição na thread privada. Há checkpoint assíncrono de admissão, journal worker-only de ownership e assessment conservador; importador Session conserva fila+recibo v2 e aguarda Saved matching, sem autoplay/reappend no retry. Bootstrap preserva ledger com restauração/opcionais OFF sem carregar áudio. Reconciliação estrita reconhece recibos saudáveis como Imported sem reimportação, preserva métricas e protege namespace de órfãos; controller valida/copia evidência de startup antes de Ready. Host binário real e canal Qt Network dedicado são opcionais/OFF por padrão, com identidade confiável de produção vazia e sem configuração por argv/ambiente/JSON; não alteram OpenSources local. Main instrumentada compõe ingresso, serviços/importador, binding/painel e ambos stores/workers reais, com publicação Published somente sintética: quatro hosts repetem o mesmo UUID duas vezes por boot em dois boots, leitores independentes conferem recibos/IDs após resposta e documentos após NormalExit, sem autoplay/duplicação e com Imported/restore=false no restart. Os ensaios anteriores de MP3/MP4→serviço continuam usando transferência/helper e importador falsos, com processos/filesystem/conversor/publicação reais, sem conexão desse executor à composição instrumentada. O produto permanece sem ingresso/serviço remoto ativos. Completar promoção para execução protegida de produção, composição da reconciliação com ownership, recuperação/capacidade acionáveis, resíduos de runtime, perfil exato de distribuição/notices, FFmpeg corrigido/proveniência/licenças/sandbox, descoberta ampliada e Brave real. Identidade instalada, registro/upgrade e primeira instância/colisão do pipe Windows continuam gates; origem/pipe do mesmo usuário não autenticam navegador. Implementar engine isolada da Completa e instaladores/opcionais de ambas; integração externa opcional e YouTube separado. ADR-0003/0009 continuam propostos; sem workflow completo no app ou aprovação de mídia remota/distribuição."
       ]
@@ -1669,6 +1687,13 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileRelocatesOnlySourcesAcrossTwoAbsentUnicodeRoots" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedRelativeSourcesRejectAmbiguityBeforeJoining" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedProfileOwnsEveryRawPathAndPinBeforeReturning" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "packagedActualPathsIgnoreWorkingDirectoryAndInheritedEnvironment" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_direct_plan_is_read_only_and_emits_one_relative_inventory_and_header" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_each_plan_uses_the_same_current_planner_bytes_recorded_in_its_recipe_snapshot" },
+        { "path": "tests/download_runtime/test_build_profile.py", "marker": "test_cli_ascii_stdout_emits_lossless_json_for_unicode_configuration_paths" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "freshStorageHasExactSecurityAndBothRealStoresCanUseState" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "broaderOrInheritableExistingSecurityIsRefusedWithoutRepair" },
         { "path": "tests/qt/WindowsDownloadStorageTests.cpp", "marker": "partialProgressAndUnknownFilesSurviveALaterFailure" },
@@ -2205,6 +2230,7 @@
         }
       ],
       "evidence": [
+        { "path": "docs/packaged-download-profile.md", "marker": "# Perfil de downloads com caminhos relativos ao pacote" },
         { "path": "docs/player-download-storage.md", "marker": "# Armazenamento privado do bootstrap de downloads" },
         { "path": "docs/youtube-native-manifest.md", "marker": "# Manifesto candidato do host YouTube" },
         { "path": "docs/native-host-build-profile.md", "marker": "# Recibo do perfil compilado dos hosts nativos" },
@@ -2286,6 +2312,7 @@
         }
       ],
       "remaining": [
+        "O perfil empacotado relocável e a receita de header/inventário relativos já foram exercitados com paths/pins próprios, ambiente explícito e main real em CWD distinto; os preparadores mantêm a qualificação física na worker e o default sem header permanece OFF, sem concluir identidade real, perfil distribuível, segurança ou aquisição pública.",
         "O storage privado opt-in está implementado com layout fixo e preparo no worker de checkpoint, retry por load explícito e cache após sucesso, preservando os providers de caminhos existentes. A jornada do main configurado prepara as pastas em TEMP e valida AAC→Media Foundation/MP3, sessão e replay. Qualificação física do perfil distribuído e os gates externos de ferramentas, navegador, instalação e distribuição permanecem pendentes.",
         "O gerador de manifesto YouTube está implementado e validado com fixtures locais, produzindo candidato installation_pending; ID real da extensão, manifesto da configuração real, pacote e instalação/ativação permanecem pendentes.",
         "O matching dos canais ativos já recusa divergências entre provider e perfis Native compilados, e os recibos de build registram a consistência dos dados CMake/header com hash e tamanho do executável, mantendo os defaults de produção desabilitados; autenticação do Brave/publisher, perfil real e instalação continuam pendentes.",

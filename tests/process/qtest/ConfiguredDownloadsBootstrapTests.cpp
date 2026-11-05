@@ -67,6 +67,7 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
             }
             QProcess app;
             ChildGuard guard{app};
+            app.setWorkingDirectory(root.path());
             app.setProcessChannelMode(QProcess::MergedChannels);
             QByteArray output;
             QObject::connect(&app, &QProcess::readyReadStandardOutput, &app,

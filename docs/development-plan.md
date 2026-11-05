@@ -800,7 +800,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — preparo assíncrono do storage de downloads
+### Checkpoint atual — perfil relativo e candidato das ferramentas
+
+A [receita do perfil distribuível](packaged-download-profile.md) usa fontes/pins explícitos dos nove arquivos de rede, worker MF e recibo de produção YouTube opcional. Um único plano determina as cópias e o header C++; o app não carrega esses JSONs como configuração de runtime. O helper rebasa fontes pelo diretório real da imagem, sem CWD, ambiente herdado, hashing ou abertura de arquivos na UI. Storage fixo, pins/roles/limites e ingressos compilados são preservados; YouTube usa ambiente novo e clock UTC. Sem esse runtime, o provider faz opt-out do canal YouTube para conservar a principal.
+
+Red C++ **55 passados/5 falhos**, Green **60/60 Qt**. A receita teve Red **16 métodos/49 falhas/1 erro**, depois regressões de cache/proveniência e stdout Unicode **16/2**, Green **18/18 Python**. Fechamento **4/4 CTest, 68 Qt**, sem falhas/skips, formato **5 C++**. A jornada pela main usa header real da receita, fontes relativas e CWD TEMP, com Native principal funcional apesar de YouTube compilado ativo; AAC local → MF/MP3, Saved e replay continuam reais, sem duplicar/autoplay. Python 3.13+ é ferramenta de geração desse recorte de testes, não dependência do player padrão.
+
+O candidato `out/product/download-tools-20261105-01/` contém **45 arquivos/133.468.285 bytes de payload**, mais header e recibo, com inventário/hashes conferidos independentemente. Estado `candidate`; não contém player, Qt completo, host ou setup. Header completo YouTube compilou no player Release sem testes/Native OFF; o cache foi restaurado/recompilado vazio, zero CTest e grafo de 337 comandos sem perfil/Native/hooks/Qt Test. O app de produção e os binários do candidato não foram iniciados. Recibos e hashes ficam no guia e em `out/product/test-runs/packaged-download-profile-20261105/`.
+
+Próximo desenvolvimento: montagem do componente no runtime Qt e seleção opcional do instalador com ownership/upgrade/remoção coerentes, além de inventário/closure PE e licenças revisados. O ID real da extensão continua pendente para compor host/manifest habilitados. Defaults de produção permanecem OFF; aquisição pública, Letras primário, segurança/isolamento, origem instalada e distribuição continuam gates. Não houve setup/Registro, novo perfil/AppContainer, WFP/UAC, GUI nativa, mídia pública ou benchmark.
+
+### Checkpoint anterior — preparo assíncrono do storage de downloads
 
 O [armazenamento privado do bootstrap](player-download-storage.md) prepara `downloads/{state,network,media,youtube,staging,published}` pelo worker de checkpoint, com opt-in C++ falso por padrão. O layout deriva do mesmo `config_root` e preserva pins, limites e opções; o provider e a factory não fazem I/O. Somente load tenta preparar: falha/ausência/exceção vira Unreadable e permite retry explícito no mesmo wrapper; save antes do sucesso falha sem provisionamento. Após sucesso, o wrapper não reprovisiona e os stores mantêm suas validações.
 

@@ -72,6 +72,8 @@ A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-
 
 ### Composição opcional de downloads
 
+O [perfil relativo ao pacote](../packaged-download-profile.md) reutiliza `WindowsPlayerDownloadProfile` como protótipo compilado. O helper resolve somente as fontes pelo diretório real da imagem e obtém o diretório Windows por API, sem descoberta em CWD/ambiente ou I/O na UI. A receita de build produz cópias e header pelo mesmo inventário; os workers conservam a autenticação e seus leases. Um pacote direto omite o canal YouTube compilado quando não inclui o resolver, preservando a integração principal. O candidato das ferramentas permanece separado do runtime Qt e do instalador.
+
 O [storage opt-in do bootstrap](../player-download-storage.md) deriva um layout fixo do diretório de configuração existente e o prepara somente no load do worker de checkpoint. O wrapper conserva retry explícito após falha, sem reprovisionar depois do primeiro sucesso ou reparar objetos existentes. O default continua usando os caminhos já provisionados. Nenhuma página ou documento persistido escolhe essas pastas; Saved, ownership, importação e drenagem mantêm seus contratos anteriores.
 
 O [gerador de manifest Native YouTube](../youtube-native-manifest.md) é uma receita de empacotamento separada: confere recibo de build confiável, ID e host e escreve somente dois JSONs candidatos. Não fornece configuração ao domínio ou ao player, não monta runtime e não registra componentes. O candidato de fontes continua com identidade pendente até a escolha real da extensão.

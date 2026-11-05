@@ -72,6 +72,8 @@ add_dependencies(rc_music_shell_executable_smoke_tests rc_music_fixture_test_she
 if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
    TARGET rc_music_download_io_helper AND TARGET rc_music_media_foundation_worker AND
    RC_MUSIC_DOWNLOAD_TEST_CRT_DIR AND RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
+    # Build-time fixture generation only; Python is never a player dependency.
+    find_package(Python3 3.13 REQUIRED COMPONENTS Interpreter)
     add_executable(rc_music_configured_downloads_profile_tests
         qtest/ConfiguredDownloadsProfileTests.cpp
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
@@ -108,10 +110,12 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
     set(native_main_endpoint "rc-music-configured-downloads-${configured_downloads_identity}")
     set(native_main_owner_images "QStringLiteral(\"rc_music_configured_downloads_shell.exe\")")
     set(native_main_host_images "${native_main_owner_images}")
-    set(native_youtube_origin "")
-    set(native_youtube_endpoint "")
-    set(native_youtube_owner_images "")
-    set(native_youtube_host_images "")
+    # A direct-only generated package must opt out of the compiled YouTube
+    # channel, so its absence cannot block the principal integration.
+    set(native_youtube_origin "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/")
+    set(native_youtube_endpoint "rc-music-configured-youtube-${configured_downloads_identity}")
+    set(native_youtube_owner_images "${native_main_owner_images}")
+    set(native_youtube_host_images "${native_main_host_images}")
     set(configured_downloads_native_profile "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/NativeHostBuildProfiles.hpp")
     configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildProfiles.hpp.in"
         "${configured_downloads_native_profile}" @ONLY)
@@ -120,18 +124,35 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
     add_custom_command(OUTPUT "${configured_downloads_profile}"
         COMMAND "${CMAKE_COMMAND}"
             "-DOUTPUT=${configured_downloads_profile}" "-DTEMPLATE=${configured_downloads_template}"
+            "-DPAYLOAD_ROOT=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DPROFILE_PYTHON=${Python3_EXECUTABLE}"
+            "-DPROFILE_RECIPE=${RC_MUSIC_SOURCE_ROOT}/tools/download-runtime/build_profile.py"
             "-DBOOTSTRAP=$<TARGET_FILE:rc_music_download_io_helper>"
             "-DPAYLOAD=$<TARGET_FILE:rc_music_download_network_payload>"
             "-DCORE=$<TARGET_FILE:Qt6::Core>" "-DNETWORK=$<TARGET_FILE:Qt6::Network>"
             "-DCRT_DIR=${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}" "-DPLUGIN=${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
             "-DMEDIA=$<TARGET_FILE:rc_music_media_foundation_worker>"
-            "-DENDPOINT=rc-music-configured-downloads-${configured_downloads_identity}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsProfile.cmake"
         DEPENDS rc_music_download_io_helper rc_music_download_network_payload rc_music_media_foundation_worker
             Qt6::Core Qt6::Network "${RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN}"
             "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/msvcp140.dll" "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/msvcp140_1.dll"
             "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/vcruntime140.dll" "${RC_MUSIC_DOWNLOAD_TEST_CRT_DIR}/vcruntime140_1.dll"
             "${configured_downloads_template}" "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsProfile.cmake"
+            "${RC_MUSIC_SOURCE_ROOT}/tools/download-runtime/build_profile.py"
+            "${RC_MUSIC_SOURCE_ROOT}/tools/youtube-resolver/onedir_plan.py"
+        BYPRODUCTS
+            "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/PackagedDownloadsFixtureProfile.hpp"
+            "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/package-profile-config.json"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/RCMusicDownloadWorker.exe"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/rcmusic-download-network.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/Qt6Core.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/Qt6Network.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/msvcp140.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/msvcp140_1.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/vcruntime140.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/vcruntime140_1.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/qrcmusicschanneloffline.dll"
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/media/RCMusicMediaWorker.exe"
         VERBATIM)
     set_source_files_properties("${configured_downloads_profile}" PROPERTIES GENERATED TRUE)
     add_custom_target(rc_music_configured_downloads_profile DEPENDS "${configured_downloads_profile}")

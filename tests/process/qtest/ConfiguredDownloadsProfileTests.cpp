@@ -1,14 +1,18 @@
 #include "../support/ConfiguredDownloadsContractProfile.hpp"
 #include "app/PlayerDownloadsBuildProfile.hpp"
 
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 
 #include <algorithm>
 #include <atomic>
 #include <future>
+#include <qt_windows.h>
 #include <stdexcept>
 #include <thread>
 #include <tuple>
@@ -39,6 +43,66 @@ void matchingProfile() {
                                                                              .youtube = expected_profiles.youtube};
 }
 #ifndef RC_MUSIC_TEST_NATIVE_PROFILE_OFF
+WindowsPlayerDownloadProfile packagedPrototype() {
+    WindowsPlayerDownloadProfile profile;
+    const QStringList names{QStringLiteral("RCMusicDownloadWorker.exe"),
+                            QStringLiteral("rcmusic-download-network.dll"),
+                            QStringLiteral("Qt6Core.dll"),
+                            QStringLiteral("Qt6Network.dll"),
+                            QStringLiteral("msvcp140.dll"),
+                            QStringLiteral("msvcp140_1.dll"),
+                            QStringLiteral("vcruntime140.dll"),
+                            QStringLiteral("vcruntime140_1.dll"),
+                            QStringLiteral("qrcmusicschanneloffline.dll")};
+    for (std::size_t i = 0; i < profile.execution.network.artifacts.size(); ++i)
+        profile.execution.network.artifacts[i] = {QStringLiteral("download-tools/network/") +
+                                                      names.at(static_cast<qsizetype>(i)),
+                                                  QByteArray(64, static_cast<char>('0' + i))};
+    profile.execution.media.source_executable = QStringLiteral("download-tools/media/RCMusicMediaWorker.exe");
+    profile.execution.media.source_sha256 = QByteArray(64, 'a');
+    profile.execution.job.network.max_body_bytes = 1234;
+    profile.execution.job.total_timeout_ms = 5678;
+    profile.execution.job.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
+    profile.execution.job.converter.max_process_memory_bytes = 123456;
+    profile.execution.youtube.emplace();
+    profile.execution.youtube->limits.max_stdout_bytes = 4567;
+    const std::vector<std::pair<WindowsYoutubeRuntimeRole, QString>> sources{
+        {WindowsYoutubeRuntimeRole::Extractor, QStringLiteral("extractor/yt-dlp.exe")},
+        {WindowsYoutubeRuntimeRole::Node, QStringLiteral("javascript/node.exe")},
+        {WindowsYoutubeRuntimeRole::EjsCore, QStringLiteral("extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js")},
+        {WindowsYoutubeRuntimeRole::EjsLibrary, QStringLiteral("extractor/_internal/yt_dlp_ejs/yt/solver/lib.min.js")},
+        {WindowsYoutubeRuntimeRole::Support, QStringLiteral("notices/NOTICE.txt")}};
+    for (const auto& [role, relative] : sources)
+        profile.execution.youtube->runtime.artifacts.push_back(
+            {role, relative, QStringLiteral("download-tools/youtube/") + relative, QByteArray(64, 'b')});
+    profile.execution.youtube->environment.insert(QStringLiteral("PATH"), QStringLiteral("C:/untrusted"));
+    profile.execution.youtube->environment.insert(QStringLiteral("NODE_OPTIONS"), QStringLiteral("--require poison"));
+    profile.execution.youtube->environment.insert(QStringLiteral("PYTHONPATH"), QStringLiteral("C:/poison"));
+    profile.execution.youtube->epoch_clock = [] { return qint64{-1}; };
+    profile.options.job_namespace = "preserved-package-namespace";
+    profile.options.binding.automatic_polling = false;
+    profile.options.native_ingress = WindowsPlayerNativeIngressOptions{.principal = expected_profiles.principal,
+                                                                       .youtube = expected_profiles.youtube};
+    return profile;
+}
+struct PackagedRawStorage final {
+    std::vector<std::vector<QChar>> texts;
+    std::vector<std::vector<char>> pins;
+    QString text(const QString& source) {
+        texts.emplace_back(source.cbegin(), source.cend());
+        return QString::fromRawData(texts.back().data(), static_cast<qsizetype>(texts.back().size()));
+    }
+    QByteArray pin(const QByteArray& source) {
+        pins.emplace_back(source.cbegin(), source.cend());
+        return QByteArray::fromRawData(pins.back().data(), static_cast<qsizetype>(pins.back().size()));
+    }
+    void overwrite() {
+        for (auto& text : texts)
+            std::fill(text.begin(), text.end(), QChar(u'x'));
+        for (auto& pin : pins)
+            std::fill(pin.begin(), pin.end(), 'x');
+    }
+};
 template <class Operation> auto onWorker(Operation operation) {
     return std::async(std::launch::async, std::move(operation)).get();
 }
@@ -415,6 +479,253 @@ class ConfiguredDownloadsProfileTests final : public QObject {
         QVERIFY(!QFile::exists(custom + QStringLiteral("/download-checkpoint.json")));
         QVERIFY(sentinel.open(QIODevice::ReadOnly));
         QCOMPARE(sentinel.readAll(), QByteArray{"unchanged"});
+    }
+    void packagedProfileRelocatesOnlySourcesAcrossTwoAbsentUnicodeRoots() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const auto config = temporary.filePath(QStringLiteral("unused config 日本"));
+        const auto prototype = packagedPrototype();
+        const auto first_root = temporary.filePath(QStringLiteral("Moved A 日本"));
+        const auto second_root = temporary.filePath(QStringLiteral("Moved B espaço"));
+        const auto first = makePackagedPlayerDownloadProfile(
+            prototype, config, QDir::toNativeSeparators(first_root) + QStringLiteral("\\"),
+            QStringLiteral("W:\\Windows\\"));
+        const auto second =
+            makePackagedPlayerDownloadProfile(prototype, config, second_root, QStringLiteral("W:/Windows"));
+        QVERIFY(first);
+        QVERIFY(second);
+        for (std::size_t i = 0; i < prototype.execution.network.artifacts.size(); ++i) {
+            const auto relative = prototype.execution.network.artifacts[i].path;
+            QCOMPARE(QDir::fromNativeSeparators(first->execution.network.artifacts[i].path),
+                     first_root + '/' + relative);
+            QCOMPARE(QDir::fromNativeSeparators(second->execution.network.artifacts[i].path),
+                     second_root + '/' + relative);
+            QCOMPARE(first->execution.network.artifacts[i].sha256, prototype.execution.network.artifacts[i].sha256);
+        }
+        QCOMPARE(QDir::fromNativeSeparators(first->execution.media.source_executable),
+                 first_root + '/' + prototype.execution.media.source_executable);
+        QCOMPARE(first->execution.media.source_sha256, prototype.execution.media.source_sha256);
+        for (std::size_t i = 0; i < prototype.execution.youtube->runtime.artifacts.size(); ++i) {
+            const auto& original = prototype.execution.youtube->runtime.artifacts[i];
+            const auto& rebased = first->execution.youtube->runtime.artifacts[i];
+            QCOMPARE(QDir::fromNativeSeparators(rebased.source_path), first_root + '/' + original.source_path);
+            QCOMPARE(rebased.relative_path, original.relative_path);
+            QCOMPARE(rebased.role, original.role);
+            QCOMPARE(rebased.sha256, original.sha256);
+        }
+        QVERIFY(first->prepare_storage);
+        const auto base = config + QStringLiteral("/downloads");
+        QCOMPARE(first->checkpoint_directory, base + QStringLiteral("/state"));
+        QCOMPARE(second->checkpoint_directory, first->checkpoint_directory);
+        QCOMPARE(first->execution.journal_directory, first->checkpoint_directory);
+        QCOMPARE(first->execution.network.runtime_parent, base + QStringLiteral("/network"));
+        QCOMPARE(first->execution.media.runtime_parent, base + QStringLiteral("/media"));
+        QCOMPARE(first->execution.youtube->runtime.runtime_parent, base + QStringLiteral("/youtube"));
+        QCOMPARE(first->execution.job.workspace.staging_parent, base + QStringLiteral("/staging"));
+        QCOMPARE(first->execution.job.workspace.publish_parent, base + QStringLiteral("/published"));
+        QCOMPARE(first->execution.job.network.max_body_bytes, quint64{1234});
+        QCOMPARE(first->execution.job.total_timeout_ms, qint64{5678});
+        QCOMPARE(first->execution.job.converter.max_process_memory_bytes, quint64{123456});
+        QCOMPARE(first->execution.job.converter.backend, prototype.execution.job.converter.backend);
+        QCOMPARE(first->execution.youtube->limits.max_stdout_bytes, quint64{4567});
+        QCOMPARE(first->options.job_namespace, prototype.options.job_namespace);
+        QCOMPARE(first->options.binding.automatic_polling, false);
+        compareProfile(first->options.native_ingress->principal, prototype.options.native_ingress->principal);
+        compareProfile(first->options.native_ingress->youtube, prototype.options.native_ingress->youtube);
+        QVERIFY(!QDir{config}.exists());
+        QVERIFY(!QDir{first_root}.exists());
+        QVERIFY(!QDir{second_root}.exists());
+    }
+    void packagedRelativeSourcesRejectAmbiguityBeforeJoining_data() {
+        QTest::addColumn<QString>("source");
+        QTest::newRow("empty") << QString{};
+        QTest::newRow("drive absolute") << QStringLiteral("C:/outside/file.exe");
+        QTest::newRow("drive relative") << QStringLiteral("C:outside.exe");
+        QTest::newRow("UNC") << QStringLiteral("\\\\server\\share\\file.exe");
+        QTest::newRow("root relative") << QStringLiteral("/outside.exe");
+        QTest::newRow("parent traversal") << QStringLiteral("tools/../outside.exe");
+        QTest::newRow("dot segment") << QStringLiteral("tools/./file.exe");
+        QTest::newRow("empty segment") << QStringLiteral("tools//file.exe");
+        QTest::newRow("ADS") << QStringLiteral("tools/file.exe:stream");
+        QTest::newRow("DOS device") << QStringLiteral("tools/NUL.txt");
+        QTest::newRow("trailing dot") << QStringLiteral("tools/file.exe.");
+        QTest::newRow("control") << (QStringLiteral("tools/file") + QChar{1} + QStringLiteral(".exe"));
+        QTest::newRow("wildcard") << QStringLiteral("tools/file?.exe");
+    }
+    void packagedRelativeSourcesRejectAmbiguityBeforeJoining() {
+        QFETCH(QString, source);
+        for (int field = 0; field < 3; ++field) {
+            auto profile = packagedPrototype();
+            if (field == 0)
+                profile.execution.network.artifacts.back().path = source;
+            else if (field == 1)
+                profile.execution.media.source_executable = source;
+            else
+                profile.execution.youtube->runtime.artifacts.back().source_path = source;
+            QVERIFY(!makePackagedPlayerDownloadProfile(profile, QStringLiteral("C:/not-created/config"),
+                                                       QStringLiteral("D:/not-created/app"),
+                                                       QStringLiteral("W:/Windows")));
+        }
+    }
+    void packagedSourcesRequireLowercaseSha256Pins_data() {
+        QTest::addColumn<QByteArray>("pin");
+        QTest::newRow("empty") << QByteArray{};
+        QTest::newRow("short") << QByteArray(63, 'a');
+        QTest::newRow("long") << QByteArray(65, 'a');
+        QTest::newRow("uppercase") << QByteArray(64, 'A');
+        QTest::newRow("nonhex") << QByteArray(64, 'g');
+        QTest::newRow("NUL") << QByteArray(64, '\0');
+    }
+    void packagedSourcesRequireLowercaseSha256Pins() {
+        QFETCH(QByteArray, pin);
+        for (int field = 0; field < 3; ++field) {
+            auto profile = packagedPrototype();
+            if (field == 0)
+                profile.execution.network.artifacts.back().sha256 = pin;
+            else if (field == 1)
+                profile.execution.media.source_sha256 = pin;
+            else
+                profile.execution.youtube->runtime.artifacts.back().sha256 = pin;
+            QVERIFY(!makePackagedPlayerDownloadProfile(profile, QStringLiteral("C:/not-created/config"),
+                                                       QStringLiteral("D:/not-created/app"),
+                                                       QStringLiteral("W:/Windows")));
+        }
+    }
+    void packagedApplicationAndWindowsRootsAreLexicallyConstrained_data() {
+        QTest::addColumn<QString>("root");
+        QTest::newRow("empty") << QString{};
+        QTest::newRow("drive relative") << QStringLiteral("C:relative");
+        QTest::newRow("root relative") << QStringLiteral("\\relative");
+        QTest::newRow("UNC") << QStringLiteral("\\\\server\\share");
+        QTest::newRow("device namespace") << QStringLiteral("\\\\?\\C:\\app");
+        QTest::newRow("parent traversal") << QStringLiteral("C:/app/../elsewhere");
+        QTest::newRow("ADS") << QStringLiteral("C:/app:stream");
+        QTest::newRow("device component") << QStringLiteral("C:/NUL/app");
+    }
+    void packagedApplicationAndWindowsRootsAreLexicallyConstrained() {
+        QFETCH(QString, root);
+        QVERIFY(!makePackagedPlayerDownloadProfile(packagedPrototype(), QStringLiteral("C:/not-created/config"), root,
+                                                   QStringLiteral("W:/Windows")));
+        QVERIFY(!makePackagedPlayerDownloadProfile(packagedPrototype(), QStringLiteral("C:/not-created/config"),
+                                                   QStringLiteral("D:/not-created/app"), root));
+    }
+    void packagedProfileOwnsEveryRawPathAndPinBeforeReturning() {
+        const auto expected = packagedPrototype();
+        auto profile = expected;
+        PackagedRawStorage raw;
+        for (auto& artifact : profile.execution.network.artifacts) {
+            artifact.path = raw.text(artifact.path);
+            artifact.sha256 = raw.pin(artifact.sha256);
+        }
+        profile.execution.media.source_executable = raw.text(profile.execution.media.source_executable);
+        profile.execution.media.source_sha256 = raw.pin(profile.execution.media.source_sha256);
+        for (auto& artifact : profile.execution.youtube->runtime.artifacts) {
+            artifact.source_path = raw.text(artifact.source_path);
+            artifact.relative_path = raw.text(artifact.relative_path);
+            artifact.sha256 = raw.pin(artifact.sha256);
+        }
+        for (auto* native : {&profile.options.native_ingress->principal, &profile.options.native_ingress->youtube}) {
+            native->allowed_origin = raw.text(native->allowed_origin);
+            native->endpoint_name = raw.text(native->endpoint_name);
+            for (auto& image : native->expected_owner_images)
+                image = raw.text(image);
+            for (auto& image : native->expected_host_images)
+                image = raw.text(image);
+        }
+        const auto config = raw.text(QStringLiteral("C:/unused user 日本"));
+        const auto app = raw.text(QStringLiteral("D:/unused app espaço"));
+        const auto windows = raw.text(QStringLiteral("W:/Windows"));
+        const auto result = makePackagedPlayerDownloadProfile(profile, config, app, windows);
+        QVERIFY(result);
+        raw.overwrite();
+        for (std::size_t i = 0; i < expected.execution.network.artifacts.size(); ++i) {
+            QCOMPARE(QDir::fromNativeSeparators(result->execution.network.artifacts[i].path),
+                     QStringLiteral("D:/unused app espaço/") + expected.execution.network.artifacts[i].path);
+            QCOMPARE(result->execution.network.artifacts[i].sha256, expected.execution.network.artifacts[i].sha256);
+        }
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.media.source_executable),
+                 QStringLiteral("D:/unused app espaço/") + expected.execution.media.source_executable);
+        QCOMPARE(result->execution.media.source_sha256, expected.execution.media.source_sha256);
+        for (std::size_t i = 0; i < expected.execution.youtube->runtime.artifacts.size(); ++i) {
+            const auto& source = result->execution.youtube->runtime.artifacts[i];
+            const auto& previous = expected.execution.youtube->runtime.artifacts[i];
+            QCOMPARE(QDir::fromNativeSeparators(source.source_path),
+                     QStringLiteral("D:/unused app espaço/") + previous.source_path);
+            QCOMPARE(source.relative_path, previous.relative_path);
+            QCOMPARE(source.sha256, previous.sha256);
+        }
+        compareProfile(result->options.native_ingress->principal, expected.options.native_ingress->principal);
+        compareProfile(result->options.native_ingress->youtube, expected.options.native_ingress->youtube);
+        QCOMPARE(result->checkpoint_directory, QStringLiteral("C:/unused user 日本/downloads/state"));
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.youtube->environment.value(QStringLiteral("SystemRoot"))),
+                 QStringLiteral("W:/Windows"));
+    }
+    void packagedProfileCreatesOnlyExplicitEnvironmentAndClockAndKeepsResolverOptional() {
+        const auto before = QDateTime::currentSecsSinceEpoch();
+        const auto result =
+            makePackagedPlayerDownloadProfile(packagedPrototype(), QStringLiteral("C:/unused/user"),
+                                              QStringLiteral("D:/unused/app"), QStringLiteral("W:/Windows"));
+        QVERIFY(result);
+        const auto& youtube = *result->execution.youtube;
+        QCOMPARE(youtube.environment.keys().size(), 2);
+        QVERIFY(youtube.environment.contains(QStringLiteral("PATH")));
+        QVERIFY(youtube.environment.value(QStringLiteral("PATH")).isEmpty());
+        QCOMPARE(QDir::fromNativeSeparators(youtube.environment.value(QStringLiteral("SystemRoot"))),
+                 QStringLiteral("W:/Windows"));
+        QVERIFY(youtube.epoch_clock);
+        const auto observed = youtube.epoch_clock();
+        QVERIFY(observed >= before && observed <= QDateTime::currentSecsSinceEpoch());
+        auto direct = packagedPrototype();
+        direct.execution.youtube.reset();
+        direct.options.native_ingress.reset();
+        const auto direct_result = makePackagedPlayerDownloadProfile(
+            direct, QStringLiteral("C:/unused/user"), QStringLiteral("D:/unused/app"), QStringLiteral("W:/Windows"));
+        QVERIFY(direct_result);
+        QVERIFY(!direct_result->execution.youtube);
+        QVERIFY(!direct_result->options.native_ingress);
+    }
+    void packagedDriveRootDirectoriesRemainAbsoluteWithoutDoubleSeparators() {
+        const auto result = makePackagedPlayerDownloadProfile(packagedPrototype(), QStringLiteral("C:/unused/user"),
+                                                              QStringLiteral("D:/"), QStringLiteral("W:/"));
+        QVERIFY(result);
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.network.artifacts.front().path),
+                 QStringLiteral("D:/") + packagedPrototype().execution.network.artifacts.front().path);
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.youtube->environment.value(QStringLiteral("SystemRoot"))),
+                 QStringLiteral("W:/"));
+    }
+    void packagedActualPathsIgnoreWorkingDirectoryAndInheritedEnvironment() {
+        QTemporaryDir unrelated;
+        QVERIFY(unrelated.isValid());
+        const auto previous_cwd = QDir::currentPath();
+        const std::vector<QByteArray> names{"PATH", "SystemRoot", "NODE_OPTIONS", "PYTHONPATH"};
+        std::vector<std::tuple<QByteArray, QByteArray, bool>> saved;
+        for (const auto& name : names)
+            saved.emplace_back(name, qgetenv(name.constData()), qEnvironmentVariableIsSet(name.constData()));
+        const auto restore = qScopeGuard([&] {
+            static_cast<void>(QDir::setCurrent(previous_cwd));
+            for (const auto& [name, value, present] : saved) {
+                if (present)
+                    static_cast<void>(qputenv(name.constData(), value));
+                else
+                    static_cast<void>(qunsetenv(name.constData()));
+            }
+        });
+        QVERIFY(QDir::setCurrent(unrelated.path()));
+        for (const auto& name : names)
+            QVERIFY(qputenv(name.constData(), "Z:/hostile inherited value"));
+        const auto result = makePackagedPlayerDownloadProfile(packagedPrototype(), unrelated.path());
+        QVERIFY(result);
+        const auto application = QDir::fromNativeSeparators(QCoreApplication::applicationDirPath());
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.network.artifacts.front().path),
+                 application + '/' + packagedPrototype().execution.network.artifacts.front().path);
+        wchar_t windows[32768]{};
+        const auto count = GetWindowsDirectoryW(windows, 32768);
+        QVERIFY(count > 0 && count < 32768);
+        QCOMPARE(QDir::fromNativeSeparators(result->execution.youtube->environment.value(QStringLiteral("SystemRoot"))),
+                 QDir::fromNativeSeparators(QString::fromWCharArray(windows, static_cast<qsizetype>(count))));
+        QCOMPARE(result->execution.youtube->environment.keys().size(), 2);
+        QVERIFY(result->execution.youtube->environment.value(QStringLiteral("PATH")).isEmpty());
+        QVERIFY(!QDir{unrelated.filePath(QStringLiteral("downloads"))}.exists());
     }
 #else
     void nativeOffHasNoCompiledProfileAndRefusesActiveProviderChannels() {
