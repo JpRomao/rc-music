@@ -23,7 +23,7 @@ Incremento posterior: o [leitor de Registro e a factory das quatro raízes](medi
 
 Preparação em `c840fe1`: o [probe separado do inventário](media-profile-lifecycle.md#probe-separado-do-inventário-de-storage) compôs esse leitor com o owner vivo e recibos privados em executável próprio. Naquele fechamento, somente modos inertes e testes com perfil falso tinham sido executados. O fechamento proporcional passou **14/14 CTest, 538 Qt + 33 casos puros**, sem falhas/skips, formato **473 C++/62 QML**, build Lite e fronteira de **255 comandos**. A execução posterior recebeu autorização própria e está no checkpoint atual; não promove política/MIC ou produção.
 
-**Próxima prioridade do mantenedor (2026-11-04):** permitir playlists locais nomeadas e persistentes no app, conforme FR-056/M6.6. O pedido antecipa esse incremento antes de continuar Lidarr, outras fontes de download ou AppContainer. A integração Lidarr já implementada, seus gates pendentes e o trabalho em andamento permanecem preservados. Essa mudança de ordem não retoma autorizações físicas anteriores.
+**Prioridade em desenvolvimento (2026-11-04):** playlists locais nomeadas e persistentes no app, conforme FR-056/M6.6. O incremento possui domínio, store, binding e painel implementados, com seus checks abaixo. Avança antes de continuar Lidarr, outras fontes de download ou AppContainer. A integração Lidarr, seus gates pendentes e os seis arquivos AppContainer em andamento permanecem preservados. Essa mudança de ordem não retoma autorizações físicas anteriores.
 
 ## 1. Regras de uso
 
@@ -598,7 +598,7 @@ O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prior
 | M6.3 | Repeat | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; modos off/faixa/fila e fim |
 | M6.4 | Velocidade de reprodução | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE`; precisão, áudio/CPU e reset |
 | M6.5 | Editor de tema limitado a tokens | FR-041 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE`; contraste e recovery |
-| M6.6 | Playlists locais nomeadas — próxima prioridade; criar/renomear/excluir, salvar fila, organizar e persistir; M3U8 em evolução posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
+| M6.6 | Playlists locais nomeadas — recorte automatizado implementado; criar/renomear/excluir, salvar fila, organizar e persistir; aceitação nativa/pacote pendente e M3U8 posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
 
@@ -768,9 +768,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Próxima prioridade — playlists
 
-**Estado: planejado.** FR-056/M6.6 passa a ser o próximo desenvolvimento funcional Windows. Criar playlists com nome, salvar a fila atual, renomear/excluir listas e adicionar/remover/reordenar faixas; preservar ordem, Unicode e duplicatas. As listas são persistentes e independentes da sessão/fila em reprodução. Abrir/editar a lista não toca áudio; adicionar/carregar suas faixas exige ação explícita. Excluir a lista mantém os arquivos de áudio.
+**Estado: em andamento, funcional no recorte automatizado Windows.** FR-056/M6.6 agora tem playlists com nome, cópia da fila atual, renomeação/exclusão de listas e adição/remoção/reordenação de faixas, preservando ordem, Unicode e duplicatas. As listas são persistentes e independentes da sessão/fila em reprodução. Abrir/editar a lista não toca áudio; **Adicionar à fila** acrescenta suas faixas ao fim sem seleção/autoplay. Excluir a lista mantém os arquivos de áudio.
 
-Sequência: definir contratos puros e testes Red de identidade/ordem/duplicatas; implementar operações de playlist; acrescentar armazenamento local com confirmação de escrita e recuperação; compor painel e ações de fila; verificar restart, erros de gravação, teclado/foco, Lite/Completa e documentação. Dados pessoais e fila atual devem ser preservados durante os checks. Formato de armazenamento será definido nesse trabalho; M3U8 fica para uma evolução posterior. Não há implementação ou teste funcional de playlists alegado por esta priorização documental.
+Checks deste incremento: domínio 20 casos/228 assertions; store 35 e binding 15 casos; painel Quick 16/16 e suíte Quick final 319/319; restart de playlists em dois processos; presenter 306 e importação 79 casos; core sem Qt 274/274 CTest. Builds Lite ON/OFF e Completa OFF, lint sem avisos e formato dos 17 C++ alterados/69 QML passaram. A [evidência delimitada](playlists.md#evidência-de-implementação) registra os Reds, a falha intermediária do harness e as seleções finais, sem alegar nova suíte integral ou aceitação nativa. M6.6 e gates globais permanecem abertos.
+
+O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra domínio/porta puros, JSON v1 separado com backup/lock e um job Qt Concurrent por binding. O candidato só é publicado após Saved; falha conserva a alteração para retry explícito ou recarga do disco, sem prometer rollback. O [guia](playlists.md#evidência-de-implementação) reúne Reds, checks e limites. Permanecem aceitação Windows nativa/NVDA e empacotamento atualizado; M3U8 segue em evolução posterior. Nenhum gate global ou release é aprovado por esse recorte.
 
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 

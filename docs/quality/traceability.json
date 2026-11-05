@@ -2207,15 +2207,25 @@
     {
       "id": "FR-056",
       "plan": "M6.6",
-      "status": "planejado",
+      "status": "em andamento",
       "verification": "mixed",
-      "tests": [],
+      "tests": [
+        { "path": "tests/core/PlaylistLibraryTests.cpp", "marker": "playlists create independent named lists and preserve duplicate Unicode sources" },
+        { "path": "tests/qt/QtJsonPlaylistStoreTests.cpp", "marker": "firstWriteAndRestartRoundTripUnicodeDuplicatesAndExactIds" },
+        { "path": "tests/qt/PlaylistsRestartTests.cpp", "marker": "namedPlaylistsSurviveTwoProcessesWithoutAutomaticQueueActions" },
+        { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedSaveRetainsTheCandidateForExplicitRetryAndBlocksExit" },
+        { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "exitDuringTheQueueCallbackCannotCreateAnUnsaveablePendingChange" },
+        { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue" },
+        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "name: \"PlaylistsPanel\"" }
+      ],
       "evidence": [
         { "path": "docs/product/requirements.md", "marker": "### 2.9 Playlists nomeadas" },
-        { "path": "docs/development-plan.md", "marker": "### Próxima prioridade — playlists" }
+        { "path": "docs/development-plan.md", "marker": "### Próxima prioridade — playlists" },
+        { "path": "docs/architecture/decisions/0015-named-playlists.md", "marker": "## Decisão" },
+        { "path": "docs/playlists.md", "marker": "## Evidência de implementação" }
       ],
       "remaining": [
-        "Implementar playlists nomeadas locais, operações de edição e persistência com testes Red/Green, compor a UI e verificar restart/erros/teclado/fila preservada. A prioridade foi aceita; ainda não há implementação ou testes funcionais de playlists. M3U8 permanece evolução posterior."
+        "Concluir aceitação Windows nativa/NVDA e empacotamento atualizado. Domínio, store, binding, painel, restart em dois processos e append sem autoplay têm testes próprios; fakes/offscreen e falhas injetadas não comprovam filesystem sob perda física de energia ou instalação atualizada. M3U8 permanece evolução posterior."
       ]
     },
     {

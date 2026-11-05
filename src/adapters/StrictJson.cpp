@@ -105,7 +105,9 @@ bool skipStrictNumber(const QByteArray& payload, qsizetype& position) {
 }
 } // namespace
 
-bool strictJsonPreflight(const QByteArray& payload) {
+bool strictJsonPreflight(const QByteArray& payload, const std::size_t maximum_depth) {
+    if (maximum_depth == 0 || maximum_depth > 64)
+        return false;
     QStringDecoder decoder{QStringDecoder::Utf8};
     const QString decoded = decoder(payload);
     if (decoder.hasError() || decoded.toUtf8() != payload)
@@ -120,7 +122,7 @@ bool strictJsonPreflight(const QByteArray& payload) {
     for (qsizetype position = 0; position < payload.size();) {
         const char value = payload[position];
         if (value == '{' || value == '[') {
-            if (scopes.size() == 4)
+            if (scopes.size() == maximum_depth)
                 return false;
             scopes.push_back({value, {}});
             ++position;

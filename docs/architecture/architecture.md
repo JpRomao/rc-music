@@ -25,6 +25,8 @@ As [letras locais e consulta online explícita](decisions/0013-lyrics-and-online
 
 O [cliente Lidarr opcional](decisions/0014-lidarr-integration.md) usa Qt Network no adapter, com conexão e credenciais fornecidas explicitamente e mantidas em memória. `LidarrBinding` projeta catálogo, escolhas de pasta/perfis e resultados tipados; QML separa consulta de confirmação para adicionar/buscar um álbum. O servidor gerencia seus downloads. A integração é comum às edições Lite/Completa e não fornece bytes ou caminhos importáveis ao núcleo local.
 
+As [playlists nomeadas](decisions/0015-named-playlists.md) usam `PlaylistLibrary` e `PlaylistStore` separados da sessão de reprodução. O catálogo preserva IDs próprios, ordem e duplicatas; a apresentação prepara uma alteração e só a publica após Saved. `QtJsonPlaylistStore` lê/grava um documento JSON local com backup/lock, em um job Qt Concurrent por binding. A composição do app fornece callbacks tipados para copiar a fila e acrescentar um lote sem seleção/autoplay; os mesmos gates e a transação do append local já usado pela importação são reutilizados. A UI não abre documentos ou arquivos de áudio.
+
 ## 2. Contexto
 
 ```text

@@ -2,6 +2,7 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#include "adapters/QtJsonPlaylistStore.hpp"
 #include "adapters/QtLidarrService.hpp"
 #include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
@@ -36,6 +37,7 @@
 #include "presentation/LifecycleText.hpp"
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
+#include "presentation/PlaylistsBinding.hpp"
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #endif
@@ -454,6 +456,7 @@ int main(int argc, char* argv[]) {
         music_player::m0::LyricsBinding lyrics_binding(lyrics_service);
         music_player::m0::QtLidarrService lidarr_service;
         music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
+        std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
@@ -518,8 +521,9 @@ int main(int argc, char* argv[]) {
         presenter.setSourceExitDrainedProbe([&] {
             const bool lyrics_drained = lyrics_binding.prepareExit();
             const bool lidarr_drained = lidarr_binding.prepareExit();
+            const bool playlists_drained = !playlists_binding || playlists_binding->prepareExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
-                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained;
+                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained && playlists_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -632,6 +636,30 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
         }
 #endif
+        QString playlists_config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+#if defined(Q_OS_WIN) || defined(M0_QT_COMBINED_AUDIO)
+        playlists_config_root = config_root;
+#endif
+        playlists_binding = std::make_unique<music_player::m0::PlaylistsBinding>(
+            std::make_shared<music_player::m0::QtJsonPlaylistStore>(playlists_config_root),
+            [&] {
+                auto snapshot = presenter.playlistQueueSnapshot();
+                music_player::m0::PlaylistsBinding::Paths paths;
+                paths.reserve(snapshot.items.size());
+                for (auto& item : snapshot.items)
+                    paths.push_back(std::move(item.source_path));
+                return paths;
+            },
+            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); });
+        static_cast<void>(playlists_binding->retryLoad());
+        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, playlists_binding.get(), [&] {
+            if (presenter.exiting())
+                static_cast<void>(playlists_binding->prepareExit());
+            else
+                playlists_binding->resume();
+        });
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, playlists_binding.get(),
+                         &music_player::m0::PlaylistsBinding::beginShutdown);
         const auto update_lyrics = [&] {
             if (presenter.exiting()) {
                 static_cast<void>(lyrics_binding.prepareExit());
@@ -659,6 +687,7 @@ int main(int argc, char* argv[]) {
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
                                        {QStringLiteral("lidarr"), QVariant::fromValue(&lidarr_binding)},
+                                       {QStringLiteral("playlists"), QVariant::fromValue(playlists_binding.get())},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

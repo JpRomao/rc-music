@@ -14,7 +14,7 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Última revisão:** 2026-11-04
 
-**Próxima prioridade confirmada em 2026-11-04:** playlists locais nomeadas e persistentes, FR-056/M6.6, antecipadas pelo mantenedor. A entrega começa por criar/renomear/excluir listas, salvar a fila atual, organizar faixas e carregá-las explicitamente na fila. A [integração Lidarr](lidarr-integration.md), seus gates pendentes e o trabalho AppContainer ficam preservados para continuidade posterior.
+**Prioridade antecipada em 2026-11-04:** [playlists locais nomeadas e persistentes](playlists.md), FR-056/M6.6. O recorte automatizado implementa criar/renomear/excluir listas, salvar a fila atual, organizar faixas, persistir e acrescentar à fila sem autoplay. Aceitação Windows nativa e pacote atualizado continuam pendentes. A [integração Lidarr](lidarr-integration.md), seus gates e o trabalho AppContainer ficam preservados para continuidade posterior.
 
 ## 1. Como ler
 

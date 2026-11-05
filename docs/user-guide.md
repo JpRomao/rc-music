@@ -2,6 +2,12 @@
 
 Este guia descreve o aplicativo Windows atual para uso local privado e experimental. Não é anúncio de release nem comprovação de instalação, segurança, desempenho ou acessibilidade nativa finais. A consulta opcional de letras é descrita abaixo; reprodução/download de fontes remotas e Linux mantêm seus gates próprios. Para a composição dos arquivos e as limitações dos artefatos, consulte os guias de [runtime Windows](windows-runtime.md) e [instalador Windows](windows-installer.md).
 
+## Playlists
+
+Abra **Playlists** para criar uma lista vazia com **Nova playlist**, ou copie a fila atual com **Salvar fila como…**. Selecione uma lista para ver suas faixas, renomear/excluir ou usar **Adicionar fila atual**; selecione uma faixa para mover ou remover. Excluir uma lista conserva os arquivos de áudio. A alteração aparece depois da confirmação de salvamento; em falha, escolha **Tentar salvar** ou **Recarregar do disco** para conferir o que foi gravado.
+
+**Adicionar à fila** acrescenta a playlist ao fim da fila, preservando a música atual e as duplicatas. Escolher a lista não inicia áudio; para tocar, use a fila do player. As playlists ficam salvas independentemente da restauração da sessão e funcionam offline. O [guia de playlists](playlists.md) explica backup, limites e recuperação.
+
 ## Letras das músicas
 
 A letra aparece **acima da barra de progresso**, no idioma original. O player carrega automaticamente um arquivo `.lrc` UTF-8 na mesma pasta e com o mesmo nome base do áudio: `música.mp3` e `música.lrc`. Os versos acompanham a posição confirmada, incluindo pausa e saltos; arrastar o progresso ainda mostra uma prévia até o ajuste ser confirmado. Texto sem tempos aparece em uma área rolável. Nesta primeira matriz, arquivos UNC, links e offset diferente de zero não são aceitos.

@@ -504,6 +504,9 @@ class PlayerPresenterTests final : public QObject {
     void localOpenCancellationIsInert();
     void localOpenPublishesUnicodeFallbackAndStartsMetadata();
     void localOpenPublishesOrderedQueueWithDistinctDuplicateOccurrences();
+    void playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue();
+    void playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch();
+    void playlistAppendAcknowledgesItsCommitWhenALaterObserverThrows();
     void openingAdditionalFilesPreservesTheQueueAndPlaysTheFirstNewOccurrence();
     void localQueueNavigationAvoidsAutoplayAndPreservesDuplicateOccurrence();
     void playNowUsesTheStableLocalOccurrenceIdAndAutoplays();
@@ -865,6 +868,73 @@ void PlayerPresenterTests::localOpenPublishesUnicodeFallbackAndStartsMetadata() 
     QCOMPARE(timers.size(), 1);
     QVERIFY(timers.front()->interval() < 200);
     QVERIFY(timers.front()->isActive());
+}
+
+void PlayerPresenterTests::playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+    const auto a = localTestPath(u8"First 日本.mp3"), b = localTestPath(u8"Second.flac");
+    QVERIFY(presenter.appendPlaylistSources({a, b, a}));
+    const auto snapshot = presenter.playlistQueueSnapshot();
+    QCOMPARE(snapshot.items.size(), std::size_t{3});
+    QCOMPARE(snapshot.items[0].source_path, a);
+    QCOMPARE(snapshot.items[1].source_path, b);
+    QCOMPARE(snapshot.items[2].source_path, a);
+    QVERIFY(snapshot.items[0].occurrence_id != snapshot.items[2].occurrence_id);
+    QVERIFY(!snapshot.current_occurrence_id);
+    QVERIFY(backend.loaded_paths.empty());
+    QCOMPARE(backend.play_calls, 0);
+    QVERIFY(metadata.requests.empty());
+    QVERIFY(presenter.removeQueueOccurrence(LocalQueueListModel::occurrenceId(snapshot.items[1].occurrence_id)));
+    QCOMPARE(snapshot.items.size(), std::size_t{3});
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{2});
+}
+
+void PlayerPresenterTests::playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"Current.mp3"), b = localTestPath(u8"New.flac");
+    PlayerPresenter presenter(platform, backend, metadata, [a] { return std::vector<std::filesystem::path>{a}; });
+    QVERIFY(presenter.openAudio());
+    const auto current = presenter.currentOccurrenceId();
+    const auto state = presenter.playbackState();
+    const auto loads = backend.loaded_paths.size();
+    QVERIFY(presenter.appendPlaylistSources({b, b}));
+    QCOMPARE(presenter.currentOccurrenceId(), current);
+    QCOMPARE(presenter.playbackState(), state);
+    QCOMPARE(backend.loaded_paths.size(), loads);
+    const auto snapshot = presenter.playlistQueueSnapshot();
+    QVERIFY(!presenter.appendPlaylistSources({b, std::filesystem::path("relative.mp3")}));
+    QVERIFY(!presenter.appendPlaylistSources({}));
+    QVERIFY(presenter.playlistQueueSnapshot() == snapshot);
+}
+
+void PlayerPresenterTests::playlistAppendAcknowledgesItsCommitWhenALaterObserverThrows() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+    const auto path = localTestPath(u8"Committed.mp3");
+    const auto connection = QObject::connect(
+        &presenter, &PlayerPresenter::stateChanged, &presenter,
+        [] { throw std::runtime_error("observer failed after commit"); }, Qt::DirectConnection);
+    bool accepted{}, threw{};
+    try {
+        accepted = presenter.appendPlaylistSources({path, path});
+    } catch (...) {
+        threw = true;
+    }
+    QObject::disconnect(connection);
+    QVERIFY(!threw);
+    QVERIFY(accepted);
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{2});
+    QVERIFY(backend.loaded_paths.empty());
+    QCOMPARE(backend.play_calls, 0);
+    QVERIFY(presenter.appendPlaylistSources({path}));
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{3});
 }
 
 void PlayerPresenterTests::localOpenPublishesOrderedQueueWithDistinctDuplicateOccurrences() {

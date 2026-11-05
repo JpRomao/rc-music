@@ -27,6 +27,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0012](0012-experimental-edition-packaging.md) | Proposto | Receitas privadas Lite/Completa experimental, notices e troca de payload em uma instalação compartilhada |
 | [0013](0013-lyrics-and-online-lookup.md) | Aceito | Letras locais e sincronizadas acima do progresso, busca LRCLIB explícita por metadados e refinamento do indicador de volume |
 | [0014](0014-lidarr-integration.md) | Aceito | Integração opcional com Lidarr priorizada pelo mantenedor; conexão, pesquisa e pedidos explícitos separados da reprodução local |
+| [0015](0015-named-playlists.md) | Aceito | Playlists locais nomeadas, catálogo independente da fila, persistência JSON limitada e edição publicada somente após Saved |
 
 ## Processo
 

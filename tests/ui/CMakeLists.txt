@@ -63,6 +63,15 @@ endfunction()
 add_ui_test(rc_music_lyrics_service_tests rc_music.lyrics.service
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLyricsServiceTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_service_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_playlists_store_tests rc_music.playlists.store
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonPlaylistStoreTests.cpp" rc_music_playlists rc_music_media_data)
+set_target_properties(rc_music_playlists_store_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_playlists_binding_tests rc_music.playlists.binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PlaylistsBindingTests.cpp" rc_music_playlists)
+set_target_properties(rc_music_playlists_binding_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_playlists_restart_tests rc_music.playlists.restart
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PlaylistsRestartTests.cpp" rc_music_playlists)
+set_target_properties(rc_music_playlists_restart_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_lidarr_service_tests rc_music.lidarr.service
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLidarrServiceTests.cpp" rc_music_lidarr)
 set_target_properties(rc_music_lidarr_service_tests PROPERTIES AUTOMOC ON)

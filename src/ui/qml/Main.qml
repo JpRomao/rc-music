@@ -12,6 +12,7 @@ ApplicationWindow {
     property var embeddedBrowser: null
     property var lyrics: null
     property var lidarr: null
+    property var playlists: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -55,7 +56,7 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: !lidarrPanel.visible && !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !playlistsPanel.visible && !lidarrPanel.visible && !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
@@ -247,7 +248,7 @@ ApplicationWindow {
         presenter.setVolume(Math.max(0, Math.min(100, percent + percentagePoints)) / 100);
     }
     function openPreferences() {
-        if (lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
+        if (playlistsPanel.visible || lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
             return;
         queueOpen = false;
         if (preferencesPanel.opened)
@@ -256,7 +257,7 @@ ApplicationWindow {
             preferencesPanel.open();
     }
     function openTrackDetails(opener) {
-        if (lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
+        if (playlistsPanel.visible || lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
             return;
         queueOpen = false;
         trackDetailsPanel.openFrom(opener);
@@ -265,6 +266,7 @@ ApplicationWindow {
         if (downloads === null || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
             return;
         queueOpen = false;
+        playlistsPanel.close();
         lidarrPanel.close();
         preferencesPanel.close();
         trackDetailsPanel.close();
@@ -274,10 +276,21 @@ ApplicationWindow {
         if (lidarr === null || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
             return;
         queueOpen = false;
+        playlistsPanel.close();
         preferencesPanel.close();
         trackDetailsPanel.close();
         downloadsPanel.close();
         lidarrPanel.open();
+    }
+    function openPlaylists() {
+        if (playlists === null || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+            return;
+        queueOpen = false;
+        preferencesPanel.close();
+        trackDetailsPanel.close();
+        downloadsPanel.close();
+        lidarrPanel.close();
+        playlistsPanel.open();
     }
     function revealDownloadFinalSaveFailure() {
         if (downloadsPanel && presenter.exiting && downloadFinalSaveDecisionRequired && !downloadsPanel.visible)
@@ -344,6 +357,19 @@ ApplicationWindow {
                 visible: window.downloads !== null
                 enabled: visible && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
                 onClicked: window.openDownloads()
+            }
+            AccessibleTransportButton {
+                id: playlistsButton
+                objectName: "playlists"
+                anchors.top: parent.top
+                anchors.right: lidarrButton.visible ? lidarrButton.left : (browserButton.visible ? browserButton.left : (downloadsButton.visible ? downloadsButton.left : queueButton.left))
+                anchors.rightMargin: window.uiContract.spacingUnit * 2
+                z: 20
+                contract: window.uiContract
+                text: qsTr("Playlists")
+                visible: window.playlists !== null
+                enabled: visible && !window.presenter.exiting
+                onClicked: window.openPlaylists()
             }
             AccessibleTransportButton {
                 id: lidarrButton
@@ -501,7 +527,7 @@ ApplicationWindow {
         warningScope: window.presenter.persistenceWarningScope
         warningRevision: window.presenter.persistenceWarningRevision
         fallbackFocusItem: preferencesButton
-        interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        interactionAllowed: window.active && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         onReviewRequested: window.openPreferences()
         onDismissRequested: window.presenter.dismissPreferenceWarning()
         onRetryRequested: window.presenter.retryPreferenceSave()
@@ -568,6 +594,16 @@ ApplicationWindow {
                 browserError.open();
         }
     }
+    PlaylistsPanel {
+        id: playlistsPanel
+        contract: window.uiContract
+        playlists: window.playlists
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !downloadsPanel.visible && !lidarrPanel.visible)
+                playlistsButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
     LidarrPanel {
         id: lidarrPanel
         contract: window.uiContract
@@ -599,7 +635,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !lidarrPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !playlistsPanel.visible && !lidarrPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction

@@ -17,6 +17,17 @@ target_link_libraries(rc_music_lidarr PUBLIC Qt6::Core Qt6::Network)
 set_target_properties(rc_music_lidarr PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lidarr)
 
+include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicMediaData.cmake")
+add_library(rc_music_playlists STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlaylistsBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlaylistsBinding.cpp")
+target_include_directories(rc_music_playlists PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_playlists PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data Qt6::Concurrent)
+set_target_properties(rc_music_playlists PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_playlists)
+
 # Reuse exactly the same presentation sources for production and the isolated
 # scenario-test variant. Each caller owns its plugin and QML output directory.
 function(rc_music_add_ui target support qml_output)
@@ -37,6 +48,7 @@ function(rc_music_add_ui target support qml_output)
             TransportSlider.qml
             LyricsPanel.qml
             LidarrPanel.qml
+            PlaylistsPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
@@ -107,6 +119,7 @@ function(rc_music_add_ui target support qml_output)
         Qt6::QuickLayouts
         rc_music_lyrics
         rc_music_lidarr
+        rc_music_playlists
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         target_sources(${target} PRIVATE

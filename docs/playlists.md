@@ -1,0 +1,72 @@
+# Playlists locais do RC Music
+
+**Estado:** recurso implementado no código Windows e validado automaticamente em 2026-11-04. Aceitação nativa e instalador atualizado permanecem pendentes.
+
+O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
+
+## Criar e organizar
+
+1. Abra **Playlists** no player e escolha **Nova playlist** para criar uma lista vazia. Informe o nome e confirme **Salvar**.
+2. Para copiar a fila que está no player, escolha **Salvar fila como…** e informe o nome da nova lista. A fila e a música atual são preservadas.
+3. Selecione uma playlist para ver suas faixas. **Adicionar fila atual** acrescenta as faixas que estão na fila do player à lista selecionada, conservando ordem e duplicatas.
+4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. A edição afeta a playlist salva; não muda a fila em reprodução nem remove arquivos do disco.
+5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
+
+Listas e entradas possuem IDs próprios: nomes iguais e faixas repetidas são permitidos. Nomes e paths são apresentados como texto simples. Trocar a seleção ou alterar o alvo de uma confirmação não deve redirecionar a ação para outra lista.
+
+## Adicionar músicas à fila
+
+Selecione a lista desejada e clique em **Adicionar à fila**. Suas faixas são acrescentadas ao fim da fila atual, na ordem salva, com novas ocorrências de fila. A ação preserva a seleção e a reprodução correntes; para tocar, escolha explicitamente uma ocorrência no player.
+
+Abrir uma playlist apenas mostra seu conteúdo. Salvar, editar, renomear ou excluir uma lista não inicia áudio, consulta remota ou download. A persistência da lista não depende da opção de restaurar a sessão do player.
+
+## Salvamento e erros
+
+O painel mostra a operação de salvamento e só publica a edição nas listas após o reconhecimento **Saved** do store. Enquanto há trabalho ativo, a operação de arquivos roda em um worker e novas edições ficam indisponíveis até sua conclusão; o áudio conserva seu fluxo normal.
+
+Se o salvamento falhar, **Tentar salvar** submete novamente o mesmo candidato. A opção de recarregar do disco abandona esse candidato em memória e consulta o estado realmente armazenado. Uma falha de confirmação pode acontecer depois da gravação física; por isso, recarregar pode reencontrar a alteração e não promete desfazê-la.
+
+Durante a preparação de saída, o app fecha novas admissões e aguarda o trabalho pendente. Uma alteração sem confirmação precisa ser resolvida; a saída cancelada devolve as ações do painel. Fechar o processo não é uma confirmação de salvamento.
+
+Quando não for possível carregar o catálogo, use **Tentar abrir novamente** depois de conferir a disponibilidade dos arquivos na pasta de configuração. Versão futura e dados inválidos são preservados; o app não grava uma lista vazia sobre esses documentos por consequência do erro.
+
+## Arquivos e limites
+
+O catálogo usa `playlists.json`, `playlists.json.bak` e `playlists.json.lock`, na pasta de configuração do RC Music. Ele contém nomes, IDs e referências aos arquivos locais; o store não abre, altera ou apaga esses áudios. O backup conserva a versão anterior do primário válido e pode recuperar uma leitura quando o primário estiver inválido ou ausente. A leitura não repara os arquivos automaticamente.
+
+| Limite | Valor |
+|---|---:|
+| Playlists no catálogo | 128 |
+| Entradas somadas entre todas as listas | 10.000 |
+| Nome de playlist | 256 bytes UTF-8 |
+| Path de cada entrada | 32.768 unidades nativas |
+| Payload de nomes e paths | 8 MiB |
+| Documento JSON | 16 MiB |
+
+Os IDs são strings decimais no JSON, preservando exatamente valores acima de `2^53`. A versão inicial recusa registros incompletos/malformados e excesso de limites, sem carregar um subconjunto silenciosamente. O lock é cooperativo e sem espera; uma instância ocupada ou um documento indisponível produz um resultado acionável para tentar novamente.
+
+Importação/exportação M3U8 permanece uma evolução posterior. A primeira entrega usa as listas salvas do próprio app, sem banco de dados, conta ou rede.
+
+## Evidência de implementação
+
+Os recibos locais ficam em `out/product/test-runs/playlists-implementation-20261104/`. Os Reds foram observados antes das respectivas implementações: domínio 20 casos falhando; store 33 falhas e binding 9; painel sem a propriedade de composição; restart com filho recusando o fluxo ainda ausente. Regressões adicionais cobriram leitura de fila com exceção/saída reentrante, papéis acessíveis dos diálogos e confirmação da adição à fila quando um observador falha depois do commit. Essa última falha não pode induzir o chamador a repetir uma adição já efetivada.
+
+| Check final do recorte | Resultado |
+|---|---|
+| Domínio puro | 20 casos, 228 assertions |
+| Store / binding Qt | 35 / 15 casos, incluindo inicialização e encerramento do Qt Test |
+| Painel Quick isolado / suíte Quick | 16 / 319 casos |
+| Restart de playlists | 3 casos Qt Test; gravação e leitura em dois processos distintos |
+| Presenter / importação durável | 306 / 79 casos |
+| Codecs compartilhados de download / navegador | 188 / 68 casos |
+| Core Release sem Qt, no Windows | 274/274 CTest |
+| Builds Release Lite ON, Lite OFF e Completa OFF | Passaram; as duas composições OFF expõem zero testes |
+| `all_qmllint` | Passou sem avisos |
+| Formato | 17 C++ alterados e todos os 69 QML; comparação normalizada da saída de `qmlformat`, sem `--check` |
+| Documentação / rastreabilidade | 90 Markdown, 86 requisitos, 17 checks e 82 etapas; 489 referências válidas |
+
+A regressão inicial passou 286/287 CTest; a única falha era um clique do teste Quick antes do polimento do layout. O harness passou a aguardar visibilidade/polimento e a verificar a separação dos botões, mantendo o clique real. A seleção final Quick + restart passou 2/2 CTest e os cinco alvos de presenter/importação/restart de preferências, sessão e startup passaram 5/5 após a última correção. Essas seleções complementam a regressão inicial; não são uma nova execução integral de toda a suíte.
+
+O teste de restart preserva nomes Unicode, IDs, ordem, duplicatas e hashes de todos os arquivos no diretório entre a leitura e seu encerramento. Os testes usam portas falsas e diretórios temporários próprios, sem depender de músicas pessoais. O grafo do aplicativo inclui domínio/store/binding/painel nas duas edições; o navegador permanece exclusivo da Completa, e fontes de teste, Registry e WFP não entram nesses grafos de produção.
+
+Não houve instalação, registro no host, uso de perfis AppContainer, benchmark ou alteração de dados pessoais. Os seis arquivos AppContainer em andamento e os cinco artefatos congelados anteriores foram preservados. Os instaladores existentes não foram regenerados neste incremento. FR-056/M6.6 continua **em andamento** até a aceitação nativa e empacotada; estes checks não encerram acessibilidade nativa, Linux, durabilidade após perda de energia nem os gates globais do plano.

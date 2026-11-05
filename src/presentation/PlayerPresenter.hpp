@@ -402,6 +402,10 @@ class PlayerPresenter final : public QObject {
     // can recognize this commit even if a later observer throws. False without
     // commitment permits retry. Composition supplies a validated final MP3.
     [[nodiscard]] bool appendPublishedAudio(const std::filesystem::path& path, bool& committed);
+    // Trusted local playlist handoff: detached snapshot and append-only batch,
+    // without selection, decoding, autoplay or a download receipt.
+    [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
+    [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
     Q_INVOKABLE bool cancelSourceImport();
@@ -479,6 +483,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] SessionSnapshot currentSessionSnapshot() const;
     [[nodiscard]] bool appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
                                                 const std::string* download_job_id);
+    [[nodiscard]] bool appendLocalSourcesWithoutPlayback(std::vector<std::filesystem::path> source_paths,
+                                                         bool& committed, const std::string* download_job_id);
     void discardStaleRestoredSessionState();
     void cancelRestoredPositionForExplicitTransport();
     void sessionStructureDidChange();

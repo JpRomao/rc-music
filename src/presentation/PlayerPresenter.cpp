@@ -1825,17 +1825,44 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
         return false;
     return appendPublishedAudioImpl(path, committed, nullptr);
 }
+LocalFileQueueSnapshot PlayerPresenter::playlistQueueSnapshot() const { return local_queue_.snapshot(); }
+bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> paths) {
+    if (QThread::currentThread() != thread() || download_import_call_in_progress_)
+        return false;
+    for (const auto& path : paths) {
+#ifdef Q_OS_WIN
+        const auto text = QString::fromStdWString(path.native());
+#else
+        const auto text = QString::fromUtf8(path.native().data(), static_cast<qsizetype>(path.native().size()));
+#endif
+        if (!isAbsoluteFilesystemSourcePath(text))
+            return false;
+    }
+    bool committed{};
+    try {
+        return appendLocalSourcesWithoutPlayback(std::move(paths), committed, nullptr);
+    } catch (...) {
+        // A notification can fail after the queue transaction. Preserve the
+        // committed acknowledgement so the caller cannot replay that batch.
+        return committed;
+    }
+}
 bool PlayerPresenter::appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
                                                const std::string* download_job_id) {
+    return appendLocalSourcesWithoutPlayback({path}, committed, download_job_id);
+}
+bool PlayerPresenter::appendLocalSourcesWithoutPlayback(std::vector<std::filesystem::path> paths, bool& committed,
+                                                        const std::string* download_job_id) {
     committed = false;
     if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
         file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
-        file_location_request_.has_value() || path.empty())
+        file_location_request_.has_value() || paths.empty() ||
+        std::any_of(paths.begin(), paths.end(), [](const auto& path) { return path.empty(); }))
         return false;
 
     auto candidate = local_queue_;
     const auto first_inserted = candidate.size();
-    if (!candidate.append({path}))
+    if (!candidate.append(paths))
         return false;
     auto navigation = navigationItems(candidate);
     auto receipts = download_import_receipts_;
@@ -1843,7 +1870,7 @@ bool PlayerPresenter::appendPublishedAudioImpl(const std::filesystem::path& path
     if (download_job_id != nullptr) {
         if (!download_import_persistence_ready_ || session_autosave_ == nullptr)
             return false;
-        receipts.push_back({.job_id = *download_job_id, .source_path = path});
+        receipts.push_back({.job_id = *download_job_id, .source_path = paths.front()});
         if (!isValidDownloadImportReceipts(receipts))
             return false;
         revisions.push_back(std::numeric_limits<SessionRevision>::max());
