@@ -1,5 +1,7 @@
 #pragma once
 
+#include "m0/domain/LyricsVariants.hpp"
+
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -7,6 +9,24 @@
 #include <memory>
 
 namespace music_player::m0 {
+enum class AcquiredLyricsSaveState {
+    Idle,
+    Loading,
+    Saving,
+    Saved,
+    Unchanged,
+    Conflict,
+    LoadFailed,
+    SaveFailed,
+    BlockedByFutureVersion,
+    Invalid,
+    Abandoned
+};
+struct AcquiredLyricsSaveSnapshot final {
+    std::string ticket{};
+    QString target{};
+    AcquiredLyricsSaveState state{AcquiredLyricsSaveState::Idle};
+};
 class QtLyricsService;
 class LyricsVariantsStore;
 struct LyricsDocument;
@@ -41,6 +61,11 @@ class LyricsBinding final : public QObject {
     void setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
                   qint64 duration_ms);
     void setPosition(qint64 confirmed_position_ms);
+    // Trusted publication/consent owner only, never a QML/browser path. Uses
+    // the same serialized writer as manual edits and never changes playback.
+    [[nodiscard]] bool appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
+                                            bool keep_distinct_versions = false);
+    [[nodiscard]] AcquiredLyricsSaveSnapshot acquiredLyricsSave() const;
     void beginShutdown();
     [[nodiscard]] bool prepareExit();
     [[nodiscard]] bool stopped() const;

@@ -1,0 +1,528 @@
+#include "adapters/QtLyricsService.hpp"
+#include "m0/ports/LyricsVariantsStore.hpp"
+#include "presentation/DownloadLyricsBinding.hpp"
+#include "presentation/LyricsBinding.hpp"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMetaMethod>
+#include <QMetaProperty>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPointer>
+#include <QSemaphore>
+#include <QTemporaryDir>
+#include <QTest>
+#include <QUuid>
+#include <QVariantMap>
+
+#include <algorithm>
+#include <atomic>
+#include <cstring>
+#include <map>
+#include <mutex>
+
+using namespace music_player::m0;
+namespace {
+class Reply final : public QNetworkReply {
+  public:
+    Reply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
+        setRequest(request);
+        setUrl(request.url());
+        setOperation(QNetworkAccessManager::GetOperation);
+        open(QIODevice::ReadOnly | QIODevice::Unbuffered);
+    }
+    bool aborted{};
+    void abort() override {
+        aborted = true;
+        if (!isFinished()) {
+            setError(OperationCanceledError, "synthetic cancellation");
+            setFinished(true);
+            emit finished();
+        }
+    }
+    void finish(const int status, QByteArray body) {
+        bytes_ = std::move(body);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
+        setFinished(true);
+        emit readyRead();
+        emit finished();
+    }
+    qint64 bytesAvailable() const override { return bytes_.size() - offset_ + QNetworkReply::bytesAvailable(); }
+
+  protected:
+    qint64 readData(char* output, const qint64 maximum) override {
+        const auto count = std::min(maximum, qint64{bytes_.size() - offset_});
+        if (count <= 0)
+            return isFinished() ? -1 : 0;
+        std::memcpy(output, bytes_.constData() + offset_, static_cast<std::size_t>(count));
+        offset_ += count;
+        return count;
+    }
+
+  private:
+    QByteArray bytes_;
+    qint64 offset_{};
+};
+class Network final : public QNetworkAccessManager {
+  public:
+    QList<QNetworkRequest> requests;
+    QList<QPointer<Reply>> replies;
+
+  protected:
+    QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request, QIODevice*) override {
+        if (operation != GetOperation)
+            return nullptr;
+        requests.push_back(request);
+        auto* reply = new Reply(request, this);
+        replies.push_back(reply);
+        return reply;
+    }
+};
+QByteArray payload() {
+    return QJsonDocument(QJsonObject{{"syncedLyrics", QStringLiteral("[00:01.00]日本語\n[00:02.00]次の行")},
+                                     {"plainLyrics", "Nihongo\nTsugi no gyou"},
+                                     {"instrumental", false}})
+        .toJson(QJsonDocument::Compact);
+}
+std::filesystem::path nativePath(const QString& value) {
+#ifdef Q_OS_WIN
+    return std::filesystem::path(value.toStdWString());
+#else
+    return std::filesystem::path(value.toUtf8().toStdString());
+#endif
+}
+class Store final : public LyricsVariantsStore {
+  public:
+    std::atomic_int loads{}, saves{};
+    std::atomic_bool block_save{}, save_entered{};
+    std::atomic<LyricsVariantsLoadStatus> load_status{LyricsVariantsLoadStatus::Missing};
+    std::atomic<LyricsVariantsSaveStatus> save_status{LyricsVariantsSaveStatus::Saved};
+    QSemaphore release_save;
+    using Attempt = std::pair<std::filesystem::path, LyricsVariants>;
+    LyricsVariantsLoadResult load(const std::filesystem::path& path) override {
+        ++loads;
+        if (load_status != LyricsVariantsLoadStatus::Missing)
+            return {.status = load_status.load()};
+        std::lock_guard lock(mutex_);
+        const auto found = disk_.find(path);
+        return found == disk_.end() ? LyricsVariantsLoadResult{}
+                                    : LyricsVariantsLoadResult{found->second, LyricsVariantsLoadStatus::Loaded};
+    }
+    LyricsVariantsSaveStatus save(const std::filesystem::path& path, const LyricsVariants& variants) override {
+        ++saves;
+        if (block_save.exchange(false)) {
+            save_entered = true;
+            static_cast<void>(release_save.tryAcquire(1, 3000));
+        }
+        std::lock_guard lock(mutex_);
+        attempts_.emplace_back(path, variants);
+        const auto status = save_status.load();
+        if (status == LyricsVariantsSaveStatus::Saved)
+            disk_[path] = variants;
+        return status;
+    }
+    LyricsVariants read(const QString& target) {
+        std::lock_guard lock(mutex_);
+        const auto found = disk_.find(nativePath(target));
+        return found == disk_.end() ? LyricsVariants{} : found->second;
+    }
+    std::vector<Attempt> attempts() {
+        std::lock_guard lock(mutex_);
+        return attempts_;
+    }
+
+  private:
+    std::mutex mutex_;
+    std::map<std::filesystem::path, LyricsVariants> disk_;
+    std::vector<Attempt> attempts_;
+};
+LyricsVariants foreignDraft() {
+    return {{0, "Foreign", "", "", "manual", "Other explicit content", LyricsVariantKind::Original, false}};
+}
+struct Harness final {
+    QTemporaryDir directory;
+    Network network, playback_network;
+    QtLyricsService service{&network}, playback{&playback_network};
+    DownloadLyricsLookup lookup{service};
+    std::shared_ptr<Store> store{std::make_shared<Store>()};
+    LyricsBinding writer{playback, store};
+    DownloadLyricsBinding binding{lookup, writer};
+    ~Harness() { store->release_save.release(); }
+    PublishedLyricsRequest request(const std::string& id = "published_1") const {
+        return {id,
+                directory.filePath("downloaded 日本.mp3"),
+                QStringLiteral("歌の名前"),
+                QStringLiteral("作者 日本語"),
+                QStringLiteral("https://www.letras.mus.br/naruto/silhouette/"),
+                {},
+                0};
+    }
+    bool ready() {
+        if (!directory.isValid() || !binding.offerPublished(request()) || network.replies.isEmpty())
+            return false;
+        network.replies.back()->finish(200, payload());
+        return binding.candidates().size() == 2 && binding.canSave();
+    }
+};
+} // namespace
+
+class DownloadLyricsBindingTests final : public QObject {
+    Q_OBJECT
+  private slots:
+    void constructionIsPassiveAndPublicationAuthorityIsNotExposedToQml() {
+        Harness h;
+        QVERIFY(h.directory.isValid());
+        QVERIFY(!h.binding.hasRequest());
+        QVERIFY(!h.binding.busy());
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(!h.binding.canRetry());
+        QVERIFY(!h.binding.canRetrySave());
+        QVERIFY(!h.binding.canDismiss());
+        QVERIFY(h.binding.candidates().isEmpty());
+        QVERIFY(h.binding.requestToken().isEmpty());
+        QVERIFY(h.binding.drained());
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(h.network.requests.isEmpty());
+        const auto* meta = h.binding.metaObject();
+        for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
+            const auto property = meta->property(index);
+            QVERIFY(!property.isWritable());
+            QVERIFY(QByteArray(property.name()) != "path");
+            QVERIFY(QByteArray(property.name()) != "jobId");
+        }
+        for (int index = meta->methodOffset(); index < meta->methodCount(); ++index)
+            QVERIFY(meta->method(index).name() != QByteArray("offerPublished"));
+    }
+    void explicitOfferProducesAllPreviewsAndNeverSavesAutomatically() {
+        Harness h;
+        const auto request = h.request();
+        QVERIFY(h.binding.offerPublished(request));
+        QVERIFY(!h.binding.requestToken().isEmpty());
+        QVERIFY(h.binding.hasRequest());
+        QVERIFY(h.binding.busy());
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(h.binding.canDismiss());
+        QCOMPARE(h.binding.title(), request.title);
+        QCOMPARE(h.binding.artist(), request.artist);
+        QVERIFY(h.binding.statusText().contains("Letras", Qt::CaseInsensitive));
+        QVERIFY(h.binding.statusText().contains("LRCLIB", Qt::CaseInsensitive));
+        QCOMPARE(h.network.requests.size(), 1);
+        QCOMPARE(h.network.requests.front().url().host(), QStringLiteral("lrclib.net"));
+        h.network.replies.back()->finish(200, payload());
+        QVERIFY(!h.binding.busy());
+        QVERIFY(h.binding.canSave());
+        const auto rows = h.binding.candidates();
+        QCOMPARE(rows.size(), 2);
+        for (int index = 0; index < rows.size(); ++index) {
+            const auto row = rows[index].toMap();
+            QCOMPARE(row.value("index").toInt(), index);
+            QVERIFY(!row.value("label").toString().isEmpty());
+            QVERIFY(!row.value("text").toString().isEmpty());
+            QVERIFY(!row.contains("path"));
+            QVERIFY(!row.contains("jobId"));
+            QVERIFY(!row.contains("language"));
+            QVERIFY(!row.contains("script"));
+        }
+        QVERIFY(rows[0].toMap().value("synced").toBool());
+        QVERIFY(!rows[1].toMap().value("synced").toBool());
+        QCOMPARE(rows[0].toMap().value("text").toString(), QStringLiteral("日本語\n次の行"));
+        QCOMPARE(rows[1].toMap().value("text").toString(), QStringLiteral("Nihongo\nTsugi no gyou"));
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(h.playback_network.requests.isEmpty());
+    }
+    void missingMetadataCanBeCorrectedByAnExplicitRetry() {
+        Harness h;
+        auto request = h.request();
+        request.artist.clear();
+        QVERIFY(h.binding.offerPublished(request));
+        const auto token = h.binding.requestToken();
+        QVERIFY(!token.isEmpty());
+        QVERIFY(h.binding.hasRequest());
+        QVERIFY(h.binding.canRetry());
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(h.network.requests.isEmpty());
+        QVERIFY(h.binding.retry("Corrected title", "Corrected artist"));
+        QCOMPARE(h.binding.requestToken(), token);
+        QCOMPARE(h.binding.title(), QStringLiteral("Corrected title"));
+        QCOMPARE(h.binding.artist(), QStringLiteral("Corrected artist"));
+        QCOMPARE(h.network.requests.size(), 1);
+        h.network.replies.back()->finish(200, payload());
+        QVERIFY(h.binding.canSave());
+        QCOMPARE(h.store->saves.load(), 0);
+    }
+    void anExistingSearchingOrReadyPreviewCannotBeReplacedBeforeDismiss() {
+        Harness h;
+        const auto first = h.request();
+        auto second = h.request("published_2");
+        second.title = "Second";
+        QVERIFY(h.binding.offerPublished(first));
+        const auto token = h.binding.requestToken();
+        QVERIFY(!token.isEmpty());
+        QVERIFY(!h.binding.offerPublished(second));
+        QCOMPARE(h.binding.requestToken(), token);
+        QVERIFY(!h.network.replies.back()->aborted);
+        QCOMPARE(h.network.requests.size(), 1);
+        h.network.replies.back()->finish(200, payload());
+        QVERIFY(!h.binding.offerPublished(second));
+        QCOMPARE(h.binding.title(), first.title);
+        QVERIFY(h.binding.dismiss());
+        QVERIFY(!h.binding.hasRequest());
+        QVERIFY(h.binding.candidates().isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(h.service.canSearch(), 1500);
+        QVERIFY(h.binding.offerPublished(second));
+        QVERIFY(!h.binding.requestToken().isEmpty());
+        QVERIFY(h.binding.requestToken() != token);
+        QCOMPARE(h.binding.title(), second.title);
+        QCOMPARE(h.network.requests.size(), 2);
+    }
+    void explicitFormsAreSavedOneAtATimeWithoutChangingPlaybackOrLosingOtherCandidates() {
+        Harness h;
+        const auto current = h.directory.filePath("current.mp3");
+        h.writer.setTrack(current, "Current song", "Current artist", {}, 0);
+        QTRY_VERIFY(h.writer.variantsReady());
+        QVERIFY(h.ready());
+        const auto request = h.request();
+        QVERIFY(h.binding.saveCandidate(0, "Original", "ja", "Jpan", "original"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        const auto first_ticket = h.writer.acquiredLyricsSave().ticket;
+        QVERIFY(!QUuid::fromString(QString::fromStdString(first_ticket)).isNull());
+        QCOMPARE(h.writer.acquiredLyricsSave().target, request.final_mp3);
+        auto saved = h.store->read(request.final_mp3);
+        QCOMPARE(saved.size(), std::size_t{1});
+        QCOMPARE(saved.front().name, std::string{"Original"});
+        QCOMPARE(saved.front().language, std::string{"ja"});
+        QCOMPARE(saved.front().script, std::string{"Jpan"});
+        QCOMPARE(saved.front().kind, LyricsVariantKind::Original);
+        QCOMPARE(saved.front().source, std::string{"LRCLIB"});
+        QVERIFY(!saved.front().generated);
+        const auto parsed = parseLrc(saved.front().content);
+        QCOMPARE(parsed.error, LyricsParseError::None);
+        QCOMPARE(parsed.document.lines.front().timestamp_ms, std::int64_t{1000});
+        const auto original_id = saved.front().id;
+        QCOMPARE(h.binding.candidates().size(), 2);
+        QVERIFY(h.binding.canSave());
+        QVERIFY(h.binding.saveCandidate(1, "Romanized", "ja", "Latn", "romanized"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QVERIFY(h.writer.acquiredLyricsSave().ticket != first_ticket);
+        saved = h.store->read(request.final_mp3);
+        QCOMPARE(saved.size(), std::size_t{2});
+        QCOMPARE(saved.front().id, original_id);
+        QCOMPARE(saved.back().kind, LyricsVariantKind::Romanized);
+        QCOMPARE(saved.back().script, std::string{"Latn"});
+        QCOMPARE(saved.back().content, std::string{"Nihongo\nTsugi no gyou"});
+        QCOMPARE(h.network.requests.size(), 1);
+        QCOMPARE(h.writer.title(), QStringLiteral("Current song"));
+        QCOMPARE(h.writer.artist(), QStringLiteral("Current artist"));
+        QVERIFY(h.playback_network.requests.isEmpty());
+    }
+    void invalidIndexNameAndUnconfirmedOrInvalidFormNeverReachTheWriter_data() {
+        QTest::addColumn<int>("scenario");
+        for (int index = 0; index < 8; ++index)
+            QTest::newRow(qPrintable(QString::number(index))) << index;
+    }
+    void invalidIndexNameAndUnconfirmedOrInvalidFormNeverReachTheWriter() {
+        QFETCH(int, scenario);
+        Harness h;
+        QVERIFY(h.ready());
+        int index{};
+        QString name = "Explicit", language, script, kind = "original";
+        switch (scenario) {
+        case 0:
+            index = -1;
+            break;
+        case 1:
+            index = 2;
+            break;
+        case 2:
+            name.clear();
+            break;
+        case 3:
+            name = "  ";
+            break;
+        case 4:
+            kind.clear();
+            break;
+        case 5:
+            kind = "guessed";
+            break;
+        case 6:
+            language = QString(65, 'a');
+            break;
+        default:
+            name = QString(129, 'a');
+            break;
+        }
+        QVERIFY(!h.binding.saveCandidate(index, name, language, script, kind));
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+        QCOMPARE(h.binding.candidates().size(), 2);
+        QCOMPARE(h.network.requests.size(), 1);
+    }
+    void aFailedSaveRetainsItsExactTicketAndCandidateForRetryWithoutHttpOrDismissal() {
+        Harness h;
+        QVERIFY(h.ready());
+        h.store->save_status = LyricsVariantsSaveStatus::Failed;
+        QVERIFY(h.binding.saveCandidate(0, "Explicit", "", "", "original"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
+        const auto pending = h.writer.acquiredLyricsSave();
+        QVERIFY(!h.binding.busy());
+        QVERIFY(h.binding.canRetrySave());
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(!h.binding.canDismiss());
+        QVERIFY(!h.binding.dismiss());
+        QVERIFY(!h.binding.offerPublished(h.request("replacement")));
+        QVERIFY(!h.binding.retry("Other title", "Other artist"));
+        const auto before = h.store->attempts();
+        QCOMPARE(before.size(), std::size_t{1});
+        h.store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(h.binding.retrySave());
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(h.writer.acquiredLyricsSave().ticket, pending.ticket);
+        QCOMPARE(h.writer.acquiredLyricsSave().target, pending.target);
+        const auto after = h.store->attempts();
+        QCOMPARE(after.size(), std::size_t{2});
+        QCOMPARE(after[0], after[1]);
+        QCOMPARE(h.network.requests.size(), 1);
+        QVERIFY(h.binding.canDismiss());
+        QCOMPARE(h.binding.candidates().size(), 2);
+    }
+    void loadFailureRetainsTheSameSaveTicketAndCanRetryOnlyTheSharedWriter() {
+        Harness h;
+        QVERIFY(h.ready());
+        h.store->load_status = LyricsVariantsLoadStatus::Unavailable;
+        QVERIFY(h.binding.saveCandidate(1, "Untimed", "", "", "original"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::LoadFailed);
+        const auto ticket = h.writer.acquiredLyricsSave().ticket;
+        QVERIFY(h.binding.canRetrySave());
+        QVERIFY(!h.binding.dismiss());
+        QCOMPARE(h.store->saves.load(), 0);
+        h.store->load_status = LyricsVariantsLoadStatus::Missing;
+        QVERIFY(h.binding.retrySave());
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(h.writer.acquiredLyricsSave().ticket, ticket);
+        QCOMPARE(h.network.requests.size(), 1);
+    }
+    void dismissingAPreviewNeverAbandonsAnUnrelatedPendingWrite() {
+        Harness h;
+        const auto foreign = h.directory.filePath("foreign.mp3");
+        h.store->block_save = true;
+        QVERIFY(h.writer.appendAcquiredLyrics("foreign", foreign, foreignDraft(), true));
+        QTRY_VERIFY(h.store->save_entered.load());
+        QVERIFY(h.binding.offerPublished(h.request()));
+        h.network.replies.back()->finish(200, payload());
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(h.binding.canDismiss());
+        QVERIFY(h.binding.dismiss());
+        QVERIFY(h.writer.variantsHasPendingChange());
+        QCOMPARE(h.writer.acquiredLyricsSave().ticket, std::string{"foreign"});
+        h.store->release_save.release();
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(h.store->read(foreign).size(), std::size_t{1});
+        QVERIFY(h.store->read(h.request().final_mp3).empty());
+    }
+    void revokingTheLookupInvalidatesSaveAuthorityForItsOldPreview() {
+        Harness h;
+        QVERIFY(h.ready());
+        h.lookup.clear();
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(!h.binding.saveCandidate(0, "Stale", "", "", "original"));
+        QVERIFY(h.binding.candidates().isEmpty());
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+    }
+    void aForeignWriterAcknowledgementCannotAuthorizeRetryOfThisBindingsCandidate() {
+        Harness h;
+        QVERIFY(h.ready());
+        h.store->save_status = LyricsVariantsSaveStatus::Failed;
+        QVERIFY(h.binding.saveCandidate(0, "Owned", "", "", "original"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
+        const auto owned_ticket = h.writer.acquiredLyricsSave().ticket;
+        // An explicit action in the writer resolves/abandons its own pending
+        // candidate; this binding must never perform that abandonment itself.
+        QVERIFY(h.writer.reloadVariants());
+        h.store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(h.writer.appendAcquiredLyrics("foreign", h.request().final_mp3, foreignDraft(), true));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QVERIFY(h.writer.acquiredLyricsSave().ticket != owned_ticket);
+        QVERIFY(!h.binding.canRetrySave());
+        QVERIFY(!h.binding.retrySave());
+        QCOMPARE(h.store->saves.load(), 2);
+        QCOMPARE(h.network.requests.size(), 1);
+    }
+    void reentrantWriterNotificationsCannotDismissReplaceOrMutateAnAdmittedCandidate() {
+        Harness h;
+        QVERIFY(h.ready());
+        bool acted{}, dismissed{}, replaced{}, retried{};
+        QString name = "Explicit", kind = "original";
+        connect(&h.writer, &LyricsBinding::changed, &h.binding, [&] {
+            if (acted || h.writer.acquiredLyricsSave().state != AcquiredLyricsSaveState::Loading)
+                return;
+            acted = true;
+            name.fill('X');
+            kind = "romanized";
+            dismissed = h.binding.dismiss();
+            replaced = h.binding.offerPublished(h.request("replacement"));
+            retried = h.binding.retry("Other", "Artist");
+        });
+        QVERIFY(h.binding.saveCandidate(0, name, "", "", kind));
+        QVERIFY(acted);
+        QVERIFY(!dismissed);
+        QVERIFY(!replaced);
+        QVERIFY(!retried);
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        const auto saved = h.store->read(h.request().final_mp3);
+        QCOMPARE(saved.size(), std::size_t{1});
+        QCOMPARE(saved.front().name, std::string{"Explicit"});
+        QCOMPARE(saved.front().kind, LyricsVariantKind::Original);
+        QCOMPARE(h.network.requests.size(), 1);
+    }
+    void aReentrantDismissDuringOfferRevokesItBeforeHttpCanEscape() {
+        Harness h;
+        bool acted{}, dismissed{};
+        connect(&h.binding, &DownloadLyricsBinding::changed, &h.binding, [&] {
+            if (acted || !h.binding.hasRequest() || !h.binding.busy())
+                return;
+            acted = true;
+            dismissed = h.binding.dismiss();
+        });
+        QVERIFY(!h.binding.offerPublished(h.request()));
+        QVERIFY(acted);
+        QVERIFY(dismissed);
+        QVERIFY(!h.binding.hasRequest());
+        QVERIFY(h.binding.candidates().isEmpty());
+        QVERIFY(h.network.requests.isEmpty());
+        QCOMPARE(h.store->loads.load(), 0);
+    }
+    void exitDelegatesLookupCancellationWithoutAutomaticallySearchingAfterResume() {
+        Harness h;
+        QVERIFY(h.binding.offerPublished(h.request()));
+        QVERIFY(!h.binding.prepareExit());
+        QVERIFY(!h.binding.offerPublished(h.request("during_exit")));
+        QVERIFY(!h.binding.retry("Other", "Artist"));
+        QVERIFY(!h.binding.saveCandidate(0, "Closed", "", "", "original"));
+        QVERIFY(h.binding.candidates().isEmpty());
+        QTRY_VERIFY(h.binding.drained());
+        QVERIFY(h.binding.prepareExit());
+        h.binding.resume();
+        QCOMPARE(h.network.requests.size(), 1);
+        if (h.binding.hasRequest())
+            QVERIFY(h.binding.dismiss());
+        QTRY_VERIFY_WITH_TIMEOUT(h.service.canSearch(), 1500);
+        QVERIFY(h.binding.offerPublished(h.request("resumed")));
+        h.network.replies.back()->finish(200, payload());
+        QVERIFY(h.binding.canSave());
+        h.binding.beginShutdown();
+        h.binding.resume();
+        QVERIFY(!h.binding.offerPublished(h.request("closed")));
+        QVERIFY(!h.binding.retry("Song", "Artist"));
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(h.binding.candidates().isEmpty());
+        QVERIFY(h.binding.drained());
+    }
+};
+QTEST_GUILESS_MAIN(DownloadLyricsBindingTests)
+#include "DownloadLyricsBindingTests.moc"

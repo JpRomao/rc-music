@@ -1,18 +1,27 @@
 #include "../../qt/support/YoutubeResolverTestSupport.hpp"
 #include "adapters/DownloadJobsModel.hpp"
 #include "adapters/NativeYoutubeAudioSession.hpp"
+#include "adapters/QtJsonLyricsVariantsStore.hpp"
+#include "adapters/QtLyricsService.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
 #include "adapters/YoutubeAudioCodec.hpp"
 #include "adapters/YoutubeDownloadExecution.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
+#include "presentation/DownloadLyricsBinding.hpp"
+#include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
 #include "presentation/WindowsPlayerDownloads.hpp"
 
 #include <QElapsedTimer>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
+#include <cstring>
 
 #include <atomic>
 #include <condition_variable>
@@ -24,6 +33,56 @@
 using namespace music_player::m0;
 
 namespace {
+class LyricsReply final : public QNetworkReply {
+  public:
+    LyricsReply(const QNetworkRequest& request, QObject* parent, int status) : QNetworkReply(parent) {
+        setRequest(request);
+        setUrl(request.url());
+        setOperation(QNetworkAccessManager::GetOperation);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
+        open(QIODevice::ReadOnly | QIODevice::Unbuffered);
+        QTimer::singleShot(0, this, [this] {
+            setFinished(true);
+            emit readyRead();
+            emit finished();
+        });
+    }
+    void abort() override {
+        if (!isFinished()) {
+            setFinished(true);
+            setError(OperationCanceledError, "cancelled");
+            emit finished();
+        }
+    }
+    qint64 bytesAvailable() const override { return bytes_.size() - offset_ + QNetworkReply::bytesAvailable(); }
+
+  protected:
+    qint64 readData(char* data, qint64 maximum) override {
+        const auto count = std::min(maximum, qint64{bytes_.size() - offset_});
+        if (count <= 0)
+            return isFinished() ? -1 : 0;
+        std::memcpy(data, bytes_.constData() + offset_, static_cast<std::size_t>(count));
+        offset_ += count;
+        return count;
+    }
+
+  private:
+    QByteArray bytes_{
+        R"({"syncedLyrics":"[00:01.000]Synthetic source","plainLyrics":"Other source form","instrumental":false})"};
+    qint64 offset_{};
+};
+class LyricsNetwork final : public QNetworkAccessManager {
+  public:
+    int calls{}, status{200};
+    QUrl last_url;
+
+  protected:
+    QNetworkReply* createRequest(Operation, const QNetworkRequest& request, QIODevice*) override {
+        ++calls;
+        last_url = request.url();
+        return new LyricsReply(request, this, status);
+    }
+};
 DownloadRequest request() {
     return {"01234567-89ab-4cde-8fab-0123456789ab",
             {{"https://synthetic.example.test/known.mp3", "Synthetic", DownloadMediaKind::Audio}}};
@@ -180,7 +239,8 @@ struct Harness final {
     std::shared_ptr<CheckpointState> checkpoint{std::make_shared<CheckpointState>()};
     std::shared_ptr<TaskState> task{std::make_shared<TaskState>()};
     std::unique_ptr<WindowsPlayerDownloads> owner;
-    explicit Harness(bool youtube = false) {
+    explicit Harness(bool youtube = false, LyricsBinding* lyrics_writer = nullptr,
+                     QNetworkAccessManager* lyrics_network = nullptr, bool automatic_polling = false) {
         WindowsDownloadExecution::TaskFactory destination = [state = task] { return std::make_unique<Task>(state); };
         auto execution =
             youtube ? makeWindowsMediaAndYoutubeExecution(
@@ -190,7 +250,10 @@ struct Harness final {
         owner = std::make_unique<WindowsPlayerDownloads>(
             presenter, SessionLoadResult{}, std::move(execution),
             [state = checkpoint] { return std::make_unique<CheckpointStore>(state); },
-            WindowsPlayerDownloadsOptions{.job_namespace = "owner", .binding = {.automatic_polling = false}});
+            WindowsPlayerDownloadsOptions{.job_namespace = "owner",
+                                          .binding = {.automatic_polling = automatic_polling},
+                                          .lyrics_writer = lyrics_writer,
+                                          .lyrics_network = lyrics_network});
     }
     ~Harness() {
         // Failed assertions must not strand a deliberately held worker.
@@ -239,6 +302,117 @@ struct Harness final {
 class WindowsPlayerDownloadsTests final : public QObject {
     Q_OBJECT
   private slots:
+    void automaticPollingOffersTheNextPublishedLyricsOnlyAfterExplicitDismissal() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        LyricsNetwork network;
+        QtLyricsService foreground;
+        auto store = std::make_shared<QtJsonLyricsVariantsStore>(temp.path());
+        LyricsBinding writer(foreground, store);
+        Harness h(true, &writer, &network, true);
+        QVERIFY(h.ready());
+        auto* lyrics = qobject_cast<DownloadLyricsBinding*>(h.owner->binding()->lyrics());
+        QVERIFY(lyrics);
+        YoutubeAudioRequest first{"01234567-89ab-4cde-8fab-0123456789ab",
+                                  {{"aB0-_Cd1EF2", "First song", "Artist", "", true}}};
+        QCOMPARE(h.owner->youtubeSubmission().begin(first).state, DownloadAdmissionState::Pending);
+        QVERIFY(h.wait([&] { return h.session_writer.active.has_value() && lyrics->canSave(); }));
+        h.session_writer.save();
+        QVERIFY(h.wait([&] { return h.state() == QStringLiteral("completed"); }));
+        auto second = first;
+        second.request_id.back() = 'c';
+        second.items[0].title = "Second song";
+        QCOMPARE(h.owner->youtubeSubmission().begin(second).state, DownloadAdmissionState::Pending);
+        QVERIFY(h.wait([&] { return h.task->starts == 2 && h.session_writer.active.has_value(); }));
+        h.session_writer.save();
+        QVERIFY(h.wait([&] { return h.state(1) == QStringLiteral("completed"); }));
+        QCOMPARE(lyrics->title(), QStringLiteral("First song"));
+        QCOMPARE(network.calls, 1);
+        const auto first_token = lyrics->requestToken();
+        QVERIFY(lyrics->dismiss());
+        // No owner.poll(): the normal automatic lifecycle must advance this.
+        QTRY_COMPARE(lyrics->title(), QStringLiteral("Second song"));
+        QVERIFY(lyrics->hasRequest());
+        QVERIFY(lyrics->requestToken() != first_token);
+        QCOMPARE(h.task->starts.load(), 2);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 2);
+        QVERIFY(h.drain());
+    }
+    void publishedYoutubeLyricsUseTheSharedWriterAndARealTemporaryCatalogueAfterExplicitSave() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        LyricsNetwork network;
+        QtLyricsService foreground;
+        auto store = std::make_shared<QtJsonLyricsVariantsStore>(temp.path());
+        LyricsBinding writer(foreground, store);
+        Harness h(true, &writer, &network);
+        QVERIFY(h.ready());
+        auto* lyrics = qobject_cast<DownloadLyricsBinding*>(h.owner->binding()->lyrics());
+        QVERIFY(lyrics);
+        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
+                                           {{"aB0-_Cd1EF2", "Synthetic song", "Artist", "", true}}};
+        QCOMPARE(h.owner->youtubeSubmission().begin(selected).state, DownloadAdmissionState::Pending);
+        QVERIFY(h.wait([&] { return h.session_writer.active.has_value(); }));
+        h.session_writer.save();
+        QVERIFY(h.wait([&] { return h.state() == QStringLiteral("completed") && lyrics->canSave(); }));
+        QCOMPARE(network.calls, 1);
+        QCOMPARE(network.last_url.host(), QStringLiteral("lrclib.net"));
+        QCOMPARE(lyrics->candidates().size(), 2);
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.backend.loads, 0);
+        QVERIFY(!h.presenter.hasCurrentTrack());
+        const auto target = std::filesystem::path(L"C:/synthetic-published/final.mp3");
+        QCOMPARE(store->load(target).status, LyricsVariantsLoadStatus::Missing);
+        QVERIFY(lyrics->saveCandidate(1, "Romanized form", "ja", "Latn", "romanized"));
+        QVERIFY(h.wait([&] { return writer.acquiredLyricsSave().state == AcquiredLyricsSaveState::Saved; }));
+        const auto saved = store->load(target);
+        QCOMPARE(saved.status, LyricsVariantsLoadStatus::Loaded);
+        QCOMPARE(saved.variants.size(), std::size_t{1});
+        QCOMPARE(saved.variants[0].kind, LyricsVariantKind::Romanized);
+        QCOMPARE(saved.variants[0].content, std::string("Other source form"));
+        QCOMPARE(network.calls, 1);
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.owner->youtubeSubmission().begin(selected).state, DownloadAdmissionState::Completed);
+        for (int i = 0; i < 3; ++i)
+            h.poll();
+        QCOMPARE(network.calls, 1);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 1);
+        QVERIFY(h.drain());
+    }
+    void lyricsFailureOrAbsentConsentCannotFailOrRepeatPublishedAudio_data() {
+        QTest::addColumn<bool>("consent");
+        QTest::newRow("lookup404") << true;
+        QTest::newRow("unchecked") << false;
+    }
+    void lyricsFailureOrAbsentConsentCannotFailOrRepeatPublishedAudio() {
+        QFETCH(bool, consent);
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        LyricsNetwork network;
+        network.status = 404;
+        QtLyricsService foreground;
+        auto store = std::make_shared<QtJsonLyricsVariantsStore>(temp.path());
+        LyricsBinding writer(foreground, store);
+        Harness h(true, &writer, &network);
+        QVERIFY(h.ready());
+        auto* lyrics = qobject_cast<DownloadLyricsBinding*>(h.owner->binding()->lyrics());
+        QVERIFY(lyrics);
+        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
+                                           {{"aB0-_Cd1EF2", "Synthetic song", "Artist", "", consent}}};
+        QCOMPARE(h.owner->youtubeSubmission().begin(selected).state, DownloadAdmissionState::Pending);
+        QVERIFY(h.wait([&] { return h.session_writer.active.has_value(); }));
+        h.session_writer.save();
+        QVERIFY(h.wait([&] {
+            return h.state() == QStringLiteral("completed") && (!consent || (network.calls == 1 && !lyrics->busy()));
+        }));
+        QCOMPARE(network.calls, consent ? 1 : 0);
+        QCOMPARE(lyrics->hasRequest(), consent);
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 1);
+        QVERIFY(!writer.variantsHasPendingChange());
+        QCOMPARE(h.backend.loads, 0);
+        QVERIFY(h.drain());
+    }
     void youtubeSessionSurvivesDisconnectAndImportsOnlyAfterBothSavedAcknowledgements() {
         Harness h(true);
         QVERIFY(h.ready());

@@ -17,6 +17,7 @@ target_include_directories(rc_music_contracts INTERFACE "${RC_MUSIC_SOURCE_ROOT}
 target_compile_features(rc_music_contracts INTERFACE cxx_std_20)
 
 add_library(rc_music_core STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/domain/AcquiredLyrics.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/LyricsVariants.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/PlaylistLibrary.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/Lyrics.cpp"

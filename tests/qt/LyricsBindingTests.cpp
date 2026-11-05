@@ -75,6 +75,19 @@ class MemoryVariantsStore final : public LyricsVariantsStore {
         return disk[path];
     }
 };
+LyricsVariants acquiredDrafts() {
+    return {{0, "Original", "ja", "Jpan", "Synthetic provider", "[00:01.000]独自のテスト", LyricsVariantKind::Original,
+             false},
+            {0, "Romanized", "ja", "Latn", "Synthetic provider", "[00:01.000]Dokujino test",
+             LyricsVariantKind::Romanized, false}};
+}
+struct ReleaseBlockedStore final {
+    std::shared_ptr<MemoryVariantsStore> store;
+    ~ReleaseBlockedStore() {
+        store->load_release.release();
+        store->save_release.release();
+    }
+};
 class OnlineReply final : public QNetworkReply {
   public:
     OnlineReply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
@@ -130,6 +143,167 @@ class OnlineNetwork final : public QNetworkAccessManager {
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void acquiredFormsAreSavedForThePublishedTargetWithoutChangingTheCurrentTrack() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto current = temp.filePath("current.mp3"), target = temp.filePath("downloaded.mp3");
+        save(current, "preserved personal audio fixture");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setTrack(current, "Current", "Artist", {}, 0);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.appendAcquiredLyrics("job_1_lookup_1", target, acquiredDrafts()));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(binding.acquiredLyricsSave().target, target);
+        QCOMPARE(binding.title(), QStringLiteral("Current"));
+        QCOMPARE(binding.variants().size(), 0);
+        const auto saved = store->read(nativePath(target));
+        QCOMPARE(saved.size(), std::size_t{2});
+        QVERIFY(saved[0].id != 0 && saved[1].id != saved[0].id);
+        QCOMPARE(saved[0].content, acquiredDrafts()[0].content);
+        QCOMPARE(saved[1].content, acquiredDrafts()[1].content);
+        QFile audio(current);
+        QVERIFY(audio.open(QIODevice::ReadOnly));
+        QCOMPARE(audio.readAll(), QByteArray("preserved personal audio fixture"));
+    }
+    void acquisitionLoadsFreshVersionsAndPreservesTheCurrentSelection() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto target = temp.filePath("current.mp3");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        auto base = acquiredDrafts();
+        base.resize(1);
+        base[0].id = 12;
+        store->disk[nativePath(target)] = base;
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setTrack(target, "Current", "Artist", {}, 0);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.selectVariant("12"));
+        auto fresh = base;
+        fresh.push_back({21, "Other", "en", "Latn", "manual", "Another version", LyricsVariantKind::Original, false});
+        {
+            const std::lock_guard lock(store->mutex);
+            store->disk[nativePath(target)] = fresh;
+        }
+        auto drafts = acquiredDrafts();
+        drafts.erase(drafts.begin());
+        QVERIFY(binding.appendAcquiredLyrics("job_2", target, drafts));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(binding.variants().size(), 3);
+        QCOMPARE(binding.selectedVariantId(), QStringLiteral("12"));
+        QCOMPARE(store->read(nativePath(target))[1], fresh[1]);
+    }
+    void failedAcquiredSaveRetainsTheExactCandidateAndRetriesWithoutAnotherMerge() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto target = temp.filePath("downloaded.mp3");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->save_status = LyricsVariantsSaveStatus::Failed;
+        store->commit_before_failure = true;
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        QVERIFY(binding.appendAcquiredLyrics("job_3", target, acquiredDrafts()));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
+        QVERIFY(binding.variantsHasPendingChange());
+        QVERIFY(binding.variantsCanRetrySave());
+        QCOMPARE(store->save_calls.load(), 1);
+        const auto first = store->read(nativePath(target));
+        store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(binding.retryVariantsSave());
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(store->read(nativePath(target)), first);
+        QCOMPARE(store->save_calls.load(), 2);
+        QCOMPARE(store->load_calls.load(), 1);
+        QVERIFY(!binding.variantsHasPendingChange());
+    }
+    void futureCataloguesArePreservedAndAnExplicitReloadAbandonsTheAcquisition() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->load_status = LyricsVariantsLoadStatus::FutureVersion;
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        QVERIFY(binding.appendAcquiredLyrics("job_4", temp.filePath("downloaded.mp3"), acquiredDrafts()));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::BlockedByFutureVersion);
+        QCOMPARE(store->save_calls.load(), 0);
+        QVERIFY(binding.variantsHasPendingChange());
+        QVERIFY(binding.reloadVariants());
+        QCOMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Abandoned);
+        QVERIFY(!binding.variantsHasPendingChange());
+        QCOMPARE(store->save_calls.load(), 0);
+    }
+    void divergentVersionsRequireConfirmationAndExactReplayDoesNotWriteAgain() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto target = temp.filePath("downloaded.mp3");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        auto base = acquiredDrafts();
+        base.resize(1);
+        base[0].id = 5;
+        store->disk[nativePath(target)] = base;
+        auto changed = base;
+        changed[0].id = 0;
+        changed[0].content = "Different content";
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        QVERIFY(binding.appendAcquiredLyrics("job_5_a", target, changed));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Conflict);
+        QCOMPARE(store->save_calls.load(), 0);
+        QVERIFY(binding.variantsHasPendingChange());
+        QVERIFY(binding.reloadVariants());
+        QVERIFY(binding.appendAcquiredLyrics("job_5_b", target, changed, true));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        const auto saved = store->read(nativePath(target));
+        QCOMPARE(saved.size(), std::size_t{2});
+        QCOMPARE(saved[0], base[0]);
+        QVERIFY(binding.appendAcquiredLyrics("job_5_c", target, changed));
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Unchanged);
+        QCOMPARE(store->save_calls.load(), 1);
+        QCOMPARE(store->read(nativePath(target)), saved);
+    }
+    void theSingleWriterRemainsReservedAcrossLoadSaveAndExitPreparation() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->block_load = true;
+        store->block_save = true;
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        ReleaseBlockedStore cleanup{store};
+        const auto target = temp.filePath("downloaded.mp3");
+        QVERIFY(binding.appendAcquiredLyrics("job_6", target, acquiredDrafts()));
+        bool load_observed{};
+        QTRY_VERIFY(load_observed || (load_observed = store->load_entered.tryAcquire()));
+        QVERIFY(!binding.appendAcquiredLyrics("overlap", target, acquiredDrafts()));
+        QVERIFY(!binding.addVariant("Manual", {}, {}, {}, "original", "Manual text", false));
+        QVERIFY(!binding.prepareExit());
+        store->load_release.release();
+        bool save_observed{};
+        QTRY_VERIFY(save_observed || (save_observed = store->save_entered.tryAcquire()));
+        QVERIFY(!binding.prepareExit());
+        store->save_release.release();
+        QTRY_COMPARE(binding.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QTRY_VERIFY(binding.prepareExit());
+        binding.beginShutdown();
+        QTRY_VERIFY(binding.stopped());
+    }
+    void invalidAcquisitionTargetsAndOversizedDraftsNeverReachTheStore() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        QVERIFY(!binding.appendAcquiredLyrics("job_7", "relative.mp3", acquiredDrafts()));
+        QVERIFY(!binding.appendAcquiredLyrics("job_7", "https://example.test/audio.mp3", acquiredDrafts()));
+        QVERIFY(!binding.appendAcquiredLyrics("bad/ticket", temp.filePath("valid.mp3"), acquiredDrafts()));
+        auto too_large = acquiredDrafts();
+        too_large[0].content = std::string(lyrics_max_input_bytes + 1, 'a');
+        QVERIFY(!binding.appendAcquiredLyrics("job_7", temp.filePath("valid.mp3"), too_large));
+        QCOMPARE(store->load_calls.load(), 0);
+        QCOMPARE(store->save_calls.load(), 0);
+    }
     void confirmedPositionSelectsTheOriginalVerseAndSeeksBackwards() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

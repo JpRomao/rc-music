@@ -22,6 +22,7 @@ function(rc_music_add_core_tests target test_prefix test_labels)
     rc_music_add_test_support()
     add_executable(${target}
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LyricsVariantsTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/core/AcquiredLyricsTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/PlaylistLibraryTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LyricsTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/ArtworkLimitsTests.cpp"

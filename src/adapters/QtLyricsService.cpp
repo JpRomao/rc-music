@@ -150,11 +150,12 @@ struct QtLyricsService::Impl final {
     QString path, title, artist, album, message;
     qint64 duration_ms{};
     quint64 generation{};
-    bool stopping{}, local_running{}, cooldown_forever{};
+    bool stopping{}, local_running{}, cooldown_forever{}, lookup_only{};
     std::optional<PendingLocal> pending_local;
     Status status{Status::Idle};
     Source source{Source::None};
     LyricsDocument document;
+    std::vector<LyricsDocument> online_documents;
 
     Impl(QtLyricsService& service, QNetworkAccessManager* borrowed, QByteArray identifier, const int timeout_ms)
         : owner(service), network(borrowed ? borrowed : new QNetworkAccessManager(&service)),
@@ -216,6 +217,7 @@ struct QtLyricsService::Impl final {
     void revoke() {
         ++generation;
         pending_local.reset();
+        online_documents.clear();
         cancelReply();
     }
     void startLocal(PendingLocal pending) {
@@ -334,18 +336,23 @@ struct QtLyricsService::Impl final {
             emit owner.changed();
             return;
         }
-        auto parsed = parseLrc(std::string_view{synced->constData(), static_cast<std::size_t>(synced->size())});
-        if (parsed.error != LyricsParseError::None || parsed.document.lines.empty()) {
-            const auto plain_result = plainDocument(*plain);
-            if (!plain_result) {
-                networkFailure(QStringLiteral("O serviço retornou uma letra inválida."));
-                return;
-            }
-            parsed.error = LyricsParseError::None;
-            parsed.document = *plain_result;
+        const auto plain_result = plainDocument(*plain);
+        if (!plain_result) {
+            networkFailure(QStringLiteral("O serviço retornou uma letra inválida."));
+            return;
         }
+        auto parsed = parseLrc(std::string_view{synced->constData(), static_cast<std::size_t>(synced->size())});
+        std::vector<LyricsDocument> candidates;
+        if (parsed.error == LyricsParseError::None && !parsed.document.lines.empty())
+            candidates.push_back(std::move(parsed.document));
+        // These are formats delivered by the provider, not evidence of a
+        // language or alphabet. Identical untimed text needs only the timed
+        // candidate; distinct plain content must not be discarded.
+        if (content(*plain_result) && (candidates.empty() || candidates.front().plain_text != plain_result->plain_text))
+            candidates.push_back(*plain_result);
         cancelReply();
-        document = std::move(parsed.document);
+        online_documents = std::move(candidates);
+        document = online_documents.empty() ? LyricsDocument{} : online_documents.front();
         source = Source::Online;
         status = content(document) ? Status::Ready : Status::NotFound;
         message.clear();
@@ -366,13 +373,14 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     title = owned(title);
     artist = owned(artist);
     album = owned(album);
-    const bool same_path = path == value.path;
+    const bool same_path = path == value.path && !value.lookup_only;
     const bool changed_metadata =
         title != value.title || artist != value.artist || album != value.album || duration_ms != value.duration_ms;
     value.title = std::move(title);
     value.artist = std::move(artist);
     value.album = std::move(album);
     value.duration_ms = duration_ms;
+    value.lookup_only = false;
     if (same_path) {
         if (changed_metadata && value.reply) {
             value.revoke();
@@ -393,6 +401,24 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     emit changed();
     if (!value.stopping && value.generation == generation && value.status == Status::LoadingLocal)
         value.startLocal({generation, owned(value.path)});
+}
+void QtLyricsService::setLookupTrack(QString path, QString title, QString artist, QString album,
+                                     const qint64 duration_ms) {
+    auto& value = *impl_;
+    if (value.stopping)
+        return;
+    value.revoke();
+    value.path = owned(path);
+    value.title = owned(title);
+    value.artist = owned(artist);
+    value.album = owned(album);
+    value.duration_ms = duration_ms;
+    value.lookup_only = true;
+    value.document = {};
+    value.source = Source::None;
+    value.status = Status::Idle;
+    value.message.clear();
+    emit changed();
 }
 bool QtLyricsService::searchOnline(QString title_override, QString artist_override) {
     auto& value = *impl_;
@@ -478,6 +504,7 @@ bool QtLyricsService::drained() const noexcept {
 QtLyricsService::Status QtLyricsService::status() const noexcept { return impl_->status; }
 QtLyricsService::Source QtLyricsService::source() const noexcept { return impl_->source; }
 const LyricsDocument& QtLyricsService::document() const noexcept { return impl_->document; }
+const std::vector<LyricsDocument>& QtLyricsService::onlineDocuments() const noexcept { return impl_->online_documents; }
 QString QtLyricsService::message() const { return impl_->message; }
 bool QtLyricsService::canSearch() const noexcept {
     return !impl_->stopping && !impl_->path.isEmpty() && impl_->network && validClient(impl_->client) &&

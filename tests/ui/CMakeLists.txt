@@ -113,6 +113,17 @@ target_sources(rc_music_lyrics_binding_tests PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp")
 set_target_properties(rc_music_lyrics_binding_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_download_lyrics_lookup_tests rc_music.lyrics.download-lookup
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/DownloadLyricsLookupTests.cpp" rc_music_lyrics)
+set_target_properties(rc_music_download_lyrics_lookup_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_download_lyrics_binding_tests rc_music.lyrics.download-binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/DownloadLyricsBindingTests.cpp" rc_music_lyrics)
+target_sources(rc_music_download_lyrics_binding_tests PRIVATE
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.cpp")
+set_target_properties(rc_music_download_lyrics_binding_tests PROPERTIES AUTOMOC ON)
 add_executable(rc_music_lyrics_online_probe "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LyricsOnlineProbe.cpp")
 target_link_libraries(rc_music_lyrics_online_probe PRIVATE rc_music_lyrics)
 rc_music_configure_cpp(rc_music_lyrics_online_probe)

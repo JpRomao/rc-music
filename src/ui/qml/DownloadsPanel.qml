@@ -22,6 +22,8 @@ Popup {
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
+    readonly property var lyricsBackend: downloads !== null && typeof downloads.lyrics !== "undefined" ? downloads.lyrics : null
+    readonly property bool lyricsAvailable: lyricsBackend !== null && lyricsBackend.hasRequest
     property Item fallbackFocusItem: null
     property bool focusRestoreAllowed: true
     property Item restoreFocusItem: null
@@ -170,7 +172,7 @@ Popup {
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
     function topControls() {
-        return [closeButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
+        return [closeButton, lyricsButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -217,6 +219,24 @@ Popup {
                 text: "✕"
 
                 onClicked: root.close()
+            }
+        }
+        AccessibleTransportButton {
+            id: lyricsButton
+            Layout.fillWidth: true
+            contract: root.contract
+            objectName: "downloads-lyrics"
+            text: root.lyricsBackend !== null && root.lyricsBackend.busy ? qsTr("Buscando letra…") : qsTr("Revisar letras")
+            accessibleName: text
+            visible: root.lyricsAvailable
+            enabled: root.lyricsAvailable
+            KeyNavigation.backtab: root.nextTopControl(lyricsButton, true)
+            KeyNavigation.tab: root.nextTopControl(lyricsButton, false)
+            onClicked: {
+                if (!root.lyricsAvailable)
+                    return;
+                lyricsDialog.restoreFocusItem = lyricsButton;
+                lyricsDialog.open();
             }
         }
         Text {
@@ -699,6 +719,8 @@ Popup {
             invalidateCloseConsent();
     }
     onClosed: {
+        lyricsDialog.restoreFocusItem = null;
+        lyricsDialog.close();
         const target = restoreFocusItem;
         restoreFocusItem = null;
         Qt.callLater(function () {
@@ -721,6 +743,11 @@ Popup {
 
     DownloadText {
         id: labels
+    }
+    DownloadLyricsPanel {
+        id: lyricsDialog
+        contract: root.contract
+        backend: root.lyricsBackend
     }
     Popup {
         id: importConfirmation

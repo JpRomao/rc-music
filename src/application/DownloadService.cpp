@@ -407,6 +407,25 @@ DownloadService::DownloadService(DownloadExecution& execution, DownloadImport& i
     : impl_(std::make_unique<Impl>(execution, importer, std::move(prefix), limits, identity)) {}
 DownloadService::~DownloadService() = default;
 
+std::optional<PublishedYoutubeAudio> DownloadService::publishedYoutubeAudio(const std::string_view job_id) const {
+    const auto& state = *impl_;
+    if (state.calling_port || job_id.empty() || job_id.size() > 64)
+        return {};
+    const auto job = std::find_if(state.jobs.begin(), state.jobs.end(),
+                                  [job_id](const auto& item) { return item.view.job_id == job_id; });
+    if (job == state.jobs.end() ||
+        (job->view.state != DownloadJobState::Completed && job->view.state != DownloadJobState::Importing &&
+         job->view.state != DownloadJobState::Imported && job->view.state != DownloadJobState::ImportFailed) ||
+        !validPublishedPath(job->view.completed_mp3) || job->receipt_index >= state.receipts.size())
+        return {};
+    const auto& receipt = state.receipts[job->receipt_index];
+    if (receipt.recovered || job->item_index >= receipt.request.items.size())
+        return {};
+    const auto& source = receipt.request.items[job->item_index].youtube;
+    if (!source)
+        return {};
+    return PublishedYoutubeAudio{job->view.job_id, job->view.completed_mp3, *source};
+}
 std::optional<DownloadCheckpoint> DownloadService::checkpoint() {
     const auto& state = *impl_;
     if (state.calling_port || !state.valid_configuration || state.identity == nullptr)

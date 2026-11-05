@@ -5,6 +5,7 @@ include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicMediaData.cmake")
 include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicYoutube.cmake")
 
 add_library(rc_music_lyrics STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadLyricsLookup.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.hpp"
@@ -71,6 +72,7 @@ function(rc_music_add_ui target support qml_output)
             TrackDetailsPanel.qml
             TrackDetailsText.qml
             DownloadsPanel.qml
+            DownloadLyricsPanel.qml
             BrowserText.qml
             DownloadText.qml)
         set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
@@ -93,6 +95,8 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.hpp"

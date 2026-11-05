@@ -1,7 +1,9 @@
 #include "LyricsBinding.hpp"
 #include "adapters/QtLyricsService.hpp"
+#include "m0/domain/AcquiredLyrics.hpp"
 #include "m0/ports/LyricsVariantsStore.hpp"
 
+#include <QDir>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -37,7 +39,37 @@ std::optional<std::uint64_t> identifier(const QString& value) {
 struct VariantsJob final {
     LyricsVariantsLoadResult loaded{};
     LyricsVariantsSaveStatus saved{LyricsVariantsSaveStatus::Failed};
+    AcquiredLyricsMergeResult merged{};
+    bool invalid_drafts{};
 };
+bool acquiredTarget(const QString& value) {
+    if (value.isEmpty() || value.size() > 32768 || value.contains(QChar{0}) || value.startsWith(QStringLiteral("//")) ||
+        value.startsWith(QStringLiteral("\\\\")) || !value.endsWith(QStringLiteral(".mp3"), Qt::CaseInsensitive) ||
+        QString::fromUtf8(value.toUtf8()) != value || !QDir::isAbsolutePath(value))
+        return false;
+    const auto path = nativePath(value);
+    return path.is_absolute() && path == path.lexically_normal();
+}
+bool acquiredTicket(const std::string& value) {
+    return !value.empty() && value.size() <= 96 && std::all_of(value.begin(), value.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    });
+}
+bool boundedDrafts(const LyricsVariants& values) {
+    if (values.empty() || values.size() > maximum_lyrics_variants)
+        return false;
+    std::size_t bytes{};
+    for (const auto& item : values) {
+        if (item.name.size() > maximum_lyrics_variant_name_bytes ||
+            item.language.size() > maximum_lyrics_variant_tag_bytes ||
+            item.script.size() > maximum_lyrics_variant_tag_bytes ||
+            item.source.size() > maximum_lyrics_variant_source_bytes || item.content.size() > lyrics_max_input_bytes ||
+            item.content.size() > maximum_lyrics_variants_content_bytes - bytes)
+            return false;
+        bytes += item.content.size();
+    }
+    return true;
+}
 } // namespace
 struct LyricsBinding::VariantsState final {
     LyricsBinding& owner;
@@ -49,12 +81,16 @@ struct LyricsBinding::VariantsState final {
     QString job_path, pending_path, notice;
     std::uint64_t selected{}, select_after_save{}, next_id{1}, next_after_save{1};
     bool busy{}, loading{}, ready{};
+    AcquiredLyricsSaveSnapshot acquired;
+    std::shared_ptr<const LyricsVariants> acquired_drafts;
+    bool acquired_pending{}, acquired_loading{}, keep_distinct{};
     VariantsState(LyricsBinding& binding, std::shared_ptr<LyricsVariantsStore> source)
         : owner(binding), store(std::move(source)) {
         QObject::connect(&watcher, &QFutureWatcher<VariantsJob>::finished, &owner, [this] { finished(); });
     }
     bool allowed() const { return !owner.shutting_down_ && !owner.exit_preparing_; }
-    bool editable() const { return store && allowed() && ready && !busy && !pending; }
+    bool hasPending() const { return pending.has_value() || acquired_pending; }
+    bool editable() const { return store && allowed() && ready && !busy && !hasPending(); }
     auto find(const std::uint64_t id) const {
         return std::find_if(library.begin(), library.end(), [id](const auto& item) { return item.id == id; });
     }
@@ -104,7 +140,7 @@ struct LyricsBinding::VariantsState final {
         return false;
     }
     bool load() {
-        if (!allowed() || !store || busy || pending || owner.path_.isEmpty())
+        if (!allowed() || !store || busy || hasPending() || owner.path_.isEmpty())
             return false;
         const auto retained_store = store;
         const auto path = nativePath(owner.path_);
@@ -131,8 +167,53 @@ struct LyricsBinding::VariantsState final {
         emit owner.changed();
         return busy;
     }
-    bool save() {
-        if (!allowed() || !store || busy || !pending)
+    bool loadAcquired() {
+        if (!allowed() || !store || busy || !acquired_pending || pending || !acquired_drafts)
+            return false;
+        const auto retained_store = store;
+        const auto path = nativePath(acquired.target);
+        const auto drafts = acquired_drafts;
+        const auto keep = keep_distinct;
+        job_path = owned(acquired.target);
+        busy = true;
+        acquired_loading = true;
+        loading = false;
+        acquired.state = AcquiredLyricsSaveState::Loading;
+        notice = LyricsBinding::tr("Preparando versões da letra para guardar…");
+        try {
+            watcher.setFuture(QtConcurrent::run([retained_store, path, drafts, keep] {
+                VariantsJob result;
+                auto checked = mergeAcquiredLyrics({}, *drafts, true);
+                if (checked.status == AcquiredLyricsMergeStatus::Invalid ||
+                    checked.status == AcquiredLyricsMergeStatus::LimitExceeded) {
+                    result.invalid_drafts = true;
+                    result.merged = std::move(checked);
+                    return result;
+                }
+                try {
+                    result.loaded = retained_store->load(path);
+                } catch (...) {
+                    result.loaded.status = LyricsVariantsLoadStatus::Unavailable;
+                }
+                const auto status = result.loaded.status;
+                if (status == LyricsVariantsLoadStatus::Missing || status == LyricsVariantsLoadStatus::Loaded ||
+                    status == LyricsVariantsLoadStatus::RecoveredFromBackup)
+                    result.merged = mergeAcquiredLyrics(result.loaded.variants, *drafts, keep);
+                result.loaded.variants.clear();
+                return result;
+            }));
+        } catch (...) {
+            busy = false;
+            acquired_loading = false;
+            acquired.state = AcquiredLyricsSaveState::LoadFailed;
+            notice =
+                LyricsBinding::tr("Não foi possível preparar as versões. Tente novamente ou abandone a alteração.");
+        }
+        emit owner.changed();
+        return true;
+    }
+    bool save(const bool continuation = false) {
+        if ((!allowed() && !(continuation && acquired_pending && !owner.shutting_down_)) || !store || busy || !pending)
             return false;
         const auto retained_store = store;
         const auto path = nativePath(pending_path);
@@ -140,6 +221,8 @@ struct LyricsBinding::VariantsState final {
         job_path = owned(pending_path);
         busy = true;
         loading = false;
+        if (acquired_pending)
+            acquired.state = AcquiredLyricsSaveState::Saving;
         notice = LyricsBinding::tr("Salvando versão da letra…");
         try {
             watcher.setFuture(QtConcurrent::run([retained_store, path, candidate] {
@@ -152,6 +235,8 @@ struct LyricsBinding::VariantsState final {
             }));
         } catch (...) {
             busy = false;
+            if (acquired_pending)
+                acquired.state = AcquiredLyricsSaveState::SaveFailed;
             notice = LyricsBinding::tr("Não foi possível confirmar o salvamento. Tente salvar novamente ou "
                                        "recarregue as versões do disco.");
         }
@@ -159,9 +244,57 @@ struct LyricsBinding::VariantsState final {
         return true; // The candidate remains admitted even if starting its job failed.
     }
     void finished() {
-        const auto result = watcher.result();
+        auto result = watcher.result();
         const bool same_track = job_path == owner.path_;
         busy = false;
+        if (acquired_loading) {
+            acquired_loading = false;
+            const auto status = result.loaded.status;
+            const bool usable = status == LyricsVariantsLoadStatus::Missing ||
+                                status == LyricsVariantsLoadStatus::Loaded ||
+                                status == LyricsVariantsLoadStatus::RecoveredFromBackup;
+            if (result.invalid_drafts) {
+                acquired.state = AcquiredLyricsSaveState::Invalid;
+                notice = LyricsBinding::tr("Confira o texto e os limites das versões recebidas.");
+            } else if (!usable) {
+                acquired.state = status == LyricsVariantsLoadStatus::FutureVersion
+                                     ? AcquiredLyricsSaveState::BlockedByFutureVersion
+                                     : AcquiredLyricsSaveState::LoadFailed;
+                notice = LyricsBinding::tr(
+                    "Não foi possível carregar as versões existentes. Os arquivos foram preservados.");
+            } else if (result.merged.status == AcquiredLyricsMergeStatus::Conflict) {
+                acquired.state = AcquiredLyricsSaveState::Conflict;
+                notice = LyricsBinding::tr("Há outra versão desta forma. Confira o conteúdo antes de guardar ambas.");
+            } else if (result.merged.status == AcquiredLyricsMergeStatus::Unchanged) {
+                if (same_track) {
+                    library = std::move(result.merged.variants);
+                    ready = true;
+                    if (!select(selected))
+                        clearSelection();
+                    resetAllocator();
+                }
+                acquired.state = AcquiredLyricsSaveState::Unchanged;
+                acquired_pending = false;
+                acquired_drafts.reset();
+                pending_path.clear();
+                notice = LyricsBinding::tr("Estas versões já estavam guardadas.");
+                if (!same_track && allowed() && !owner.path_.isEmpty())
+                    static_cast<void>(load());
+            } else if (result.merged.status == AcquiredLyricsMergeStatus::Added) {
+                pending = std::move(result.merged.variants);
+                pending_path = owned(acquired.target);
+                acquired_drafts.reset();
+                if (!save(true))
+                    acquired.state = AcquiredLyricsSaveState::SaveFailed;
+                return;
+            } else {
+                acquired.state = AcquiredLyricsSaveState::Invalid;
+                notice = LyricsBinding::tr(
+                    "As versões excedem os limites ou contêm dados inválidos. Os arquivos foram preservados.");
+            }
+            emit owner.changed();
+            return;
+        }
         if (loading) {
             loading = false;
             if (same_track) {
@@ -187,23 +320,36 @@ struct LyricsBinding::VariantsState final {
             }
         } else if (result.saved == LyricsVariantsSaveStatus::Saved && pending) {
             if (same_track) {
+                const auto keep_selection = acquired_pending ? selected : select_after_save;
                 library = std::move(*pending);
                 ready = true;
-                if (!select(select_after_save))
+                if (!select(keep_selection))
                     clearSelection();
-                next_id = next_after_save;
+                if (acquired_pending)
+                    resetAllocator();
+                else
+                    next_id = next_after_save;
                 notice = LyricsBinding::tr("Versão da letra salva.");
             }
             pending.reset();
             pending_path.clear();
+            if (acquired_pending) {
+                acquired.state = AcquiredLyricsSaveState::Saved;
+                acquired_pending = false;
+                acquired_drafts.reset();
+            }
         } else {
+            if (acquired_pending)
+                acquired.state = result.saved == LyricsVariantsSaveStatus::BlockedByFutureVersion
+                                     ? AcquiredLyricsSaveState::BlockedByFutureVersion
+                                     : AcquiredLyricsSaveState::SaveFailed;
             notice = result.saved == LyricsVariantsSaveStatus::BlockedByFutureVersion
                          ? LyricsBinding::tr("Uma versão mais recente das letras foi encontrada. Os arquivos foram "
                                              "preservados; recarregue do disco.")
                          : LyricsBinding::tr("Não foi possível confirmar o salvamento. Tente salvar novamente ou "
                                              "recarregue as versões do disco.");
         }
-        if (!same_track && allowed() && !pending && !owner.path_.isEmpty())
+        if (!same_track && allowed() && !hasPending() && !owner.path_.isEmpty())
             static_cast<void>(load());
         emit owner.changed();
     }
@@ -215,6 +361,21 @@ LyricsBinding::LyricsBinding(QtLyricsService& service, std::shared_ptr<LyricsVar
     connect(&service_, &QtLyricsService::changed, this, &LyricsBinding::changed);
 }
 LyricsBinding::~LyricsBinding() = default;
+bool LyricsBinding::appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
+                                         bool keep_distinct_versions) {
+    if (!variants_->allowed() || !variants_->store || variants_->busy || variants_->hasPending() ||
+        !acquiredTicket(ticket) || !acquiredTarget(target) || !boundedDrafts(drafts))
+        return false;
+    auto retained = std::make_shared<const LyricsVariants>(std::move(drafts));
+    target = owned(target);
+    variants_->acquired = {std::move(ticket), target, AcquiredLyricsSaveState::Loading};
+    variants_->acquired_drafts = std::move(retained);
+    variants_->acquired_pending = true;
+    variants_->keep_distinct = keep_distinct_versions;
+    variants_->pending_path = std::move(target);
+    return variants_->loadAcquired();
+}
+AcquiredLyricsSaveSnapshot LyricsBinding::acquiredLyricsSave() const { return variants_->acquired; }
 QVariantList LyricsBinding::variants() const {
     QVariantList result;
     for (const auto& item : variants_->library)
@@ -233,16 +394,16 @@ QString LyricsBinding::selectedVariantId() const {
 bool LyricsBinding::variantsBusy() const { return variants_->busy; }
 bool LyricsBinding::variantsReady() const { return variants_->ready; }
 QString LyricsBinding::variantsStatusText() const {
-    if (variants_->pending && variants_->pending_path != path_)
+    if (variants_->hasPending() && variants_->pending_path != path_)
         return tr(
             "Há um salvamento pendente de outra faixa. Tente salvar novamente ou recarregue as versões do disco.");
     return variants_->notice;
 }
 bool LyricsBinding::variantsCanEdit() const { return variants_->editable(); }
 bool LyricsBinding::variantsCanRetrySave() const {
-    return variants_->allowed() && variants_->pending && !variants_->busy;
+    return variants_->allowed() && variants_->hasPending() && !variants_->busy;
 }
-bool LyricsBinding::variantsHasPendingChange() const { return variants_->pending.has_value(); }
+bool LyricsBinding::variantsHasPendingChange() const { return variants_->hasPending(); }
 bool LyricsBinding::canSaveCurrentLyrics() const {
     return variants_->editable() && variants_->selected == 0 && service_.status() == QtLyricsService::Status::Ready &&
            (!service_.document().lines.empty() || !service_.document().plain_text.empty());
@@ -307,11 +468,15 @@ bool LyricsBinding::removeVariant(const QString& value) {
     variants_->next_after_save = variants_->next_id;
     return variants_->save();
 }
-bool LyricsBinding::retryVariantsSave() { return variants_->save(); }
+bool LyricsBinding::retryVariantsSave() { return variants_->pending ? variants_->save() : variants_->loadAcquired(); }
 bool LyricsBinding::reloadVariants() {
-    if (!variants_->allowed() || variants_->busy || !variants_->store || (path_.isEmpty() && !variants_->pending))
+    if (!variants_->allowed() || variants_->busy || !variants_->store || (path_.isEmpty() && !variants_->hasPending()))
         return false;
     variants_->pending.reset();
+    if (variants_->acquired_pending)
+        variants_->acquired.state = AcquiredLyricsSaveState::Abandoned;
+    variants_->acquired_pending = false;
+    variants_->acquired_drafts.reset();
     variants_->pending_path.clear();
     variants_->clearView();
     if (path_.isEmpty()) {
@@ -359,7 +524,7 @@ void LyricsBinding::beginShutdown() {
     shutting_down_ = true;
     service_.beginShutdown();
 }
-bool LyricsBinding::stopped() const { return service_.stopped() && !variants_->busy && !variants_->pending; }
+bool LyricsBinding::stopped() const { return service_.stopped() && !variants_->busy && !variants_->hasPending(); }
 bool LyricsBinding::prepareExit() {
     if (!exit_preparing_) {
         exit_preparing_ = true;
@@ -368,12 +533,12 @@ bool LyricsBinding::prepareExit() {
         // when already drained; a synchronous save refusal can then rearm us.
         return false;
     }
-    return service_.drained() && !variants_->busy && !variants_->pending;
+    return service_.drained() && !variants_->busy && !variants_->hasPending();
 }
 QString LyricsBinding::title() const { return title_; }
 QString LyricsBinding::artist() const { return artist_; }
 QString LyricsBinding::statusText() const {
-    if (variants_->pending && path_.isEmpty())
+    if (variants_->hasPending() && path_.isEmpty())
         return variantsStatusText();
     if (variants_->selected) {
         const auto found = variants_->find(variants_->selected);

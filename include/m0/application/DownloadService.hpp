@@ -33,6 +33,11 @@ struct DownloadRecoveryReport final {
     std::vector<std::string> session_only_job_ids{};
     bool operator==(const DownloadRecoveryReport&) const = default;
 };
+struct PublishedYoutubeAudio final {
+    std::string job_id{};
+    std::filesystem::path published_mp3{};
+    YoutubeAudioItem source{};
+};
 
 // Single application-thread owner shared by all browser connections. Admission inputs must
 // pass the common remote-source policy at the adapter boundary (NativeDownloadCodec today).
@@ -55,6 +60,9 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] DownloadSubmissionResult submitStaged(const DownloadRequest& request);
     [[nodiscard]] bool confirmStaged(std::string_view request_id);
     [[nodiscard]] std::vector<DownloadJobSnapshot> snapshot() const;
+    // Live, matching publication acknowledgement plus original typed source
+    // only. Historical candidate paths/receipts never authorize a new lookup.
+    [[nodiscard]] std::optional<PublishedYoutubeAudio> publishedYoutubeAudio(std::string_view job_id) const;
     // These methods do not perform I/O. Restore is only for a pristine owner with
     // a fresh prefix and identity port. It never starts work or trusts stored paths.
     [[nodiscard]] std::optional<DownloadCheckpoint> checkpoint();

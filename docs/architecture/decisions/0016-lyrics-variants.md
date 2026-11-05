@@ -24,6 +24,14 @@ O [ADR-0013](0013-lyrics-and-online-lookup.md) conserva o histórico da primeira
 8. A saída fecha admissão e aguarda leitura/gravação e resolução de alterações sem confirmação. Cancelar saída rearma as ações. Fechar o processo não confirma a escrita. As confirmações QML ficam vinculadas ao backend, à faixa e ao ID escolhido, sendo revogadas quando o alvo muda. Se a fila ficar sem faixa atual, a UI mantém acesso à resolução: retry continua para o alvo original; abandono explícito remove somente o candidato em memória, sem leitura ou promessa de desfazer o disco.
 9. O caminho `.lrc`/LRCLIB atual continua disponível sem salvar automaticamente. Persistência exige ação explícita, com indicação da origem. Nenhuma nova requisição é necessária para alternar, carregar ou editar versões guardadas. Não enviar letras, áudio ou paths a uma LLM.
 
+## Evolução: writer compartilhado com letras adquiridas — 2026-11-05
+
+A composição opcional de [letras do áudio adquirido](../../download-lyrics.md) reutiliza `LyricsBinding` e `LyricsVariantsStore`; não cria um writer paralelo para o mesmo catálogo. A admissão C++ recebe ticket, alvo publicado e drafts limitados. A reserva cobre leitura fresca, `mergeAcquiredLyrics` e gravação em worker, impedindo sobreposição com edições manuais. O merge ignora IDs dos drafts, preserva entradas existentes, atribui IDs locais e deduplica conteúdo LRC canônico dentro de tipo/idioma/escrita. Conteúdo divergente da mesma forma exige a escolha explícita de manter versões distintas; não substitui uma versão salva.
+
+Falha de gravação conserva candidato e ticket exatos para retry sem repetir merge, consulta ou aquisição de áudio. Troca de faixa não muda o alvo da escrita, e a biblioteca visual só recebe um resultado correspondente após `Saved`; a seleção atual é preservada. Ler/gravar versões não altera áudio, `.lrc`, tags ou fila. O usuário pode guardar uma forma por vez e selecionar a desejada em **Versões** ao tocar o arquivo depois.
+
+Schema 1, identidade por path exato, limites, backup e lock cooperativo permanecem. A serialização pertence a este actor compartilhado; não é CAS, merge transacional entre processos ou promessa de rollback após confirmação ambígua. Preparação/cancelamento de saída e abandono explícito continuam obedecendo aos contratos da decisão original. Evidência disponível: merge puro **21 casos/253 assertions** e writer **24 casos Qt**; fechamento integrado e Quick constam do [registro](../../download-lyrics.md#evidência-deste-incremento). Runtime/host YouTube, acesso Letras e distribuição permanecem gates do ADR-0017, sem alterar o estado aceito desta persistência local.
+
 ## Alternativas e consequências
 
 - Um único `.lrc` não atende às várias representações e pode exigir escrita em pasta de mídia sem permissão. Os documentos de configuração evitam modificar a biblioteca pessoal.

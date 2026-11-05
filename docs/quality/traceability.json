@@ -1159,6 +1159,7 @@
         { "path": "tests/qt/YoutubeAudioAdmissionTests.cpp", "marker": "commonControllerDoesNotAckOrExecuteBeforeSavedAndRejectsChangedConsent" },
         { "path": "tests/qt/NativeYoutubeAudioSessionTests.cpp", "marker": "splitAuthorizedFrameDispatchesOnceAndPendingHasNoWireAcknowledgement" },
         { "path": "tests/qt/DownloadCheckpointJsonTests.cpp", "marker": "youtubeReplayAfterCheckpointRoundTripUsesAllMetadataWithoutPersistingSourceData" },
+        { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "publishedYoutubeLyricsUseTheSharedWriterAndARealTemporaryCatalogueAfterExplicitSave" },
         { "path": "tests/ui/qtest/WindowsPlayerDownloadsTests.cpp", "marker": "youtubeSessionSurvivesDisconnectAndImportsOnlyAfterBothSavedAcknowledgements" },
         { "path": "tests/qt/WindowsYoutubeResolverProcessTests.cpp", "marker": "privateInputIsEchoedAndLeaseLivesUntilTheStoppedPipeAcknowledgement" },
         { "path": "tests/qt/YoutubeDownloadExecutionTests.cpp", "marker": "resolutionHandsTheExactCapabilityToTheExistingTaskOnTheWorker" },
@@ -1189,7 +1190,7 @@
         }
       ],
       "remaining": [
-        "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. O controlador e fila comuns preservam artista/página/consentimento na identidade e aguardam Saved para ACK/importação; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. Faltam runtime/ferramentas/licenças autenticados e composição instalada de produção, host/origens confiáveis, Brave, opcionais e pacote. EJS local completo e Node descendente não foram qualificados; NoChild preservado. Letras preferencial depende de acesso/contrato compatível; cadeia LRCLIB fallback e associação ao arquivo final ainda pendentes. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
+        "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. Letras do fluxo opcional têm fallback LRCLIB após publicação live consentida, preview e salvamento explícito no catálogo do arquivo; ensaio usa rede/publicação falsas e JSON TEMP real. Faltam runtime/ferramentas/licenças autenticados e composição instalada de produção, host/origens confiáveis, Brave, opcionais e pacote. EJS local completo e Node descendente não qualificados; NoChild preservado. Letras primário depende de acesso/contrato compatível e não é anunciado como funcional. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
       ]
     },
     {
@@ -2198,6 +2199,11 @@
         { "path": "tests/qt/QtLyricsServiceTests.cpp", "marker": "retryAfterSurvivesTrackChangesAndBlocksQueriesUntilItsDeadline" },
         { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "cancelledPlayerExitCanReloadLocalLyricsWithoutARequest" },
         { "path": "tests/core/LyricsVariantsTests.cpp", "marker": "lyrics variants preserve original and romanized forms independently" },
+        { "path": "tests/core/AcquiredLyricsTests.cpp", "marker": "acquired lyrics preserve original and romanized Unicode forms with their times" },
+        { "path": "tests/qt/DownloadLyricsLookupTests.cpp", "marker": "constructionIsPassiveAndOnlyExplicitPublishedRequestSearchesTheFallback" },
+        { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "failedAcquiredSaveRetainsTheExactCandidateAndRetriesWithoutAnotherMerge" },
+        { "path": "tests/qt/DownloadLyricsBindingTests.cpp", "marker": "explicitFormsAreSavedOneAtATimeWithoutChangingPlaybackOrLosingOtherCandidates" },
+        { "path": "tests/ui/quick/tst_download_lyrics.qml", "marker": "test_savingRomanizedAllowsEmptyLanguageAndScriptWithoutInference" },
         { "path": "tests/qt/QtJsonLyricsVariantsStoreTests.cpp", "marker": "firstWriteAndRestartRetainEveryFormExactIdAndTimesWithoutTouchingAudio" },
         { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "importsOriginalAndRomanizedOnlyAfterSavedAndKeepsTheirOwnTiming" },
         { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "aFailedSaveForThePreviousTrackCannotBeLostOrPublishedOnTheCurrentOne" },
@@ -2215,7 +2221,7 @@
         { "path": "docs/user-guide.md", "marker": "## Letras das músicas" }
       ],
       "remaining": [
-        "Compor Letras preferencial com fallback LRCLIB e associação das formas ao arquivo final, após acesso/contrato compatível do primário; o app atual consulta LRCLIB diretamente. Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado das variantes persistentes. Testes usam fixtures/fakes e restart em dois processos próprios; smoke online anterior cobre só uma faixa pública, sem cobertura universal/distribuição. Aquisição MP3, LLM, tradução e alinhamento simultâneo conservam seus gates."
+        "Letras primário continua sem acesso/contrato compatível. Fallback LRCLIB, preview e salvamento consentido após publicação estão implementados no fluxo opcional, com rede falsa e catálogo TEMP real; não é prova online da composição instalada. Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado. Persistência anterior conserva restart em dois processos; smoke online anterior cobre só uma faixa pública, sem cobertura universal/distribuição. Runtime/host MP3, LLM, tradução e alinhamento simultâneo conservam seus gates."
       ]
     },
     {

@@ -6,17 +6,24 @@
 #include <memory>
 #include <string>
 
+class QNetworkAccessManager;
+
 namespace music_player::m0 {
 class AsyncDownloadSubmission;
 class AsyncYoutubeAudioSubmission;
 class PlayerPresenter;
 class WindowsDownloadExecution;
+class LyricsBinding;
 struct SessionLoadResult;
 
 struct WindowsPlayerDownloadsOptions final {
     // Empty selects a fresh UUID namespace. Trusted composition only.
     std::string job_namespace{};
     DownloadApplicationBindingOptions binding{};
+    // Optional shared writer owned by the player. Creates one private lookup
+    // service/view only when present. Borrowed dependencies outlive this owner.
+    LyricsBinding* lyrics_writer{nullptr};
+    QNetworkAccessManager* lyrics_network{nullptr};
 };
 
 // Optional Windows application-thread composition, never a QML-created object.

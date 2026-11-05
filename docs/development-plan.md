@@ -39,6 +39,10 @@ Continuidade de 2026-11-05: ingresso YouTube assíncrono e controlador de admiss
 
 O [fechamento desse ingresso](youtube-audio-and-lyrics.md#evidência-da-admissão-durável-e-fila-compartilhada) passou **10/10 CTest, 549 Qt**, mais **167 casos puros/4.313 assertions**, sem falhas/skips. Formato **22 C++**, builds Lite/Completa, rede standalone e serviço sem Qt/sem testes passaram; documentação e rastreabilidade conservam os estados dos 86 requisitos. A sessão e a principal continuam separadas; runtime/host autênticos e letras/fallback permanecem próximos passos reais. Nenhum instalador, nova interação nativa ou benchmark foi executado.
 
+Continuidade das letras: [aquisição e revisão após publicação](download-lyrics.md) acrescentam lookup LRCLIB independente da reprodução, com Letras indisponível comunicado explicitamente, e fila de previews sobre a publicação live consentida. A UI permite guardar cada forma com nome/classificação informados, sem inferir idioma/script; o writer existente faz load→merge→save sem outro gravador concorrente. Duplicatas canônicas não escrevem novamente, versões divergentes só são acrescentadas por confirmação, e falhas conservam candidato para retry sem HTTP/novo áudio. O catálogo v1 continua separado da mídia/sessão. Runtime/host de download reais, Letras primário, instalador e gates globais permanecem pendentes.
+
+Fechamento das letras: **7/7 CTest, 494 Qt**, incluindo **356 Quick**, sem falhas/skips; core **304/7.138 assertions** também sem Qt, downloads **170/4.338 assertions**, builds/lint Lite e Completa sem testes, formato **23 C++/3 QML**. O [guia](download-lyrics.md#evidência-deste-incremento) distingue rede/resolver/publicação falsos do catálogo JSON real em TEMP e registra Reds/correção do binding loop. Documentação/rastreabilidade conservam os 86 requisitos e seus estados. Arquivos em andamento e cinco artefatos congelados permanecem preservados; não houve novo setup, mídia pública, perfil/UAC/WFP, GUI nativa ou benchmark.
+
 ## 1. Regras de uso
 
 ### 1.1 Hierarquia

@@ -41,6 +41,7 @@ struct DownloadApplicationBindingOptions final {
 class DownloadApplicationBinding final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QAbstractItemModel* jobsModel READ jobsModel CONSTANT)
+    Q_PROPERTY(QObject* lyrics READ lyrics NOTIFY stateChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
     Q_PROPERTY(QString warningText READ warningText NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryStartup READ canRetryStartup NOTIFY stateChanged)
@@ -59,6 +60,9 @@ class DownloadApplicationBinding final : public QObject {
                                DownloadApplicationBindingOptions options = {}, QObject* parent = nullptr);
     ~DownloadApplicationBinding() override;
     [[nodiscard]] QAbstractItemModel* jobsModel() const;
+    [[nodiscard]] QObject* lyrics() const;
+    // Trusted optional composition; never an invokable path/source setter.
+    void setLyrics(QObject* lyrics);
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString warningText() const;
     [[nodiscard]] bool canRetryStartup() const;

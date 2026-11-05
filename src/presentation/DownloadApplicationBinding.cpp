@@ -106,6 +106,7 @@ struct DownloadApplicationBinding::Impl {
     DownloadExecutionDrainCallbacks execution;
     DownloadApplicationBindingOptions options;
     DownloadJobsModel model;
+    QPointer<QObject> lyrics;
     QTimer timer;
     QElapsedTimer elapsed;
     std::int64_t last_now{0};
@@ -513,6 +514,15 @@ void DownloadApplicationBinding::failValidation() {
     shutdownValidation();
 }
 QAbstractItemModel* DownloadApplicationBinding::jobsModel() const { return &impl_->model; }
+QObject* DownloadApplicationBinding::lyrics() const { return impl_->lyrics.data(); }
+void DownloadApplicationBinding::setLyrics(QObject* value) {
+    if (impl_->lyrics == value)
+        return;
+    impl_->lyrics = value;
+    if (value)
+        connect(value, &QObject::destroyed, this, [this] { emit stateChanged(); });
+    emit stateChanged();
+}
 QString DownloadApplicationBinding::statusText() const { return impl_->projection.status; }
 QString DownloadApplicationBinding::warningText() const { return impl_->projection.warning; }
 bool DownloadApplicationBinding::canRetryStartup() const { return impl_->projection.retry_startup; }

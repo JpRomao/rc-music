@@ -789,6 +789,72 @@ TEST_CASE("Download retained request byte budget is exact and overflow safe", "[
     }
 }
 
+TEST_CASE("Published YouTube context requires a live publication and survives pending or failed queue import",
+          "[download][published-lyrics]") {
+    Harness h;
+    auto input = youtubeRequest();
+    const auto admitted = h.service.submit(input);
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    const auto id = admitted.job_ids.front();
+    REQUIRE_FALSE(h.service.publishedYoutubeAudio(id));
+    h.importer.begin_state = DownloadImportState::Pending;
+    h.service.tick(0);
+    REQUIRE_FALSE(h.service.publishedYoutubeAudio(id));
+    published(h.execution, id);
+    h.service.tick(1);
+    const auto live = h.service.publishedYoutubeAudio(id);
+    REQUIRE(live);
+    REQUIRE(live->job_id == id);
+    REQUIRE(live->published_mp3 == finalPath());
+    REQUIRE(live->source == *input.items[0].youtube);
+    input.items[0].youtube->artist = "Changed caller";
+    REQUIRE(h.service.publishedYoutubeAudio(id)->source.artist != input.items[0].youtube->artist);
+    h.importer.poll_state = DownloadImportState::Failed;
+    h.service.tick(2);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::ImportFailed);
+    REQUIRE(h.service.publishedYoutubeAudio(id));
+    REQUIRE_FALSE(h.service.publishedYoutubeAudio("unknown"));
+}
+TEST_CASE("Direct or cancelled jobs cannot provide a published YouTube lookup target", "[download][published-lyrics]") {
+    Harness h;
+    SECTION("direct") {
+        const auto ids = h.admit();
+        h.service.tick(0);
+        published(h.execution, ids.front());
+        h.service.tick(1);
+        REQUIRE_FALSE(h.service.publishedYoutubeAudio(ids.front()));
+    }
+    SECTION("cancelled") {
+        const auto result = h.service.submit(youtubeRequest());
+        REQUIRE(result.error == DownloadSubmissionError::None);
+        REQUIRE(h.service.cancel(result.job_ids.front()));
+        REQUIRE_FALSE(h.service.publishedYoutubeAudio(result.job_ids.front()));
+    }
+}
+TEST_CASE("Recovered YouTube receipts do not acquire publication authority even after explicit replay",
+          "[download][published-lyrics]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService original(execution, importer, "old", {}, &identity);
+    const auto input = youtubeRequest();
+    const auto admitted = original.submit(input);
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    original.tick(0);
+    published(execution, admitted.job_ids.front());
+    original.tick(1);
+    const auto checkpoint = original.checkpoint();
+    REQUIRE(checkpoint);
+    FakeExecution fresh_execution;
+    FakeImport fresh_importer;
+    DownloadService restored(fresh_execution, fresh_importer, "new", {}, &identity);
+    REQUIRE(restored.restore(*checkpoint));
+    REQUIRE_FALSE(restored.publishedYoutubeAudio(admitted.job_ids.front()));
+    REQUIRE(restored.submit(input).job_ids == admitted.job_ids);
+    REQUIRE_FALSE(restored.publishedYoutubeAudio(admitted.job_ids.front()));
+    REQUIRE(fresh_execution.starts.empty());
+    REQUIRE(fresh_importer.imports.empty());
+}
 TEST_CASE("Download admission owns every YouTube field and rejects changed request replay",
           "[download][youtube][FR-050]") {
     Harness h;

@@ -7,6 +7,7 @@
 #include <QString>
 
 #include <memory>
+#include <vector>
 
 class QNetworkAccessManager;
 
@@ -28,6 +29,9 @@ class QtLyricsService final : public QObject {
     // Same-path metadata updates preserve healthy local lyrics. Changed search
     // metadata revokes an in-flight online result. Caller supplies local files.
     void setTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms);
+    // Metadata-only context for a separately owned acquisition lookup. Revokes
+    // earlier results without reading an audio file or its sibling .lrc.
+    void setLookupTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms);
     [[nodiscard]] bool searchOnline(QString title_override = {}, QString artist_override = {});
     void cancel();
     // Irreversible exit preparation. Does not join file I/O on the UI thread.
@@ -38,6 +42,9 @@ class QtLyricsService final : public QObject {
     [[nodiscard]] Status status() const noexcept;
     [[nodiscard]] Source source() const noexcept;
     [[nodiscard]] const LyricsDocument& document() const noexcept;
+    // All distinct online contents for this search, synchronized first. Plain
+    // text stays plain; no language, alphabet or synchronization is inferred.
+    [[nodiscard]] const std::vector<LyricsDocument>& onlineDocuments() const noexcept;
     [[nodiscard]] QString message() const;
     [[nodiscard]] bool canSearch() const noexcept;
     [[nodiscard]] bool busy() const noexcept;

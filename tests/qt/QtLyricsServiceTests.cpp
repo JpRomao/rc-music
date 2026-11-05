@@ -92,6 +92,137 @@ void awaitLocal(Service& service) { QTRY_VERIFY_WITH_TIMEOUT(service.status() !=
 class QtLyricsServiceTests final : public QObject {
     Q_OBJECT
   private slots:
+    void lookupContextNeverStartsAReadOfTheSiblingLyrics() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto audio = temp.filePath("published 日本.mp3");
+        QVERIFY(save(temp.filePath("published 日本.lrc"), "[00:01.00]Must not load"));
+        Network network;
+        Service service(&network);
+        service.setLookupTrack(audio, "Lookup title", "Lookup artist", "Album", 123'000);
+        QCOMPARE(service.status(), Service::Status::Idle);
+        QCOMPARE(service.source(), Service::Source::None);
+        QVERIFY(service.drained());
+        QVERIFY(service.document().lines.empty());
+        QVERIFY(service.onlineDocuments().empty());
+        QVERIFY(network.requests.isEmpty());
+        QVERIFY(service.canSearch());
+        QVERIFY(service.searchOnline());
+        const QUrlQuery query(network.requests.back().url());
+        QCOMPARE(query.queryItemValue("track_name"), QStringLiteral("Lookup title"));
+        QCOMPARE(query.queryItemValue("artist_name"), QStringLiteral("Lookup artist"));
+        QVERIFY(!query.toString().contains(audio));
+    }
+    void switchingALocalContextToLookupForTheSamePathRevokesItsLoadedContent() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto audio = temp.filePath("published.mp3");
+        QVERIFY(save(temp.filePath("published.lrc"), "[00:01.00]Local lyric"));
+        Network network;
+        Service service(&network);
+        setTrack(service, audio);
+        awaitLocal(service);
+        QCOMPARE(service.status(), Service::Status::Ready);
+        service.setLookupTrack(audio, "Other title", "Other artist", {}, 0);
+        QCOMPARE(service.status(), Service::Status::Idle);
+        QCOMPARE(service.source(), Service::Source::None);
+        QVERIFY(service.document().lines.empty());
+        QVERIFY(service.document().plain_text.empty());
+        QVERIFY(service.drained());
+        QVERIFY(network.requests.isEmpty());
+    }
+    void distinctOnlineContentsPreserveUnicodeAndExistingTimesWithoutGuessingForms() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload("[00:01.25]日本語\n[00:02.00]次の行", "Nihongo\nTsugi no gyou"));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        const auto& documents = service.onlineDocuments();
+        QCOMPARE(documents.size(), std::size_t{2});
+        QCOMPARE(documents.front(), service.document());
+        QCOMPARE(documents.front().lines.front().timestamp_ms, std::int64_t{1250});
+        QCOMPARE(documents.front().lines.front().text, QStringLiteral("日本語").toStdString());
+        QVERIFY(documents.back().lines.empty());
+        QCOMPARE(documents.back().plain_text, std::string{"Nihongo\nTsugi no gyou"});
+    }
+    void identicalUntimedContentDoesNotDuplicateTheSynchronizedCandidate() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload("[00:01.00]日本語\n[00:02.00]次の行", "日本語\n次の行"));
+        QCOMPARE(service.onlineDocuments().size(), std::size_t{1});
+        QCOMPARE(service.onlineDocuments().front(), service.document());
+        QVERIFY(!service.onlineDocuments().front().lines.empty());
+    }
+    void plainOnlineContentRemainsPlainEvenWhenItLooksLikeATimestamp() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload({}, "[00:12.00]Literal original line\r\n[Chorus]"));
+        QCOMPARE(service.onlineDocuments().size(), std::size_t{1});
+        QVERIFY(service.onlineDocuments().front().lines.empty());
+        QCOMPARE(service.onlineDocuments().front().plain_text,
+                 std::string{"[00:12.00]Literal original line\n[Chorus]"});
+    }
+    void startingAnotherSearchRevokesThePreviousCandidateBatchBeforeItsResponse() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload({}, "First content"));
+        QCOMPARE(service.onlineDocuments().size(), std::size_t{1});
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 1500);
+        QVERIFY(service.searchOnline("Another song", "Another artist"));
+        QVERIFY(service.onlineDocuments().empty());
+        network.replies.back()->finish(404, "{}");
+        QVERIFY(service.onlineDocuments().empty());
+    }
+    void cancelLookupAndInstrumentalRevokeAllOnlineCandidates() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload("[00:01.00]First", "Other content"));
+        QCOMPARE(service.onlineDocuments().size(), std::size_t{2});
+        service.cancel();
+        QVERIFY(service.onlineDocuments().empty());
+        service.setLookupTrack("C:/published/other.mp3", "Other", "Artist", {}, 0);
+        QVERIFY(!service.canSearch());
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 1500);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload({}, {}, true));
+        QCOMPARE(service.status(), Service::Status::Instrumental);
+        QVERIFY(service.onlineDocuments().empty());
+    }
+    void metadataOnlyLookupRetainsRetryAfterAcrossTargetChanges() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(429, "{}", "1");
+        service.setLookupTrack("C:/published/other.mp3", "Other", "Artist", {}, 0);
+        QVERIFY(!service.canSearch());
+        QVERIFY(!service.searchOnline());
+        QCOMPARE(network.requests.size(), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 2000);
+        QVERIFY(service.searchOnline());
+        QCOMPARE(network.requests.size(), 2);
+        const QUrlQuery query(network.requests.back().url());
+        QCOMPARE(query.queryItemValue("track_name"), QStringLiteral("Other"));
+        QCOMPARE(query.queryItemValue("artist_name"), QStringLiteral("Artist"));
+    }
+    void malformedSecondaryContentDoesNotPublishAPartialCandidateBatch() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        QVERIFY(service.searchOnline());
+        network.replies.back()->finish(200, payload("[00:01.00]Valid timed text", QStringLiteral("bad\x01line")));
+        QCOMPARE(service.status(), Service::Status::Error);
+        QVERIFY(service.onlineDocuments().empty());
+    }
     void currentTrackNeverStartsANetworkRequestAndReadsSiblingLrc() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
