@@ -2176,14 +2176,23 @@
         { "path": "tests/qt/QtLyricsServiceTests.cpp", "marker": "switchingTracksRevokesOldRepliesAndLocalResults" },
         { "path": "tests/qt/QtLyricsServiceTests.cpp", "marker": "retryAfterSurvivesTrackChangesAndBlocksQueriesUntilItsDeadline" },
         { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "cancelledPlayerExitCanReloadLocalLyricsWithoutARequest" },
+        { "path": "tests/core/LyricsVariantsTests.cpp", "marker": "lyrics variants preserve original and romanized forms independently" },
+        { "path": "tests/qt/QtJsonLyricsVariantsStoreTests.cpp", "marker": "firstWriteAndRestartRetainEveryFormExactIdAndTimesWithoutTouchingAudio" },
+        { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "importsOriginalAndRomanizedOnlyAfterSavedAndKeepsTheirOwnTiming" },
+        { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "aFailedSaveForThePreviousTrackCannotBeLostOrPublishedOnTheCurrentOne" },
+        { "path": "tests/qt/LyricsBindingTests.cpp", "marker": "aFailedCandidateCanBeAbandonedAfterClearingTheTrackWithoutWritingOrRollingBack" },
+        { "path": "tests/ui/quick/tst_lyrics_variants.qml", "marker": "test_addingLaterKeepsLanguageScriptSourceAndPlainTextSeparate" },
+        { "path": "tests/ui/quick/tst_lyrics_variants.qml", "marker": "test_clearingTheQueueKeepsPendingRecoveryAccessibleWithoutClaimingADiskReload" },
         { "path": "tests/ui/quick/tst_lyrics.qml", "marker": "test_originalVerseIsPlainTextImmediatelyAboveTheProgressBar" }
       ],
       "evidence": [
         { "path": "docs/architecture/decisions/0013-lyrics-and-online-lookup.md", "marker": "## Decisão" },
+        { "path": "docs/architecture/decisions/0016-lyrics-variants.md", "marker": "## Decisão" },
+        { "path": "docs/lyrics-variants.md", "marker": "## Evidência de implementação" },
         { "path": "docs/user-guide.md", "marker": "## Letras das músicas" }
       ],
       "remaining": [
-        "Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado. Testes de parser/serviço/binding/UI usam fixtures/fakes; o smoke online separado cobre uma faixa pública de exemplo, sem cobertura universal ou aprovação de distribuição."
+        "Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado, incluindo as variantes persistentes original/romanizada e inclusão posterior. Testes de parser/serviço/binding/UI usam fixtures/fakes; restart de variantes usa dois processos com arquivos próprios. O smoke online anterior cobre uma faixa pública de exemplo, sem cobertura universal ou aprovação de distribuição. Letras.mus.br/MP3, LLM, tradução e alinhamento simultâneo continuam separados."
       ]
     },
     {

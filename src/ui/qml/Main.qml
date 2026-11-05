@@ -471,7 +471,7 @@ ApplicationWindow {
         LyricsPanel {
             id: lyricsPanel
             Layout.fillWidth: true
-            visible: window.lyrics !== null && window.presenter.hasCurrentTrack
+            visible: window.lyrics !== null && (window.presenter.hasCurrentTrack || (typeof window.lyrics.variantsHasPendingChange !== "undefined" && window.lyrics.variantsHasPendingChange))
             contract: window.uiContract
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId

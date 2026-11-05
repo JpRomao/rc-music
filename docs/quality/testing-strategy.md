@@ -1,5 +1,7 @@
 # Estratégia de testes e TDD
 
+A extensão de [versões de letras](../lyrics-variants.md#evidência-de-implementação), FR-054/ADR-0016, usa texto sintético e portas falsas para original/romanizada, serializer sem perda de tempos, limites, Saved, retry, busca explícita e troca de faixa/saída. O store real usa diretórios próprios, restart em dois processos e hashes de primário/backup/áudio sentinela. Quick mantém confirmações por identidade e recuperação mesmo sem faixa atual. O fechamento proporcional passou 295/295 CTest e 336 casos Quick; o core sem Qt passou 283/283. Reds/Greens e contagens delimitadas estão no guia, sem aceitação nativa, pacote ou cobertura de provedores por esses fakes.
+
 **Estado:** contrato de qualidade inicial  
 **Última revisão:** 2026-11-04
 **Escopo:** domínio, aplicação, adapters, UI, plataforma e distribuição

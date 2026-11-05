@@ -10,7 +10,8 @@ Item {
     property var lyrics: null
     property string trackIdentity: ""
     property string queryTrackIdentity: ""
-    readonly property bool queryOpen: queryDialog.visible
+    readonly property bool variantsAvailable: lyrics !== null && typeof lyrics.variants !== "undefined"
+    readonly property bool queryOpen: queryDialog.visible || variantsPanel.visible || variantsPanel.childDialogOpen
     readonly property bool synchronizedLyrics: lyrics !== null && lyrics.hasSyncedLyrics
     readonly property bool plainLyrics: lyrics !== null && !lyrics.hasSyncedLyrics && lyrics.plainText.length > 0
     readonly property bool searchAvailable: enabled && lyrics !== null && !lyrics.busy && lyrics.canSearch
@@ -21,14 +22,26 @@ Item {
     onTrackIdentityChanged: {
         if (queryDialog)
             queryDialog.close();
+        if (variantsPanel)
+            variantsPanel.close();
+    }
+    onLyricsChanged: {
+        if (queryDialog)
+            queryDialog.close();
+        if (variantsPanel)
+            variantsPanel.close();
     }
     onVisibleChanged: {
         if (!visible && queryDialog)
             queryDialog.close();
+        if (!visible && variantsPanel)
+            variantsPanel.close();
     }
     onEnabledChanged: {
         if (!enabled && queryDialog)
             queryDialog.close();
+        if (!enabled && variantsPanel)
+            variantsPanel.close();
     }
 
     ColumnLayout {
@@ -50,6 +63,22 @@ Item {
                 Accessible.name: text
             }
             AccessibleTransportButton {
+                id: versionsButton
+                objectName: "lyrics-versions"
+                contract: root.contract
+                text: qsTr("Versões")
+                accessibleName: qsTr("Versões da letra")
+                Layout.preferredHeight: root.contract.controlTargetMinimum
+                visible: root.variantsAvailable
+                enabled: visible && root.enabled
+                onClicked: {
+                    if (!enabled || !root.visible)
+                        return;
+                    queryDialog.close();
+                    variantsPanel.open();
+                }
+            }
+            AccessibleTransportButton {
                 id: searchButton
                 objectName: "lyrics-search"
                 contract: root.contract
@@ -60,6 +89,7 @@ Item {
                 onClicked: {
                     if (!searchButton.enabled)
                         return;
+                    variantsPanel.close();
                     root.queryTrackIdentity = root.trackIdentity;
                     titleField.text = root.lyrics ? root.lyrics.title : "";
                     artistField.text = root.lyrics ? root.lyrics.artist : "";
@@ -123,6 +153,18 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: !root.synchronizedLyrics && !root.plainLyrics
+        }
+    }
+
+    LyricsVariantsPanel {
+        id: variantsPanel
+        contract: root.contract
+        lyrics: root.variantsAvailable ? root.lyrics : null
+        trackIdentity: root.trackIdentity
+        enabled: root.enabled
+        onClosed: {
+            if (root.visible && root.enabled && versionsButton.visible)
+                versionsButton.forceActiveFocus(Qt.TabFocusReason);
         }
     }
 

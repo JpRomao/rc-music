@@ -28,6 +28,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0013](0013-lyrics-and-online-lookup.md) | Aceito | Letras locais e sincronizadas acima do progresso, busca LRCLIB explícita por metadados e refinamento do indicador de volume |
 | [0014](0014-lidarr-integration.md) | Aceito | Integração opcional com Lidarr priorizada pelo mantenedor; conexão, pesquisa e pedidos explícitos separados da reprodução local |
 | [0015](0015-named-playlists.md) | Aceito | Playlists locais nomeadas, catálogo independente da fila, persistência JSON limitada e edição publicada somente após Saved |
+| [0016](0016-lyrics-variants.md) | Aceito | Várias versões locais da letra por música, inclusão posterior e persistência explícita; provedores, MP3 e LLM separados |
 
 ## Processo
 

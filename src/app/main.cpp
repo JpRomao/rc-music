@@ -2,6 +2,7 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
 #include "adapters/QtLidarrService.hpp"
 #include "adapters/QtLyricsService.hpp"
@@ -453,7 +454,12 @@ int main(int argc, char* argv[]) {
                                                    std::move(availability_reader));
         music_player::m0::QtSystemAppearance system_appearance;
         music_player::m0::QtLyricsService lyrics_service;
-        music_player::m0::LyricsBinding lyrics_binding(lyrics_service);
+        QString lyrics_config_root = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+#if defined(Q_OS_WIN) || defined(M0_QT_COMBINED_AUDIO)
+        lyrics_config_root = config_root;
+#endif
+        music_player::m0::LyricsBinding lyrics_binding(
+            lyrics_service, std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root));
         music_player::m0::QtLidarrService lidarr_service;
         music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;

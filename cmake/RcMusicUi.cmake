@@ -1,11 +1,14 @@
 include_guard(GLOBAL)
 
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Network Concurrent)
+include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicMediaData.cmake")
 add_library(rc_music_lyrics STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.cpp")
 target_include_directories(rc_music_lyrics PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
-target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Network PRIVATE Qt6::Concurrent)
+target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Network PRIVATE rc_music_media_data Qt6::Concurrent)
 set_target_properties(rc_music_lyrics PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lyrics)
 
@@ -17,7 +20,6 @@ target_link_libraries(rc_music_lidarr PUBLIC Qt6::Core Qt6::Network)
 set_target_properties(rc_music_lidarr PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lidarr)
 
-include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicMediaData.cmake")
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
@@ -47,6 +49,7 @@ function(rc_music_add_ui target support qml_output)
             TransportText.qml
             TransportSlider.qml
             LyricsPanel.qml
+            LyricsVariantsPanel.qml
             LidarrPanel.qml
             PlaylistsPanel.qml
             QueuePanel.qml
