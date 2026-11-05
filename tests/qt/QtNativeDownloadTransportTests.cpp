@@ -914,7 +914,9 @@ class QtNativeDownloadTransportTests final : public QObject {
         QTRY_COMPARE(socket.state(), QLocalSocket::UnconnectedState);
         QCOMPARE(owner.begins, 0);
         server.beginShutdown();
-        QVERIFY(server.stopped());
+        // Disconnecting the socket does not acknowledge the native peer-check
+        // worker's retirement. Keep observing its physical shutdown.
+        QTRY_VERIFY(server.stopped());
     }
     void ownerExceptionsNeverEmitAcknowledgementOrSensitiveError() {
         for (int variant = 0; variant < 2; ++variant) {
