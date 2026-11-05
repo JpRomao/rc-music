@@ -23,7 +23,7 @@ Incremento posterior: o [leitor de Registro e a factory das quatro raízes](medi
 
 Preparação em `c840fe1`: o [probe separado do inventário](media-profile-lifecycle.md#probe-separado-do-inventário-de-storage) compôs esse leitor com o owner vivo e recibos privados em executável próprio. Naquele fechamento, somente modos inertes e testes com perfil falso tinham sido executados. O fechamento proporcional passou **14/14 CTest, 538 Qt + 33 casos puros**, sem falhas/skips, formato **473 C++/62 QML**, build Lite e fronteira de **255 comandos**. A execução posterior recebeu autorização própria e está no checkpoint atual; não promove política/MIC ou produção.
 
-**Prioridade atual do mantenedor (2026-11-04):** integrar Lidarr para pesquisar artistas/álbuns e solicitar downloads mediante confirmação, em uma instância já existente (`http://localhost:8686/`). [FR-055/ADR-0014](architecture/decisions/0014-lidarr-integration.md) acrescentam R1.11. Este incremento vem antes da continuação AppContainer, cujo trabalho em andamento e evidências ficam preservados. O escopo não instala o servidor nem retoma autorizações físicas anteriores.
+**Próxima prioridade do mantenedor (2026-11-04):** permitir playlists locais nomeadas e persistentes no app, conforme FR-056/M6.6. O pedido antecipa esse incremento antes de continuar Lidarr, outras fontes de download ou AppContainer. A integração Lidarr já implementada, seus gates pendentes e o trabalho em andamento permanecem preservados. Essa mudança de ordem não retoma autorizações físicas anteriores.
 
 ## 1. Regras de uso
 
@@ -589,6 +589,8 @@ O [registro central de localização](../experiments/m0/candidates/qt/README.md#
 
 M6 não é um pacote único. Cada item exige necessidade após uso real, requisito refinado, UX, TDD, checks proporcionais e commit/ADR quando alterar arquitetura.
 
+O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prioridade, sem aguardar o fechamento da release 0.1. O escopo aceito está em FR-056: primeiro playlists nomeadas do app, persistência e ingresso explícito na fila; M3U8 permanece evolução posterior. Os demais itens não são antecipados por esse pedido.
+
 | ID | Candidato | Requisito | Checks mínimos |
 |---|---|---|---|
 | M6.1 | Escolha de dispositivo e recuperação de troca | FR-018 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE`; capabilities e device lost |
@@ -596,7 +598,7 @@ M6 não é um pacote único. Cada item exige necessidade após uso real, requisi
 | M6.3 | Repeat | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; modos off/faixa/fila e fim |
 | M6.4 | Velocidade de reprodução | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE`; precisão, áudio/CPU e reset |
 | M6.5 | Editor de tema limitado a tokens | FR-041 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE`; contraste e recovery |
-| M6.6 | Playlists M3U8 | novo requisito | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE`; round-trip, Unicode e erro parcial |
+| M6.6 | Playlists locais nomeadas — próxima prioridade; criar/renomear/excluir, salvar fila, organizar e persistir; M3U8 em evolução posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
 
@@ -620,7 +622,7 @@ FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entr
 | R1.8 | Serviço comum de download/conversão MP3 e importação de arquivo finalizado, isolado do playback — [coordenação/importação/checkpoint iniciados](download-jobs.md), integração no player pendente | FR-051–053 | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | progresso/cancelamento/limites e falhas sem afetar o player |
 | R1.9 | Composições Lite/Completa: decidir engine e adicionar navegação interna isolada somente à Completa | FR-051–053, NFR-MAINT-002 | `CHK-DOC`, `CHK-TDD`, `CHK-SEC`, `CHK-UI`, `CHK-CLOSE` | mesma base e integração externa, engine ausente na Lite |
 | R1.10 | Opcionais no instalador, identidades/ponte, upgrade entre edições e separação de YouTube | FR-050–053 | `CHK-TDD`, `CHK-PACKAGE`, `CHK-SEC`, `CHK-CLOSE` | seleção independente e remoção por proprietário, sem instalação compulsória |
-| R1.11 | Integração opcional Lidarr — prioridade atual: conexão explícita, pesquisa, seleção de álbum e confirmação de busca/download | FR-055, NFR-PRIV-004 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | cliente assíncrono em Lite/Completa; chave em memória; pedido aceito separado de download concluído; fila local preservada |
+| R1.11 | Integração opcional Lidarr — incremento implementado, com aceitação autenticada/instalada pendente: conexão, pesquisa e confirmação de busca/download | FR-055, NFR-PRIV-004 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | cliente assíncrono em Lite/Completa; chave em memória; pedido aceito separado de download concluído; fila local preservada |
 
 Sequência prioritária: threat model R1.2 e avaliação específica de downloader/conversor/ponte por FR-052, implementar R1.7/R1.8 com fakes e fixtures locais, validar R1.9 e depois as composições/opcionais R1.10. A principal não depende da comparação de engines de streaming R1.4 nem da retomada de `CHK-PERF`. R1.3/FR-050 trata YouTube separadamente, sem virar pré-requisito da principal. A navegação interna usa os mesmos serviços de seleção/download; não presumir execução literal da extensão do Brave dentro da engine embarcada. Critérios e limites de instalação/privacidade estão no ADR-0006. Nenhuma dessas novas etapas está concluída; benchmarks permanecem adiados.
 
@@ -651,7 +653,7 @@ Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos
 | Backlog | FR-025 | exclusão intencional documentada |
 | R1 | FR-050–053, FR-055, NFR-PRIV-004 | threat model, política, harness, integração Lidarr e ADR |
 
-### 15.1 Destino individual dos 85 requisitos
+### 15.1 Destino individual dos 86 requisitos
 
 Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica onde o requisito é primeiro provado ou deliberadamente descartado; não significa que o teste já exista. O [manifesto de M1.2](quality/traceability.json) mantém uma linha por ID, links para testes/evidências, lacunas e estado (`planejado`, `em andamento`, `comprovado`, `excepcionado` ou `fora de escopo`). O [validador integrado ao runner](quality/traceability.md) confere inventário, destinos e referências literais, com consulta inversa por teste/evidência; não executa os testes citados nem comprova automaticamente seus critérios. `Excepcionado` vale somente para gates/desvios que o contrato permita; P0 funcional falho precisa ser corrigido ou alterado/repriorizado antes do RC.
 
@@ -700,6 +702,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-053` | R1.2, R1.4–R1.10 | harness remoto, timeout/cancelamento, arquivos finais seguros e zero concatenação shell |
 | `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
 | `FR-055` | R1.11 | conexão Lidarr explícita, catálogo, seleção e confirmação do álbum, limites e erros sem alterar fila local |
+| `FR-056` | M6.6 | playlists nomeadas persistentes, CRUD/ordem/duplicatas, ingresso explícito na fila e proteção contra perda de dados |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
@@ -763,7 +766,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Prioridade atual — integração Lidarr
+### Próxima prioridade — playlists
+
+**Estado: planejado.** FR-056/M6.6 passa a ser o próximo desenvolvimento funcional Windows. Criar playlists com nome, salvar a fila atual, renomear/excluir listas e adicionar/remover/reordenar faixas; preservar ordem, Unicode e duplicatas. As listas são persistentes e independentes da sessão/fila em reprodução. Abrir/editar a lista não toca áudio; adicionar/carregar suas faixas exige ação explícita. Excluir a lista mantém os arquivos de áudio.
+
+Sequência: definir contratos puros e testes Red de identidade/ordem/duplicatas; implementar operações de playlist; acrescentar armazenamento local com confirmação de escrita e recuperação; compor painel e ações de fila; verificar restart, erros de gravação, teclado/foco, Lite/Completa e documentação. Dados pessoais e fila atual devem ser preservados durante os checks. Formato de armazenamento será definido nesse trabalho; M3U8 fica para uma evolução posterior. Não há implementação ou teste funcional de playlists alegado por esta priorização documental.
+
+Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
+
+### Checkpoint anterior — integração Lidarr
 
 O incremento implementado passou **263/263 CTest**, incluindo **33 casos Qt do serviço, 8 do binding e 12 Quick dedicados**; a suíte Quick completa ficou **303/303**. Builds Lite ON/OFF e Completa OFF, lint sem warnings, formato dos 7 C++ alterados/67 QML e fronteiras dos grafos passaram. O [guia](lidarr-integration.md#evidência-de-implementação) registra Reds, limites e recibos. A instância indicada respondeu 401 ao GET sem chave; pesquisa autenticada e solicitação real aguardam chave informada no app, sem POST automático. Nenhum gate global foi promovido e os instaladores existentes não foram regenerados.
 

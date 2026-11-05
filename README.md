@@ -1,5 +1,7 @@
 # RC Music
 
+A próxima prioridade é permitir [playlists locais nomeadas](docs/product/requirements.md), conforme FR-056/M6.6: criar, renomear, excluir, salvar a fila atual, organizar faixas e recuperar as listas ao reiniciar. A implementação está planejada; o [plano](docs/development-plan.md) antecipa esse incremento antes de continuar as integrações remotas, preservando o trabalho e as evidências existentes.
+
 A [integração opcional com Lidarr](docs/lidarr-integration.md), priorizada pelo mantenedor, permite conectar, pesquisar artistas/álbuns e solicitar downloads após confirmação, em Lite e Completa. Usa a instância informada no app, inicialmente `http://localhost:8686/`, com chave somente em memória. Os checks passaram **263/263 CTest**, incluindo API/binding/UI e regressões locais; builds Release Lite/Completa também passaram. O servidor indicado respondeu **401 sem chave**; pesquisa autenticada e download real aguardam a chave no app. Instaladores existentes e os arquivos pendentes de AppContainer permanecem preservados.
 
 O player agora tem [letras acima da barra de progresso](docs/user-guide.md#letras-das-músicas): lê `.lrc` locais e oferece consulta explícita ao LRCLIB, com título/artista corrigíveis, sincronização por posição confirmada e texto simples quando não há tempos. A porcentagem do volume aparece ao passar o mouse ou arrastar o slider. O [ADR-0013](docs/architecture/decisions/0013-lyrics-and-online-lookup.md) registra limites e privacidade; esse pedido de UX mantém pausado o trabalho anterior de AppContainer.

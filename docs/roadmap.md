@@ -14,7 +14,7 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Última revisão:** 2026-11-04
 
-**Prioridade confirmada em 2026-11-04:** [integração Lidarr](lidarr-integration.md), FR-055/R1.11, para pesquisa e solicitação explícita de álbuns numa instância existente. Avança antes da investigação AppContainer, cujo trabalho e evidências ficam preservados. Aceitação de pedidos não equivale a download concluído nem inclui instalação do servidor.
+**Próxima prioridade confirmada em 2026-11-04:** playlists locais nomeadas e persistentes, FR-056/M6.6, antecipadas pelo mantenedor. A entrega começa por criar/renomear/excluir listas, salvar a fila atual, organizar faixas e carregá-las explicitamente na fila. A [integração Lidarr](lidarr-integration.md), seus gates pendentes e o trabalho AppContainer ficam preservados para continuidade posterior.
 
 ## 1. Como ler
 
@@ -402,11 +402,12 @@ Todos os critérios vigentes nos [requisitos](product/requirements.md), seção 
 
 ## 10. M6 — Organização 0.2
 
-**Estado:** embaralhamento das próximas faixas e repetição da fila antecipados por pedido explícito de 2026-09-06, junto dos atalhos locais. Demais itens continuam opcionais após uso real do 0.1.
+**Estado:** embaralhamento das próximas faixas e repetição da fila antecipados por pedido explícito de 2026-09-06, junto dos atalhos locais. Playlists nomeadas foram antecipadas em 2026-11-04 como próxima prioridade, sem aguardar a release 0.1. Demais itens continuam opcionais após uso real do 0.1.
 
 Candidatos independentes:
 
-- playlists nomeadas e M3U8;
+- playlists locais nomeadas e persistentes — próxima prioridade, FR-056/M6.6;
+- importação/exportação M3U8 como evolução posterior das playlists;
 - modo aleatório ligado/desligado por F1, preservando a atual;
 - repetir fila por F2, movendo a ocorrência concluída ao fim;
 - velocidade de reprodução;

@@ -99,7 +99,7 @@ try {
     $functionalCount = @($requirementIds | Where-Object { $_ -like 'FR-*' }).Count
     $uxCount = @($requirementIds | Where-Object { $_ -like 'UX-*' }).Count
     $nonFunctionalCount = @($requirementIds | Where-Object { $_ -like 'NFR-*' }).Count
-    if ($requirementIds.Count -ne 85 -or $functionalCount -ne 43 -or $uxCount -ne 10 -or $nonFunctionalCount -ne 32) {
+    if ($requirementIds.Count -ne 86 -or $functionalCount -ne 44 -or $uxCount -ne 10 -or $nonFunctionalCount -ne 32) {
         Add-ValidationError "Contagem de requisitos divergente: total=$($requirementIds.Count), FR=$functionalCount, UX=$uxCount, NFR=$nonFunctionalCount"
     }
 
@@ -155,7 +155,7 @@ try {
     }
 
     $planLines = Get-Content -LiteralPath 'docs/development-plan.md'
-    $matrixStart = [Array]::IndexOf($planLines, '### 15.1 Destino individual dos 85 requisitos')
+    $matrixStart = [Array]::IndexOf($planLines, '### 15.1 Destino individual dos 86 requisitos')
     $matrixEnd = [Array]::IndexOf($planLines, '## 16. Lacunas que o plano fecha explicitamente')
     $matrixDestinations = @{}
     if ($matrixStart -lt 0 -or $matrixEnd -le $matrixStart) {
