@@ -114,13 +114,15 @@ struct WindowsYoutubeBrokerProcess::Impl final {
     YoutubeResolverProcessUpdate update{.state = YoutubeResolverProcessState::Failed,
                                         .error = DownloadFailure::Unavailable};
     std::optional<DownloadFailure> first_failure{};
-    bool attempted{}, preparing{}, acknowledged{true}, stopping{}, user_cancelled{}, node_input_closed{};
+    bool attempted{}, preparing{}, acknowledged{true}, stopping{}, user_cancelled{}, node_input_closed{},
+        extractor_launch_pending{};
 
     explicit Impl(Prepare source) : prepare(std::move(source)) {}
     void releaseRuntime() {
         // Raw process objects must already have acknowledged native exit and
         // every owned pipe before the authenticated tree may be released.
         retained.reset();
+        extractor_launch_pending = false;
         video_id.clear();
         core.clear();
         library.clear();
@@ -451,6 +453,13 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         if (stopping)
             requestStop();
         try {
+            if (!stopping && extractor_launch_pending) {
+                extractor_launch_pending = false;
+                static_cast<void>(launch(extractor, WindowsYoutubeRuntimeRole::Extractor, last_now));
+                if (!extractor.process)
+                    finishIfAcknowledged();
+                return update;
+            }
             const bool had_node = static_cast<bool>(node.process);
             if (extractor.process)
                 sampleExtractor(last_now);
@@ -550,10 +559,10 @@ bool WindowsYoutubeBrokerProcess::start(const QString& video_id, const qint64 no
             value.noNativeFailure(error);
             return false;
         }
-        const bool accepted = value.launch(value.extractor, WindowsYoutubeRuntimeRole::Extractor, now_ms);
-        if (!value.extractor.process)
-            value.finishIfAcknowledged();
-        return accepted;
+        // Return to the worker's cancellation boundary after potentially slow
+        // preparation. The first valid, uncancelled poll owns native launch.
+        value.extractor_launch_pending = true;
+        return true;
     } catch (...) {
         value.preparing = false;
         if (value.extractor.process || value.node.process)

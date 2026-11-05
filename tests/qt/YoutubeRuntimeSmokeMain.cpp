@@ -2,6 +2,9 @@
 
 #include "adapters/WindowsYoutubeBrokerProcess.hpp"
 #include "adapters/YoutubeResolverSession.hpp"
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+#include "adapters/WindowsYoutubeExecution.hpp"
+#endif
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -24,7 +27,9 @@
 #include <Windows.h>
 
 #include <array>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <utility>
 
@@ -49,9 +54,18 @@ struct Report final {
     QByteArray manifest_sha256{};
     qsizetype file_count{};
     QJsonObject validated_audit{};
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+    int preparations{}, handoffs{}, direct_starts{};
+    bool prepare_on_worker{}, consumer_on_worker{}, worker_stopped{}, lease_released_at_handoff{};
+    QString consumer_terminal{}, consumer_error{};
+#endif
     QJsonObject json() const {
         return {{"schemaVersion", 1},
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+                {"purpose", QStringLiteral("youtube-worker-offline-smoke-v1")},
+#else
                 {"purpose", QStringLiteral("youtube-offline-smoke-v1")},
+#endif
                 {"success", success},
                 {"state", state},
                 {"stage", stage},
@@ -61,7 +75,20 @@ struct Report final {
                 {"validated_audit", validated_audit},
                 {"process_acknowledged", process_acknowledged},
                 {"runtime_lease_released", runtime_lease_released},
-                {"temporary_preserved", temporary_preserved}};
+                {"temporary_preserved", temporary_preserved}
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+                ,
+                {"preparations", preparations},
+                {"handoffs", handoffs},
+                {"direct_starts", direct_starts},
+                {"prepare_on_worker", prepare_on_worker},
+                {"consumer_on_worker", consumer_on_worker},
+                {"worker_stopped", worker_stopped},
+                {"lease_released_at_handoff", lease_released_at_handoff},
+                {"consumer_terminal", consumer_terminal},
+                {"consumer_error", consumer_error}
+#endif
+        };
     }
 };
 std::optional<Options> options(const QStringList& arguments) {
@@ -239,7 +266,7 @@ std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot) {
             return {};
     return object;
 }
-void run(const Options& input, YoutubeRuntimeReceipt receipt, Report& report) {
+[[maybe_unused]] void run(const Options& input, YoutubeRuntimeReceipt receipt, Report& report) {
     report.file_count = static_cast<qsizetype>(receipt.config.artifacts.size());
     report.stage = QStringLiteral("metadata");
     report.error = QStringLiteral("size_mismatch");
@@ -377,6 +404,239 @@ void run(const Options& input, YoutubeRuntimeReceipt receipt, Report& report) {
     report.stage = QStringLiteral("complete");
     report.error = QStringLiteral("none");
 }
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+struct WorkerObservations final {
+    std::atomic_int preparations{}, handoffs{}, direct_starts{};
+    std::atomic_bool prepare_on_worker{true}, consumer_on_worker{true}, prepared_sizes{true},
+        lease_released_at_handoff{true};
+    std::mutex mutex;
+    std::weak_ptr<const WindowsYoutubeRuntime> lease{};
+    QJsonObject validated_audit{};
+    void observe(const std::shared_ptr<const WindowsYoutubeRuntime>& files) {
+        std::lock_guard lock(mutex);
+        lease = files;
+    }
+    bool expired() {
+        std::lock_guard lock(mutex);
+        return lease.expired();
+    }
+    void observeConsumerThread() {
+        const auto* application = QCoreApplication::instance();
+        consumer_on_worker = consumer_on_worker && application && QThread::currentThread() != application->thread();
+    }
+};
+class WorkerAuditConsumer final : public WindowsDownloadTask {
+    std::shared_ptr<WorkerObservations> observations_;
+    std::string id_{};
+    bool cancelled_{};
+
+  public:
+    explicit WorkerAuditConsumer(std::shared_ptr<WorkerObservations> observations)
+        : observations_(std::move(observations)) {
+        observations_->observeConsumerThread();
+    }
+    ~WorkerAuditConsumer() override { observations_->observeConsumerThread(); }
+    bool start(const std::string& id, const DownloadItem&, qint64) override {
+        id_ = id;
+        ++observations_->direct_starts;
+        observations_->observeConsumerThread();
+        return true;
+    }
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64,
+                              const qint64 epoch) override {
+        observations_->observeConsumerThread();
+        if (!capability || capability->expiresAtSeconds() <= epoch)
+            return false;
+        id_ = capability->jobId();
+        // The real session minted this capability only after the broker's
+        // terminal native/pipe ACK. Reuse the same audit as the direct smoke.
+        const auto validated = audit({YoutubeResolverState::Ready, DownloadFailure::None, capability});
+        observations_->lease_released_at_handoff = observations_->lease_released_at_handoff && observations_->expired();
+        {
+            std::lock_guard lock(observations_->mutex);
+            observations_->validated_audit = validated.value_or(QJsonObject{});
+        }
+        ++observations_->handoffs;
+        return validated.has_value();
+    }
+    void cancel() override {
+        observations_->observeConsumerThread();
+        cancelled_ = true;
+    }
+    DownloadExecutionUpdate poll(qint64) override {
+        observations_->observeConsumerThread();
+        // Deliberate acknowledged terminal: never touch transfer, converters,
+        // publication, importer or playback, and never manufacture an MP3.
+        return {.job_id = id_,
+                .state = cancelled_ ? DownloadExecutionState::Cancelled : DownloadExecutionState::Failed,
+                .error = cancelled_ ? DownloadFailure::None : DownloadFailure::UnsupportedMedia};
+    }
+};
+bool workerTerminal(const DownloadExecutionState state) {
+    return state == DownloadExecutionState::Published || state == DownloadExecutionState::Failed ||
+           state == DownloadExecutionState::Cancelled;
+}
+QString workerStateName(const DownloadExecutionState state) {
+    switch (state) {
+    case DownloadExecutionState::Running:
+        return QStringLiteral("running");
+    case DownloadExecutionState::Published:
+        return QStringLiteral("published");
+    case DownloadExecutionState::Failed:
+        return QStringLiteral("failed");
+    case DownloadExecutionState::Cancelled:
+        return QStringLiteral("cancelled");
+    }
+    return QStringLiteral("failed");
+}
+void runWorker(const Options& input, YoutubeRuntimeReceipt receipt, Report& report) {
+    report.file_count = static_cast<qsizetype>(receipt.config.artifacts.size());
+    report.stage = QStringLiteral("metadata");
+    report.error = QStringLiteral("size_mismatch");
+    if (!observedSizes(receipt))
+        return;
+    const auto explicit_environment = environment();
+    if (!explicit_environment) {
+        report.stage = QStringLiteral("environment");
+        report.error = QStringLiteral("unavailable");
+        return;
+    }
+    QTemporaryDir temporary(QDir::tempPath() + QStringLiteral("/RCMusic-real-youtube-worker-offline-XXXXXX"));
+    if (!temporary.isValid()) {
+        report.stage = QStringLiteral("temporary");
+        report.error = QStringLiteral("unavailable");
+        return;
+    }
+    temporary.setAutoRemove(false);
+    receipt.config.runtime_parent = temporary.path();
+    const auto observations = std::make_shared<WorkerObservations>();
+    std::unique_ptr<WindowsDownloadExecution> execution;
+    DownloadExecutionUpdate final;
+    bool admitted{}, observed_terminal{}, stopped{};
+    QElapsedTimer elapsed;
+    elapsed.start();
+    report.stage = QStringLiteral("worker");
+    report.error = QStringLiteral("unavailable");
+    try {
+        auto source = makeWindowsYoutubeBrokerResolverFactory(
+            receipt.config, *explicit_environment,
+            [observations, expected = receipt](const WindowsYoutubeRuntimeConfig& config) {
+                ++observations->preparations;
+                const auto* application = QCoreApplication::instance();
+                observations->prepare_on_worker =
+                    observations->prepare_on_worker && application && QThread::currentThread() != application->thread();
+                auto files = WindowsYoutubeRuntime::prepare(config);
+                observations->observe(files);
+                if (files && (!observedSizes(expected, files->directory()) || !files->unchanged())) {
+                    observations->prepared_sizes = false;
+                    return std::shared_ptr<const WindowsYoutubeRuntime>{};
+                }
+                return files;
+            });
+        execution = makeWindowsMediaAndYoutubeExecution(
+            std::move(source), [observations] { return std::make_unique<WorkerAuditConsumer>(observations); },
+            [] { return fixed_utc_seconds; });
+        if (execution) {
+            DownloadItem item{"https://www.youtube.com/watch?v=testVideo01", "RC Music synthetic fixture",
+                              DownloadMediaKind::Audio};
+            item.youtube = YoutubeAudioItem{"testVideo01", item.title, "RC Music synthetic fixture", "", false};
+            admitted = execution->start(job_id, item);
+            if (!admitted)
+                execution->shutdown();
+            do {
+                QCoreApplication::processEvents();
+                if (elapsed.elapsed() >= native_run_limit_ms) {
+                    execution->cancel(job_id);
+                    execution->shutdown();
+                }
+                final = execution->poll(job_id);
+                if (workerTerminal(final.state)) {
+                    observed_terminal = true;
+                    execution->shutdown();
+                }
+                stopped = execution->stopped();
+                if (stopped)
+                    break;
+                QThread::msleep(1);
+            } while (elapsed.elapsed() < native_owner_limit_ms);
+        }
+    } catch (...) {
+        report.error = QStringLiteral("exception");
+    }
+    if (execution && !stopped) {
+        report.stage = QStringLiteral("drain");
+        report.error = QStringLiteral("uncertain_stop");
+        try {
+            execution->cancel(job_id);
+            execution->shutdown();
+            while (elapsed.elapsed() < native_owner_limit_ms) {
+                QCoreApplication::processEvents();
+                final = execution->poll(job_id);
+                observed_terminal = observed_terminal || workerTerminal(final.state);
+                stopped = execution->stopped();
+                if (stopped)
+                    break;
+                QThread::msleep(1);
+            }
+        } catch (...) {
+        }
+    }
+    if (execution && !stopped) {
+        // Its destructor joins. Preserve the owner, captured callback data and
+        // TEMP after an uncertain stop instead of blocking or claiming ACK.
+        static_cast<void>(execution.release());
+    } else {
+        execution.reset();
+    }
+    report.preparations = observations->preparations.load();
+    report.handoffs = observations->handoffs.load();
+    report.direct_starts = observations->direct_starts.load();
+    report.prepare_on_worker = observations->prepare_on_worker.load();
+    report.consumer_on_worker = observations->consumer_on_worker.load();
+    report.lease_released_at_handoff = observations->lease_released_at_handoff.load();
+    report.worker_stopped = stopped;
+    report.process_acknowledged = observed_terminal && stopped;
+    report.runtime_lease_released = observations->expired();
+    {
+        std::lock_guard lock(observations->mutex);
+        report.validated_audit = observations->validated_audit;
+    }
+    report.state = workerStateName(final.state);
+    report.consumer_terminal = report.state;
+    report.consumer_error = final.error == DownloadFailure::UnsupportedMedia ? QStringLiteral("unsupported_media")
+                                                                             : failureName(final.error);
+    const bool empty = QDir(temporary.path()).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty();
+    const bool clean = stopped && report.runtime_lease_released && empty;
+    temporary.setAutoRemove(clean);
+    report.temporary_preserved = !clean;
+    if (!stopped) {
+        report.stage = QStringLiteral("drain");
+        report.error = QStringLiteral("uncertain_stop");
+        return;
+    }
+    if (!clean) {
+        report.stage = QStringLiteral("release");
+        report.error = QStringLiteral("runtime_preserved");
+        return;
+    }
+    report.stage = QStringLiteral("handoff");
+    report.error = QStringLiteral("unexpected_handoff");
+    if (!admitted || !observed_terminal || final.job_id != job_id || final.state != DownloadExecutionState::Failed ||
+        final.error != DownloadFailure::UnsupportedMedia || !final.published_mp3.empty() || report.preparations != 1 ||
+        report.handoffs != 1 || report.direct_starts != 0 || !report.prepare_on_worker || !report.consumer_on_worker ||
+        !report.lease_released_at_handoff || !observations->prepared_sizes || report.validated_audit.isEmpty())
+        return;
+    report.stage = QStringLiteral("source_verify");
+    report.error = QStringLiteral("source_changed");
+    const auto manifest = readManifest(input.manifest);
+    if (!manifest || QCryptographicHash::hash(*manifest, QCryptographicHash::Sha256).toHex() != input.manifest_sha256 ||
+        !originalArtifactsUnchanged(receipt))
+        return;
+    report.success = true;
+    report.stage = QStringLiteral("complete");
+    report.error = QStringLiteral("none");
+}
+#endif
 } // namespace
 
 // TEST ONLY: EXCLUDE_FROM_ALL, never a product mode or installed host.
@@ -410,7 +670,11 @@ int main(int argc, char** argv) {
     if (!receipt.open(QIODevice::WriteOnly | QIODevice::NewOnly))
         return 2;
     try {
+#ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+        runWorker(*input, *decoded.receipt, report);
+#else
         run(*input, *decoded.receipt, report);
+#endif
     } catch (...) {
         report.success = false;
         report.stage = QStringLiteral("driver");

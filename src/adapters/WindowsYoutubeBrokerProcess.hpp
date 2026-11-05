@@ -21,6 +21,8 @@ struct WindowsYoutubeBrokerPreparedRuntime final {
 // No executable, argv, source path or program is accepted from the browser.
 // All challenge frames stay internal; only an acknowledged final projection
 // reaches YoutubeResolverSession. This is not production sandbox qualification.
+// start prepares/validates only. First uncancelled poll launches the extractor,
+// so the executor observes cancel/shutdown received during preparation first.
 class WindowsYoutubeBrokerProcess final : public YoutubeResolverProcess {
   public:
     using Prepare = std::function<std::optional<WindowsYoutubeBrokerPreparedRuntime>()>;

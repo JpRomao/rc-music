@@ -22,6 +22,8 @@ Checks nativos do broker passaram **36/36 Qt**, após Red **2 passados/34 falhos
 
 ## Build local
 
+A composição C++ usa `makeWindowsYoutubeBrokerResolverFactory` com `WindowsYoutubeRuntimeConfig` revisado e ambiente explícito, seguida de `makeWindowsMediaAndYoutubeExecution`. A factory faz cópias próprias dos dados e permanece passiva. Cada job prepara seu runtime na worker; `broker.start()` retorna após preparar e validar, e o primeiro `poll()` válido lança o extractor. Assim o executor pode observar cancelamento/shutdown recebido durante a cópia antes do lançamento. O manifesto JSON do ensaio continua exclusivo de testes.
+
 O ambiente de build é um venv Windows x64 separado, com CPython 3.13.1 e os nove wheels fixados em `requirements-build.lock`. Node 24.20.0 é um input separado. Esses pins reproduzem o candidato de desenvolvimento verificado; não representam aprovação de segurança ou distribuição das versões.
 
 Instale os wheels previamente obtidos e conferidos no venv usando `pip install --no-index --find-links <diretório-de-wheels> --require-hashes --only-binary=:all: -r tools/youtube-resolver/requirements-build.lock`. O builder não instala nem baixa dependências.
@@ -45,5 +47,7 @@ O marcador vazio `extractor/_internal/yt_dlp_ejs-0.8.0.dist-info/REQUESTED` é a
 `offline` usa outro entrypoint, a fixture original do projeto, o diretor JSC e headers reais do yt-dlp, sem acesso a vídeo ou página pública. Não é uma flag aceita pelo executável de produção. `prod` exclui a fixture e o entrypoint de teste.
 
 O alvo explícito `rc_music_youtube_runtime_smoke` é `EXCLUDE_FROM_ALL` e existe somente com `BUILD_TESTING=ON`. Ele recebe `--manifest <absoluto> --manifest-sha256 <hash-revisado> --receipt <absoluto-novo>`, exige propósito offline e usa o preparador, broker e sessão C++ reais. O recibo registra validação dos cinco vetores, contadores instrumentados, ACK, lease e preservação em incerteza. Não executa transferência, conversão, importação ou GUI.
+
+O segundo alvo explícito `rc_music_youtube_worker_runtime_smoke` aceita os mesmos argumentos e usa a nova factory e o executor misto reais. Seu consumidor local valida a capability e encerra deliberadamente com `Failed/UnsupportedMedia`, sem acessar a mídia. `success=true` nesse recibo significa somente que o ensaio de handoff e parada passou; `consumer_terminal`/`consumer_error` conservam essa distinção. O alvo e a macro `RC_MUSIC_YOUTUBE_WORKER_SMOKE` existem somente no build de testes, sem modo correspondente no produto.
 
 Os testes Python determinísticos usam `python -B -I -m unittest discover -s tests/youtube -p 'test_*.py'`. Contratos C++ e evidência real, comandos completos e gates pendentes estão no [guia do fluxo](../../docs/youtube-audio-and-lyrics.md#runtime-real-no-ensaio-offline).

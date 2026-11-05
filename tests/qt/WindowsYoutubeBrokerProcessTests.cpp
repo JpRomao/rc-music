@@ -291,6 +291,89 @@ class WindowsYoutubeBrokerProcessTests final : public QObject {
         QVERIFY(h.lease.expired());
         QVERIFY(QDir(h.runtime_parent).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty());
     }
+    void acceptedStartCompletesPreparationButDefersExtractorLaunchUntilPolling() {
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("gate-challenge"), false, true));
+        bool preparation_completed{};
+        WindowsYoutubeBrokerProcess process([&] {
+            auto result = h.prepare();
+            preparation_completed = true;
+            return result;
+        });
+        DrainGuard guard{&process, h};
+        QVERIFY(process.start(video_id, 0));
+        QVERIFY(preparation_completed);
+        QCOMPARE(h.preparations, 1);
+        QVERIFY(!h.lease.expired());
+        // Do not poll the broker here. Give an incorrectly eager native start
+        // time to publish its real helper marker before testing absence.
+        QTest::qWait(250);
+        QVERIFY2(h.reports().isEmpty(), qPrintable(h.reports().join(QStringLiteral(", "))));
+
+        Collected result;
+        QVERIFY(waitMarker(process, result, h.marker(QStringLiteral("extractor.pid.json"))));
+        QCOMPARE(result.update.state, State::Running);
+        QCOMPARE(h.preparations, 1);
+        verifyReport(h, QStringLiteral("extractor.pid.json"), QStringLiteral("extractor"), {video_id});
+        process.cancel();
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, State::Cancelled);
+        QVERIFY(result.output.isEmpty());
+        QVERIFY(h.lease.expired());
+        h.verifySources();
+    }
+    void cancellationBeforeFirstPollReleasesPreparedRuntimeWithoutLaunchingWorkers() {
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("gate-challenge"), false, true));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); });
+        DrainGuard guard{&process, h};
+        QVERIFY(process.start(video_id, 0));
+        QCOMPARE(h.preparations, 1);
+        QVERIFY(!h.lease.expired());
+        QTest::qWait(250);
+        process.cancel();
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, State::Cancelled);
+        QVERIFY(result.output.isEmpty());
+        QVERIFY(result.errors.isEmpty());
+        QCOMPARE(h.preparations, 1);
+        QVERIFY2(h.reports().isEmpty(), qPrintable(h.reports().join(QStringLiteral(", "))));
+        QVERIFY(h.lease.expired());
+        QVERIFY(QDir(h.runtime_parent).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty());
+        QVERIFY(!process.start(video_id, 0));
+        h.verifySources();
+    }
+    void firstPollRejectsExpiredOrRegressedClockBeforeAnyExtractorLaunch_data() {
+        QTest::addColumn<qint64>("first_poll");
+        QTest::addColumn<int>("expected_failure");
+        QTest::newRow("inclusive global deadline") << qint64{60'100} << static_cast<int>(Failure::Timeout);
+        QTest::newRow("regressed before launch") << qint64{99} << static_cast<int>(Failure::InvalidResult);
+    }
+    void firstPollRejectsExpiredOrRegressedClockBeforeAnyExtractorLaunch() {
+        QFETCH(qint64, first_poll);
+        QFETCH(int, expected_failure);
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("gate-challenge"), false, true));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); });
+        DrainGuard guard{&process, h};
+        QVERIFY(process.start(video_id, 100));
+        QCOMPARE(h.preparations, 1);
+        QVERIFY(!h.lease.expired());
+        QTest::qWait(250);
+        Collected result;
+        QVERIFY(collect(process, result, first_poll));
+        QCOMPARE(result.update.state, State::Failed);
+        QCOMPARE(result.update.error, static_cast<Failure>(expected_failure));
+        QVERIFY(result.output.isEmpty());
+        QVERIFY(result.errors.isEmpty());
+        QCOMPARE(h.preparations, 1);
+        QVERIFY2(h.reports().isEmpty(), qPrintable(h.reports().join(QStringLiteral(", "))));
+        QVERIFY(h.lease.expired());
+        QVERIFY(QDir(h.runtime_parent).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty());
+        QVERIFY(!process.start(video_id, first_poll));
+        h.verifySources();
+    }
     void largeTwoGroupExchangeWaitsForEveryNodeExitBeforeForwardingAndFinalPublication() {
         Fixture h;
         QVERIFY(h.initialize(QStringLiteral("large-two-groups"), true, false, true));
