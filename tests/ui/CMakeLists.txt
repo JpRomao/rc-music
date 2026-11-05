@@ -63,6 +63,12 @@ endfunction()
 add_ui_test(rc_music_lyrics_service_tests rc_music.lyrics.service
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLyricsServiceTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_service_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_youtube_codec_tests rc_music.youtube.codec
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeAudioCodecTests.cpp" rc_music_youtube_codec rc_music_media_data)
+target_sources(rc_music_youtube_codec_tests PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeDownloadCodec.cpp")
+target_compile_definitions(rc_music_youtube_codec_tests PRIVATE
+    RC_MUSIC_YOUTUBE_PROTOCOL_VECTORS_PATH="${RC_MUSIC_SOURCE_ROOT}/tests/extensions/youtube-protocol-vectors.json")
+set_target_properties(rc_music_youtube_codec_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_lyrics_variants_store_tests rc_music.lyrics.variants-store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLyricsVariantsStoreTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_variants_store_tests PROPERTIES AUTOMOC ON)

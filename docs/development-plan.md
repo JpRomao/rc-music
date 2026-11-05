@@ -27,6 +27,10 @@ Preparação em `c840fe1`: o [probe separado do inventário](media-profile-lifec
 
 **Continuidade funcional solicitada:** FR-054/M3.9 agora permite guardar várias versões de letra por música e adicioná-las posteriormente, conforme [ADR-0016](architecture/decisions/0016-lyrics-variants.md). Armazenamento local e seleção preservam áudio/fila; o fechamento passou **295/295 CTest**, **336 Quick**, core sem Qt **283/283**, builds Lite/Completa e lint/formato. O [checkpoint delimitado](lyrics-variants.md#evidência-de-implementação) registra Reds, restart em dois processos e recuperação. Letras.mus.br/MP3, LLM, tradução, aceitação nativa e instalador atualizado permanecem separados; M3.9/gates globais não são encerrados por esse recorte.
 
+**Próxima frente solicitada:** [YouTube em MP3 e Letras → LRCLIB](youtube-audio-and-lyrics.md), FR-050/FR-054, conforme desenho do [ADR-0017](architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md). Começar pelo ingresso separado/contrato, preservando a principal; seguir com resolver, aquisição/conversão/importação e letras independentes. Preferir áudio separado e converter realmente para MP3; falha da letra não repete nem invalida áudio concluído. Acesso/contrato Letras, ferramentas/runtime, produção e distribuição continuam gates reais. Não executar novos perfis/UAC, instalar componentes ou retomar benchmarks por esse pedido.
+
+O primeiro incremento dessa frente implementa cliente MV3 YouTube e codec próprios, sem ligar execução ao player: **203/203 Node**, incluindo 36 novos; **2/2 CTest**, com 66 Qt do ingresso e 188 da regressão da principal. O [registro](youtube-audio-and-lyrics.md#evidência-do-ingresso-separado) conserva Reds e limites. Próximo desenvolvimento: resolver e coordenação protegida de aquisição, com runtime/ferramentas revisados; depois letras/associação e integração instalada. Não repetir checks verdes nem apresentar o ingresso como download funcional.
+
 ## 1. Regras de uso
 
 ### 1.1 Hierarquia

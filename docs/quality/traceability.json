@@ -1150,9 +1150,14 @@
     {
       "id": "FR-050",
       "plan": "R1.3–R1.6, R1.10",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        { "path": "tests/qt/YoutubeAudioCodecTests.cpp", "marker": "separateRequestRoundTripsUnicodeWithoutGrantingAnyMainCapability" },
+        { "path": "tests/qt/YoutubeAudioCodecTests.cpp", "marker": "theMainCodecStillRefusesYoutubeAndItsCdnIndirectly" },
+        { "path": "tests/extensions/youtube-popup.test.mjs", "marker": "opening or refreshing reads only the current tab and never submits a request" },
+        { "path": "tests/extensions/youtube-native-client.test.mjs", "marker": "YouTube bridge is separate and acknowledges admission rather than completion" }
+      ],
       "evidence": [
         {
           "path": "docs/development-plan.md",
@@ -1165,10 +1170,18 @@
         {
           "path": "docs/architecture/decisions/0006-browser-editions-and-extensions.md",
           "marker": "## Decisão de produto"
+        },
+        {
+          "path": "docs/architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md",
+          "marker": "## Desenho proposto"
+        },
+        {
+          "path": "docs/youtube-audio-and-lyrics.md",
+          "marker": "## Evidência do ingresso separado"
         }
       ],
       "remaining": [
-        "O escopo de extensão YouTube separada e opcional foi aceito no ADR-0006; investigar viabilidade técnica/de termos, ferramentas e distribuição, implementar e validar em gates próprios, sem bloquear a principal. Não há extensão ou reprodução remota implementada."
+        "Cliente/codec do ingresso separado implementados com testes Node/Qt e corpus compartilhado, sem aquisição. Faltam resolver/execução YouTube, runtime/ferramentas/licenças, composição protegida com transferência/conversão/importação e letras independentes, host/origens instaladas, Brave, opcionais e pacote. Letras preferencial depende de acesso/contrato compatível; cadeia LRCLIB fallback e associação ao arquivo final ainda pendentes. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
       ]
     },
     {
@@ -2189,10 +2202,12 @@
         { "path": "docs/architecture/decisions/0013-lyrics-and-online-lookup.md", "marker": "## Decisão" },
         { "path": "docs/architecture/decisions/0016-lyrics-variants.md", "marker": "## Decisão" },
         { "path": "docs/lyrics-variants.md", "marker": "## Evidência de implementação" },
+        { "path": "docs/architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md", "marker": "## Contexto e pesquisa" },
+        { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Limites atuais" },
         { "path": "docs/user-guide.md", "marker": "## Letras das músicas" }
       ],
       "remaining": [
-        "Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado, incluindo as variantes persistentes original/romanizada e inclusão posterior. Testes de parser/serviço/binding/UI usam fixtures/fakes; restart de variantes usa dois processos com arquivos próprios. O smoke online anterior cobre uma faixa pública de exemplo, sem cobertura universal ou aprovação de distribuição. Letras.mus.br/MP3, LLM, tradução e alinhamento simultâneo continuam separados."
+        "Compor Letras preferencial com fallback LRCLIB e associação das formas ao arquivo final, após acesso/contrato compatível do primário; o app atual consulta LRCLIB diretamente. Concluir aceitação visual/acessibilidade nativa Windows e empacotamento atualizado das variantes persistentes. Testes usam fixtures/fakes e restart em dois processos próprios; smoke online anterior cobre só uma faixa pública, sem cobertura universal/distribuição. Aquisição MP3, LLM, tradução e alinhamento simultâneo conservam seus gates."
       ]
     },
     {

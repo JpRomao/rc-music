@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RC Music — YouTube</title>
+    <link rel="stylesheet" href="popup.css">
+    <script type="module" src="popup.mjs"></script>
+  </head>
+  <body>
+    <header><p>RC Music</p><h1>YouTube</h1><span>Prévia opcional</span></header>
+    <main>
+      <button id="refresh" type="button">Atualizar vídeo</button>
+      <p id="status" role="status" aria-live="polite">Preparando o vídeo atual…</p>
+      <fieldset id="selection" hidden>
+        <legend>Selecione o que deseja baixar</legend>
+        <label><input id="selected" type="checkbox"><span id="video-title"></span></label>
+      </fieldset>
+      <label for="title">Título da música</label><input id="title" type="text" maxlength="512" disabled>
+      <label for="artist">Artista, para buscar a letra</label><input id="artist" type="text" maxlength="512" disabled>
+      <label for="lyrics-page">Página do Letras, se conhecida</label><input id="lyrics-page" type="url" maxlength="2048" disabled placeholder="https://www.letras.mus.br/artista/musica/">
+      <label class="check"><input id="fetch-lyrics" type="checkbox" checked disabled>Buscar letra: Letras e, se indisponível, LRCLIB</label>
+      <button id="send" class="primary" type="button" disabled>Baixar MP3 + letra</button>
+      <p class="help">O pedido solicita somente áudio. O app precisa convertê-lo e validar o MP3. A letra pode falhar sem impedir o áudio.</p>
+    </main>
+    <footer>Recurso em desenvolvimento, ainda sem downloads disponíveis. Requer o componente YouTube no RC Music. Pedido aceito não significa download concluído.</footer>
+  </body>
+</html>

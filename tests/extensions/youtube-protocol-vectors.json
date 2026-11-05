@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "requests": [
+    {
+      "name": "unicode-original-and-explicit-page",
+      "valid": true,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"日本語 / Canção","artist":"Artista","lyricsPage":"https://www.letras.mus.br/artista/faixa/","fetchLyrics":true}]}
+    },
+    {
+      "name": "audio-only-without-artist-or-page",
+      "valid": true,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"","fetchLyrics":false}]}
+    },
+    {
+      "name": "default-https-port-and-uppercase-host",
+      "valid": true,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"https://LETRAS.MUS.BR:443/artista/faixa/","fetchLyrics":true}]}
+    },
+    {
+      "name": "principal-type-never-grants-youtube",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"download.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"","fetchLyrics":true}]}
+    },
+    {
+      "name": "foreign-lyrics-host",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"https://letras.mus.br.evil.test/artista/faixa/","fetchLyrics":true}]}
+    },
+    {
+      "name": "literal-parent-segment-is-not-normalized",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"https://letras.mus.br/a/../b/","fetchLyrics":true}]}
+    },
+    {
+      "name": "encoded-parent-segment-is-not-normalized",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"https://letras.mus.br/a/%2e%2e/b/","fetchLyrics":true}]}
+    },
+    {
+      "name": "string-booleans-do-not-enable-lyrics",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"","fetchLyrics":"true"}]}
+    }
+  ],
+  "responses": [
+    {"name":"admitted-not-completed","valid":true,"itemCount":1,"payload":{"schemaVersion":1,"type":"youtube.audio.response","requestId":"01234567-89ab-4cde-8fab-0123456789ab","status":"accepted","jobIds":["youtube-job-1"]}},
+    {"name":"explicitly-unavailable","valid":true,"itemCount":1,"payload":{"schemaVersion":1,"type":"youtube.audio.response","requestId":"01234567-89ab-4cde-8fab-0123456789ab","status":"rejected","code":"not_available"}},
+    {"name":"foreign-protocol-response","valid":false,"itemCount":1,"payload":{"schemaVersion":1,"type":"download.response","requestId":"01234567-89ab-4cde-8fab-0123456789ab","status":"accepted","jobIds":["youtube-job-1"]}},
+    {"name":"partial-ack-is-invalid","valid":false,"itemCount":2,"payload":{"schemaVersion":1,"type":"youtube.audio.response","requestId":"01234567-89ab-4cde-8fab-0123456789ab","status":"accepted","jobIds":["youtube-job-1"]}}
+  ]
+}

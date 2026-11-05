@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "RC Music — YouTube",
+  "version": "0.1.0",
+  "description": "Selecione o vídeo atual para solicitar MP3 e letra ao RC Music. Componente YouTube separado e opcional.",
+  "minimum_chrome_version": "106",
+  "permissions": ["activeTab", "nativeMessaging"],
+  "action": {
+    "default_title": "YouTube para o RC Music",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  }
+}

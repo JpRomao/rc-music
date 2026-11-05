@@ -29,6 +29,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0014](0014-lidarr-integration.md) | Aceito | Integração opcional com Lidarr priorizada pelo mantenedor; conexão, pesquisa e pedidos explícitos separados da reprodução local |
 | [0015](0015-named-playlists.md) | Aceito | Playlists locais nomeadas, catálogo independente da fila, persistência JSON limitada e edição publicada somente após Saved |
 | [0016](0016-lyrics-variants.md) | Aceito | Várias versões locais da letra por música, inclusão posterior e persistência explícita; provedores, MP3 e LLM separados |
+| [0017](0017-youtube-audio-and-lyrics-acquisition.md) | Proposto | Aquisição YouTube em MP3, ingresso separado e preferência Letras → LRCLIB; ferramentas, acesso e produção pendentes |
 
 ## Processo
 

@@ -2,7 +2,7 @@
 
 **Estado:** cliente, biblioteca Qt Core de recepção e host/transporte Native Messaging Windows opcionais implementados. A configuração de produção do host fica vazia/desabilitada e o player de produção continua sem ingresso/serviço remoto ativo. Não há extensão/host instalados ou prova no Brave real; a [navegação interna experimental](embedded-browser.md) tem composição opt-in própria e não ativa essa ponte. Não é uma entrega funcional instalada nem extensão publicada.
 
-Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. YouTube segue extensão independente, ainda não implementada.
+Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. O [cliente e codec YouTube independentes](youtube-audio-and-lyrics.md) já têm testes próprios, sem host/execução no player normal. A principal conserva seus bloqueios e não encaminha pedidos para esse outro cliente.
 
 ## Implementação do cliente
 

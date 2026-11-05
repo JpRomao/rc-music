@@ -1,0 +1,42 @@
+# ADR-0017: aquisição YouTube em MP3 e letras com fallback
+
+**Estado:** Proposto
+
+**Data:** 2026-11-04
+
+**Escopo aceito pelo mantenedor:** áudio do YouTube entregue como MP3, letra preferencialmente do Letras.mus.br e outro provedor como fallback. A separação opcional da extensão YouTube permanece conforme [ADR-0006](0006-browser-editions-and-extensions.md). Ferramentas externas, execução, acesso ao Letras e distribuição ainda não estão aprovados por este registro.
+
+## Contexto e pesquisa
+
+O pedido atual torna explícito o fluxo completo; guardar versões locais da letra, já adotado no [ADR-0016](0016-lyrics-variants.md), não o substitui. O player normal ainda não compõe o downloader de produção. Existe somente a extensão principal, que recusa YouTube também no codec/policy C++; essa fronteira precisa continuar intacta.
+
+A opção MP3 de um downloader não significa que o YouTube entregue um arquivo MP3 nativo. A [documentação do yt-dlp](https://github.com/yt-dlp/yt-dlp#post-processing-options) descreve extração e conversão pelo FFmpeg. O fluxo deve preferir uma faixa somente de áudio e convertê-la quando necessário, sem baixar a imagem do vídeo e sem renomear AAC/Opus para `.mp3`. A presença de yt-dlp/FFmpeg no computador não os aprova como componentes do instalador.
+
+A página de exemplo do Letras respondeu 403 na consulta HTTP. Os [termos publicados pelo Ouvir Música](https://www.ouvirmusica.com.br/aviso-legal/) declaram abranger Letras.mus.br e restringem métodos de extração de dados. Não foi localizado contrato primário de API pública para um player externo. Portanto, não inventar um parser “compatível” com HTML sintético, usar endpoints internos como contrato ou alegar acesso confirmado. A preferência do mantenedor por Letras permanece registrada, com integração pendente de acesso/contrato compatível. O [LRCLIB](https://lrclib.net/docs.txt) tem API pública já usada pelo app e será o fallback proposto; não promete original e romanização separadas.
+
+As [políticas da API YouTube](https://developers.google.com/youtube/terms/developer-policies-guide) restringem download/separação de áudio por clientes dessa API. Este desenho não usa a Data API como fonte de MP3 nem autoriza usos proibidos pelo serviço. Termos, ferramenta/versão, licenças, procedência e distribuição continuam nos gates de FR-050/FR-052.
+
+## Desenho proposto
+
+1. Criar pacote `extensions/chromium/youtube` e host lógico `com.rcmusic.youtube`, distintos da principal/`com.rcmusic.media`. Permissões mínimas de aba ativa e Native Messaging. Abrir o popup apenas apresenta o vídeo da aba; somente seleção e clique explícitos enviam um pedido. Não ler cookies, histórico, microfone ou URLs de streams do player.
+2. Usar contrato próprio `youtube.audio.request` v1: UUID v4, lista de IDs de vídeo e título/artista editáveis, opção de letra e página Letras opcional. O app constrói a URL canônica a partir de um ID de 11 caracteres; a mensagem não transporta executável, argumentos, destino ou URL de mídia arbitrária. Origem instalada/host confiável autoriza a capacidade; um campo da página não a concede.
+3. Validar integralmente o pedido: até 20 IDs únicos, 64 KiB de JSON estrito, 512 bytes UTF-8 por título/artista e 2048 por página Letras; título obrigatório, artista/página opcionais. A página aceita somente HTTPS no host Letras exato, sem credenciais/query/fragmento ou segmentos ambíguos. Isso valida um identificador, não consulta ou aprova o provedor. Respostas correlacionam ID e quantidade; ACK é admissão, não arquivo baixado.
+4. Resolver a faixa de áudio em adapter separado e worker supervisionado, com runtime explicitamente configurado/autenticado e argumentos fixos, sem shell/config/plugins/cookies herdados ou auto-update. yt-dlp é candidato, sem invocação nesta etapa. Priorizar M4A/AAC quando disponível para aproveitar a matriz já testada; Opus/WebM depende de qualificação do backend real escolhido.
+5. Compor resolução → transferência limitada → conversão/validação MP3 → publicação sem overwrite → importação durável existente, sem seleção/autoplay. Progresso, cancelamento, reconhecimento de parada, ownership e Saved continuam obrigatórios. Um resultado JSON de resolução não autoriza sozinho URL, arquivo ou importação.
+6. Associar letras à gravação usando título/artista corrigíveis e, quando disponível, duração/álbum; canal de vídeo ou `/naruto/` da página não são automaticamente artista da gravação. A busca explícita segue Letras → LRCLIB somente com adapters disponíveis e origem informada. Não buscar metadados/letras automaticamente ao abrir o player ou a extensão.
+7. MP3 e letras possuem resultados independentes: falha/ausência de letra conserva o áudio concluído; retry de letra não baixa áudio novamente. Salvar várias formas deve usar uma alteração de catálogo reconhecida, preservando as existentes e a identidade do arquivo final. Não inventar romanização ou timestamps; LLM/tradução continuam posteriores.
+8. Opcionais de instalação, host/origens instaladas, ferramentas e runtime/artefatos têm seus gates próprios. Não registrar componentes, executar setup ou ativar produção por um teste de codec/cliente. Lite continua sem engine interna; Completa e Lite compartilham a futura aquisição protegida.
+
+## Alternativas e consequências
+
+- Remover o bloqueio da principal violaria a separação aceita e permitiria pedidos indiretos sem capacidade confiável.
+- Baixar vídeo completo para descartar a imagem acrescenta tráfego e disco sem necessidade quando há áudio separado.
+- Usar qualquer CLI achada em PATH como componente do produto perderia procedência e controle de versão/runtime.
+- Letras sem acesso verificado não pode ser anunciado como provedor funcional; LRCLIB existente não deve ser rotulado como Letras.
+- Falha de letra não deve invalidar ou repetir uma aquisição de áudio concluída. Origem e cobertura ficam visíveis.
+
+## Validação e critérios de revisão
+
+Ingressos usam testes Node/Qt offline com schemas compartilhados, IDs/URLs hostis, Unicode, limites, ausência/falha da ponte, resposta obsoleta e clique explícito. A principal deve continuar recusando YouTube e seus testes permanecer verdes. Codec/cliente não provam resolver, internet, conversão real, associação de letra, Brave instalado ou distribuição.
+
+Resolver e coordenação precisam de Red/Green com portas falsas/processos controlados, cancelamento e tempo/disco limitados; depois runtime/ferramentas, prova real autorizada e composição instalada. Letras exige uma fonte acessível e contrato compatível antes do adapter de produção. Os gates nativos anteriores não são reabertos por este pedido. Evidências e pendências ficam no [guia do fluxo](../../youtube-audio-and-lyrics.md).

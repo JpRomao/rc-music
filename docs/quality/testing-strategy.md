@@ -1,5 +1,7 @@
 # Estratégia de testes e TDD
 
+O [ingresso YouTube separado](../youtube-audio-and-lyrics.md#evidência-do-ingresso-separado) usa Node/Chrome falso, Qt Test e corpus JSON comum de 8 pedidos/4 respostas. Os checks verificam clique explícito, navegação, tempo/desconexão, resposta correlacionada, limites/UTF-8 e recusa de YouTube pela principal. O Green de 203 Node e 66+188 Qt comprova cliente/codec; não comprova extração, runtime, rede, conversão, acesso ao Letras ou funcionamento Brave instalado.
+
 A extensão de [versões de letras](../lyrics-variants.md#evidência-de-implementação), FR-054/ADR-0016, usa texto sintético e portas falsas para original/romanizada, serializer sem perda de tempos, limites, Saved, retry, busca explícita e troca de faixa/saída. O store real usa diretórios próprios, restart em dois processos e hashes de primário/backup/áudio sentinela. Quick mantém confirmações por identidade e recuperação mesmo sem faixa atual. O fechamento proporcional passou 295/295 CTest e 336 casos Quick; o core sem Qt passou 283/283. Reds/Greens e contagens delimitadas estão no guia, sem aceitação nativa, pacote ou cobertura de provedores por esses fakes.
 
 **Estado:** contrato de qualidade inicial  
