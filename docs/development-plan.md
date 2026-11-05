@@ -800,7 +800,15 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — perfil compilado dos hosts e matching do player
+### Checkpoint atual — gerador de manifest Native YouTube
+
+O [gerador de manifest candidato](youtube-native-manifest.md) exige ID explícito da extensão, recibo de build confiável com pin SHA-256 e host com bytes correspondentes. Produz somente `com.rcmusic.youtube.json` e recibo `installation_pending`, em saída nova. O parser limita schema/UTF-8/campos/tipos/paths e recusa perfil desabilitado, principal, origem divergente e alterações após o plano. Não copia ou executa o host nem registra componentes.
+
+Red **0/14**, Green **14/14 PowerShell**, com fixtures locais deliberadamente não executáveis. A revisão reproduziu aceitação indevida de LF final nos campos endpoint/imagens (**12 passados/2 falhos**); o fim absoluto de string corrigiu o problema, com Green **14/14** e casos LF/CRLF preservados. A regressão do componente-fonte passou **15/15**. A validação do perfil compilado abaixo passou separadamente; esses testes não comprovam extensão instalada ou download público. O host precisa ficar junto de `RCMusic.exe`, com dependências PE inventariadas pela receita existente; o diretório de dois JSONs não é um runtime autossuficiente.
+
+Próxima etapa: informar o ID real da pasta escolhida no Brave e configurar um build habilitado correspondente, além do perfil confiável de runtime/ambiente/diretórios. Nenhum manifest de produção foi gerado: os recibos reais atuais continuam desabilitados, e o pacote-fonte preserva `identity_pending`. Instalação opcional, aquisição protegida, Letras primário e gates de segurança/licenças/distribuição continuam pendentes. Não houve mídia pública, setup/Registro, GUI, novos perfis/AppContainer, WFP/UAC ou benchmarks.
+
+### Checkpoint anterior — perfil compilado dos hosts e matching do player
 
 O [recibo de build dos hosts](native-host-build-profile.md) usa a mesma configuração CMake dos headers selecionados e do header C++ compartilhado. O writer fixa o hash do header no configure e registra hash/tamanho do executável após o link; JSON é evidência de consistência local, sem autoridade de runtime ou autenticação do Brave/publisher. Ambos os hosts reais compilaram e produziram recibos conferidos com `enabled: false`.
 
