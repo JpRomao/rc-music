@@ -1164,6 +1164,8 @@
         { "path": "tests/qt/WindowsYoutubeResolverProcessTests.cpp", "marker": "privateInputIsEchoedAndLeaseLivesUntilTheStoppedPipeAcknowledgement" },
           { "path": "tests/qt/WindowsYoutubeRuntimeTests.cpp", "marker": "preparesOnlyOwnedByteIdenticalCopiesWithExplicitRolePaths" },
           { "path": "tests/qt/WindowsYoutubeRuntimeTests.cpp", "marker": "unknownFilesInvalidateInventoryAndSurviveIdentityOwnedCleanup" },
+          { "path": "tests/qt/WindowsDownloadInteractiveInputTests.cpp", "marker": "segmentedInteractiveTotalCanExceedTheLegacyOneShotCeiling" },
+          { "path": "tests/qt/WindowsDownloadInteractiveInputTests.cpp", "marker": "cancellationAfterWitnessedNativeExitClosesInputAdmission" },
         { "path": "tests/qt/YoutubeDownloadExecutionTests.cpp", "marker": "resolutionHandsTheExactCapabilityToTheExistingTaskOnTheWorker" },
         { "path": "tests/qt/WindowsDownloadJobSessionTests.cpp", "marker": "youtubeExpiryDuringDnsStillRequiresTheOriginalNativeDrainAcknowledgement" },
         { "path": "tests/extensions/youtube-popup.test.mjs", "marker": "opening or refreshing reads only the current tab and never submits a request" },

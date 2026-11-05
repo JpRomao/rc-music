@@ -268,7 +268,7 @@ class NativeInput final {
   public:
     ~NativeInput() { close(); }
 
-    [[nodiscard]] bool create(PSECURITY_DESCRIPTOR descriptor, const QByteArray& payload) {
+    [[nodiscard]] bool create(PSECURITY_DESCRIPTOR descriptor, const QByteArray& payload, const bool interactive) {
         const auto name =
             QStringLiteral("\\\\.\\pipe\\RCMusic-download-input-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
         const auto native_name = name.toStdWString();
@@ -290,11 +290,13 @@ class NativeInput final {
         event_.reset(::CreateEventW(nullptr, TRUE, FALSE, nullptr));
         if (!event_.valid())
             return false;
-        payload_ = payload;
+        payload_ = QByteArray(payload.constData(), payload.size());
         offset_ = 0;
         ended_ = false;
         failed_ = false;
         cancelled_ = false;
+        sealed_ = !interactive;
+        native_exited_ = false;
         return true;
     }
 
@@ -302,8 +304,30 @@ class NativeInput final {
     void releaseReader() { reader_.reset(); }
     [[nodiscard]] bool ended() const { return ended_; }
     [[nodiscard]] bool failed() const { return failed_; }
+    [[nodiscard]] bool accepting() const { return !ended_ && !failed_ && !cancelled_ && !sealed_ && !native_exited_; }
+    [[nodiscard]] qsizetype bufferedBytes() const { return payload_.size() - offset_; }
 
-    void poll() {
+    void enqueue(const QByteArray& owned_payload) {
+        // Native WriteFile borrows buffer_, not payload_. Only the prefix
+        // already acknowledged by GetOverlappedResult may be discarded.
+        if (offset_ != 0) {
+            payload_.remove(0, offset_);
+            offset_ = 0;
+        }
+        payload_.append(owned_payload);
+    }
+    void seal() { sealed_ = true; }
+    void nativeExited() {
+        if (ended_ || native_exited_)
+            return;
+        native_exited_ = true;
+        sealed_ = true;
+        if (pending_)
+            ::CancelIoEx(writer_.get(), &operation_);
+        // poll must witness completion before clearing buffer_ or its event.
+    }
+
+    void poll(const bool allow_write = true) {
         if (ended_)
             return;
         if (pending_) {
@@ -321,7 +345,7 @@ class NativeInput final {
                 return;
             }
         }
-        if (cancelled_ || offset_ == payload_.size()) {
+        if (cancelled_) {
             finish();
             return;
         }
@@ -329,6 +353,17 @@ class NativeInput final {
             finish();
             return;
         }
+        if (native_exited_) {
+            failed_ = bufferedBytes() != 0;
+            finish();
+            return;
+        }
+        if (offset_ == payload_.size()) {
+            drained();
+            return;
+        }
+        if (!allow_write)
+            return;
         const auto count = static_cast<DWORD>(std::min<qsizetype>(pipe_bytes, payload_.size() - offset_));
         std::copy_n(payload_.constData() + offset_, count, buffer_.data());
         requested_ = count;
@@ -338,8 +373,10 @@ class NativeInput final {
         DWORD written = 0;
         if (::WriteFile(writer_.get(), buffer_.data(), count, &written, &operation_)) {
             complete(written);
-            if (!failed_ && offset_ == payload_.size())
+            if (failed_)
                 finish();
+            else if (offset_ == payload_.size())
+                drained();
         } else if (::GetLastError() == ERROR_IO_PENDING) {
             pending_ = true;
         } else {
@@ -371,10 +408,22 @@ class NativeInput final {
         operation_ = {};
         failed_ = false;
         cancelled_ = false;
+        sealed_ = true;
+        native_exited_ = false;
         requested_ = 0;
     }
 
   private:
+    void drained() {
+        if (sealed_) {
+            finish();
+            return;
+        }
+        payload_.clear();
+        offset_ = 0;
+        requested_ = 0;
+        ::SecureZeroMemory(buffer_.data(), buffer_.size());
+    }
     void complete(DWORD count) {
         if (count == 0 || count > requested_)
             failed_ = true;
@@ -403,6 +452,8 @@ class NativeInput final {
     bool ended_{true};
     bool failed_{false};
     bool cancelled_{false};
+    bool sealed_{true};
+    bool native_exited_{false};
 };
 
 [[nodiscard]] bool validText(const QString& value) {
@@ -458,6 +509,14 @@ class NativeInput final {
         config.arguments.size() > 128 || config.standard_input.size() > download_process_max_input_bytes ||
         !validEnvironment(config.environment))
         return false;
+    if (config.interactive_input) {
+        const auto& limits = *config.interactive_input;
+        if (limits.max_buffered_bytes <= 0 || limits.max_buffered_bytes > download_process_max_input_bytes ||
+            limits.max_total_bytes == 0 || limits.max_total_bytes > download_process_max_interactive_input_bytes ||
+            config.standard_input.size() > limits.max_buffered_bytes ||
+            static_cast<quint64>(config.standard_input.size()) > limits.max_total_bytes)
+            return false;
+    }
     qsizetype units = config.executable.size();
     for (const auto& argument : config.arguments) {
         if (!validText(argument) || argument.size() > 8192 || units > 16384 - argument.size() - 1)
@@ -493,6 +552,7 @@ struct WindowsDownloadProcess::Impl final {
     Q_PROCESS_INFORMATION* created_information{nullptr};
     quint64 stdout_count{0};
     quint64 stderr_count{0};
+    quint64 stdin_count{0};
     qint64 started_ms{0};
     qint64 last_ms{0};
     WindowsDownloadProcessState stopped_state{WindowsDownloadProcessState::Exited};
@@ -588,7 +648,8 @@ struct WindowsDownloadProcess::Impl final {
         LocalAllocation descriptor;
         if (!userPipeSecurity(descriptor) || !stdout_pipe.create(descriptor.value) ||
             !stderr_pipe.create(descriptor.value) ||
-            (!config.standard_input.isEmpty() && !stdin_pipe.create(descriptor.value, config.standard_input)))
+            ((config.interactive_input || !config.standard_input.isEmpty()) &&
+             !stdin_pipe.create(descriptor.value, config.standard_input, config.interactive_input.has_value())))
             return false;
         SIZE_T bytes = 0;
         const DWORD count = config.app_container ? 3 : 2;
@@ -707,6 +768,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
     value.update = {};
     value.stdout_count = 0;
     value.stderr_count = 0;
+    value.stdin_count = 0;
     value.started_ms = now_ms;
     value.last_ms = now_ms;
     value.stopped_state = WindowsDownloadProcessState::Exited;
@@ -727,6 +789,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         return false;
     }
     value.config = config;
+    value.stdin_count = static_cast<quint64>(config.standard_input.size());
     if (native_fence) {
         // This acquisition is atomic with owner admission closure. The earlier
         // query only provides error precedence; it never reserves permission.
@@ -776,7 +839,7 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.startup.StartupInfo.cb = sizeof(STARTUPINFOEXW);
         value.startup.StartupInfo.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
         value.startup.StartupInfo.wShowWindow = SW_HIDE;
-        if (!value.config.standard_input.isEmpty())
+        if (value.config.interactive_input || !value.config.standard_input.isEmpty())
             value.startup.StartupInfo.hStdInput = value.stdin_pipe.reader();
         value.startup.StartupInfo.hStdOutput = value.stdout_pipe.writer();
         value.startup.StartupInfo.hStdError = value.stderr_pipe.writer();
@@ -865,12 +928,26 @@ WindowsDownloadProcessUpdate WindowsDownloadProcess::poll(qint64 now_ms) {
     } else if (value.job.valid()) {
         ::TerminateJobObject(value.job.get(), 92);
     }
+    // An interactive stdin can legitimately be idle/open when the process
+    // exits. Observe that first, rather than writing to an already-dead peer.
+    const bool interactive_ended = value.config.interactive_input && value.processEnded();
+    if (interactive_ended)
+        value.stdin_pipe.nativeExited();
     value.stdin_pipe.poll();
     if (value.stdin_pipe.failed())
         value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
     value.update.stdout_chunk = value.take(value.stdout_pipe, value.stdout_count, value.config.max_stdout_bytes);
     value.update.stderr_chunk = value.take(value.stderr_pipe, value.stderr_count, value.config.max_stderr_bytes);
-    const bool process_ended = value.processEnded();
+    const bool process_ended = interactive_ended || value.processEnded();
+    if (value.config.interactive_input) {
+        if (process_ended && !interactive_ended)
+            value.stdin_pipe.nativeExited();
+        // Output observed above may follow a just-completed input write.
+        // Settle its capacity/EOF without issuing another write this poll.
+        value.stdin_pipe.poll(false);
+        if (value.stdin_pipe.failed())
+            value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
+    }
     if (process_ended && value.stdin_pipe.ended() && value.stdout_pipe.ended() && value.stderr_pipe.ended()) {
         value.update.state = value.update.state == WindowsDownloadProcessState::Stopping
                                  ? value.stopped_state
@@ -903,11 +980,46 @@ void WindowsDownloadProcess::cancel() {
     auto& value = *impl_;
     if (value.update.state == WindowsDownloadProcessState::Idle)
         value.update.state = WindowsDownloadProcessState::Cancelled;
-    else if (value.update.state == WindowsDownloadProcessState::Running && value.processEnded())
+    else if (value.update.state == WindowsDownloadProcessState::Running && value.processEnded()) {
         // Preserve a witnessed natural exit while pending pipes drain under their normal limits.
+        if (value.config.interactive_input)
+            value.stdin_pipe.nativeExited();
         return;
-    else
+    } else
         value.stop(WindowsDownloadProcessState::Cancelled, WindowsDownloadProcessError::None);
+}
+
+WindowsDownloadInputResult WindowsDownloadProcess::enqueueStandardInput(const QByteArrayView bytes) {
+    auto& value = *impl_;
+    if (value.update.state != WindowsDownloadProcessState::Running || !value.config.interactive_input ||
+        !value.stdin_pipe.accepting())
+        return WindowsDownloadInputResult::Closed;
+    const auto& limits = *value.config.interactive_input;
+    if (bytes.size() > limits.max_buffered_bytes ||
+        static_cast<quint64>(bytes.size()) > limits.max_total_bytes - value.stdin_count) {
+        value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::LimitExceeded);
+        return WindowsDownloadInputResult::LimitExceeded;
+    }
+    if (bytes.isEmpty())
+        return WindowsDownloadInputResult::Accepted;
+    if (bytes.size() > limits.max_buffered_bytes - value.stdin_pipe.bufferedBytes())
+        return WindowsDownloadInputResult::Backpressure;
+    try {
+        const QByteArray captured(bytes.data(), bytes.size());
+        value.stdin_pipe.enqueue(captured);
+        value.stdin_count += static_cast<quint64>(bytes.size());
+        return WindowsDownloadInputResult::Accepted;
+    } catch (...) {
+        value.stop(WindowsDownloadProcessState::Failed, WindowsDownloadProcessError::Io);
+        return WindowsDownloadInputResult::Closed;
+    }
+}
+bool WindowsDownloadProcess::closeStandardInput() {
+    auto& value = *impl_;
+    if (value.update.state != WindowsDownloadProcessState::Running || !value.config.interactive_input)
+        return false;
+    value.stdin_pipe.seal();
+    return true;
 }
 
 } // namespace music_player::m0

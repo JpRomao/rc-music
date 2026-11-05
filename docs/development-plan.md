@@ -47,6 +47,8 @@ Continuidade do runtime YouTube: [inventário privado fechado](youtube-audio-and
 
 ## 1. Regras de uso
 
+Continuidade do broker YouTube: [stdin interativo supervisionado](youtube-audio-and-lyrics.md#entrada-interativa-supervisionada) implementado como opt-in do supervisor existente, com cópia própria, fila limitada, orçamento acumulado, backpressure sem mutação e EOF após drain. Red **3/25**, Green inicial **28/28**, seguido de regressão de cancelamento após saída física **28/2** e correção; fechamento **5/5 CTest/165 Qt**, sem falhas/skips, Release opcional sem testes e formato de três C++ verdes. O modo legado e NoChild permanecem. Provider JSC, protocolo de desafios, supervisão conjunta de Node e perfil real continuam próximos passos; não habilita downloads ou reabre perfis/UAC/GUI/benchmarks.
+
 ### 1.1 Hierarquia
 
 1. `agents.md` define como trabalhar.

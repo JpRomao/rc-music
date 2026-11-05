@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
@@ -16,6 +17,13 @@ inline constexpr qint64 download_process_poll_bytes = 64 * 1024;
 inline constexpr qsizetype download_process_max_input_bytes = 256 * 1024;
 inline constexpr qsizetype download_process_max_environment_units = 32760;
 inline constexpr qsizetype download_process_max_path_units = 8192;
+inline constexpr quint64 download_process_max_interactive_input_bytes = 64ULL * 1024 * 1024;
+
+struct WindowsDownloadInteractiveInputLimits final {
+    qsizetype max_buffered_bytes{download_process_max_input_bytes};
+    quint64 max_total_bytes{16ULL * 1024 * 1024};
+};
+enum class WindowsDownloadInputResult { Accepted, Backpressure, Closed, LimitExceeded };
 
 // Trusted composition only: these are never accepted from an extension/page.
 // The executable and working directory must be absolute local filesystem paths.
@@ -46,6 +54,11 @@ struct WindowsDownloadProcessConfig final {
     // Explicit opt-in survives a failed identity factory: required + null is
     // Isolation before allocating native resources, never a legacy fallback.
     bool require_app_container{false};
+    // Trusted opt-in for a parent-controlled protocol. Empty stdin remains
+    // open between writes; EOF requires closeStandardInput or native exit.
+    // Initial bytes count against both limits. The default one-shot mode and
+    // its 256 KiB initial-input ceiling are unchanged.
+    std::optional<WindowsDownloadInteractiveInputLimits> interactive_input{};
 };
 
 enum class WindowsDownloadProcessState { Idle, Running, Stopping, Exited, Failed, Cancelled };
@@ -85,6 +98,14 @@ class WindowsDownloadProcess final {
 
     [[nodiscard]] bool start(const WindowsDownloadProcessConfig& config, qint64 now_ms);
     [[nodiscard]] WindowsDownloadProcessUpdate poll(qint64 now_ms);
+    // Worker-only, nonblocking, all-or-nothing deep copy; native writing only
+    // occurs in poll(). Backpressure changes neither queue nor total quota.
+    // A chunk larger than the queue ceiling or cumulative-quota overflow
+    // initiates Failed/LimitExceeded; it is not a native/pipe stop ACK.
+    [[nodiscard]] WindowsDownloadInputResult enqueueStandardInput(QByteArrayView bytes);
+    // Seals admission immediately; already accepted bytes drain before EOF.
+    // Idempotent while Running in interactive mode. Other modes/states refuse.
+    [[nodiscard]] bool closeStandardInput();
     void cancel();
 
   private:

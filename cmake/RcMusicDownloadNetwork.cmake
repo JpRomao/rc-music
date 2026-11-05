@@ -63,7 +63,7 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsYoutubeResolverProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask)
@@ -135,7 +135,8 @@ if(BUILD_TESTING)
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
         set_target_properties(${target} PROPERTIES AUTOMOC ON)
         rc_music_configure_cpp(${target})
-        if(unit STREQUAL "WindowsDownloadProcess" OR unit STREQUAL "WindowsYoutubeResolverProcess")
+        if(unit STREQUAL "WindowsDownloadProcess" OR unit STREQUAL "WindowsYoutubeResolverProcess" OR
+           unit STREQUAL "WindowsDownloadInteractiveInput")
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
