@@ -20,6 +20,13 @@ enum class DownloadRecoveryReviewAction;
 struct DownloadExecutionDrainCallbacks final {
     std::function<void()> shutdown{};
     std::function<bool()> stopped{};
+    // Optional prompt closure of borrowed ingress, before consent signals or
+    // controller/execution shutdown. No waits or owner/controller ticks.
+    // May reenter; successful completion is remembered only after it returns.
+    // If it throws inside a running controller tick, that controller is sealed
+    // after the throw to prevent a successor. Further ticks/exit remain blocked
+    // until closure succeeds; failure never proves physical drain or Saved.
+    std::function<void()> before_shutdown{};
 };
 
 struct DownloadApplicationBindingOptions final {
@@ -102,6 +109,7 @@ class DownloadApplicationBinding final : public QObject {
     void importConsentChanged();
 
   private:
+    [[nodiscard]] bool requestClosure();
     void beginShutdown();
     void shutdownReview();
     void pollReview();

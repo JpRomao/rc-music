@@ -168,6 +168,12 @@ if(WIN32 AND TARGET rc_music_player_downloads)
     target_link_libraries(rc_music_test_player_downloads PRIVATE rc_music_ui_scenario_support)
     add_ui_test(rc_music_ui_player_downloads_tests rc_music.ui.player-downloads
         qtest/WindowsPlayerDownloadsTests.cpp rc_music_test_player_downloads)
+    if(TARGET rc_music_native_messaging)
+        # Test consumers exercise IPC explicitly. Never propagate their
+        # compile profile into the owner implementation or the UI.
+        target_link_libraries(rc_music_ui_player_downloads_tests PRIVATE rc_music_native_messaging)
+        target_compile_definitions(rc_music_ui_player_downloads_tests PRIVATE RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS)
+    endif()
     set_tests_properties(rc_music.ui.player-downloads PROPERTIES
         LABELS "ui;qt;downloads;persistence;lifecycle;windows;FR-051;FR-053")
     if(RC_MUSIC_DOWNLOAD_TEST_CRT_DIR AND RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
@@ -189,12 +195,56 @@ if(WIN32 AND TARGET rc_music_player_downloads)
             RC_MUSIC_TEST_MF_WORKER_PATH="$<TARGET_FILE:rc_music_media_foundation_worker>")
         add_dependencies(rc_music_player_downloads_composition_tests
             rc_music_download_io_helper rc_music_download_network_payload rc_music_media_foundation_worker)
+        if(TARGET rc_music_native_messaging)
+            string(SHA256 player_youtube_native_identity "${CMAKE_BINARY_DIR}")
+            string(SUBSTRING "${player_youtube_native_identity}" 0 16 player_youtube_native_identity)
+            set(native_config_origin "chrome-extension://cccccccccccccccccccccccccccccccc/")
+            set(native_config_endpoint "rc-music-youtube-owner-${player_youtube_native_identity}")
+            set(native_config_owner_images "QStringLiteral(\"rc_music_player_downloads_composition_tests.exe\")")
+            set(native_config_host_images "QStringLiteral(\"rc_music_youtube_owner_native_host_test.exe\")")
+            set(player_youtube_native_config "${CMAKE_CURRENT_BINARY_DIR}/player-youtube-owner-native-host")
+            configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
+                "${player_youtube_native_config}/NativeHostBuildConfiguration.hpp" @ONLY)
+            add_executable(rc_music_youtube_owner_native_host_test
+                "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
+            target_compile_definitions(rc_music_youtube_owner_native_host_test PRIVATE RC_MUSIC_YOUTUBE_NATIVE_HOST)
+            target_include_directories(rc_music_youtube_owner_native_host_test PRIVATE "${player_youtube_native_config}")
+            target_link_libraries(rc_music_youtube_owner_native_host_test PRIVATE rc_music_native_messaging)
+            rc_music_configure_cpp(rc_music_youtube_owner_native_host_test)
+            # Peer image profiles resolve siblings of the actual executable,
+            # never CWD, ../, or an identity supplied over the protocol.
+            set_target_properties(rc_music_youtube_owner_native_host_test rc_music_player_downloads_composition_tests
+                PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+            target_link_libraries(rc_music_player_downloads_composition_tests PRIVATE rc_music_native_messaging)
+            target_include_directories(rc_music_player_downloads_composition_tests PRIVATE "${player_youtube_native_config}")
+            target_compile_definitions(rc_music_player_downloads_composition_tests PRIVATE
+                RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
+                RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH="$<TARGET_FILE:rc_music_youtube_owner_native_host_test>")
+            add_dependencies(rc_music_player_downloads_composition_tests rc_music_youtube_owner_native_host_test)
+        endif()
         add_test(NAME rc_music.ui.player-downloads-composition COMMAND rc_music_player_downloads_composition_tests -o -,txt)
         set_tests_properties(rc_music.ui.player-downloads-composition PROPERTIES
             LABELS "ui;qt;downloads;persistence;process;lifecycle;windows;FR-051;FR-053" TIMEOUT 90
             ENVIRONMENT "${ui_environment}"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
+    if(TARGET rc_music_native_messaging)
+        set(player_native_ingress_expected ON)
+    else()
+        set(player_native_ingress_expected OFF)
+    endif()
+    if(TARGET rc_music_player_downloads_composition_tests)
+        set(player_native_composition_available ON)
+    else()
+        set(player_native_composition_available OFF)
+    endif()
+    add_test(NAME rc_music.ui.player-native-ingress-build-boundary COMMAND "${CMAKE_COMMAND}"
+        "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
+        "-DNATIVE_INGRESS_EXPECTED=${player_native_ingress_expected}"
+        "-DCOMPOSITION_TEST_AVAILABLE=${player_native_composition_available}"
+        -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/PlayerNativeIngressBuildBoundaryTests.cmake")
+    set_tests_properties(rc_music.ui.player-native-ingress-build-boundary PROPERTIES
+        LABELS "ui;boundary;native;downloads" TIMEOUT 20)
 endif()
 if(WIN32 AND TARGET rc_music_download_network AND TARGET rc_music_download_persistence AND
         RC_MUSIC_DOWNLOAD_TEST_FFMPEG AND RC_MUSIC_DOWNLOAD_TEST_FFPROBE)

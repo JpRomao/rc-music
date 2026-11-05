@@ -15,12 +15,26 @@
 #include "presentation/PlayerPresenterTestAccess.hpp"
 #include "presentation/WindowsPlayerDownloads.hpp"
 
+#ifdef RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
+#include "adapters/NativeDownloadCodec.hpp"
+#include "adapters/NativeDownloadIpcProtocol.hpp"
+#include "adapters/NativeYoutubeAudioIpcProtocol.hpp"
+#include "adapters/QtNativeDownloadClient.hpp"
+#include "adapters/QtNativeYoutubeAudioClient.hpp"
+#include "adapters/WindowsNativeDownloadLease.hpp"
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <qt_windows.h>
+#endif
+
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QUuid>
 #include <cstring>
 
 #include <atomic>
@@ -87,6 +101,14 @@ DownloadRequest request() {
     return {"01234567-89ab-4cde-8fab-0123456789ab",
             {{"https://synthetic.example.test/known.mp3", "Synthetic", DownloadMediaKind::Audio}}};
 }
+NativeHostConfiguration nativeProfile(const char letter) {
+    const auto image = QCoreApplication::applicationFilePath();
+    return {QStringLiteral("chrome-extension://") + QString(32, QLatin1Char{letter}) + '/',
+            QStringLiteral("rc-music-player-owner-") + QUuid::createUuid().toString(QUuid::Id128),
+            {image},
+            {image}};
+}
+WindowsPlayerNativeIngressOptions nativeProfiles() { return {nativeProfile('a'), nativeProfile('b')}; }
 class Platform final : public PlatformIntegration {
   public:
     bool trayAvailable() const noexcept override { return true; }
@@ -195,6 +217,7 @@ class CheckpointStore final : public DownloadCheckpointStore {
 struct TaskState final {
     std::atomic<int> starts{0};
     std::atomic<bool> complete{true}, cancelled{false}, allow_cancel_terminal{true};
+    std::function<void()> during_cancel{};
 };
 class Task final : public WindowsDownloadTask {
   public:
@@ -207,7 +230,11 @@ class Task final : public WindowsDownloadTask {
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64 now, qint64) override {
         return cap && start(cap->jobId(), {}, now);
     }
-    void cancel() override { state_->cancelled = true; }
+    void cancel() override {
+        if (state_->during_cancel)
+            state_->during_cancel();
+        state_->cancelled = true;
+    }
     DownloadExecutionUpdate poll(qint64) override {
         if (state_->cancelled && state_->allow_cancel_terminal)
             return {.job_id = id_, .state = DownloadExecutionState::Cancelled};
@@ -223,6 +250,46 @@ class Task final : public WindowsDownloadTask {
     std::shared_ptr<TaskState> state_;
     std::string id_;
 };
+#ifdef RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
+struct NativePeerState final {
+    std::atomic<bool> released{true};
+    std::atomic<int> begins{0}, shutdowns{0};
+    QStringList images{};
+};
+class NativePeer final : public NativeDownloadPeerCheck {
+  public:
+    explicit NativePeer(std::shared_ptr<NativePeerState> state) : state_(std::move(state)) {}
+    bool begin(qintptr pipe, NativeDownloadPeerSide, const QStringList& images) override {
+        ++state_->begins;
+        state_->images = images;
+        return pipe != 0 && pipe != -1;
+    }
+    NativeDownloadPeerState poll() override { return NativeDownloadPeerState::Eligible; }
+    void shutdown() noexcept override { ++state_->shutdowns; }
+    bool stopped() override { return state_->released; }
+
+  private:
+    std::shared_ptr<NativePeerState> state_;
+};
+NativeDownloadPeerCheckFactory nativePeerFactory(std::shared_ptr<NativePeerState> state = {}) {
+    if (!state)
+        state = std::make_shared<NativePeerState>();
+    return [state] { return std::make_unique<NativePeer>(state); };
+}
+struct ReleaseNativePeer final {
+    std::shared_ptr<NativePeerState> state;
+    ~ReleaseNativePeer() { state->released = true; }
+};
+bool nativeEndpointOpenable(const QString& endpoint) {
+    const auto path = (QStringLiteral("\\\\.\\pipe\\") + endpoint).toStdWString();
+    const auto pipe = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                  FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE)
+        return false;
+    CloseHandle(pipe);
+    return true;
+}
+#endif
 struct Harness final {
     Platform platform;
     Backend backend;
@@ -240,7 +307,8 @@ struct Harness final {
     std::shared_ptr<TaskState> task{std::make_shared<TaskState>()};
     std::unique_ptr<WindowsPlayerDownloads> owner;
     explicit Harness(bool youtube = false, LyricsBinding* lyrics_writer = nullptr,
-                     QNetworkAccessManager* lyrics_network = nullptr, bool automatic_polling = false) {
+                     QNetworkAccessManager* lyrics_network = nullptr, bool automatic_polling = false,
+                     std::optional<WindowsPlayerNativeIngressOptions> native_ingress = {}) {
         WindowsDownloadExecution::TaskFactory destination = [state = task] { return std::make_unique<Task>(state); };
         auto execution =
             youtube ? makeWindowsMediaAndYoutubeExecution(
@@ -253,7 +321,8 @@ struct Harness final {
             WindowsPlayerDownloadsOptions{.job_namespace = "owner",
                                           .binding = {.automatic_polling = automatic_polling},
                                           .lyrics_writer = lyrics_writer,
-                                          .lyrics_network = lyrics_network});
+                                          .lyrics_network = lyrics_network,
+                                          .native_ingress = std::move(native_ingress)});
     }
     ~Harness() {
         // Failed assertions must not strand a deliberately held worker.
@@ -302,6 +371,211 @@ struct Harness final {
 class WindowsPlayerDownloadsTests final : public QObject {
     Q_OBJECT
   private slots:
+#ifdef RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
+    void nativeProfilesArePassiveAndOwnTheirCapturedTransportStringsBeforeStart() {
+        auto profiles = nativeProfiles();
+        const auto principal = profiles.principal;
+        const auto youtube = profiles.youtube;
+        auto origin_units = youtube.allowed_origin.toStdU16String();
+        auto endpoint_units = youtube.endpoint_name.toStdU16String();
+        auto image_units = youtube.expected_host_images.front().toStdU16String();
+        profiles.youtube.allowed_origin = QString::fromRawData(reinterpret_cast<const QChar*>(origin_units.data()),
+                                                               static_cast<qsizetype>(origin_units.size()));
+        profiles.youtube.endpoint_name = QString::fromRawData(reinterpret_cast<const QChar*>(endpoint_units.data()),
+                                                              static_cast<qsizetype>(endpoint_units.size()));
+        profiles.youtube.expected_host_images = {QString::fromRawData(
+            reinterpret_cast<const QChar*>(image_units.data()), static_cast<qsizetype>(image_units.size()))};
+        const auto principal_peer = std::make_shared<NativePeerState>();
+        const auto youtube_peer = std::make_shared<NativePeerState>();
+        profiles.principal_peer_check_factory = nativePeerFactory(principal_peer);
+        profiles.youtube_peer_check_factory = nativePeerFactory(youtube_peer);
+        Harness h(true, nullptr, nullptr, false, profiles);
+        WindowsNativeDownloadLease principal_probe, youtube_probe;
+        QVERIFY(principal_probe.acquire(principal.endpoint_name));
+        QVERIFY(youtube_probe.acquire(youtube.endpoint_name));
+        principal_probe.reset();
+        youtube_probe.reset();
+        QLocalServer endpoint_probe;
+        QVERIFY(endpoint_probe.listen(principal.endpoint_name));
+        endpoint_probe.close();
+        QVERIFY(endpoint_probe.listen(youtube.endpoint_name));
+        endpoint_probe.close();
+        QCOMPARE(principal_peer->begins.load(), 0);
+        QCOMPARE(youtube_peer->begins.load(), 0);
+        origin_units[origin_units.size() - 2] = u'p';
+        endpoint_units.back() = endpoint_units.back() == u'z' ? u'a' : u'z';
+        image_units.front() = image_units.front() == u'Z' ? u'Y' : u'Z';
+        QVERIFY(h.ready());
+        QLocalSocket principal_observer;
+        principal_observer.connectToServer(principal.endpoint_name);
+        QTRY_COMPARE(principal_observer.state(), QLocalSocket::ConnectedState);
+        QTRY_COMPARE(principal_peer->begins.load(), 1);
+        principal_observer.abort();
+        QtNativeYoutubeAudioClient client{youtube, {.peer_check_factory = nativePeerFactory() }};
+        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
+                                           { { "aB0-_Cd1EF2",
+                                               "Synthetic song",
+                                               "Artist",
+                                               "",
+                                               false } }};
+        QCOMPARE(client.begin(selected).state, DownloadAdmissionState::Pending);
+        std::optional<DownloadSubmissionResult> reply;
+        QVERIFY(h.wait([&] { return (reply = client.poll(selected.request_id)).has_value(); }));
+        QCOMPARE(reply->error, DownloadSubmissionError::None);
+        QCOMPARE(principal_peer->images, principal.expected_host_images);
+        QCOMPARE(youtube_peer->images, youtube.expected_host_images);
+        client.shutdown();
+        QVERIFY(h.drain());
+    }
+    void bothNativePortsWaitForTheSharedCheckpointBeforeReply_data() {
+        QTest::addColumn<bool>("youtube");
+        QTest::newRow("principal port") << false;
+        QTest::newRow("YouTube port") << true;
+    }
+    void bothNativePortsWaitForTheSharedCheckpointBeforeReply() {
+        QFETCH(bool, youtube);
+        auto profiles = nativeProfiles();
+        profiles.principal_peer_check_factory = nativePeerFactory();
+        profiles.youtube_peer_check_factory = nativePeerFactory();
+        Harness h(true, nullptr, nullptr, false, profiles);
+        QVERIFY(h.ready());
+        h.checkpoint->allow(false);
+        QtNativeDownloadClient principal{profiles.principal, {.peer_check_factory = nativePeerFactory() }};
+        QtNativeYoutubeAudioClient yt{profiles.youtube, {.peer_check_factory = nativePeerFactory() }};
+        const YoutubeAudioRequest selected{request().request_id,
+                                           { { "aB0-_Cd1EF2",
+                                               "Synthetic song",
+                                               "Artist",
+                                               "",
+                                               false } }};
+        const auto result = youtube ? yt.begin(selected) : principal.begin(request());
+        QCOMPARE(result.state, DownloadAdmissionState::Pending);
+        const auto observe = [&] {
+            return youtube ? yt.poll(selected.request_id) : principal.poll(request().request_id);
+        };
+        QVERIFY(h.wait([&] { return h.checkpoint->saves == 1; }));
+        QVERIFY(!observe());
+        QCOMPARE(h.task->starts.load(), 0);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
+        h.checkpoint->allow(true);
+        std::optional<DownloadSubmissionResult> reply;
+        QVERIFY(h.wait([&] { return (reply = observe()).has_value(); }));
+        QCOMPARE(reply->error, DownloadSubmissionError::None);
+        QCOMPARE(reply->job_ids.size(), std::size_t{1});
+        QVERIFY(h.wait([&] { return h.session_writer.active.has_value(); }));
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.state(), QStringLiteral("importing"));
+        QCOMPARE(h.autosave.savedRevision(), SessionRevision{0});
+        QCOMPARE(h.backend.loads, 0);
+        QVERIFY(!h.presenter.hasCurrentTrack());
+        h.session_writer.save();
+        QVERIFY(h.wait([&] { return h.state() == QStringLiteral("completed"); }));
+        QCOMPARE(h.session_writer.disk.download_import_receipts.front().job_id, reply->job_ids.front());
+        principal.shutdown();
+        yt.shutdown();
+        QVERIFY(h.drain());
+    }
+    void nativeIngressClosesBeforeExecutionCancellationAndRetainsBothNamesThroughDrain() {
+        auto profiles = nativeProfiles();
+        const auto peers = std::make_shared<NativePeerState>();
+        peers->released = false;
+        profiles.principal_peer_check_factory = nativePeerFactory(peers);
+        profiles.youtube_peer_check_factory = nativePeerFactory(peers);
+        Harness h(true, nullptr, nullptr, false, profiles);
+        ReleaseNativePeer release_peers{peers};
+        h.task->complete = false;
+        h.task->allow_cancel_terminal = false;
+        const auto listener_open_during_cancel = std::make_shared<std::atomic<bool>>(false);
+        h.task->during_cancel = [listener_open_during_cancel, principal = profiles.principal.endpoint_name,
+                                 youtube = profiles.youtube.endpoint_name] {
+            *listener_open_during_cancel = nativeEndpointOpenable(principal) || nativeEndpointOpenable(youtube);
+        };
+        QVERIFY(h.ready());
+        QtNativeYoutubeAudioClient client{profiles.youtube, {.peer_check_factory = nativePeerFactory() }};
+        const YoutubeAudioRequest selected{request().request_id,
+                                           { { "aB0-_Cd1EF2",
+                                               "Synthetic song",
+                                               "Artist",
+                                               "",
+                                               false } }};
+        QCOMPARE(client.begin(selected).state, DownloadAdmissionState::Pending);
+        std::optional<DownloadSubmissionResult> reply;
+        QVERIFY(h.wait([&] { return (reply = client.poll(selected.request_id)).has_value(); }));
+        QCOMPARE(reply->error, DownloadSubmissionError::None);
+        QVERIFY(h.wait([&] { return h.task->starts == 1; }));
+        client.shutdown();
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(h.wait([&] { return h.task->cancelled.load(); }));
+        QVERIFY(!listener_open_during_cancel->load());
+        QVERIFY(!h.owner->stopped());
+        QCOMPARE(h.platform.exits, 0);
+        WindowsNativeDownloadLease principal_probe, youtube_probe;
+        QVERIFY(!principal_probe.acquire(profiles.principal.endpoint_name));
+        QVERIFY(!youtube_probe.acquire(profiles.youtube.endpoint_name));
+        h.task->allow_cancel_terminal = true;
+        for (int index = 0; index < 10; ++index) {
+            h.poll();
+            QTest::qWait(1);
+        }
+        QVERIFY(!h.owner->stopped());
+        peers->released = true;
+        QVERIFY(h.drain());
+        QVERIFY(!principal_probe.acquire(profiles.principal.endpoint_name));
+        QVERIFY(!youtube_probe.acquire(profiles.youtube.endpoint_name));
+        h.owner.reset();
+        QVERIFY(principal_probe.acquire(profiles.principal.endpoint_name));
+        QVERIFY(youtube_probe.acquire(profiles.youtube.endpoint_name));
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
+    }
+    void secondListenerConflictRollsBackTheFirstWithoutAdmittingAnyWork() {
+        auto profiles = nativeProfiles();
+        profiles.principal_peer_check_factory = nativePeerFactory();
+        profiles.youtube_peer_check_factory = nativePeerFactory();
+        QLocalServer blocker;
+        QVERIFY(blocker.listen(profiles.youtube.endpoint_name));
+        Harness h(true, nullptr, nullptr, false, profiles);
+        QVERIFY(!h.owner->start());
+        QtNativeDownloadClient principal{profiles.principal, {.peer_check_factory = nativePeerFactory() }};
+        const auto result = principal.begin(request());
+        QCOMPARE(result.state, DownloadAdmissionState::Completed);
+        QCOMPARE(result.result.error, DownloadSubmissionError::NotAvailable);
+        QCOMPARE(h.task->starts.load(), 0);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
+        principal.shutdown();
+        QVERIFY(h.drain());
+        h.owner.reset();
+        WindowsNativeDownloadLease principal_probe;
+        QVERIFY(principal_probe.acquire(profiles.principal.endpoint_name));
+    }
+    void invalidNativeProfilesAreRejectedBeforeAnyListener_data() {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("partial principal") << 0;
+        QTest::newRow("foreign YouTube origin") << 1;
+        QTest::newRow("endpoint alias") << 2;
+        QTest::newRow("origin alias") << 3;
+        QTest::newRow("missing host images") << 4;
+    }
+    void invalidNativeProfilesAreRejectedBeforeAnyListener() {
+        QFETCH(int, mode);
+        auto profiles = nativeProfiles();
+        if (mode == 0)
+            profiles.principal.endpoint_name.clear();
+        else if (mode == 1)
+            profiles.youtube.allowed_origin = QStringLiteral("https://example.invalid/");
+        else if (mode == 2)
+            profiles.youtube.endpoint_name = profiles.principal.endpoint_name.toUpper();
+        else if (mode == 3)
+            profiles.youtube.allowed_origin = profiles.principal.allowed_origin;
+        else
+            profiles.youtube.expected_host_images.clear();
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, Harness(false, nullptr, nullptr, false, profiles));
+    }
+#else
+    void aBuildWithoutNativeMessagingRefusesAnActiveIngressProfile() {
+        const auto profiles = nativeProfiles();
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, Harness(false, nullptr, nullptr, false, profiles));
+    }
+#endif
     void automaticPollingOffersTheNextPublishedLyricsOnlyAfterExplicitDismissal() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

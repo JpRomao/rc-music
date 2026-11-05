@@ -1,15 +1,23 @@
+#include "../../qt/support/YoutubeResolverTestSupport.hpp"
 #include "adapters/DownloadJobsModel.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
+#include "adapters/YoutubeDownloadExecution.hpp"
 #include "m0/adapters/SingleWorkerSessionWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/WindowsPlayerDownloads.hpp"
+
+#ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+#include "NativeHostBuildConfiguration.hpp"
+#include "adapters/NativeMessageFrame.hpp"
+#include "adapters/YoutubeAudioCodec.hpp"
+#endif
 
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #error "Player download composition must use the production UI ABI without fixture scenarios"
@@ -21,10 +29,14 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
+#include <QtEndian>
 
 #include <Sddl.h>
 
@@ -119,12 +131,49 @@ struct Observation final {
     std::atomic<bool> checkpoint_destroyed{false};
     std::atomic<bool> fail_session_before_commit{false};
     std::atomic<int> factories{0};
+    std::atomic<int> resolvers{0};
+    std::atomic<bool> resolver_before_saved{false}, resolver_on_ui{false};
     std::atomic<int> session_failures{0};
     void release() {
         admission_ack.release();
         session_ack.release();
         fail_session_before_commit = false;
     }
+};
+
+// The resolver port alone is synthetic. Capability decoding, worker routing,
+// local framed transfer, MF conversion, publication and persistence stay real.
+class ObservedYoutubeResolver final : public YoutubeResolverProcess {
+  public:
+    explicit ObservedYoutubeResolver(std::shared_ptr<Observation> state) : state_(std::move(state)) {}
+    bool start(const QString& video, qint64) override {
+        ++state_->resolvers;
+        if (!state_->admission_saved)
+            state_->resolver_before_saved = true;
+        state_->resolver_on_ui = QThread::currentThread() == QCoreApplication::instance()->thread();
+        auto object =
+            QJsonDocument::fromJson(
+                music_player::m0::test::youtubeResolverFixtureJson(
+                    video,
+                    QStringLiteral("https://r1.googlevideo.com/videoplayback?expire=2000000000&fixture=synthetic-mp4")))
+                .object();
+        // The general fixture's 1024 is not the AAC fixture's byte count.
+        // An absent optional estimate lets the real HTTP length govern quotas.
+        object.remove(QStringLiteral("filesize"));
+        output_ = QJsonDocument{object}.toJson(QJsonDocument::Compact);
+        return true;
+    }
+    YoutubeResolverProcessUpdate poll(qint64) override {
+        return cancelled_ ? YoutubeResolverProcessUpdate{.state = YoutubeResolverProcessState::Cancelled}
+                          : YoutubeResolverProcessUpdate{
+                                .state = YoutubeResolverProcessState::Exited, .stdout_chunk = output_, .exit_code = 0};
+    }
+    void cancel() override { cancelled_ = true; }
+
+  private:
+    std::shared_ptr<Observation> state_;
+    QByteArray output_;
+    bool cancelled_{};
 };
 
 // The real store commits first; only its Saved acknowledgement is withheld.
@@ -292,7 +341,8 @@ struct Player final {
     std::unique_ptr<WindowsPlayerDownloads> owner;
     bool started{false};
 
-    explicit Player(Files& paths, std::shared_ptr<Observation> state = std::make_shared<Observation>())
+    explicit Player(Files& paths, std::shared_ptr<Observation> state = std::make_shared<Observation>(),
+                    std::optional<WindowsPlayerNativeIngressOptions> ingress = {}, bool youtube = false)
         : files(paths), observation(std::move(state)), preferences(preferences_writer, initialPreferences()),
           session_store(files.documents, {.inject_fault =
                                               [state = observation](SessionStoreFaultPoint point) {
@@ -311,7 +361,7 @@ struct Player final {
                     {.initial = initialPreferences(),
                      .autosave = &preferences,
                      .session = {.initial = loaded.snapshot, .load_status = loaded.status, .autosave = &autosave}}) {
-        auto execution = std::make_unique<WindowsDownloadExecution>([state = observation, &paths] {
+        WindowsDownloadExecution::TaskFactory destination = [state = observation, &paths] {
             ++state->factories;
             if (!state->admission_saved)
                 state->factory_before_saved = true;
@@ -320,11 +370,18 @@ struct Player final {
             // Every real preparer, the journal and the task are owned by the
             // execution worker. No prepared capability crosses from this UI.
             return makeWindowsOwnedPreparedDownloadTask(paths.network, paths.media, paths.job, paths.documents);
-        });
+        };
+        auto execution = youtube
+                             ? makeWindowsMediaAndYoutubeExecution(
+                                   [state = observation] { return std::make_unique<ObservedYoutubeResolver>(state); },
+                                   destination, [] { return qint64{1'999'999'000}; })
+                             : std::make_unique<WindowsDownloadExecution>(destination);
         owner = std::make_unique<WindowsPlayerDownloads>(
-            presenter, loaded, std::move(execution), [state = observation, directory = files.documents] {
+            presenter, loaded, std::move(execution),
+            [state = observation, directory = files.documents] {
                 return std::make_unique<ObservedCheckpointStore>(directory, state);
-            });
+            },
+            WindowsPlayerDownloadsOptions{.native_ingress = std::move(ingress)});
     }
     ~Player() {
         observation->release();
@@ -363,12 +420,186 @@ bool publishedAndClean(const Files& files, const std::string& id) {
            result.journal->records.front().stage == DownloadOwnershipStage::Published &&
            result.journal->records.front().cleanup_complete && entries(files.staging).isEmpty();
 }
+#ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+class BrowserHost final {
+  public:
+    QProcess process;
+    ~BrowserHost() {
+        if (process.state() != QProcess::NotRunning) {
+            process.kill();
+            static_cast<void>(process.waitForFinished(3'000));
+        }
+    }
+    bool start(const QByteArray& frame) {
+        process.setProcessChannelMode(QProcess::SeparateChannels);
+        process.start(QString::fromUtf8(RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH),
+                      {nativeHostBuildConfiguration().allowed_origin, QStringLiteral("--parent-window=0")});
+        if (!process.waitForStarted(3'000) || process.write(frame.first(2)) != 2)
+            return false;
+        QTest::qWait(10);
+        if (process.write(frame.sliced(2, 3)) != 3)
+            return false;
+        QTest::qWait(10);
+        // Stdin deliberately remains open during admission Pending.
+        return process.write(frame.sliced(5)) == frame.size() - 5;
+    }
+    void read() {
+        constexpr qsizetype maximum = 4'100;
+        if (output.size() <= maximum)
+            output += process.read(maximum + 1 - output.size());
+        overflow = overflow || output.size() > maximum || process.bytesAvailable() > 0;
+    }
+    QByteArray output{};
+    bool overflow{};
+};
+#endif
 } // namespace
 
 class PlayerDownloadsCompositionTests final : public QObject {
     Q_OBJECT
 
   private slots:
+#ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+    void nativeYoutubeHostUsesOwnedIngressAndCommitsBothSavedAcknowledgements() {
+        Files files;
+        QVERIFY(files.initialize());
+        QVERIFY(QFileInfo::exists(QString::fromUtf8(RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH)));
+        const auto profile = nativeHostBuildConfiguration();
+        QVERIFY(isValidNativeHostConfiguration(profile));
+        const WindowsPlayerNativeIngressOptions profiles{.youtube = profile};
+        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
+                                           {{"aB0-_Cd1EF2", "Synthetic song", "Synthetic artist", "", false}}};
+        const auto frame = encodeNativeMessageFrame(encodeYoutubeAudioRequest(selected));
+        QVERIFY(!frame.isEmpty());
+        std::vector<std::string> original_ids;
+        SessionSnapshot committed;
+        QByteArray final_hash;
+        for (int run = 0; run < 2; ++run) {
+            auto observation = std::make_shared<Observation>();
+            if (run != 0)
+                observation->release();
+            Player player{files, observation, profiles, true};
+            QVERIFY(player.ready());
+            BrowserHost browser;
+            QVERIFY(browser.start(frame));
+            if (run == 0) {
+                QVERIFY(waitFor([&] { return observation->admission_ack.entered.load(); }));
+                browser.read();
+                QVERIFY(browser.output.isEmpty());
+                QVERIFY(!browser.overflow);
+                QCOMPARE(browser.process.state(), QProcess::Running);
+                QCOMPARE(observation->resolvers.load(), 0);
+                QCOMPARE(observation->factories.load(), 0);
+                QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+                WindowsDownloadCheckpointStore checkpoint{files.documents};
+                const auto saved_bytes = checkpoint.load();
+                QCOMPARE(saved_bytes.status, DownloadCheckpointLoadStatus::Loaded);
+                QVERIFY(saved_bytes.checkpoint);
+                QCOMPARE(saved_bytes.checkpoint->receipts.size(), std::size_t{1});
+                observation->admission_ack.release();
+            }
+            QVERIFY(waitFor([&] {
+                browser.read();
+                return browser.process.state() == QProcess::NotRunning || browser.overflow;
+            }));
+            browser.read();
+            QVERIFY(!browser.overflow);
+            QCOMPARE(browser.process.exitStatus(), QProcess::NormalExit);
+            QCOMPARE(browser.process.exitCode(), 0);
+            QVERIFY(browser.process.readAllStandardError().isEmpty());
+            QVERIFY(browser.output.size() > 4 && browser.output.size() <= 4'100);
+            QCOMPARE(qFromLittleEndian<quint32>(browser.output.constData()),
+                     static_cast<quint32>(browser.output.size() - 4));
+            const auto admitted = decodeYoutubeAudioResponse(browser.output.sliced(4), selected.request_id, 1);
+            QVERIFY(admitted);
+            QCOMPARE(admitted->error, DownloadSubmissionError::None);
+            if (run == 0)
+                original_ids = admitted->job_ids;
+            QCOMPARE(admitted->job_ids, original_ids);
+            QCOMPARE(original_ids.size(), std::size_t{1});
+            if (run == 0) {
+                QVERIFY(waitFor([&] { return observation->session_ack.entered.load(); }));
+                QCOMPARE(observation->resolvers.load(), 1);
+                QCOMPARE(observation->factories.load(), 1);
+                QVERIFY(!observation->resolver_before_saved);
+                QVERIFY(!observation->resolver_on_ui);
+                QVERIFY(!observation->factory_before_saved);
+                QVERIFY(!observation->factory_on_ui);
+                QVERIFY(!observation->checkpoint_on_ui);
+                QCOMPARE(player.state(), QStringLiteral("importing"));
+                QCOMPARE(player.presenter.queueModelObject()->rowCount(), 1);
+                QCOMPARE(player.autosave.savedRevision(), SessionRevision{0});
+                QtJsonWindowsSessionStore fresh_session{files.documents};
+                const auto bytes_without_ack = fresh_session.load();
+                QCOMPARE(bytes_without_ack.status, SessionLoadStatus::Loaded);
+                QCOMPARE(bytes_without_ack.snapshot.download_import_receipts.size(), std::size_t{1});
+                QCOMPARE(bytes_without_ack.snapshot.download_import_receipts.front().job_id, original_ids.front());
+                QVERIFY(publishedAndClean(files, original_ids.front()));
+                observation->session_ack.release();
+                QVERIFY(waitFor([&] { return player.state() == QStringLiteral("completed"); }));
+                QVERIFY(player.autosave.savedRevision() > 0);
+                QCOMPARE(player.autosave.savedRevision(), player.autosave.latestRevision());
+                committed = fresh_session.load().snapshot;
+                QCOMPARE(committed, bytes_without_ack.snapshot);
+                const auto final =
+                    QString::fromStdWString(committed.download_import_receipts.front().source_path.wstring());
+                QCOMPARE(QFileInfo{final}.absolutePath(), files.publication);
+                QVERIFY(final.endsWith(QStringLiteral(".mp3")));
+                QVERIFY(QFileInfo{final}.size() > 0);
+                final_hash = fileHash(final);
+                QCOMPARE(final_hash.size(), 64);
+            } else {
+                QCOMPARE(player.loaded.snapshot.download_import_receipts, committed.download_import_receipts);
+                QCOMPARE(observation->resolvers.load(), 0);
+                QCOMPARE(observation->factories.load(), 0);
+                QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+                QCOMPARE(player.autosave.savedRevision(), SessionRevision{0});
+                QCOMPARE(
+                    fileHash(QString::fromStdWString(committed.download_import_receipts.front().source_path.wstring())),
+                    final_hash);
+            }
+            BrowserHost replay;
+            QVERIFY(replay.start(frame));
+            QVERIFY(waitFor([&] {
+                replay.read();
+                return replay.process.state() == QProcess::NotRunning || replay.overflow;
+            }));
+            replay.read();
+            QVERIFY(!replay.overflow);
+            QCOMPARE(replay.process.exitStatus(), QProcess::NormalExit);
+            QCOMPARE(replay.process.exitCode(), 0);
+            QVERIFY(replay.process.readAllStandardError().isEmpty());
+            QVERIFY(replay.output.size() > 4 && replay.output.size() <= 4'100);
+            QCOMPARE(qFromLittleEndian<quint32>(replay.output.constData()),
+                     static_cast<quint32>(replay.output.size() - 4));
+            const auto repeated = decodeYoutubeAudioResponse(replay.output.sliced(4), selected.request_id, 1);
+            QVERIFY(repeated);
+            QCOMPARE(repeated->error, DownloadSubmissionError::None);
+            QCOMPARE(repeated->job_ids, original_ids);
+            QCOMPARE(observation->resolvers.load(), run == 0 ? 1 : 0);
+            QCOMPARE(observation->factories.load(), run == 0 ? 1 : 0);
+            QCOMPARE(player.jobs()->rowCount(), 1);
+            QCOMPARE(player.presenter.queueModelObject()->rowCount(), run == 0 ? 1 : 0);
+            QCOMPARE(player.audio.loads, 0);
+            QCOMPARE(player.audio.plays, 0);
+            QVERIFY(!player.presenter.hasCurrentTrack());
+            QCOMPARE(entries(files.publication).size(), 1);
+            WindowsDownloadCheckpointStore checkpoint{files.documents};
+            const auto checkpoint_after_replay = checkpoint.load();
+            QCOMPARE(checkpoint_after_replay.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(checkpoint_after_replay.checkpoint);
+            QCOMPARE(checkpoint_after_replay.checkpoint->jobs.size(), std::size_t{1});
+            QCOMPARE(checkpoint_after_replay.checkpoint->receipts.size(), std::size_t{1});
+            QCOMPARE(checkpoint_after_replay.checkpoint->receipts.front().request_id, selected.request_id);
+            QCOMPARE(checkpoint_after_replay.checkpoint->jobs.front().job_id, original_ids.front());
+            QVERIFY(player.drain());
+            QVERIFY(player.owner->stopped());
+            QVERIFY(observation->checkpoint_destroyed);
+        }
+        QVERIFY(files.transientParentsEmpty());
+        QVERIFY(files.sourcesPreserved());
+    }
+#endif
     void realPreparedWorkersImportOnlyAfterDurableAdmissionAndSessionSaved_data() {
         QTest::addColumn<QString>("suffix");
         QTest::newRow("MP3") << QStringLiteral("mp3");

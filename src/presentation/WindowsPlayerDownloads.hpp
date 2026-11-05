@@ -1,9 +1,12 @@
 #pragma once
 
+#include "adapters/NativeDownloadPeerCheck.hpp"
+#include "adapters/NativeHostLaunch.hpp"
 #include "m0/adapters/SingleWorkerDownloadCheckpointIo.hpp"
 #include "presentation/DownloadApplicationBinding.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 class QNetworkAccessManager;
@@ -16,6 +19,14 @@ class WindowsDownloadExecution;
 class LyricsBinding;
 struct SessionLoadResult;
 
+struct WindowsPlayerNativeIngressOptions final {
+    // Trusted optional profiles only, never values from a page or checkpoint.
+    // Both origin and endpoint empty disable a channel; partial profiles fail.
+    // Defaults open no listener.
+    NativeHostConfiguration principal{}, youtube{};
+    NativeDownloadPeerCheckFactory principal_peer_check_factory{}, youtube_peer_check_factory{};
+};
+
 struct WindowsPlayerDownloadsOptions final {
     // Empty selects a fresh UUID namespace. Trusted composition only.
     std::string job_namespace{};
@@ -24,11 +35,13 @@ struct WindowsPlayerDownloadsOptions final {
     // service/view only when present. Borrowed dependencies outlive this owner.
     LyricsBinding* lyrics_writer{nullptr};
     QNetworkAccessManager* lyrics_network{nullptr};
+    std::optional<WindowsPlayerNativeIngressOptions> native_ingress{};
 };
 
 // Optional Windows application-thread composition, never a QML-created object.
 // Owns execution, durable admission and Session-mode import as one lifecycle;
-// creates no directory, ingress or installation profile. The store factory and
+// creates no directory or installation profile. Native ingress is inactive by
+// default; trusted optional profiles open only at start(). The store factory and
 // all checkpoint I/O/destruction run on the checkpoint worker. Execution keeps
 // its existing private Qt worker. All configuration is supplied by trusted C++.
 // Presenter/session autosave and any borrowed binding recovery ports outlive us.

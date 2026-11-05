@@ -14,5 +14,11 @@ function(rc_music_add_player_downloads target ui)
     target_include_directories(${target} PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
     target_link_libraries(${target} PUBLIC ${ui} rc_music_download_network rc_music_download_persistence)
     target_link_libraries(${target} PRIVATE Qt6::Qml Qt6::Quick)
+    if(TARGET rc_music_native_messaging)
+        # Only this owner implementation acquires the optional ingress. Keep
+        # its public ABI and both UI variants independent of this build flag.
+        target_link_libraries(${target} PRIVATE rc_music_native_messaging)
+        target_compile_definitions(${target} PRIVATE RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE)
+    endif()
     rc_music_configure_cpp(${target})
 endfunction()

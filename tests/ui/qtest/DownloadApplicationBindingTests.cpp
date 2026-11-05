@@ -45,9 +45,17 @@ class Execution final : public DownloadExecution {
         update = {.job_id = id};
         return true;
     }
-    void cancel(std::string_view) override { ++cancellations; }
+    void cancel(std::string_view) override {
+        ++cancellations;
+        if (on_cancel)
+            on_cancel();
+    }
     DownloadExecutionUpdate poll(std::string_view) override { return update; }
-    void shutdown() { ++shutdowns; }
+    void shutdown() {
+        ++shutdowns;
+        if (on_shutdown)
+            on_shutdown();
+    }
     bool stopped() const {
         if (throw_probe)
             throw std::runtime_error{"private worker error"};
@@ -58,6 +66,7 @@ class Execution final : public DownloadExecution {
     int shutdowns{0};
     bool physical_stopped{false};
     bool throw_probe{false};
+    std::function<void()> on_cancel{}, on_shutdown{};
     DownloadExecutionUpdate update{};
 };
 class Importer final : public DownloadImport {
@@ -281,6 +290,8 @@ struct Harness final {
     std::int64_t now{0};
     int clock_reads{0};
     bool throw_clock{false};
+    int before_shutdown_calls{0};
+    std::function<void()> on_before_shutdown{};
     DownloadApplicationBinding binding;
     explicit Harness(SessionLoadResult session = {}, bool with_review = false, bool with_validation = false)
         : presenter(
@@ -289,7 +300,14 @@ struct Harness final {
           service(execution, importer, "fresh", {}, &identity),
           controller(service, io, session, DownloadFinalSavePolicy::HoldForDecision),
           binding(presenter, controller, service,
-                  {.shutdown = [&] { execution.shutdown(); }, .stopped = [&] { return execution.stopped(); }},
+                  {.shutdown = [&] { execution.shutdown(); },
+                   .stopped = [&] { return execution.stopped(); },
+                   .before_shutdown =
+                       [&] {
+                           ++before_shutdown_calls;
+                           if (on_before_shutdown)
+                               on_before_shutdown();
+                       }},
                   {.now_ms =
                        [&] {
                            ++clock_reads;
@@ -1474,6 +1492,286 @@ class DownloadApplicationBindingTests final : public QObject {
         QCOMPARE(h.execution.starts, 1);
         QVERIFY(!h.binding.warningText().contains(QStringLiteral("never-display")));
         QCOMPARE(h.binding.jobsModel()->rowCount(), 1);
+    }
+    void beforeShutdownClosesIngressBeforeCancellationAndExecutionShutdown() {
+        Harness h;
+        QVERIFY(h.ready());
+        QVERIFY(h.controller.begin(input()).state == DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        std::vector<std::string> events;
+        bool ingress_closed = false;
+        h.on_before_shutdown = [&] {
+            events.push_back("ingress");
+            QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+            QCOMPARE(h.execution.cancellations, 0);
+            QCOMPARE(h.execution.shutdowns, 0);
+            ingress_closed = true;
+        };
+        h.execution.on_cancel = [&] {
+            events.push_back("cancel");
+            QVERIFY(ingress_closed);
+        };
+        h.execution.on_shutdown = [&] {
+            events.push_back("execution");
+            QVERIFY(ingress_closed);
+        };
+        QVERIFY(h.presenter.requestExit());
+        QCOMPARE(events, (std::vector<std::string>{"ingress", "cancel", "execution"}));
+        QCOMPARE(h.before_shutdown_calls, 1);
+        h.binding.poll();
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QCOMPARE(h.platform.exits, 0);
+    }
+    void beforeShutdownRunsBeforeConsentNotificationsAndRecoveryDrain() {
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        QVERIFY(h.binding.requestRecoveredImport(QStringLiteral("old-1")));
+        bool ingress_closed = false;
+        bool consent_observed = false;
+        h.on_before_shutdown = [&] {
+            QVERIFY(!h.binding.importConsentToken().isEmpty());
+            QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+            QCOMPARE(h.execution.shutdowns, 0);
+            QCOMPARE(h.review.shutdowns, 0);
+            QCOMPARE(h.validation.shutdowns, 0);
+            ingress_closed = true;
+        };
+        connect(&h.binding, &DownloadApplicationBinding::importConsentChanged, &h.binding, [&] {
+            if (h.binding.importConsentToken().isEmpty()) {
+                consent_observed = true;
+                QVERIFY(ingress_closed);
+                QCOMPARE(h.execution.shutdowns, 0);
+            }
+        });
+        h.execution.on_shutdown = [&] {
+            QVERIFY(ingress_closed);
+            QVERIFY(consent_observed);
+        };
+        QVERIFY(h.presenter.requestExit());
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QVERIFY(consent_observed);
+        QCOMPARE(h.execution.shutdowns, 1);
+        QCOMPARE(h.validation.shutdowns, 1);
+        QCOMPARE(h.platform.exits, 0);
+    }
+    void clockClosureHookReentryCannotDrainTheControllerBeforeReturning_data() {
+        QTest::addColumn<bool>("throws");
+        QTest::newRow("clock throws") << true;
+        QTest::newRow("clock moves backwards") << false;
+    }
+    void clockClosureHookReentryCannotDrainTheControllerBeforeReturning() {
+        QFETCH(bool, throws);
+        Harness h;
+        h.now = 1;
+        QVERIFY(h.ready());
+        h.on_before_shutdown = [&] {
+            QCOMPARE(h.before_shutdown_calls, 1);
+            QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+            h.binding.poll();
+            QVERIFY(h.presenter.requestExit());
+            h.playerPoll();
+            QCOMPARE(h.before_shutdown_calls, 1);
+            QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+            QCOMPARE(h.execution.shutdowns, 0);
+            QVERIFY(h.io.saves.empty());
+            QCOMPARE(h.platform.exits, 0);
+        };
+        h.throw_clock = throws;
+        if (!throws)
+            h.now = 0;
+        h.binding.poll();
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Stopping);
+        QCOMPARE(h.execution.shutdowns, 1);
+        QCOMPARE(h.platform.exits, 0);
+        h.throw_clock = false;
+        h.now = 1;
+        h.binding.poll();
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QCOMPARE(h.execution.shutdowns, 1);
+    }
+    void failedBeforeShutdownBlocksWorkAndExitUntilAHealthyRetry() {
+        Harness h;
+        QVERIFY(h.ready());
+        auto selected = input();
+        selected.items.push_back({.url = "https://synthetic.example.test/second.mp3",
+                                  .title = "Second synthetic item",
+                                  .kind = DownloadMediaKind::Audio});
+        QVERIFY(h.controller.begin(selected).state == DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        h.execution.update.state = DownloadExecutionState::Failed;
+        h.execution.update.error = DownloadFailure::Unavailable;
+        bool fail_hook = true;
+        h.on_before_shutdown = [&] {
+            QCOMPARE(h.execution.starts, 1);
+            QCOMPARE(h.execution.shutdowns, 0);
+            if (fail_hook)
+                throw std::runtime_error{"private ingress closure error"};
+        };
+        static_cast<void>(h.presenter.requestExit());
+        QVERIFY(h.before_shutdown_calls > 0);
+        const auto failed_attempts = h.before_shutdown_calls;
+        h.binding.poll();
+        h.playerPoll();
+        QVERIFY(h.before_shutdown_calls > failed_attempts);
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.cancellations, 0);
+        QCOMPARE(h.execution.shutdowns, 0);
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+        QCOMPARE(h.platform.exits, 0);
+        QVERIFY(!h.presenter.exitCommitted());
+        QVERIFY(!h.binding.warningText().isEmpty());
+        fail_hook = false;
+        h.binding.poll();
+        const auto successful_attempts = h.before_shutdown_calls;
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.shutdowns, 1);
+        QVERIFY(h.io.saves.size() > std::size_t{1});
+        h.io.saved(DownloadCheckpointSaveStatus::Failed);
+        h.io.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 0);
+        QVERIFY(h.binding.canRetryFinalSave());
+        QVERIFY(h.binding.retryFinalSave());
+        h.io.saved();
+        h.binding.poll();
+        static_cast<void>(h.presenter.requestExit());
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 1);
+        QCOMPARE(h.before_shutdown_calls, successful_attempts);
+        QCOMPARE(h.execution.starts, 1);
+    }
+    void beforeShutdownMayDestroyItsBindingWithoutApprovingExitOrCallingDrain() {
+        Harness h;
+        PlayerPresenter presenter(
+            FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE)),
+            h.platform);
+        int hook_calls = 0;
+        std::unique_ptr<DownloadApplicationBinding> binding;
+        binding = std::make_unique<DownloadApplicationBinding>(
+            presenter, h.controller, h.service,
+            DownloadExecutionDrainCallbacks{.shutdown = [&] { h.execution.shutdown(); },
+                                            .stopped = [&] { return h.execution.stopped(); },
+                                            .before_shutdown =
+                                                [&] {
+                                                    ++hook_calls;
+                                                    binding.reset();
+                                                }},
+            DownloadApplicationBindingOptions{.automatic_polling = false});
+        QPointer<DownloadApplicationBinding> guard{binding.get()};
+        QVERIFY(binding->start());
+        h.io.loaded();
+        binding->poll();
+        static_cast<void>(presenter.requestExit());
+        QCOMPARE(hook_calls, 1);
+        QVERIFY(guard.isNull());
+        QCOMPARE(h.execution.shutdowns, 0);
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Ready);
+        QVERIFY(h.io.saves.empty());
+        PlayerPresenterTestAccess::pollPersistence(presenter);
+        QCOMPARE(h.platform.exits, 0);
+        QVERIFY(!presenter.exitCommitted());
+        QVERIFY(!presenter.setExitPreparationCallbacks({}));
+    }
+    void beforeShutdownDuringImportPollingClosesBeforeTheSameTickSuccessor() {
+        Harness h;
+        QVERIFY(h.ready());
+        auto selected = input();
+        selected.items.push_back({.url = "https://synthetic.example.test/second.mp3",
+                                  .title = "Second synthetic item",
+                                  .kind = DownloadMediaKind::Audio});
+        QVERIFY(h.controller.begin(selected).state == DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.importer.pending = true;
+        h.execution.update.state = DownloadExecutionState::Published;
+        h.execution.update.phase = DownloadPhase::Publishing;
+        h.execution.update.published_mp3 = path();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.execution.starts, 1);
+        bool hook_returned = false;
+        h.on_before_shutdown = [&] {
+            h.binding.poll();
+            QCOMPARE(h.execution.shutdowns, 0);
+            QCOMPARE(h.execution.starts, 1);
+            QCOMPARE(h.before_shutdown_calls, 1);
+            hook_returned = true;
+        };
+        h.importer.polled = DownloadImportState::Committed;
+        h.importer.on_poll = [&] {
+            QVERIFY(h.presenter.requestExit());
+            QVERIFY(hook_returned);
+            QCOMPARE(h.execution.shutdowns, 0);
+        };
+        h.binding.poll();
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QVERIFY(hook_returned);
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.controller.begin(input()).result.error, DownloadSubmissionError::NotAvailable);
+        h.binding.poll();
+        QCOMPARE(h.before_shutdown_calls, 1);
+        QCOMPARE(h.execution.starts, 1);
+    }
+    void failedBeforeShutdownInsideATickSealsTheCurrentSuccessorUntilRetry() {
+        Harness h;
+        QVERIFY(h.ready());
+        auto selected = input();
+        selected.items.push_back({.url = "https://synthetic.example.test/second.mp3",
+                                  .title = "Second synthetic item",
+                                  .kind = DownloadMediaKind::Audio});
+        QVERIFY(h.controller.begin(selected).state == DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.importer.pending = true;
+        h.execution.update.state = DownloadExecutionState::Published;
+        h.execution.update.phase = DownloadPhase::Publishing;
+        h.execution.update.published_mp3 = path();
+        h.binding.poll();
+        QCOMPARE(h.importer.calls, 1);
+        QCOMPARE(h.execution.starts, 1);
+        bool fail_hook = true;
+        h.on_before_shutdown = [&] {
+            QCOMPARE(h.execution.starts, 1);
+            QCOMPARE(h.execution.shutdowns, 0);
+            if (fail_hook)
+                throw std::runtime_error{"private nested ingress closure error"};
+        };
+        h.importer.polled = DownloadImportState::Committed;
+        h.importer.on_poll = [&] { static_cast<void>(h.presenter.requestExit()); };
+        h.binding.poll();
+        QVERIFY(h.before_shutdown_calls > 0);
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.shutdowns, 0);
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Stopping);
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        h.binding.poll();
+        h.playerPoll();
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.shutdowns, 0);
+        QCOMPARE(h.platform.exits, 0);
+        fail_hook = false;
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.shutdowns, 1);
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+        const auto successful_attempts = h.before_shutdown_calls;
+        h.io.saved();
+        h.io.physical_stopped = true;
+        h.execution.physical_stopped = true;
+        h.binding.poll();
+        static_cast<void>(h.presenter.requestExit());
+        h.playerPoll();
+        QCOMPARE(h.platform.exits, 1);
+        QCOMPARE(h.before_shutdown_calls, successful_attempts);
+        QCOMPARE(h.execution.starts, 1);
     }
     void exitNeedsSavedFinalHistoryAndBothPhysicalDrains() {
         Harness h;

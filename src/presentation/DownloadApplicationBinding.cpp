@@ -113,6 +113,9 @@ struct DownloadApplicationBinding::Impl {
     bool gate_attached{false};
     bool operating{false};
     bool closing{false};
+    bool before_shutdown_in_progress{false};
+    bool before_shutdown_completed{false};
+    bool controller_tick_in_progress{false};
     bool execution_shutdown_requested{false};
     bool execution_stopped{false};
     bool explicit_loss_accepted{false};
@@ -767,13 +770,53 @@ bool DownloadApplicationBinding::start() {
     return guard && accepted;
 }
 
+bool DownloadApplicationBinding::requestClosure() {
+    const QPointer<DownloadApplicationBinding> guard{this};
+    impl_->closing = true;
+    if (impl_->before_shutdown_completed)
+        return true;
+    if (impl_->before_shutdown_in_progress)
+        return false;
+    impl_->before_shutdown_in_progress = true;
+    try {
+        // Retain the callable independently: prompt closure may reenter or
+        // destroy the binding. No controller drain precedes its return.
+        const auto before_shutdown = impl_->execution.before_shutdown;
+        if (before_shutdown)
+            before_shutdown();
+        if (!guard)
+            return false;
+        impl_->before_shutdown_completed = true;
+        impl_->before_shutdown_in_progress = false;
+        return true;
+    } catch (...) {
+        if (guard) {
+            impl_->before_shutdown_in_progress = false;
+            impl_->poll_failed = true;
+            // The hook has unwound. Seal a tick already on the core stack so
+            // its successor predicate closes, but keep ingress closure pending
+            // and forbid further ticks/exit until a healthy hook retry.
+            if (impl_->controller_tick_in_progress)
+                impl_->controller.shutdown();
+        }
+        return false;
+    }
+}
+
 void DownloadApplicationBinding::beginShutdown() {
     if (QThread::currentThread() != thread())
         return;
     const QPointer<DownloadApplicationBinding> guard{this};
     const bool already_operating = impl_->operating;
     impl_->operating = true;
-    impl_->closing = true;
+    if (!requestClosure()) {
+        if (!guard || already_operating)
+            return;
+        refreshProjection();
+        if (guard)
+            impl_->operating = false;
+        return;
+    }
     invalidateDiscardConsent();
     if (!guard)
         return;
@@ -816,6 +859,13 @@ void DownloadApplicationBinding::poll() {
         return;
     const QPointer<DownloadApplicationBinding> guard{this};
     impl_->operating = true;
+    const auto pause_for_closure = [&] {
+        if (!guard)
+            return;
+        refreshProjection();
+        if (guard)
+            impl_->operating = false;
+    };
     bool clock_healthy = false;
     try {
         const auto clock = impl_->options.now_ms;
@@ -829,13 +879,21 @@ void DownloadApplicationBinding::poll() {
     } catch (...) {
         if (!guard)
             return;
-        impl_->closing = true;
+        if (!requestClosure()) {
+            pause_for_closure();
+            return;
+        }
     }
     impl_->poll_failed = !clock_healthy;
     // A nested player exit can request closure while a controller port is on
     // the stack. Apply it here/on the next outer tick before starting successors.
-    if (impl_->closing)
+    if (impl_->closing) {
+        if (!requestClosure()) {
+            pause_for_closure();
+            return;
+        }
         impl_->controller.shutdown();
+    }
     if (!guard)
         return;
     if (impl_->closing && !impl_->execution_shutdown_requested) {
@@ -858,15 +916,27 @@ void DownloadApplicationBinding::poll() {
     if (!guard)
         return;
     try {
+        impl_->controller_tick_in_progress = true;
         impl_->controller.tick(impl_->last_now);
     } catch (...) {
         if (!guard)
             return;
+        impl_->controller_tick_in_progress = false;
         impl_->poll_failed = true;
-        impl_->closing = true;
+        if (!requestClosure()) {
+            pause_for_closure();
+            return;
+        }
     }
     if (!guard)
         return;
+    impl_->controller_tick_in_progress = false;
+    // A nested exit may have failed to close ingress while the core tick was
+    // on the stack. Do not visit any further outward ports until it succeeds.
+    if (impl_->closing && !requestClosure()) {
+        pause_for_closure();
+        return;
+    }
     pollReview();
     if (!guard)
         return;
@@ -949,6 +1019,8 @@ ExitPreparationState DownloadApplicationBinding::pollExitPreparation() {
     poll();
     if (!guard)
         return ExitPreparationState::Failed;
+    if (!impl_->before_shutdown_completed || impl_->before_shutdown_in_progress)
+        return impl_->poll_failed ? ExitPreparationState::Failed : ExitPreparationState::Pending;
     if (impl_->poll_failed || impl_->controller.state() == DownloadAdmissionControllerState::FinalSaveFailed)
         return ExitPreparationState::Failed;
     if (!impl_->controller.stopped() || !impl_->execution_shutdown_requested)
@@ -1006,6 +1078,23 @@ bool DownloadApplicationBinding::closeAfterFinalSaveFailure() {
 
 void DownloadApplicationBinding::refreshProjection() {
     const QPointer<DownloadApplicationBinding> guard{this};
+    if (impl_->closing && !impl_->before_shutdown_completed) {
+        // A failed ingress closure freezes the controller and consent model.
+        // Publish only the blocked-exit notice; never query recovery ports or
+        // invalidate consent before the outer closure callback has returned.
+        auto next = impl_->projection;
+        next.warning = tr("Não foi possível confirmar o andamento dos downloads. O encerramento permanece bloqueado.");
+        next.retry_startup = false;
+        next.renew_namespace = false;
+        next.retry_admission = false;
+        next.retry_final = false;
+        next.close_failed = false;
+        if (next != impl_->projection) {
+            impl_->projection = std::move(next);
+            emit stateChanged();
+        }
+        return;
+    }
     bool discard_supported = false;
     if (impl_->gate_attached && impl_->options.recovery_review && !impl_->review_unavailable) {
         try {

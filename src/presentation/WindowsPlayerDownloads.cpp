@@ -11,8 +11,14 @@
 #include "presentation/PlayerDownloadImport.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+#include "adapters/QtNativeDownloadServer.hpp"
+#include "adapters/QtNativeYoutubeAudioServer.hpp"
+#endif
+
 #include <QAbstractItemModel>
 #include <QNetworkAccessManager>
+#include <QPointer>
 #include <QScopedValueRollback>
 #include <QThread>
 #include <QTimer>
@@ -23,7 +29,54 @@
 #include <utility>
 
 namespace music_player::m0 {
+namespace {
+bool nativeProfileActive(const NativeHostConfiguration& profile) {
+    return !profile.allowed_origin.isEmpty() || !profile.endpoint_name.isEmpty();
+}
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+void ownProfileStrings(NativeHostConfiguration& profile) {
+    const auto own = [](const QString& value) { return QString{value.constData(), value.size()}; };
+    profile.allowed_origin = own(profile.allowed_origin);
+    profile.endpoint_name = own(profile.endpoint_name);
+    for (auto& image : profile.expected_owner_images)
+        image = own(image);
+    for (auto& image : profile.expected_host_images)
+        image = own(image);
+}
+#endif
+void validateAndOwnIngress(std::optional<WindowsPlayerNativeIngressOptions>& ingress) {
+    if (!ingress)
+        return;
+    const bool principal = nativeProfileActive(ingress->principal);
+    const bool youtube = nativeProfileActive(ingress->youtube);
+    if (!principal && !youtube)
+        return;
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+    for (auto* profile : {&ingress->principal, &ingress->youtube}) {
+        if (nativeProfileActive(*profile) &&
+            (!isValidNativeHostConfiguration(*profile) || !validNativePeerImages(profile->expected_owner_images) ||
+             !validNativePeerImages(profile->expected_host_images)))
+            throw std::invalid_argument{"player downloads requires a complete trusted native profile"};
+        ownProfileStrings(*profile);
+    }
+    if (principal && youtube &&
+        (ingress->principal.allowed_origin == ingress->youtube.allowed_origin ||
+         ingress->principal.endpoint_name.compare(ingress->youtube.endpoint_name, Qt::CaseInsensitive) == 0))
+        throw std::invalid_argument{"player download native profiles must use distinct origins and endpoints"};
+#else
+    throw std::invalid_argument{"player native ingress is not available in this build"};
+#endif
+}
+} // namespace
 struct WindowsPlayerDownloads::Impl final {
+    QPointer<PlayerPresenter> presenter;
+    bool ingress_ready{}, ingress_closing{};
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+    // Reservations outlive every worker's destructor fallback. The destructor
+    // closes observers before their borrowed controller/ports start to die.
+    std::unique_ptr<QtNativeDownloadServer> principal_ingress;
+    std::unique_ptr<QtNativeYoutubeAudioServer> youtube_ingress;
+#endif
     std::unique_ptr<WindowsDownloadExecution> execution;
     QtDownloadRequestIdentity identity;
     PlayerDownloadImport importer;
@@ -39,6 +92,50 @@ struct WindowsPlayerDownloads::Impl final {
     bool offering_lyrics{};
     bool lyrics_wake_queued{};
     DownloadApplicationBinding view;
+    void closeIngress() {
+        ingress_ready = false;
+        ingress_closing = true;
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+        if (principal_ingress)
+            principal_ingress->beginShutdown();
+        if (youtube_ingress)
+            youtube_ingress->beginShutdown();
+#endif
+    }
+    bool ingressStopped() const {
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+        return (!principal_ingress || principal_ingress->stopped()) && (!youtube_ingress || youtube_ingress->stopped());
+#else
+        return true;
+#endif
+    }
+    bool ingressAvailable() const { return ingress_ready && !ingress_closing && presenter && !presenter->exiting(); }
+    bool start() {
+        if (!view.start())
+            return false;
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+        if (principal_ingress || youtube_ingress) {
+            if (ingress_closing || !presenter || presenter->exiting() ||
+                (principal_ingress && !principal_ingress->start()) || (youtube_ingress && !youtube_ingress->start()) ||
+                ingress_closing || !presenter || presenter->exiting()) {
+                closeIngress();
+                return false;
+            }
+            // No request may enter a partially started pair. The controller
+            // retains its own startup/busy/replay policy after this latch opens.
+            ingress_ready = true;
+        }
+#endif
+        return true;
+    }
+    void pollIngress() {
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+        if (principal_ingress)
+            principal_ingress->poll();
+        if (youtube_ingress)
+            youtube_ingress->poll();
+#endif
+    }
     bool lyricsDrained() const {
         return !lyrics_view ||
                (lyrics_view->drained() && !lyrics_writer->variantsBusy() && !lyrics_writer->variantsHasPendingChange());
@@ -77,8 +174,8 @@ struct WindowsPlayerDownloads::Impl final {
     Impl(PlayerPresenter& presenter, const SessionLoadResult& session,
          std::unique_ptr<WindowsDownloadExecution> owned_execution,
          SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options)
-        : execution(std::move(owned_execution)), importer(presenter, {}, PlayerDownloadImportPersistence::Session),
-          checkpoint(std::move(checkpoint_store)),
+        : presenter(&presenter), execution(std::move(owned_execution)),
+          importer(presenter, {}, PlayerDownloadImportPersistence::Session), checkpoint(std::move(checkpoint_store)),
           service(*execution, importer,
                   options.job_namespace.empty() ? QUuid::createUuid().toString(QUuid::Id128).toStdString()
                                                 : std::move(options.job_namespace),
@@ -96,8 +193,26 @@ struct WindowsPlayerDownloads::Impl final {
                             lyrics_view->beginShutdown();
                         execution->shutdown();
                     },
-                .stopped = [this] { return execution->stopped() && lyricsDrained(); }},
+                .stopped = [this] { return execution->stopped() && lyricsDrained() && ingressStopped(); },
+                .before_shutdown = [this] { closeIngress(); }},
                std::move(options.binding)) {
+#ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
+        if (options.native_ingress) {
+            auto& native = *options.native_ingress;
+            if (nativeProfileActive(native.principal))
+                principal_ingress = std::make_unique<QtNativeDownloadServer>(
+                    std::move(native.principal), controller,
+                    QtNativeDownloadServerOptions{.available = [this] { return ingressAvailable(); },
+                                                  .peer_check_factory =
+                                                      std::move(native.principal_peer_check_factory)});
+            if (nativeProfileActive(native.youtube))
+                youtube_ingress = std::make_unique<QtNativeYoutubeAudioServer>(
+                    std::move(native.youtube), youtube,
+                    QtNativeYoutubeAudioServerOptions{.available = [this] { return ingressAvailable(); },
+                                                      .peer_check_factory =
+                                                          std::move(native.youtube_peer_check_factory)});
+        }
+#endif
         view.setLyrics(lyrics_view.get());
         QObject::connect(&view, &DownloadApplicationBinding::stateChanged, &view, [this] { offerLyrics(); });
         QObject::connect(view.jobsModel(), &QAbstractItemModel::dataChanged, &view, [this] { offerLyrics(); });
@@ -113,6 +228,7 @@ struct WindowsPlayerDownloads::Impl final {
                 });
             });
     }
+    ~Impl() { closeIngress(); }
 };
 
 WindowsPlayerDownloads::WindowsPlayerDownloads(PlayerPresenter& presenter, const SessionLoadResult& session,
@@ -124,20 +240,22 @@ WindowsPlayerDownloads::WindowsPlayerDownloads(PlayerPresenter& presenter, const
         (options.lyrics_network && (!options.lyrics_writer || options.lyrics_network->thread() != presenter.thread())))
         throw std::invalid_argument{
             "player downloads requires same-thread presenter, execution and checkpoint factory"};
+    validateAndOwnIngress(options.native_ingress);
     impl_ = std::make_unique<Impl>(presenter, session, std::move(execution), std::move(checkpoint_store),
                                    std::move(options));
 }
 WindowsPlayerDownloads::~WindowsPlayerDownloads() = default;
-bool WindowsPlayerDownloads::start() { return impl_->view.start(); }
+bool WindowsPlayerDownloads::start() { return impl_->start(); }
 DownloadApplicationBinding* WindowsPlayerDownloads::binding() const { return &impl_->view; }
 AsyncDownloadSubmission& WindowsPlayerDownloads::submission() { return impl_->controller; }
 AsyncYoutubeAudioSubmission& WindowsPlayerDownloads::youtubeSubmission() { return impl_->youtube; }
 void WindowsPlayerDownloads::poll() {
     impl_->view.poll();
+    impl_->pollIngress();
     impl_->offerLyrics();
 }
 bool WindowsPlayerDownloads::stopped() const {
     return impl_->controller.stopped() && impl_->checkpoint.stopped() && impl_->execution->stopped() &&
-           impl_->lyricsDrained();
+           impl_->lyricsDrained() && impl_->ingressStopped();
 }
 } // namespace music_player::m0
