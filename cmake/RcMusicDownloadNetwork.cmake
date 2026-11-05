@@ -64,7 +64,7 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime YoutubeRuntimeReceipt WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask)
@@ -83,6 +83,10 @@ if(BUILD_TESTING)
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsYoutubeBrokerHelper.cpp")
         target_link_libraries(rc_music_youtube_broker_helper PRIVATE Qt6::Core)
         rc_music_configure_cpp(rc_music_youtube_broker_helper)
+        add_executable(rc_music_youtube_runtime_smoke EXCLUDE_FROM_ALL
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeRuntimeSmokeMain.cpp")
+        target_link_libraries(rc_music_youtube_runtime_smoke PRIVATE rc_music_download_network Qt6::Core)
+        rc_music_configure_cpp(rc_music_youtube_runtime_smoke)
         add_executable(rc_music_download_tls_runtime_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadTlsRuntimeHelper.cpp")
         target_link_libraries(rc_music_download_tls_runtime_helper PRIVATE rc_music_download_network)

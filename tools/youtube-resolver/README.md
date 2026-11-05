@@ -19,3 +19,31 @@ O pai usa EJS `0.8.0` autenticado, com até 4 MiB por recurso core/lib e program
 Os testes Python usam somente streams em memória, I/O parcial controlado, API JSC/registry e YoutubeDL falsos. O responsável pelos checks executou `python -B -I -m unittest discover -s tests/youtube -p test_resolver_provider.py`: **34 métodos Green, 0,120 s**. O scaffold teve Red **28 métodos/58 falhas/8 erros**; testes posteriores observaram terminal no budget exato (**1 método/2 erros**), `HTTPHeaderDict` (**1 falha**) e interoperabilidade de nonblank/data/envelope (**34 métodos/12 falhas/1 erro**), corrigidos sem retirar os oráculos. O codec C++ passou **96/96 Qt, 0,45 s**. Esses recortes não importam ou executam yt-dlp, Node ou EJS reais.
 
 Checks nativos do broker passaram **36/36 Qt**, após Red **2 passados/34 falhos**. A seleção integrada passou **4/4 CTest/239 Qt** e o módulo opcional Release compilou sem testes. O helper usa processos reais, mas representa extractor/Node com dados/respostas falsos e recursos EJS sintéticos; não demonstra execução deste Python empacotado ou solução JavaScript real. A presença de um provider próprio e de dados corretos no wire não comprova closure de um pacote real. Produção permanece OFF, sem host/configuração instalada; sandbox de filesystem/rede, privacidade e distribuição continuam gates. Não foram criados perfis AppContainer, consultado WFP ou retomadas autorizações anteriores por esse incremento.
+
+## Build local
+
+O ambiente de build é um venv Windows x64 separado, com CPython 3.13.1 e os nove wheels fixados em `requirements-build.lock`. Node 24.20.0 é um input separado. Esses pins reproduzem o candidato de desenvolvimento verificado; não representam aprovação de segurança ou distribuição das versões.
+
+Instale os wheels previamente obtidos e conferidos no venv usando `pip install --no-index --find-links <diretório-de-wheels> --require-hashes --only-binary=:all: -r tools/youtube-resolver/requirements-build.lock`. O builder não instala nem baixa dependências.
+
+O JSON de configuração tem exatamente estes campos:
+
+- `repository_root`: raiz absoluta do checkout;
+- `venv_python`: `python.exe` do venv privado, abaixo de `out`;
+- `artifact_root`, `work_root`, `receipt_path`: destinos absolutos novos, disjuntos e abaixo de `out`; recibo fora das duas árvores;
+- `mode`: `prod` ou `offline`;
+- `sources`: observações `{name, version, path, sha256, provenance}` dos onze pins em `onedir_plan.SOURCE_PINS`, dos arquivos fixos do projeto e dos cinco textos de licença.
+
+Os fontes do projeto são `entrypoint`, `spec`, `hook`, `build-lock`, e, somente em offline, `fixture` e `offline-entry`; a versão desses registros é `project`. O builder exige também `python-license`, `node-license`, `yt-dlp-license`, `ejs-license` e `pyinstaller-license`. SHA-256 deve ser hexadecimal minúsculo observado dos bytes locais; procedência é um texto explícito, sem descoberta automática. Inputs não podem atravessar reparse points; para um Node instalado por symlink, conferir e declarar o alvo canônico.
+
+Execute o Python privado com `-B -I tools/youtube-resolver/build_runtime.py --config <configuração-absoluta.json>`. `onedir_plan.py` valida os dados; a spec fixa entrypoints, imports, nome/layout e opções. O builder confere hashes antes/depois, cria ambiente de build com home/cache/TEMP privados, copia Node e notices, inventaria todos os arquivos e grava o recibo externo. Destinos existentes são recusados; falhas preservam os parciais e `work_root/build-journal.json`, com log do PyInstaller.
+
+O marcador vazio `extractor/_internal/yt_dlp_ejs-0.8.0.dist-info/REQUESTED` é a única exclusão permitida: após conferir a árvore, sua remoção é registrada no journal. Outros vazios ou arquivos fora do layout falham. O recibo contém somente `schemaVersion`, `purpose`, `artifact_root`, `sources` e `artifacts`, sem autoridade de lançamento ou confiança no publicador.
+
+## Prova offline
+
+`offline` usa outro entrypoint, a fixture original do projeto, o diretor JSC e headers reais do yt-dlp, sem acesso a vídeo ou página pública. Não é uma flag aceita pelo executável de produção. `prod` exclui a fixture e o entrypoint de teste.
+
+O alvo explícito `rc_music_youtube_runtime_smoke` é `EXCLUDE_FROM_ALL` e existe somente com `BUILD_TESTING=ON`. Ele recebe `--manifest <absoluto> --manifest-sha256 <hash-revisado> --receipt <absoluto-novo>`, exige propósito offline e usa o preparador, broker e sessão C++ reais. O recibo registra validação dos cinco vetores, contadores instrumentados, ACK, lease e preservação em incerteza. Não executa transferência, conversão, importação ou GUI.
+
+Os testes Python determinísticos usam `python -B -I -m unittest discover -s tests/youtube -p 'test_*.py'`. Contratos C++ e evidência real, comandos completos e gates pendentes estão no [guia do fluxo](../../docs/youtube-audio-and-lyrics.md#runtime-real-no-ensaio-offline).
