@@ -3,7 +3,9 @@
 **Estado:** setups privados Lite e Completa experimental com ferramentas e preparação separada das extensões compilados e conferidos em 2026-11-05, sem executar ou instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-11-05.
 
-A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) contém os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
+A [limpeza de 2026-11-05](development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) preservou os dois setups `cf34cd8` e retirou os executáveis substituídos, mantendo recibos, configurações e evidências. Os registros históricos abaixo documentam a geração original.
+
+A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 

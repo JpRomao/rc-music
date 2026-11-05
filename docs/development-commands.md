@@ -181,6 +181,21 @@ O [incremento Windows seguinte](windows-integration-tests.md) promoveu oito suit
 
 A [promoção dos processos](process-tests.md) registra os cinco drivers em sete jornadas, mais uma guarda de ABI/recursos, usando dois shells instrumentados exclusivos de testes. Os gates de build/testes estão validados: `test` passou **296/296**, com build OFF, lint e formato executados separadamente, sem novo `validate` neste incremento. Após configure/build, `ctest --test-dir out/product/desktop-tests --output-on-failure --no-tests=error -L process` seleciona oito registros; `-L windows` passa a selecionar 19, incluindo as 12 integrações anteriores. Os quatro smokes QPA Windows continuam fora do runner diário, e o executável real permanece sem hooks em ON/OFF.
 
+## Limpeza de artefatos gerados — 2026-11-05
+
+A limpeza solicitada removeu **50.238 arquivos / 2.776.863.058 bytes** (aproximadamente **2,78 GB**, ou 2,59 GiB), sem novo backup de binários descartáveis:
+
+- objetos CMake recompiláveis e intermediários de PyInstaller/DIA;
+- 19 setups substituídos e os arquivos declarados de quatro payloads antigos, preservando manifests, configurações e recibos;
+- seis stages de autoria cujos conteúdos já estavam reproduzidos no corpus versionado;
+- 45.765 fontes duplicadas de `out/m0/ft50811-01/{qtbase,qtbase-patched,vulkan-headers-1.2.182.0}`, depois de comparar todos os hashes com as fontes canônicas e inventários em `q/96bvah3m0t0t71m990olv5gpvs/source`.
+
+Foram conferidos antes/depois **2.706 arquivos protegidos**, incluindo fontes versionadas, seis WIP preexistentes, probes congelados, componentes pinados, os dois runtimes Native `7601247` e os dois setups `cf34cd8`. O SDK composto, Qt Host, Multimedia stage, TagLib install, fontes/licenças canônicas, mídia, logs e evidências permanecem disponíveis. A worktree `r1-src` foi mantida porque seus arquivos ainda aparecem como inputs dos runtimes atuais. Não há projeto Cargo ativo neste checkout.
+
+A remoção usou uma lista literal revisada, recusou reparse points e preservou arquivos desconhecidos; diretórios foram retirados somente quando vazios. Os três grafos Ninja atuais continuaram legíveis. Código e índice Git permaneceram inalterados durante a limpeza, antes deste registro documental. Não houve build, CTest, setup, escrita no Registro ou retomada dos ensaios nativos adiados.
+
+Recibos em `out/product/cleanup-20261105/`: `summary.json`, plano/resultado, proteção de arquivos e verificação das duplicatas. Os dois inventários maiores foram comprimidos em `file-inventories.zip` e reabertos para conferir tamanho/SHA-256 de cada entrada; `inventory-archive.json` conserva os hashes originais. Objetos removidos serão recompilados quando necessários. Reexecutar os experimentos FreeType antigos exige recriar suas cópias de fontes a partir das árvores canônicas preservadas. Entradas históricas dos guias descrevem a geração original; seus recibos não comprovam presença física de binários substituídos após esta limpeza.
+
 ## Limpeza local de intermediários — 2026-10-24
 
 A limpeza solicitada pelo mantenedor removeu **10.701 arquivos `.obj`**, **6.957.596.342 bytes**, somente em `CMakeFiles` de builds antigos: `out/m0/builds`, caches auxiliares de `out/product` e `b` das duas execuções Qtbase `q/96bvah3m0t0t71m990olv5gpvs` e `q/hla2221pa11rncc9e2fhsta6r4`. Nenhuma raiz foi apagada recursivamente. Dois reparse points foram ignorados, sem percorrer seus destinos.

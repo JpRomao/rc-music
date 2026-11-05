@@ -1,6 +1,8 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtimes privados Lite e Completa experimental com hosts Native montados em 2026-11-05. Os setups anteriores continuam preservados; o smoke de startup/codecs abaixo pertence a um runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtimes privados Lite e Completa experimental com hosts Native montados em 2026-11-05 e preservados na limpeza posterior. O smoke de startup/codecs abaixo pertence a um runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+
+A [retenção após a limpeza de 2026-11-05](development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) mantém os dois runtimes Native `7601247`; payloads substituídos tiveram seus arquivos removidos, conservando manifests e evidências. Os registros históricos abaixo documentam sua geração original.
 **Data:** 2026-11-05.
 
 Os [runtimes mais recentes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados e montados em worktree isolada: Lite com 554 arquivos e Completa experimental com 557. Ambos permanecem íntegros após a limpeza; os payloads anteriores `4125f46`/`51cd067` foram substituídos, preservando seus manifests e setups históricos.
