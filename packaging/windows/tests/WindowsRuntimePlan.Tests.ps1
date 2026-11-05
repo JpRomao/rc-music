@@ -124,6 +124,22 @@ function New-DownloadScenario([string] $Edition = 'Lite') {
             DownloadProfileHeader = $header; DownloadProfileHeaderSha256 = $hash }
     }
 }
+function New-NativeHostScenario([string] $Edition = 'Lite') {
+    $scenario = New-DownloadScenario $Edition
+    $scenario.Cache.RC_MUSIC_BUILD_NATIVE_MESSAGING = 'ON'
+    $scenario.Cache.RC_MUSIC_NATIVE_MAIN_ORIGIN = 'chrome-extension://' + ('a' * 32) + '/'
+    $scenario.Cache.RC_MUSIC_NATIVE_ENDPOINT = 'rcmusic-main-fixture'
+    $scenario.Cache.RC_MUSIC_NATIVE_YOUTUBE_ORIGIN = 'chrome-extension://' + ('b' * 32) + '/'
+    $scenario.Cache.RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT = 'rcmusic-youtube-fixture'
+    # This layer checks lexical aliases only. The dedicated component reader
+    # will authenticate existing receipts, the shared header and host binaries.
+    $native = Join-Path $scenario.Scenario.Base 'unmaterialized native aliases'
+    $scenario.Cache.RC_MUSIC_NATIVE_MAIN_BUILD_PROFILE = Join-Path $native 'native-host/rc_music_native_host.build-profile.json'
+    $scenario.Cache.RC_MUSIC_NATIVE_YOUTUBE_BUILD_PROFILE = Join-Path $native 'youtube-native-host/rc_music_youtube_native_host.build-profile.json'
+    $scenario.Cache.RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER = Join-Path $native 'native-host/NativeHostBuildProfiles.hpp'
+    $scenario.Arguments.NativeHostComponent = $true
+    return $scenario
+}
 function New-TestJunction([string] $Path, [string] $Target) {
     foreach ($value in @($Path, $Target)) {
         if (-not [IO.Path]::GetFullPath($value).StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar,
@@ -517,6 +533,120 @@ try {
             $arguments = $s.Arguments
             Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'RC_MUSIC_BUILD_NATIVE_MESSAGING'
         }
+    }
+    Test-Case 'existing local and pinned-download profiles report native hosts disabled by default' {
+        $s = New-DownloadScenario
+        $arguments = $s.Arguments.Clone()
+        $configuration = Get-RcMusicDesktopBuildConfiguration @arguments
+        Assert-Equal $configuration.native_hosts_enabled $false
+        $arguments.NativeHostComponent = $false
+        Assert-Equal (Get-RcMusicDesktopBuildConfiguration @arguments).native_hosts_enabled $false
+        $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = ''
+        $s.Cache.Remove('RC_MUSIC_BUILD_NATIVE_MESSAGING')
+        $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root
+        Assert-Equal $configuration.native_hosts_enabled $false
+        Assert-Equal $configuration.download_component_enabled $false
+    }
+    foreach ($edition in @('Lite', 'CompleteExperimental')) {
+        Test-Case "$edition accepts explicit native hosts only with the pinned download profile and reviewed cache identities" {
+            $s = New-NativeHostScenario $edition
+            $before = $s.Cache.Clone()
+            $headerBefore = (Get-FileHash -LiteralPath $s.Header).Hash
+            $arguments = $s.Arguments
+            $configuration = Get-RcMusicDesktopBuildConfiguration @arguments
+            Assert-Equal $configuration.native_hosts_enabled $true
+            Assert-Equal $configuration.download_component_enabled $true
+            Assert-Equal $configuration.entrypoint 'product'
+            Assert-Equal $configuration.edition $edition
+            Assert-Equal $configuration.download_profile_header_sha256 $s.Hash
+            Assert-Equal $s.Cache.Count $before.Count
+            foreach ($key in $before.Keys) { Assert-Equal $s.Cache[$key] $before[$key] }
+            Assert-Equal ((Get-FileHash -LiteralPath $s.Header).Hash) $headerBefore
+            foreach ($key in @('RC_MUSIC_NATIVE_MAIN_BUILD_PROFILE', 'RC_MUSIC_NATIVE_YOUTUBE_BUILD_PROFILE',
+                    'RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER')) {
+                Assert-Equal (Test-Path -LiteralPath $s.Cache[$key]) $false
+            }
+            Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+        }
+    }
+    Test-Case 'Native Messaging ON never gains packaging authority from a header or a bare cache alone' {
+        $s = New-NativeHostScenario
+        $arguments = $s.Arguments.Clone()
+        $arguments.Remove('NativeHostComponent')
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'NATIVE_MESSAGING|native|opt-in'
+        $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = ''
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root } 'NATIVE_MESSAGING|native|opt-in'
+    }
+    Test-Case 'explicit native packaging requires the paired pinned download-profile opt-in' {
+        $s = New-NativeHostScenario
+        $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = ''
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root -NativeHostComponent } 'native|profile|header|opt-in'
+        foreach ($field in @('DownloadProfileHeader', 'DownloadProfileHeaderSha256')) {
+            $s = New-NativeHostScenario
+            $arguments = $s.Arguments.Clone()
+            $arguments.Remove($field)
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'profile|header|pin|SHA256'
+        }
+    }
+    Test-Case 'explicit native packaging requires Native Messaging and all four download modules ON' {
+        foreach ($flag in @('NATIVE_MESSAGING', 'BROWSER_INTEGRATION', 'DOWNLOADS', 'DOWNLOAD_NETWORK', 'DOWNLOAD_PERSISTENCE')) {
+            foreach ($value in @($null, 'OFF', 'on', $true)) {
+                $s = New-NativeHostScenario
+                if ($null -eq $value) { $s.Cache.Remove('RC_MUSIC_BUILD_' + $flag) }
+                else { $s.Cache['RC_MUSIC_BUILD_' + $flag] = $value }
+                $arguments = $s.Arguments
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } ('RC_MUSIC_BUILD_' + $flag)
+            }
+        }
+    }
+    Test-Case 'native packaging requires two exact nonempty Chromium origins and two bounded pipe names' {
+        foreach ($field in @('RC_MUSIC_NATIVE_MAIN_ORIGIN', 'RC_MUSIC_NATIVE_YOUTUBE_ORIGIN')) {
+            foreach ($value in @($null, '', $true, ('chrome-extension://' + ('A' * 32) + '/'),
+                    ('chrome-extension://' + ('a' * 31) + '/'), ('chrome-extension://' + ('a' * 32) + "/`n"))) {
+                $s = New-NativeHostScenario
+                if ($null -eq $value) { $s.Cache.Remove($field) } else { $s.Cache[$field] = $value }
+                $arguments = $s.Arguments
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'origin|identity'
+            }
+        }
+        foreach ($field in @('RC_MUSIC_NATIVE_ENDPOINT', 'RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT')) {
+            foreach ($value in @($null, '', $false, 'bad/pipe', ('p' * 97), "pipe`n")) {
+                $s = New-NativeHostScenario
+                if ($null -eq $value) { $s.Cache.Remove($field) } else { $s.Cache[$field] = $value }
+                $arguments = $s.Arguments
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'endpoint|identity|pipe'
+            }
+        }
+    }
+    Test-Case 'principal and YouTube native origins and pipe names must remain distinct' {
+        $s = New-NativeHostScenario
+        $s.Cache.RC_MUSIC_NATIVE_YOUTUBE_ORIGIN = $s.Cache.RC_MUSIC_NATIVE_MAIN_ORIGIN
+        $arguments = $s.Arguments
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'distinct|origin|identity'
+        $s = New-NativeHostScenario
+        $s.Cache.RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT = $s.Cache.RC_MUSIC_NATIVE_ENDPOINT.ToUpperInvariant()
+        $arguments = $s.Arguments
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'distinct|endpoint|pipe|identity'
+    }
+    Test-Case 'native receipt and shared-header aliases must be explicit ordinary absolute local paths' {
+        foreach ($field in @('RC_MUSIC_NATIVE_MAIN_BUILD_PROFILE', 'RC_MUSIC_NATIVE_YOUTUBE_BUILD_PROFILE',
+                'RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER')) {
+            foreach ($value in @($null, '', $true, 'relative/receipt.json', '\\server\receipt.json',
+                    '\\?\C:\receipt.json', 'C:/receipt.json:stream')) {
+                $s = New-NativeHostScenario
+                if ($null -eq $value) { $s.Cache.Remove($field) } else { $s.Cache[$field] = $value }
+                $arguments = $s.Arguments
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'alias|profile|header|path|absolute|stream'
+            }
+        }
+    }
+    Test-Case 'native-host packaging never promotes the legacy desktop entrypoint' {
+        $s = New-NativeHostScenario
+        $s.Cache.CMAKE_HOME_DIRECTORY = Join-Path $s.Root 'experiments/m0/candidates/qt/shell'
+        $s.Cache.M0_QT_AUDIO_SUPPORT = 'ON'
+        $s.Cache.M0_QT_SHELL_SUPPORT = 'ON'
+        $arguments = $s.Arguments
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'product|entrypoint|profile'
     }
     Test-Case 'download profile refuses the legacy entrypoint even with valid pins and flags' {
         $s = New-DownloadScenario

@@ -5,7 +5,11 @@ param(
     [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $BuildDirectory,
     [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite',
     [AllowEmptyString()] [string] $DownloadPackageReceipt,
-    [AllowEmptyString()] [string] $DownloadPackageReceiptSha256
+    [AllowEmptyString()] [string] $DownloadPackageReceiptSha256,
+    [AllowEmptyString()] [string] $MainNativeBuildReceipt,
+    [AllowEmptyString()] [string] $MainNativeBuildReceiptSha256,
+    [AllowEmptyString()] [string] $YoutubeNativeBuildReceipt,
+    [AllowEmptyString()] [string] $YoutubeNativeBuildReceiptSha256
 )
 
 Set-StrictMode -Version Latest
@@ -21,6 +25,17 @@ if (-not $OutputDirectory.StartsWith((Join-Path $repository 'out/product/'), [St
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Output directory already exists; choose a new name' }
 $componentEnabled = $PSBoundParameters.ContainsKey('DownloadPackageReceipt') -or
     $PSBoundParameters.ContainsKey('DownloadPackageReceiptSha256')
+$nativeParameters = @('MainNativeBuildReceipt', 'MainNativeBuildReceiptSha256',
+    'YoutubeNativeBuildReceipt', 'YoutubeNativeBuildReceiptSha256')
+$nativeEnabled = @($nativeParameters | Where-Object { $PSBoundParameters.ContainsKey($_) }).Count -ne 0
+if ($nativeEnabled -and (-not $componentEnabled -or
+        @($nativeParameters | Where-Object { -not $PSBoundParameters.ContainsKey($_) }).Count -ne 0 -or
+        [string]::IsNullOrWhiteSpace($MainNativeBuildReceipt) -or
+        [string]::IsNullOrWhiteSpace($YoutubeNativeBuildReceipt) -or
+        $MainNativeBuildReceiptSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or
+        $YoutubeNativeBuildReceiptSha256 -cnotmatch '\A[0-9a-f]{64}\z')) {
+    throw 'Native host component requires download tools and both explicit build receipts with lowercase SHA256 pins'
+}
 if ($componentEnabled -and (-not $PSBoundParameters.ContainsKey('DownloadPackageReceipt') -or
         -not $PSBoundParameters.ContainsKey('DownloadPackageReceiptSha256') -or
         [string]::IsNullOrWhiteSpace($DownloadPackageReceipt) -or
@@ -37,21 +52,29 @@ if ($componentEnabled) {
         -ReceiptSha256 $DownloadPackageReceiptSha256
     $componentSnapshot = $downloadComponent | ConvertTo-Json -Depth 15 -Compress
 }
+$nativeComponent = $null
+if ($nativeEnabled) {
+    Import-Module (Join-Path $PSScriptRoot 'RcMusicNativeHostComponent.psm1') -Force
+    if (@($downloadComponent.files | Where-Object role -CEQ 'Extractor').Count -ne 1) {
+        throw 'Native host component requires the separate YouTube runtime in the download package'
+    }
+}
 
 # Record the actual implementation and data files, never just a legacy wrapper.
 function Get-RuntimeRecipeFiles {
     param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
-        [switch] $DownloadComponent)
+        [switch] $DownloadComponent, [switch] $NativeHostComponent)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
         'qt.conf', 'LOCAL-DEVELOPMENT.txt')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
+    if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
     $names | ForEach-Object {
         [pscustomobject]@{ path = ('packaging/windows/' + $_)
             sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
 }
-$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled)
+$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled)
 $recipeBefore = ConvertTo-Json -InputObject $recipeFiles -Compress
 
 function Invoke-RuntimeTool([string] $Program, [string[]] $Arguments) {
@@ -95,26 +118,44 @@ function Assert-DownloadPackageUnchanged {
         throw 'Download package changed while collecting the runtime'
     }
 }
+function Get-RuntimeNativeComponent {
+    Get-RcMusicNativeHostComponentPlan -BuildDirectory $BuildDirectory -Cache (Read-RuntimeCache) `
+        -MainBuildReceipt $MainNativeBuildReceipt -MainBuildReceiptSha256 $MainNativeBuildReceiptSha256 `
+        -YoutubeBuildReceipt $YoutubeNativeBuildReceipt -YoutubeBuildReceiptSha256 $YoutubeNativeBuildReceiptSha256
+}
+function Assert-NativeComponentUnchanged {
+    if ($nativeEnabled -and ((Get-RuntimeNativeComponent | ConvertTo-Json -Depth 15 -Compress) -cne $nativeSnapshot)) {
+        throw 'Native host component changed while collecting the runtime'
+    }
+}
 $cache = Read-RuntimeCache
 $configurationArguments = @{ RepositoryRoot = $repository; BuildTesting = 'OFF'; Edition = $Edition }
 if ($componentEnabled) {
     $configurationArguments.DownloadProfileHeader = $downloadComponent.header_path
     $configurationArguments.DownloadProfileHeaderSha256 = $downloadComponent.header_sha256
 }
+$configurationArguments.NativeHostComponent = $nativeEnabled
 $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache @configurationArguments
+if ($nativeEnabled) {
+    $nativeComponent = Get-RuntimeNativeComponent
+    $nativeSnapshot = $nativeComponent | ConvertTo-Json -Depth 15 -Compress
+}
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
 $dumpbin = Join-Path ([IO.Path]::GetDirectoryName($cache.CMAKE_CXX_COMPILER)) 'dumpbin.exe'
 $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 # This is an incremental application build, never a Qt SDK rebuild or benchmark.
-$null = Invoke-RuntimeTool $cache.CMAKE_COMMAND @('--build', $BuildDirectory, '--target', $configuration.target)
+$buildTargets = @($configuration.target)
+if ($nativeEnabled) { $buildTargets += 'rc_music_native_host', 'rc_music_youtube_native_host' }
+$null = Invoke-RuntimeTool $cache.CMAKE_COMMAND (@('--build', $BuildDirectory, '--target') + $buildTargets)
 $afterBuild = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterBuild.commit) { throw 'Source commit changed during the application build' }
 if ($componentEnabled) {
     $null = Get-RcMusicDesktopBuildConfiguration -Cache (Read-RuntimeCache) @configurationArguments
     Assert-DownloadPackageUnchanged
 }
+Assert-NativeComponentUnchanged
 $scannerText = Invoke-RuntimeTool (Join-Path $qt 'bin/qmlimportscanner.exe') @(
     '-rootPath', $configuration.qml_source, '-importPath', (Join-Path $BuildDirectory 'qml'), '-importPath', (Join-Path $qt 'qml'))
 $modules = @($scannerText | ConvertFrom-Json -Depth 20)
@@ -133,6 +174,9 @@ function Add-RuntimeFile([string] $SourceFile, [string] $RelativePath) {
     if ([IO.Path]::GetExtension($SourceFile) -in @('.exe', '.dll')) { $peQueue.Enqueue($entry) }
 }
 Add-RuntimeFile (Join-Path $BuildDirectory $configuration.executable) 'RCMusic.exe'
+if ($nativeEnabled) {
+    foreach ($entry in $nativeComponent.files) { Add-RuntimeFile $entry.source $entry.relative_path }
+}
 Add-RuntimeFile (Join-Path $PSScriptRoot 'qt.conf') 'qt.conf'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'LOCAL-DEVELOPMENT.txt') 'LOCAL-DEVELOPMENT.txt'
 if ($configuration.edition -ceq 'CompleteExperimental') {
@@ -219,6 +263,24 @@ $payload = Join-Path $OutputDirectory 'app'
 $allowedRoots = @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot)
 if ($configuration.browser_sdk_root) { $allowedRoots += $configuration.browser_sdk_root }
 if ($componentEnabled) { $allowedRoots += $downloadComponent.package_root }
+if ($nativeEnabled) {
+    Assert-NativeComponentUnchanged
+    $manifestSources = Join-Path $OutputDirectory 'native-manifests'
+    $null = [IO.Directory]::CreateDirectory($manifestSources)
+    foreach ($entry in $nativeComponent.manifests) {
+        $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($entry.content)
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+        if ($bytes.Length -ne $entry.size_bytes -or $hash -cne $entry.sha256 -or
+            $entry.relative_path -cnotin @('com.rcmusic.media.json', 'com.rcmusic.youtube.json')) {
+            throw 'Generated Native manifest differs from its validated descriptor'
+        }
+        $source = Join-Path $manifestSources $entry.relative_path
+        $stream = [IO.File]::Open($source, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $stream.Write($bytes); $stream.Flush($true) } finally { $stream.Dispose() }
+        Add-RuntimeFile $source $entry.relative_path
+    }
+    $allowedRoots += $manifestSources
+}
 $plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots $allowedRoots -Destination $payload
 if ($componentEnabled) {
     foreach ($expected in $downloadComponent.files) {
@@ -227,11 +289,19 @@ if ($componentEnabled) {
             $copied[0].sha256 -cne $expected.sha256) { throw 'Download component mapping differs from its pinned plan' }
     }
 }
+if ($nativeEnabled) {
+    foreach ($expected in @($nativeComponent.files) + @($nativeComponent.manifests)) {
+        $copied = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
+        if ($copied.Count -ne 1 -or $copied[0].size_bytes -ne $expected.size_bytes -or
+            $copied[0].sha256 -cne $expected.sha256) { throw 'Native component mapping differs from its pinned plan' }
+    }
+}
 $null = Copy-RcMusicRuntimePlan -Plan $plan
 Assert-DownloadPackageUnchanged
+Assert-NativeComponentUnchanged
 $afterCopy = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterCopy.commit) { throw 'Source commit changed while collecting the runtime' }
-if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled) -Compress) -cne $recipeBefore) {
+if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled) -Compress) -cne $recipeBefore) {
     throw 'Runtime recipe changed while collecting the runtime'
 }
 $recipeStatus = Invoke-RuntimeTool 'git' @('status', '--porcelain', '--', 'packaging/windows')
@@ -256,6 +326,26 @@ if ($componentEnabled) {
         activation_marker = $downloadComponent.metadata.activation_marker
         files = @($downloadComponent.files | Select-Object relative_path, size_bytes, sha256)
         pe_closure = $componentClosure
+    }
+    if ($nativeEnabled) {
+        $manifest.download_component.files += @($plan.files | Where-Object {
+            $_.relative_path -cin @('rc_music_native_host.exe', 'rc_music_youtube_native_host.exe',
+                'com.rcmusic.media.json', 'com.rcmusic.youtube.json')
+        } | Select-Object relative_path, size_bytes, sha256)
+        $manifest.download_component.native_hosts = [ordered]@{
+            schema_version = 1; shared_header_sha256 = $nativeComponent.shared_header.sha256
+            channels = @(for ($index = 0; $index -lt 2; ++$index) {
+                $profile = $nativeComponent.profiles[$index]
+                [ordered]@{
+                    protocol = $profile.protocol; host_name = $profile.host_name
+                    origin = $profile.origin; endpoint = $profile.endpoint
+                    receipt_sha256 = $nativeComponent.receipts[$index].sha256
+                    configuration_sha256 = $profile.configuration.sha256
+                    executable = $nativeComponent.files[$index].relative_path
+                    manifest = $nativeComponent.manifests[$index].relative_path
+                }
+            })
+        }
     }
     # The installer will create this marker only after the user selects the
     # component and its files are verified. Packaging alone grants no activation.

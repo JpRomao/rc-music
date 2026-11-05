@@ -82,6 +82,112 @@ function New-Fixture([switch] $Youtube) {
 function Component($Fixture) {
     return Get-RcMusicInstallerComponent -Manifest $Fixture.Manifest -RuntimeDirectory $Fixture.Runtime
 }
+function Add-NativeHosts($Fixture) {
+    $channels = @(for ($index = 0; $index -lt 2; ++$index) {
+        $youtube = $index -eq 1
+        $name = if ($youtube) { 'com.rcmusic.youtube' } else { 'com.rcmusic.media' }
+        $exe = if ($youtube) { 'rc_music_youtube_native_host.exe' } else { 'rc_music_native_host.exe' }
+        $origin = 'chrome-extension://' + $(if ($youtube) { 'b' * 32 } else { 'a' * 32 }) + '/'
+        $description = if ($youtube) { 'RC Music YouTube audio extension host' } else { 'RC Music media extension host' }
+        $text = (ConvertTo-Json -InputObject ([ordered]@{
+            name = $name; description = $description; path = $exe; type = 'stdio'; allowed_origins = @($origin)
+        }) -Depth 4) + "`n"
+        $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($text)
+        $rows = @(
+            [pscustomobject]@{ relative_path = $exe; size_bytes = 31; sha256 = ('e' * 64) },
+            [pscustomobject]@{ relative_path = $name + '.json'; size_bytes = $bytes.Length
+                sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant() }
+        )
+        $Fixture.Manifest.files += $rows
+        $Fixture.Manifest.download_component.files += $rows
+        [pscustomobject]@{
+            protocol = $(if ($youtube) { 'youtube.audio.v1' } else { 'direct.media.v1' }); host_name = $name
+            origin = $origin; endpoint = "rcmusic-fixture-$index"
+            receipt_sha256 = 'f' * 64; configuration_sha256 = 'a' * 64
+            executable = $exe; manifest = $name + '.json'
+        }
+    })
+    $Fixture.Manifest.download_component | Add-Member -NotePropertyName native_hosts -NotePropertyValue ([pscustomobject]@{
+        schema_version = 1; shared_header_sha256 = 'b' * 64; channels = $channels
+    })
+}
+
+Test-Case 'native host executables and portable manifests remain in the optional selected inventory' {
+    $fixture = New-Fixture -Youtube
+    Add-NativeHosts $fixture
+    $before = Json $fixture
+    $result = Component $fixture
+    Assert-Equal @($result.files).Count 26
+    foreach ($name in @('rc_music_native_host.exe', 'rc_music_youtube_native_host.exe', 'com.rcmusic.media.json', 'com.rcmusic.youtube.json')) {
+        Assert-Equal @($result.files | Where-Object relative_path -CEQ $name).Count 1
+    }
+    Assert-Equal (Json $fixture) $before
+}
+Test-Case 'native files cannot silently become mandatory files without matching component metadata' {
+    foreach ($withDownloads in @($false, $true)) {
+        $fixture = New-Fixture -Youtube; Add-NativeHosts $fixture
+        if ($withDownloads) { $fixture.Manifest.download_component.PSObject.Properties.Remove('native_hosts') }
+        else {
+            $fixture.Manifest.PSObject.Properties.Remove('download_component')
+            $fixture.Manifest.files = @($fixture.Manifest.files | Where-Object relative_path -CNotLike 'download-tools/*')
+        }
+        Assert-Rejected { Component $fixture }
+    }
+}
+Test-Case 'native metadata requires both exact channels, independent origins and endpoints, and complete tool runtime' {
+    foreach ($variant in @('missing', 'duplicate', 'protocol', 'host', 'origin', 'endpoint', 'same-origin', 'same-endpoint', 'no-youtube', 'exe', 'manifest', 'schema', 'pin', 'extra')) {
+        $fixture = New-Fixture -Youtube; Add-NativeHosts $fixture
+        $native = $fixture.Manifest.download_component.native_hosts
+        switch ($variant) {
+            missing { $native.channels = @($native.channels[0]) }
+            duplicate { $native.channels = @($native.channels[0], $native.channels[0]) }
+            protocol { $native.channels[0].protocol = 'youtube.audio.v1' }
+            host { $native.channels[0].host_name = 'com.rcmusic.youtube' }
+            origin { $native.channels[0].origin = 'chrome-extension://*/' }
+            endpoint { $native.channels[0].endpoint = '../pipe' }
+            same-origin { $native.channels[1].origin = $native.channels[0].origin }
+            same-endpoint { $native.channels[1].endpoint = $native.channels[0].endpoint.ToUpperInvariant() }
+            no-youtube {
+                $fixture = New-Fixture
+                Add-NativeHosts $fixture
+            }
+            exe { $native.channels[0].executable = 'download-tools/native/rc_music_native_host.exe' }
+            manifest { $native.channels[0].manifest = 'other.json' }
+            schema { $native.schema_version = '1' }
+            pin { $native.channels[0].receipt_sha256 = 'A' * 64 }
+            extra { $native | Add-Member -NotePropertyName unknown -NotePropertyValue $true }
+        }
+        Assert-Rejected { Component $fixture }
+    }
+}
+Test-Case 'native manifest inventory binds the generated relative host path and exact allowed origin' {
+    foreach ($variant in @('missing-exe', 'missing-manifest', 'manifest-hash', 'manifest-size', 'extra-root')) {
+        $fixture = New-Fixture -Youtube; Add-NativeHosts $fixture
+        switch ($variant) {
+            missing-exe {
+                $fixture.Manifest.files = @($fixture.Manifest.files | Where-Object relative_path -CNE 'rc_music_native_host.exe')
+                $fixture.Manifest.download_component.files = @($fixture.Manifest.download_component.files | Where-Object relative_path -CNE 'rc_music_native_host.exe')
+            }
+            missing-manifest {
+                $fixture.Manifest.files = @($fixture.Manifest.files | Where-Object relative_path -CNE 'com.rcmusic.media.json')
+                $fixture.Manifest.download_component.files = @($fixture.Manifest.download_component.files | Where-Object relative_path -CNE 'com.rcmusic.media.json')
+            }
+            manifest-hash {
+                $row = @($fixture.Manifest.files | Where-Object relative_path -CEQ 'com.rcmusic.media.json')[0]
+                $row.sha256 = 'e' * 64
+            }
+            manifest-size {
+                $row = @($fixture.Manifest.files | Where-Object relative_path -CEQ 'com.rcmusic.media.json')[0]
+                $row.size_bytes++
+            }
+            extra-root {
+                $row = [pscustomobject]@{ relative_path = 'another_host.exe'; size_bytes = 23; sha256 = 'e' * 64 }
+                $fixture.Manifest.files += $row; $fixture.Manifest.download_component.files += $row
+            }
+        }
+        Assert-Rejected { Component $fixture }
+    }
+}
 
 Test-Case 'ordinary runtimes return null without mutating the manifest' {
     $fixture = New-Fixture

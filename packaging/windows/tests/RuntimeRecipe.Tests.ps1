@@ -7,6 +7,7 @@ $testRoot = Join-Path $repository ('out/product/runtime-recipe-' + [guid]::NewGu
 $sourceNames = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
     'qt.conf', 'LOCAL-DEVELOPMENT.txt')
 $componentNames = @('RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
+$nativeNames = @('RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1')
 $state = @{ Passed = 0; Failed = 0 }
 function Test-Case([string] $Name, [scriptblock] $Body) {
     try { & $Body; $state.Passed++; Write-Host "[PASS] $Name" }
@@ -35,7 +36,7 @@ function Read-Ast([string] $Path) {
     if ($parseErrors.Count -ne 0) { throw "Invalid PowerShell: $Path" }
     return $ast
 }
-function Read-RecipeFiles([string] $Edition = 'Lite', [switch] $DownloadComponent) {
+function Read-RecipeFiles([string] $Edition = 'Lite', [switch] $DownloadComponent, [switch] $NativeHostComponent) {
     $ast = Read-Ast $exportedRecipe
     $functions = @($ast.FindAll({ param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-RuntimeRecipeFiles'
@@ -43,7 +44,8 @@ function Read-RecipeFiles([string] $Edition = 'Lite', [switch] $DownloadComponen
     Assert-Equal $functions.Count 1
     # Execute only this inventory function, never the script body. The AST keeps
     # the exported file identity so PSScriptRoot resolves beside the five copies.
-    return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition -DownloadComponent:$DownloadComponent)
+    return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition -DownloadComponent:$DownloadComponent `
+        -NativeHostComponent:$NativeHostComponent)
 }
 function Invoke-RecipeChild([string[]] $Arguments) {
     $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
@@ -85,7 +87,7 @@ try {
     $buildDirectory = Join-Path $exportRoot 'out/product/build inválido'
     $foreignDirectory = Join-Path $testRoot 'cwd alheio'
     $null = New-Item -ItemType Directory -Path $exportDirectory, $buildDirectory, $foreignDirectory
-    foreach ($name in $sourceNames + @($componentNames | Where-Object {
+    foreach ($name in $sourceNames + @(($componentNames + $nativeNames) | Where-Object {
         Test-Path -LiteralPath (Join-Path $repository ('packaging/windows/' + $_))
     })) {
         $original = Join-Path $repository ('packaging/windows/' + $name)
@@ -144,6 +146,37 @@ try {
         }
         Assert-Equal @(Read-RecipeFiles).Count 5
         Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count 8
+    }
+    foreach ($arguments in @(
+        @('-MainNativeBuildReceipt', 'C:/missing/main.json'),
+        @('-MainNativeBuildReceiptSha256', ('a' * 64)),
+        @('-YoutubeNativeBuildReceipt', 'C:/missing/youtube.json'),
+        @('-YoutubeNativeBuildReceiptSha256', ('b' * 64)),
+        @('-MainNativeBuildReceipt', '', '-MainNativeBuildReceiptSha256', ('a' * 64),
+            '-YoutubeNativeBuildReceipt', 'C:/missing/youtube.json', '-YoutubeNativeBuildReceiptSha256', ('b' * 64)),
+        @('-MainNativeBuildReceipt', 'C:/missing/main.json', '-MainNativeBuildReceiptSha256', ('A' * 64),
+            '-YoutubeNativeBuildReceipt', 'C:/missing/youtube.json', '-YoutubeNativeBuildReceiptSha256', ('b' * 64)),
+        @('-MainNativeBuildReceipt', 'C:/missing/main.json', '-MainNativeBuildReceiptSha256', ('a' * 64),
+            '-YoutubeNativeBuildReceipt', 'C:/missing/youtube.json', '-YoutubeNativeBuildReceiptSha256', ('b' * 64))
+    )) {
+        Test-Case "native hosts require both pinned receipts and download tools before any output: $($arguments -join ' ')" {
+            $result = Invoke-RecipeChild (@('-BuildDirectory', $buildDirectory, '-OutputDirectory',
+                'out/product/rejected-native') + $arguments)
+            Assert-Equal $result.ExitCode 1
+            Assert-Equal $result.Stdout ''
+            if ($result.Stderr -notmatch 'Native host component') { throw "Wrong native preflight: $($result.Stderr)" }
+            Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-native')) $false
+        }
+    }
+    Test-Case 'native recipe provenance binds its reader and component planner only for explicit opt-in' {
+        $files = @(Read-RecipeFiles -DownloadComponent -NativeHostComponent)
+        Assert-Equal $files.Count 9
+        foreach ($name in $nativeNames) {
+            $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
+            Assert-Equal $entry.Count 1
+            Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
+        }
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent -NativeHostComponent).Count 10
     }
     Test-Case 'the recipe inventories exactly five repository-relative paths and their exported bytes' {
         $files = @(Read-RecipeFiles)

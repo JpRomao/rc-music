@@ -2,7 +2,7 @@
 
 O gerador prepara um manifesto Native Messaging para `com.rcmusic.youtube` e um recibo local com estado `installation_pending`. Ele exige o ID explícito da extensão, um recibo confiável do build do host e o executável correspondente. Não executa o host nem altera o Registro, o instalador ou o Brave.
 
-O resultado contém dois JSONs. A montagem do pacote com player, host, DLLs e extensão, assim como instalação e ativação, continua sendo uma etapa posterior.
+O resultado contém dois JSONs. A [receita do runtime](windows-runtime.md#montagem-opcional-dos-dois-hosts-native-messaging) agora pode montar os dois hosts e manifestos portáveis com o player/DLLs, mediante recibos pinados e configuração coerente. Este gerador separado conserva seu manifesto de path absoluto. Empacotamento/identidade das extensões, registro, instalação e ativação continuam pendentes.
 
 ## Entradas necessárias
 

@@ -94,6 +94,15 @@ function New-Plan($Fixture) {
     return New-RcMusicYoutubeNativeManifestPlan -RepositoryRoot $Fixture.Root -BuildReceipt $Fixture.Receipt `
         -BuildReceiptSha256 $Fixture.Pin -ExtensionId $extensionId -HostExecutable $Fixture.Host -OutputDirectory $Fixture.Output
 }
+function Set-FixtureFamily($Fixture, [string] $Family) {
+    if ($Family -ceq 'Main') {
+        $Fixture.Data.protocol = 'direct.media.v1'
+        $Fixture.Data.host_name = 'com.rcmusic.media'
+        $Fixture.Data.host_images = @('rc_music_native_host.exe')
+        $Fixture.Data.executable.path = (Join-Path ([IO.Path]::GetDirectoryName($Fixture.Exe)) 'rc_music_native_host.exe').Replace('\', '/')
+        Save-Receipt $Fixture
+    }
+}
 function Assert-Rejected-Data([scriptblock] $Change) {
     $f = New-Fixture
     & $Change $f.Data
@@ -107,6 +116,103 @@ Assert-SafeTestRoot
 if (Test-Path -LiteralPath $testRoot) { throw 'Test root must be fresh' }
 $null = New-Item -ItemType Directory -Path $testRoot
 try {
+    foreach ($family in @('Main', 'Youtube')) {
+        Test-Case "the public $family reader returns a pinned profile without requiring host or configuration bytes" {
+            $f = New-Fixture
+            Set-FixtureFamily $f $family
+            $leaf = if ($family -ceq 'Main') { 'rc_music_native_host.exe' } else { 'rc_music_youtube_native_host.exe' }
+            $f.Data.executable.path = (Join-Path $f.Root ('absent originals/' + $leaf)).Replace('\', '/')
+            $f.Data.configuration.path = (Join-Path $f.Root 'absent originals/configuration.hpp').Replace('\', '/')
+            Save-Receipt $f
+            $before = Hash $f.Receipt
+            $profile = Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family $family
+            Assert-True ($null -ne $profile) 'Reader returned no profile'
+            Assert-Equal $profile.protocol $f.Data.protocol
+            Assert-Equal $profile.host_name $f.Data.host_name
+            Assert-Equal $profile.origin $origin
+            Assert-Equal $profile.endpoint $f.Data.endpoint
+            Assert-Equal ($profile.owner_images -join '|') 'RCMusic.exe'
+            Assert-Equal ($profile.host_images -join '|') $leaf
+            Assert-Equal $profile.executable.path ([IO.Path]::GetFullPath($f.Data.executable.path))
+            Assert-Equal $profile.executable.sha256 $f.Data.executable.sha256
+            Assert-Equal $profile.executable.size_bytes $f.Data.executable.size_bytes
+            Assert-Equal $profile.configuration.path ([IO.Path]::GetFullPath($f.Data.configuration.path))
+            Assert-Equal $profile.configuration.sha256 $f.Data.configuration.sha256
+            Assert-Equal (Hash $f.Receipt) $before
+            Assert-Equal (Hash $f.Main) $f.MainHash
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Reader created output'
+        }
+    }
+    Test-Case 'the public reader rejects cross-family profiles and mismatched logical host names' {
+        foreach ($family in @('Main', 'Youtube')) {
+            $f = New-Fixture
+            Set-FixtureFamily $f $family
+            $other = if ($family -ceq 'Main') { 'Youtube' } else { 'Main' }
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family $other } 'Cross-family receipt was accepted'
+            $f.Data.host_name = if ($family -ceq 'Main') { 'com.rcmusic.youtube' } else { 'com.rcmusic.media' }
+            Save-Receipt $f
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family $family } 'Family protocol accepted a different host name'
+        }
+        Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family 'Other' } 'Unknown family was accepted'
+    }
+    Test-Case 'the public reader preserves strict enabled schema and scalar validation for both families' {
+        foreach ($family in @('Main', 'Youtube')) {
+            foreach ($change in @(
+                { param($d) $d.enabled = $false },
+                { param($d) $d.enabled = 'true' },
+                { param($d) $d.schema_version = $true },
+                { param($d) $d.component = $false },
+                { param($d) $d.endpoint = "endpoint`n" },
+                { param($d) $d.unexpected = 1 }
+            )) {
+                $f = New-Fixture
+                Set-FixtureFamily $f $family
+                & $change $f.Data
+                Save-Receipt $f
+                Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family $family } 'Disabled, coerced or open-schema profile was accepted'
+                Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Reader created output for a rejected profile'
+            }
+        }
+    }
+    Test-Case 'the public reader rejects duplicate fields invalid UTF8 and trailing JSON through the shared parser' {
+        foreach ($kind in @('duplicate-root', 'duplicate-nested', 'utf8', 'trailing')) {
+            $f = New-Fixture
+            $json = [IO.File]::ReadAllText($f.Receipt)
+            switch ($kind) {
+                'duplicate-root' { Write-Utf8 $f.Receipt $json.Replace('"enabled":true', '"enabled":true,"enabled":true') }
+                'duplicate-nested' { Write-Utf8 $f.Receipt $json.Replace('"configuration":{', '"configuration":{"sha256":"' + ('0' * 64) + '",') }
+                'utf8' { [IO.File]::WriteAllBytes($f.Receipt, [byte[]]@(0x7b, 0xff, 0x7d)) }
+                'trailing' { Write-Utf8 $f.Receipt ($json + '{}') }
+            }
+            $f.Pin = Hash $f.Receipt
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family Youtube } 'Malformed receipt bytes were accepted'
+        }
+    }
+    Test-Case 'the public reader requires an exact pin and verifies it before parsing receipt JSON' {
+        $f = New-Fixture
+        foreach ($bad in @(('0' * 63), ('A' * 64), ($f.Pin + "`n"), ('0' * 64))) {
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $bad -Family Youtube } 'Invalid receipt pin was accepted'
+        }
+        Write-Utf8 $f.Receipt '{'
+        $errorText = ''
+        try { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 ('0' * 64) -Family Youtube | Out-Null }
+        catch { $errorText = $_.Exception.Message }
+        Assert-True ($errorText -match 'SHA256') 'Malformed JSON was parsed before checking its mismatched pin'
+    }
+    Test-Case 'the public reader uses a held read snapshot and releases it after returning' {
+        $f = New-Fixture
+        $writer = [IO.File]::Open($f.Receipt, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::ReadWrite)
+        try {
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family Youtube } 'Reader shared an active writer'
+        } finally { $writer.Dispose() }
+        $profile = Read-RcMusicNativeHostBuildProfile -ReceiptPath $f.Receipt -ReceiptSha256 $f.Pin -Family Youtube
+        Assert-True ($null -ne $profile) 'Reader did not recover after the writer closed'
+        $exclusive = [IO.File]::Open($f.Receipt, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $exclusive.Dispose()
+        foreach ($path in @('relative-receipt.json', ('\\?\' + $f.Receipt), [IO.Path]::GetDirectoryName($f.Receipt))) {
+            Assert-Throws { Read-RcMusicNativeHostBuildProfile -ReceiptPath $path -ReceiptSha256 $f.Pin -Family Youtube } 'Reader accepted a non-ordinary receipt path'
+        }
+    }
     Test-Case 'planning binds a copied host and explicit extension ID to a pinned build receipt without writing' {
         $f = New-Fixture
         $plan = New-Plan $f

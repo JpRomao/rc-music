@@ -120,6 +120,47 @@ function Get-InstallerComponentCanonicalClosure($Closure) {
     return ConvertTo-Json -InputObject $normalized -Depth 4 -Compress
 }
 
+function Assert-InstallerNativeHosts($Native, $ByPath) {
+    Assert-InstallerComponentFields $Native @('schema_version', 'shared_header_sha256', 'channels')
+    if (-not (Test-InstallerComponentInteger $Native.schema_version) -or $Native.schema_version -ne 1 -or
+        $Native.channels -isnot [Array] -or $Native.channels.Count -ne 2) {
+        throw 'Native hosts require schema 1 and both fixed channels.'
+    }
+    Assert-InstallerComponentSha $Native.shared_header_sha256
+    $origins = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $endpoints = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    for ($index = 0; $index -lt 2; ++$index) {
+        $channel = $Native.channels[$index]
+        Assert-InstallerComponentFields $channel @('protocol', 'host_name', 'origin', 'endpoint',
+            'receipt_sha256', 'configuration_sha256', 'executable', 'manifest')
+        $youtube = $index -eq 1
+        $name = if ($youtube) { 'com.rcmusic.youtube' } else { 'com.rcmusic.media' }
+        $exe = if ($youtube) { 'rc_music_youtube_native_host.exe' } else { 'rc_music_native_host.exe' }
+        $protocol = if ($youtube) { 'youtube.audio.v1' } else { 'direct.media.v1' }
+        if ($channel.protocol -cne $protocol -or $channel.host_name -cne $name -or
+            $channel.executable -cne $exe -or $channel.manifest -cne ($name + '.json') -or
+            $channel.origin -isnot [string] -or $channel.origin -cnotmatch '\Achrome-extension://[a-p]{32}/\z' -or
+            $channel.endpoint -isnot [string] -or $channel.endpoint -cnotmatch '\A[A-Za-z0-9_-]{1,96}\z' -or
+            -not $origins.Add($channel.origin) -or -not $endpoints.Add($channel.endpoint)) {
+            throw 'Native channel identities or sibling paths are invalid or duplicated.'
+        }
+        Assert-InstallerComponentSha $channel.receipt_sha256
+        Assert-InstallerComponentSha $channel.configuration_sha256
+        if (-not $ByPath.ContainsKey($exe) -or -not $ByPath.ContainsKey($channel.manifest)) {
+            throw 'Both native executables and manifests must be in the component inventory.'
+        }
+        $description = if ($youtube) { 'RC Music YouTube audio extension host' } else { 'RC Music media extension host' }
+        $text = (ConvertTo-Json -InputObject ([ordered]@{
+            name = $name; description = $description; path = $exe; type = 'stdio'; allowed_origins = @($channel.origin)
+        }) -Depth 4) + "`n"
+        $bytes = [Text.UTF8Encoding]::new($false, $true).GetBytes($text)
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+        if ($ByPath[$channel.manifest].sha256 -cne $hash -or $ByPath[$channel.manifest].size_bytes -ne $bytes.Length) {
+            throw 'Native manifest bytes must match the exact relative host path and allowed origin.'
+        }
+    }
+}
+
 # The installer verifies physical runtime bytes separately through RuntimePlan.
 # This helper validates the declared component without following historical
 # source paths, opening build receipts, inspecting PEs, or creating its marker.
@@ -135,6 +176,9 @@ function Get-RcMusicInstallerComponent {
     }
     $byPath = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::OrdinalIgnoreCase)
     $toolFiles = [Collections.Generic.List[object]]::new()
+    $nativeFiles = [Collections.Generic.List[object]]::new()
+    $nativePaths = @('rc_music_native_host.exe', 'rc_music_youtube_native_host.exe',
+        'com.rcmusic.media.json', 'com.rcmusic.youtube.json')
     foreach ($file in $Manifest.files) {
         if (@(Get-InstallerComponentFields $file) -cnotcontains 'relative_path') {
             throw 'Runtime file is missing its relative path.'
@@ -144,16 +188,24 @@ function Get-RcMusicInstallerComponent {
         $byPath.Add($relative, $file)
         if ($relative -ieq 'download-tools' -or $relative.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase)) {
             $toolFiles.Add($file)
+        } elseif ($relative -iin $nativePaths) {
+            $nativeFiles.Add($file)
         }
     }
     if ($manifestFields -cnotcontains 'download_component') {
-        if ($toolFiles.Count -ne 0) { throw 'Undeclared download tools cannot enter the base installation.' }
+        if ($toolFiles.Count -ne 0 -or $nativeFiles.Count -ne 0) { throw 'Undeclared download tools or native hosts cannot enter the base installation.' }
         return $null
     }
 
     $component = $Manifest.download_component
-    Assert-InstallerComponentFields $component @('schema_version', 'selection_default', 'receipt_sha256',
+    $nativeEnabled = @(Get-InstallerComponentFields $component) -ccontains 'native_hosts'
+    $componentFields = @('schema_version', 'selection_default', 'receipt_sha256',
         'header_sha256', 'activation_marker', 'files', 'pe_closure')
+    if ($nativeEnabled) { $componentFields += 'native_hosts' }
+    Assert-InstallerComponentFields $component $componentFields
+    if (($nativeEnabled -and $nativeFiles.Count -ne 4) -or (-not $nativeEnabled -and $nativeFiles.Count -ne 0)) {
+        throw 'Native host files require matching metadata for both optional channels.'
+    }
     if (-not (Test-InstallerComponentInteger $component.schema_version) -or $component.schema_version -ne 1 -or
         $component.selection_default -isnot [bool] -or $component.selection_default) {
         throw 'The optional component requires schema 1 and default selection false.'
@@ -171,14 +223,16 @@ function Get-RcMusicInstallerComponent {
     }
     if ($byPath.ContainsKey($markerPath)) { throw 'The runtime must not contain an activation marker.' }
     if ($component.files -isnot [Array] -or $component.files.Count -lt 10 -or
-        $component.files.Count -gt 266 -or $component.files.Count -ne $toolFiles.Count) {
+        $component.files.Count -gt 270 -or $toolFiles.Count -gt 266 -or
+        $component.files.Count -ne ($toolFiles.Count + $nativeFiles.Count)) {
         throw 'Invalid component inventory size or mismatch with runtime tools.'
     }
     $declared = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $component.files) {
         Assert-InstallerComponentFields $file @('relative_path', 'size_bytes', 'sha256')
         $relative = Get-InstallerComponentRelative $file.relative_path
-        if (-not $relative.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase) -or
+        if ((-not $relative.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase) -and
+                (-not $nativeEnabled -or $relative -inotin $nativePaths)) -or
             -not $declared.Add($relative) -or -not $byPath.ContainsKey($relative)) {
             throw 'Invalid, duplicate or unmatched component inventory path.'
         }
@@ -195,6 +249,7 @@ function Get-RcMusicInstallerComponent {
             throw 'Component inventory differs from runtime size or hash.'
         }
     }
+    if ($nativeEnabled) { Assert-InstallerNativeHosts $component.native_hosts $byPath }
 
     $network = [ordered]@{
         Bootstrap = 'RCMusicDownloadWorker.exe'; Payload = 'rcmusic-download-network.dll'
@@ -233,6 +288,7 @@ function Get-RcMusicInstallerComponent {
     if ($youtubeCount -gt 256 -or $youtubeBytes -gt 536870912) {
         throw 'The YouTube inventory exceeds the existing package limits.'
     }
+    if ($nativeEnabled -and $youtubeCount -eq 0) { throw 'Both native channels require the separate YouTube runtime.' }
     if ($youtubeCount -gt 0) {
         foreach ($name in @('python-LICENSE.txt', 'node-LICENSE.txt', 'yt-dlp-LICENSE.txt', 'ejs-LICENSE.txt', 'pyinstaller-COPYING.txt')) {
             if (-not $declared.Contains('download-tools/youtube/notices/' + $name)) {
@@ -250,7 +306,7 @@ function Get-RcMusicInstallerComponent {
         throw 'Claimed component PE reports or edges differ from the recomputed closure.'
     }
     return [pscustomobject]@{
-        available = $true; files = $toolFiles.ToArray()
+        available = $true; files = @($toolFiles.ToArray()) + @($nativeFiles.ToArray())
         marker = [pscustomobject]@{
             relative_path = $markerPath; content = $markerContent; size_bytes = 24
             sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(

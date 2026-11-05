@@ -91,7 +91,25 @@ function Get-NativeManifestImages([Text.Json.JsonElement] $Element) {
     }
 }
 
-function Read-NativeManifestBuildProfile([IO.Stream] $Stream, [string] $ExpectedSha256) {
+function Read-RcMusicNativeHostBuildProfile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $ReceiptPath,
+        [Parameter(Mandatory)][string] $ReceiptSha256,
+        [Parameter(Mandatory)][ValidateSet('Main', 'Youtube')][string] $Family
+    )
+    if ($ReceiptSha256 -cnotmatch '^[0-9a-f]{64}\z') { throw 'An explicit lowercase receipt SHA256 is required' }
+    $path = Get-NativeManifestLocalPath $ReceiptPath
+    $stream = Open-NativeManifestInput $path
+    try {
+        return Read-NativeManifestBuildProfile $stream $ReceiptSha256 -Family $Family
+    } finally { $stream.Dispose() }
+}
+
+function Read-NativeManifestBuildProfile([IO.Stream] $Stream, [string] $ExpectedSha256,
+        [ValidateSet('Main', 'Youtube')][string] $Family = 'Youtube') {
+    $expectedProtocol = if ($Family -ieq 'Main') { 'direct.media.v1' } else { 'youtube.audio.v1' }
+    $expectedHostName = if ($Family -ieq 'Main') { 'com.rcmusic.media' } else { 'com.rcmusic.youtube' }
     if ($Stream.Length -lt 1 -or $Stream.Length -gt 65536) { throw 'Build receipt must be at most 64 KiB' }
     if ((Get-NativeManifestStreamHash $Stream) -cne $ExpectedSha256) { throw 'Build receipt SHA256 does not match its explicit pin' }
     $bytes = [byte[]]::new([int]$Stream.Length)
@@ -114,10 +132,10 @@ function Read-NativeManifestBuildProfile([IO.Stream] $Stream, [string] $Expected
         $schema = $root.GetProperty('schema_version')
         if ($schema.ValueKind -ne [Text.Json.JsonValueKind]::Number -or $schema.GetRawText() -cne '1' -or
             (Get-NativeManifestString ($root.GetProperty('component'))) -cne 'rcmusic-native-host-build-profile' -or
-            (Get-NativeManifestString ($root.GetProperty('protocol'))) -cne 'youtube.audio.v1' -or
-            (Get-NativeManifestString ($root.GetProperty('host_name'))) -cne 'com.rcmusic.youtube' -or
+            (Get-NativeManifestString ($root.GetProperty('protocol'))) -cne $expectedProtocol -or
+            (Get-NativeManifestString ($root.GetProperty('host_name'))) -cne $expectedHostName -or
             $root.GetProperty('enabled').ValueKind -ne [Text.Json.JsonValueKind]::True) {
-            throw 'An enabled YouTube native-host build profile is required'
+            throw "An enabled $Family native-host build profile is required"
         }
         $origin = Get-NativeManifestString ($root.GetProperty('origin'))
         $endpoint = Get-NativeManifestString ($root.GetProperty('endpoint'))
@@ -142,6 +160,7 @@ function Read-NativeManifestBuildProfile([IO.Stream] $Stream, [string] $Expected
         $configPath = Get-NativeManifestLocalPath (Get-NativeManifestString ($configuration.GetProperty('path')))
         $configHash = Get-NativeManifestSha256 ($configuration.GetProperty('sha256'))
         return [pscustomobject]@{
+            protocol = $expectedProtocol; host_name = $expectedHostName
             origin = $origin; endpoint = $endpoint; owner_images = $ownerImages; host_images = $hostImages
             executable = [pscustomobject]@{ path = $exePath; sha256 = $exeHash; size_bytes = $size }
             configuration = [pscustomobject]@{ path = $configPath; sha256 = $configHash }
@@ -304,4 +323,4 @@ function Copy-RcMusicYoutubeNativeManifestPlan {
     } finally { foreach ($stream in $streams) { $stream.Dispose() } }
 }
 
-Export-ModuleMember -Function New-RcMusicYoutubeNativeManifestPlan, Copy-RcMusicYoutubeNativeManifestPlan
+Export-ModuleMember -Function New-RcMusicYoutubeNativeManifestPlan, Copy-RcMusicYoutubeNativeManifestPlan, Read-RcMusicNativeHostBuildProfile

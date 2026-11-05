@@ -800,7 +800,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — seleção das ferramentas no instalador
+### Checkpoint atual — montagem opcional dos hosts
+
+A [receita de runtime com hosts](windows-runtime.md#montagem-opcional-dos-dois-hosts-native-messaging) aceita os dois recibos/hash explícitos, confere sua correspondência com cache/headers/executáveis e mantém hosts e manifestos portáveis como irmãos do player. O instalador inclui os quatro arquivos somente na seleção opcional das ferramentas, sem registro. Identidade definitiva das extensões, montagem física com esses IDs, instalação/registro e aquisição pública continuam pendentes; o default permanece OFF. Evidências e comandos ficam no guia do runtime.
+
+### Checkpoint anterior — seleção das ferramentas no instalador
 
 O [instalador opcional](windows-installer.md#seleção-opcional-das-ferramentas-de-download) agora oferece ferramentas inicialmente desmarcadas, base obrigatória e IDs próprios para as variantes com/sem ferramentas. O marcador só é extraído após verificar os arquivos selecionados; ownership e remoção usam a mesma variante. Os cinco checks focados passaram **135 casos**, incluindo quatro compilações completas de fixtures sem executar os setups. Os [setups reais de `54e25a9`](windows-installer.md#setups-locais-de-2026-11-05), Lite e Completa, foram gerados e conferidos sobre os runtimes preservados de `bbff186`, com 45 ferramentas cada, associações OFF e sem assinatura. Não houve execução ou instalação. Próximos passos: lifecycle/checkbox físicos, hosts/ID Brave e aquisição pública; esses gates não são comprovados pela compilação.
 

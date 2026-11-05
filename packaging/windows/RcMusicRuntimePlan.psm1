@@ -151,11 +151,14 @@ function Get-RcMusicDesktopBuildConfiguration {
         [ValidateSet('ON', 'OFF')][string] $BuildTesting = 'OFF',
         [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
         [object] $DownloadProfileHeader,
-        [object] $DownloadProfileHeaderSha256
+        [object] $DownloadProfileHeaderSha256,
+        [switch] $NativeHostComponent
     )
     $hasDownloadHeader = $PSBoundParameters.ContainsKey('DownloadProfileHeader')
     $hasDownloadPin = $PSBoundParameters.ContainsKey('DownloadProfileHeaderSha256')
     $downloadEnabled = $hasDownloadHeader -or $hasDownloadPin
+    $nativeEnabled = [bool] $NativeHostComponent
+    $nativeMode = if ($nativeEnabled) { 'ON' } else { 'OFF' }
     $downloadHeader = $null
     $downloadHeaderHash = $null
     if ($downloadEnabled) {
@@ -181,6 +184,14 @@ function Get-RcMusicDesktopBuildConfiguration {
         ($Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER'] -isnot [string] -or
             $Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER'].Length -ne 0)) {
         throw 'A configured download profile header requires an explicit pinned opt-in'
+    }
+    if ($nativeEnabled -and -not $downloadEnabled) {
+        throw 'Native host packaging requires an explicit pinned download profile header'
+    }
+    if (-not $nativeEnabled -and $Cache.Contains('RC_MUSIC_BUILD_NATIVE_MESSAGING') -and
+        ($Cache['RC_MUSIC_BUILD_NATIVE_MESSAGING'] -isnot [string] -or
+            $Cache['RC_MUSIC_BUILD_NATIVE_MESSAGING'] -cne 'OFF')) {
+        throw 'Unsupported desktop build configuration: RC_MUSIC_BUILD_NATIVE_MESSAGING requires an explicit native-host opt-in'
     }
     $root = Get-RcMusicRuntimeAbsolutePath $RepositoryRoot
     foreach ($required in @{ CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = $BuildTesting }.GetEnumerator()) {
@@ -220,12 +231,48 @@ function Get-RcMusicDesktopBuildConfiguration {
             RC_MUSIC_BUILD_DOWNLOADS = 'ON'
             RC_MUSIC_BUILD_DOWNLOAD_NETWORK = 'ON'
             RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = 'ON'
-            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = $nativeMode
         }
         foreach ($option in $downloadOptions.GetEnumerator()) {
             if (-not $Cache.Contains($option.Key) -or $Cache[$option.Key] -isnot [string] -or
                 $Cache[$option.Key] -cne $option.Value) {
                 throw "Unsupported desktop build configuration: $($option.Key) (download profile requires $($option.Value))"
+            }
+        }
+    }
+    if ($nativeEnabled) {
+        foreach ($key in @('RC_MUSIC_NATIVE_MAIN_ORIGIN', 'RC_MUSIC_NATIVE_YOUTUBE_ORIGIN')) {
+            if (-not $Cache.Contains($key) -or $Cache[$key] -isnot [string] -or
+                $Cache[$key] -cnotmatch '\Achrome-extension://[a-p]{32}/\z') {
+                throw "Invalid trusted native origin identity: $key"
+            }
+        }
+        foreach ($key in @('RC_MUSIC_NATIVE_ENDPOINT', 'RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT')) {
+            if (-not $Cache.Contains($key) -or $Cache[$key] -isnot [string] -or
+                $Cache[$key] -cnotmatch '\A[A-Za-z0-9_-]{1,96}\z') {
+                throw "Invalid trusted native pipe endpoint identity: $key"
+            }
+        }
+        if ([string]::Equals($Cache['RC_MUSIC_NATIVE_MAIN_ORIGIN'], $Cache['RC_MUSIC_NATIVE_YOUTUBE_ORIGIN'],
+                [StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals($Cache['RC_MUSIC_NATIVE_ENDPOINT'], $Cache['RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT'],
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Principal and YouTube native origin and pipe identities must be distinct'
+        }
+        foreach ($key in @('RC_MUSIC_NATIVE_MAIN_BUILD_PROFILE', 'RC_MUSIC_NATIVE_YOUTUBE_BUILD_PROFILE',
+                'RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER')) {
+            $alias = $Cache[$key]
+            if (-not $Cache.Contains($key) -or $alias -isnot [string] -or
+                $alias -notmatch '\A[A-Za-z]:[\\/]' -or $alias -match '[\x00-\x1f\x7f]') {
+                throw "Native build alias must be an ordinary absolute local path: $key"
+            }
+            try {
+                # Lexical validation only. The component reader owns file
+                # existence, fixed build locations, pins and receipt matching.
+                $tail = $alias.Replace('\', '/').Substring(3)
+                $null = Get-RcMusicRuntimeRelativePath $tail
+            } catch {
+                throw "Invalid native build alias path: $key"
             }
         }
     }
@@ -241,7 +288,7 @@ function Get-RcMusicDesktopBuildConfiguration {
             RC_MUSIC_BUILD_DOWNLOADS = $downloadMode
             RC_MUSIC_BUILD_DOWNLOAD_NETWORK = $downloadMode
             RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = $downloadMode
-            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = $nativeMode
         }
         foreach ($option in $options.GetEnumerator()) {
             if (-not $Cache.Contains($option.Key) -or $Cache[$option.Key] -isnot [string] -or
@@ -266,6 +313,7 @@ function Get-RcMusicDesktopBuildConfiguration {
     return [pscustomobject]@{
         edition = if ($complete) { 'CompleteExperimental' } else { 'Lite' }
         download_component_enabled = $downloadEnabled
+        native_hosts_enabled = $nativeEnabled
         download_profile_header = $downloadHeader
         download_profile_header_sha256 = $downloadHeaderHash
         browser_sdk_root = $browserSdkRoot

@@ -134,6 +134,65 @@ function New-DownloadFixture([string] $Edition = 'Lite') {
         files = $entries; pe_closure = (Get-RcMusicDownloadComponentPeClosure -Files $files -Reports $reports)
     })
     $f.Manifest.files += $entries
+    Add-Member -InputObject $f -NotePropertyName ToolFiles -NotePropertyValue $files
+    Save-Manifest $f
+    return $f
+}
+function New-NativeDownloadFixture([string] $Edition = 'Lite') {
+    $f = New-DownloadFixture $Edition
+    $youtube = [ordered]@{
+        'extractor/yt-dlp.exe' = 'Extractor'; 'javascript/node.exe' = 'Node'
+        'extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js' = 'EjsCore'
+        'extractor/_internal/yt_dlp_ejs/yt/solver/lib.min.js' = 'EjsLibrary'
+        'notices/python-LICENSE.txt' = 'Support'; 'notices/node-LICENSE.txt' = 'Support'
+        'notices/yt-dlp-LICENSE.txt' = 'Support'; 'notices/ejs-LICENSE.txt' = 'Support'
+        'notices/pyinstaller-COPYING.txt' = 'Support'
+    }
+    foreach ($relative in $youtube.Keys) {
+        $target = 'download-tools/youtube/' + $relative
+        $path = Join-Path $f.App $target
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+        [IO.File]::WriteAllText($path, 'Synthetic owned YouTube runtime fixture: ' + $target, [Text.UTF8Encoding]::new($false))
+        $f.ToolFiles += [pscustomobject]@{ source = $path; relative_path = $target; component = 'youtube'; role = $youtube[$relative]
+            size_bytes = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
+    }
+    $entries = @($f.ToolFiles | Select-Object relative_path, size_bytes, sha256)
+    $f.Manifest.files = @($f.Manifest.files | Where-Object { -not $_.relative_path.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase) }) + $entries
+    $f.Manifest.download_component.files = $entries
+    $reports = @($f.ToolFiles | Where-Object { [IO.Path]::GetExtension($_.relative_path) -in @('.exe', '.dll', '.pyd') } | ForEach-Object {
+        [pscustomobject]@{ relative_path = $_.relative_path; machine = 'x64'; imports = @('KERNEL32.dll') }
+    })
+    $f.Manifest.download_component.pe_closure = Get-RcMusicDownloadComponentPeClosure -Files $f.ToolFiles -Reports $reports
+    $channels = @(for ($index = 0; $index -lt 2; $index++) {
+        $isYoutube = $index -eq 1
+        $name = if ($isYoutube) { 'com.rcmusic.youtube' } else { 'com.rcmusic.media' }
+        $exe = if ($isYoutube) { 'rc_music_youtube_native_host.exe' } else { 'rc_music_native_host.exe' }
+        $origin = 'chrome-extension://' + $(if ($isYoutube) { 'b' * 32 } else { 'a' * 32 }) + '/'
+        $description = if ($isYoutube) { 'RC Music YouTube audio extension host' } else { 'RC Music media extension host' }
+        $manifestText = (ConvertTo-Json -InputObject ([ordered]@{
+            name = $name; description = $description; path = $exe; type = 'stdio'; allowed_origins = @($origin)
+        }) -Depth 4) + "`n"
+        foreach ($row in @(
+            @{ relative_path = $exe; content = ('Synthetic owned non-executable host fixture: ' + $exe) },
+            @{ relative_path = ($name + '.json'); content = $manifestText }
+        )) {
+            $path = Join-Path $f.App $row.relative_path
+            [IO.File]::WriteAllText($path, $row.content, [Text.UTF8Encoding]::new($false))
+            $entry = [pscustomobject]@{ relative_path = $row.relative_path
+                size_bytes = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
+            $f.Manifest.files += $entry
+            $f.Manifest.download_component.files += $entry
+        }
+        [pscustomobject]@{
+            protocol = $(if ($isYoutube) { 'youtube.audio.v1' } else { 'direct.media.v1' }); host_name = $name
+            origin = $origin; endpoint = "rcmusic-planner-fixture-$index"
+            receipt_sha256 = ('c' * 64); configuration_sha256 = ('d' * 64)
+            executable = $exe; manifest = ($name + '.json')
+        }
+    })
+    Add-Member -InputObject $f.Manifest.download_component -NotePropertyName native_hosts -NotePropertyValue ([pscustomobject]@{
+        schema_version = 1; shared_header_sha256 = ('e' * 64); channels = $channels
+    })
     Save-Manifest $f
     return $f
 }
@@ -312,6 +371,52 @@ try {
             Assert-True ((Get-ConfigMacro $p $name) -cmatch '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1') ('Backslash tools escaped the optional boundary in ' + $name)
         }
         Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Separator normalization created installer output'
+    }
+    foreach ($edition in @('Lite', 'CompleteExperimental')) {
+        Test-Case "$edition keeps both native hosts and portable manifests exclusively in the optional file callbacks" {
+            $f = New-NativeDownloadFixture $edition
+            $before = (Get-FileHash -LiteralPath $f.ManifestPath).Hash
+            $p = New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition
+            $files = Get-ConfigMacro $p 'RCMUSIC_PAYLOAD_FILES'
+            $extract = Get-ConfigMacro $p 'RCMUSIC_PAYLOAD_EXTRACT'
+            $fileGate = [regex]::Match($files, '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1')
+            $extractGate = [regex]::Match($extract, '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1')
+            Assert-True ($fileGate.Success -and $extractGate.Success) 'Native payload lost the component selection boundary'
+            $baseToken = Get-ConfigPathToken $p 'RCMusic.exe'
+            Assert-True ($files.IndexOf($baseToken) -ge 0 -and $files.IndexOf($baseToken) -lt $fileGate.Index) 'The local player moved into the optional selection'
+            foreach ($relative in @('rc_music_native_host.exe', 'rc_music_youtube_native_host.exe', 'com.rcmusic.media.json', 'com.rcmusic.youtube.json')) {
+                $token = Get-ConfigPathToken $p $relative
+                Assert-True ($files.IndexOf($token) -gt $fileGate.Index -and [regex]::Matches($files, [regex]::Escape($token)).Count -eq 1) ('Verification/cleanup callback is not exclusively optional: ' + $relative)
+                Assert-True ($extract.IndexOf('/oname=' + $relative) -gt $extractGate.Index) ('Host or manifest extraction is mandatory: ' + $relative)
+                Assert-True ($p.download_component.files.relative_path -ccontains $relative) ('Native source missing from optional ownership: ' + $relative)
+            }
+            Assert-True ($p.payload_ids.base -cne $p.payload_ids.downloads -and $p.payload_id -ceq $p.payload_ids.base) 'Native selected and unselected installations share an identity'
+            Assert-True ($f.Manifest.download_component.selection_default -eq $false -and -not $p.config.Contains('StrCpy $RcDownloadSelected 1')) 'Native availability enabled the default selection'
+            Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.App 'download-tools/installed-v1')) -and -not (Test-Path -LiteralPath $f.Output)) 'Planning installed or activated the native component'
+            Assert-True ((Get-FileHash -LiteralPath $f.ManifestPath).Hash -ceq $before) 'Planning changed native metadata'
+        }
+    }
+    Test-Case 'a portable native manifest change invalidates both installer selection identities' {
+        $f = New-NativeDownloadFixture
+        $first = New-RcMusicInstallerPlan $f.App $f.Output
+        $channel = $f.Manifest.download_component.native_hosts.channels[1]
+        $channel.origin = 'chrome-extension://' + ('c' * 32) + '/'
+        $text = (ConvertTo-Json -InputObject ([ordered]@{
+            name = $channel.host_name; description = 'RC Music YouTube audio extension host'; path = $channel.executable
+            type = 'stdio'; allowed_origins = @($channel.origin)
+        }) -Depth 4) + "`n"
+        $path = Join-Path $f.App $channel.manifest
+        [IO.File]::WriteAllText($path, $text, [Text.UTF8Encoding]::new($false))
+        foreach ($entry in @($f.Manifest.files) + @($f.Manifest.download_component.files)) {
+            if ($entry.relative_path -ceq $channel.manifest) {
+                $entry.size_bytes = (Get-Item -LiteralPath $path).Length
+                $entry.sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant()
+            }
+        }
+        Save-Manifest $f
+        $changed = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($first.payload_ids.base -cne $changed.payload_ids.base -and $first.payload_ids.downloads -cne $changed.payload_ids.downloads) 'Changed portable manifest reused a base or selected identity'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Manifest identity calculation wrote installer output'
     }
     Test-Case 'optional payload macros gate tools while leaving mandatory base files unconditional' {
         $f = New-DownloadFixture
