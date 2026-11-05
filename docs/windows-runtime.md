@@ -39,6 +39,19 @@ pwsh -NoProfile -File packaging/windows/tests/DownloadComponentPe.Tests.ps1
 
 TDD de 2026-11-05: leitor **0/10 → 10/10**, closure PE **0/20 → 20/20**, configuração **115 passados/25 falhos → 140/140** e receita exportada **7/5 → 12/12**. São **182 casos PowerShell** verdes nos quatro checks focados. O candidato preservado de ferramentas passou com **45 arquivos, 37 PEs, 73 imports privados e 227 imports Windows**; o marcador continua ausente. Evidências em `out/product/test-runs/runtime-download-component-20261105/`. Esse resultado não inicia as ferramentas nem transfere mídia.
 
+### Runtimes com ferramentas montados em 2026-11-05
+
+O commit limpo `bbff186cf7f8b48e92d2565616a5541383d65e46` foi compilado em worktree isolada, reutilizando os SDKs locais. Lite teve build Release próprio; Completa foi recompilada incrementalmente no mesmo build com WebView2 habilitado. Ambos usam `BUILD_TESTING=OFF` e listam zero CTest. O cache padrão do checkout principal permaneceu inalterado.
+
+| Edição | Diretório em `out/product/rc-music-local/` | Arquivos / bytes do payload | SHA-256 do manifesto |
+|---|---|---:|---|
+| Lite | `rc-music-bbff186-downloads-Lite-20261105` | 599 / 231.408.372 | `388bbdf90dc960c4c734542f231013e5a7925928cec5a5fe66472937026cf6de` |
+| Completa experimental | `rc-music-bbff186-downloads-CompleteExperimental-20261105` | 602 / 231.619.339 | `154edbc03d18c21e588f15c028935bb1d12ce2bd36b21b2a0d0654b8dde33e03` |
+
+Cada runtime contém os **45 arquivos de ferramentas**, inclusive **18 `.pyd`**, e o relatório dos **37 PEs**. Todos os arquivos do payload tiveram tamanho/hash conferidos independentemente do copiador. Os dois `RCMusic.exe` conservam subsistema **Windows GUI**, sem console; a Lite continua sem WebEngine. A seleção padrão é falsa e o marcador não existe. A chamada do planejador v1 foi recusada para ambos antes de gerar saída, pelo guard explícito de componente opcional. Não houve setup, instalação, Registro, execução do player, engine ou ferramenta, nem aquisição pública.
+
+`runtime-verification.json` registra a conferência; `runtime-locations.json` registra a mudança dos diretórios próprios para o local final, com manifestos intactos. Os candidatos anteriores, SDKs e seis alterações preexistentes foram preservados. Próximo passo: seleção/ownership do componente no instalador, seguida da composição dos hosts e identidade real Brave. Estes runtimes são candidatos privados com integração desativada, não releases ou prova de download público.
+
 ### Montagem sem o componente de downloads
 
 `-Edition Lite` é o padrão e continua recusando um cache com navegador ON. Sem o componente acima, `-Edition CompleteExperimental` exige o entrypoint raiz, navegador ON, SDK local explícito e integração/downloads/Native Messaging OFF, conforme o [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md). A receita sempre exige `BUILD_TESTING=OFF`; permitir ON explicitamente na API de inspeção não autoriza empacotar testes.

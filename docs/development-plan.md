@@ -804,7 +804,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 A [montagem opcional do runtime](windows-runtime.md#componente-opcional-de-downloads) agora aceita recibo/hash explícitos, vincula o header ao build, valida a árvore e os imports PE em quatro domínios e copia as ferramentas preservando os `.pyd`. Os quatro checks focados passaram **182 casos PowerShell**, incluindo defaults/edições e recusas antes de saída; o candidato real preservado passou com **45 arquivos/37 PEs**. Detalhes e limites ficam no guia, sem repetir validações C++ que não foram afetadas.
 
-O manifesto declara o componente inicialmente desmarcado e descreve o marcador, sem criá-lo. A montagem física do runtime, a seleção/ownership no instalador, hosts/ID Brave e aquisição pública ainda precisam das respectivas provas; o app padrão continua OFF. Prosseguir pela entrega integrada do pacote, preservando os artefatos existentes e as seis alterações preexistentes.
+O manifesto declara o componente inicialmente desmarcado e descreve o marcador, sem criá-lo. Os [runtimes físicos de `bbff186`](windows-runtime.md#runtimes-com-ferramentas-montados-em-2026-11-05), Lite com **599 arquivos** e Completa com **602**, foram compilados/montados em worktree limpa e tiveram inventários/hashes conferidos. Ambos contêm as 45 ferramentas, conservam subsistema GUI e zero CTest; o instalador v1 os recusou antes de saída, conforme o guard. Não houve execução dos aplicativos ou instalação. Próximo desenvolvimento: seleção/ownership no instalador, hosts/ID Brave e aquisição pública. O app padrão continua OFF; artefatos anteriores e as seis alterações preexistentes permanecem preservados.
 
 ### Checkpoint anterior — ativação opcional dos downloads
 
