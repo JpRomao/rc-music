@@ -10,6 +10,14 @@ Para buscar online, clique em **Buscar letra**, confira ou corrija título e art
 
 Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
 
+## Pesquisar e solicitar álbuns no Lidarr
+
+Clique em **Lidarr**, informe o endereço da sua instância (inicialmente `http://localhost:8686`) e a chave de API obtida nas configurações do Lidarr, depois escolha **Conectar**. A chave é mascarada, fica somente em memória e precisa ser informada novamente ao reiniciar o player. Abrir o painel não se conecta automaticamente. HTTP não criptografa a conexão; prefira HTTPS fora deste computador.
+
+Digite o artista ou álbum, escolha o tipo de pesquisa e clique em **Buscar**. Selecione um álbum e use **Solicitar download**. Confira a confirmação e, para um álbum novo, escolha uma pasta de biblioteca e perfis já configurados no servidor. O Lidarr pode cadastrar o artista necessário; artistas existentes conservam suas configurações no servidor. Só **Solicitar** envia o pedido. O Lidarr trabalha com álbuns completos: para uma faixa, procure o artista ou álbum correspondente.
+
+**Busca solicitada no Lidarr** indica que o pedido foi aceito, sem garantir resultado ou download concluído. Indexadores e cliente de download precisam estar configurados no Lidarr; acompanhe a busca nele. Se cancelar ou ocorrer timeout após o envio, confira no Lidarr antes de repetir. A integração não importa os arquivos baixados automaticamente nem altera a fila atual. **Desconectar** encerra a conexão e descarta as credenciais da sessão. Consulte os [limites da integração](lidarr-integration.md).
+
 ## Abrir música e organizar a fila
 
 - **Abrir áudio** (`Ctrl+O`): selecione um ou mais arquivos. Eles entram no fim da fila e a primeira faixa nova começa a tocar quando estiver pronta; a fila anterior não é apagada.

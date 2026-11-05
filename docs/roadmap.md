@@ -12,7 +12,9 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Estado:** stack aceita; sequência de promoção e conclusão Windows, sem compromisso de datas
 
-**Última revisão:** 2026-10-01
+**Última revisão:** 2026-11-04
+
+**Prioridade confirmada em 2026-11-04:** [integração Lidarr](lidarr-integration.md), FR-055/R1.11, para pesquisa e solicitação explícita de álbuns numa instância existente. Avança antes da investigação AppContainer, cujo trabalho e evidências ficam preservados. Aceitação de pedidos não equivale a download concluído nem inclui instalação do servidor.
 
 ## 1. Como ler
 

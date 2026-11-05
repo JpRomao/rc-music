@@ -132,6 +132,14 @@ Pedido confirmado em 2026-11-04: a letra funciona como legenda da música, sem t
 
 A matriz inicial de letras locais aceita um `.lrc` UTF-8 regular com o mesmo nome base do áudio, sem UNC ou symlink. Offset diferente de zero não é aceito neste recorte. Cobertura, versão da música e precisão dos tempos do provedor podem variar; não há promessa de encontrar letras para todas as faixas. A consulta de texto é independente da extensão, do navegador e do downloader; não encerra FR-050–053, licenças ou distribuição.
 
+### 2.8 Integração opcional com Lidarr
+
+| ID | Prioridade | Origem | Requisito e critério principal |
+|---|---:|---|---|
+| FR-055 | P1 | Confirmado | Integrar uma instância Lidarr configurada pelo usuário, em Lite e Completa, para pesquisar artistas/álbuns e solicitar downloads de álbuns mediante seleção e confirmação explícitas. Informar endereço e chave no app; usar as pastas e perfis reais do servidor, sem instalar ou configurar o Lidarr automaticamente. Separar pedido aceito de download concluído e manter fila/reprodução local independentes da conexão. |
+
+Pedido prioritário confirmado em 2026-11-04, com instância indicada `http://localhost:8686/`. O [ADR-0014](../architecture/decisions/0014-lidarr-integration.md) delimita esta integração específica. O lookup do Lidarr pesquisa artistas/álbuns, sem busca global por título de faixa: para uma música, procurar seu artista ou álbum. Solicitar um álbum pode cadastrar o artista necessário no servidor; a confirmação explica esse efeito e a busca do álbum completo. Chave somente em memória nesta versão, envio em `X-Api-Key`, HTTP com aviso de ausência de criptografia e HTTPS sem ignorar certificados. Abrir o painel não envia pedidos; timeout de escrita exige conferência no Lidarr, sem retry automático. Resultados e caminhos do servidor não autorizam importação, autoplay ou operações em arquivos locais.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |

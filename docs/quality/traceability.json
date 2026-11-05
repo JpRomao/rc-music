@@ -2187,6 +2187,24 @@
       ]
     },
     {
+      "id": "FR-055",
+      "plan": "R1.11",
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        { "path": "tests/qt/QtLidarrServiceTests.cpp", "marker": "explicitConnectionLoadsOnlyStatusAndConfiguredChoices" },
+        { "path": "tests/qt/LidarrBindingTests.cpp", "marker": "exitHasObservablePreparationAndBlocksEveryNewOperation" },
+        { "path": "tests/ui/quick/tst_lidarr.qml", "marker": "name: \"LidarrPanel\"" }
+      ],
+      "evidence": [
+        { "path": "docs/architecture/decisions/0014-lidarr-integration.md", "marker": "## Decisão" },
+        { "path": "docs/lidarr-integration.md", "marker": "## Evidência de implementação" }
+      ],
+      "remaining": [
+        "Cliente, binding e UI têm Red/Green e builds Lite/Completa conferidos; validar pesquisa e solicitação na instância real com chave fornecida no app. O GET real sem chave retornou 401, sem POST. Testes falsos não comprovam catálogo/indexadores/download concluído, aceitação nativa ou empacotamento atualizado."
+      ]
+    },
+    {
       "id": "UX-001",
       "plan": "M0.2–M0.4, M1.10, M2.7, M3.8",
       "status": "em andamento",
@@ -3302,7 +3320,7 @@
       "evidence": [
         {
           "path": "docs/development-plan.md",
-          "marker": "### 15.1 Destino individual dos 84 requisitos"
+          "marker": "### 15.1 Destino individual dos 85 requisitos"
         },
         {
           "path": "docs/quality/traceability.md",

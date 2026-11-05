@@ -9,6 +9,14 @@ target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Networ
 set_target_properties(rc_music_lyrics PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lyrics)
 
+add_library(rc_music_lidarr STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLidarrService.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLidarrService.cpp")
+target_include_directories(rc_music_lidarr PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_lidarr PUBLIC Qt6::Core Qt6::Network)
+set_target_properties(rc_music_lidarr PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_lidarr)
+
 # Reuse exactly the same presentation sources for production and the isolated
 # scenario-test variant. Each caller owns its plugin and QML output directory.
 function(rc_music_add_ui target support qml_output)
@@ -28,6 +36,7 @@ function(rc_music_add_ui target support qml_output)
             TransportText.qml
             TransportSlider.qml
             LyricsPanel.qml
+            LidarrPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
@@ -67,6 +76,8 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.hpp"
@@ -95,6 +106,7 @@ function(rc_music_add_ui target support qml_output)
         Qt6::QuickControls2
         Qt6::QuickLayouts
         rc_music_lyrics
+        rc_music_lidarr
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         target_sources(${target} PRIVATE

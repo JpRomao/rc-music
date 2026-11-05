@@ -63,6 +63,15 @@ endfunction()
 add_ui_test(rc_music_lyrics_service_tests rc_music.lyrics.service
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLyricsServiceTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_service_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_lidarr_service_tests rc_music.lidarr.service
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLidarrServiceTests.cpp" rc_music_lidarr)
+set_target_properties(rc_music_lidarr_service_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_lidarr_binding_tests rc_music.lidarr.binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LidarrBindingTests.cpp" rc_music_lidarr)
+target_sources(rc_music_lidarr_binding_tests PRIVATE
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.cpp")
+set_target_properties(rc_music_lidarr_binding_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_lyrics_binding_tests rc_music.lyrics.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LyricsBindingTests.cpp" rc_music_lyrics)
 target_sources(rc_music_lyrics_binding_tests PRIVATE

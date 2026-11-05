@@ -4,6 +4,8 @@
 **Última revisão:** 2026-11-04
 **Escopo:** domínio, aplicação, adapters, UI, plataforma e distribuição
 
+O [cliente Lidarr](../lidarr-integration.md) usa QNAM falso para conexão explícita, base com prefixo, chave somente em cabeçalho, quatro consultas de configuração, lookup tipado/limitado e POST único por seleção confirmada. Casos de timeout/cancelamento devem observar o abort independentemente do lifetime do reply, sem dereferenciar objetos após DeferredDelete. Binding e serviço reais são ligados em teste para conferir a projeção e o comando; Quick usa backend falso para confirmação, texto simples, seleção obsoleta, campos de senha, foco/modal e 720 × 520. Testes falsos e resposta 401 sem chave não comprovam pesquisa autenticada ou download real.
+
 ## 1. Objetivo
 
 TDD neste projeto não significa apenas escrever testes antes do commit. O teste é a primeira expressão executável do comportamento, orienta o desenho das portas e impede que a UI ou o backend concreto se tornem o domínio.

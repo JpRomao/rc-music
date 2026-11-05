@@ -2,6 +2,7 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#include "adapters/QtLidarrService.hpp"
 #include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
@@ -31,6 +32,7 @@
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
+#include "presentation/LidarrBinding.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -450,6 +452,8 @@ int main(int argc, char* argv[]) {
         music_player::m0::QtSystemAppearance system_appearance;
         music_player::m0::QtLyricsService lyrics_service;
         music_player::m0::LyricsBinding lyrics_binding(lyrics_service);
+        music_player::m0::QtLidarrService lidarr_service;
+        music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
@@ -513,8 +517,9 @@ int main(int argc, char* argv[]) {
         };
         presenter.setSourceExitDrainedProbe([&] {
             const bool lyrics_drained = lyrics_binding.prepareExit();
+            const bool lidarr_drained = lidarr_binding.prepareExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
-                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained;
+                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -642,9 +647,18 @@ int main(int argc, char* argv[]) {
         QObject::connect(&application, &QCoreApplication::aboutToQuit, &lyrics_binding,
                          &music_player::m0::LyricsBinding::beginShutdown);
         update_lyrics();
+        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &lidarr_binding, [&] {
+            if (presenter.exiting())
+                static_cast<void>(lidarr_binding.prepareExit());
+            else
+                lidarr_binding.resume();
+        });
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, &lidarr_binding,
+                         &music_player::m0::LidarrBinding::beginShutdown);
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
+                                       {QStringLiteral("lidarr"), QVariant::fromValue(&lidarr_binding)},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

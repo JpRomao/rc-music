@@ -2,7 +2,7 @@
 
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
-**Última revisão:** 2026-10-02
+**Última revisão:** 2026-11-04
 **Marco atual:** produto Windows C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib promovido para a raiz, conforme [ADR-0005](architecture/decisions/0005-windows-product-stack.md), com M1 e gates globais ainda abertos. A seção 17 registra reservas cooperativa/nativa do owner, host binário/IPC opcional e jornada instrumentada até o painel comum, mantendo produção sem workflow remoto ativo, Lite sem engine e Completa/navegação interna pendentes; isso não conclui corpus, segurança, acessibilidade, integração instalada, distribuição ou desempenho. M0.10 preserva a escolha explícita sem vitória A/B ou aprovação dos budgets.
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
@@ -22,6 +22,8 @@ O fechamento desse avanço passou **4/4 CTest / 176 Qt + 13 casos puros de parse
 Incremento posterior: o [leitor de Registro e a factory das quatro raízes](media-profile-lifecycle.md#leitor-de-registro-e-factory-de-sessão-de-quatro-raízes) acrescentam a implementação de teste e composição inerte, com **100/100 Qt** do Reader, **19/19** de admissão Native e **7/7** da factory. A seleção afetada passou **9/9 CTest, 389 Qt + 13 casos puros de parser**, sem falhas/skips. O diagnóstico real separado observou apenas Software/Microsoft existentes: aberturas Native 0, três Notify 0/eventos Unchanged e três chaves/três eventos fechados com 0, sem UAC solicitado ou token capturado. Não houve inventário em perfil, teste de mudança real, política/MIC, prova de identidade física/atomicidade/ABA ou promoção de gate.
 
 Preparação em `c840fe1`: o [probe separado do inventário](media-profile-lifecycle.md#probe-separado-do-inventário-de-storage) compôs esse leitor com o owner vivo e recibos privados em executável próprio. Naquele fechamento, somente modos inertes e testes com perfil falso tinham sido executados. O fechamento proporcional passou **14/14 CTest, 538 Qt + 33 casos puros**, sem falhas/skips, formato **473 C++/62 QML**, build Lite e fronteira de **255 comandos**. A execução posterior recebeu autorização própria e está no checkpoint atual; não promove política/MIC ou produção.
+
+**Prioridade atual do mantenedor (2026-11-04):** integrar Lidarr para pesquisar artistas/álbuns e solicitar downloads mediante confirmação, em uma instância já existente (`http://localhost:8686/`). [FR-055/ADR-0014](architecture/decisions/0014-lidarr-integration.md) acrescentam R1.11. Este incremento vem antes da continuação AppContainer, cujo trabalho em andamento e evidências ficam preservados. O escopo não instala o servidor nem retoma autorizações físicas anteriores.
 
 ## 1. Regras de uso
 
@@ -618,6 +620,7 @@ FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entr
 | R1.8 | Serviço comum de download/conversão MP3 e importação de arquivo finalizado, isolado do playback — [coordenação/importação/checkpoint iniciados](download-jobs.md), integração no player pendente | FR-051–053 | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | progresso/cancelamento/limites e falhas sem afetar o player |
 | R1.9 | Composições Lite/Completa: decidir engine e adicionar navegação interna isolada somente à Completa | FR-051–053, NFR-MAINT-002 | `CHK-DOC`, `CHK-TDD`, `CHK-SEC`, `CHK-UI`, `CHK-CLOSE` | mesma base e integração externa, engine ausente na Lite |
 | R1.10 | Opcionais no instalador, identidades/ponte, upgrade entre edições e separação de YouTube | FR-050–053 | `CHK-TDD`, `CHK-PACKAGE`, `CHK-SEC`, `CHK-CLOSE` | seleção independente e remoção por proprietário, sem instalação compulsória |
+| R1.11 | Integração opcional Lidarr — prioridade atual: conexão explícita, pesquisa, seleção de álbum e confirmação de busca/download | FR-055, NFR-PRIV-004 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | cliente assíncrono em Lite/Completa; chave em memória; pedido aceito separado de download concluído; fila local preservada |
 
 Sequência prioritária: threat model R1.2 e avaliação específica de downloader/conversor/ponte por FR-052, implementar R1.7/R1.8 com fakes e fixtures locais, validar R1.9 e depois as composições/opcionais R1.10. A principal não depende da comparação de engines de streaming R1.4 nem da retomada de `CHK-PERF`. R1.3/FR-050 trata YouTube separadamente, sem virar pré-requisito da principal. A navegação interna usa os mesmos serviços de seleção/download; não presumir execução literal da extensão do Brave dentro da engine embarcada. Critérios e limites de instalação/privacidade estão no ADR-0006. Nenhuma dessas novas etapas está concluída; benchmarks permanecem adiados.
 
@@ -646,9 +649,9 @@ Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos
 | M5 | todos os P0/P1 e NFRs do MVP | matriz individual teste/evidência e RC |
 | M6 | FR-018–019, FR-041 e novos requisitos autorizados | incrementos independentes |
 | Backlog | FR-025 | exclusão intencional documentada |
-| R1 | FR-050–053, NFR-PRIV-004 | threat model, política, harness e ADR |
+| R1 | FR-050–053, FR-055, NFR-PRIV-004 | threat model, política, harness, integração Lidarr e ADR |
 
-### 15.1 Destino individual dos 84 requisitos
+### 15.1 Destino individual dos 85 requisitos
 
 Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica onde o requisito é primeiro provado ou deliberadamente descartado; não significa que o teste já exista. O [manifesto de M1.2](quality/traceability.json) mantém uma linha por ID, links para testes/evidências, lacunas e estado (`planejado`, `em andamento`, `comprovado`, `excepcionado` ou `fora de escopo`). O [validador integrado ao runner](quality/traceability.md) confere inventário, destinos e referências literais, com consulta inversa por teste/evidência; não executa os testes citados nem comprova automaticamente seus critérios. `Excepcionado` vale somente para gates/desvios que o contrato permita; P0 funcional falho precisa ser corrigido ou alterado/repriorizado antes do RC.
 
@@ -696,6 +699,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-052` | R1.2–R1.4, R1.6, R1.9–R1.10 | fontes oficiais, engine/ferramentas, licença/distribuição por artefato e ADR |
 | `FR-053` | R1.2, R1.4–R1.10 | harness remoto, timeout/cancelamento, arquivos finais seguros e zero concatenação shell |
 | `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
+| `FR-055` | R1.11 | conexão Lidarr explícita, catálogo, seleção e confirmação do álbum, limites e erros sem alterar fila local |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
@@ -758,6 +762,12 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 - NSIS mantém o escopo experimental local; aceitar a stack não autoriza distribuição pública.
 
 ## 17. Próxima sequência segura
+
+### Prioridade atual — integração Lidarr
+
+O incremento implementado passou **263/263 CTest**, incluindo **33 casos Qt do serviço, 8 do binding e 12 Quick dedicados**; a suíte Quick completa ficou **303/303**. Builds Lite ON/OFF e Completa OFF, lint sem warnings, formato dos 7 C++ alterados/67 QML e fronteiras dos grafos passaram. O [guia](lidarr-integration.md#evidência-de-implementação) registra Reds, limites e recibos. A instância indicada respondeu 401 ao GET sem chave; pesquisa autenticada e solicitação real aguardam chave informada no app, sem POST automático. Nenhum gate global foi promovido e os instaladores existentes não foram regenerados.
+
+O mantenedor priorizou [R1.11/FR-055](lidarr-integration.md): conectar à instância indicada, pesquisar artistas/álbuns e solicitar downloads após confirmação. Cliente, projeção, painel e checks automatizados estão implementados; a próxima conferência é autenticada na instância real, com chave informada no app, seguida de aceitação nativa/empacotamento atualizados. Nenhuma busca/download é disparada apenas por abrir o player ou o painel. A API pesquisa artistas/álbuns e solicita álbuns completos; não promete lookup global de faixas. Os seis arquivos pendentes de integração AppContainer ficam preservados enquanto esta prioridade avança.
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
