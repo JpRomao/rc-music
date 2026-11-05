@@ -1166,6 +1166,9 @@
           { "path": "tests/qt/WindowsYoutubeRuntimeTests.cpp", "marker": "unknownFilesInvalidateInventoryAndSurviveIdentityOwnedCleanup" },
           { "path": "tests/qt/WindowsDownloadInteractiveInputTests.cpp", "marker": "segmentedInteractiveTotalCanExceedTheLegacyOneShotCeiling" },
           { "path": "tests/qt/WindowsDownloadInteractiveInputTests.cpp", "marker": "cancellationAfterWitnessedNativeExitClosesInputAdmission" },
+          { "path": "tests/qt/YoutubeBrokerProtocolTests.cpp", "marker": "nodeProgramPassesHostilePlayerAndChallengesAsSerializedDataInResourceOrder" },
+          { "path": "tests/qt/WindowsYoutubeBrokerProcessTests.cpp", "marker": "largeTwoGroupExchangeWaitsForEveryNodeExitBeforeForwardingAndFinalPublication" },
+          { "path": "tests/youtube/test_resolver_provider.py", "marker": "test_projection_accepts_the_pinned_http_header_dict_subclass_without_importing_ytdlp" },
         { "path": "tests/qt/YoutubeDownloadExecutionTests.cpp", "marker": "resolutionHandsTheExactCapabilityToTheExistingTaskOnTheWorker" },
         { "path": "tests/qt/WindowsDownloadJobSessionTests.cpp", "marker": "youtubeExpiryDuringDnsStillRequiresTheOriginalNativeDrainAcknowledgement" },
         { "path": "tests/extensions/youtube-popup.test.mjs", "marker": "opening or refreshing reads only the current tab and never submits a request" },
@@ -1194,7 +1197,7 @@
         }
       ],
       "remaining": [
-          "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. Letras do fluxo opcional têm fallback LRCLIB após publicação live consentida, preview e salvamento explícito no catálogo do arquivo; ensaio usa rede/publicação falsas e JSON TEMP real. O preparador de inventário privado autentica/copia bytes declarados em configuração C++ revisada, sem conceder autoridade de execução. Faltam perfil real completo/ferramentas/licenças e composição instalada de produção, host/origens confiáveis, Brave, opcionais e pacote. EJS local completo e Node descendente não qualificados; broker compatível com NoChild pendente. Letras primário depende de acesso/contrato compatível e não é anunciado como funcional. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
+          "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. Letras do fluxo opcional têm fallback LRCLIB após publicação live consentida, preview e salvamento explícito no catálogo do arquivo; ensaio usa rede/publicação falsas e JSON TEMP real. O preparador de inventário privado autentica/copia bytes declarados em configuração C++ revisada, sem conceder autoridade de execução. Faltam perfil real completo/ferramentas/licenças e composição instalada de produção, host/origens confiáveis, Brave, opcionais e pacote. Provider JSC próprio e broker C++ de desafios implementados com processos irmãos Job=1, validados com helpers e dados sintéticos; stdin interativo/protocolo não qualificam o runtime real. EJS completo, bootstrap do entrypoint próprio e execução real de Node continuam pendentes de perfil revisado. Letras primário depende de acesso/contrato compatível e não é anunciado como funcional. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
       ]
     },
     {

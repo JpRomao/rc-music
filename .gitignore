@@ -1,4 +1,6 @@
 /.tools/
+/tools/youtube-resolver/__pycache__/
+/tests/youtube/__pycache__/
 /out/m0/
 /out/product/
 /q/*

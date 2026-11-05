@@ -23,6 +23,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeResolverProcess.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeBrokerProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
@@ -63,7 +64,7 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask)
@@ -78,6 +79,10 @@ if(BUILD_TESTING)
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadProcessHelper.cpp")
         target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core advapi32)
         rc_music_configure_cpp(rc_music_download_process_helper)
+        add_executable(rc_music_youtube_broker_helper
+            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsYoutubeBrokerHelper.cpp")
+        target_link_libraries(rc_music_youtube_broker_helper PRIVATE Qt6::Core)
+        rc_music_configure_cpp(rc_music_youtube_broker_helper)
         add_executable(rc_music_download_tls_runtime_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadTlsRuntimeHelper.cpp")
         target_link_libraries(rc_music_download_tls_runtime_helper PRIVATE rc_music_download_network)
@@ -140,6 +145,10 @@ if(BUILD_TESTING)
             add_dependencies(${target} rc_music_download_process_helper)
             target_compile_definitions(${target} PRIVATE
                 RC_MUSIC_DOWNLOAD_PROCESS_HELPER_PATH="$<TARGET_FILE:rc_music_download_process_helper>")
+        elseif(unit STREQUAL "WindowsYoutubeBrokerProcess")
+            add_dependencies(${target} rc_music_youtube_broker_helper)
+            target_compile_definitions(${target} PRIVATE
+                RC_MUSIC_YOUTUBE_BROKER_HELPER_PATH="$<TARGET_FILE:rc_music_youtube_broker_helper>")
         elseif(unit STREQUAL "WindowsDownloadNetworkLaunch" OR unit STREQUAL "WindowsPreparedDownloadExecution")
             add_dependencies(${target} rc_music_download_network_bootstrap rc_music_download_network_payload)
             target_compile_definitions(${target} PRIVATE
@@ -203,6 +212,10 @@ if(BUILD_TESTING)
         if(unit STREQUAL "WindowsYoutubeRuntime")
             set_tests_properties("rc_music.download-network.${unit}" PROPERTIES
                 LABELS "download-network;qt;FR-050;FR-052")
+        endif()
+        if(unit STREQUAL "WindowsYoutubeBrokerProcess")
+            set_tests_properties("rc_music.download-network.${unit}" PROPERTIES
+                LABELS "download-network;qt;FR-050" TIMEOUT 120)
         endif()
     endforeach()
 endif()

@@ -72,6 +72,9 @@ set_target_properties(rc_music_youtube_codec_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_youtube_resolution_tests rc_music.youtube.resolution
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeAudioResolutionTests.cpp" rc_music_youtube_resolution)
 set_target_properties(rc_music_youtube_resolution_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_youtube_broker_protocol_tests rc_music.youtube.broker-protocol
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeBrokerProtocolTests.cpp" rc_music_youtube_resolution)
+set_target_properties(rc_music_youtube_broker_protocol_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_youtube_resolver_session_tests rc_music.youtube.resolver-session
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeResolverSessionTests.cpp" rc_music_youtube_resolution)
 set_target_properties(rc_music_youtube_resolver_session_tests PROPERTIES AUTOMOC ON)
