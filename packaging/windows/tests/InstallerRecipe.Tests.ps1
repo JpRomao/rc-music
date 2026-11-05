@@ -68,7 +68,8 @@ try {
     foreach ($name in @('New-RcMusicInstaller.ps1', 'RcMusicInstallerPlan.psm1', 'RcMusicRuntimePlan.psm1',
             'RcMusicFormatMatrix.psm1', 'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
             'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json',
-            'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1')) {
+            'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1',
+            'RcMusicExtensionComponent.psm1', 'RcMusicChromiumIdentity.psm1', 'RcMusicBrowserHosts.nsh')) {
         Copy-Item -LiteralPath (Join-Path $repository ('packaging/windows/' + $name)) -Destination $recipeRoot
     }
     $recipe = Join-Path $recipeRoot 'New-RcMusicInstaller.ps1'
@@ -134,6 +135,17 @@ try {
     $compiler = Join-Path $export 'untrusted-compiler.txt'
     [IO.File]::WriteAllText($compiler, 'This is never executed: the pinned hash must reject it')
     $output = Join-Path $export 'out/product/rejected-installer'
+    Test-Case 'extension receipt opt-in reaches the planner before the compiler without creating output' {
+        foreach ($arguments in @(
+            @('-MainExtensionPackageReceipt','C:/missing/package-receipt.json'),
+            @('-YoutubeExtensionPackageReceiptSha256',('a'*64)),
+            @('-MainExtensionPackageReceipt','C:/missing/package-receipt.json','-MainExtensionPackageReceiptSha256',('A'*64))
+        )) {
+            $result=Invoke-Recipe (@('-RuntimeDirectory',$app,'-OutputDirectory',$output,'-MakeNsis',$compiler)+$arguments)
+            Assert-True ($result.ExitCode -eq 1 -and $result.Stderr -match 'Extension packages require') "Wrong extension preflight: $($result.Stderr)"
+            Assert-True (-not(Test-Path -LiteralPath $output)) 'Invalid extension opt-in created output'
+        }
+    }
     Test-Case 'exported OFF recipe rejects untrusted compiler bytes before output or execution' {
         $result = Invoke-Recipe @('-RuntimeDirectory', $app, '-OutputDirectory', $output, '-MakeNsis', $compiler)
         Assert-True ($result.ExitCode -eq 1) 'Preflight did not fail'

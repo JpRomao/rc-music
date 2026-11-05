@@ -41,7 +41,8 @@ $state = @{ Passed = 0; Failed = 0 }
 $recipeNames = @('New-RcMusicInstaller.ps1', 'RcMusicInstallerPlan.psm1', 'RcMusicRuntimePlan.psm1',
     'RcMusicFormatMatrix.psm1', 'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
     'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json',
-    'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
+    'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1',
+    'RcMusicExtensionComponent.psm1', 'RcMusicChromiumIdentity.psm1', 'RcMusicBrowserHosts.nsh')
 function Assert-True([bool] $Condition, [string] $Message) { if (-not $Condition) { throw $Message } }
 function Assert-Rejected([scriptblock] $Body) {
     $rejected = $false

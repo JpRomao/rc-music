@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'RcMusicRuntimePlan.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'RcMusicFormatMatrix.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'RcMusicInstallerComponent.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'RcMusicExtensionComponent.psm1') -Force
 
 function ConvertTo-RcMusicNsisLiteral([string] $Value, [switch] $Runtime,
     [ValidateRange(1, 2)][int] $Passes = 1) {
@@ -35,18 +36,47 @@ function Get-RcMusicInstallerRecipeHashes {
     return @(@('New-RcMusicInstaller.ps1', 'RcMusicInstallerPlan.psm1', 'RcMusicRuntimePlan.psm1',
             'RcMusicFormatMatrix.psm1', 'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
             'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json',
-            'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1') | ForEach-Object {
+            'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1',
+            'RcMusicExtensionComponent.psm1', 'RcMusicChromiumIdentity.psm1', 'RcMusicBrowserHosts.nsh') | ForEach-Object {
         $path = 'packaging/windows/' + $_
         [pscustomobject]@{ path = $path
             sha256 = (Get-FileHash -LiteralPath (Join-Path $repository $path) -Algorithm SHA256).Hash.ToLowerInvariant() }
     })
 }
 
+function Add-RcMusicInstallerGroupCondition([Collections.Generic.List[string]] $Lines, [int] $Group) {
+    switch ($Group) {
+        0 { }
+        1 { $Lines.Add('    ${If} $RcDownloadSelected == 1') }
+        2 { $Lines.Add('    ${If} $RcBrowserExtensionsSelected == 2'); $Lines.Add('    ${OrIf} $RcBrowserExtensionsSelected == 6') }
+        4 { $Lines.Add('    ${If} $RcBrowserExtensionsSelected == 4'); $Lines.Add('    ${OrIf} $RcBrowserExtensionsSelected == 6') }
+        6 { $Lines.Add('    ${If} $RcBrowserExtensionsSelected != 0') }
+        default { throw 'Unknown installer file group' }
+    }
+}
+
 function New-RcMusicInstallerPlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string] $RuntimeDirectory,
         [Parameter(Mandatory)][string] $OutputDirectory, [string] $FormatMatrix, [switch] $LegacyBaseline,
-        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite')
+        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
+        [AllowEmptyString()][string] $MainExtensionPackageReceipt,
+        [AllowEmptyString()][string] $MainExtensionPackageReceiptSha256,
+        [AllowEmptyString()][string] $YoutubeExtensionPackageReceipt,
+        [AllowEmptyString()][string] $YoutubeExtensionPackageReceiptSha256)
+    $extensionInputs = @()
+    foreach ($channel in @('Main', 'Youtube')) {
+        $pathName = $channel + 'ExtensionPackageReceipt'
+        $pinName = $pathName + 'Sha256'
+        if ($PSBoundParameters.ContainsKey($pathName) -or $PSBoundParameters.ContainsKey($pinName)) {
+            if (-not $PSBoundParameters.ContainsKey($pathName) -or -not $PSBoundParameters.ContainsKey($pinName) -or
+                [string]::IsNullOrWhiteSpace($PSBoundParameters[$pathName]) -or
+                $PSBoundParameters[$pinName] -cnotmatch '\A[0-9a-f]{64}\z') {
+                throw 'Extension packages require paired receipt paths and explicit lowercase SHA256 pins'
+            }
+            $extensionInputs += [pscustomobject]@{channel=$channel;path=$PSBoundParameters[$pathName];pin=$PSBoundParameters[$pinName]}
+        }
+    }
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
     $output = [IO.Path]::GetFullPath($OutputDirectory, $repository)
     $outputRoots = @('out/product/', 'out/m0/') | ForEach-Object { Join-Path $repository $_ }
@@ -93,7 +123,7 @@ function New-RcMusicInstallerPlan {
     }
     $mappings = foreach ($entry in $manifest.files) {
         if ($entry.relative_path -isnot [string] -or $entry.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
-            $entry.relative_path -match '^(?i:Uninstall\.exe|\.rcmusic-install\.ini)(?:[\\/]|$)') {
+            $entry.relative_path -match '^(?i:Uninstall\.exe|\.rcmusic-install\.ini|browser-extensions)(?:[\\/]|$)') {
             throw 'Invalid or installer-reserved runtime entry'
         }
         @{ source = (Join-Path $runtime $entry.relative_path); relative_path = $entry.relative_path }
@@ -113,6 +143,17 @@ function New-RcMusicInstallerPlan {
     foreach ($required in $requiredFiles) {
         if ($verified.files.relative_path -cnotcontains $required) { throw "Missing required runtime file: $required" }
     }
+    $browserExtensions = @()
+    foreach ($inputPackage in $extensionInputs) {
+        if ($null -eq $component -or -not $manifest.download_component.PSObject.Properties['native_hosts']) {
+            throw 'Extension packages require the matching enabled native host component'
+        }
+        $hostName = if ($inputPackage.channel -ceq 'Main') { 'com.rcmusic.media' } else { 'com.rcmusic.youtube' }
+        $nativeChannel = @($manifest.download_component.native_hosts.channels | Where-Object host_name -CEQ $hostName)
+        if ($nativeChannel.Count -ne 1) { throw 'An extension requires its exact native channel' }
+        $browserExtensions += Get-RcMusicExtensionComponentPlan -ReceiptPath $inputPackage.path -ReceiptSha256 $inputPackage.pin `
+            -Channel $inputPackage.channel -NativeChannel $nativeChannel[0]
+    }
     $optionalPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     if ($null -ne $component) {
         foreach ($entry in $component.files) { $null = $optionalPaths.Add($entry.relative_path.Replace('\', '/')) }
@@ -123,6 +164,16 @@ function New-RcMusicInstallerPlan {
     # A single boundary in each generated macro keeps the mandatory files
     # unconditional and the optional inventory together under the selection.
     $files = @($baseFiles) + @($optionalFiles)
+    $fileGroups = [Collections.Generic.Dictionary[string,int]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $files) { $fileGroups.Add($entry.relative_path, $(if ($optionalPaths.Contains($entry.relative_path)) {1} else {0})) }
+    foreach ($extension in $browserExtensions) {
+        foreach ($entry in $extension.files) {
+            if ($fileGroups.ContainsKey($entry.relative_path)) { throw 'An extension collides with the runtime inventory' }
+            $fileGroups.Add($entry.relative_path, $(if ($extension.channel -ceq 'Main') {2} else {4}))
+            $files += $entry
+        }
+    }
+    $files = @($files | Sort-Object @{Expression={$fileGroups[$_.relative_path]}}, @{Expression={$_.relative_path}} -CaseSensitive -Culture '')
     $baseSizeKb = [long][Math]::Ceiling(($baseFiles | Measure-Object size_bytes -Sum).Sum / 1024)
     $downloadSizeKb = if ($null -ne $component) {
         [long][Math]::Ceiling((($optionalFiles | Measure-Object size_bytes -Sum).Sum + $component.marker.size_bytes) / 1024)
@@ -143,6 +194,7 @@ function New-RcMusicInstallerPlan {
         edition = $canonicalEdition; browser_runtime_requirement = $browserRequirement } | ConvertTo-Json -Compress
     $payloadId = Get-RcMusicInstallerIdentity -InventoryJson $packageIdentity -RecipeHashes $recipeHashes
     $payloadIds = $null
+    $payloadVariants = @()
     $generatedFiles = @()
     if ($null -ne $component) {
         $variants = @{}
@@ -166,6 +218,24 @@ function New-RcMusicInstallerPlan {
         $generatedFiles = @([pscustomobject]@{ relative_path = 'download-component-marker.bin'
             content = $component.marker.content; sha256 = $component.marker.sha256 })
     }
+    if ($browserExtensions.Count -gt 0) {
+        $availableMask = 1
+        foreach ($extension in $browserExtensions) { $availableMask = $availableMask -bor $(if($extension.channel -ceq 'Main'){2}else{4}) }
+        foreach ($mask in @(0,1,3,5,7)) {
+            if (($mask -band $availableMask) -ne $mask) { continue }
+            $selected = @($files | Where-Object { $group=$fileGroups[$_.relative_path];$group -eq 0 -or ($mask -band $group) -ne 0 })
+            if ($mask -band 1) { $selected += $component.marker }
+            $selectedInventory = @($selected | ForEach-Object { [ordered]@{path=$_.relative_path;size=$_.size_bytes;sha256=$_.sha256} })
+            $variant = [ordered]@{inventory=$selectedInventory;available_inventory=$identity;component_mask=$mask
+                receipt_sha256=$component.receipt_sha256;header_sha256=$component.header_sha256
+                extension_receipts=@($browserExtensions | ForEach-Object {[ordered]@{channel=$_.channel;sha256=$_.receipt_sha256}})
+                format_signature=$formatSignature;format_matrix_sha256=$(if($declaration){$declaration.sha256}else{$null})
+                edition=$canonicalEdition;browser_runtime_requirement=$browserRequirement}
+            $payloadVariants += [pscustomobject]@{mask=$mask;payload_id=(Get-RcMusicInstallerIdentity -InventoryJson ($variant|ConvertTo-Json -Depth 8 -Compress) -RecipeHashes $recipeHashes)}
+        }
+        $payloadIds = [pscustomobject]@{base=($payloadVariants|Where-Object mask -EQ 0).payload_id;downloads=($payloadVariants|Where-Object mask -EQ 1).payload_id}
+        $payloadId = $payloadIds.base
+    }
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('; Generated from verified runtime bytes. Private local development only.')
     $lines.Add('!define RCMUSIC_OUTPUT "' + (ConvertTo-RcMusicNsisLiteral (Join-Path $output 'RCMusic-Setup.exe') -Passes 2) + '"')
@@ -177,6 +247,44 @@ function New-RcMusicInstallerPlan {
     $lines.Add('!define RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE ' + [int] ($null -ne $component))
     $lines.Add('!define RCMUSIC_BASE_SIZE_KB ' + $baseSizeKb)
     $lines.Add('!define RCMUSIC_DOWNLOAD_SIZE_KB ' + $downloadSizeKb)
+    $lines.Add('!define RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE ' + [int]($browserExtensions.Count -gt 0))
+    foreach ($channel in @('Main','Youtube')) {
+        $extension = @($browserExtensions|Where-Object channel -CEQ $channel)
+        $name = $channel.ToUpperInvariant()
+        $lines.Add('!define RCMUSIC_' + $name + '_EXTENSION_AVAILABLE ' + [int]($extension.Count -eq 1))
+        $size = if($extension.Count -eq 1){[long][Math]::Ceiling(($extension[0].files|Measure-Object size_bytes -Sum).Sum/1024)}else{0}
+        $lines.Add('!define RCMUSIC_' + $name + '_EXTENSION_SIZE_KB ' + $size)
+    }
+    if ($browserExtensions.Count -gt 0) {
+        foreach ($mode in @('SELECT','DETECT')) {
+            $lines.Add('!macro RCMUSIC_' + $mode + '_VARIANT')
+            $lines.Add('    StrCpy $RcStatus 1')
+            $first=$true
+            foreach ($variant in $payloadVariants) {
+                $test = if($mode -ceq 'SELECT'){'$RcVariantMask == ' + $variant.mask}else{'$0 S== "${RCMUSIC_INSTALL_ROOT}\' + $variant.payload_id + '"'}
+                $lines.Add('    ${' + $(if($first){'If'}else{'ElseIf'}) + '} ' + $test)
+                $first=$false
+                $lines.Add('        StrCpy $RcPayloadId "' + $variant.payload_id + '"')
+                $lines.Add('        StrCpy $RcDownloadSelected ' + ($variant.mask -band 1))
+                $lines.Add('        StrCpy $RcBrowserExtensionsSelected ' + ($variant.mask -band 6))
+                $lines.Add('        StrCpy $RcVariantMask ' + $variant.mask)
+                $lines.Add('        StrCpy $RcStatus 0')
+            }
+            $lines.Add('    ${EndIf}')
+            $lines.Add('!macroend')
+        }
+        $lines.Add('!macro RCMUSIC_BROWSER_HOSTS CALLBACK')
+        foreach ($extension in $browserExtensions) {
+            $bit=if($extension.channel -ceq 'Main'){2}else{4}
+            $lines.Add('    ${If} $RcBrowserExtensionsSelected == ' + $bit)
+            $lines.Add('    ${OrIf} $RcBrowserExtensionsSelected == 6')
+            foreach ($browser in @('BraveSoftware\Brave-Browser','Google\Chrome','Microsoft\Edge')) {
+                $lines.Add('        !insertmacro ${CALLBACK} "' + $browser + '\NativeMessagingHosts\' + $extension.native_host_name + '" "' + $extension.native_host_name + '.json"')
+            }
+            $lines.Add('    ${EndIf}')
+        }
+        $lines.Add('!macroend')
+    }
     if ($null -ne $component) {
         $lines.Add('!define RCMUSIC_BASE_PAYLOAD_ID "' + $payloadIds.base + '"')
         $lines.Add('!define RCMUSIC_DOWNLOAD_PAYLOAD_ID "' + $payloadIds.downloads + '"')
@@ -198,11 +306,13 @@ function New-RcMusicInstallerPlan {
         $lines.Add('!define ' + $token + ' "' + (ConvertTo-RcMusicNsisLiteral $files[$index].relative_path.Replace('/', '\') -Runtime -Passes 2) + '"')
     }
     $lines.Add('!macro RCMUSIC_PAYLOAD_EXTRACT')
-    $optionalStarted = $false
+    $currentGroup = 0
     foreach ($entry in $files) {
-        if (-not $optionalStarted -and $optionalPaths.Contains($entry.relative_path)) {
-            $lines.Add('    ${If} $RcDownloadSelected == 1')
-            $optionalStarted = $true
+        $group=$fileGroups[$entry.relative_path]
+        if ($group -ne $currentGroup) {
+            if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
+            Add-RcMusicInstallerGroupCondition $lines $group
+            $currentGroup=$group
         }
         $relative = $entry.relative_path.Replace('/', '\')
         $parent = [IO.Path]::GetDirectoryName($relative)
@@ -214,16 +324,18 @@ function New-RcMusicInstallerPlan {
             (ConvertTo-RcMusicNsisLiteral $entry.source) + '"')
         $lines.Add('    IfErrors rcmusic_install_failed')
     }
-    if ($optionalStarted) { $lines.Add('    ${EndIf}') }
+    if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
     $lines.Add('!macroend')
     $lines.Add('!macro RCMUSIC_PAYLOAD_FILES CALLBACK')
-    $directories = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $optionalStarted = $false
+    $directoryGroups = [Collections.Generic.Dictionary[string,int]]::new([StringComparer]::OrdinalIgnoreCase)
+    $currentGroup = 0
     for ($index = 0; $index -lt $files.Count; $index++) {
         $entry = $files[$index]
-        if (-not $optionalStarted -and $optionalPaths.Contains($entry.relative_path)) {
-            $lines.Add('    ${If} $RcDownloadSelected == 1')
-            $optionalStarted = $true
+        $group=$fileGroups[$entry.relative_path]
+        if ($group -ne $currentGroup) {
+            if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
+            Add-RcMusicInstallerGroupCondition $lines $group
+            $currentGroup=$group
         }
         $relative = $entry.relative_path.Replace('/', '\')
         $token = 'RCMUSIC_PATH_{0:D4}' -f $index
@@ -231,33 +343,33 @@ function New-RcMusicInstallerPlan {
         # final NSIS instruction so every literal has exactly two passes.
         $lines.Add('    !insertmacro ${CALLBACK} "' + $token + '" "' + $entry.sha256 + '"')
         $parent = [IO.Path]::GetDirectoryName($relative)
-        while ($parent) { $null = $directories.Add($parent); $parent = [IO.Path]::GetDirectoryName($parent) }
+        while ($parent) {
+            if ($directoryGroups.ContainsKey($parent)) { $directoryGroups[$parent]=$directoryGroups[$parent] -bor $group }
+            else { $directoryGroups.Add($parent,$group) }
+            $parent = [IO.Path]::GetDirectoryName($parent)
+        }
     }
-    if ($optionalStarted) { $lines.Add('    ${EndIf}') }
+    if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
     $lines.Add('!macroend')
-    $sortedDirectories = @($directories | Sort-Object -Property @{ Expression = { $_.Split('\').Count }; Descending = $true },
+    $sortedDirectories = @($directoryGroups.Keys | Sort-Object -Property @{Expression={$directoryGroups[$_]}}, @{ Expression = { $_.Split('\').Count }; Descending = $true },
         @{ Expression = { $_ }; Descending = $false })
-    if ($null -ne $component) {
-        $baseDirectories = @($sortedDirectories | Where-Object { $_ -ine 'download-tools' -and -not $_.StartsWith('download-tools\', [StringComparison]::OrdinalIgnoreCase) })
-        $optionalDirectories = @($sortedDirectories | Where-Object { $_ -ieq 'download-tools' -or $_.StartsWith('download-tools\', [StringComparison]::OrdinalIgnoreCase) })
-        $sortedDirectories = @($baseDirectories) + @($optionalDirectories)
-    }
     for ($index = 0; $index -lt $sortedDirectories.Count; $index++) {
         $token = 'RCMUSIC_DIR_{0:D4}' -f $index
         $lines.Add('!define ' + $token + ' "' + (ConvertTo-RcMusicNsisLiteral $sortedDirectories[$index] -Runtime -Passes 2) + '"')
     }
     $lines.Add('!macro RCMUSIC_PAYLOAD_DIRECTORIES CALLBACK')
-    $optionalStarted = $false
+    $currentGroup = 0
     for ($index = 0; $index -lt $sortedDirectories.Count; $index++) {
-        if ($null -ne $component -and -not $optionalStarted -and
-            ($sortedDirectories[$index] -ieq 'download-tools' -or $sortedDirectories[$index].StartsWith('download-tools\', [StringComparison]::OrdinalIgnoreCase))) {
-            $lines.Add('    ${If} $RcDownloadSelected == 1')
-            $optionalStarted = $true
+        $group=$directoryGroups[$sortedDirectories[$index]]
+        if ($group -ne $currentGroup) {
+            if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
+            Add-RcMusicInstallerGroupCondition $lines $group
+            $currentGroup=$group
         }
         $token = 'RCMUSIC_DIR_{0:D4}' -f $index
         $lines.Add('    !insertmacro ${CALLBACK} "' + $token + '"')
     }
-    if ($optionalStarted) { $lines.Add('    ${EndIf}') }
+    if ($currentGroup -ne 0) { $lines.Add('    ${EndIf}') }
     $lines.Add('!macroend')
     $lines.Add('!macro RCMUSIC_ACTIVATION_FILE CALLBACK')
     if ($null -ne $component) {
@@ -305,7 +417,8 @@ function New-RcMusicInstallerPlan {
         edition = $canonicalEdition; browser_runtime_requirement = $browserRequirement
         runtime_manifest_sha256 = $manifestHash
         source_commit = $manifest.source_commit; payload_id = $payloadId; files = $files; recipe_hashes = $recipeHashes
-        payload_ids = $payloadIds; download_component = $component; generated_files = $generatedFiles
+        payload_ids = $payloadIds; payload_variants=$payloadVariants; browser_extensions=$browserExtensions
+        download_component = $component; generated_files = $generatedFiles
         associations_enabled = ($formats.Count -gt 0); format_signature = $formatSignature; formats = $formats
         format_matrix = $declaration
         config = ($lines -join "`n") + "`n" }

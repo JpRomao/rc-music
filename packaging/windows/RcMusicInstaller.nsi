@@ -7,10 +7,60 @@ SetCompressor zlib
 !ifndef RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE
 !define RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE 0
 !endif
+!ifndef RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE
+!define RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE 0
+!endif
+!ifndef RCMUSIC_MAIN_EXTENSION_AVAILABLE
+!define RCMUSIC_MAIN_EXTENSION_AVAILABLE 0
+!endif
+!ifndef RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE
+!define RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE 0
+!endif
 !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} != 0
 !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} != 1
 !error "Unknown download component availability"
 !endif
+!endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} != 0
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} != 1
+!error "Unknown browser extensions availability"
+!endif
+!endif
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} != 0
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} != 1
+!error "Unknown main extension availability"
+!endif
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} != 0
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} != 1
+!error "Unknown YouTube extension availability"
+!endif
+!endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} != 1
+        !error "Browser extensions require the download component"
+    !endif
+    !if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 0
+    !if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 0
+        !error "Browser extensions require at least one available package"
+    !endif
+    !endif
+    !ifmacrondef RCMUSIC_SELECT_VARIANT
+        !error "Browser extensions require compiled selection variants"
+    !endif
+    !ifmacrondef RCMUSIC_DETECT_VARIANT
+        !error "Browser extensions require compiled uninstall variants"
+    !endif
+    !ifmacrondef RCMUSIC_BROWSER_HOSTS
+        !error "Browser extensions require their compiled native host inventory"
+    !endif
+!else
+    !if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} != 0
+        !error "Main extension availability requires browser extensions"
+    !endif
+    !if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} != 0
+        !error "YouTube extension availability requires browser extensions"
+    !endif
 !endif
 !ifmacrondef RCMUSIC_ACTIVATION_FILE
 !macro RCMUSIC_ACTIVATION_FILE CALLBACK
@@ -87,6 +137,9 @@ ShowUninstDetails show
 !insertmacro MUI_PAGE_COMPONENTS
 !endif
 !insertmacro MUI_PAGE_INSTFILES
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+!define MUI_FINISHPAGE_TEXT "Para ativar uma extensão selecionada, abra brave://extensions (ou chrome://extensions / edge://extensions). Ative o modo desenvolvedor e use Carregar sem compactação.$\r$\n$\r$\nPrincipal: $INSTDIR\browser-extensions\main$\r$\nYouTube: $INSTDIR\browser-extensions\youtube$\r$\n$\r$\nApós atualizar o RC Music, recarregue a pasta da nova versão. As extensões não são carregadas nem atualizadas automaticamente."
+!endif
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
@@ -115,6 +168,10 @@ Var RcShortcutProblem
 Var RcDownloadSelected
 Var RcPayloadId
 !endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+Var RcBrowserExtensionsSelected
+Var RcVariantMask
+!endif
 
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS ""
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS "un."
@@ -137,6 +194,10 @@ Var RcPayloadId
     StrCpy $RcValue $2
     StrCpy $RcStatus $3
 !macroend
+
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+!include "RcMusicBrowserHosts.nsh"
+!endif
 
 !macro RCMUSIC_INSTALL_WRITE KEY NAME VALUE
     ClearErrors
@@ -228,6 +289,12 @@ Function ${PREFIX}RCMusic.VerifyMarker
 !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
     ReadINIStr $RcValue "$RcPath" "RC Music" "DownloadComponent"
     ${If} $RcValue S!= $RcDownloadSelected
+        Goto rcmusic_marker_failed
+    ${EndIf}
+!endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    ReadINIStr $RcValue "$RcPath" "RC Music" "BrowserExtensionsSelection"
+    ${If} $RcValue S!= $RcBrowserExtensionsSelected
         Goto rcmusic_marker_failed
     ${EndIf}
 !endif
@@ -603,6 +670,10 @@ Function .onInit
     StrCpy $RcDownloadSelected 0
     StrCpy $RcPayloadId "${RCMUSIC_BASE_PAYLOAD_ID}"
 !endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    StrCpy $RcBrowserExtensionsSelected 0
+    StrCpy $RcVariantMask 0
+!endif
     StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
     Call RCMusic.AcquireMutex
     ${If} $RcStatus != 0
@@ -620,10 +691,16 @@ Function un.onInit
     SetRegView 64
 !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
     ; NSIS supplies the original uninstall directory, including explicit _?=.
-    ; Infer the inventory only from one of our two compiled version paths.
+    ; Infer inventory only from a compiled version path, never marker fields.
     ClearErrors
     GetFullPathName $0 "$INSTDIR"
     IfErrors rcmusic_uninstall_init_failed
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    !insertmacro RCMUSIC_DETECT_VARIANT
+    ${If} $RcStatus != 0
+        Goto rcmusic_uninstall_init_failed
+    ${EndIf}
+!else
     ${If} $0 == "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_BASE_PAYLOAD_ID}"
         StrCpy $RcDownloadSelected 0
         StrCpy $RcPayloadId "${RCMUSIC_BASE_PAYLOAD_ID}"
@@ -633,6 +710,7 @@ Function un.onInit
     ${Else}
         Goto rcmusic_uninstall_init_failed
     ${EndIf}
+!endif
     StrCpy $INSTDIR $0
 !else
     StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
@@ -668,10 +746,13 @@ FunctionEnd
 
 Section "Instalar RC Music" SEC_RCMUSIC_BASE
     SectionIn RO
+    StrCpy $RcFreshThisAttempt 0
 !if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
     Call RCMusic.SelectDownloadComponent
+    ${If} $RcStatus != 0
+        Goto rcmusic_install_failed
+    ${EndIf}
 !endif
-    StrCpy $RcFreshThisAttempt 0
     StrCpy $RcPath "$INSTDIR"
     Call RCMusic.ValidatePath
     ${If} $RcStatus != 0
@@ -767,6 +848,12 @@ Section "Instalar RC Music" SEC_RCMUSIC_BASE
     ${If} $RcStatus != 0
         Goto rcmusic_install_failed
     ${EndIf}
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    Call RCMusic.PreflightBrowserHosts
+    ${If} $RcStatus != 0
+        Goto rcmusic_install_failed
+    ${EndIf}
+!endif
 
     ${If} $RcActive != ""
     ${AndIf} $RcActive S!= "${RCMUSIC_PAYLOAD_ID}"
@@ -832,6 +919,10 @@ Section "Instalar RC Music" SEC_RCMUSIC_BASE
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "DownloadComponent" "$RcDownloadSelected"
         IfErrors rcmusic_install_failed
 !endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+        WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "BrowserExtensionsSelection" "$RcBrowserExtensionsSelected"
+        IfErrors rcmusic_install_failed
+!endif
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "FormatSignature" "${RCMUSIC_FORMAT_SIGNATURE}"
         IfErrors rcmusic_install_failed
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "AssociationCleanupProtocol" "${RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL}"
@@ -853,6 +944,14 @@ Section "Instalar RC Music" SEC_RCMUSIC_BASE
     ${If} $RcPrevious != ""
         !insertmacro RCMUSIC_INSTALL_WRITE "${RCMUSIC_INSTALL_STATE}" "PendingCleanup" "$RcPrevious"
     ${EndIf}
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    ; Registry publication can fail partway through. The verified payload and
+    ; pending state must survive; fresh-copy cleanup no longer has authority.
+    Call RCMusic.RegisterBrowserHosts
+    ${If} $RcStatus != 0
+        Goto rcmusic_install_failed
+    ${EndIf}
+!endif
     !if ${RCMUSIC_ASSOCIATIONS_ENABLED} == 1
         Call RCMusic.RegisterAssociations
         Pop $0
@@ -932,10 +1031,66 @@ Section /o "Ferramentas de download (opcional)" SEC_RCMUSIC_DOWNLOADS
     ; The mandatory section freezes this choice before any install mutation.
 SectionEnd
 
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 1
+Section /o "Preparar extensão principal para Brave/Chromium (carregamento manual)" SEC_RCMUSIC_MAIN_EXTENSION
+SectionEnd
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 1
+Section /o "Preparar extensão YouTube para Brave/Chromium (carregamento manual)" SEC_RCMUSIC_YOUTUBE_EXTENSION
+SectionEnd
+!endif
+
 Function RCMusic.InitializeDownloadComponents
     SectionSetSize ${SEC_RCMUSIC_BASE} ${RCMUSIC_BASE_SIZE_KB}
     SectionSetSize ${SEC_RCMUSIC_DOWNLOADS} ${RCMUSIC_DOWNLOAD_SIZE_KB}
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 1
+    SectionSetSize ${SEC_RCMUSIC_MAIN_EXTENSION} ${RCMUSIC_MAIN_EXTENSION_SIZE_KB}
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 1
+    SectionSetSize ${SEC_RCMUSIC_YOUTUBE_EXTENSION} ${RCMUSIC_YOUTUBE_EXTENSION_SIZE_KB}
+!endif
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    Call RCMusic.UpdateBrowserExtensionDependencies
+!endif
 FunctionEnd
+
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+Function RCMusic.UpdateBrowserExtensionDependencies
+    Push $0
+    Push $1
+    Push $2
+    StrCpy $1 0
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 1
+    SectionGetFlags ${SEC_RCMUSIC_MAIN_EXTENSION} $0
+    IntOp $0 $0 & ${SF_SELECTED}
+    IntOp $1 $1 | $0
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 1
+    SectionGetFlags ${SEC_RCMUSIC_YOUTUBE_EXTENSION} $0
+    IntOp $0 $0 & ${SF_SELECTED}
+    IntOp $1 $1 | $0
+!endif
+    SectionGetFlags ${SEC_RCMUSIC_DOWNLOADS} $0
+    StrCpy $2 $0
+    ${If} $1 != 0
+        IntOp $0 $0 | ${SF_SELECTED}
+        IntOp $0 $0 | ${SF_RO}
+    ${Else}
+        IntOp $1 ${SF_RO} ~
+        IntOp $0 $0 & $1
+    ${EndIf}
+    ${If} $0 != $2
+        SectionSetFlags ${SEC_RCMUSIC_DOWNLOADS} $0
+    ${EndIf}
+    Pop $2
+    Pop $1
+    Pop $0
+FunctionEnd
+
+Function .onSelChange
+    Call RCMusic.UpdateBrowserExtensionDependencies
+FunctionEnd
+!endif
 
 Function RCMusic.SelectDownloadComponent
     StrCpy $RcDownloadSelected 0
@@ -944,14 +1099,53 @@ Function RCMusic.SelectDownloadComponent
     IntOp $0 $0 & ${SF_SELECTED}
     ${If} $0 != 0
         StrCpy $RcDownloadSelected 1
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 0
         StrCpy $RcPayloadId "${RCMUSIC_DOWNLOAD_PAYLOAD_ID}"
+!endif
     ${EndIf}
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    StrCpy $RcBrowserExtensionsSelected 0
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 1
+    SectionGetFlags ${SEC_RCMUSIC_MAIN_EXTENSION} $0
+    IntOp $0 $0 & ${SF_SELECTED}
+    ${If} $0 != 0
+        IntOp $RcBrowserExtensionsSelected $RcBrowserExtensionsSelected | 2
+    ${EndIf}
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 1
+    SectionGetFlags ${SEC_RCMUSIC_YOUTUBE_EXTENSION} $0
+    IntOp $0 $0 & ${SF_SELECTED}
+    ${If} $0 != 0
+        IntOp $RcBrowserExtensionsSelected $RcBrowserExtensionsSelected | 4
+    ${EndIf}
+!endif
+    ${If} $RcBrowserExtensionsSelected != 0
+        StrCpy $RcDownloadSelected 1
+    ${EndIf}
+    IntOp $RcVariantMask $RcBrowserExtensionsSelected | $RcDownloadSelected
+    !insertmacro RCMUSIC_SELECT_VARIANT
+    ${If} $RcStatus != 0
+        Return
+    ${EndIf}
+!else
+    StrCpy $RcStatus 0
+!endif
     StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
 FunctionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_BASE} "Instala o player RC Music e preserva seus dados e preferências."
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_DOWNLOADS} "Instala ferramentas e hosts locais compartilhados para download e conversão. É necessário para qualquer extensão selecionada."
+!else
     !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_DOWNLOADS} "Instala ferramentas locais de download e conversão para MP3. A extensão do Brave/Chromium exige ativação separada e não é instalada por esta opção."
+!endif
+!if ${RCMUSIC_MAIN_EXTENSION_AVAILABLE} == 1
+    !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_MAIN_EXTENSION} "Copia a extensão de mídia e registra seu host local por usuário. O carregamento da pasta no navegador é manual."
+!endif
+!if ${RCMUSIC_YOUTUBE_EXTENSION_AVAILABLE} == 1
+    !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_YOUTUBE_EXTENSION} "Copia a extensão YouTube separada e registra seu host local por usuário. O carregamento da pasta no navegador é manual."
+!endif
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 !endif
 
@@ -1027,6 +1221,12 @@ Section "Uninstall"
             Goto rcmusic_uninstall_failed
         ${EndIf}
     ${EndIf}
+!if ${RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE} == 1
+    Call un.RCMusic.UnregisterBrowserHosts
+    ${If} $RcStatus != 0
+        Goto rcmusic_uninstall_failed
+    ${EndIf}
+!endif
     !if ${RCMUSIC_ASSOCIATIONS_ENABLED} == 1
         Call un.RCMusic.UnregisterAssociations
         Pop $0

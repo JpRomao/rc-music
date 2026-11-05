@@ -93,6 +93,22 @@ function Fixture([string]$Edition, [switch]$Downloads) {
     $plan = New-RcMusicInstallerPlan -RuntimeDirectory $app -OutputDirectory $output -Edition $Edition
     return [pscustomobject]@{ Base = $base; Output = $output; Plan = $plan }
 }
+function Browser-Fixture([string]$Edition = 'Lite', [ValidateSet('Main', 'Youtube', 'Both')][string]$Available = 'Both') {
+    $state.Next++
+    $base = Join-Path $root ([string]$state.Next + '-browser')
+    Import-Module (Join-Path $PSScriptRoot 'ExtensionInstallerFixture.psm1') -Force
+    $fixture = New-RcMusicExtensionInstallerFixture -Directory $base -RepositoryRoot $repository -Edition $Edition
+    $arguments = @{ RuntimeDirectory = $fixture.App; OutputDirectory = $fixture.Output; Edition = $Edition }
+    if ($Available -in @('Main', 'Both')) {
+        $arguments.MainExtensionPackageReceipt = $fixture.MainReceipt
+        $arguments.MainExtensionPackageReceiptSha256 = $fixture.MainReceiptSha256
+    }
+    if ($Available -in @('Youtube', 'Both')) {
+        $arguments.YoutubeExtensionPackageReceipt = $fixture.YoutubeReceipt
+        $arguments.YoutubeExtensionPackageReceiptSha256 = $fixture.YoutubeReceiptSha256
+    }
+    return [pscustomobject]@{ Base = $base; Output = $fixture.Output; Plan = (New-RcMusicInstallerPlan @arguments) }
+}
 function Invoke-Nsis($Scenario, [string]$Append = '', [switch]$Build) {
     $config = Join-Path $Scenario.Base 'installer-config.nsh'
     [IO.File]::WriteAllText($config, $Scenario.Plan.config + $Append, [Text.UTF8Encoding]::new($false))
@@ -279,6 +295,116 @@ try {
         Require ($result.ExitCode -ne 0) 'Malformed optional-component availability was accepted'
         Require (-not (Test-Path -LiteralPath $scenario.Output)) 'Rejected availability created output'
     }
+    Case 'available browser extensions stay unchecked and explain manual activation and reloading' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        foreach ($section in @('SEC_RCMUSIC_DOWNLOADS', 'SEC_RCMUSIC_MAIN_EXTENSION', 'SEC_RCMUSIC_YOUTUBE_EXTENSION')) {
+            Require ($result.Text -match ('(?im)^Section\s+/o\s+"[^"\r\n]+"\s+' + $section + '\s*$')) 'A browser/tools checkbox is selected by default or missing'
+        }
+        $base = Section-Body $result.Text 'Instalar RC Music'
+        Require ($base -match '(?im)^\s*SectionIn\s+RO\s*$') 'The base player is optional'
+        $init = Function-Body $result.Text '.onInit'
+        Require ($init -match '(?m)^\s*StrCpy\s+\$RcBrowserExtensionsSelected\s+0\s*$') 'Browser extensions do not default to OFF'
+        Require ($init -match '(?m)^\s*StrCpy\s+\$RcVariantMask\s+0\s*$') 'The initial variant is not base-only'
+        Require ($result.Text.Contains('brave://extensions') -and $result.Text.Contains('Carregar sem compactação')) 'Manual Brave loading instructions are missing'
+        Require ($result.Text -match '(?i)modo (?:de |do )?desenvolvedor') 'Developer-mode instructions are missing'
+        Require ($result.Text.Contains('\browser-extensions\main') -and $result.Text.Contains('\browser-extensions\youtube')) 'Instructions do not identify the versioned source directories'
+        Require ($result.Text -match '(?i)recarreg') 'The user is not told to reload the new folder after an update'
+    }
+    Case 'browser checkbox dependencies and the frozen selection both imply the download tools' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        $changed = Function-Body $result.Text '.onSelChange'
+        Require ($changed.Contains('Call RCMusic.UpdateBrowserExtensionDependencies')) 'Checkbox changes do not refresh the tools dependency'
+        $dependencies = Function-Body $result.Text 'RCMusic.UpdateBrowserExtensionDependencies'
+        Require ($dependencies -match '(?m)^\s*SectionSetFlags\s+(?:1|\$\{SEC_RCMUSIC_DOWNLOADS\})\s+') 'Selecting an extension does not select its tools section'
+        $select = Function-Body $result.Text 'RCMusic.SelectDownloadComponent'
+        foreach ($section in @('SEC_RCMUSIC_MAIN_EXTENSION', 'SEC_RCMUSIC_YOUTUBE_EXTENSION')) {
+            Require ($select.Contains('${' + $section + '}')) 'Frozen selection does not inspect both extension checkboxes'
+        }
+        Require ($select -match '(?m)^\s*StrCpy\s+\$RcDownloadSelected\s+1\s*$') 'Frozen extension selection does not require tools'
+        Require ($select.Contains('$RcVariantMask') -and $select.Contains('$RcBrowserExtensionsSelected')) 'The immutable variant omits extension selection'
+        $ids = @([regex]::Matches($select, '"([0-9a-f]{64})"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        Require ($ids.Count -eq 5) 'The five valid component combinations do not have distinct compiled identities'
+    }
+    Case 'GUI initialization accounts for tools and both separate extension source sizes' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        $initialize = Function-Body $result.Text 'RCMusic.InitializeDownloadComponents'
+        Require (@([regex]::Matches($initialize, '(?m)^\s*SectionSetSize\s+')).Count -eq 4) 'Browser sources do not have separate component sizes'
+        foreach ($entry in @(@('MAIN', 'SEC_RCMUSIC_MAIN_EXTENSION', '2'), @('YOUTUBE', 'SEC_RCMUSIC_YOUTUBE_EXTENSION', '3'))) {
+            $size = [regex]::Match($scenario.Plan.config, '(?m)^!define RCMUSIC_' + $entry[0] + '_EXTENSION_SIZE_KB ([0-9]+)\r?$')
+            Require $size.Success 'The extension source size is absent from the compiled plan'
+            $pattern = '(?m)^\s*SectionSetSize\s+(?:' + $entry[2] + '|\$\{' + $entry[1] + '\})\s+' + $size.Groups[1].Value + '\s*$'
+            Require ($initialize -match $pattern) 'A browser section does not receive its planned size'
+        }
+    }
+    Case 'uninstall derives the five inventories from its directory and verifies the saved browser mask' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        $init = Function-Body $result.Text 'un.onInit'
+        Require ($init.Contains('GetFullPathName $0 "$INSTDIR"')) 'Uninstall does not normalize its supplied directory'
+        Require (-not $init.Contains('ReadINIStr')) 'Uninstall trusts INI data to select a removal inventory'
+        $ids = @([regex]::Matches($init, '[0-9a-f]{64}') | ForEach-Object Value | Sort-Object -Unique)
+        Require ($ids.Count -eq 5 -and $init.Contains('$RcBrowserExtensionsSelected')) 'Uninstall does not recognize exactly its five compiled inventories'
+        foreach ($prefix in @('', 'un.')) {
+            $verify = Function-Body $result.Text ($prefix + 'RCMusic.VerifyMarker')
+            Require ($verify -match '(?m)^\s*ReadINIStr\s+[^\r\n]+"BrowserExtensionsSelection"\s*$') 'Ownership verification omits the persisted browser mask'
+            Require ($verify.Contains('$RcBrowserExtensionsSelected')) 'The persisted browser mask is not checked against the directory-derived selection'
+        }
+        $base = Section-Body $result.Text 'Instalar RC Music'
+        Require ($base -match '(?m)^\s*WriteINIStr\s+[^\r\n]+"BrowserExtensionsSelection"\s+"?\$RcBrowserExtensionsSelected"?\s*$') 'The ownership marker does not save the frozen browser mask'
+    }
+    Case 'browser registration follows verified ownership and pending publication without fresh cleanup authority' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        $base = Section-Body $result.Text 'Instalar RC Music'
+        $preflight = $base.IndexOf('Call RCMusic.PreflightBrowserHosts', [StringComparison]::Ordinal)
+        $firstFile = [regex]::Match($base, '(?m)^\s*File\s+')
+        $firstWrite = [regex]::Match($base, '(?m)^\s*(?:WriteRegStr|WriteINIStr)\s+')
+        Require ($preflight -ge 0 -and $firstFile.Success -and $preflight -lt $firstFile.Index -and
+            $firstWrite.Success -and $preflight -lt $firstWrite.Index) 'Browser preflight follows install writes'
+        $register = $base.IndexOf('Call RCMusic.RegisterBrowserHosts', [StringComparison]::Ordinal)
+        Require ($register -ge 0) 'Selected browser hosts are never registered'
+        $beforeRegister = $base.Substring(0, $register)
+        $ownership = $beforeRegister.LastIndexOf('Call RCMusic.VerifyMarker', [StringComparison]::Ordinal)
+        $freshClosed = $beforeRegister.LastIndexOf('StrCpy $RcFreshThisAttempt 0', [StringComparison]::Ordinal)
+        $pending = [regex]::Match($beforeRegister, '(?m)^\s*WriteRegStr\s+HKCU\s+"[^"\r\n]+"\s+"PendingPayload"\s+"\$RcPayloadId"\s*$')
+        Require ($ownership -ge 0 -and $freshClosed -gt $ownership -and $pending.Success -and $pending.Index -gt $freshClosed) "Registration failure can delete its published payload or lacks pending recovery state: ownership=$ownership fresh=$freshClosed pending=$($pending.Index) matched=$($pending.Success)"
+        Require ($register -lt $base.IndexOf('Call RCMusic.PublishShortcut', [StringComparison]::Ordinal)) 'Native hosts register after active UI publication'
+        $afterRegister = $base.Substring($register)
+        Require ($afterRegister -match '(?s)Call RCMusic\.RegisterBrowserHosts\s+.*?\$RcStatus.*?Goto rcmusic_install_failed') 'Registration errors do not enter the preserving failure path'
+    }
+    Case 'browser unregistration happens after VERIFY and ownership checks but before any payload cleanup' {
+        $scenario = Browser-Fixture
+        $result = Preprocess $scenario
+        Require ($result.ExitCode -eq 0) "Preprocessor failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+        $uninstall = Section-Body $result.Text 'Uninstall'
+        $unregister = $uninstall.IndexOf('Call un.RCMusic.UnregisterBrowserHosts', [StringComparison]::Ordinal)
+        $verifyPayload = $uninstall.IndexOf('Call un.RCMusic.VerifyPayload', [StringComparison]::Ordinal)
+        Require ($verifyPayload -ge 0) 'Uninstall has no payload verification stage'
+        $verifyReturn = $uninstall.IndexOf('Goto rcmusic_uninstall_done', $verifyPayload, [StringComparison]::Ordinal)
+        $firstDelete = [regex]::Match($uninstall, '(?m)^\s*Delete\s+')
+        Require ($unregister -gt $verifyPayload -and $unregister -gt $verifyReturn -and
+            $firstDelete.Success -and $unregister -lt $firstDelete.Index) 'Unregistration is not gated by VERIFY/ownership before cleanup'
+        Require ($unregister -lt $uninstall.IndexOf('Call un.RCMusic.RemoveShortcut', [StringComparison]::Ordinal)) 'Browser unregistration follows shortcut mutation'
+        Require ($uninstall.Substring($unregister) -match '(?s)Call un\.RCMusic\.UnregisterBrowserHosts\s+.*?\$RcStatus.*?Goto rcmusic_uninstall_failed') 'Unregistration errors do not preserve the remaining payload'
+    }
+    Case 'NSIS rejects unknown browser availability values and extensions without download tools' {
+        foreach ($define in @('BROWSER_EXTENSIONS_AVAILABLE', 'MAIN_EXTENSION_AVAILABLE', 'YOUTUBE_EXTENSION_AVAILABLE')) {
+            $scenario = Fixture Lite
+            $result = Preprocess $scenario ("`n!define /redef RCMUSIC_" + $define + " 2`n")
+            Require ($result.ExitCode -ne 0) 'An unknown browser availability flag was accepted'
+        }
+        $scenario = Fixture Lite
+        $result = Preprocess $scenario "`n!define /redef RCMUSIC_BROWSER_EXTENSIONS_AVAILABLE 1`n!define /redef RCMUSIC_MAIN_EXTENSION_AVAILABLE 1`n"
+        Require ($result.ExitCode -ne 0) 'An extension became available without the tools component'
+    }
     if ($Compile) {
         foreach ($edition in @('Lite', 'CompleteExperimental')) {
             foreach ($downloads in @($false, $true)) {
@@ -292,6 +418,18 @@ try {
                     $setup = Join-Path $scenario.Output 'RCMusic-Setup.exe'
                     Require ([IO.File]::Exists($setup) -and [IO.FileInfo]::new($setup).Length -gt 0) 'Compiler produced no setup artifact'
                 }
+            }
+        }
+        foreach ($variant in @(@('Lite', 'Main'), @('Lite', 'Youtube'), @('Lite', 'Both'), @('CompleteExperimental', 'Both'))) {
+            Case ("full template compiles manual browser extensions " + $variant[0] + '/' + $variant[1] + ' without executing setup') {
+                $scenario = Browser-Fixture $variant[0] $variant[1]
+                Require (-not (Test-Path -LiteralPath $scenario.Output)) 'Compiler destination is not fresh'
+                $null = [IO.Directory]::CreateDirectory($scenario.Output)
+                Marker-Inputs $scenario -Write | Out-Null
+                $result = Invoke-Nsis $scenario -Build
+                Require ($result.ExitCode -eq 0) "Full browser-extension compilation failed: stdout=$($result.Text) stderr=$($result.ErrorText)"
+                $setup = Join-Path $scenario.Output 'RCMusic-Setup.exe'
+                Require ([IO.File]::Exists($setup) -and [IO.FileInfo]::new($setup).Length -gt 0) 'Compiler produced no browser-extension setup artifact'
             }
         }
     }

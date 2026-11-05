@@ -6,7 +6,11 @@ param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $MakeNsis,
     [string] $FormatMatrix,
     [switch] $LegacyBaseline,
-    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite'
+    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite',
+    [AllowEmptyString()][string] $MainExtensionPackageReceipt,
+    [AllowEmptyString()][string] $MainExtensionPackageReceiptSha256,
+    [AllowEmptyString()][string] $YoutubeExtensionPackageReceipt,
+    [AllowEmptyString()][string] $YoutubeExtensionPackageReceiptSha256
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -29,8 +33,13 @@ function Write-RcMusicInstallerGeneratedFiles([object] $Plan) {
         (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() -cne $hash) { throw 'Generated activation marker changed' }
     return [pscustomobject]@{ relative_path = $entry.relative_path; source = $path; size_bytes = 24; sha256 = $hash }
 }
+$extensionArguments = @{}
+foreach ($name in @('MainExtensionPackageReceipt','MainExtensionPackageReceiptSha256',
+        'YoutubeExtensionPackageReceipt','YoutubeExtensionPackageReceiptSha256')) {
+    if ($PSBoundParameters.ContainsKey($name)) { $extensionArguments[$name]=$PSBoundParameters[$name] }
+}
 $plan = New-RcMusicInstallerPlan -RuntimeDirectory $RuntimeDirectory -OutputDirectory $OutputDirectory `
-    -FormatMatrix $FormatMatrix -LegacyBaseline:$LegacyBaseline -Edition $Edition
+    -FormatMatrix $FormatMatrix -LegacyBaseline:$LegacyBaseline -Edition $Edition @extensionArguments
 $MakeNsis = (Resolve-Path -LiteralPath $MakeNsis).ProviderPath
 $toolchain = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'nsis-toolchain.json') -Raw | ConvertFrom-Json
 $compilerHash = (Get-FileHash -LiteralPath $MakeNsis -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -106,6 +115,19 @@ if ($null -ne $plan.format_matrix -and
     (Get-FileHash -LiteralPath $plan.format_matrix.path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $plan.format_matrix.sha256) {
     throw 'Format matrix changed while compiling the installer'
 }
+if ($plan.browser_extensions.Count -gt 0) {
+    Import-Module (Join-Path $PSScriptRoot 'RcMusicExtensionComponent.psm1') -Force
+    $runtimeManifest = Get-Content -LiteralPath $plan.runtime_manifest -Raw | ConvertFrom-Json
+    foreach ($extension in $plan.browser_extensions) {
+        $nativeChannel = @($runtimeManifest.download_component.native_hosts.channels |
+            Where-Object host_name -CEQ $extension.native_host_name)[0]
+        $current = Get-RcMusicExtensionComponentPlan -ReceiptPath $extension.receipt_path -ReceiptSha256 $extension.receipt_sha256 `
+            -Channel $extension.channel -NativeChannel $nativeChannel
+        if (($current|ConvertTo-Json -Depth 10 -Compress) -cne ($extension|ConvertTo-Json -Depth 10 -Compress)) {
+            throw 'An extension package changed during installer compilation'
+        }
+    }
+}
 $receiptPath = Join-Path $plan.output 'installer-receipt.json'
 $receipt = [ordered]@{
     schema_version = 1; name = 'RC Music'; distribution = 'private-local-development-only'
@@ -119,6 +141,7 @@ $receipt = [ordered]@{
     installer_sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     files = $plan.files
     payload_ids = $plan.payload_ids; download_component = $plan.download_component; generated_files = $generatedFiles
+    payload_variants = $plan.payload_variants; browser_extensions = $plan.browser_extensions
     prerequisites = 'Windows x64 and compatible Microsoft Visual C++ Redistributable; no runtime PowerShell dependency' +
         $(if ($plan.edition -ceq 'CompleteExperimental') { '; internal navigation requires existing WebView2 Evergreen Runtime x64; runtime is not bundled or installed' })
 }

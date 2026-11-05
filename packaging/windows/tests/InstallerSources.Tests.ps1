@@ -7,14 +7,15 @@ $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $sourceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 # Reviewed product snapshot. Three includes preserve the promotion baseline
-# from 3f539d6ed39d5e990fa736e3b324fa3de67a8fc2; the main script adds explicit
-# edition/prerequisite text and guards, covered by InstallerEdition.Tests.ps1.
+# from 3f539d6ed39d5e990fa736e3b324fa3de67a8fc2; the main script and browser
+# helper add explicit optional components, covered by focused contract tests.
 # This inventory test never invokes Git or NSIS.
 $sources = [ordered]@{
-    'RcMusicInstaller.nsi' = 'a0266dc7ef2df7742cfaa2084335e35fd10687efd950d202ecb5d2b8097833a0'
+    'RcMusicInstaller.nsi' = 'd6dc65afe81313194ab1a4dc672b502e1c661c4f25dfb3c4f197382615d3ee37'
     'RcMusicInstallerFiles.nsh' = '530f28af503ae23c54461c57a82d95802d44ed9e129edbb3d842b1322469bb06'
     'RcMusicAssociationSections.nsh' = '67174c0a56f73049fc3cb4dd13e064ec41f60fdc0ab5c1f65ccd787b5e6a585d'
     'RcMusicAssociations.nsh' = '56321242fad0615189474d63a6f32d81d5cc5e92a7a38158a5d9eb9cb760baca'
+    'RcMusicBrowserHosts.nsh' = '08fec82c47263aeb3569ec2af4fdf4d822155220f174ad80f2181ba407a28577'
 }
 $sdkIncludes = @('LogicLib.nsh', 'FileFunc.nsh', 'x64.nsh', 'MUI2.nsh', 'Sections.nsh')
 $state = @{ Passed = 0; Failed = 0 }
@@ -84,7 +85,7 @@ try {
             Assert-SourceBytes $sourceDirectory $name
         }
     }
-    Test-Case 'exported four-file include closure is independent of experiments and caller CWD' {
+    Test-Case 'exported five-file include closure is independent of experiments and caller CWD' {
         $exportRoot = Join-Path $testRoot 'exported product 日本'
         $exportDirectory = Join-Path $exportRoot 'packaging/windows'
         $foreignDirectory = Join-Path $testRoot 'unrelated working directory'
@@ -96,11 +97,13 @@ try {
         Push-Location -LiteralPath $foreignDirectory
         try { Assert-ProjectIncludeClosure $exportDirectory }
         finally { Pop-Location }
-        Assert-Equal (@(Get-ChildItem -LiteralPath $exportDirectory -File).Count) 4
+        Assert-Equal (@(Get-ChildItem -LiteralPath $exportDirectory -File).Count) 5
         Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'experiments')) $false
     }
     if ($IncludeLegacy) {
-        foreach ($name in $sources.Keys) {
+        # Only the four historical entrypoints have legacy forwarders. The new
+        # helper is reached through the promoted main template's include path.
+        foreach ($name in @($sources.Keys | Where-Object { $_ -cne 'RcMusicBrowserHosts.nsh' })) {
             Test-Case "legacy NSIS include forwards without changing compiler CWD: $name" {
                 $legacy = Join-Path $repository ('experiments/m0/candidates/qt/windows-installer/' + $name)
                 $commands = @([IO.File]::ReadAllLines($legacy) | Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith(';') })

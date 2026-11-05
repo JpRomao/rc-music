@@ -800,7 +800,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — identidades fixas das extensões
+### Checkpoint atual — extensões opcionais no instalador
+
+O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual no navegador. Os checks estáticos/de compilação não encerram aceitação de instalação, Registro ou Brave; aquisição pública e demais gates continuam pendentes. Não retoma AppContainer ou benchmarks.
+
+### Checkpoint anterior — identidades fixas das extensões
 
 O mantenedor autorizou gerar identidades locais fixas. Os dois manifestos incluem somente suas chaves públicas, com IDs distintos derivados do DER; as privadas ficam fora do repositório. O [gerador de pacotes Chromium](youtube-extension-package.md) prepara separadamente principal/YouTube e preserva candidatos sem chave como `identity_pending`. Os dois pacotes reais de `7601247` e [runtimes Lite/Completa com hosts correspondentes](windows-runtime.md#runtimes-com-hosts-montados-em-2026-11-05) foram gerados; os planos reais do instalador mantêm 49 arquivos opcionais e associações OFF. A integração instalada das extensões, aquisição pública e demais gates permanecem pendentes; o default do app continua OFF. Checks e hashes ficam nos guias, sem duplicar o relato aqui.
 
