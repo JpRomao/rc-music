@@ -133,6 +133,134 @@ class ConfiguredDownloadsProfileTests final : public QObject {
         expected_profiles = fixtureProfiles();
     }
 #ifndef RC_MUSIC_TEST_NATIVE_PROFILE_OFF
+    void installedComponentGateIsOptInAndItsReaderIsPassive() {
+        WindowsPlayerDownloadProfile profile;
+        QVERIFY(!profile.requires_installed_component);
+        QVERIFY(!profile.component_reader);
+        next_profile = profile;
+        int reads = 0;
+        next_profile->component_reader = [&] {
+            ++reads;
+            return PlayerDownloadComponentState::Enabled;
+        };
+        const auto result = playerDownloadsBuildProfile(QStringLiteral("C:/trusted/config"));
+        QVERIFY(result);
+        QVERIFY(!result->requires_installed_component);
+        QVERIFY(result->component_reader);
+        QCOMPARE(reads, 0);
+    }
+    void packagedProfileRequiresInstalledComponentWithoutReadingIt() {
+        auto profile = packagedPrototype();
+        QVERIFY(!profile.requires_installed_component);
+        int reads = 0;
+        profile.component_reader = [&] {
+            ++reads;
+            return PlayerDownloadComponentState::Enabled;
+        };
+        const auto result =
+            makePackagedPlayerDownloadProfile(std::move(profile), QStringLiteral("C:/unused/user"),
+                                              QStringLiteral("D:/unused/app"), QStringLiteral("W:/Windows"));
+        QVERIFY(result);
+        QVERIFY(result->requires_installed_component);
+        QVERIFY(result->component_reader);
+        QCOMPARE(reads, 0);
+    }
+    void retainedInstalledComponentProfileOwnsRawPathsPinsNativeIdentityAndEnvironment() {
+        auto expected = packagedPrototype();
+        expected.requires_installed_component = true;
+        expected.checkpoint_directory = QStringLiteral("C:/trusted/checkpoint");
+        auto& execution = expected.execution;
+        execution.journal_directory = QStringLiteral("C:/trusted/journal");
+        execution.network.runtime_parent = QStringLiteral("C:/trusted/network");
+        execution.media.runtime_parent = QStringLiteral("C:/trusted/media");
+        execution.youtube->runtime.runtime_parent = QStringLiteral("C:/trusted/youtube");
+        execution.job.workspace.staging_parent = QStringLiteral("C:/trusted/staging");
+        execution.job.workspace.publish_parent = QStringLiteral("C:/trusted/published");
+        execution.job.converter.ffmpeg_executable = QStringLiteral("C:/trusted/ffmpeg.exe");
+        execution.job.converter.ffprobe_executable = QStringLiteral("C:/trusted/ffprobe.exe");
+        execution.job.converter.media_foundation_executable = QStringLiteral("C:/trusted/media-worker.exe");
+        execution.youtube->environment.clear();
+        execution.youtube->environment.insert(QStringLiteral("SystemRoot"), QStringLiteral("W:/Windows"));
+        execution.youtube->environment.insert(QStringLiteral("PATH"), QStringLiteral("C:/trusted/explicit"));
+        next_profile = expected;
+        PackagedRawStorage raw;
+        auto& pending = *next_profile;
+        pending.checkpoint_directory = raw.text(pending.checkpoint_directory);
+        auto& stored = pending.execution;
+        stored.journal_directory = raw.text(stored.journal_directory);
+        stored.network.runtime_parent = raw.text(stored.network.runtime_parent);
+        for (auto& artifact : stored.network.artifacts) {
+            artifact.path = raw.text(artifact.path);
+            artifact.sha256 = raw.pin(artifact.sha256);
+        }
+        stored.media.runtime_parent = raw.text(stored.media.runtime_parent);
+        stored.media.source_executable = raw.text(stored.media.source_executable);
+        stored.media.source_sha256 = raw.pin(stored.media.source_sha256);
+        stored.youtube->runtime.runtime_parent = raw.text(stored.youtube->runtime.runtime_parent);
+        for (auto& artifact : stored.youtube->runtime.artifacts) {
+            artifact.source_path = raw.text(artifact.source_path);
+            artifact.relative_path = raw.text(artifact.relative_path);
+            artifact.sha256 = raw.pin(artifact.sha256);
+        }
+        stored.job.workspace.staging_parent = raw.text(stored.job.workspace.staging_parent);
+        stored.job.workspace.publish_parent = raw.text(stored.job.workspace.publish_parent);
+        stored.job.converter.ffmpeg_executable = raw.text(stored.job.converter.ffmpeg_executable);
+        stored.job.converter.ffprobe_executable = raw.text(stored.job.converter.ffprobe_executable);
+        stored.job.converter.media_foundation_executable = raw.text(stored.job.converter.media_foundation_executable);
+        stored.youtube->environment.clear();
+        for (const auto& key : execution.youtube->environment.keys())
+            stored.youtube->environment.insert(raw.text(key), raw.text(execution.youtube->environment.value(key)));
+        for (auto* native : {&pending.options.native_ingress->principal, &pending.options.native_ingress->youtube}) {
+            native->allowed_origin = raw.text(native->allowed_origin);
+            native->endpoint_name = raw.text(native->endpoint_name);
+            for (auto& image : native->expected_owner_images)
+                image = raw.text(image);
+            for (auto& image : native->expected_host_images)
+                image = raw.text(image);
+        }
+        int reads = 0;
+        pending.component_reader = [&] {
+            ++reads;
+            return PlayerDownloadComponentState::Enabled;
+        };
+        const auto result = playerDownloadsBuildProfile(QStringLiteral("C:/trusted/config"));
+        QVERIFY(result);
+        QVERIFY(result->requires_installed_component);
+        QCOMPARE(reads, 0);
+        raw.overwrite();
+        QCOMPARE(result->checkpoint_directory, expected.checkpoint_directory);
+        const auto& actual = result->execution;
+        QCOMPARE(actual.journal_directory, execution.journal_directory);
+        QCOMPARE(actual.network.runtime_parent, execution.network.runtime_parent);
+        for (std::size_t index = 0; index < actual.network.artifacts.size(); ++index) {
+            QCOMPARE(actual.network.artifacts[index].path, execution.network.artifacts[index].path);
+            QCOMPARE(actual.network.artifacts[index].sha256, execution.network.artifacts[index].sha256);
+        }
+        QCOMPARE(actual.media.runtime_parent, execution.media.runtime_parent);
+        QCOMPARE(actual.media.source_executable, execution.media.source_executable);
+        QCOMPARE(actual.media.source_sha256, execution.media.source_sha256);
+        QCOMPARE(actual.youtube->runtime.runtime_parent, execution.youtube->runtime.runtime_parent);
+        QCOMPARE(actual.youtube->runtime.artifacts.size(), execution.youtube->runtime.artifacts.size());
+        for (std::size_t index = 0; index < actual.youtube->runtime.artifacts.size(); ++index) {
+            QCOMPARE(actual.youtube->runtime.artifacts[index].source_path,
+                     execution.youtube->runtime.artifacts[index].source_path);
+            QCOMPARE(actual.youtube->runtime.artifacts[index].relative_path,
+                     execution.youtube->runtime.artifacts[index].relative_path);
+            QCOMPARE(actual.youtube->runtime.artifacts[index].sha256,
+                     execution.youtube->runtime.artifacts[index].sha256);
+        }
+        QCOMPARE(actual.job.workspace.staging_parent, execution.job.workspace.staging_parent);
+        QCOMPARE(actual.job.workspace.publish_parent, execution.job.workspace.publish_parent);
+        QCOMPARE(actual.job.converter.ffmpeg_executable, execution.job.converter.ffmpeg_executable);
+        QCOMPARE(actual.job.converter.ffprobe_executable, execution.job.converter.ffprobe_executable);
+        QCOMPARE(actual.job.converter.media_foundation_executable, execution.job.converter.media_foundation_executable);
+        QCOMPARE(actual.youtube->environment, execution.youtube->environment);
+        compareProfile(result->options.native_ingress->principal, expected.options.native_ingress->principal);
+        compareProfile(result->options.native_ingress->youtube, expected.options.native_ingress->youtube);
+        QVERIFY(result->component_reader);
+        QCOMPARE(result->component_reader(), PlayerDownloadComponentState::Enabled);
+        QCOMPARE(reads, 1);
+    }
     void providerReceivesTrustedRootOnceAndMayReturnNone() {
         QVERIFY(!playerDownloadsBuildProfile(QStringLiteral("C:/trusted/config")));
         QCOMPARE(calls, 1);

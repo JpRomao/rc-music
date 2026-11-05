@@ -74,6 +74,18 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
    RC_MUSIC_DOWNLOAD_TEST_CRT_DIR AND RC_MUSIC_DOWNLOAD_TEST_TLS_PLUGIN)
     # Build-time fixture generation only; Python is never a player dependency.
     find_package(Python3 3.13 REQUIRED COMPONENTS Interpreter)
+    add_executable(rc_music_download_component_probe_tests
+        qtest/PlayerDownloadComponentProbeTests.cpp
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadComponentProbe.cpp")
+    target_link_libraries(rc_music_download_component_probe_tests PRIVATE Qt6::Core Qt6::Test)
+    target_include_directories(rc_music_download_component_probe_tests PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src")
+    rc_music_configure_cpp(rc_music_download_component_probe_tests)
+    set_target_properties(rc_music_download_component_probe_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME rc_music.process.download-component-probe COMMAND rc_music_download_component_probe_tests -o -,txt)
+    set_tests_properties(rc_music.process.download-component-probe PROPERTIES TIMEOUT 20
+        LABELS "windows;desktop;qt;downloads;bootstrap"
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_executable(rc_music_configured_downloads_profile_tests
         qtest/ConfiguredDownloadsProfileTests.cpp
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
@@ -141,6 +153,7 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
             "${RC_MUSIC_SOURCE_ROOT}/tools/download-runtime/build_profile.py"
             "${RC_MUSIC_SOURCE_ROOT}/tools/youtube-resolver/onedir_plan.py"
         BYPRODUCTS
+            "${CMAKE_CURRENT_BINARY_DIR}/download-tools/installed-v1"
             "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/PackagedDownloadsFixtureProfile.hpp"
             "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/package-profile-config.json"
             "${CMAKE_CURRENT_BINARY_DIR}/download-tools/network/RCMusicDownloadWorker.exe"

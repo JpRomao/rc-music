@@ -800,7 +800,19 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — perfil relativo e candidato das ferramentas
+### Checkpoint atual — ativação opcional dos downloads
+
+O [componente instalado](packaged-download-profile.md#ativação-do-componente-instalado) passa por uma verificação assíncrona do marcador fixo `download-tools/installed-v1` antes de criar owner, executor, worker de checkpoint ou listeners. Somente os 24 bytes ASCII exatos habilitam a composição; ausente, inválido ou ilegível mantém o player local. O perfil retido copia paths, pins, identidade Native e ambiente Qt. A intenção de saída sela a ativação antes de callbacks reentrantes e aguarda a thread; Enabled atrasado não abre canais. Perfis confiáveis anteriores conservam seu opt-in falso por padrão.
+
+Red do probe **5 passados/23 falhos**; Red do perfil **61/2** e da main **5/3**. Fechamento Green **5/5 CTest, 102 casos Qt**, sem falhas/skips: probe 28, perfil 63, perfil Native OFF 3, bootstrap 8 e fronteira de processos. A fixture usa marker LF explícito e leitores controlados: missing/corrupt completam sem binding/storage, slow exit mantém UI respondendo e impede binding tardio. A conversão AAC local → MF/MP3, importação, Saved e replay em dois boots continuam reais, sem duplicar/autoplay.
+
+Formato dos **10 C++** passou. O header completo do candidato YouTube compilou novamente no player Release `BUILD_TESTING=OFF`/Native OFF, com zero CTest; cache restaurado ao perfil vazio e app recompilado. O grafo padrão conserva **337 comandos**, sem perfil/probe opcional, Native ou hooks/Qt Test. Nenhum executável de produção foi iniciado.
+
+O [guard do instalador v1](windows-installer.md#checks-sem-compilação-ou-instalação), commit `67af88e`, passou Red **71/16 → Green 87/87**. Ele recusa metadados e arquivos do componente enquanto houver extração obrigatória única. Isso conserva a seleção opcional exigida, mas ainda não implementa a checkbox, ownership, upgrade ou remoção.
+
+Próximo desenvolvimento: montar o componente no runtime Qt, conferir closure PE/licenças e implementar a seleção inicialmente desmarcada com ciclo de instalação coerente. O candidato de ferramentas anterior permanece intacto e sem marcador; não é um runtime instalado. ID real Brave, host habilitado, aquisição pública e Letras primário continuam pendentes. Defaults de produção permanecem OFF; nenhum setup/Registro, novo perfil/AppContainer, WFP/UAC, GUI nativa, mídia pública ou benchmark foi executado neste incremento. Evidências em `out/product/test-runs/component-activation-20261105/`.
+
+### Checkpoint anterior — perfil relativo e candidato das ferramentas
 
 A [receita do perfil distribuível](packaged-download-profile.md) usa fontes/pins explícitos dos nove arquivos de rede, worker MF e recibo de produção YouTube opcional. Um único plano determina as cópias e o header C++; o app não carrega esses JSONs como configuração de runtime. O helper rebasa fontes pelo diretório real da imagem, sem CWD, ambiente herdado, hashing ou abertura de arquivos na UI. Storage fixo, pins/roles/limites e ingressos compilados são preservados; YouTube usa ambiente novo e clock UTC. Sem esse runtime, o provider faz opt-out do canal YouTube para conservar a principal.
 

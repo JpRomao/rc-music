@@ -86,4 +86,8 @@ if(NOT header_error STREQUAL "NOTFOUND" OR header_text STREQUAL "")
 endif()
 set(fixture_packaged_header "${profile_directory}/PackagedDownloadsFixtureProfile.hpp")
 file(WRITE "${fixture_packaged_header}" "${header_text}")
+# Only the owned process fixture receives this marker; actual package assembly
+# must publish it after verifying the selected optional tool inventory.
+file(CONFIGURE OUTPUT "${PAYLOAD_ROOT}/download-tools/installed-v1"
+    CONTENT "RCMusicDownloadTools-v1\n" NEWLINE_STYLE LF)
 configure_file("${TEMPLATE}" "${OUTPUT}" @ONLY)

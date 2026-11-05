@@ -89,6 +89,20 @@ Para YouTube presente, a composição C++ fornece ambiente novo com `PATH` vazio
 
 As identidades Native vêm de `compiledPlayerNativeIngressProfiles()`. No candidato sem runtime YouTube, o provider faz opt-out explícito desse canal, preservando o canal principal mesmo se ambos estiverem compilados. O gerador não inventa ID de extensão ou origem.
 
+## Ativação do componente instalado
+
+O helper de pacote define `requires_installed_component=true`. Antes de criar o owner, executor, worker de checkpoint ou listeners, o bootstrap consulta em um worker o arquivo fixo `download-tools/installed-v1`, relativo à imagem real do player. O conteúdo deve ser exatamente `RCMusicDownloadTools-v1` seguido de LF, 24 bytes ASCII. Esse marcador registra a seleção do componente; não autentica publicador nem substitui a validação dos arquivos/pins pelos workers.
+
+O leitor abre somente caminhos locais ordinários, retém ancestrais sem seguir reparse points e recusa diretórios, hardlinks ou conteúdo/tamanho diferentes. Ausência, erro ou objeto inválido deixam o player local disponível, sem provisionar storage de downloads. Não há busca no CWD, ambiente, Registro ou configuração JSON de runtime. A receita de ferramentas continua produzindo um candidato sem marcador; a futura montagem opcional deve publicá-lo após conferir os arquivos selecionados.
+
+O probe é passivo até `start`, entrega no máximo um resultado após liberar o reader e confirmar a parada da thread. O fechamento sela a ativação permanentemente nessa execução e aguarda esse ACK, sem bloquear a UI. Um resultado atrasado não recria a integração. Após Enabled, a composição conserva o owner mesmo se `start` falhar e publica o binding no QML depois da tentativa única de início. O perfil retido possui cópias de paths, pins, identidades Native e ambiente Qt.
+
+Perfis C++ confiáveis anteriores mantêm o padrão `requires_installed_component=false`; esse opt-in não transforma o app padrão em um downloader. O [instalador atual](windows-installer.md#checks-sem-compilação-ou-instalação) recusa o componente enquanto seleção, ownership, upgrade e remoção opcionais não forem implementados.
+
+Evidência de 2026-11-05: Red do probe **5 passados/23 falhos**, perfil **61/2**, bootstrap **5/3**, seguido de Green **5/5 CTest, 102 casos Qt**, sem skips. São 28 do probe, 63 do perfil, 3 do perfil Native OFF e 8 do bootstrap, mais a fronteira de processos. O bootstrap preserva a jornada AAC local → MF/MP3 e replay e acrescenta ausência/corrupção do marcador e saída com reader pendente. Os negativos aguardam a leitura concluída e ticks da UI antes de avaliar ausência de binding; não passam apenas por fechar cedo. O marker da fixture usa `NEWLINE_STYLE LF`, corrigido no produtor após o primeiro ensaio encontrar CRLF/25 bytes. Logs em `out/product/test-runs/component-activation-20261105/`; os testes não instalaram o componente nem executaram mídia pública.
+
+Formato dos **10 arquivos C++** passou. O perfil completo preservado, incluindo YouTube, compilou no player Release sem testes/Native OFF, com zero CTest. O cache foi restaurado ao perfil vazio e o player recompilado; a conferência somente leitura encontrou **337 comandos** no grafo padrão, sem o probe/perfil opcional, Native ou hooks/Qt Test. O app de produção não foi iniciado. Esse build não materializa o runtime instalado nem qualifica mídia pública.
+
 ## Preservação e limites
 
 O destino precisa ser fresco e não pode sobrepor as fontes. Antes de abrir inputs, a receita recusa caminhos UNC, de dispositivo, ADS, componentes reservados e reparse points em qualquer ancestral. Confere metadados antes dos hashes e mantém streams dos inputs durante a cópia.

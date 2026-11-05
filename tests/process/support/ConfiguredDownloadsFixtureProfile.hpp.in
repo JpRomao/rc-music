@@ -4,6 +4,9 @@
 #include "@fixture_packaged_header@"
 #undef configuredPlayerDownloadsBuildProfile
 
+#include <QFile>
+#include <QThread>
+
 void configuredDownloadsProfileObserved();
 
 namespace music_player::m0 {
@@ -17,6 +20,27 @@ inline std::optional<WindowsPlayerDownloadProfile> configuredPlayerDownloadsBuil
     if (profile) {
         profile->execution.job.workspace.max_workspace_bytes = 2 * 1024 * 1024;
         profile->execution.job.total_timeout_ms = 15'000;
+        profile->requires_installed_component = true;
+        const QString owned_root{root.constData(), root.size()};
+        profile->component_reader = [owned_root] {
+            if (!QFile::exists(owned_root + QStringLiteral("/configured-downloads-slow-component-probe"))) {
+                const auto result = readInstalledPlayerDownloadComponentMarker();
+                const auto path = owned_root + QStringLiteral("/configured-downloads-probe-completed");
+                if (!QFile::exists(path)) {
+                    QFile completed{path};
+                    if (!completed.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+                        return PlayerDownloadComponentState::Failed;
+                }
+                return result;
+            }
+            QFile entered{owned_root + QStringLiteral("/configured-downloads-probe-entered")};
+            if (!entered.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+                return PlayerDownloadComponentState::Failed;
+            entered.close();
+            while (!QFile::exists(owned_root + QStringLiteral("/configured-downloads-probe-release")))
+                QThread::msleep(5);
+            return PlayerDownloadComponentState::Enabled;
+        };
     }
     return profile;
 }

@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -11,6 +12,11 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUuid>
+
+#include <cstdio>
+#include <functional>
+#include <utility>
 
 using namespace music_player::m0;
 namespace {
@@ -42,6 +48,90 @@ bool marker(const QString& path) {
     QFile file{path};
     return file.open(QIODevice::WriteOnly | QIODevice::NewOnly);
 }
+
+bool waitForObservation(QProcess& app, QByteArray& output, const std::function<bool()>& ready, const int timeout) {
+    QElapsedTimer timer;
+    timer.start();
+    do {
+        output += app.readAllStandardOutput();
+        if (ready())
+            return true;
+        if (app.state() == QProcess::NotRunning)
+            break;
+        QTest::qWait(5);
+    } while (timer.elapsed() < timeout);
+    output += app.readAllStandardOutput();
+    return ready();
+}
+
+bool finishGracefully(QProcess& app, QByteArray& output, const QString& root) {
+    const auto path = QDir{root}.filePath(QStringLiteral("configured-downloads-exit"));
+    const bool requested = QFile::exists(path) || marker(path);
+    const bool stopped = waitForObservation(app, output, [&] { return app.state() == QProcess::NotRunning; }, 15'000);
+    if (!stopped) {
+        app.kill();
+        static_cast<void>(app.waitForFinished(5'000));
+        output += app.readAllStandardOutput();
+    }
+    return requested && stopped;
+}
+
+struct ProbeReleaseGuard final {
+    QString path;
+    bool release() const { return QFile::exists(path) || marker(path); }
+    ~ProbeReleaseGuard() { static_cast<void>(release()); }
+};
+
+class FixtureMarkerGuard final {
+  public:
+    explicit FixtureMarkerGuard(QString path)
+        : path_(std::move(path)),
+          backup_(path_ + QStringLiteral(".fixture-backup-") + QUuid::createUuid().toString(QUuid::WithoutBraces)) {}
+    bool moveAside() {
+        QFile original{path_};
+        if (QFileInfo{path_}.isSymLink() || !original.open(QIODevice::ReadOnly) ||
+            original.readAll() != QByteArray{"RCMusicDownloadTools-v1\n"})
+            return false;
+        original.close();
+        moved_ = QFile::rename(path_, backup_);
+        return moved_;
+    }
+    bool writeCorrupt() {
+        QFile file{path_};
+        if (!moved_ || !file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+            return false;
+        corrupted_ = true;
+        return file.write(corrupt_bytes_) == corrupt_bytes_.size();
+    }
+    bool restore() {
+        if (!moved_)
+            return true;
+        if (corrupted_) {
+            QFile file{path_};
+            if (QFileInfo{path_}.isSymLink() || !file.open(QIODevice::ReadOnly) || file.readAll() != corrupt_bytes_)
+                return false;
+            file.close();
+            if (!QFile::remove(path_))
+                return false;
+            corrupted_ = false;
+        } else if (QFile::exists(path_)) {
+            return false;
+        }
+        if (!QFile::rename(backup_, path_))
+            return false;
+        moved_ = false;
+        return true;
+    }
+    ~FixtureMarkerGuard() {
+        if (!restore())
+            std::fputs("Preserved the fixture marker backup after uncertain restoration\n", stderr);
+    }
+
+  private:
+    QString path_, backup_;
+    const QByteArray corrupt_bytes_{"RCMusicDownloadTools-v1\nnot-installed\n"};
+    bool moved_{}, corrupted_{};
+};
 
 QStringList directoryEntries(const QString& path) {
     return QDir{path}.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
@@ -145,6 +235,105 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
         }
     }
 
+    void missingOrCorruptInstalledMarkerKeepsThePlayerLocal_data() {
+        QTest::addColumn<bool>("corrupt");
+        QTest::newRow("missing") << false;
+        QTest::newRow("corrupt") << true;
+    }
+    void missingOrCorruptInstalledMarkerKeepsThePlayerLocal() {
+        QFETCH(bool, corrupt);
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QVERIFY(marker(root.filePath(QStringLiteral("configured-downloads-local-only"))));
+        FixtureMarkerGuard installed{
+            QFileInfo{configured_shell}.absoluteDir().filePath(QStringLiteral("download-tools/installed-v1"))};
+        QVERIFY(installed.moveAside());
+        if (corrupt)
+            QVERIFY(installed.writeCorrupt());
+        QProcess app;
+        ChildGuard guard{app};
+        app.setWorkingDirectory(root.path());
+        app.setProcessChannelMode(QProcess::MergedChannels);
+        QByteArray output;
+        QObject::connect(&app, &QProcess::readyReadStandardOutput, &app,
+                         [&] { output += app.readAllStandardOutput(); });
+        app.start(configured_shell, {QStringLiteral("--m0-test-config-root=") + root.path()});
+        QVERIFY(app.waitForStarted(5'000));
+        const bool locally_ready =
+            waitForObservation(app, output, [&] { return !observation(output, "local-ready").isEmpty(); }, 3'000);
+        const bool reader_finished = waitForObservation(
+            app, output,
+            [&] { return !observation(output, "ready").isEmpty() && !observation(output, "finished").isEmpty(); },
+            2'000);
+        // The old eager main never invokes the reader. Always close it before
+        // asserting the Red, so no owner or fixture handle survives this case.
+        const bool gracefully_stopped = finishGracefully(app, output, root.path());
+        const bool restored = installed.restore();
+        QVERIFY2(gracefully_stopped, output.constData());
+        QVERIFY(restored);
+        QCOMPARE(app.exitStatus(), QProcess::NormalExit);
+        QVERIFY2(app.exitCode() == 0, output.constData());
+        QVERIFY2(locally_ready, output.constData());
+        QVERIFY2(reader_finished, output.constData());
+        QVERIFY(QFile::exists(root.filePath(QStringLiteral("configured-downloads-probe-completed"))));
+        const auto ready = observation(output, "ready");
+        QCOMPARE(ready.value("profileCalls").toInt(), 1);
+        QVERIFY(!ready.value("binding").toBool());
+        const auto finished = observation(output, "finished");
+        QCOMPARE(finished.value("acks").toInt(), 0);
+        QCOMPARE(finished.value("queue").toInt(), 0);
+        QVERIFY(!finished.value("playing").toBool());
+        const auto stopped = observation(output, "stopped");
+        QVERIFY(!stopped.isEmpty());
+        QVERIFY(!stopped.value("everBinding").toBool());
+        QVERIFY(stopped.value("clientStopped").toBool());
+        QVERIFY(!stopped.value("failed").toBool());
+        QVERIFY(!QFile::exists(root.filePath(QStringLiteral("downloads"))));
+    }
+    void exitWhileTheComponentProbeIsPendingDrainsWithoutLateBinding() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QVERIFY(marker(root.filePath(QStringLiteral("configured-downloads-local-only"))));
+        QVERIFY(marker(root.filePath(QStringLiteral("configured-downloads-slow-component-probe"))));
+        QProcess app;
+        ChildGuard guard{app};
+        ProbeReleaseGuard release{root.filePath(QStringLiteral("configured-downloads-probe-release"))};
+        app.setWorkingDirectory(root.path());
+        app.setProcessChannelMode(QProcess::MergedChannels);
+        QByteArray output;
+        QObject::connect(&app, &QProcess::readyReadStandardOutput, &app,
+                         [&] { output += app.readAllStandardOutput(); });
+        app.start(configured_shell, {QStringLiteral("--m0-test-config-root=") + root.path()});
+        QVERIFY(app.waitForStarted(5'000));
+        const bool locally_ready =
+            waitForObservation(app, output, [&] { return !observation(output, "local-ready").isEmpty(); }, 3'000);
+        const bool entered = waitForObservation(
+            app, output,
+            [&] { return QFile::exists(root.filePath(QStringLiteral("configured-downloads-probe-entered"))); }, 2'000);
+        const bool requested = marker(root.filePath(QStringLiteral("configured-downloads-exit")));
+        const bool pending =
+            waitForObservation(app, output, [&] { return !observation(output, "exit-pending").isEmpty(); }, 2'000);
+        // Release the owned worker even when the eager main never called it.
+        // All behavior assertions follow the graceful shutdown observation.
+        const bool released = release.release();
+        const bool gracefully_stopped = finishGracefully(app, output, root.path());
+        QVERIFY2(gracefully_stopped, output.constData());
+        QCOMPARE(app.exitStatus(), QProcess::NormalExit);
+        QVERIFY2(app.exitCode() == 0, output.constData());
+        QVERIFY(requested);
+        QVERIFY(released);
+        QVERIFY2(locally_ready, output.constData());
+        QVERIFY2(entered, output.constData());
+        QVERIFY2(pending, output.constData());
+        QVERIFY(!observation(output, "exit-requested").isEmpty());
+        QVERIFY(!observation(output, "local-ready").value("binding").toBool());
+        const auto stopped = observation(output, "stopped");
+        QVERIFY(!stopped.isEmpty());
+        QVERIFY(!stopped.value("everBinding").toBool());
+        QVERIFY(stopped.value("clientStopped").toBool());
+        QVERIFY(!stopped.value("failed").toBool());
+        QVERIFY(!QFile::exists(root.filePath(QStringLiteral("downloads"))));
+    }
     void noConfiguredHeaderOrExplicitNoneKeepsLocalPlayerWithoutWork_data() {
         QTest::addColumn<QString>("executable");
         QTest::addColumn<int>("calls");

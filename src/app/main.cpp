@@ -496,6 +496,19 @@ int main(int argc, char* argv[]) {
         bool source_activation_pending = false;
         bool source_import_was_active = presenter.sourceImportActive();
         bool single_instance_stopped = false;
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        std::optional<music_player::m0::WindowsPlayerDownloadProfile> pending_player_download_profile;
+        std::unique_ptr<music_player::m0::PlayerDownloadComponentProbe> downloads_component_probe;
+        bool downloads_activation_sealed = false;
+        const auto cancel_downloads_activation = [&] {
+            // Exit intent is permanent for this launch, including an exit whose
+            // drain later times out. A late worker result cannot reopen ingress.
+            downloads_activation_sealed = true;
+            pending_player_download_profile.reset();
+            if (downloads_component_probe)
+                downloads_component_probe->cancel();
+        };
+#endif
         music_player::m0::OpenSourcesDispatcher source_dispatcher{
             [&] {
                 if (!shell_platform_ready) {
@@ -531,11 +544,20 @@ int main(int argc, char* argv[]) {
             }
         };
         presenter.setSourceExitDrainedProbe([&] {
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+            // requestExit consults this probe before publishing exiting. Seal
+            // activation before any other exit callback can reenter the shell.
+            cancel_downloads_activation();
+            const bool downloads_component_drained = !downloads_component_probe || downloads_component_probe->stopped();
+#else
+            constexpr bool downloads_component_drained = true;
+#endif
             const bool lyrics_drained = lyrics_binding.prepareExit();
             const bool lidarr_drained = lidarr_binding.prepareExit();
             const bool playlists_drained = !playlists_binding || playlists_binding->prepareExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
-                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained && playlists_drained;
+                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained &&
+                   playlists_drained && downloads_component_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -556,6 +578,10 @@ int main(int argc, char* argv[]) {
             source_dispatcher.stopAccepting();
         };
         QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &source_ipc_context, [&] {
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+            if (presenter.exiting() || presenter.exitCommitted())
+                cancel_downloads_activation();
+#endif
             if (presenter.exitCommitted()) {
                 stop_single_instance();
             } else if (presenter.exiting()) {
@@ -568,6 +594,10 @@ int main(int argc, char* argv[]) {
             }
         });
         QObject::connect(&application, &QCoreApplication::aboutToQuit, &source_ipc_context, stop_single_instance);
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, &source_ipc_context,
+                         cancel_downloads_activation);
+#endif
         pump_source_commands();
 #else
 #ifdef Q_OS_WIN
@@ -592,6 +622,21 @@ int main(int argc, char* argv[]) {
         // after the QML roots die. The legacy test composition owns its own
         // exit hook, so it can never coexist with this optional bootstrap.
         std::unique_ptr<music_player::m0::WindowsPlayerDownloads> player_downloads;
+        const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
+            auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
+            auto execution = music_player::m0::makeWindowsConfiguredDownloadExecution(std::move(profile.execution));
+            if (execution) {
+                profile.options.lyrics_writer = &lyrics_binding;
+                player_downloads = std::make_unique<music_player::m0::WindowsPlayerDownloads>(
+                    presenter, downloads_initial_session, std::move(execution), std::move(checkpoint_factory),
+                    std::move(profile.options));
+            } else {
+                qInfo("The configured download profile is unavailable");
+            }
+        };
+        // Both the timer's callbacks and the QML roots die before the retained
+        // owner; presenter/session/lyrics dependencies outlive all of them.
+        QTimer player_downloads_activation_timer;
 #ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
         if (!downloads_smoke)
 #endif
@@ -599,22 +644,24 @@ int main(int argc, char* argv[]) {
             try {
                 auto profile = music_player::m0::playerDownloadsBuildProfile(config_root);
                 if (profile) {
-                    auto checkpoint_factory =
-                        music_player::m0::makePlayerDownloadCheckpointFactory(*profile, config_root);
-                    auto execution =
-                        music_player::m0::makeWindowsConfiguredDownloadExecution(std::move(profile->execution));
-                    if (execution) {
-                        profile->options.lyrics_writer = &lyrics_binding;
-                        player_downloads = std::make_unique<music_player::m0::WindowsPlayerDownloads>(
-                            presenter, downloads_initial_session, std::move(execution), std::move(checkpoint_factory),
-                            std::move(profile->options));
+                    if (profile->requires_installed_component) {
+                        if (!downloads_activation_sealed && !presenter.exiting()) {
+                            auto reader = std::move(profile->component_reader);
+                            profile->component_reader = {};
+                            pending_player_download_profile = std::move(profile);
+                            downloads_component_probe =
+                                reader ? std::make_unique<music_player::m0::PlayerDownloadComponentProbe>(
+                                             std::move(reader))
+                                       : std::make_unique<music_player::m0::PlayerDownloadComponentProbe>();
+                        }
                     } else {
-                        qInfo("The configured download profile is unavailable");
+                        compose_player_downloads(std::move(*profile));
                     }
                 }
             } catch (...) {
                 // Optional acquisition must not prevent the local player from
                 // starting. No alternate source of configuration is consulted.
+                cancel_downloads_activation();
                 qInfo("The configured download composition is unavailable");
             }
         }
@@ -788,6 +835,61 @@ int main(int argc, char* argv[]) {
         if (!window->setProperty("startupReady", true)) {
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
         }
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        if (pending_player_download_profile && downloads_component_probe && !downloads_activation_sealed &&
+            !presenter.exiting()) {
+            const QPointer<QWindow> guarded_window{window};
+            const QPointer<PlayerPresenter> guarded_presenter{&presenter};
+            player_downloads_activation_timer.setInterval(5);
+            QObject::connect(
+                &player_downloads_activation_timer, &QTimer::timeout, &player_downloads_activation_timer,
+                [&, guarded_window, guarded_presenter] {
+                    if (downloads_activation_sealed || !guarded_window || !guarded_presenter ||
+                        guarded_presenter->exiting()) {
+                        player_downloads_activation_timer.stop();
+                        cancel_downloads_activation();
+                        return;
+                    }
+                    const auto state = downloads_component_probe->poll();
+                    if (!state)
+                        return;
+                    player_downloads_activation_timer.stop();
+                    if (*state != music_player::m0::PlayerDownloadComponentState::Enabled) {
+                        cancel_downloads_activation();
+                        return;
+                    }
+                    // Seal before constructing anything that can publish callbacks.
+                    downloads_activation_sealed = true;
+                    auto profile = std::move(pending_player_download_profile);
+                    pending_player_download_profile.reset();
+                    if (!profile)
+                        return;
+                    try {
+                        compose_player_downloads(std::move(*profile));
+                        if (!player_downloads || !guarded_window || !guarded_presenter || guarded_presenter->exiting())
+                            return;
+                        // Keep the owner even if start fails after attaching its exit gate.
+                        static_cast<void>(player_downloads->start());
+                        // Publishing may invoke QML and request exit synchronously; the
+                        // owner is retained and its gate is already installed at that point.
+                        if (guarded_window && guarded_presenter &&
+                            !guarded_window->setProperty("downloads", QVariant::fromValue(player_downloads->binding())))
+                            qInfo("The configured download binding is unavailable");
+                    } catch (...) {
+                        qInfo("The configured download composition is unavailable");
+                    }
+                });
+            try {
+                if (downloads_component_probe->start())
+                    player_downloads_activation_timer.start();
+                else
+                    cancel_downloads_activation();
+            } catch (...) {
+                cancel_downloads_activation();
+                qInfo("The installed download component is unavailable");
+            }
+        }
+#endif
 #ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
         if (downloads_smoke)
             downloads_smoke->bindWindow(*window);
@@ -1271,6 +1373,10 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
         const int result = application.exec();
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        player_downloads_activation_timer.stop();
+        cancel_downloads_activation();
+#endif
 #ifdef RC_MUSIC_DOWNLOAD_SMOKE_AVAILABLE
         if (downloads_smoke && (result != 0 || !downloads_smoke->completed()))
             return 2;

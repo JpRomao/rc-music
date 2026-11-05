@@ -65,6 +65,8 @@ function(rc_music_configure_player_downloads target profile_header)
     endif()
     set_property(TARGET ${target} PROPERTY RC_MUSIC_PLAYER_DOWNLOAD_PROFILE "${profile_header}")
     target_sources(${target} PRIVATE
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadComponentProbe.hpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadComponentProbe.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.hpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp"
         "${profile_header}")

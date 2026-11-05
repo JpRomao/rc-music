@@ -42,7 +42,15 @@ struct Observation final {
     std::unique_ptr<QtNativeDownloadClient> client;
     std::vector<std::string> jobs;
     int acknowledgements{};
-    bool inspected{}, finished{}, exit_requested{}, failed{};
+    int exiting_ticks{}, completion_ticks{};
+    bool inspected{}, ready_reported{}, finished{}, exit_requested{}, exit_pending_reported{}, failed{};
+    bool local_only{}, slow_component{}, ever_binding{};
+
+    void refreshBinding() {
+        if (window)
+            binding = qobject_cast<DownloadApplicationBinding*>(window->property("downloads").value<QObject*>());
+        ever_binding = ever_binding || !binding.isNull();
+    }
 
     void tick() {
         if (!inspected) {
@@ -52,30 +60,54 @@ struct Observation final {
                     continue;
                 window = candidate;
                 presenter = found;
-                binding = qobject_cast<DownloadApplicationBinding*>(candidate->property("downloads").value<QObject*>());
                 inspected = true;
-                report({{"stage", "ready"},
+                local_only = QFile::exists(QDir{root}.filePath(QStringLiteral("configured-downloads-local-only")));
+                slow_component =
+                    QFile::exists(QDir{root}.filePath(QStringLiteral("configured-downloads-slow-component-probe")));
+                refreshBinding();
+                report({{"stage", "local-ready"},
                         {"profileCalls", profile_calls},
                         {"binding", !binding.isNull()},
                         {"lyrics", binding && binding->lyrics() != nullptr}});
-#if RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING
-                if (!binding)
-#endif
-                {
-                    finished = true;
-                    report({{"stage", "finished"},
-                            {"profileCalls", profile_calls},
-                            {"acks", 0},
-                            {"queue", presenter->queueModelObject()->rowCount()},
-                            {"playing", presenter->playbackState() == PlayerPresenter::PlaybackState::Playing}});
-                }
                 break;
             }
         }
         if (!inspected || !presenter)
             return;
+        refreshBinding();
+        bool local_complete = true;
 #if RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING
-        if (binding && !finished && !failed) {
+        if (local_only && !slow_component) {
+            if (QFile::exists(QDir{root}.filePath(QStringLiteral("configured-downloads-probe-completed"))))
+                ++completion_ticks;
+            local_complete = completion_ticks >= 2;
+        }
+#endif
+        bool can_report_ready = local_only ? local_complete : !binding.isNull();
+#if !RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING
+        can_report_ready = true;
+#endif
+        if (!ready_reported && can_report_ready) {
+            ready_reported = true;
+            report({{"stage", "ready"},
+                    {"profileCalls", profile_calls},
+                    {"binding", !binding.isNull()},
+                    {"lyrics", binding && binding->lyrics() != nullptr}});
+        }
+        bool finish_without_submission = local_only && local_complete;
+#if !RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING
+        finish_without_submission = true;
+#endif
+        if (!finished && finish_without_submission) {
+            finished = true;
+            report({{"stage", "finished"},
+                    {"profileCalls", profile_calls},
+                    {"acks", 0},
+                    {"queue", presenter->queueModelObject()->rowCount()},
+                    {"playing", presenter->playbackState() == PlayerPresenter::PlaybackState::Playing}});
+        }
+#if RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING
+        if (binding && !local_only && !finished && !failed) {
             try {
                 if (!client && acknowledgements < 2 &&
                     binding->statusText() ==
@@ -134,9 +166,17 @@ struct Observation final {
 #endif
         if (!exit_requested && QFile::exists(QDir{root}.filePath(QStringLiteral("configured-downloads-exit")))) {
             exit_requested = true;
+            report({{"stage", "exit-requested"}});
             if (client)
                 client->shutdown();
             static_cast<void>(presenter->requestExit());
+            return;
+        }
+        if (exit_requested && !exit_pending_reported && presenter->exiting() && !presenter->exitCommitted()) {
+            if (++exiting_ticks >= 2) {
+                exit_pending_reported = true;
+                report({{"stage", "exit-pending"}, {"everBinding", ever_binding}});
+            }
         }
     }
 };
@@ -151,8 +191,10 @@ void observeConfiguredDownloads() {
     timer->setInterval(5);
     QObject::connect(timer, &QTimer::timeout, timer, [observation] { observation->tick(); });
     QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, timer, [observation] {
+        observation->refreshBinding();
         report({{"stage", "stopped"},
                 {"clientStopped", !observation->client || observation->client->stopped()},
+                {"everBinding", observation->ever_binding},
                 {"downloadStatus", observation->binding ? observation->binding->statusText() : QString{}},
                 {"failed", observation->failed}});
     });

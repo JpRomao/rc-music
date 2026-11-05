@@ -2,6 +2,7 @@
 
 #include "adapters/WindowsConfiguredDownloadExecution.hpp"
 #include "adapters/WindowsPrivateDownloadDocument.hpp"
+#include "app/PlayerDownloadComponentProbe.hpp"
 #include "presentation/WindowsPlayerDownloads.hpp"
 
 #include <QString>
@@ -19,6 +20,11 @@ struct WindowsPlayerDownloadProfile final {
     QString checkpoint_directory{};
     WindowsPlayerDownloadsOptions options{};
     bool prepare_storage{false};
+    // Packaged optional tools require the fixed installed-component marker
+    // before the main thread creates the download owner or any listener.
+    // Legacy trusted profiles keep their existing eager composition by default.
+    bool requires_installed_component{false};
+    PlayerDownloadComponentReader component_reader{};
 };
 
 using WindowsPlayerDownloadStoragePreparer = std::function<bool(const QString&)>;

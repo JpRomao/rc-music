@@ -115,6 +115,10 @@ void ownProfileStrings(WindowsPlayerDownloadProfile& profile) {
             artifact.relative_path = owned(artifact.relative_path);
             artifact.sha256 = owned(artifact.sha256);
         }
+        QProcessEnvironment environment;
+        for (const auto& key : execution.youtube->environment.keys())
+            environment.insert(owned(key), owned(execution.youtube->environment.value(key)));
+        execution.youtube->environment = std::move(environment);
     }
     if (profile.options.native_ingress) {
         ownNativeStrings(profile.options.native_ingress->principal);
@@ -215,6 +219,7 @@ std::optional<WindowsPlayerDownloadProfile> makePackagedPlayerDownloadProfile(Wi
         youtube.epoch_clock = [] { return QDateTime::currentSecsSinceEpoch(); };
     }
     profile.prepare_storage = true;
+    profile.requires_installed_component = true;
     applyStorageLayout(profile, owned(config_root));
     return profile;
 }
@@ -277,6 +282,8 @@ std::optional<WindowsPlayerDownloadProfile> playerDownloadsBuildProfile(const QS
                 return std::nullopt;
         }
     }
+    if (profile && profile->requires_installed_component)
+        ownProfileStrings(*profile);
     if (profile && profile->prepare_storage) {
         applyStorageLayout(*profile, config_root);
     }
