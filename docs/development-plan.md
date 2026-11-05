@@ -802,7 +802,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — extensões opcionais no instalador
 
-O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual no navegador. Os checks estáticos/de compilação não encerram aceitação de instalação, Registro ou Brave; aquisição pública e demais gates continuam pendentes. Não retoma AppContainer ou benchmarks.
+O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual. Os [setups reais de `cf34cd8`](windows-installer.md#setups-com-extensões-preparados-em-2026-11-05), Lite/Completa, foram compilados/conferidos sem executar, preservando os runtimes de `7601247`. O fechamento tem 165 casos estáticos/de compilação; o ensaio nativo preparado exige autorização própria. Instalação, Registro, Brave, aquisição pública e demais gates continuam pendentes; não retoma AppContainer ou benchmarks.
 
 ### Checkpoint anterior — identidades fixas das extensões
 

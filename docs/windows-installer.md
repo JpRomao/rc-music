@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental com seleção opcional de ferramentas compilados e conferidos em 2026-11-05, sem executar ou instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Estado:** setups privados Lite e Completa experimental com ferramentas e preparação separada das extensões compilados e conferidos em 2026-11-05, sem executar ou instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-11-05.
 
 A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) contém os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
@@ -72,7 +72,7 @@ Essas provas verificam planejamento, fluxo gerado e compilação. Interação re
 
 ### Extensões principal e YouTube como opções separadas
 
-O builder e `New-RcMusicInstallerPlan` aceitam `-MainExtensionPackageReceipt`/`-MainExtensionPackageReceiptSha256` e `-YoutubeExtensionPackageReceipt`/`-YoutubeExtensionPackageReceiptSha256`, independentes e explícitos. Os pacotes precisam estar limpos e possuir [identidades públicas fixas](youtube-extension-package.md#identidades-públicas-estáveis) iguais às origens dos hosts declarados pelo runtime. O leitor verifica JSON estrito, pin, árvore fechada e hashes dos nove/sete arquivos; não segue os caminhos de proveniência. O builder revalida o pacote inteiro após compilar.
+O builder e `New-RcMusicInstallerPlan` aceitam `-MainExtensionPackageReceipt`/`-MainExtensionPackageReceiptSha256` e `-YoutubeExtensionPackageReceipt`/`-YoutubeExtensionPackageReceiptSha256`, independentes e explícitos; os caminhos dos recibos devem ser absolutos. Os pacotes precisam estar limpos e possuir [identidades públicas fixas](youtube-extension-package.md#identidades-públicas-estáveis) iguais às origens dos hosts declarados pelo runtime. O leitor verifica JSON estrito, pin, árvore fechada e hashes dos nove/sete arquivos; não segue os caminhos de proveniência. O builder revalida o pacote inteiro após compilar.
 
 O instalador oferece **Preparar extensão principal** e **Preparar extensão YouTube**, inicialmente desmarcadas, com tamanhos próprios. Qualquer uma requer as ferramentas compartilhadas, que são selecionadas e ficam obrigatórias enquanto uma extensão estiver marcada. A seleção é congelada antes do preflight. Sem os parâmetros dos pacotes, continuam disponíveis somente as escolhas anteriores.
 
@@ -89,6 +89,17 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups com extensões preparados em 2026-11-05
+
+A receita limpa `cf34cd8daf185fa65a31d3fcd158bfccd21258fa` gerou os setups sobre os runtimes e pacotes-fonte preservados de `7601247`, sem rebuild do player. Cada um contém cinco variantes, 49 arquivos de ferramentas/hosts e 16 assets de extensões, com três opções inicialmente desmarcadas, associações OFF e sem assinatura. A conferência independente passou para setup, configuração, marcador, 14 fontes da receita, recibos de componentes e todos os arquivos de entrada.
+
+| Edição | Diretório em `out/product/rc-music-installer/` | Bytes de `RCMusic-Setup.exe` | SHA-256 |
+|---|---|---:|---|
+| Lite | `rc-music-cf34cd8-extensions-Lite-20261105` | 89.936.126 | `92c312f516bc1f59380901c1886c8aedec567e9d5b64955409d98e122a91cb96` |
+| Completa experimental | `rc-music-cf34cd8-extensions-CompleteExperimental-20261105` | 90.001.880 | `c52aa68c43c9d0455609dda22d5b495a1afb3c7ee4b2e5cc1ee85d32f29f11c2` |
+
+Recibos SHA-256: Lite `978dd56f1cd162f5fdc7c71a768fd148855591dd1b4ccd2a9f4f3ecc038c03ba`; Completa `db787f580133fc7ad1a909490a558786cebf58e5b8d2e3e128796e7eecb5c407`. O inventário reúne 619/622 arquivos, respectivamente. `out/product/test-runs/installer-extensions-20261105/setup-verification.json` registra a conferência, incluindo PE x86 GUI do setup e ausência de assinatura. Os runtimes de origem continuam sem marcador; nenhum setup foi executado. Candidatos anteriores e trabalho AppContainer permanecem preservados.
 
 ### Setups locais de 2026-11-05
 
