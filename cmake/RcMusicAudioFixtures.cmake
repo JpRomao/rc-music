@@ -70,7 +70,45 @@ function(rc_music_validate_artwork_audio_corpus corpus)
         "28905103380715e5a9c1e184e63582b7f3c777042e2b09559765b87643bacf58")
 endfunction()
 
+function(rc_music_validate_canonical_metadata_corpus corpus)
+    _rc_music_require_audio_fixture("${corpus}" "codec-artwork.v1.json" 8383
+        "21055753eaee84d0bccd5e21249e984a88c4d1c7789431888eeb9c8a9d5432d5")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/m4a-aac-art.m4a" 33491
+        "a43af86f169c7bf14a73ef52e84f1f435807af185a4097ae942dd65e17c81a49")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/flac-art.flac" 60643
+        "93baf1c68b50b1a9463da0d537afc98d0df21cf101a160a3469b2ecaf37907bb")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/ogg-vorbis-art.ogg" 12777
+        "bda0ce791a45f3220036a3bc93ade634455d86216f10bf128ad747d7587cb498")
+    _rc_music_require_audio_fixture("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." "scripts/fixtures/generate_codec_artwork_corpus.py" 7884
+        "8fc82d9dbb20ab3db39debf44180619614739ce77c08a52725ac86fdc3d0fa19")
+    _rc_music_require_audio_fixture("${corpus}" "text-limits.v1.json" 29397
+        "9699b848a57e89b79d57d714bfdcddd23990da277a26970dfce778a380d207fe")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-title-below.mp3" 49644
+        "421da5b646561788014ad43576599dbf9584dbc1a93ef9feeb8f8ddcdab0a38f")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-title-at.mp3" 49644
+        "857898864eb7b7a937bb714c28cb8b7d7e3b0a1ae7b0a039ec3e60ebb3acf2e4")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-title-above.mp3" 49646
+        "187e3f9ca3891ffa4f3fa287839541040d09cab5cd670dcb3dea3a56cb11e778")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-artist-below.mp3" 49676
+        "f6cfd33a8168a84a8d9555b2e2d6beab002eab0b1e08a648fc4d7cca8729d1d1")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-artist-at.mp3" 49676
+        "25923f70e860dfe2d02d16d5f4aeeaccf16e5cf464cfeb33f338794cbec53fe3")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-artist-above.mp3" 49678
+        "26dd64ab32c97e1600d1faefd047e7db53d2139183cdb1ee58bf4c76d1163a21")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-album-below.mp3" 49668
+        "c43b848e1a3cc5406715be0fee9e6c2d32b8c988f0da7ec624689a49242526b6")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-album-at.mp3" 49668
+        "d60ef71700bedf9f305c4868a71a15a418834ac734b42107f167fa6d96fa0bbb")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-album-above.mp3" 49670
+        "5d331b0042ff8f7c3f6d8e68f6f963d72464c2a55f1ec43904409d75c0b5596e")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/tags/mp3-all-fields-at.mp3" 82367
+        "b9f27fe6e11f9bae48362495f8debff9ebe2abaf7701261d3e2fe0b6aa720cc0")
+    _rc_music_require_audio_fixture("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." "scripts/fixtures/generate_tag_corpus.py" 11079
+        "3a5a7ed52db6d27d904f3b973dcb4c0ae82824220d2cfa0b6a622f77226b3b2d")
+endfunction()
+
 function(rc_music_validate_audio_corpus corpus)
+    rc_music_validate_canonical_metadata_corpus("${corpus}")
     rc_music_validate_artwork_audio_corpus("${corpus}")
     rc_music_validate_truncated_audio_corpus("${corpus}")
     _rc_music_require_audio_fixture("${corpus}" "LICENSE.assets.txt" 663

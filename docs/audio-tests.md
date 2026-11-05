@@ -23,7 +23,7 @@ A [licença preservada](../tests/audio/corpus/LICENSE.assets.txt), `LicenseRef-M
 
 Incremento posterior: o [catálogo factual](../tests/audio/corpus/catalog.v1.json) descreve somente sete fixtures básicas elegíveis para a [declaração de formatos do instalador](windows-installer.md). Seus tamanhos/hashes são conferidos contra os pins abaixo; não substitui o corpus, a licença ou um resultado de execução e não promove Opus/ALAC/entradas edge a suporte aprovado.
 
-[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos originais, dos cinco arquivos da extensão de truncamento e do gerador, manifesto e 14 arquivos de arte descritos abaixo. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
+[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos arquivos originais e dos geradores, manifestos e extensões canônicas descritos abaixo. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
 
 [RcMusicAudioTests.cmake](../cmake/RcMusicAudioTests.cmake) fornece `rc_music_add_audio_tests(corpus_root)`. A integração raiz autentica e registra o corpus somente com desktop e `BUILD_TESTING=ON`; produção OFF não lê esse módulo de fixtures, não compila essas suites nem adquire uma dependência do corpus. Os nomes técnicos `M0_TEST_AUDIO_*` permanecem para preservar as fontes dos testes, sem tornar o experimento um pré-requisito.
 
@@ -84,7 +84,17 @@ O [gerador](../scripts/fixtures/generate_artwork_corpus.py) usa apenas Python st
 
 Green: **39/39 CTest** (37 casos de metadados, integração local e integridade), build Release do player sem testes e formato dos dois C++ alterados aprovados. A inspeção independente confirmou os 14 hashes, frames APIC, tags/áudio originais, CRCs e dimensões físicas dos PNG. Evidências em `out/product/test-runs/artwork-boundaries-20261105/`. O consumidor histórico recebeu os caminhos/autenticação novos, sem ser recompilado; seus assets originais permanecem intactos.
 
-Este recorte não cobre arte canônica nos outros contêineres ou todas as bordas textuais. TagLib ainda materializa a tag antes do gate de tamanho do produto; a proteção de pré-alocação do parser, `NFR-LIMIT-001`/`SEC-002` e os gates amplos continuam parciais. Não houve execução do player, atualização dos instaladores ou aceitação nativa.
+O incremento seguinte acrescenta capas nos demais contêineres básicos e bordas textuais. TagLib ainda materializa a tag antes do gate de tamanho do produto; a proteção de pré-alocação do parser, `NFR-LIMIT-001`/`SEC-002` e os gates amplos continuam parciais. Não houve execução do player, atualização dos instaladores ou aceitação nativa.
+
+## Capas e textos no corpus dos codecs
+
+Os novos manifestos de [capas por contêiner](../tests/audio/corpus/codec-artwork.v1.json) e [limites de texto](../tests/audio/corpus/text-limits.v1.json) acrescentam 13 arquivos, **636.248 bytes**: M4A/AAC, FLAC e Ogg/Vorbis com PNG de 1 × 1; título, artista e álbum MP3 com 16 KiB UTF-8 − 1, exatamente 16 KiB e + 1; e três textos no limite junto de faixa/ano válidos. A matriz de capas e os casos `MR-012`/`MR-013` passam a ler as fixtures diretamente, com as mesmas assertions. Duas regressões adicionais verificam cada campo independentemente e o agregado realmente alcançável de **49.160 bytes**. O limite geral de 256 KiB continua separado na policy.
+
+Os geradores de [capas](../scripts/fixtures/generate_codec_artwork_corpus.py) e [texto](../scripts/fixtures/generate_tag_corpus.py) reutilizam o helper existente, autenticam fontes e escrevem somente em stage novo. A autoria de capas usa o mesmo FFmpeg 8.1.1 pinado da receita histórica, apenas com stream copy e mídia sintética local; o executável não é copiado ou exigido pelos testes cotidianos. O texto usa Python stdlib, frames ID3v2.3 UTF-16LE e contagem explícita dos bytes UTF-8 esperados. Scripts, fontes, ferramentas e argumentos ficam nas receitas, sob a licença privada existente.
+
+Duas gerações reproduziram os 13 binários e dois manifestos; cinco tentativas com saída existente/fora do stage ou ferramenta divergente foram recusadas. A inspeção independente confirmou os hashes, os três streams de áudio codificado e, nos dez MP3, áudio, padding e frames não alterados. O fechamento passou **40/40 CTest** (39 casos de metadados e integridade), build Release do alvo, formato, documentação e rastreabilidade. Evidências em `out/product/test-runs/canonical-metadata-20261105/`.
+
+Este incremento altera corpus e testes. O código do player e os instaladores permanecem nos seus commits anteriores; seus checks não foram repetidos. Parser/isolamento, outros perfis hostis, budgets, catálogo global e aceitação nativa mantêm seus próprios gates; `M0.5`/`M2.6`/`M5.2` não são encerrados por esta cobertura.
 
 ## Limites
 

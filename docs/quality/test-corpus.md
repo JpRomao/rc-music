@@ -1,6 +1,6 @@
 # Corpus de áudio e fixtures
 
-**Estado:** M0.5 em andamento; matriz básica, truncados e capas MP3 com bordas reais autenticados; demais capas e limites textuais canônicos pendentes
+**Estado:** M0.5 em andamento; matriz básica, truncados, capas em quatro contêineres e limites UTF-8 MP3 autenticados; hardening e catálogo global pendentes
 **Última revisão:** 2026-11-05
 
 ## 1. Objetivo
@@ -68,7 +68,7 @@ O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), as rec
 
 O [corpus do produto](../audio-tests.md#prefixos-truncados-canônicos) acrescenta quatro prefixos canônicos de 64 bytes para MP3, M4A/AAC, FLAC e Ogg/Vorbis, autenticados antes do teste real de metadados. Seu manifesto registra a receita e a expectativa de rejeição, sem inventar propriedades do áudio truncado. O WAV truncado já existente cobre o quinto contêiner básico. M0.5 continua aberto pelos casos canônicos de arte e limites e demais critérios; os arquivos históricos permanecem intactos.
 
-O recorte de [capas canônicas](../audio-tests.md#capas-canônicas-e-bordas-reais) acrescenta 14 MP3 com arte válida/inválida e casos reais abaixo/no/acima dos três limites de imagem. Receita, propriedades esperadas e hashes são versionados; o teste valida a capa e preservação dos metadados. Arte em outros contêineres e limites textuais canônicos permanecem pendentes, sem alterar o manifesto histórico.
+O recorte de [capas canônicas](../audio-tests.md#capas-canônicas-e-bordas-reais) acrescenta 14 MP3 com arte válida/inválida e casos reais abaixo/no/acima dos três limites de imagem. A extensão de [capas e textos](../audio-tests.md#capas-e-textos-no-corpus-dos-codecs) acrescenta três capas nos demais contêineres básicos e dez MP3 nos limites de título/artista/álbum e no agregado alcançável. Receitas, propriedades esperadas e hashes são versionados; os testes validam capa, diagnóstico e preservação dos metadados. O manifesto histórico permanece intacto.
 
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
 

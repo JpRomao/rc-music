@@ -3235,7 +3235,7 @@
         }
       ],
       "remaining": [
-        "Completar capas canônicas nos demais contêineres e proteção de pré-alocação do parser TagLib; o gate posterior de tamanho não cobre sua materialização interna.",
+        "Completar a proteção de pré-alocação do parser TagLib e demais perfis hostis; o gate posterior de tamanho não cobre sua materialização interna.",
         "Completar a validação integrada de placeholder sem impedir playback para o corpus declarado."
       ]
     },
@@ -3252,16 +3252,24 @@
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-013 discards one metadata field above the retained byte limit without failing the read"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "NFR-LIMIT-002 enforces canonical UTF-8 text boundaries independently for every field"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "NFR-LIMIT-002 retains the largest aggregate reachable through the supported metadata fields"
         }
       ],
       "evidence": [
         {
-          "path": "docs/development-plan.md",
-          "marker": "O limite agregado de metadata está provado na policy"
+          "path": "docs/audio-tests.md",
+          "marker": "## Capas e textos no corpus dos codecs"
         }
       ],
       "remaining": [
-        "Completar corpus canônico de metadata de limite e comprovação integrada dos diagnósticos nos campos/perfis declarados.",
+        "Ampliar os perfis hostis e a comprovação integrada dos diagnósticos nos demais contêineres declarados; os três campos MP3 já possuem fixtures canônicas abaixo/no/acima.",
         "O adapter atual retém no máximo 48 KiB + 8 bytes; a policy de 256 KiB não demonstra um caminho integrado que alcance esse total nem limita alocações internas do parser."
       ]
     },

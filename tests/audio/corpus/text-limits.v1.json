@@ -1,0 +1,937 @@
+{
+  "schema_id": "rcmusic.audio-text-limits.v1",
+  "schema_version": 1,
+  "purpose": "canonical-metadata-text-limits-not-runtime-approval",
+  "hash_algorithm": "sha256",
+  "license": "LicenseRef-MusicPlayer-M0-Private",
+  "license_source": {
+    "relative_path": "tests/audio/corpus/LICENSE.assets.txt",
+    "size_bytes": 663,
+    "sha256": "54b7a0cbbf8050b2ac4e24cf8afd74c68a2c6d6c6b22c0487599dd84d23b8b13"
+  },
+  "limits": {
+    "field_utf8_bytes": 16384,
+    "total_retained_bytes": 262144,
+    "numeric_retained_bytes_each": 4
+  },
+  "recipe": {
+    "id": "rcmusic-text-limit-generator-v1",
+    "scripts": [
+      {
+        "relative_path": "scripts/fixtures/generate_tag_corpus.py",
+        "size_bytes": 11079,
+        "sha256": "3a5a7ed52db6d27d904f3b973dcb4c0ae82824220d2cfa0b6a622f77226b3b2d"
+      },
+      {
+        "relative_path": "scripts/fixtures/generate_artwork_corpus.py",
+        "size_bytes": 12184,
+        "sha256": "777a490529fb493b26ff166658baa7d38e20ac070e57eaf31cd1a40072ae8a2a"
+      }
+    ],
+    "source": {
+      "id": "mp3-cbr-stereo",
+      "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+      "size_bytes": 33318,
+      "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+    },
+    "python_version": "3.13.1",
+    "python_implementation": "CPython",
+    "arguments": [
+      "--repository-root",
+      "<absolute-repository-root>",
+      "--output-directory",
+      "<new-descendant-of-out/m0>"
+    ],
+    "id3": {
+      "version": "2.3.0",
+      "tag_flags": 0,
+      "frame_flags": 0,
+      "frame_size": "big-endian-uint32",
+      "text_encoding_byte": 1,
+      "text_encoding": "UTF-16LE",
+      "bom_hex": "fffe",
+      "terminator": "none",
+      "unchanged_frames_padding_audio": "preserved byte-for-byte",
+      "new_track_frame": "TRCK only in mp3-all-fields-at"
+    },
+    "text_pattern": "repeat é floor(utf8_size/2) times; append a iff utf8_size is odd",
+    "aggregate_retained_bytes": 49160
+  },
+  "fixtures": [
+    {
+      "id": "mp3-title-below",
+      "relative_path": "fixtures/tags/mp3-title-below.mp3",
+      "size_bytes": 49644,
+      "sha256": "421da5b646561788014ad43576599dbf9584dbc1a93ef9feeb8f8ddcdab0a38f",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-title-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "title": {
+            "frame_id": "TIT2",
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": {
+        "pattern": {
+          "character": "é",
+          "repeat_count": 8191,
+          "suffix": "a",
+          "utf8_size_bytes": 16383,
+          "utf16le_size_bytes": 16384
+        }
+      },
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16420,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-title-at",
+      "relative_path": "fixtures/tags/mp3-title-at.mp3",
+      "size_bytes": 49644,
+      "sha256": "857898864eb7b7a937bb714c28cb8b7d7e3b0a1ae7b0a039ec3e60ebb3acf2e4",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-title-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "title": {
+            "frame_id": "TIT2",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": {
+        "pattern": {
+          "character": "é",
+          "repeat_count": 8192,
+          "suffix": "",
+          "utf8_size_bytes": 16384,
+          "utf16le_size_bytes": 16384
+        }
+      },
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16421,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-title-above",
+      "relative_path": "fixtures/tags/mp3-title-above.mp3",
+      "size_bytes": 49646,
+      "sha256": "187e3f9ca3891ffa4f3fa287839541040d09cab5cd670dcb3dea3a56cb11e778",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-title-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "title": {
+            "frame_id": "TIT2",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "a",
+            "utf8_size_bytes": 16385,
+            "utf16le_size_bytes": 16386,
+            "id3_payload_size_bytes": 16389
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": null,
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "mp3-title-above",
+      "expected_metadata_diagnostics": [
+        {
+          "code": "FieldTooLarge",
+          "field": "Title",
+          "observed_bytes": 16385,
+          "limit_bytes": 16384
+        }
+      ],
+      "expected_retained_metadata_bytes": 37,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-artist-below",
+      "relative_path": "fixtures/tags/mp3-artist-below.mp3",
+      "size_bytes": 49676,
+      "sha256": "f6cfd33a8168a84a8d9555b2e2d6beab002eab0b1e08a648fc4d7cca8729d1d1",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-artist-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "artist": {
+            "frame_id": "TPE1",
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16444,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-artist-at",
+      "relative_path": "fixtures/tags/mp3-artist-at.mp3",
+      "size_bytes": 49676,
+      "sha256": "25923f70e860dfe2d02d16d5f4aeeaccf16e5cf464cfeb33f338794cbec53fe3",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-artist-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "artist": {
+            "frame_id": "TPE1",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16445,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-artist-above",
+      "relative_path": "fixtures/tags/mp3-artist-above.mp3",
+      "size_bytes": 49678,
+      "sha256": "26dd64ab32c97e1600d1faefd047e7db53d2139183cdb1ee58bf4c76d1163a21",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-artist-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "artist": {
+            "frame_id": "TPE1",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "a",
+            "utf8_size_bytes": 16385,
+            "utf16le_size_bytes": 16386,
+            "id3_payload_size_bytes": 16389
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": null,
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [
+        {
+          "code": "FieldTooLarge",
+          "field": "Artist",
+          "observed_bytes": 16385,
+          "limit_bytes": 16384
+        }
+      ],
+      "expected_retained_metadata_bytes": 61,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-album-below",
+      "relative_path": "fixtures/tags/mp3-album-below.mp3",
+      "size_bytes": 49668,
+      "sha256": "c43b848e1a3cc5406715be0fee9e6c2d32b8c988f0da7ec624689a49242526b6",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-album-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "album": {
+            "frame_id": "TALB",
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8191,
+            "suffix": "a",
+            "utf8_size_bytes": 16383,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16441,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-album-at",
+      "relative_path": "fixtures/tags/mp3-album-at.mp3",
+      "size_bytes": 49668,
+      "sha256": "d60ef71700bedf9f305c4868a71a15a418834ac734b42107f167fa6d96fa0bbb",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-album-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "album": {
+            "frame_id": "TALB",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 16442,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-album-above",
+      "relative_path": "fixtures/tags/mp3-album-above.mp3",
+      "size_bytes": 49670,
+      "sha256": "5d331b0042ff8f7c3f6d8e68f6f963d72464c2a55f1ec43904409d75c0b5596e",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-album-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "album": {
+            "frame_id": "TALB",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "a",
+            "utf8_size_bytes": 16385,
+            "utf16le_size_bytes": 16386,
+            "id3_payload_size_bytes": 16389
+          }
+        },
+        "added_track_number": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": null,
+        "track": null,
+        "year": 2026
+      },
+      "expected_display_title": "Canção determinística 日本語 🎵",
+      "expected_metadata_diagnostics": [
+        {
+          "code": "FieldTooLarge",
+          "field": "Album",
+          "observed_bytes": 16385,
+          "limit_bytes": 16384
+        }
+      ],
+      "expected_retained_metadata_bytes": 58,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-all-fields-at",
+      "relative_path": "fixtures/tags/mp3-all-fields-at.mp3",
+      "size_bytes": 82367,
+      "sha256": "b9f27fe6e11f9bae48362495f8debff9ebe2abaf7701261d3e2fe0b6aa720cc0",
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-text-limit-generator-v1",
+        "case_id": "mp3-all-fields-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        },
+        "fields": {
+          "title": {
+            "frame_id": "TIT2",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          },
+          "artist": {
+            "frame_id": "TPE1",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          },
+          "album": {
+            "frame_id": "TALB",
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384,
+            "id3_payload_size_bytes": 16387
+          }
+        },
+        "added_track_number": 1
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "artist": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "album": {
+          "pattern": {
+            "character": "é",
+            "repeat_count": 8192,
+            "suffix": "",
+            "utf8_size_bytes": 16384,
+            "utf16le_size_bytes": 16384
+          }
+        },
+        "track": 1,
+        "year": 2026
+      },
+      "expected_display_title": {
+        "pattern": {
+          "character": "é",
+          "repeat_count": 8192,
+          "suffix": "",
+          "utf8_size_bytes": 16384,
+          "utf16le_size_bytes": 16384
+        }
+      },
+      "expected_metadata_diagnostics": [],
+      "expected_retained_metadata_bytes": 49160,
+      "expected_artwork": {
+        "state": "absent",
+        "encoded_size_bytes": 0,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "none"
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-022",
+        "NFR-LIMIT-002",
+        "NFR-REL-001"
+      ]
+    }
+  ]
+}

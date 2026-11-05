@@ -1148,6 +1148,7 @@ if(BUILD_TESTING)
         include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioFixtures.cmake")
         rc_music_validate_truncated_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         rc_music_validate_artwork_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
+        rc_music_validate_canonical_metadata_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         add_executable(m0_taglib_metadata_extractor_tests
             "${RC_MUSIC_SOURCE_ROOT}/tests/audio/TagLibMetadataExtractorTests.cpp"
         )

@@ -238,22 +238,6 @@ void writeMp3Artwork(const std::filesystem::path& destination, const std::vector
                       TagLib::MPEG::File::DoNotDuplicate));
 }
 
-template <typename TagLibFile>
-void writeComplexArtwork(const std::filesystem::path& destination, const std::vector<std::uint8_t>& artwork,
-                         const std::string& mime_type = "image/png") {
-    TagLibFile file{destination.c_str()};
-    REQUIRE(file.isValid());
-
-    const TagLib::VariantMap picture{
-        {"data",
-         TagLib::ByteVector{reinterpret_cast<const char*>(artwork.data()), static_cast<unsigned int>(artwork.size())}},
-        {"pictureType", "Front Cover"},
-        {"mimeType", TagLib::String{mime_type, TagLib::String::Latin1}},
-    };
-    REQUIRE(file.setComplexProperties("PICTURE", {picture}));
-    REQUIRE(file.save());
-}
-
 [[nodiscard]] std::vector<std::uint8_t> withoutId3Tags(std::vector<std::uint8_t> bytes) {
     REQUIRE(bytes.size() >= 10);
     REQUIRE(bytes[0] == 'I');
@@ -700,38 +684,19 @@ TEST_CASE("FR-021 extracts bounded RGBA thumbnails from valid PNG and JPEG embed
 
 TEST_CASE("FR-021 extracts embedded artwork across the authenticated local codec matrix",
           "[m0][qt][metadata][taglib][artwork][codec-matrix][FR-021]") {
-    enum class Container { M4a, Flac, Vorbis };
     struct ArtworkCase final {
-        Container container;
         std::filesystem::path relative_path;
-        std::filesystem::path temporary_filename;
         std::string expected_container;
         std::string expected_codec;
     };
 
-    const ScopedTemporaryDirectory directory;
     for (const auto& artwork_case : {
-             ArtworkCase{Container::M4a, "fixtures/valid/m4a-aac-lc.m4a", "embedded-cover.m4a", "ISO MP4/M4A", "AAC"},
-             ArtworkCase{Container::Flac, "fixtures/valid/flac-16-stereo.flac", "embedded-cover.flac", "FLAC", "FLAC"},
-             ArtworkCase{Container::Vorbis, "fixtures/valid/ogg-vorbis.ogg", "embedded-cover.ogg", "Ogg", "Vorbis"},
+             ArtworkCase{"fixtures/artwork/m4a-aac-art.m4a", "ISO MP4/M4A", "AAC"},
+             ArtworkCase{"fixtures/artwork/flac-art.flac", "FLAC", "FLAC"},
+             ArtworkCase{"fixtures/artwork/ogg-vorbis-art.ogg", "Ogg", "Vorbis"},
          }) {
         CAPTURE(artwork_case.relative_path.string());
-        const ScopedTemporaryFile source{temporaryPath(directory, artwork_case.temporary_filename)};
-        writeBytes(source.path(), readBytes(fixture(artwork_case.relative_path)));
-        const auto artwork = onePixelPng();
-        switch (artwork_case.container) {
-        case Container::M4a:
-            writeComplexArtwork<TagLib::MP4::File>(source.path(), artwork);
-            break;
-        case Container::Flac:
-            writeComplexArtwork<TagLib::FLAC::File>(source.path(), artwork);
-            break;
-        case Container::Vorbis:
-            writeComplexArtwork<TagLib::Vorbis::File>(source.path(), artwork);
-            break;
-        }
-
-        const auto result = TagLibMetadataExtractor{}.read(source.path());
+        const auto result = TagLibMetadataExtractor{}.read(productFixture(artwork_case.relative_path));
         const auto& metadata = requireMetadata(result);
 
         REQUIRE(metadata.artwork.has_value());
@@ -946,13 +911,9 @@ TEST_CASE("NFR-LIMIT-001 discards an embedded image format outside the artwork a
 TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limit",
           "[m0][qt][metadata][taglib][limits][MR-012]") {
     constexpr std::size_t field_limit_bytes = MetadataRetentionBudget::field_limit_bytes;
-    const ScopedTemporaryDirectory directory;
-    const ScopedTemporaryFile source{temporaryPath(directory, "exact-field-limit.mp3")};
     const auto title = utf8TextFieldWithSize(field_limit_bytes);
-    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
-    writeMp3Title(source.path(), title);
 
-    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto result = TagLibMetadataExtractor{}.read(productFixture("fixtures/tags/mp3-title-at.mp3"));
     const auto& metadata = requireMetadata(result);
 
     REQUIRE(metadata.tags.title.has_value());
@@ -968,16 +929,12 @@ TEST_CASE("MR-012 preserves one metadata field exactly at the retained byte limi
 TEST_CASE("MR-013 discards one metadata field above the retained byte limit without failing the read",
           "[m0][qt][metadata][taglib][limits][MR-013]") {
     constexpr std::size_t field_limit_bytes = MetadataRetentionBudget::field_limit_bytes;
-    const ScopedTemporaryDirectory directory;
-    const ScopedTemporaryFile source{temporaryPath(directory, "above-field-limit.mp3")};
-    writeBytes(source.path(), readBytes(fixture("fixtures/valid/mp3-cbr-stereo.mp3")));
-    writeMp3Title(source.path(), utf8TextFieldWithSize(field_limit_bytes + 1));
 
-    const auto result = TagLibMetadataExtractor{}.read(source.path());
+    const auto result = TagLibMetadataExtractor{}.read(productFixture("fixtures/tags/mp3-title-above.mp3"));
     const auto& metadata = requireMetadata(result);
 
     CHECK_FALSE(metadata.tags.title.has_value());
-    CHECK(metadata.display_title == "above-field-limit");
+    CHECK(metadata.display_title == "mp3-title-above");
     REQUIRE(metadata.diagnostics.size() == 1);
     CHECK(metadata.diagnostics.front().code == MetadataDiagnosticCode::FieldTooLarge);
     CHECK(metadata.diagnostics.front().field == MetadataField::Title);
@@ -985,6 +942,75 @@ TEST_CASE("MR-013 discards one metadata field above the retained byte limit with
     CHECK(metadata.diagnostics.front().limit_bytes == field_limit_bytes);
     REQUIRE(metadata.audio.duration_ms.has_value());
     CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("NFR-LIMIT-002 enforces canonical UTF-8 text boundaries independently for every field",
+          "[m0][qt][metadata][taglib][limits][NFR-LIMIT-002]") {
+    struct TextCase final {
+        const char* filename;
+        MetadataField field;
+        std::size_t bytes;
+    };
+    const TagLibMetadataExtractor reader;
+    const auto source_result = reader.read(fixture("fixtures/valid/mp3-cbr-stereo.mp3"));
+    const auto& original = requireMetadata(source_result);
+    for (const auto& text_case : {
+             TextCase{"mp3-title-below.mp3", MetadataField::Title, 16'383},
+             TextCase{"mp3-artist-below.mp3", MetadataField::Artist, 16'383},
+             TextCase{"mp3-artist-at.mp3", MetadataField::Artist, 16'384},
+             TextCase{"mp3-artist-above.mp3", MetadataField::Artist, 16'385},
+             TextCase{"mp3-album-below.mp3", MetadataField::Album, 16'383},
+             TextCase{"mp3-album-at.mp3", MetadataField::Album, 16'384},
+             TextCase{"mp3-album-above.mp3", MetadataField::Album, 16'385},
+         }) {
+        DYNAMIC_SECTION(text_case.filename) {
+            const auto result =
+                reader.read(productFixture(std::filesystem::path{"fixtures/tags"} / text_case.filename));
+            const auto& metadata = requireMetadata(result);
+            const auto& field = text_case.field == MetadataField::Title    ? metadata.tags.title
+                                : text_case.field == MetadataField::Artist ? metadata.tags.artist
+                                                                           : metadata.tags.album;
+            if (text_case.bytes <= 16'384) {
+                REQUIRE(field.has_value());
+                CHECK(*field == utf8TextFieldWithSize(text_case.bytes));
+                CHECK(metadata.diagnostics.empty());
+            } else {
+                CHECK_FALSE(field.has_value());
+                REQUIRE(metadata.diagnostics.size() == 1);
+                CHECK(metadata.diagnostics.front().code == MetadataDiagnosticCode::FieldTooLarge);
+                CHECK(metadata.diagnostics.front().field == text_case.field);
+                CHECK(metadata.diagnostics.front().observed_bytes == text_case.bytes);
+                CHECK(metadata.diagnostics.front().limit_bytes == 16'384);
+            }
+            if (text_case.field != MetadataField::Title) {
+                CHECK(metadata.tags.title == original.tags.title);
+                CHECK(metadata.display_title == original.display_title);
+            }
+            if (text_case.field != MetadataField::Artist) {
+                CHECK(metadata.tags.artist == original.tags.artist);
+            }
+            if (text_case.field != MetadataField::Album) {
+                CHECK(metadata.tags.album == original.tags.album);
+            }
+            CHECK(metadata.audio.duration_ms == original.audio.duration_ms);
+            CHECK(metadata.audio.sample_rate_hz == original.audio.sample_rate_hz);
+            CHECK(metadata.audio.channels == original.audio.channels);
+        }
+    }
+}
+
+TEST_CASE("NFR-LIMIT-002 retains the largest aggregate reachable through the supported metadata fields",
+          "[m0][qt][metadata][taglib][limits][NFR-LIMIT-002]") {
+    const auto result = TagLibMetadataExtractor{}.read(productFixture("fixtures/tags/mp3-all-fields-at.mp3"));
+    const auto& metadata = requireMetadata(result);
+    const auto text = utf8TextFieldWithSize(16'384);
+    CHECK(metadata.tags.title == std::optional<std::string>{text});
+    CHECK(metadata.tags.artist == std::optional<std::string>{text});
+    CHECK(metadata.tags.album == std::optional<std::string>{text});
+    CHECK(metadata.tags.track_number == std::optional<std::uint32_t>{1});
+    CHECK(metadata.tags.year == std::optional<std::uint32_t>{2026});
+    CHECK(metadata.display_title == text);
+    CHECK(metadata.diagnostics.empty());
 }
 
 TEST_CASE("FR-023 sanitizes display text while preserving Unicode and multi-value joins",
