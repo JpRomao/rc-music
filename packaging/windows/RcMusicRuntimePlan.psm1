@@ -149,8 +149,39 @@ function Get-RcMusicDesktopBuildConfiguration {
         [Parameter(Mandatory)][Collections.IDictionary] $Cache,
         [Parameter(Mandatory)][string] $RepositoryRoot,
         [ValidateSet('ON', 'OFF')][string] $BuildTesting = 'OFF',
-        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite'
+        [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
+        [object] $DownloadProfileHeader,
+        [object] $DownloadProfileHeaderSha256
     )
+    $hasDownloadHeader = $PSBoundParameters.ContainsKey('DownloadProfileHeader')
+    $hasDownloadPin = $PSBoundParameters.ContainsKey('DownloadProfileHeaderSha256')
+    $downloadEnabled = $hasDownloadHeader -or $hasDownloadPin
+    $downloadHeader = $null
+    $downloadHeaderHash = $null
+    if ($downloadEnabled) {
+        if (-not $hasDownloadHeader -or -not $hasDownloadPin -or
+            $DownloadProfileHeader -isnot [string] -or [string]::IsNullOrWhiteSpace($DownloadProfileHeader) -or
+            $DownloadProfileHeaderSha256 -isnot [string] -or $DownloadProfileHeaderSha256 -cnotmatch '\A[0-9a-f]{64}\z') {
+            throw 'Download profile header and lowercase SHA256 pin must be supplied together'
+        }
+        $downloadHeader = Get-RcMusicRuntimeAbsolutePath $DownloadProfileHeader
+        if (-not [IO.File]::Exists($downloadHeader)) { throw 'Download profile header must be an existing file' }
+        $cachedHeader = $Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER']
+        if ($cachedHeader -isnot [string] -or [string]::IsNullOrWhiteSpace($cachedHeader)) {
+            throw 'Download profile header must match its explicit build cache entry'
+        }
+        $cachedHeader = Get-RcMusicRuntimeAbsolutePath $cachedHeader
+        if (-not [string]::Equals($cachedHeader, $downloadHeader, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Download profile header does not match the compiled build cache path'
+        }
+        $downloadHeaderHash = (Get-FileHash -LiteralPath $downloadHeader -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($downloadHeaderHash -cne $DownloadProfileHeaderSha256) { throw 'Download profile header SHA256 changed' }
+    } elseif ($Cache.Contains('RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER') -and
+        $null -ne $Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER'] -and
+        ($Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER'] -isnot [string] -or
+            $Cache['RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER'].Length -ne 0)) {
+        throw 'A configured download profile header requires an explicit pinned opt-in'
+    }
     $root = Get-RcMusicRuntimeAbsolutePath $RepositoryRoot
     foreach ($required in @{ CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = $BuildTesting }.GetEnumerator()) {
         if ($Cache[$required.Key] -cne $required.Value) {
@@ -182,17 +213,34 @@ function Get-RcMusicDesktopBuildConfiguration {
         }
         $entrypoint = 'legacy'
     } else { throw 'Unsupported desktop build entrypoint' }
+    if ($downloadEnabled) {
+        if ($entrypoint -cne 'product') { throw 'A download profile requires the product desktop entrypoint' }
+        $downloadOptions = [ordered]@{
+            RC_MUSIC_BUILD_BROWSER_INTEGRATION = 'ON'
+            RC_MUSIC_BUILD_DOWNLOADS = 'ON'
+            RC_MUSIC_BUILD_DOWNLOAD_NETWORK = 'ON'
+            RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = 'ON'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF'
+        }
+        foreach ($option in $downloadOptions.GetEnumerator()) {
+            if (-not $Cache.Contains($option.Key) -or $Cache[$option.Key] -isnot [string] -or
+                $Cache[$option.Key] -cne $option.Value) {
+                throw "Unsupported desktop build configuration: $($option.Key) (download profile requires $($option.Value))"
+            }
+        }
+    }
     $browserSdkRoot = $null
     if ($complete) {
         if ($entrypoint -cne 'product') {
             throw 'CompleteExperimental requires the product desktop entrypoint'
         }
+        $downloadMode = if ($downloadEnabled) { 'ON' } else { 'OFF' }
         $options = [ordered]@{
             RC_MUSIC_BUILD_EMBEDDED_BROWSER = 'ON'
-            RC_MUSIC_BUILD_BROWSER_INTEGRATION = 'OFF'
-            RC_MUSIC_BUILD_DOWNLOADS = 'OFF'
-            RC_MUSIC_BUILD_DOWNLOAD_NETWORK = 'OFF'
-            RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = 'OFF'
+            RC_MUSIC_BUILD_BROWSER_INTEGRATION = $downloadMode
+            RC_MUSIC_BUILD_DOWNLOADS = $downloadMode
+            RC_MUSIC_BUILD_DOWNLOAD_NETWORK = $downloadMode
+            RC_MUSIC_BUILD_DOWNLOAD_PERSISTENCE = $downloadMode
             RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF'
         }
         foreach ($option in $options.GetEnumerator()) {
@@ -217,6 +265,9 @@ function Get-RcMusicDesktopBuildConfiguration {
     # packaging requests OFF and cannot silently accept an instrumented cache.
     return [pscustomobject]@{
         edition = if ($complete) { 'CompleteExperimental' } else { 'Lite' }
+        download_component_enabled = $downloadEnabled
+        download_profile_header = $downloadHeader
+        download_profile_header_sha256 = $downloadHeaderHash
         browser_sdk_root = $browserSdkRoot
         browser_runtime_requirement = if ($complete) { 'existing-webview2-evergreen-x64' } else { 'none' }
         entrypoint = $entrypoint

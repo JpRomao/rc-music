@@ -6,6 +6,7 @@ $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $testRoot = Join-Path $repository ('out/product/runtime-recipe-' + [guid]::NewGuid().ToString('N'))
 $sourceNames = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
     'qt.conf', 'LOCAL-DEVELOPMENT.txt')
+$componentNames = @('RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
 $state = @{ Passed = 0; Failed = 0 }
 function Test-Case([string] $Name, [scriptblock] $Body) {
     try { & $Body; $state.Passed++; Write-Host "[PASS] $Name" }
@@ -34,7 +35,7 @@ function Read-Ast([string] $Path) {
     if ($parseErrors.Count -ne 0) { throw "Invalid PowerShell: $Path" }
     return $ast
 }
-function Read-RecipeFiles([string] $Edition = 'Lite') {
+function Read-RecipeFiles([string] $Edition = 'Lite', [switch] $DownloadComponent) {
     $ast = Read-Ast $exportedRecipe
     $functions = @($ast.FindAll({ param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-RuntimeRecipeFiles'
@@ -42,7 +43,7 @@ function Read-RecipeFiles([string] $Edition = 'Lite') {
     Assert-Equal $functions.Count 1
     # Execute only this inventory function, never the script body. The AST keeps
     # the exported file identity so PSScriptRoot resolves beside the five copies.
-    return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition)
+    return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition -DownloadComponent:$DownloadComponent)
 }
 function Invoke-RecipeChild([string[]] $Arguments) {
     $start = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
@@ -84,7 +85,9 @@ try {
     $buildDirectory = Join-Path $exportRoot 'out/product/build inválido'
     $foreignDirectory = Join-Path $testRoot 'cwd alheio'
     $null = New-Item -ItemType Directory -Path $exportDirectory, $buildDirectory, $foreignDirectory
-    foreach ($name in $sourceNames) {
+    foreach ($name in $sourceNames + @($componentNames | Where-Object {
+        Test-Path -LiteralPath (Join-Path $repository ('packaging/windows/' + $_))
+    })) {
         $original = Join-Path $repository ('packaging/windows/' + $name)
         $copy = Join-Path $exportDirectory $name
         Copy-Item -LiteralPath $original -Destination $copy
@@ -115,6 +118,32 @@ try {
         Assert-Equal $result.ExitCode 1
         if ($result.Stderr -notmatch 'BuildDirectory') { throw 'Missing build parameter was not identified.' }
         Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/missing-build')) $false
+    }
+    foreach ($arguments in @(
+        @('-DownloadPackageReceipt', 'C:/missing/receipt.json'),
+        @('-DownloadPackageReceiptSha256', ('a' * 64)),
+        @('-DownloadPackageReceipt', '', '-DownloadPackageReceiptSha256', ('a' * 64)),
+        @('-DownloadPackageReceipt', 'C:/missing/receipt.json', '-DownloadPackageReceiptSha256', ('A' * 64))
+    )) {
+        Test-Case "partial or invalid download package inputs fail before build preflight: $($arguments -join ' ')" {
+            $result = Invoke-RecipeChild (@('-BuildDirectory', $buildDirectory, '-OutputDirectory',
+                'out/product/rejected-downloads') + $arguments)
+            Assert-Equal $result.ExitCode 1
+            Assert-Equal $result.Stdout ''
+            if ($result.Stderr -notmatch 'Download package') { throw "Wrong download preflight: $($result.Stderr)" }
+            Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-downloads')) $false
+        }
+    }
+    Test-Case 'optional recipe provenance includes both component validators while default stays unchanged' {
+        $files = @(Read-RecipeFiles -DownloadComponent)
+        Assert-Equal $files.Count 7
+        foreach ($name in $componentNames) {
+            $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
+            Assert-Equal $entry.Count 1
+            Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
+        }
+        Assert-Equal @(Read-RecipeFiles).Count 5
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count 8
     }
     Test-Case 'the recipe inventories exactly five repository-relative paths and their exported bytes' {
         $files = @(Read-RecipeFiles)

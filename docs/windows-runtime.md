@@ -23,7 +23,25 @@ O manifesto mantém schema 1 e campos de compatibilidade, acrescentando `parser_
 
 ## Edições e montagem da Completa experimental
 
-`-Edition Lite` é o padrão e continua recusando um cache com navegador ON. `-Edition CompleteExperimental` exige o entrypoint raiz, navegador ON, SDK local explícito e integração/downloads/Native Messaging OFF, conforme o [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md). A receita sempre exige `BUILD_TESTING=OFF`; permitir ON explicitamente na API de inspeção não autoriza empacotar testes.
+### Componente opcional de downloads
+
+A receita aceita `-DownloadPackageReceipt` e `-DownloadPackageReceiptSha256` juntos para montar as ferramentas da [receita de perfil](packaged-download-profile.md). O recibo pinado determina o header e seus hashes; o cache deve apontar para esse mesmo header. O modo exige entrypoint de produto, os quatro módulos de integração/downloads ON e Native Messaging OFF, até a montagem própria dos hosts. Lite conserva navegador OFF; Completa conserva navegador ON e SDK explícito. Sem esses parâmetros, o caminho anterior permanece disponível e um header de downloads ativo é recusado.
+
+O leitor confere JSON estrito, papéis, limites, header, hashes e árvore física fechada; caminhos históricos de receitas e do recibo YouTube são proveniência inerte. A análise PE separa rede, Media Foundation, extrator e Node, inclui `.pyd` e resolve imports privados dentro de cada árvore. Não procura dependências no Python global, no payload do player ou em DLLs arbitrárias de System32. Isso verifica imports PE declarados, sem provar todo carregamento dinâmico, isolamento, licença ou funcionamento público.
+
+Os arquivos são copiados sem achatar a árvore e reconferidos antes/depois da montagem. O manifesto acrescenta `download_component`, seleção padrão falsa, inventário e descrição do marcador. **O marcador não é criado pela montagem**: cabe ao futuro instalador publicá-lo após seleção e verificação. O instalador v1 recusa esse manifesto, preservando a exigência da opção inicialmente desmarcada; essa montagem não registra host nem instala extensão.
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicLocalRuntime.ps1 -BuildDirectory '<build Release OFF>' -OutputDirectory '<destino novo em out/product>' -DownloadPackageReceipt '<recibo absoluto revisado>' -DownloadPackageReceiptSha256 '<sha256 minúsculo do recibo>'
+pwsh -NoProfile -File packaging/windows/tests/DownloadComponent.Tests.ps1
+pwsh -NoProfile -File packaging/windows/tests/DownloadComponentPe.Tests.ps1
+```
+
+TDD de 2026-11-05: leitor **0/10 → 10/10**, closure PE **0/20 → 20/20**, configuração **115 passados/25 falhos → 140/140** e receita exportada **7/5 → 12/12**. São **182 casos PowerShell** verdes nos quatro checks focados. O candidato preservado de ferramentas passou com **45 arquivos, 37 PEs, 73 imports privados e 227 imports Windows**; o marcador continua ausente. Evidências em `out/product/test-runs/runtime-download-component-20261105/`. Esse resultado não inicia as ferramentas nem transfere mídia.
+
+### Montagem sem o componente de downloads
+
+`-Edition Lite` é o padrão e continua recusando um cache com navegador ON. Sem o componente acima, `-Edition CompleteExperimental` exige o entrypoint raiz, navegador ON, SDK local explícito e integração/downloads/Native Messaging OFF, conforme o [ADR-0012 Proposto](architecture/decisions/0012-experimental-edition-packaging.md). A receita sempre exige `BUILD_TESTING=OFF`; permitir ON explicitamente na API de inspeção não autoriza empacotar testes.
 
 Com o build OFF da [navegação](embedded-browser.md#inputs-e-composição) preparado, fontes commitadas e destino inexistente:
 

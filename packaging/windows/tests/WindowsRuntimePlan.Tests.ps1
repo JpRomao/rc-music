@@ -95,6 +95,35 @@ function New-CompleteScenario {
             RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF' }
     }
 }
+function New-DownloadScenario([string] $Edition = 'Lite') {
+    if ($Edition -ceq 'CompleteExperimental') {
+        $complete = New-CompleteScenario
+        $s = $complete.Scenario
+        $root = $complete.Root
+        $cache = $complete.Cache
+    } else {
+        $s = New-Scenario
+        $root = Join-Path $s.Base 'product source'
+        $null = New-Item -ItemType Directory -Path $root
+        $cache = @{ CMAKE_HOME_DIRECTORY = $root; CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = 'OFF'
+            RC_MUSIC_BUILD_DESKTOP = 'ON'; RC_MUSIC_BUILD_EMBEDDED_BROWSER = 'OFF'
+            RC_MUSIC_BUILD_NATIVE_MESSAGING = 'OFF' }
+    }
+    foreach ($flag in @('BROWSER_INTEGRATION', 'DOWNLOADS', 'DOWNLOAD_NETWORK', 'DOWNLOAD_PERSISTENCE')) {
+        $cache['RC_MUSIC_BUILD_' + $flag] = 'ON'
+    }
+    $directory = Join-Path $s.Base 'profile package ação 日本'
+    $null = New-Item -ItemType Directory -Path $directory
+    $header = Join-Path $directory 'PlayerDownloadPackageProfile.hpp'
+    [IO.File]::WriteAllText($header, "#pragma once`n// Synthetic reviewed profile.`n", [Text.UTF8Encoding]::new($false))
+    $hash = (Get-FileHash -LiteralPath $header -Algorithm SHA256).Hash.ToLowerInvariant()
+    $cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = $header
+    return [pscustomobject]@{
+        Scenario = $s; Root = $root; Cache = $cache; Header = $header; Hash = $hash; Edition = $Edition
+        Arguments = @{ Cache = $cache; RepositoryRoot = $root; Edition = $Edition
+            DownloadProfileHeader = $header; DownloadProfileHeaderSha256 = $hash }
+    }
+}
 function New-TestJunction([string] $Path, [string] $Target) {
     foreach ($value in @($Path, $Target)) {
         if (-not [IO.Path]::GetFullPath($value).StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar,
@@ -378,6 +407,134 @@ try {
         Assert-Equal $snapshot.commit $source.Commit
         Assert-Equal ($snapshot.input_paths -join '|') ($source.ProductInputPaths -join '|')
         Assert-Equal (Test-Path -LiteralPath (Join-Path $source.Directory 'experiments')) $false
+    }
+    Test-Case 'historical absent or explicitly empty profile cache stays disabled without an opt-in' {
+        $s = New-DownloadScenario
+        foreach ($profile in @('absent', 'empty')) {
+            if ($profile -ceq 'absent') { $s.Cache.Remove('RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER') }
+            else { $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = '' }
+            $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root
+            Assert-Equal $configuration.download_component_enabled $false
+            Assert-Equal $configuration.download_profile_header $null
+            Assert-Equal $configuration.download_profile_header_sha256 $null
+        }
+        Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+    }
+    foreach ($edition in @('Lite', 'CompleteExperimental')) {
+        Test-Case "$edition accepts a pinned compiled profile without changing inputs or writing payload" {
+            $s = New-DownloadScenario $edition
+            $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = $s.Header.Replace('\', '/').ToUpperInvariant()
+            $before = $s.Cache.Clone()
+            $arguments = $s.Arguments
+            $configuration = Get-RcMusicDesktopBuildConfiguration @arguments
+            Assert-Equal $configuration.download_component_enabled $true
+            Assert-Equal $configuration.download_profile_header ([IO.Path]::GetFullPath($s.Header))
+            Assert-Equal $configuration.download_profile_header_sha256 $s.Hash
+            Assert-Equal $configuration.edition $edition
+            Assert-Equal $configuration.browser_runtime_requirement $(if ($edition -ceq 'Lite') { 'none' } else { 'existing-webview2-evergreen-x64' })
+            Assert-Equal $s.Cache.Count $before.Count
+            foreach ($key in $before.Keys) { Assert-Equal $s.Cache[$key] $before[$key] }
+            Assert-Equal ((Get-FileHash -LiteralPath $s.Header).Hash.ToLowerInvariant()) $s.Hash
+            Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+        }
+        Test-Case "$edition rejects a configured profile cache without the explicit pinned opt-in" {
+            $s = New-DownloadScenario $edition
+            if ($edition -ceq 'CompleteExperimental') {
+                foreach ($flag in @('BROWSER_INTEGRATION', 'DOWNLOADS', 'DOWNLOAD_NETWORK', 'DOWNLOAD_PERSISTENCE')) {
+                    $s.Cache['RC_MUSIC_BUILD_' + $flag] = 'OFF'
+                }
+            }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $s.Cache -RepositoryRoot $s.Root -Edition $edition } 'profile|header|opt-in'
+        }
+    }
+    foreach ($invalid in @('header-only', 'pin-only', 'null-header', 'empty-header', 'empty-pin', 'short-pin', 'uppercase-pin', 'newline-pin', 'boolean-header', 'boolean-pin')) {
+        Test-Case "download profile opt-in rejects $invalid before output" {
+            $s = New-DownloadScenario
+            $arguments = $s.Arguments.Clone()
+            switch ($invalid) {
+                'header-only' { $arguments.Remove('DownloadProfileHeaderSha256') }
+                'pin-only' { $arguments.Remove('DownloadProfileHeader') }
+                'null-header' { $arguments.DownloadProfileHeader = $null }
+                'empty-header' { $arguments.DownloadProfileHeader = '' }
+                'empty-pin' { $arguments.DownloadProfileHeaderSha256 = '' }
+                'short-pin' { $arguments.DownloadProfileHeaderSha256 = '0' * 63 }
+                'uppercase-pin' { $arguments.DownloadProfileHeaderSha256 = 'A' * 64 }
+                'newline-pin' { $arguments.DownloadProfileHeaderSha256 = $s.Hash + "`n" }
+                'boolean-header' { $arguments.DownloadProfileHeader = $false }
+                'boolean-pin' { $arguments.DownloadProfileHeaderSha256 = $false }
+            }
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'profile|header|pin|SHA256'
+            Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+        }
+    }
+    Test-Case 'download profile requires an ordinary existing absolute header file' {
+        $s = New-DownloadScenario
+        foreach ($path in @('relative/profile.hpp', [IO.Path]::GetDirectoryName($s.Header),
+                (Join-Path $s.Root 'missing.hpp'), ('\\?\' + $s.Header), ($s.Header + ':stream'))) {
+            $arguments = $s.Arguments.Clone()
+            $arguments.DownloadProfileHeader = $path
+            $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = $path
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'profile|header|path|absolute|file|stream'
+        }
+        Assert-Equal ((Get-FileHash -LiteralPath $s.Header).Hash.ToLowerInvariant()) $s.Hash
+    }
+    Test-Case 'download profile cache must name the exact compiled header rather than a same-byte copy' {
+        $s = New-DownloadScenario
+        $copy = Join-Path $s.Root 'same-bytes.hpp'
+        Copy-Item -LiteralPath $s.Header -Destination $copy
+        foreach ($value in @($null, '', $false, $copy)) {
+            if ($null -eq $value) { $s.Cache.Remove('RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER') }
+            else { $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = $value }
+            $arguments = $s.Arguments
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'profile|header|cache'
+        }
+    }
+    Test-Case 'download profile pin rejects changed header bytes without changing the source or creating output' {
+        $s = New-DownloadScenario
+        [IO.File]::AppendAllText($s.Header, '// changed bytes')
+        $changedHash = (Get-FileHash -LiteralPath $s.Header).Hash
+        $arguments = $s.Arguments
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'profile|header|hash|SHA256'
+        Assert-Equal ((Get-FileHash -LiteralPath $s.Header).Hash) $changedHash
+        Assert-Equal (Test-Path -LiteralPath $s.Scenario.Destination) $false
+    }
+    foreach ($flag in @('BROWSER_INTEGRATION', 'DOWNLOADS', 'DOWNLOAD_NETWORK', 'DOWNLOAD_PERSISTENCE')) {
+        Test-Case "download profile requires explicit ON for RC_MUSIC_BUILD_$flag" {
+            $s = New-DownloadScenario
+            foreach ($value in @($null, 'OFF', 'on', $true)) {
+                if ($null -eq $value) { $s.Cache.Remove('RC_MUSIC_BUILD_' + $flag) }
+                else { $s.Cache['RC_MUSIC_BUILD_' + $flag] = $value }
+                $arguments = $s.Arguments
+                Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } ('RC_MUSIC_BUILD_' + $flag)
+            }
+        }
+    }
+    Test-Case 'download profile keeps Native Messaging explicitly OFF until its own packaging contract exists' {
+        $s = New-DownloadScenario
+        foreach ($value in @($null, 'ON', 'off', $false)) {
+            if ($null -eq $value) { $s.Cache.Remove('RC_MUSIC_BUILD_NATIVE_MESSAGING') }
+            else { $s.Cache.RC_MUSIC_BUILD_NATIVE_MESSAGING = $value }
+            $arguments = $s.Arguments
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'RC_MUSIC_BUILD_NATIVE_MESSAGING'
+        }
+    }
+    Test-Case 'download profile refuses the legacy entrypoint even with valid pins and flags' {
+        $s = New-DownloadScenario
+        $s.Cache.CMAKE_HOME_DIRECTORY = Join-Path $s.Root 'experiments/m0/candidates/qt/shell'
+        $s.Cache.M0_QT_AUDIO_SUPPORT = 'ON'
+        $s.Cache.M0_QT_SHELL_SUPPORT = 'ON'
+        $arguments = $s.Arguments
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'product|entrypoint|profile'
+    }
+    Test-Case 'download profile refuses a reparse ancestor without changing the owned source' {
+        $s = New-DownloadScenario
+        $alias = Join-Path $s.Scenario.Base 'profile alias'
+        New-TestJunction $alias ([IO.Path]::GetDirectoryName($s.Header))
+        $arguments = $s.Arguments.Clone()
+        $arguments.DownloadProfileHeader = Join-Path $alias ([IO.Path]::GetFileName($s.Header))
+        $s.Cache.RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER = $arguments.DownloadProfileHeader
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'reparse|junction|link'
+        Assert-Equal ((Get-FileHash -LiteralPath $s.Header).Hash.ToLowerInvariant()) $s.Hash
     }
     foreach ($entrypoint in @('product', 'legacy')) {
         foreach ($change in @('unstaged', 'staged', 'untracked')) {

@@ -3,7 +3,9 @@
 param(
     [Parameter(Mandatory)] [string] $OutputDirectory,
     [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $BuildDirectory,
-    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite'
+    [ValidateSet('Lite', 'CompleteExperimental')] [string] $Edition = 'Lite',
+    [AllowEmptyString()] [string] $DownloadPackageReceipt,
+    [AllowEmptyString()] [string] $DownloadPackageReceiptSha256
 )
 
 Set-StrictMode -Version Latest
@@ -17,21 +19,39 @@ if (-not $OutputDirectory.StartsWith((Join-Path $repository 'out/product/'), [St
     throw 'Local runtime output must be a fresh directory below repository out/product (or historical out/m0)'
 }
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Output directory already exists; choose a new name' }
+$componentEnabled = $PSBoundParameters.ContainsKey('DownloadPackageReceipt') -or
+    $PSBoundParameters.ContainsKey('DownloadPackageReceiptSha256')
+if ($componentEnabled -and (-not $PSBoundParameters.ContainsKey('DownloadPackageReceipt') -or
+        -not $PSBoundParameters.ContainsKey('DownloadPackageReceiptSha256') -or
+        [string]::IsNullOrWhiteSpace($DownloadPackageReceipt) -or
+        $DownloadPackageReceiptSha256 -cnotmatch '\A[0-9a-f]{64}\z')) {
+    throw 'Download package requires an explicit receipt path and its lowercase SHA256 pin'
+}
 Import-Module (Join-Path $PSScriptRoot 'RcMusicRuntimePlan.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'PeDependencyReport.psm1') -Force
+$downloadComponent = $null
+if ($componentEnabled) {
+    Import-Module (Join-Path $PSScriptRoot 'RcMusicDownloadComponent.psm1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'RcMusicDownloadComponentPe.psm1') -Force
+    $downloadComponent = Get-RcMusicDownloadComponentPlan -ReceiptPath $DownloadPackageReceipt `
+        -ReceiptSha256 $DownloadPackageReceiptSha256
+    $componentSnapshot = $downloadComponent | ConvertTo-Json -Depth 15 -Compress
+}
 
 # Record the actual implementation and data files, never just a legacy wrapper.
 function Get-RuntimeRecipeFiles {
-    param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite')
+    param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
+        [switch] $DownloadComponent)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
         'qt.conf', 'LOCAL-DEVELOPMENT.txt')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
+    if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     $names | ForEach-Object {
         [pscustomobject]@{ path = ('packaging/windows/' + $_)
             sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
 }
-$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition)
+$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled)
 $recipeBefore = ConvertTo-Json -InputObject $recipeFiles -Compress
 
 function Invoke-RuntimeTool([string] $Program, [string[]] $Arguments) {
@@ -60,11 +80,28 @@ function Invoke-RuntimeTool([string] $Program, [string[]] $Arguments) {
     } finally { $process.Dispose() }
 }
 
-$cache = @{}
-foreach ($line in (Get-Content -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))) {
-    if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $cache[$Matches[1]] = $Matches[2] }
+function Read-RuntimeCache {
+    $result = @{}
+    foreach ($line in (Get-Content -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))) {
+        if ($line -match '^([^#/][^:]*):[^=]+=(.*)$') { $result[$Matches[1]] = $Matches[2] }
+    }
+    return $result
 }
-$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $repository -BuildTesting 'OFF' -Edition $Edition
+function Assert-DownloadPackageUnchanged {
+    if (-not $componentEnabled) { return }
+    $current = Get-RcMusicDownloadComponentPlan -ReceiptPath $DownloadPackageReceipt `
+        -ReceiptSha256 $DownloadPackageReceiptSha256
+    if (($current | ConvertTo-Json -Depth 15 -Compress) -cne $componentSnapshot) {
+        throw 'Download package changed while collecting the runtime'
+    }
+}
+$cache = Read-RuntimeCache
+$configurationArguments = @{ RepositoryRoot = $repository; BuildTesting = 'OFF'; Edition = $Edition }
+if ($componentEnabled) {
+    $configurationArguments.DownloadProfileHeader = $downloadComponent.header_path
+    $configurationArguments.DownloadProfileHeaderSha256 = $downloadComponent.header_sha256
+}
+$configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache @configurationArguments
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
@@ -74,6 +111,10 @@ $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPo
 $null = Invoke-RuntimeTool $cache.CMAKE_COMMAND @('--build', $BuildDirectory, '--target', $configuration.target)
 $afterBuild = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterBuild.commit) { throw 'Source commit changed during the application build' }
+if ($componentEnabled) {
+    $null = Get-RcMusicDesktopBuildConfiguration -Cache (Read-RuntimeCache) @configurationArguments
+    Assert-DownloadPackageUnchanged
+}
 $scannerText = Invoke-RuntimeTool (Join-Path $qt 'bin/qmlimportscanner.exe') @(
     '-rootPath', $configuration.qml_source, '-importPath', (Join-Path $BuildDirectory 'qml'), '-importPath', (Join-Path $qt 'qml'))
 $modules = @($scannerText | ConvertFrom-Json -Depth 20)
@@ -151,14 +192,46 @@ while ($peQueue.Count -gt 0) {
         $null = $external.Add($dependency)
     }
 }
+$componentClosure = $null
+if ($componentEnabled) {
+    $componentReports = [Collections.Generic.List[object]]::new()
+    foreach ($entry in $downloadComponent.files) {
+        if ([IO.Path]::GetExtension($entry.relative_path) -in @('.exe', '.dll', '.pyd')) {
+            $report = ConvertFrom-QtShellPeReport (Invoke-RuntimeTool $dumpbin @('/headers', '/dependents', $entry.source))
+            $componentReports.Add([pscustomobject]@{
+                relative_path = $entry.relative_path; machine = $report.machine; imports = $report.imports
+            })
+        }
+    }
+    $componentClosure = Get-RcMusicDownloadComponentPeClosure -Files $downloadComponent.files `
+        -Reports $componentReports.ToArray()
+    foreach ($entry in $downloadComponent.files) {
+        if ($files.ContainsKey($entry.relative_path)) { throw 'Download component collides with the player payload' }
+        # Keep the authenticated private tree out of the player's flattening
+        # resolver. The separate closure includes PYDs and never discovers DLLs.
+        $files.Add($entry.relative_path, $entry)
+    }
+    foreach ($report in $componentClosure.reports) { $reports.Add($report) }
+    foreach ($import in $componentClosure.windows_external) { $null = $external.Add($import.name) }
+    Assert-DownloadPackageUnchanged
+}
 $payload = Join-Path $OutputDirectory 'app'
 $allowedRoots = @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot)
 if ($configuration.browser_sdk_root) { $allowedRoots += $configuration.browser_sdk_root }
+if ($componentEnabled) { $allowedRoots += $downloadComponent.package_root }
 $plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots $allowedRoots -Destination $payload
+if ($componentEnabled) {
+    foreach ($expected in $downloadComponent.files) {
+        $copied = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
+        if ($copied.Count -ne 1 -or $copied[0].size_bytes -cne $expected.size_bytes -or
+            $copied[0].sha256 -cne $expected.sha256) { throw 'Download component mapping differs from its pinned plan' }
+    }
+}
 $null = Copy-RcMusicRuntimePlan -Plan $plan
+Assert-DownloadPackageUnchanged
 $afterCopy = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterCopy.commit) { throw 'Source commit changed while collecting the runtime' }
-if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition) -Compress) -cne $recipeBefore) {
+if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled) -Compress) -cne $recipeBefore) {
     throw 'Runtime recipe changed while collecting the runtime'
 }
 $recipeStatus = Invoke-RuntimeTool 'git' @('status', '--porcelain', '--', 'packaging/windows')
@@ -175,6 +248,20 @@ $manifest = [ordered]@{
     distribution = 'private-local-development-only'
     format_matrix = 'experimental; packaged codec checks pending; no registered associations'
     files = $plan.files; pe_imports = @($reports); external_prerequisites = @($external | Sort-Object)
+}
+if ($componentEnabled) {
+    $manifest.download_component = [ordered]@{
+        schema_version = 1; selection_default = $false
+        receipt_sha256 = $downloadComponent.receipt_sha256; header_sha256 = $downloadComponent.header_sha256
+        activation_marker = $downloadComponent.metadata.activation_marker
+        files = @($downloadComponent.files | Select-Object relative_path, size_bytes, sha256)
+        pe_closure = $componentClosure
+    }
+    # The installer will create this marker only after the user selects the
+    # component and its files are verified. Packaging alone grants no activation.
+    if (Test-Path -LiteralPath (Join-Path $payload 'download-tools/installed-v1')) {
+        throw 'Runtime packaging must not activate the optional download component'
+    }
 }
 [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 12) + "`n", [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText((Join-Path $OutputDirectory 'qml-imports.json'), $scannerText, [Text.UTF8Encoding]::new($false))

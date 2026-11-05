@@ -800,7 +800,13 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — ativação opcional dos downloads
+### Checkpoint atual — ferramentas no runtime Windows
+
+A [montagem opcional do runtime](windows-runtime.md#componente-opcional-de-downloads) agora aceita recibo/hash explícitos, vincula o header ao build, valida a árvore e os imports PE em quatro domínios e copia as ferramentas preservando os `.pyd`. Os quatro checks focados passaram **182 casos PowerShell**, incluindo defaults/edições e recusas antes de saída; o candidato real preservado passou com **45 arquivos/37 PEs**. Detalhes e limites ficam no guia, sem repetir validações C++ que não foram afetadas.
+
+O manifesto declara o componente inicialmente desmarcado e descreve o marcador, sem criá-lo. A montagem física do runtime, a seleção/ownership no instalador, hosts/ID Brave e aquisição pública ainda precisam das respectivas provas; o app padrão continua OFF. Prosseguir pela entrega integrada do pacote, preservando os artefatos existentes e as seis alterações preexistentes.
+
+### Checkpoint anterior — ativação opcional dos downloads
 
 O [componente instalado](packaged-download-profile.md#ativação-do-componente-instalado) passa por uma verificação assíncrona do marcador fixo `download-tools/installed-v1` antes de criar owner, executor, worker de checkpoint ou listeners. Somente os 24 bytes ASCII exatos habilitam a composição; ausente, inválido ou ilegível mantém o player local. O perfil retido copia paths, pins, identidade Native e ambiente Qt. A intenção de saída sela a ativação antes de callbacks reentrantes e aguarda a thread; Enabled atrasado não abre canais. Perfis confiáveis anteriores conservam seu opt-in falso por padrão.
 
