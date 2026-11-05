@@ -11,12 +11,12 @@ $sourceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 # edition/prerequisite text and guards, covered by InstallerEdition.Tests.ps1.
 # This inventory test never invokes Git or NSIS.
 $sources = [ordered]@{
-    'RcMusicInstaller.nsi' = '81fbe70017a54c5838393f8e1da36c82e48705c81c4e04b529e4cfd73c3f4ba7'
+    'RcMusicInstaller.nsi' = 'a0266dc7ef2df7742cfaa2084335e35fd10687efd950d202ecb5d2b8097833a0'
     'RcMusicInstallerFiles.nsh' = '530f28af503ae23c54461c57a82d95802d44ed9e129edbb3d842b1322469bb06'
     'RcMusicAssociationSections.nsh' = '67174c0a56f73049fc3cb4dd13e064ec41f60fdc0ab5c1f65ccd787b5e6a585d'
     'RcMusicAssociations.nsh' = '56321242fad0615189474d63a6f32d81d5cc5e92a7a38158a5d9eb9cb760baca'
 }
-$sdkIncludes = @('LogicLib.nsh', 'FileFunc.nsh', 'x64.nsh', 'MUI2.nsh')
+$sdkIncludes = @('LogicLib.nsh', 'FileFunc.nsh', 'x64.nsh', 'MUI2.nsh', 'Sections.nsh')
 $state = @{ Passed = 0; Failed = 0 }
 $runId = [Guid]::NewGuid().ToString('N')
 $testParent = Join-Path $repository 'out/product/test-runs/rc-music-installer-sources'

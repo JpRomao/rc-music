@@ -800,7 +800,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — ferramentas no runtime Windows
+### Checkpoint atual — seleção das ferramentas no instalador
+
+O [instalador opcional](windows-installer.md#seleção-opcional-das-ferramentas-de-download) agora oferece ferramentas inicialmente desmarcadas, base obrigatória e IDs próprios para as variantes com/sem ferramentas. O marcador só é extraído após verificar os arquivos selecionados; ownership e remoção usam a mesma variante. Os cinco checks focados passaram **135 casos**, incluindo quatro compilações completas de fixtures sem executar os setups. Os runtimes reais Lite/Completa de `bbff186` também foram aceitos pelo leitor de componente, com 45 arquivos cada. Gerar/conferir os setups reais é o fechamento seguinte; instalação/lifecycle físicos, hosts/ID Brave e aquisição pública continuam pendentes.
+
+### Checkpoint anterior — ferramentas no runtime Windows
 
 A [montagem opcional do runtime](windows-runtime.md#componente-opcional-de-downloads) agora aceita recibo/hash explícitos, vincula o header ao build, valida a árvore e os imports PE em quatro domínios e copia as ferramentas preservando os `.pyd`. Os quatro checks focados passaram **182 casos PowerShell**, incluindo defaults/edições e recusas antes de saída; o candidato real preservado passou com **45 arquivos/37 PEs**. Detalhes e limites ficam no guia, sem repetir validações C++ que não foram afetadas.
 

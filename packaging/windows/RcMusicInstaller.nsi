@@ -4,6 +4,26 @@ SetCompressor zlib
 !error "RcMusicInstaller.nsi requires RCMUSIC_CONFIG"
 !endif
 !include "${RCMUSIC_CONFIG}"
+!ifndef RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE
+!define RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE 0
+!endif
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} != 0
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} != 1
+!error "Unknown download component availability"
+!endif
+!endif
+!ifmacrondef RCMUSIC_ACTIVATION_FILE
+!macro RCMUSIC_ACTIVATION_FILE CALLBACK
+!macroend
+!endif
+!ifmacrondef RCMUSIC_ACTIVATION_EXTRACT
+!macro RCMUSIC_ACTIVATION_EXTRACT
+!macroend
+!endif
+!ifmacrondef RCMUSIC_VERIFY_ACTIVATION
+!macro RCMUSIC_VERIFY_ACTIVATION PREFIX
+!macroend
+!endif
 ; Historical configs remain Lite. New plans always provide both fields.
 !ifndef RCMUSIC_EDITION
 !define RCMUSIC_EDITION "Lite"
@@ -29,10 +49,14 @@ SetCompressor zlib
 !endif
 !include LogicLib.nsh
 !include FileFunc.nsh
+!include Sections.nsh
 !include x64.nsh
 !include "RcMusicInstallerFiles.nsh"
 !if ${RCMUSIC_ASSOCIATIONS_ENABLED} == 1
 !include "RcMusicAssociationSections.nsh"
+!endif
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+!define MUI_CUSTOMFUNCTION_GUIINIT RCMusic.InitializeDownloadComponents
 !endif
 !include MUI2.nsh
 
@@ -59,6 +83,9 @@ ShowUninstDetails show
 !define MUI_WELCOMEPAGE_TEXT "${RCMUSIC_EDITION_WELCOME}Uso experimental local, não destinado à distribuição.$\r$\n$\r$\nRequer Windows x64 e Microsoft Visual C++ Redistributable compatível.$\r$\n$\r$\nO aplicativo não altera a escolha de player padrão do Windows."
 !endif
 !insertmacro MUI_PAGE_WELCOME
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+!insertmacro MUI_PAGE_COMPONENTS
+!endif
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -84,6 +111,10 @@ Var RcShortcutObserved
 Var RcShortcutCandidateHash
 Var RcShortcutTemporary
 Var RcShortcutProblem
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+Var RcDownloadSelected
+Var RcPayloadId
+!endif
 
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS ""
 !insertmacro RCMUSIC_INSTALLER_FILE_FUNCTIONS "un."
@@ -158,12 +189,26 @@ Var RcShortcutProblem
 !macroend
 
 !macro RCMUSIC_VERIFY_FUNCTION PREFIX CALLBACK
-Function ${PREFIX}RCMusic.VerifyPayload
+Function ${PREFIX}RCMusic.VerifyPreparedPayload
     !insertmacro RCMUSIC_PAYLOAD_FILES ${CALLBACK}
     StrCpy $RcStatus 0
     Return
 rcmusic_verify_failed:
     StrCpy $RcStatus 1
+FunctionEnd
+
+Function ${PREFIX}RCMusic.VerifyPayload
+    Call ${PREFIX}RCMusic.VerifyPreparedPayload
+    ${If} $RcStatus != 0
+        Return
+    ${EndIf}
+    !insertmacro RCMUSIC_VERIFY_ACTIVATION "${PREFIX}"
+    StrCpy $RcStatus 0
+    Return
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+rcmusic_verify_failed:
+    StrCpy $RcStatus 1
+!endif
 FunctionEnd
 
 Function ${PREFIX}RCMusic.VerifyMarker
@@ -180,6 +225,12 @@ Function ${PREFIX}RCMusic.VerifyMarker
     ${If} $RcValue S!= "${RCMUSIC_PAYLOAD_ID}"
         Goto rcmusic_marker_failed
     ${EndIf}
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+    ReadINIStr $RcValue "$RcPath" "RC Music" "DownloadComponent"
+    ${If} $RcValue S!= $RcDownloadSelected
+        Goto rcmusic_marker_failed
+    ${EndIf}
+!endif
     ReadINIStr $RcValue "$RcPath" "RC Music" "FormatSignature"
     ${If} $RcValue S!= "${RCMUSIC_FORMAT_SIGNATURE}"
         Goto rcmusic_marker_failed
@@ -523,6 +574,7 @@ Function RCMusic.CleanupFresh
         Return
     ${EndIf}
     !insertmacro RCMUSIC_PAYLOAD_FILES RCMUSIC_CLEANUP_FRESH_FILE
+    !insertmacro RCMUSIC_ACTIVATION_FILE RCMUSIC_CLEANUP_FRESH_FILE
     !insertmacro RCMUSIC_CLEANUP_FRESH_FILE RCMUSIC_RESERVED_UNINSTALL ""
     !insertmacro RCMUSIC_CLEANUP_FRESH_FILE RCMUSIC_RESERVED_MARKER ""
     !insertmacro RCMUSIC_PAYLOAD_DIRECTORIES RCMUSIC_CLEANUP_FRESH_DIRECTORY
@@ -547,6 +599,10 @@ Function .onInit
     ${EndIf}
     SetShellVarContext current
     SetRegView 64
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+    StrCpy $RcDownloadSelected 0
+    StrCpy $RcPayloadId "${RCMUSIC_BASE_PAYLOAD_ID}"
+!endif
     StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
     Call RCMusic.AcquireMutex
     ${If} $RcStatus != 0
@@ -562,7 +618,25 @@ Function un.onInit
     ${EndIf}
     SetShellVarContext current
     SetRegView 64
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+    ; NSIS supplies the original uninstall directory, including explicit _?=.
+    ; Infer the inventory only from one of our two compiled version paths.
+    ClearErrors
+    GetFullPathName $0 "$INSTDIR"
+    IfErrors rcmusic_uninstall_init_failed
+    ${If} $0 == "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_BASE_PAYLOAD_ID}"
+        StrCpy $RcDownloadSelected 0
+        StrCpy $RcPayloadId "${RCMUSIC_BASE_PAYLOAD_ID}"
+    ${ElseIf} $0 == "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_DOWNLOAD_PAYLOAD_ID}"
+        StrCpy $RcDownloadSelected 1
+        StrCpy $RcPayloadId "${RCMUSIC_DOWNLOAD_PAYLOAD_ID}"
+    ${Else}
+        Goto rcmusic_uninstall_init_failed
+    ${EndIf}
+    StrCpy $INSTDIR $0
+!else
     StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
+!endif
     StrCpy $RcVerifyOnly 0
     ${GetParameters} $0
     ClearErrors
@@ -576,6 +650,12 @@ Function un.onInit
             Abort
         ${EndIf}
     ${EndIf}
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+    Return
+rcmusic_uninstall_init_failed:
+    SetErrorLevel 1
+    Abort
+!endif
 FunctionEnd
 
 Function .onGUIEnd
@@ -586,7 +666,11 @@ Function un.onGUIEnd
     Call un.RCMusic.ReleaseMutex
 FunctionEnd
 
-Section "Instalar RC Music"
+Section "Instalar RC Music" SEC_RCMUSIC_BASE
+    SectionIn RO
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+    Call RCMusic.SelectDownloadComponent
+!endif
     StrCpy $RcFreshThisAttempt 0
     StrCpy $RcPath "$INSTDIR"
     Call RCMusic.ValidatePath
@@ -717,6 +801,15 @@ Section "Instalar RC Music"
         !insertmacro RCMUSIC_PAYLOAD_EXTRACT
         IfErrors rcmusic_install_failed
         StrCpy $RcAllowMissing 0
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+        ${If} $RcDownloadSelected == 1
+            Call RCMusic.VerifyPreparedPayload
+            ${If} $RcStatus != 0
+                Goto rcmusic_install_failed
+            ${EndIf}
+            !insertmacro RCMUSIC_ACTIVATION_EXTRACT
+        ${EndIf}
+!endif
         Call RCMusic.VerifyPayload
         ${If} $RcStatus != 0
             Goto rcmusic_install_failed
@@ -735,6 +828,10 @@ Section "Instalar RC Music"
         IfErrors rcmusic_install_failed
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "PayloadId" "${RCMUSIC_PAYLOAD_ID}"
         IfErrors rcmusic_install_failed
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+        WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "DownloadComponent" "$RcDownloadSelected"
+        IfErrors rcmusic_install_failed
+!endif
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "FormatSignature" "${RCMUSIC_FORMAT_SIGNATURE}"
         IfErrors rcmusic_install_failed
         WriteINIStr "$INSTDIR\.rcmusic-install.ini" "RC Music" "AssociationCleanupProtocol" "${RCMUSIC_ASSOCIATION_CLEANUP_PROTOCOL}"
@@ -830,6 +927,34 @@ SectionEnd
     ${EndIf}
 !macroend
 
+!if ${RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE} == 1
+Section /o "Ferramentas de download (opcional)" SEC_RCMUSIC_DOWNLOADS
+    ; The mandatory section freezes this choice before any install mutation.
+SectionEnd
+
+Function RCMusic.InitializeDownloadComponents
+    SectionSetSize ${SEC_RCMUSIC_BASE} ${RCMUSIC_BASE_SIZE_KB}
+    SectionSetSize ${SEC_RCMUSIC_DOWNLOADS} ${RCMUSIC_DOWNLOAD_SIZE_KB}
+FunctionEnd
+
+Function RCMusic.SelectDownloadComponent
+    StrCpy $RcDownloadSelected 0
+    StrCpy $RcPayloadId "${RCMUSIC_BASE_PAYLOAD_ID}"
+    SectionGetFlags ${SEC_RCMUSIC_DOWNLOADS} $0
+    IntOp $0 $0 & ${SF_SELECTED}
+    ${If} $0 != 0
+        StrCpy $RcDownloadSelected 1
+        StrCpy $RcPayloadId "${RCMUSIC_DOWNLOAD_PAYLOAD_ID}"
+    ${EndIf}
+    StrCpy $INSTDIR "${RCMUSIC_INSTALL_ROOT}\${RCMUSIC_PAYLOAD_ID}"
+FunctionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_BASE} "Instala o player RC Music e preserva seus dados e preferências."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SEC_RCMUSIC_DOWNLOADS} "Instala ferramentas locais de download e conversão para MP3. A extensão do Brave/Chromium exige ativação separada e não é instalada por esta opção."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+!endif
+
 Section "Uninstall"
     StrCpy $RcPath "$INSTDIR"
     Call un.RCMusic.ValidatePath
@@ -920,6 +1045,7 @@ Section "Uninstall"
     SetOutPath "$TEMP"
     IfErrors rcmusic_uninstall_failed
     !insertmacro RCMUSIC_PAYLOAD_FILES RCMUSIC_DELETE_FILE
+    !insertmacro RCMUSIC_ACTIVATION_FILE RCMUSIC_DELETE_FILE
     !insertmacro RCMUSIC_PAYLOAD_DIRECTORIES RCMUSIC_DELETE_DIRECTORY
     ${If} $RcActive S== "${RCMUSIC_PAYLOAD_ID}"
         !insertmacro RCMUSIC_UNINSTALL_MATCHING "${RCMUSIC_INSTALL_STATE}" "ShortcutHash" "$RcShortcutHash"

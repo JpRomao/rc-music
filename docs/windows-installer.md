@@ -1,7 +1,7 @@
 # Instalador Windows — receita de produto
 
 **Estado:** setups privados Lite e Completa experimental compilados e conferidos em 2026-11-04 sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
-**Data:** 2026-11-04.
+**Data:** 2026-11-05.
 
 A [entrega mais recente de `2144cfd`](local-delivery-2144cfd-20261104.md) contém os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
 
@@ -56,9 +56,25 @@ Declara somente os perfis básicos das sete fixtures: MP3 CBR/VBR e tags Unicode
 
 Leitura e planejamento reais passaram sem escrita: sete formatos/callbacks exatos, associações ON somente com argumento explícito, assinatura **`10e0c7a4087c3a1fab787b0a91d071234bf19c26d43dea71a75100d01070d6ef`** e payload ID **`15343435b378183f2ecd1fb5c46c4af61d285034cefb7dfc6c4c15d3a6104fae`**. Uma chamada com hash de outro runtime foi recusada antes de saída. Esses valores descrevem dados/configuração revisados, não execução de instalação ou alteração do Windows; o setup OFF já entregue permanece inalterado.
 
-## Checks sem compilação ou instalação
+## Seleção opcional das ferramentas de download
 
-O planejador v1 ainda extrai um inventário obrigatório único. Por isso recusa, antes de gerar saída, a propriedade `download_component` com qualquer valor e entradas sob `download-tools/`, sem distinguir caixa ou separadores. Essa proteção vale para Lite e Completa experimental; a seleção inicialmente desmarcada, ownership, upgrade e remoção do componente opcional continuam pendentes. Não basta acrescentar arquivos ao manifesto para instalar ferramentas de download.
+Com um [runtime que declara o componente](windows-runtime.md#componente-opcional-de-downloads), o setup oferece **Ferramentas de download (opcional)**, inicialmente desmarcada, e mantém o player obrigatório. Os tamanhos exibidos separam base e ferramentas. O modo silencioso conserva a opção desligada. A opção instala ferramentas locais de aquisição/conversão; não instala a extensão, registra host no Brave ou substitui as provas de aquisição pública.
+
+O planejador compara o inventário opcional com `download-tools/` do manifesto, valida o descritor de marcador e reconfere a consistência dos relatórios PE sem acessar os recibos/headers originais. A verificação existente dos bytes continua obrigatória. Caminhos com barras invertidas conservam a classe opcional; arquivos de ferramentas não podem virar parte obrigatória por diferença de separador.
+
+Cada escolha tem seu próprio ID de payload, incluindo seleção, inventário efetivo, marcador lógico e proveniência do pacote. A escolha é congelada antes do preflight de instalação. Alterá-la cria outra árvore versionada e usa o fluxo existente de handoff/limpeza. O desinstalador deriva a variante somente de um dos dois diretórios compilados, conforme o [`$INSTDIR` da invocação NSIS](https://nsis.sourceforge.io/Reference/$INSTDIR), e exige o campo de ownership `DownloadComponent` coerente. Nunca escolhe arquivos apenas por um valor arbitrário do INI.
+
+O builder materializa um arquivo de 24 bytes LF, sem sobrescrita. O setup copia e verifica os arquivos selecionados antes de extrair esse marcador e verifica novamente o payload ativado antes de publicar o ownership/estado da instalação. A escolha desligada exige ausência de marcador. Remoção e limpeza de tentativa nova enumeram somente a variante selecionada, incluindo seu marcador; diretórios desconhecidos e dados pessoais conservam o tratamento anterior.
+
+Evidência de 2026-11-05: **135 casos** nos cinco checks focados: planejador 94, componente 15, builder 6, fontes 5 e edições 15. O último inclui quatro compilações completas de fixtures (Lite/Completa × componente ausente/disponível), sem executar os binários. Reds: componente 1/13, planejador 86/7, builder 4/2 e pré-processamento 4/6. Regressões adicionais confirmaram classificação por separadores (91/3 com tamanhos), nome real `pyinstaller-COPYING.txt` (13/2) e tamanhos separados da UI (10/1). Correções do harness prepararam o input do compilador e aceitaram a sintaxe real do pré-processador sem mudar os contratos. Logs em `out/product/test-runs/installer-download-selection-20261105/`.
+
+Essas provas verificam planejamento, fluxo gerado e compilação. Interação real com checkbox, instalação, upgrade e remoção continuam pendentes; nenhum setup, hive de Registro, perfil AppContainer ou app foi executado por esses checks.
+
+<a id="checks-sem-compilação-ou-instalação"></a>
+
+## Checks sem instalação
+
+O guard introduzido em `67af88e` recusava todo componente enquanto o inventário era obrigatório único. Agora são aceitos somente metadados e inventários válidos para a seleção acima; declarações inválidas e ferramentas sem declaração continuam recusadas antes da saída.
 
 Regressão de 2026-11-05: Red **71 passados/16 falhos**, Green **87/87** em `WindowsInstallerPlan.Tests.ps1`, com fontes/manifestos preservados e zero saída nas recusas. Os testes usam arquivos sintéticos, sem executar NSIS, setup ou Registro. Logs em `out/product/test-runs/component-activation-20261105/installer-{red,green}.log`.
 
@@ -69,9 +85,11 @@ pwsh -NoProfile -File packaging/windows/tests/FormatMatrix.Tests.ps1
 pwsh -NoProfile -File packaging/windows/tests/WindowsInstallerPlan.Tests.ps1
 pwsh -NoProfile -File packaging/windows/tests/InstallerSources.Tests.ps1
 pwsh -NoProfile -File packaging/windows/tests/InstallerRecipe.Tests.ps1
+pwsh -NoProfile -File packaging/windows/tests/InstallerComponent.Tests.ps1
+pwsh -NoProfile -File packaging/windows/tests/InstallerEdition.Tests.ps1 -MakeNsis out/m0/toolchains/nsis-3.12/makensis.exe -Compile
 ```
 
-`-IncludeLegacy` nos três primeiros acrescenta compatibilidade histórica. Esses checks não compilam nem executam NSIS. Usam arquivos sintéticos, cópias próprias das fixtures licenciadas e exportações sem `experiments`, a partir de diretório corrente alheio. OFF não precisa de catálogo/corpus/fonte de teste. O preflight do builder recebe um arquivo de texto como compilador e deve rejeitá-lo pelo hash antes de tentar executá-lo ou criar saída.
+`-IncludeLegacy` nos três primeiros acrescenta compatibilidade histórica. Os cinco primeiros não executam NSIS; o último usa o compilador pinado para pré-processar e compilar fixtures sem iniciar os setups. Usam arquivos sintéticos, cópias próprias das fixtures licenciadas e exportações sem `experiments`, a partir de diretório corrente alheio. OFF não precisa de catálogo/corpus/fonte de teste. O preflight do builder recebe um arquivo de texto como compilador e deve rejeitá-lo pelo hash antes de tentar executá-lo ou criar saída.
 
 As quatro entradas padrão integram agora `develop.ps1 check` e `validate`, junto aos quatro checks puros do runtime. Ordem, isolamento e evidência ficam no [guia do runner](development-commands.md#checks-das-receitas-windows). `-IncludeLegacy` e os harnesses nativos históricos de arquivos, associações e lifecycle continuam separados; esta integração não executa esses gates nativos.
 

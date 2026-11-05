@@ -67,10 +67,59 @@ try {
     # No corpus, catalogue, Git checkout or experiment is needed for OFF preflight.
     foreach ($name in @('New-RcMusicInstaller.ps1', 'RcMusicInstallerPlan.psm1', 'RcMusicRuntimePlan.psm1',
             'RcMusicFormatMatrix.psm1', 'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
-            'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json')) {
+            'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json',
+            'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1')) {
         Copy-Item -LiteralPath (Join-Path $repository ('packaging/windows/' + $name)) -Destination $recipeRoot
     }
     $recipe = Join-Path $recipeRoot 'New-RcMusicInstaller.ps1'
+    Test-Case 'builder writes the generated activation marker as exact LF bytes without overwriting files' {
+        $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($recipe, [ref]$null, [ref]$parseErrors)
+        $writer = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -ceq 'Write-RcMusicInstallerGeneratedFiles'
+        }, $true)
+        Assert-True ($null -ne $writer) 'Generated-file writer missing'
+        $generatedRoot = Join-Path $testRoot 'generated'
+        $null = [IO.Directory]::CreateDirectory($generatedRoot)
+        $content = "RCMusicDownloadTools-v1`n"
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($content))).ToLowerInvariant()
+        $plan = [pscustomobject]@{ output = $generatedRoot; generated_files = @(
+            [pscustomobject]@{ relative_path = 'download-component-marker.bin'; content = $content; sha256 = $hash }
+        ) }
+        $written = @(& $writer.Body.GetScriptBlock() -Plan $plan)
+        $path = Join-Path $generatedRoot 'download-component-marker.bin'
+        Assert-True ([IO.File]::Exists($path)) 'Marker was not materialized'
+        Assert-True ([IO.File]::ReadAllBytes($path).Length -eq 24) 'Marker must contain 24 bytes'
+        Assert-True ([IO.File]::ReadAllText($path) -ceq $content) 'Marker LF changed'
+        Assert-True ((Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() -ceq $hash) 'Marker hash mismatch'
+        Assert-True ($written.Count -eq 1 -and $written[0].sha256 -ceq $hash) 'Generated inventory missing'
+        $rejected = $false
+        try { & $writer.Body.GetScriptBlock() -Plan $plan | Out-Null } catch { $rejected = $true }
+        Assert-True $rejected 'Existing output was overwritten'
+        Assert-True ((Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() -ceq $hash) 'Existing marker changed'
+    }
+    Test-Case 'builder rejects unexpected generated names and content before writing' {
+        $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($recipe, [ref]$null, [ref]$parseErrors)
+        $writer = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -ceq 'Write-RcMusicInstallerGeneratedFiles'
+        }, $true)
+        $generatedRoot = Join-Path $testRoot 'invalid-generated'
+        $null = [IO.Directory]::CreateDirectory($generatedRoot)
+        foreach ($bad in @(
+            [pscustomobject]@{ relative_path = '../unexpected.txt'; content = "RCMusicDownloadTools-v1`n"; sha256 = ('a' * 64) },
+            [pscustomobject]@{ relative_path = 'download-component-marker.bin'; content = "RCMusicDownloadTools-v1`r`n"; sha256 = ('a' * 64) },
+            [pscustomobject]@{ relative_path = 'download-component-marker.bin'; content = "RCMusicDownloadTools-v1`n"; sha256 = ('a' * 64) }
+        )) {
+            $plan = [pscustomobject]@{ output = $generatedRoot; generated_files = @($bad) }
+            $rejected = $false
+            try { & $writer.Body.GetScriptBlock() -Plan $plan | Out-Null } catch { $rejected = $true }
+            Assert-True $rejected 'Invalid generated marker was accepted'
+            Assert-True (@(Get-ChildItem -LiteralPath $generatedRoot -Force).Count -eq 0) 'Invalid marker wrote a file'
+        }
+    }
     $entries = @(foreach ($name in @('RCMusic.exe', 'qt.conf', 'LOCAL-DEVELOPMENT.txt')) {
         $path = Join-Path $app $name
         [IO.File]::WriteAllText($path, 'Synthetic planning bytes only')

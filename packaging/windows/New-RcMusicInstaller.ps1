@@ -13,6 +13,22 @@ $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or -not [Environment]::Is64BitProcess) { throw 'Windows x64 PowerShell is required to build the installer' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Import-Module (Join-Path $PSScriptRoot 'RcMusicInstallerPlan.psm1') -Force
+function Write-RcMusicInstallerGeneratedFiles([object] $Plan) {
+    if (@($Plan.generated_files).Count -eq 0) { return @() }
+    if (@($Plan.generated_files).Count -ne 1) { throw 'Unexpected generated installer inventory' }
+    $entry = $Plan.generated_files[0]
+    $content = "RCMusicDownloadTools-v1`n"
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($content)
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    if ($entry.relative_path -cne 'download-component-marker.bin' -or $entry.content -cne $content -or
+        $entry.sha256 -cne $hash) { throw 'Invalid generated activation marker' }
+    $path = Join-Path $Plan.output $entry.relative_path
+    $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Write($bytes); $stream.Flush($true) } finally { $stream.Dispose() }
+    if ((Get-Item -LiteralPath $path).Length -ne 24 -or
+        (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() -cne $hash) { throw 'Generated activation marker changed' }
+    return [pscustomobject]@{ relative_path = $entry.relative_path; source = $path; size_bytes = 24; sha256 = $hash }
+}
 $plan = New-RcMusicInstallerPlan -RuntimeDirectory $RuntimeDirectory -OutputDirectory $OutputDirectory `
     -FormatMatrix $FormatMatrix -LegacyBaseline:$LegacyBaseline -Edition $Edition
 $MakeNsis = (Resolve-Path -LiteralPath $MakeNsis).ProviderPath
@@ -32,6 +48,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot record installer recipe status' }
 # A failed build may leave this fresh directory without a success receipt.
 # Never overwrite or automatically delete a previous build or installer.
 $null = New-Item -ItemType Directory -Path $plan.output
+$generatedFiles = @(Write-RcMusicInstallerGeneratedFiles -Plan $plan)
 $configPath = Join-Path $plan.output 'installer-config.nsh'
 $installerPath = Join-Path $plan.output 'RCMusic-Setup.exe'
 [IO.File]::WriteAllText($configPath, $plan.config, [Text.UTF8Encoding]::new($false))
@@ -74,6 +91,12 @@ foreach ($entry in $plan.files) {
         throw 'Runtime input changed while compiling the installer'
     }
 }
+foreach ($entry in $generatedFiles) {
+    if ((Get-Item -LiteralPath $entry.source).Length -ne $entry.size_bytes -or
+        (Get-FileHash -LiteralPath $entry.source).Hash.ToLowerInvariant() -cne $entry.sha256) {
+        throw 'Generated installer input changed during compilation'
+    }
+}
 if ((Get-FileHash -LiteralPath $plan.runtime_manifest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $plan.runtime_manifest_sha256 -or
     (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $configHash -or
     ((Get-RcMusicInstallerRecipeHashes | ConvertTo-Json -Compress) -cne $sourceBefore)) {
@@ -95,6 +118,7 @@ $receipt = [ordered]@{
     compiler_sha256 = $compilerHash; config_sha256 = $configHash
     installer_sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     files = $plan.files
+    payload_ids = $plan.payload_ids; download_component = $plan.download_component; generated_files = $generatedFiles
     prerequisites = 'Windows x64 and compatible Microsoft Visual C++ Redistributable; no runtime PowerShell dependency' +
         $(if ($plan.edition -ceq 'CompleteExperimental') { '; internal navigation requires existing WebView2 Evergreen Runtime x64; runtime is not bundled or installed' })
 }

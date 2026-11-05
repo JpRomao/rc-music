@@ -6,6 +6,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $exportRuntime = Import-Module (Join-Path $PSScriptRoot '../RcMusicRuntimePlan.psm1') -Force -PassThru
 Import-Module (Join-Path $PSScriptRoot '../RcMusicInstallerPlan.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '../RcMusicDownloadComponentPe.psm1') -Force
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $runId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path $repository ('out/product/test-runs/rc-music-installer-plan/' + $runId)
@@ -39,7 +40,8 @@ $null = New-Item -ItemType Directory -Path $testRoot
 $state = @{ Passed = 0; Failed = 0 }
 $recipeNames = @('New-RcMusicInstaller.ps1', 'RcMusicInstallerPlan.psm1', 'RcMusicRuntimePlan.psm1',
     'RcMusicFormatMatrix.psm1', 'RcMusicInstaller.nsi', 'RcMusicInstallerFiles.nsh',
-    'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json')
+    'RcMusicAssociationSections.nsh', 'RcMusicAssociations.nsh', 'nsis-toolchain.json',
+    'RcMusicInstallerComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
 function Assert-True([bool] $Condition, [string] $Message) { if (-not $Condition) { throw $Message } }
 function Assert-Rejected([scriptblock] $Body) {
     $rejected = $false
@@ -104,6 +106,47 @@ function New-CompleteFixture {
     Set-FixtureEdition $fixture 'CompleteExperimental' 'existing-webview2-evergreen-x64'
     return $fixture
 }
+function New-DownloadFixture([string] $Edition = 'Lite') {
+    $f = if ($Edition -ceq 'CompleteExperimental') { New-CompleteFixture } else { New-Fixture }
+    $roles = [ordered]@{
+        Bootstrap = 'RCMusicDownloadWorker.exe'; Payload = 'rcmusic-download-network.dll'
+        Core = 'Qt6Core.dll'; Network = 'Qt6Network.dll'; Msvcp140 = 'msvcp140.dll'; Msvcp140_1 = 'msvcp140_1.dll'
+        Vcruntime140 = 'vcruntime140.dll'; Vcruntime140_1 = 'vcruntime140_1.dll'; Plugin = 'qrcmusicschanneloffline.dll'
+        Media = 'RCMusicMediaWorker.exe'
+    }
+    $files = @($roles.GetEnumerator() | ForEach-Object {
+        $component = if ($_.Key -ceq 'Media') { 'media' } else { 'network' }
+        $relative = 'download-tools/' + $component + '/' + $_.Value
+        $path = Join-Path $f.App $relative
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+        [IO.File]::WriteAllText($path, 'Synthetic optional installer input: ' + $relative)
+        [pscustomobject]@{ source = $path; relative_path = $relative; component = $component; role = $_.Key
+            size_bytes = (Get-Item -LiteralPath $path).Length
+            sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
+    })
+    $entries = @($files | Select-Object relative_path, size_bytes, sha256)
+    $reports = @($files | ForEach-Object {
+        [pscustomobject]@{ relative_path = $_.relative_path; machine = 'x64'; imports = @('KERNEL32.dll') }
+    })
+    Add-Member -InputObject $f.Manifest -MemberType NoteProperty -Name download_component -Value ([pscustomobject]@{
+        schema_version = 1; selection_default = $false; receipt_sha256 = ('a' * 64); header_sha256 = ('b' * 64)
+        activation_marker = [pscustomobject]@{ relative_path = 'download-tools/installed-v1'; content = "RCMusicDownloadTools-v1`n" }
+        files = $entries; pe_closure = (Get-RcMusicDownloadComponentPeClosure -Files $files -Reports $reports)
+    })
+    $f.Manifest.files += $entries
+    Save-Manifest $f
+    return $f
+}
+function Get-ConfigMacro($Plan, [string] $Name) {
+    $match = [regex]::Match($Plan.config, ('(?ms)^!macro ' + [regex]::Escape($Name) + '(?: [^\r\n]*)?\r?\n(.*?)^!macroend\r?$'))
+    Assert-True $match.Success ('Missing generated macro: ' + $Name)
+    return $match.Groups[1].Value
+}
+function Get-ConfigPathToken($Plan, [string] $Relative) {
+    $match = [regex]::Match($Plan.config, ('(?m)^!define (RCMUSIC_PATH_[0-9]+) "' + [regex]::Escape($Relative.Replace('/', '\')) + '"\r?$'))
+    Assert-True $match.Success ('Missing generated path token: ' + $Relative)
+    return $match.Groups[1].Value
+}
 function New-FormatMatrix($Fixture) {
     $catalogPath = Join-Path $repository 'tests/audio/corpus/catalog.v1.json'
     $testPath = Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp'
@@ -153,7 +196,7 @@ try {
     }
     foreach ($edition in @('Lite', 'CompleteExperimental')) {
         foreach ($declaration in @(
-            @{ Name = 'object'; Value = [pscustomobject]@{ available = $true; files = @() } },
+            @{ Name = 'invalid-object'; Value = [pscustomobject]@{ available = $true; files = @() } },
             @{ Name = 'null'; Value = $null },
             @{ Name = 'false'; Value = $false }
         )) {
@@ -196,6 +239,110 @@ try {
                 Assert-True ((Get-FileHash -LiteralPath $f.ManifestPath).Hash -ceq $manifestBefore) 'Optional path refusal changed the manifest'
             }
         }
+    }
+    Test-Case 'a local-only plan keeps its constant payload identity and disables optional installer macros' {
+        $f = New-Fixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($null -eq $p.download_component -and $p.generated_files.Count -eq 0) 'Local-only plan materialized optional state'
+        Assert-True ($p.config.Contains('!define RCMUSIC_PAYLOAD_ID "' + $p.payload_id + '"')) 'Local-only compile-time identity changed'
+        Assert-True ($p.config.Contains('!define RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE 0')) 'Local-only plan does not explicitly disable component selection'
+        foreach ($name in @('RCMUSIC_ACTIVATION_FILE', 'RCMUSIC_ACTIVATION_EXTRACT', 'RCMUSIC_VERIFY_ACTIVATION')) {
+            Assert-True ([string]::IsNullOrWhiteSpace((Get-ConfigMacro $p $name))) ('Local-only activation macro is not inert: ' + $name)
+        }
+    }
+    foreach ($edition in @('Lite', 'CompleteExperimental')) {
+        Test-Case "$edition plans distinct base and selected-download identities without writing a marker" {
+            $f = New-DownloadFixture $edition
+            $before = (Get-FileHash -LiteralPath $f.ManifestPath).Hash
+            $p = New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition
+            Assert-True ($p.download_component.available -eq $true) 'Valid complete component metadata was refused'
+            Assert-True ($p.payload_ids.base -cmatch '\A[0-9a-f]{64}\z' -and $p.payload_ids.downloads -cmatch '\A[0-9a-f]{64}\z') 'Variant identities must remain opaque SHA256 values'
+            Assert-True ($p.payload_id -ceq $p.payload_ids.base -and $p.payload_ids.base -cne $p.payload_ids.downloads) 'Base and full selection collide'
+            Assert-True ($p.config.Contains('!define RCMUSIC_BASE_PAYLOAD_ID "' + $p.payload_ids.base + '"')) 'Base variant ID missing'
+            Assert-True ($p.config.Contains('!define RCMUSIC_DOWNLOAD_PAYLOAD_ID "' + $p.payload_ids.downloads + '"')) 'Full variant ID missing'
+            Assert-True ($p.config.Contains('!define RCMUSIC_PAYLOAD_ID "$RcPayloadId"')) 'Optional installer did not use the runtime-selected variant ID'
+            Assert-True ($p.config.Contains('!define RCMUSIC_DOWNLOAD_COMPONENT_AVAILABLE 1')) 'Optional availability missing'
+            Assert-True ($p.files.Count -eq $f.Manifest.files.Count -and $p.download_component.files.Count -eq 10) 'Union or selected component inventory changed'
+            $baseBytes = ($p.files | Where-Object { -not $_.relative_path.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase) } | Measure-Object size_bytes -Sum).Sum
+            $downloadBytes = ($p.download_component.files | Measure-Object size_bytes -Sum).Sum + 24
+            Assert-True ($p.config.Contains('!define RCMUSIC_BASE_SIZE_KB ' + [long][Math]::Ceiling($baseBytes / 1024))) 'Mandatory section size includes optional files or omits base bytes'
+            Assert-True ($p.config.Contains('!define RCMUSIC_DOWNLOAD_SIZE_KB ' + [long][Math]::Ceiling($downloadBytes / 1024))) 'Optional section size omits its tool inventory or activation marker'
+            Assert-True ($p.files.relative_path -cnotcontains 'download-tools/installed-v1') 'Marker was forged as a runtime source file'
+            Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.App 'download-tools/installed-v1')) -and -not (Test-Path -LiteralPath $f.Output)) 'Planning activated or wrote the component'
+            Assert-True ((Get-FileHash -LiteralPath $f.ManifestPath).Hash -ceq $before) 'Planning changed the manifest'
+        }
+    }
+    Test-Case 'optional inventory and provenance changes invalidate both selection identities' {
+        $f = New-DownloadFixture
+        $first = New-RcMusicInstallerPlan $f.App $f.Output
+        $f.Manifest.download_component.receipt_sha256 = 'c' * 64
+        Save-Manifest $f
+        $provenance = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($first.payload_ids.base -cne $provenance.payload_ids.base -and $first.payload_ids.downloads -cne $provenance.payload_ids.downloads) 'Optional provenance reused a variant identity'
+        $relative = 'download-tools/media/RCMusicMediaWorker.exe'
+        $path = Join-Path $f.App $relative
+        [IO.File]::AppendAllText($path, ' changed synthetic bytes')
+        foreach ($entry in @($f.Manifest.files) + @($f.Manifest.download_component.files)) {
+            if ($entry.relative_path -ceq $relative) {
+                $entry.size_bytes = (Get-Item -LiteralPath $path).Length
+                $entry.sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant()
+            }
+        }
+        Save-Manifest $f
+        $changed = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($provenance.payload_ids.base -cne $changed.payload_ids.base -and $provenance.payload_ids.downloads -cne $changed.payload_ids.downloads) 'Optional bytes reused a variant identity'
+    }
+    Test-Case 'backslash component paths retain optional extraction and the canonical base selection identity' {
+        $f = New-DownloadFixture
+        $canonical = New-RcMusicInstallerPlan $f.App $f.Output
+        foreach ($entry in @($f.Manifest.files) + @($f.Manifest.download_component.files)) {
+            if ($entry.relative_path.StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase)) {
+                $entry.relative_path = $entry.relative_path.Replace('/', '\')
+            }
+        }
+        Save-Manifest $f
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        $body = Get-ConfigMacro $p 'RCMUSIC_PAYLOAD_FILES'
+        $gate = [regex]::Match($body, '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1')
+        $toolToken = Get-ConfigPathToken $p 'download-tools/network/RCMusicDownloadWorker.exe'
+        $baseToken = Get-ConfigPathToken $p 'RCMusic.exe'
+        Assert-True ($gate.Success -and $body.IndexOf($toolToken) -gt $gate.Index -and $body.IndexOf($baseToken) -ge 0 -and $body.IndexOf($baseToken) -lt $gate.Index) 'Backslash tools became mandatory payload files'
+        Assert-True ($p.payload_ids.base -ceq $canonical.payload_ids.base -and $p.payload_ids.downloads -ceq $canonical.payload_ids.downloads) 'Equivalent separators changed the base selection inventory or variant identities'
+        foreach ($name in @('RCMUSIC_PAYLOAD_EXTRACT', 'RCMUSIC_PAYLOAD_DIRECTORIES')) {
+            Assert-True ((Get-ConfigMacro $p $name) -cmatch '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1') ('Backslash tools escaped the optional boundary in ' + $name)
+        }
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Separator normalization created installer output'
+    }
+    Test-Case 'optional payload macros gate tools while leaving mandatory base files unconditional' {
+        $f = New-DownloadFixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        $baseToken = Get-ConfigPathToken $p 'RCMusic.exe'
+        $toolToken = Get-ConfigPathToken $p 'download-tools/network/RCMusicDownloadWorker.exe'
+        $filesMacro = Get-ConfigMacro $p 'RCMUSIC_PAYLOAD_FILES'
+        $gate = [regex]::Match($filesMacro, '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1')
+        Assert-True ($gate.Success -and $filesMacro.IndexOf($baseToken) -lt $gate.Index -and $filesMacro.IndexOf($baseToken) -ge 0 -and $filesMacro.IndexOf($toolToken) -gt $gate.Index) 'Mandatory/player files or optional file callbacks escaped their selection boundary'
+        foreach ($name in @('RCMUSIC_PAYLOAD_EXTRACT', 'RCMUSIC_PAYLOAD_DIRECTORIES')) {
+            $body = Get-ConfigMacro $p $name
+            Assert-True ($body -cmatch '\$\{If\}\s+\$RcDownloadSelected\s*==\s*1') ('Missing selection gate in ' + $name)
+            Assert-True (-not $body.Contains('installed-v1')) 'Activation marker is part of ordinary extraction or directory data'
+        }
+        Assert-True (-not $filesMacro.Contains('RCMUSIC_ACTIVATION_PATH')) 'Marker must be published after ordinary payload verification'
+    }
+    Test-Case 'activation is a separate deterministic LF-only generated file with selected and absent verification' {
+        $f = New-DownloadFixture
+        $p = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($p.generated_files.Count -eq 1) 'The builder must materialize exactly one controlled marker input'
+        $marker = $p.generated_files[0]
+        $expected = "RCMusicDownloadTools-v1`n"
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::ASCII.GetBytes($expected))).ToLowerInvariant()
+        Assert-True ($marker.relative_path -ceq 'download-component-marker.bin' -and $marker.content -ceq $expected -and [Text.Encoding]::ASCII.GetByteCount($marker.content) -eq 24 -and $marker.sha256 -ceq $hash) 'Generated marker bytes/path/hash do not match the fixed protocol'
+        Assert-True ($p.config.Contains('!define RCMUSIC_ACTIVATION_PATH "download-tools\installed-v1"')) 'Activation path has no separate constant'
+        $activation = Get-ConfigMacro $p 'RCMUSIC_ACTIVATION_FILE'
+        Assert-True ($activation.Contains('RCMUSIC_ACTIVATION_PATH') -and $activation.Contains($hash) -and $activation.Contains('$RcDownloadSelected')) 'Cleanup cannot address the selected marker through its own callback'
+        $extract = Get-ConfigMacro $p 'RCMUSIC_ACTIVATION_EXTRACT'
+        Assert-True ($extract.Contains('download-component-marker.bin') -and $extract.Contains('/oname=installed-v1') -and $extract.Contains('$RcDownloadSelected')) 'The marker lacks a separately ordered extraction macro'
+        $verify = Get-ConfigMacro $p 'RCMUSIC_VERIFY_ACTIVATION'
+        Assert-True ($verify.Contains('$RcDownloadSelected') -and $verify.Contains($hash) -and $verify.Contains('HashFile') -and $verify.Contains('$RcAllowMissing') -and $verify.Contains('${Else}')) 'Activation verification must distinguish selected, absent and partial-uninstall states'
     }
     Test-Case 'ordinary local filenames resembling the optional prefix remain supported' {
         $f = New-Fixture
