@@ -19,6 +19,12 @@ class WindowsDownloadTask {
   public:
     virtual ~WindowsDownloadTask() = default;
     [[nodiscard]] virtual bool start(const std::string& job_id, const DownloadItem& item, qint64 now_ms) = 0;
+    // Trusted resolver handoff, never selected by a field from a page. Legacy
+    // tasks refuse this capability unless they implement the scoped session.
+    [[nodiscard]] virtual bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability>, qint64,
+                                                    qint64) {
+        return false;
+    }
     virtual void cancel() = 0;
     [[nodiscard]] virtual DownloadExecutionUpdate poll(qint64 now_ms) = 0;
     [[nodiscard]] virtual std::filesystem::path retainedPublicationPath() const { return {}; }
@@ -81,6 +87,8 @@ class WindowsDownloadExecution final : public DownloadExecution {
     [[nodiscard]] std::filesystem::path retainedPublicationPath(std::string_view job_id) const;
 
   private:
+    friend class YoutubeDownloadExecutionFactory;
+    WindowsDownloadExecution(TaskFactory factory, std::function<bool(const DownloadItem&)> admission);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

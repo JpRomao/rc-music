@@ -69,6 +69,17 @@ target_sources(rc_music_youtube_codec_tests PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src
 target_compile_definitions(rc_music_youtube_codec_tests PRIVATE
     RC_MUSIC_YOUTUBE_PROTOCOL_VECTORS_PATH="${RC_MUSIC_SOURCE_ROOT}/tests/extensions/youtube-protocol-vectors.json")
 set_target_properties(rc_music_youtube_codec_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_youtube_resolution_tests rc_music.youtube.resolution
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeAudioResolutionTests.cpp" rc_music_youtube_resolution)
+set_target_properties(rc_music_youtube_resolution_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_youtube_resolver_session_tests rc_music.youtube.resolver-session
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeResolverSessionTests.cpp" rc_music_youtube_resolution)
+set_target_properties(rc_music_youtube_resolver_session_tests PROPERTIES AUTOMOC ON)
+if(WIN32 AND TARGET rc_music_download_network)
+    add_ui_test(rc_music_youtube_execution_tests rc_music.youtube.execution
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeDownloadExecutionTests.cpp" rc_music_download_network)
+    set_target_properties(rc_music_youtube_execution_tests PROPERTIES AUTOMOC ON)
+endif()
 add_ui_test(rc_music_lyrics_variants_store_tests rc_music.lyrics.variants-store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLyricsVariantsStoreTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_variants_store_tests PROPERTIES AUTOMOC ON)

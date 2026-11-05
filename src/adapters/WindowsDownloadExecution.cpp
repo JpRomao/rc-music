@@ -2,7 +2,9 @@
 
 #include "DownloadNetworkPolicy.hpp"
 #include "WindowsDownloadArtifactPins.hpp"
+#include "WindowsDownloadExecutionValidation.hpp"
 #include "WindowsDownloadOwnershipStore.hpp"
+#include "YoutubeAudioResolution.hpp"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -11,6 +13,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <limits>
 #include <mutex>
 #include <optional>
 
@@ -71,7 +74,7 @@ bool terminal(const DownloadExecutionState state) {
     return state == DownloadExecutionState::Published || state == DownloadExecutionState::Failed ||
            state == DownloadExecutionState::Cancelled;
 }
-bool validUpdate(const DownloadExecutionUpdate& update, const std::string& id) {
+bool validUpdateImpl(const DownloadExecutionUpdate& update, const std::string& id) {
     // Inspect lengths before any mailbox copy. This validates a trusted task's
     // DTO; it cannot bound allocations inside the task itself.
     if (update.job_id.size() > 64 || update.job_id != id || !knownPhase(update.phase) || !knownFailure(update.error) ||
@@ -99,6 +102,11 @@ class SessionTask final : public WindowsDownloadTask {
     bool start(const std::string& id, const DownloadItem& item, const qint64 now_ms) override {
         id_ = id;
         return session_.start(id, item, now_ms);
+    }
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, const qint64 now_ms,
+                              const qint64 epoch) override {
+        id_ = cap ? cap->jobId() : std::string{};
+        return session_.startResolvedYoutube(std::move(cap), now_ms, epoch);
     }
     void cancel() override { session_.cancel(); }
     DownloadExecutionUpdate poll(const qint64 now_ms) override {
@@ -143,7 +151,8 @@ class PreparedSessionTask final : public WindowsDownloadTask {
             return false;
         started_ = true;
         update_.job_id = id;
-        if (!validId(id) || !validItem(item) || now_ms < 0 || job_.total_timeout_ms <= 0 ||
+        if (!validId(id) || (resolved_ ? resolved_->jobId() != id || resolved_epoch_ < 0 : !validItem(item)) ||
+            now_ms < 0 || job_.total_timeout_ms <= 0 ||
             (!media_ && job_.converter.backend == WindowsLocalMediaBackend::MediaFoundation)) {
             fail(DownloadFailure::InvalidResult);
             return false;
@@ -191,6 +200,19 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         // observe cancel/shutdown after this blocking preparation returns.
         return true;
     }
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, const qint64 now_ms,
+                              const qint64 epoch) override {
+        if (!cap || started_ || terminal(update_.state))
+            return false;
+        if (epoch >= 0 && cap->expiresAtSeconds() <= epoch) {
+            update_.job_id = cap->jobId();
+            fail(DownloadFailure::Expired);
+            return false;
+        }
+        resolved_ = std::move(cap);
+        resolved_epoch_ = epoch;
+        return start(resolved_->jobId(), {}, now_ms);
+    }
     void cancel() override {
         if (session_)
             session_->cancel();
@@ -214,7 +236,10 @@ class PreparedSessionTask final : public WindowsDownloadTask {
             try {
                 WindowsProcessDownloadIoConfig io;
                 io.prepared_launch = lease_;
-                session_ = std::make_unique<SessionTask>(std::move(io), job_);
+                auto remaining = job_;
+                if (resolved_)
+                    remaining.total_timeout_ms -= now_ms - started_ms_;
+                session_ = std::make_unique<SessionTask>(std::move(io), std::move(remaining));
             } catch (...) {
                 // Session construction is inert: no native work escaped.
                 fail(DownloadFailure::InvalidResult);
@@ -224,7 +249,18 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         if (!session_start_attempted_) {
             // Set before calling: false/throw may own work and must never retry.
             session_start_attempted_ = true;
-            if (!session_->start(update_.job_id, item_, started_ms_))
+            bool accepted{};
+            if (resolved_) {
+                const auto seconds = (now_ms - started_ms_) / 1000;
+                if (seconds > std::numeric_limits<qint64>::max() - resolved_epoch_) {
+                    fail(DownloadFailure::InvalidResult);
+                    return update_;
+                }
+                accepted = session_->startResolvedYoutube(resolved_, now_ms, resolved_epoch_ + seconds);
+            } else {
+                accepted = session_->start(update_.job_id, item_, started_ms_);
+            }
+            if (!accepted)
                 session_->cancel();
         }
         return session_->poll(now_ms); // only its real terminal ACK releases work
@@ -246,6 +282,8 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     std::optional<QString> journal_directory_;
     DownloadExecutionUpdate update_;
     DownloadItem item_;
+    std::shared_ptr<const ResolvedYoutubeAudioCapability> resolved_;
+    qint64 resolved_epoch_{0};
     qint64 started_ms_{0};
     bool started_{false}, session_start_attempted_{false};
     // Session/native IO is destroyed before its borrowed journal. Runtime
@@ -257,6 +295,9 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     std::unique_ptr<SessionTask> session_;
 };
 } // namespace
+bool download_execution_detail::validUpdate(const DownloadExecutionUpdate& update, const std::string& job_id) {
+    return validUpdateImpl(update, job_id);
+}
 
 std::unique_ptr<WindowsDownloadTask> makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig launch,
                                                                      WindowsDownloadJobSessionConfig job,
@@ -293,6 +334,7 @@ struct WindowsDownloadExecution::Impl final {
         void run() override { owner.run(); }
     };
     TaskFactory factory;
+    std::function<bool(const DownloadItem&)> admission;
     mutable std::mutex mutex;
     std::optional<Request> pending;
     DownloadExecutionUpdate snapshot;
@@ -301,7 +343,10 @@ struct WindowsDownloadExecution::Impl final {
     QObject* dispatcher{nullptr}; // lifetime protected by mutex, one queued wake at most
     Worker worker;
 
-    explicit Impl(TaskFactory value) : factory(std::move(value)), worker(*this) { worker.start(); }
+    Impl(TaskFactory value, std::function<bool(const DownloadItem&)> admit)
+        : factory(std::move(value)), admission(std::move(admit)), worker(*this) {
+        worker.start();
+    }
 
     // Caller already holds mutex. Queuing is prompt; it never runs the task here.
     void wake() {
@@ -398,7 +443,7 @@ struct WindowsDownloadExecution::Impl final {
                 }
                 try {
                     auto update = task->poll(clock.elapsed());
-                    if (!validUpdate(update, current->id)) {
+                    if (!download_execution_detail::validUpdate(update, current->id)) {
                         invalid_result = true; // no valid native acknowledgement
                         cancel_sent = false;
                     } else if (terminal(update.state)) {
@@ -466,7 +511,10 @@ struct WindowsDownloadExecution::Impl final {
 };
 
 WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory)
-    : impl_(std::make_unique<Impl>(std::move(factory))) {}
+    : WindowsDownloadExecution(std::move(factory), validItem) {}
+WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory,
+                                                   std::function<bool(const DownloadItem&)> admission)
+    : impl_(std::make_unique<Impl>(std::move(factory), std::move(admission))) {}
 WindowsDownloadExecution::WindowsDownloadExecution(WindowsProcessDownloadIoConfig io,
                                                    WindowsDownloadJobSessionConfig job)
     : WindowsDownloadExecution(
@@ -487,7 +535,7 @@ WindowsDownloadExecution::~WindowsDownloadExecution() {
     impl_->worker.wait(); // owner must have observed stopped before UI destruction
 }
 bool WindowsDownloadExecution::start(const std::string& id, const DownloadItem& item) {
-    if (!validId(id) || !validItem(item))
+    if (!validId(id) || !validText(item.title, 800) || !impl_->admission(item))
         return false;
     Impl::Request request{id, item};
     DownloadExecutionUpdate initial;

@@ -1,5 +1,10 @@
 #include "DirectDownloadSession.hpp"
+#include "YoutubeAudioResolution.hpp"
 #include <QScopedValueRollback>
+
+#include <algorithm>
+#include <limits>
+#include <utility>
 
 namespace music_player::m0 {
 namespace {
@@ -9,12 +14,25 @@ bool active(DirectDownloadState state) {
 bool elapsed(qint64 now, qint64 start, qint64 limit) {
     return static_cast<quint64>(now) - static_cast<quint64>(start) >= static_cast<quint64>(limit);
 }
+std::optional<qint64> expiryBudget(const qint64 expires_at, const qint64 epoch_start) {
+    if (epoch_start < 0 || expires_at <= epoch_start)
+        return {};
+    const auto seconds = expires_at - epoch_start;
+    return seconds > std::numeric_limits<qint64>::max() / 1000 ? std::numeric_limits<qint64>::max() : seconds * 1000;
+}
 } // namespace
 
 DirectDownloadSession::DirectDownloadSession(DirectDownloadIo& io, QIODevice& sink, DirectDownloadLimits limits)
     : io_(io), sink_(sink), limits_(limits) {}
 DirectDownloadSession::~DirectDownloadSession() { cancel(); }
-bool DirectDownloadSession::start(const QString& url, qint64 now_ms) {
+bool DirectDownloadSession::startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                                                 const qint64 now_ms, const qint64 trusted_epoch_seconds) {
+    return startImpl({}, now_ms, std::move(capability), trusted_epoch_seconds);
+}
+bool DirectDownloadSession::start(const QString& url, qint64 now_ms) { return startImpl(url, now_ms, {}, 0); }
+bool DirectDownloadSession::startImpl(const QString& url, const qint64 now_ms,
+                                      std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                                      const qint64 trusted_epoch_seconds) {
     if (operating_ || snapshot_.state != DirectDownloadState::Idle)
         return false;
     const QScopedValueRollback operation(operating_, true);
@@ -25,16 +43,41 @@ bool DirectDownloadSession::start(const QString& url, qint64 now_ms) {
         snapshot_.error = DownloadFailure::Unavailable;
         return false;
     }
-    target_ = parseDownloadNetworkTarget(url);
+    if (capability && (now_ms < 0 || trusted_epoch_seconds < 0)) {
+        snapshot_.state = DirectDownloadState::Failed;
+        snapshot_.error = DownloadFailure::InvalidResult;
+        return false;
+    }
+    target_ = capability ? parseResolvedYoutubeNetworkTarget(*capability) : parseDownloadNetworkTarget(url);
     if (!target_) {
         snapshot_.state = DirectDownloadState::Failed;
         snapshot_.error = DownloadFailure::Restricted;
         return false;
     }
+    if (capability) {
+        const auto budget = expiryBudget(capability->expiresAtSeconds(), trusted_epoch_seconds);
+        if (!budget) {
+            snapshot_.state = DirectDownloadState::Failed;
+            snapshot_.error = DownloadFailure::Expired;
+            return false;
+        }
+        youtube_capability_ = std::move(capability);
+        youtube_epoch_start_ = trusted_epoch_seconds;
+        youtube_cap_budget_ms_ = *budget;
+    }
     started_ms_ = previous_ms_ = now_ms;
     return beginHop(now_ms);
 }
 bool DirectDownloadSession::beginHop(qint64 now_ms) {
+    if (youtube_capability_) {
+        const auto expires_at = youtubeAudioStreamExpiry(target_->url);
+        const auto budget = expires_at ? expiryBudget(*expires_at, youtube_epoch_start_) : std::nullopt;
+        if (!budget || elapsed(now_ms, started_ms_, std::min(youtube_cap_budget_ms_, *budget))) {
+            fail(DownloadFailure::Expired);
+            return false;
+        }
+        youtube_target_budget_ms_ = std::min(youtube_cap_budget_ms_, *budget);
+    }
     snapshot_.state = DirectDownloadState::Resolving;
     activity_ms_ = hop_ms_ = now_ms;
     response_ = std::make_unique<DownloadHttpResponse>(limits_.max_body_bytes);
@@ -58,6 +101,10 @@ void DirectDownloadSession::tick(qint64 now_ms) {
         return;
     }
     previous_ms_ = now_ms;
+    if (youtube_target_budget_ms_ && elapsed(now_ms, started_ms_, *youtube_target_budget_ms_)) {
+        fail(DownloadFailure::Expired);
+        return;
+    }
     if (elapsed(now_ms, started_ms_, limits_.total_timeout_ms) ||
         elapsed(now_ms, activity_ms_, limits_.idle_timeout_ms) ||
         (snapshot_.state == DirectDownloadState::Resolving && elapsed(now_ms, hop_ms_, limits_.dns_timeout_ms))) {
@@ -138,7 +185,9 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                     fail(DownloadFailure::LimitExceeded);
                     return;
                 }
-                auto next = resolveDownloadRedirect(*target_, response_->header("location"));
+                auto next = youtube_capability_ ? resolveYoutubeAudioRedirect(*target_, response_->header("location"),
+                                                                              *youtube_capability_)
+                                                : resolveDownloadRedirect(*target_, response_->header("location"));
                 if (!next) {
                     fail(DownloadFailure::Restricted);
                     return;

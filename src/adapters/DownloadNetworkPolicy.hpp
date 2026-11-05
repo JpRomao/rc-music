@@ -8,6 +8,7 @@
 #include <optional>
 
 namespace music_player::m0 {
+class ResolvedYoutubeAudioCapability;
 
 struct DownloadNetworkTarget final {
     QString url;
@@ -20,6 +21,13 @@ struct DownloadNetworkTarget final {
 // Canonical URL syntax is shared with native admission. No DNS or network I/O.
 // Encoded path/query and the Host field retain their exact accepted bytes.
 [[nodiscard]] std::optional<DownloadNetworkTarget> parseDownloadNetworkTarget(const QString& raw);
+// Typed resolver authority only. Initial bytes come exclusively from the
+// immutable capability; the caller supplies/validates its trusted clock.
+[[nodiscard]] std::optional<DownloadNetworkTarget>
+parseResolvedYoutubeNetworkTarget(const ResolvedYoutubeAudioCapability& capability);
+[[nodiscard]] std::optional<DownloadNetworkTarget>
+resolveYoutubeAudioRedirect(const DownloadNetworkTarget& previous, const QByteArray& location,
+                            const ResolvedYoutubeAudioCapability& capability);
 // Resolve HTTP Location without decoding or recasing signed escapes. Every result
 // re-enters the common policy; HTTPS downgrade and fragments are rejected.
 [[nodiscard]] std::optional<DownloadNetworkTarget> resolveDownloadRedirect(const DownloadNetworkTarget& previous,

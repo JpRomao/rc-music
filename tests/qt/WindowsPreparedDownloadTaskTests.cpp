@@ -1,4 +1,5 @@
 #include "WindowsDownloadExecution.hpp"
+#include "support/YoutubeResolverTestSupport.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -83,6 +84,45 @@ struct Drain final {
 class WindowsPreparedDownloadTaskTests final : public QObject {
     Q_OBJECT
   private slots:
+    void expiredYoutubeCapabilityCannotPrepareARuntime() {
+        Harness h;
+        const auto cap = test::resolvedYoutubeFixture();
+        QVERIFY(cap);
+        int calls{};
+        auto task = makeWindowsPreparedDownloadTask(h.launch, h.job, [&](const auto&) {
+            ++calls;
+            return std::shared_ptr<const WindowsDownloadNetworkLaunch>{};
+        });
+        QVERIFY(!task->startResolvedYoutube(cap, 0, cap->expiresAtSeconds()));
+        QCOMPARE(task->poll(1).error, DownloadFailure::Expired);
+        QCOMPARE(calls, 0);
+        QVERIFY(h.runtimes().isEmpty());
+        QVERIFY(h.workspaces().isEmpty());
+    }
+    void youtubePreparationUsesFreshExpiryAndPreservesCancellation_data() {
+        QTest::addColumn<bool>("cancel");
+        QTest::newRow("expired-during-preparation") << false;
+        QTest::newRow("cancelled-after-preparation") << true;
+    }
+    void youtubePreparationUsesFreshExpiryAndPreservesCancellation() {
+        QFETCH(bool, cancel);
+        Harness h;
+        const auto cap = test::resolvedYoutubeFixture();
+        QVERIFY(cap);
+        auto task = makeWindowsPreparedDownloadTask(h.launch, h.job);
+        QVERIFY(task->startResolvedYoutube(cap, 10, cap->expiresAtSeconds() - 1));
+        QCOMPARE(h.runtimes().size(), 1);
+        QVERIFY(h.workspaces().isEmpty());
+        if (cancel)
+            task->cancel();
+        const auto update = task->poll(1010);
+        QCOMPARE(update.job_id, cap->jobId());
+        QCOMPARE(update.state, cancel ? DownloadExecutionState::Cancelled : DownloadExecutionState::Failed);
+        QCOMPARE(update.error, cancel ? DownloadFailure::None : DownloadFailure::Expired);
+        QVERIFY(h.workspaces().isEmpty());
+        task.reset();
+        QVERIFY(h.runtimes().isEmpty());
+    }
     void constructionIsInert() {
         Harness h;
         QVERIFY(h.parent.isValid());

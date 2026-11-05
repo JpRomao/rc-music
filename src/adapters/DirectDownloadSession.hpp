@@ -66,11 +66,17 @@ class DirectDownloadSession final {
     DirectDownloadSession(DirectDownloadIo& io, QIODevice& sink, DirectDownloadLimits limits = {});
     ~DirectDownloadSession();
     bool start(const QString& url, qint64 now_ms);
+    // Resolver capability is never minted from a page flag. UTC epoch is
+    // explicitly supplied by trusted composition; ticks remain monotonic.
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64 now_ms,
+                              qint64 trusted_epoch_seconds);
     void tick(qint64 now_ms);
     void cancel();
     DirectDownloadSnapshot snapshot() const;
 
   private:
+    bool startImpl(const QString& url, qint64 now_ms, std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                   qint64 trusted_epoch_seconds);
     DownloadFailure ioFailure() const noexcept;
     void fail(DownloadFailure error);
     bool beginHop(qint64 now_ms);
@@ -79,6 +85,10 @@ class DirectDownloadSession final {
     DirectDownloadLimits limits_;
     DirectDownloadSnapshot snapshot_{};
     std::optional<DownloadNetworkTarget> target_{};
+    std::shared_ptr<const ResolvedYoutubeAudioCapability> youtube_capability_{};
+    qint64 youtube_epoch_start_{};
+    qint64 youtube_cap_budget_ms_{};
+    std::optional<qint64> youtube_target_budget_ms_{};
     std::unique_ptr<DownloadHttpResponse> response_{};
     qint64 started_ms_{0};
     qint64 activity_ms_{0};

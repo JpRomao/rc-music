@@ -1,5 +1,8 @@
 #include "DownloadNetworkPolicy.hpp"
 #include "NativeDownloadCodec.hpp"
+#include "YoutubeAudioResolution.hpp"
+
+#include <QUrl>
 
 #include <algorithm>
 #include <array>
@@ -30,6 +33,18 @@ bool validLocationBytes(const QByteArray& location) {
                return value > 0x20 && value < 0x7f && value != '\\' && value != '#' && value != '"' && value != '<' &&
                       value != '>';
            });
+}
+
+std::optional<DownloadNetworkTarget> parseYoutubeTarget(const QString& raw) {
+    if (!validYoutubeAudioStreamUrl(raw))
+        return {};
+    const auto path_start = raw.indexOf(QLatin1Char('/'), 8);
+    if (path_start < 0)
+        return {};
+    // QUrl is used only for the logical DNS/TLS host (including stripping a
+    // default :443). Signed path/query bytes are never reconstructed from it.
+    const auto host = QUrl(raw, QUrl::StrictMode).host();
+    return DownloadNetworkTarget{raw, host, host.toLatin1(), raw.mid(path_start).toLatin1(), true};
 }
 
 // RFC 3986 path merging with literal dot segments only. Encoded dot aliases are
@@ -68,6 +83,52 @@ std::optional<DownloadNetworkTarget> parseDownloadNetworkTarget(const QString& r
     const qsizetype authority_end = raw.indexOf(QLatin1Char('/'), authority_start);
     const auto host = raw.mid(authority_start, authority_end - authority_start);
     return DownloadNetworkTarget{raw, host, host.toLatin1(), raw.mid(authority_end).toLatin1(), https};
+}
+
+std::optional<DownloadNetworkTarget>
+parseResolvedYoutubeNetworkTarget(const ResolvedYoutubeAudioCapability& capability) {
+    return parseYoutubeTarget(capability.streamUrl());
+}
+std::optional<DownloadNetworkTarget> resolveYoutubeAudioRedirect(const DownloadNetworkTarget& previous,
+                                                                 const QByteArray& location,
+                                                                 const ResolvedYoutubeAudioCapability& capability) {
+    if (!parseResolvedYoutubeNetworkTarget(capability) || !validLocationBytes(location))
+        return {};
+    const auto base = parseYoutubeTarget(previous.url);
+    if (!base)
+        return {};
+    const auto reference = QString::fromLatin1(location);
+    const auto base_origin = base->url.left(base->url.indexOf(QLatin1Char('/'), 8));
+    const auto base_query = base->url.indexOf(QLatin1Char('?'));
+    const auto base_without_query = base_query < 0 ? base->url : base->url.left(base_query);
+    QString candidate;
+    if (reference.startsWith(QStringLiteral("//"))) {
+        candidate = QStringLiteral("https:") + reference;
+    } else {
+        const auto colon = reference.indexOf(QLatin1Char(':'));
+        const auto slash = reference.indexOf(QLatin1Char('/'));
+        const auto query = reference.indexOf(QLatin1Char('?'));
+        const bool has_scheme = colon >= 0 && (slash < 0 || colon < slash) && (query < 0 || colon < query);
+        if (has_scheme)
+            candidate = reference;
+        else if (reference.startsWith(QLatin1Char('/')))
+            candidate = base_origin + reference;
+        else if (reference.startsWith(QLatin1Char('?')))
+            candidate = base_without_query + reference;
+        else
+            candidate = base_without_query.left(base_without_query.lastIndexOf(QLatin1Char('/')) + 1) + reference;
+    }
+    if (!candidate.startsWith(QStringLiteral("https://")))
+        return {};
+    const auto query_start = candidate.indexOf(QLatin1Char('?'));
+    const auto without_query = query_start < 0 ? candidate : candidate.left(query_start);
+    const auto query = query_start < 0 ? QString{} : candidate.mid(query_start);
+    const auto authority_end = without_query.indexOf(QLatin1Char('/'), 8);
+    const auto origin = authority_end < 0 ? without_query : without_query.left(authority_end);
+    const auto path = resolvePath(authority_end < 0 ? QStringLiteral("/") : without_query.mid(authority_end));
+    if (!path)
+        return {};
+    return parseYoutubeTarget(origin + *path + query);
 }
 
 std::optional<DownloadNetworkTarget> resolveDownloadRedirect(const DownloadNetworkTarget& previous,

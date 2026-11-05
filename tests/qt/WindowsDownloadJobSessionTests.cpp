@@ -1,4 +1,6 @@
 #include "WindowsDownloadJobSession.hpp"
+#include "YoutubeAudioResolution.hpp"
+#include "support/YoutubeResolverTestSupport.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -159,6 +161,71 @@ bool publishingOrTerminal(const DownloadExecutionUpdate& update) {
 class WindowsDownloadJobSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void resolvedYoutubeJobKeepsTheCapabilityJobIdAndWaitsForNativeStopBeforeConversion() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        h.io.stop_update = {};
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        QCOMPARE(session.poll(0).job_id, capability->jobId());
+        h.io.respond("sealed-only-after-stop");
+        static_cast<void>(session.poll(0));
+        for (int index = 0; index < 5; ++index)
+            QVERIFY(!terminal(session.poll(0)));
+        QVERIFY(h.io.stop_polls > 0);
+        QCOMPARE(h.io.premature_stop_polls, 0);
+        QVERIFY(h.published().isEmpty());
+        session.cancel();
+        h.io.stop_update.stopped = true;
+        const auto final = drainAt(session, 0);
+        QCOMPARE(final.state, DownloadExecutionState::Cancelled);
+        QVERIFY(h.jobs().isEmpty());
+        QVERIFY(h.published().isEmpty());
+    }
+    void expiredOrMissingYoutubeCapabilitiesCannotCreateAWorkspace() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(!session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds()));
+        QCOMPARE(session.poll(0).error, DownloadFailure::Expired);
+        QVERIFY(h.io.hosts.isEmpty());
+        QVERIFY(h.jobs().isEmpty());
+        Harness missing;
+        WindowsDownloadJobSession no_capability(missing.io, missing.configuration());
+        QVERIFY(!no_capability.startResolvedYoutube({}, 0, 0));
+        QVERIFY(missing.io.hosts.isEmpty());
+        QVERIFY(missing.jobs().isEmpty());
+    }
+    void youtubeExpiryDuringDnsStillRequiresTheOriginalNativeDrainAcknowledgement() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        h.io.stop_update = {};
+        h.io.dns.state = DownloadResolutionState::Pending;
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 1));
+        QVERIFY(!terminal(session.poll(1000)));
+        QVERIFY(h.io.cancels > 0);
+        QVERIFY(h.io.stop_polls > 0);
+        QVERIFY(h.published().isEmpty());
+        h.io.stop_update.stopped = true;
+        const auto final = drainAt(session, 1000);
+        QCOMPARE(final.state, DownloadExecutionState::Failed);
+        QCOMPARE(final.error, DownloadFailure::Expired);
+        QVERIFY(h.jobs().isEmpty());
+    }
+    void youtubeRouteNeverMakesTheLegacyJobStartAcceptGooglevideo() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        WindowsDownloadJobSession session(h.io, h.configuration());
+        QVERIFY(!session.start("direct-job", {capability->streamUrl().toStdString(), "Title", DownloadMediaKind::Audio},
+                               0));
+        QVERIFY(h.io.hosts.isEmpty());
+        QVERIFY(h.jobs().isEmpty());
+    }
     void durableCreationGateCancellationCannotStartNetwork_data() {
         QTest::addColumn<int>("stage");
         QTest::newRow("Planned") << static_cast<int>(DownloadOwnershipStage::Planned);

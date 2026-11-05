@@ -12,9 +12,11 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Estado:** stack aceita; sequência de promoção e conclusão Windows, sem compromisso de datas
 
-**Última revisão:** 2026-11-04
+**Última revisão:** 2026-11-05
 
 **Próxima frente solicitada:** [aquisição YouTube em MP3 e letra](youtube-audio-and-lyrics.md), com extensão separada e preferência Letras → LRCLIB. Ingresso primeiro, depois resolver/transferência/conversão/importação e associação de letra, com falhas independentes. Nenhum suporte de produção, acesso Letras ou ferramenta externa é aprovado por esse pedido; os gates do ADR-0017 permanecem explícitos.
+
+O incremento de 2026-11-05 implementa resolver/sessão, rede por capability e handoff no worker da aquisição existente. Os testes locais exercitam essas fronteiras; runtime autêntico/descendentes EJS, host instalado, integração Letras/fallback e download real no app continuam pendentes. Os gates de segurança, licenças e distribuição permanecem separados desse avanço de código.
 
 **Continuidade funcional:** [versões de letras por música](lyrics-variants.md), como extensão de FR-054/M3.9: guardar original/romanizada quando disponíveis, adicionar texto depois e escolher a forma exibida, com persistência explícita independente de áudio/fila. O recorte automatizado está implementado, com **295/295 CTest**, restart em dois processos e builds Lite/Completa; aceitação nativa/pacote continuam pendentes. Letras.mus.br como provedor, MP3 remoto, LLM e tradução não são habilitados por esse armazenamento.
 

@@ -32,6 +32,10 @@ class WindowsDownloadJobSession final {
     WindowsDownloadJobSession& operator=(const WindowsDownloadJobSession&) = delete;
 
     [[nodiscard]] bool start(const std::string& job_id, const DownloadItem& item, qint64 now_ms);
+    // Separate typed route: exact job/source identity belongs to the resolver
+    // capability. Wall time is explicit, never read implicitly by this class.
+    [[nodiscard]] bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                                            qint64 now_ms, qint64 trusted_epoch_seconds);
     void cancel();
     [[nodiscard]] DownloadExecutionUpdate poll(qint64 now_ms);
 
@@ -40,6 +44,8 @@ class WindowsDownloadJobSession final {
     [[nodiscard]] QString retainedPublicationPath() const;
 
   private:
+    bool startImpl(const std::string& job_id, const DownloadItem& item, qint64 now_ms,
+                   std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64 trusted_epoch_seconds);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

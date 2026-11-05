@@ -1,5 +1,7 @@
 #include "DirectDownloadSession.hpp"
 #include "QtDownloadIo.hpp"
+#include "YoutubeAudioResolution.hpp"
+#include "support/YoutubeResolverTestSupport.hpp"
 
 #include <QBuffer>
 #include <QTest>
@@ -89,6 +91,106 @@ struct Harness final {
 class DirectDownloadSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void resolvedYoutubeAudioUsesTheExistingPublicDnsPinAndHttpSink() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        QCOMPARE(h.io.hosts.size(), 1);
+        h.session.tick(1);
+        QCOMPARE(h.io.endpoints.size(), 1);
+        QCOMPARE(h.io.endpoints.front().address, QHostAddress("93.184.215.14"));
+        QCOMPARE(h.io.endpoints.front().port, quint16{443});
+        QVERIFY(h.io.endpoints.front().tls);
+        const auto path = capability->streamUrl().mid(capability->streamUrl().indexOf('/', 8)).toLatin1();
+        QCOMPARE(h.io.endpoints.front().request_target, path);
+        h.io.chunks = {"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nAAC!"};
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Completed);
+        QCOMPARE(h.sink.data(), QByteArray("AAC!"));
+        QCOMPARE(h.io.cancels, 1);
+        Harness main;
+        QVERIFY(!main.session.start(capability->streamUrl(), 0));
+        QVERIFY(main.io.hosts.isEmpty());
+    }
+    void youtubeCapabilityCannotAdmitAnyPrivateDnsAnswer() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        h.io.dns.addresses.push_back(QHostAddress("127.0.0.1"));
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.session.tick(1);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QVERIFY(h.io.endpoints.isEmpty());
+        QVERIFY(h.sink.data().isEmpty());
+    }
+    void youtubeRedirectsAreRevalidatedBeforeResolvingTheNextHost() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.session.tick(1);
+        h.io.chunks = {
+            "HTTP/1.1 302 Found\r\nLocation: https://media.example.test/videoplayback\r\nContent-Length: 0\r\n\r\n"};
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QCOMPARE(h.io.hosts.size(), 1);
+        QVERIFY(h.sink.data().isEmpty());
+    }
+    void youtubeAdmissionAndTicksEnforceCapabilityExpiryWithoutAHiddenWallClock() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness expired;
+        QVERIFY(!expired.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds()));
+        QCOMPARE(expired.session.snapshot().error, DownloadFailure::Expired);
+        QVERIFY(expired.io.hosts.isEmpty());
+        Harness live;
+        QVERIFY(live.session.startResolvedYoutube(capability, 100, capability->expiresAtSeconds() - 1));
+        live.session.tick(1100);
+        QCOMPARE(live.session.snapshot().error, DownloadFailure::Expired);
+        QCOMPARE(live.io.cancels, 1);
+        QVERIFY(live.io.endpoints.isEmpty());
+        Harness missing;
+        QVERIFY(!missing.session.startResolvedYoutube({}, 0, 0));
+        QVERIFY(missing.io.hosts.isEmpty());
+    }
+    void anExpiredYoutubeRedirectFailsBeforeResolvingAnotherHost() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h;
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.session.tick(1);
+        QCOMPARE(h.io.hosts.size(), 1);
+        QCOMPARE(h.io.endpoints.size(), 1);
+        h.io.chunks = {"HTTP/1.1 302 Found\r\nLocation: "
+                       "https://r2.googlevideo.com/videoplayback?expire=1&sig=A\r\nContent-Length: 0\r\n\r\n"};
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Expired);
+        QCOMPARE(h.io.hosts.size(), 1);
+        QCOMPARE(h.io.endpoints.size(), 1);
+        QVERIFY(h.sink.data().isEmpty());
+        QVERIFY(h.io.cancels > 0);
+    }
+    void youtubeAudioKeepsTheExistingBodyQuotaAndRejectsPartialHttpResponses() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness quota({.max_body_bytes = 3});
+        QVERIFY(quota.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        quota.session.tick(1);
+        quota.io.chunks = {"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nAAC!"};
+        quota.session.tick(2);
+        QCOMPARE(quota.session.snapshot().error, DownloadFailure::LimitExceeded);
+        QVERIFY(quota.sink.data().isEmpty());
+        Harness partial;
+        QVERIFY(partial.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        partial.session.tick(1);
+        partial.io.chunks = {"HTTP/1.1 206 Partial Content\r\nContent-Length: 4\r\n\r\nAAC!"};
+        partial.session.tick(2);
+        QCOMPARE(partial.session.snapshot().error, DownloadFailure::UnsupportedMedia);
+        QVERIFY(partial.sink.data().isEmpty());
+    }
     void typedIoFailuresAreCapturedBeforeCancelCanEraseThem_data() {
         QTest::addColumn<QString>("operation");
         QTest::addColumn<int>("error");

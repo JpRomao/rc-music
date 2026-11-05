@@ -1,4 +1,6 @@
 #include "WindowsDownloadJobSession.hpp"
+#include "YoutubeAudioCodec.hpp"
+#include "YoutubeAudioResolution.hpp"
 
 #include <QScopedValueRollback>
 
@@ -258,19 +260,48 @@ struct WindowsDownloadJobSession::Impl {
 WindowsDownloadJobSession::WindowsDownloadJobSession(DirectDownloadIo& io, WindowsDownloadJobSessionConfig config)
     : impl_(std::make_unique<Impl>(io, std::move(config))) {}
 WindowsDownloadJobSession::~WindowsDownloadJobSession() = default;
+bool WindowsDownloadJobSession::startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                                                     const qint64 now_ms, const qint64 trusted_epoch_seconds) {
+    if (!capability)
+        return startImpl({}, {}, now_ms, {}, trusted_epoch_seconds);
+    const auto job_id = capability->jobId();
+    const DownloadItem item{canonicalYoutubeWatchUrl(capability->videoId().toStdString()).toStdString(),
+                            capability->data().title.toStdString(), DownloadMediaKind::Audio};
+    return startImpl(job_id, item, now_ms, std::move(capability), trusted_epoch_seconds);
+}
 bool WindowsDownloadJobSession::start(const std::string& job_id, const DownloadItem& item, qint64 now_ms) {
+    return startImpl(job_id, item, now_ms, {}, 0);
+}
+bool WindowsDownloadJobSession::startImpl(const std::string& job_id, const DownloadItem& item, const qint64 now_ms,
+                                          std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
+                                          const qint64 trusted_epoch_seconds) {
     auto& value = *impl_;
     if (value.operating || value.stage != Impl::Stage::Idle)
         return false;
     const QScopedValueRollback operation(value.operating, true);
-    const auto url = validatedUrl(item);
-    if (!validJobId(job_id) || !url || now_ms < 0 || value.config.total_timeout_ms <= 0) {
+    std::optional<QString> url;
+    const bool matching_capability =
+        !capability || (capability->jobId() == job_id && item.kind == DownloadMediaKind::Audio &&
+                        item.url == canonicalYoutubeWatchUrl(capability->videoId().toStdString()).toStdString());
+    if (capability) {
+        if (const auto target = parseResolvedYoutubeNetworkTarget(*capability))
+            url = target->url;
+    } else {
+        url = validatedUrl(item);
+    }
+    if (!validJobId(job_id) || !url || !matching_capability || now_ms < 0 || value.config.total_timeout_ms <= 0) {
         value.update.state = DownloadExecutionState::Failed;
         value.update.error = DownloadFailure::InvalidResult;
         value.stage = Impl::Stage::Terminal;
         return false;
     }
     value.update.job_id = job_id;
+    if (capability && (trusted_epoch_seconds < 0 || trusted_epoch_seconds >= capability->expiresAtSeconds())) {
+        value.update.state = DownloadExecutionState::Failed;
+        value.update.error = trusted_epoch_seconds < 0 ? DownloadFailure::InvalidResult : DownloadFailure::Expired;
+        value.stage = Impl::Stage::Terminal;
+        return false;
+    }
     value.started_ms = value.previous_ms = now_ms;
     value.stage = Impl::Stage::Downloading;
     try {
@@ -296,7 +327,9 @@ bool WindowsDownloadJobSession::start(const std::string& job_id, const DownloadI
         auto limits = value.config.network;
         limits.total_timeout_ms = std::min(limits.total_timeout_ms, value.config.total_timeout_ms);
         value.download = std::make_unique<DirectDownloadSession>(value.io, *value.workspace->inputSink(), limits);
-        const bool accepted = value.download->start(*url, now_ms);
+        const bool accepted =
+            capability ? value.download->startResolvedYoutube(std::move(capability), now_ms, trusted_epoch_seconds)
+                       : value.download->start(*url, now_ms);
         if (value.cancel_requested)
             value.stop(DownloadFailure::None, true);
         else if (!accepted)

@@ -1155,6 +1155,10 @@
       "tests": [
         { "path": "tests/qt/YoutubeAudioCodecTests.cpp", "marker": "separateRequestRoundTripsUnicodeWithoutGrantingAnyMainCapability" },
         { "path": "tests/qt/YoutubeAudioCodecTests.cpp", "marker": "theMainCodecStillRefusesYoutubeAndItsCdnIndirectly" },
+        { "path": "tests/qt/YoutubeResolverSessionTests.cpp", "marker": "onlyExitZeroAndPipeAcknowledgementCanMintTheMatchingCapability" },
+        { "path": "tests/qt/WindowsYoutubeResolverProcessTests.cpp", "marker": "privateInputIsEchoedAndLeaseLivesUntilTheStoppedPipeAcknowledgement" },
+        { "path": "tests/qt/YoutubeDownloadExecutionTests.cpp", "marker": "resolutionHandsTheExactCapabilityToTheExistingTaskOnTheWorker" },
+        { "path": "tests/qt/WindowsDownloadJobSessionTests.cpp", "marker": "youtubeExpiryDuringDnsStillRequiresTheOriginalNativeDrainAcknowledgement" },
         { "path": "tests/extensions/youtube-popup.test.mjs", "marker": "opening or refreshing reads only the current tab and never submits a request" },
         { "path": "tests/extensions/youtube-native-client.test.mjs", "marker": "YouTube bridge is separate and acknowledges admission rather than completion" }
       ],
@@ -1181,7 +1185,7 @@
         }
       ],
       "remaining": [
-        "Cliente/codec do ingresso separado implementados com testes Node/Qt e corpus compartilhado, sem aquisição. Faltam resolver/execução YouTube, runtime/ferramentas/licenças, composição protegida com transferência/conversão/importação e letras independentes, host/origens instaladas, Brave, opcionais e pacote. Letras preferencial depende de acesso/contrato compatível; cadeia LRCLIB fallback e associação ao arquivo final ainda pendentes. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
+        "Cliente/codec, resolver/sessão, rede por capability e handoff no worker implementados com testes locais. Faltam runtime/ferramentas/licenças autenticados e composição de produção com transferência/conversão/importação e letras independentes, host/origens instaladas, Brave, opcionais e pacote. EJS local completo e Node descendente não foram qualificados; NoChild preservado. Letras preferencial depende de acesso/contrato compatível; cadeia LRCLIB fallback e associação ao arquivo final ainda pendentes. Sem download YouTube funcional ou reprodução remota no app normal; principal continua separada."
       ]
     },
     {

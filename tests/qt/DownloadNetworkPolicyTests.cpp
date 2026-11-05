@@ -1,5 +1,7 @@
 #include "DownloadNetworkPolicy.hpp"
 #include "NativeDownloadCodec.hpp"
+#include "YoutubeAudioResolution.hpp"
+#include "support/YoutubeResolverTestSupport.hpp"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -12,6 +14,72 @@ class DownloadNetworkPolicyTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void aResolvedYoutubeCapabilityPreservesExactSignedBytesWithoutChangingTheMainPolicy() {
+        const auto url = QStringLiteral("https://r1---sn-test.googlevideo.com/"
+                                        "videoplayback?expire=2000000000&mime=audio%2Fmp4&sig=%7e%41&x=1+2&x=3");
+        const auto capability = test::resolvedYoutubeFixture("youtube_job", "aB0-_Cd1EF2", url);
+        QVERIFY(capability);
+        const auto target = parseResolvedYoutubeNetworkTarget(*capability);
+        QVERIFY(target);
+        QCOMPARE(target->url, url);
+        QCOMPARE(target->host, "r1---sn-test.googlevideo.com");
+        QCOMPARE(target->host_header, QByteArray("r1---sn-test.googlevideo.com"));
+        QCOMPARE(target->request_target,
+                 QByteArray("/videoplayback?expire=2000000000&mime=audio%2Fmp4&sig=%7e%41&x=1+2&x=3"));
+        QVERIFY(target->https);
+        QVERIFY(!parseDownloadNetworkTarget(url));
+        QVERIFY(!resolveDownloadRedirect(*target, QByteArray("?sig=%41")));
+    }
+    void resolvedYoutubeDefaultPortKeepsDnsAndTlsHostSeparateFromTheSignedTarget() {
+        const auto url = QStringLiteral("https://r1.googlevideo.com:443/videoplayback?expire=2000000000&sig=%2f%2F");
+        const auto capability = test::resolvedYoutubeFixture("youtube_job", "aB0-_Cd1EF2", url);
+        QVERIFY(capability);
+        const auto target = parseResolvedYoutubeNetworkTarget(*capability);
+        QVERIFY(target);
+        QCOMPARE(target->url, url);
+        QCOMPARE(target->host, "r1.googlevideo.com");
+        QCOMPARE(target->host_header, QByteArray("r1.googlevideo.com"));
+        QCOMPARE(target->request_target, QByteArray("/videoplayback?expire=2000000000&sig=%2f%2F"));
+    }
+    void youtubeRedirectsKeepOnlyTheApprovedHttpsCdnScope_data() {
+        QTest::addColumn<QByteArray>("location");
+        QTest::addColumn<bool>("accepted");
+        QTest::newRow("signed relative query") << QByteArray("?expire=2000000000&sig=%7e%41&x=1+2") << true;
+        QTest::newRow("another CDN")
+            << QByteArray("https://r2---sn-test.googlevideo.com/videoplayback?expire=2000000000&sig=%2f%2F") << true;
+        QTest::newRow("same path") << QByteArray("/videoplayback?expire=2000000000&sig=next") << true;
+        QTest::newRow("HTTPS downgrade") << QByteArray("http://r2.googlevideo.com/videoplayback?expire=2000000000&x=1")
+                                         << false;
+        QTest::newRow("unrelated host") << QByteArray("https://media.example.test/videoplayback?expire=2000000000")
+                                        << false;
+        QTest::newRow("lookalike host") << QByteArray(
+                                               "https://r1.googlevideo.com.evil.test/videoplayback?expire=2000000000")
+                                        << false;
+        QTest::newRow("YouTube HTML") << QByteArray("https://www.youtube.com/watch?v=aB0-_Cd1EF2") << false;
+        QTest::newRow("wrong CDN path") << QByteArray("/manifest.mpd?expire=2000000000") << false;
+        QTest::newRow("credentials") << QByteArray("https://user@r1.googlevideo.com/videoplayback?expire=2000000000")
+                                     << false;
+        QTest::newRow("fragment") << QByteArray("/videoplayback?expire=2000000000&x=1#part") << false;
+        QTest::newRow("custom port") << QByteArray("https://r1.googlevideo.com:8443/videoplayback?expire=2000000000")
+                                     << false;
+        QTest::newRow("encoded traversal") << QByteArray("/a/.%2e/videoplayback?expire=2000000000&x=1") << false;
+    }
+    void youtubeRedirectsKeepOnlyTheApprovedHttpsCdnScope() {
+        QFETCH(QByteArray, location);
+        QFETCH(bool, accepted);
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        const auto previous = parseResolvedYoutubeNetworkTarget(*capability);
+        QVERIFY(previous);
+        const auto next = resolveYoutubeAudioRedirect(*previous, location, *capability);
+        QCOMPARE(next.has_value(), accepted);
+        if (next) {
+            QVERIFY(next->https);
+            QVERIFY(!parseDownloadNetworkTarget(next->url));
+            if (location.startsWith('?'))
+                QCOMPARE(next->request_target, QByteArray("/videoplayback") + location);
+        }
+    }
     void acceptedUrlPreservesSignedRequestTargetAndHost_data() {
         QTest::addColumn<QString>("url");
         QTest::addColumn<QString>("host");
