@@ -2,6 +2,7 @@
 
 #include "adapters/DownloadCheckpointJson.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
+#include "adapters/YoutubeAudioAdmission.hpp"
 #include "m0/application/DownloadAdmissionController.hpp"
 #include "presentation/PlayerDownloadImport.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -20,6 +21,7 @@ struct WindowsPlayerDownloads::Impl final {
     SingleWorkerDownloadCheckpointIo checkpoint;
     DownloadService service;
     DownloadAdmissionController controller;
+    YoutubeAudioAdmission youtube;
     DownloadApplicationBinding view;
 
     Impl(PlayerPresenter& presenter, const SessionLoadResult& session,
@@ -31,7 +33,7 @@ struct WindowsPlayerDownloads::Impl final {
                   options.job_namespace.empty() ? QUuid::createUuid().toString(QUuid::Id128).toStdString()
                                                 : std::move(options.job_namespace),
                   {}, &identity),
-          controller(service, checkpoint, session, DownloadFinalSavePolicy::HoldForDecision),
+          controller(service, checkpoint, session, DownloadFinalSavePolicy::HoldForDecision), youtube(controller),
           view(presenter, controller, service,
                {.shutdown = [this] { execution->shutdown(); }, .stopped = [this] { return execution->stopped(); }},
                std::move(options.binding)) {}
@@ -51,6 +53,7 @@ WindowsPlayerDownloads::~WindowsPlayerDownloads() = default;
 bool WindowsPlayerDownloads::start() { return impl_->view.start(); }
 DownloadApplicationBinding* WindowsPlayerDownloads::binding() const { return &impl_->view; }
 AsyncDownloadSubmission& WindowsPlayerDownloads::submission() { return impl_->controller; }
+AsyncYoutubeAudioSubmission& WindowsPlayerDownloads::youtubeSubmission() { return impl_->youtube; }
 void WindowsPlayerDownloads::poll() { impl_->view.poll(); }
 bool WindowsPlayerDownloads::stopped() const {
     return impl_->controller.stopped() && impl_->checkpoint.stopped() && impl_->execution->stopped();

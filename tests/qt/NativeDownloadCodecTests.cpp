@@ -484,6 +484,41 @@ class NativeDownloadCodecTests final : public QObject {
         QVERIFY(encodeNativeDownloadRequest(original).isEmpty());
     }
 
+    void principalEncoderRefusesYoutubeMetadataEvenOnAnOtherwiseDirectRequest() {
+        DownloadRequest original{request_id.toStdString(), {{"https://media.example.test/audio.mp3", "Audio"}}};
+        QVERIFY(!encodeNativeDownloadRequest(original).isEmpty());
+        original.items.front().youtube = YoutubeAudioItem{.video_id = "AbCdEf_12-3",
+                                                          .title = "Audio",
+                                                          .artist = "Artist",
+                                                          .lyrics_page = "https://letras.mus.br/artist/audio/",
+                                                          .fetch_lyrics = true};
+        const auto preserved = original;
+        QVERIFY(encodeNativeDownloadRequest(original).isEmpty());
+        QVERIFY(original == preserved);
+        original.items.front().youtube = YoutubeAudioItem{};
+        QVERIFY(encodeNativeDownloadRequest(original).isEmpty());
+        original.items.front().youtube.reset();
+        QVERIFY(!encodeNativeDownloadRequest(original).isEmpty());
+    }
+
+    void principalDecoderNeverPopulatesOrAcceptsYoutubeMetadata() {
+        const auto decoded = decodeNativeDownloadRequest(bytes(request()));
+        QCOMPARE(decoded.error, DownloadSubmissionError::None);
+        QCOMPARE(decoded.request.items.size(), std::size_t{1});
+        QVERIFY(!decoded.request.items.front().youtube);
+        auto changed = item();
+        changed.insert(QStringLiteral("youtube"),
+                       QJsonObject{{QStringLiteral("videoId"), QStringLiteral("AbCdEf_12-3")},
+                                   {QStringLiteral("fetchLyrics"), true}});
+        const auto injected = decodeNativeDownloadRequest(bytes(request({changed})));
+        QCOMPARE(injected.error, DownloadSubmissionError::InvalidRequest);
+        QVERIFY(injected.request.items.empty());
+        const auto youtube = decodeNativeDownloadRequest(
+            bytes(request({item(QStringLiteral("https://www.youtube.com/watch?v=AbCdEf_12-3"))})));
+        QCOMPARE(youtube.error, DownloadSubmissionError::UnsupportedSource);
+        QVERIFY(youtube.request.items.empty());
+    }
+
     void typedRequestEncoderRejectsInvalidDtos() {
         const DownloadRequest valid{request_id.toStdString(), {{"https://media.example.test/audio.mp3", "Audio"}}};
         std::vector<DownloadRequest> invalid;

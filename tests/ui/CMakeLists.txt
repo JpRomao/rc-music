@@ -75,6 +75,12 @@ set_target_properties(rc_music_youtube_resolution_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_youtube_resolver_session_tests rc_music.youtube.resolver-session
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeResolverSessionTests.cpp" rc_music_youtube_resolution)
 set_target_properties(rc_music_youtube_resolver_session_tests PROPERTIES AUTOMOC ON)
+if(TARGET rc_music_browser_integration AND TARGET rc_music_download_documents)
+    add_ui_test(rc_music_youtube_admission_tests rc_music.youtube.admission
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeAudioAdmissionTests.cpp" rc_music_browser_integration)
+    target_link_libraries(rc_music_youtube_admission_tests PRIVATE rc_music_download_documents)
+    set_target_properties(rc_music_youtube_admission_tests PROPERTIES AUTOMOC ON)
+endif()
 if(WIN32 AND TARGET rc_music_download_network)
     add_ui_test(rc_music_youtube_execution_tests rc_music.youtube.execution
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeDownloadExecutionTests.cpp" rc_music_download_network)

@@ -45,11 +45,33 @@ bool validText(const std::string& text, const std::size_t max_bytes) {
     return !text.empty() && text.size() <= max_bytes && text.find('\0') == std::string::npos;
 }
 
+bool validYoutubeContext(const DownloadItem& item) {
+    if (!item.youtube)
+        return true;
+    const auto& youtube = *item.youtube;
+    constexpr std::string_view prefix{"https://www.youtube.com/watch?v="};
+    const auto optional_text = [](const std::string& text, const std::size_t max_bytes) {
+        return text.size() <= max_bytes && text.find('\0') == std::string::npos;
+    };
+    // Bounded/coherent data, never source authorization. The trusted adapter
+    // applies the full YouTube/lyrics policy before invoking this service.
+    return item.kind == DownloadMediaKind::Audio && youtube.video_id.size() == 11 &&
+           std::all_of(youtube.video_id.begin(), youtube.video_id.end(),
+                       [](const char value) {
+                           return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+                                  (value >= '0' && value <= '9') || value == '_' || value == '-';
+                       }) &&
+           item.url.starts_with(prefix) && std::string_view{item.url}.substr(prefix.size()) == youtube.video_id &&
+           validText(youtube.title, 512) && youtube.title == item.title && optional_text(youtube.artist, 512) &&
+           optional_text(youtube.lyrics_page, 2048);
+}
+
 bool validRequest(const DownloadRequest& request) {
     return validUuid(request.request_id) && !request.items.empty() && request.items.size() <= max_batch_items &&
            std::all_of(request.items.begin(), request.items.end(), [](const DownloadItem& item) {
                return validText(item.url, max_url_bytes) && validText(item.title, max_title_bytes) &&
-                      (item.kind == DownloadMediaKind::Audio || item.kind == DownloadMediaKind::Video);
+                      (item.kind == DownloadMediaKind::Audio || item.kind == DownloadMediaKind::Video) &&
+                      validYoutubeContext(item);
            });
 }
 
@@ -670,10 +692,17 @@ DownloadSubmissionResult DownloadService::submitImpl(const DownloadRequest& requ
         return {.error = DownloadSubmissionError::LimitExceeded};
 
     // Strings were bounded before counting. Subtraction keeps configured SIZE_MAX budgets
-    // safe; this counts retained request strings, not physical allocator/container overhead.
+    // safe; this counts retained strings and the explicit lyrics-choice byte,
+    // not physical allocator/container overhead. Untyped requests retain v1 accounting.
     std::size_t bytes = request.request_id.size();
-    for (const auto& item : request.items)
+    for (const auto& item : request.items) {
         bytes += item.url.size() + item.title.size();
+        if (item.youtube) {
+            const auto& youtube = *item.youtube;
+            bytes +=
+                youtube.video_id.size() + youtube.title.size() + youtube.artist.size() + youtube.lyrics_page.size() + 1;
+        }
+    }
     if (bytes > state.limits.max_retained_request_bytes - state.retained_request_bytes)
         return {.error = DownloadSubmissionError::LimitExceeded};
 

@@ -31,7 +31,7 @@ bool validText(const std::string& text, const std::size_t maximum) {
     return QString::fromUtf8(text).toUtf8().toStdString() == text;
 }
 bool validItem(const DownloadItem& item) {
-    return validText(item.url, 8192) && validText(item.title, 800) &&
+    return !item.youtube && validText(item.url, 8192) && validText(item.title, 800) &&
            (item.kind == DownloadMediaKind::Audio || item.kind == DownloadMediaKind::Video) &&
            parseDownloadNetworkTarget(QString::fromUtf8(item.url)).has_value();
 }

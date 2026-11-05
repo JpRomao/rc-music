@@ -15,7 +15,8 @@
 using namespace music_player::m0;
 namespace {
 struct State final {
-    std::atomic_int resolver_starts{}, resolver_cancels{}, destinations{}, destination_starts{}, destination_cancels{};
+    std::atomic_int resolver_starts{}, resolver_cancels{}, destinations{}, destination_starts{}, destination_cancels{},
+        direct_starts{};
     std::atomic_bool resolve{true}, resolver_ack{true}, destination_ack{true}, worker{false};
     std::atomic_bool malformed{}, false_destination_start{};
     std::atomic_bool block_preparation{}, preparation_entered{}, preparation_released{};
@@ -72,7 +73,11 @@ class Destination final : public WindowsDownloadTask {
 
   public:
     explicit Destination(std::shared_ptr<State> state) : state_(std::move(state)) {}
-    bool start(const std::string&, const DownloadItem&, qint64) override { return false; }
+    bool start(const std::string& id, const DownloadItem&, qint64) override {
+        id_ = id;
+        ++state_->direct_starts;
+        return true;
+    }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64, qint64) override {
         if (!cap)
             return false;
@@ -142,6 +147,64 @@ void stop(WindowsDownloadExecution& value) {
 class YoutubeDownloadExecutionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void legacyDirectExecutionRefusesYoutubeContextBeforeCopyingIt() {
+        auto state = std::make_shared<State>();
+        WindowsDownloadExecution legacy([state] { return std::make_unique<Destination>(state); });
+        DownloadItem invalid{"https://media.example.test/music.mp3", "Direct", DownloadMediaKind::Audio};
+        invalid.youtube = YoutubeAudioItem{"aB0-_Cd1EF2", "Direct", std::string(513, 'a'), "", false};
+        QVERIFY(!legacy.start("direct_1", invalid));
+        QCOMPARE(state->direct_starts.load(), 0);
+        stop(legacy);
+    }
+    void oneTrustedExecutorRunsDirectAndTypedYoutubeSequentially() {
+        auto state = std::make_shared<State>();
+        auto value = makeWindowsMediaAndYoutubeExecution([state] { return std::make_unique<Process>(state); },
+                                                         [state] {
+                                                             ++state->destinations;
+                                                             return std::make_unique<Destination>(state);
+                                                         },
+                                                         [] { return qint64{1'999'999'000}; });
+        QVERIFY(value);
+        const DownloadItem direct{"https://media.example.test/music.mp3", "Direct", DownloadMediaKind::Audio};
+        QVERIFY(value->start("direct_1", direct));
+        QTRY_COMPARE(value->poll("direct_1").state, DownloadExecutionState::Published);
+        QCOMPARE(state->direct_starts.load(), 1);
+        QCOMPARE(state->resolver_starts.load(), 0);
+        auto youtube = watch;
+        youtube.youtube = YoutubeAudioItem{"aB0-_Cd1EF2", youtube.title, "Artist", "", true};
+        QVERIFY(value->start("youtube_1", youtube));
+        QTRY_COMPARE(value->poll("youtube_1").state, DownloadExecutionState::Published);
+        QCOMPARE(state->direct_starts.load(), 1);
+        QCOMPARE(state->resolver_starts.load(), 1);
+        QCOMPARE(state->destination_starts.load(), 1);
+        stop(*value);
+    }
+    void theMixedExecutorDoesNotInferYoutubeAuthorityFromAUrlOrIncoherentContext() {
+        auto state = std::make_shared<State>();
+        auto value = makeWindowsMediaAndYoutubeExecution([state] { return std::make_unique<Process>(state); },
+                                                         [state] { return std::make_unique<Destination>(state); },
+                                                         [] { return qint64{1'999'999'000}; });
+        QVERIFY(value);
+        QVERIFY(!value->start("job_1", watch));
+        for (int field = 0; field < 5; ++field) {
+            auto invalid = watch;
+            invalid.youtube = YoutubeAudioItem{"aB0-_Cd1EF2", invalid.title, "Artist", "", false};
+            if (field == 0)
+                invalid.youtube->video_id = "zzzzzzzzzzz";
+            else if (field == 1)
+                invalid.youtube->title = "Mismatched";
+            else if (field == 2)
+                invalid.youtube->artist = std::string(513, 'x');
+            else if (field == 3)
+                invalid.youtube->lyrics_page = "https://attacker.example/";
+            else
+                invalid.url = "https://media.example.test/file.mp3";
+            QVERIFY(!value->start("job_1", invalid));
+        }
+        QCOMPARE(state->direct_starts.load(), 0);
+        QCOMPARE(state->resolver_starts.load(), 0);
+        stop(*value);
+    }
     void resolutionHandsTheExactCapabilityToTheExistingTaskOnTheWorker() {
         auto state = std::make_shared<State>();
         auto value = execution(state);

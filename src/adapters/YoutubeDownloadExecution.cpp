@@ -1,4 +1,5 @@
 #include "YoutubeDownloadExecution.hpp"
+#include "DownloadNetworkPolicy.hpp"
 #include "WindowsDownloadExecutionValidation.hpp"
 #include "YoutubeAudioCodec.hpp"
 
@@ -8,12 +9,28 @@ namespace music_player::m0 {
 namespace {
 QString videoId(const DownloadItem& item) {
     constexpr std::string_view prefix{"https://www.youtube.com/watch?v="};
-    if (item.kind != DownloadMediaKind::Audio || !item.url.starts_with(prefix))
+    if (item.kind != DownloadMediaKind::Audio || item.url.size() != prefix.size() + 11 || !item.url.starts_with(prefix))
         return {};
     const auto id = item.url.substr(prefix.size());
     if (canonicalYoutubeWatchUrl(id).toUtf8().toStdString() != item.url)
         return {};
     return QString::fromLatin1(id.data(), static_cast<qsizetype>(id.size()));
+}
+bool youtubeContext(const DownloadItem& item) {
+    if (!item.youtube || item.youtube->video_id.size() != 11 || item.youtube->title.size() > 512 ||
+        item.youtube->artist.size() > 512 || item.youtube->lyrics_page.size() > 2048 ||
+        item.youtube->title != item.title)
+        return false;
+    const auto id = videoId(item);
+    return !id.isEmpty() && id.toStdString() == item.youtube->video_id &&
+           !encodeYoutubeAudioRequest({"01234567-89ab-4cde-8fab-0123456789ab", {*item.youtube}}).isEmpty();
+}
+bool directItem(const DownloadItem& item) {
+    if (item.youtube || item.url.empty() || item.url.size() > 8192 || item.url.find('\0') != std::string::npos ||
+        (item.kind != DownloadMediaKind::Audio && item.kind != DownloadMediaKind::Video))
+        return false;
+    const auto url = QString::fromUtf8(item.url);
+    return url.toUtf8().toStdString() == item.url && parseDownloadNetworkTarget(url).has_value();
 }
 bool terminal(DownloadExecutionState state) {
     return state == DownloadExecutionState::Published || state == DownloadExecutionState::Failed ||
@@ -185,12 +202,50 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     DownloadFailure stop_error_{DownloadFailure::None};
     bool started_{}, cancelled_{}, destination_stop_requested_{};
 };
+class RoutedSessionTask final : public WindowsDownloadTask {
+  public:
+    RoutedSessionTask(YoutubeResolverProcessFactory source, WindowsDownloadExecution::TaskFactory destination,
+                      YoutubeResolverEpochClock clock, YoutubeResolverLimits limits)
+        : source_(std::move(source)), destination_(std::move(destination)), clock_(std::move(clock)), limits_(limits) {}
+    bool start(const std::string& id, const DownloadItem& item, qint64 now_ms) override {
+        if (attempted_)
+            return false;
+        attempted_ = true;
+        failure_ = {.job_id = id, .state = DownloadExecutionState::Failed, .error = DownloadFailure::Unavailable};
+        if (item.youtube)
+            task_ = std::make_unique<YoutubeSessionTask>(source_, destination_, clock_, limits_);
+        else
+            task_ = destination_();
+        return task_ && task_->start(id, item, now_ms);
+    }
+    void cancel() override {
+        if (task_)
+            task_->cancel();
+    }
+    DownloadExecutionUpdate poll(qint64 now_ms) override { return task_ ? task_->poll(now_ms) : failure_; }
+    std::filesystem::path retainedPublicationPath() const override {
+        return task_ ? task_->retainedPublicationPath() : std::filesystem::path{};
+    }
+
+  private:
+    YoutubeResolverProcessFactory source_;
+    WindowsDownloadExecution::TaskFactory destination_;
+    YoutubeResolverEpochClock clock_;
+    YoutubeResolverLimits limits_;
+    std::unique_ptr<WindowsDownloadTask> task_;
+    DownloadExecutionUpdate failure_;
+    bool attempted_{};
+};
 } // namespace
 class YoutubeDownloadExecutionFactory final {
   public:
-    static std::unique_ptr<WindowsDownloadExecution> create(WindowsDownloadExecution::TaskFactory factory) {
-        return std::unique_ptr<WindowsDownloadExecution>(new WindowsDownloadExecution(
-            std::move(factory), [](const DownloadItem& item) { return !videoId(item).isEmpty(); }));
+    static std::unique_ptr<WindowsDownloadExecution> create(WindowsDownloadExecution::TaskFactory factory,
+                                                            const bool mixed = false) {
+        return std::unique_ptr<WindowsDownloadExecution>(
+            new WindowsDownloadExecution(std::move(factory), [mixed](const DownloadItem& item) {
+                return mixed ? (item.youtube ? youtubeContext(item) : directItem(item))
+                             : (!videoId(item).isEmpty() && (!item.youtube || youtubeContext(item)));
+            }));
     }
 };
 std::unique_ptr<WindowsDownloadExecution>
@@ -203,5 +258,17 @@ makeWindowsYoutubeAudioExecution(YoutubeResolverProcessFactory source,
         [source = std::move(source), destination = std::move(destination), clock = std::move(clock), limits] {
             return std::make_unique<YoutubeSessionTask>(source, destination, clock, limits);
         });
+}
+std::unique_ptr<WindowsDownloadExecution>
+makeWindowsMediaAndYoutubeExecution(YoutubeResolverProcessFactory source,
+                                    WindowsDownloadExecution::TaskFactory destination, YoutubeResolverEpochClock clock,
+                                    YoutubeResolverLimits limits) {
+    if (!source || !destination || !clock)
+        return {};
+    return YoutubeDownloadExecutionFactory::create(
+        [source = std::move(source), destination = std::move(destination), clock = std::move(clock), limits] {
+            return std::make_unique<RoutedSessionTask>(source, destination, clock, limits);
+        },
+        true);
 }
 } // namespace music_player::m0

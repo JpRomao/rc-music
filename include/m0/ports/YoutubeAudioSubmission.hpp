@@ -1,16 +1,12 @@
 #pragma once
 
 #include "m0/ports/DownloadSubmission.hpp"
+#include "m0/ports/YoutubeAudioItem.hpp"
 
 #include <string>
 #include <vector>
 
 namespace music_player::m0 {
-struct YoutubeAudioItem final {
-    std::string video_id{}, title{}, artist{}, lyrics_page{};
-    bool fetch_lyrics{false};
-    bool operator==(const YoutubeAudioItem&) const = default;
-};
 struct YoutubeAudioRequest final {
     std::string request_id{};
     std::vector<YoutubeAudioItem> items{};

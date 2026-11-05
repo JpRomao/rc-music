@@ -8,6 +8,7 @@
 
 namespace music_player::m0 {
 class AsyncDownloadSubmission;
+class AsyncYoutubeAudioSubmission;
 class PlayerPresenter;
 class WindowsDownloadExecution;
 struct SessionLoadResult;
@@ -40,8 +41,11 @@ class WindowsPlayerDownloads final {
 
     [[nodiscard]] bool start();
     [[nodiscard]] DownloadApplicationBinding* binding() const;
-    // The only admission route; never expose submit/restore on the service.
+    // Both independent ingress ports use this same durable controller/queue.
+    // Never expose submit/restore on the service. YouTube still requires a
+    // trusted resolver-capable execution configuration and authenticated host.
     [[nodiscard]] AsyncDownloadSubmission& submission();
+    [[nodiscard]] AsyncYoutubeAudioSubmission& youtubeSubmission();
     void poll();
     // Physical service/checkpoint/execution drain, not proof of Saved. Failed
     // final persistence still requires the binding's explicit retry/decision.

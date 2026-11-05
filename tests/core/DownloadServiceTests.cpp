@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace music_player::m0::test {
@@ -107,6 +108,19 @@ DownloadRequest request(const unsigned int id = 1, const std::size_t count = 1) 
         result.items.push_back({.url = "https://media.example/track" + std::to_string(index) + ".mp4?token=private",
                                 .title = "Track " + std::to_string(index),
                                 .kind = DownloadMediaKind::Video});
+    return result;
+}
+
+DownloadRequest youtubeRequest(const unsigned int id = 1) {
+    auto result = request(id);
+    result.items = {{.url = "https://www.youtube.com/watch?v=AbCdEf_12-3",
+                     .title = "Synthetic opening",
+                     .kind = DownloadMediaKind::Audio,
+                     .youtube = YoutubeAudioItem{.video_id = "AbCdEf_12-3",
+                                                 .title = "Synthetic opening",
+                                                 .artist = "Synthetic artist",
+                                                 .lyrics_page = "https://www.letras.mus.br/synthetic/opening/",
+                                                 .fetch_lyrics = true}}};
     return result;
 }
 
@@ -772,6 +786,111 @@ TEST_CASE("Download retained request byte budget is exact and overflow safe", "[
     SECTION("large configuration") {
         Harness h({.max_retained_request_bytes = std::numeric_limits<std::size_t>::max()});
         REQUIRE(h.service.submit(input).error == DownloadSubmissionError::None);
+    }
+}
+
+TEST_CASE("Download admission owns every YouTube field and rejects changed request replay",
+          "[download][youtube][FR-050]") {
+    Harness h;
+    auto input = youtubeRequest();
+    const auto original = input;
+    const auto accepted = h.service.submit(input);
+    REQUIRE(accepted.error == DownloadSubmissionError::None);
+    SECTION("video identity") { input.items[0].youtube->video_id = "ZbCdEf_12-3"; }
+    SECTION("metadata title") { input.items[0].youtube->title += " changed"; }
+    SECTION("artist") { input.items[0].youtube->artist += " changed"; }
+    SECTION("lyrics page") { input.items[0].youtube->lyrics_page += "other/"; }
+    SECTION("lyrics choice") { input.items[0].youtube->fetch_lyrics = false; }
+    SECTION("optional presence") { input.items[0].youtube.reset(); }
+    REQUIRE(input.items != original.items);
+    REQUIRE(h.service.submit(input).error == DownloadSubmissionError::InvalidRequest);
+    REQUIRE(h.service.submit(original).job_ids == accepted.job_ids);
+    h.service.tick(0);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.starts.front().second == original.items.front());
+}
+
+TEST_CASE("YouTube typed metadata is bounded coherently before consuming any receipt or job",
+          "[download][youtube][FR-050]") {
+    Harness h;
+    auto input = youtubeRequest();
+    auto& item = input.items.front();
+    auto& youtube = *item.youtube;
+    SECTION("short ID") { youtube.video_id.pop_back(); }
+    SECTION("long ID") { youtube.video_id.push_back('x'); }
+    SECTION("nonopaque ID") { youtube.video_id[0] = '/'; }
+    SECTION("ID NUL") { youtube.video_id[0] = '\0'; }
+    SECTION("empty metadata title") { youtube.title.clear(); }
+    SECTION("metadata title bytes") { youtube.title.assign(513, 't'); }
+    SECTION("metadata title NUL") { youtube.title.push_back('\0'); }
+    SECTION("artist bytes") { youtube.artist.assign(513, 'a'); }
+    SECTION("artist NUL") { youtube.artist.push_back('\0'); }
+    SECTION("lyrics page bytes") { youtube.lyrics_page.assign(2049, 'p'); }
+    SECTION("lyrics page NUL") { youtube.lyrics_page.push_back('\0'); }
+    SECTION("mismatched canonical ID") { youtube.video_id = "ZbCdEf_12-3"; }
+    SECTION("mismatched title") { youtube.title = "Another title"; }
+    SECTION("video kind") { item.kind = DownloadMediaKind::Video; }
+    SECTION("direct URL with context") { item.url = "https://media.example/audio.mp3"; }
+    SECTION("canonical URL extra query") { item.url += "&arbitrary=1"; }
+    const auto result = h.service.submit(input);
+    REQUIRE(result.error == DownloadSubmissionError::InvalidRequest);
+    REQUIRE(result.job_ids.empty());
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.service.submit(youtubeRequest(2)).job_ids == std::vector<std::string>{"test-1"});
+}
+
+TEST_CASE("YouTube metadata inclusive byte boundaries remain usable without artist or lyrics page",
+          "[download][youtube][FR-050]") {
+    Harness h;
+    auto input = youtubeRequest();
+    auto& item = input.items.front();
+    item.title.assign(512, 't');
+    item.youtube->title = item.title;
+    SECTION("maximum retained fields") {
+        item.youtube->artist.assign(512, 'a');
+        constexpr std::string_view prefix{"https://letras.mus.br/"};
+        item.youtube->lyrics_page = std::string(prefix) + std::string(2048 - prefix.size(), 'p');
+    }
+    SECTION("optional empty metadata") {
+        item.youtube->artist.clear();
+        item.youtube->lyrics_page.clear();
+        item.youtube->fetch_lyrics = false;
+    }
+    REQUIRE(h.service.submit(input).error == DownloadSubmissionError::None);
+    h.service.tick(0);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.execution.starts.front().second == item);
+}
+
+TEST_CASE("YouTube quota counts all retained metadata bytes without changing the direct request budget",
+          "[download][youtube][FR-050]") {
+    const auto input = youtubeRequest();
+    const auto& item = input.items.front();
+    const auto& youtube = *item.youtube;
+    const auto bytes = input.request_id.size() + item.url.size() + item.title.size() + youtube.video_id.size() +
+                       youtube.title.size() + youtube.artist.size() + youtube.lyrics_page.size() + 1;
+    SECTION("inclusive limit and replay") {
+        RecoveryIdentity identity;
+        FakeExecution execution;
+        FakeImport importer;
+        DownloadService service{execution, importer, "youtube", {.max_retained_request_bytes = bytes}, &identity};
+        REQUIRE(service.submit(input).error == DownloadSubmissionError::None);
+        REQUIRE(service.submit(input).error == DownloadSubmissionError::None);
+        REQUIRE(service.checkpoint()->receipts.front().retained_request_bytes == bytes);
+        REQUIRE(service.submit(youtubeRequest(2)).error == DownloadSubmissionError::LimitExceeded);
+    }
+    SECTION("one byte too small rejects atomically") {
+        Harness h({.max_retained_request_bytes = bytes - 1});
+        REQUIRE(h.service.submit(input).error == DownloadSubmissionError::LimitExceeded);
+        REQUIRE(h.service.snapshot().empty());
+        REQUIRE(h.execution.starts.empty());
+    }
+    SECTION("direct request still counts only its original strings") {
+        const auto direct = request();
+        const auto direct_bytes = direct.request_id.size() + direct.items[0].url.size() + direct.items[0].title.size();
+        Harness h({.max_retained_request_bytes = direct_bytes});
+        REQUIRE(h.service.submit(direct).error == DownloadSubmissionError::None);
     }
 }
 

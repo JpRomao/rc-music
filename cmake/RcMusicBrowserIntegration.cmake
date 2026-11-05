@@ -2,20 +2,23 @@ include_guard(GLOBAL)
 
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core)
 include("${CMAKE_CURRENT_LIST_DIR}/RcMusicMediaData.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/RcMusicYoutube.cmake")
 add_library(rc_music_browser_integration STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeDownloadCodec.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeMessageFrame.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeDownloadSession.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/NativeYoutubeAudioSession.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeAudioAdmission.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadJobsModel.cpp"
 )
 target_include_directories(rc_music_browser_integration PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
-target_link_libraries(rc_music_browser_integration PUBLIC rc_music_downloads rc_music_media_data Qt6::Core)
+target_link_libraries(rc_music_browser_integration PUBLIC rc_music_downloads rc_music_media_data rc_music_youtube_codec Qt6::Core)
 set_target_properties(rc_music_browser_integration PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_browser_integration)
 
 if(BUILD_TESTING)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
-    foreach(unit IN ITEMS NativeDownloadCodec NativeMessageFrame NativeDownloadSession NativeDownloadService DownloadJobsModel)
+    foreach(unit IN ITEMS NativeDownloadCodec NativeMessageFrame NativeDownloadSession NativeYoutubeAudioSession NativeDownloadService DownloadJobsModel)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_include_directories(${target} PRIVATE "${RC_MUSIC_SOURCE_ROOT}/src/adapters")

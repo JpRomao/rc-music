@@ -14,4 +14,11 @@ using YoutubeResolverEpochClock = std::function<qint64()>;
 makeWindowsYoutubeAudioExecution(YoutubeResolverProcessFactory resolver,
                                  WindowsDownloadExecution::TaskFactory destination,
                                  YoutubeResolverEpochClock epoch_clock, YoutubeResolverLimits limits = {});
+// One executor/queue owner for the two independently validated ingress ports.
+// Only a consistent typed YouTube context selects resolution; legacy items
+// keep the direct-source policy and cannot acquire YouTube indirectly.
+[[nodiscard]] std::unique_ptr<WindowsDownloadExecution>
+makeWindowsMediaAndYoutubeExecution(YoutubeResolverProcessFactory resolver,
+                                    WindowsDownloadExecution::TaskFactory destination,
+                                    YoutubeResolverEpochClock epoch_clock, YoutubeResolverLimits limits = {});
 } // namespace music_player::m0

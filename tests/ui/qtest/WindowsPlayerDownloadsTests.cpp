@@ -1,5 +1,9 @@
+#include "../../qt/support/YoutubeResolverTestSupport.hpp"
 #include "adapters/DownloadJobsModel.hpp"
+#include "adapters/NativeYoutubeAudioSession.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
+#include "adapters/YoutubeAudioCodec.hpp"
+#include "adapters/YoutubeDownloadExecution.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/ports/AsyncDownloadSubmission.hpp"
@@ -141,6 +145,9 @@ class Task final : public WindowsDownloadTask {
         id_ = id;
         return true;
     }
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64 now, qint64) override {
+        return cap && start(cap->jobId(), {}, now);
+    }
     void cancel() override { state_->cancelled = true; }
     DownloadExecutionUpdate poll(qint64) override {
         if (state_->cancelled && state_->allow_cancel_terminal)
@@ -173,10 +180,15 @@ struct Harness final {
     std::shared_ptr<CheckpointState> checkpoint{std::make_shared<CheckpointState>()};
     std::shared_ptr<TaskState> task{std::make_shared<TaskState>()};
     std::unique_ptr<WindowsPlayerDownloads> owner;
-    Harness() {
+    explicit Harness(bool youtube = false) {
+        WindowsDownloadExecution::TaskFactory destination = [state = task] { return std::make_unique<Task>(state); };
+        auto execution =
+            youtube ? makeWindowsMediaAndYoutubeExecution(
+                          [] { return std::make_unique<music_player::m0::test::FixtureYoutubeResolverProcess>(); },
+                          destination, [] { return qint64{1'999'999'000}; })
+                    : std::make_unique<WindowsDownloadExecution>(destination);
         owner = std::make_unique<WindowsPlayerDownloads>(
-            presenter, SessionLoadResult{},
-            std::make_unique<WindowsDownloadExecution>([state = task] { return std::make_unique<Task>(state); }),
+            presenter, SessionLoadResult{}, std::move(execution),
             [state = checkpoint] { return std::make_unique<CheckpointStore>(state); },
             WindowsPlayerDownloadsOptions{.job_namespace = "owner", .binding = {.automatic_polling = false}});
     }
@@ -227,6 +239,47 @@ struct Harness final {
 class WindowsPlayerDownloadsTests final : public QObject {
     Q_OBJECT
   private slots:
+    void youtubeSessionSurvivesDisconnectAndImportsOnlyAfterBothSavedAcknowledgements() {
+        Harness h(true);
+        QVERIFY(h.ready());
+        h.checkpoint->allow(false);
+        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
+                                           {{"aB0-_Cd1EF2", "Synthetic song", "Artist", "", true}}};
+        const auto frame = encodeNativeMessageFrame(encodeYoutubeAudioRequest(selected));
+        const QString origin = QStringLiteral("chrome-extension://abcdefghijklmnopabcdefghijklmnop/");
+        {
+            NativeYoutubeAudioSession observer(origin, origin, h.owner->youtubeSubmission());
+            QCOMPARE(observer.receive(frame, 1).status, NativeSessionStatus::Awaiting);
+            QCOMPARE(observer.finishInput(2).status, NativeSessionStatus::Closed);
+        }
+        QVERIFY(h.wait([&] { return h.checkpoint->saves == 1; }));
+        QCOMPARE(h.task->starts.load(), 0);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
+        NativeYoutubeAudioSession reconnected(origin, origin, h.owner->youtubeSubmission());
+        QCOMPARE(reconnected.receive(frame, 3).status, NativeSessionStatus::Awaiting);
+        h.checkpoint->allow(true);
+        QVERIFY(h.wait([&] { return h.session_writer.active.has_value(); }));
+        const auto reply = reconnected.poll(4);
+        QCOMPARE(reply.status, NativeSessionStatus::Replied);
+        const auto ack = decodeYoutubeAudioResponse(reply.response_frame.mid(4), selected.request_id, 1);
+        QVERIFY(ack);
+        QCOMPARE(ack->error, DownloadSubmissionError::None);
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 1);
+        QCOMPARE(h.state(), QStringLiteral("importing"));
+        QCOMPARE(h.autosave.savedRevision(), SessionRevision{0});
+        QCOMPARE(h.backend.loads, 0);
+        QVERIFY(!h.presenter.hasCurrentTrack());
+        h.session_writer.save();
+        QVERIFY(h.wait([&] { return h.state() == QStringLiteral("completed"); }));
+        QCOMPARE(h.session_writer.disk.download_import_receipts.size(), std::size_t{1});
+        const auto replay = h.owner->youtubeSubmission().begin(selected);
+        QCOMPARE(replay.state, DownloadAdmissionState::Completed);
+        QCOMPARE(replay.result.job_ids, ack->job_ids);
+        QCOMPARE(h.task->starts.load(), 1);
+        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 1);
+        QVERIFY(h.drain());
+    }
     void refusesMissingExecutionOrCheckpointFactory() {
         Harness h;
         QVERIFY_THROWS_EXCEPTION(std::invalid_argument,

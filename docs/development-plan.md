@@ -35,6 +35,10 @@ Incremento de 2026-11-05: [resolver e rota de execução](youtube-audio-and-lyri
 
 Fechamento automatizado desse incremento: **9/9 CTest, 501 casos Qt**, sem falhas/skips; formato de **26 C++** e builds Release Lite/Completa/módulo de rede standalone sem testes passaram. A revisão identificou e corrigiu com Reds o cancelamento durante preparo, DTO sem ACK válido, limites de metadados e retry de cancelamento com exceção. Os [recibos e limites](youtube-audio-and-lyrics.md#evidência-do-resolver-e-da-rota-de-execução) distinguem helpers/fakes e conversão local anterior de um download público. Nenhum runtime/host YouTube foi instalado ou habilitado, nem os gates de Letras, segurança ou distribuição foram encerrados.
 
+Continuidade de 2026-11-05: ingresso YouTube assíncrono e controlador de admissão comum, com contexto tipado completo e fingerprint separado, mantendo os recibos v1 da principal. A fila e o executor são compartilhados; a sessão YouTube independente aguarda Saved antes de responder e não cancela o trabalho quando o navegador desconecta. A jornada instrumentada liga o frame ao checkpoint, à resolução falsa e à importação Session com segundo Saved, sem seleção/autoplay. Não há novo host instalado, runtime real configurado ou aquisição de letra habilitada; a intenção de letra é preservada no pedido e em seu hash, sem fingir que o checkpoint contém o payload necessário para retomá-la sozinho.
+
+O [fechamento desse ingresso](youtube-audio-and-lyrics.md#evidência-da-admissão-durável-e-fila-compartilhada) passou **10/10 CTest, 549 Qt**, mais **167 casos puros/4.313 assertions**, sem falhas/skips. Formato **22 C++**, builds Lite/Completa, rede standalone e serviço sem Qt/sem testes passaram; documentação e rastreabilidade conservam os estados dos 86 requisitos. A sessão e a principal continuam separadas; runtime/host autênticos e letras/fallback permanecem próximos passos reais. Nenhum instalador, nova interação nativa ou benchmark foi executado.
+
 ## 1. Regras de uso
 
 ### 1.1 Hierarquia

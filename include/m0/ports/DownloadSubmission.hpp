@@ -1,5 +1,8 @@
 #pragma once
 
+#include "m0/ports/YoutubeAudioItem.hpp"
+
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +14,9 @@ struct DownloadItem final {
     std::string url{};
     std::string title{};
     DownloadMediaKind kind{DownloadMediaKind::Audio};
+    // Data retained for a separately authenticated YouTube composition only.
+    // Ordinary ingress and execution must not infer permission from it.
+    std::optional<YoutubeAudioItem> youtube{};
     bool operator==(const DownloadItem&) const = default;
 };
 

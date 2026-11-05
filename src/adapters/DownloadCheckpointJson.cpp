@@ -1,4 +1,5 @@
 #include "adapters/DownloadCheckpointJson.hpp"
+#include "adapters/YoutubeAudioCodec.hpp"
 
 #include <QCryptographicHash>
 #include <QJsonArray>
@@ -8,6 +9,7 @@
 #include <QSet>
 #include <QString>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -403,16 +405,51 @@ std::string QtDownloadRequestIdentity::fingerprint(const DownloadRequest& reques
             !utf8Text(item.url) || !utf8Text(item.title))
             return {};
     }
+    const bool youtube_request = std::any_of(request.items.begin(), request.items.end(),
+                                             [](const DownloadItem& item) { return item.youtube.has_value(); });
+    if (youtube_request) {
+        for (const auto& item : request.items) {
+            if (!item.youtube || item.kind != DownloadMediaKind::Audio)
+                return {};
+            const auto& youtube = *item.youtube;
+            if (youtube.video_id.size() != 11 || youtube.title.size() > 512 || youtube.artist.size() > 512 ||
+                youtube.lyrics_page.size() > 2048 || youtube.title != item.title || !utf8Text(youtube.video_id) ||
+                !utf8Text(youtube.title) || !utf8Text(youtube.artist) || !utf8Text(youtube.lyrics_page) ||
+                canonicalYoutubeWatchUrl(youtube.video_id).toUtf8().toStdString() != item.url)
+                return {};
+        }
+        // Identity excludes the caller UUID. A fixed valid envelope lets the
+        // strict codec validate typed metadata, duplicates and its wire budget
+        // without making that unrelated transport field part of the identity.
+        YoutubeAudioRequest typed{.request_id = "00000000-0000-4000-8000-000000000000"};
+        typed.items.reserve(request.items.size());
+        for (const auto& item : request.items)
+            typed.items.push_back(*item.youtube);
+        if (encodeYoutubeAudioRequest(typed).isEmpty())
+            return {};
+    }
     QCryptographicHash hash{QCryptographicHash::Sha256};
     constexpr char prefix[] = "RCMusic.DownloadRequest.v1";
-    // sizeof includes the required domain separator NUL byte.
-    hash.addData(QByteArrayView{prefix, static_cast<qsizetype>(sizeof(prefix))});
+    constexpr char youtube_prefix[] = "RCMusic.DownloadRequest.youtube.v1";
+    // sizeof includes the required domain separator NUL byte. Keep the original
+    // prefix/framing byte-identical for receipts without YouTube metadata.
+    hash.addData(youtube_request ? QByteArrayView{youtube_prefix, static_cast<qsizetype>(sizeof(youtube_prefix))}
+                                 : QByteArrayView{prefix, static_cast<qsizetype>(sizeof(prefix))});
     appendUnsigned(hash, static_cast<std::uint64_t>(request.items.size()));
     for (const auto& item : request.items) {
         const char kind = item.kind == DownloadMediaKind::Audio ? 0 : 1;
         hash.addData(QByteArrayView{&kind, 1});
         appendText(hash, item.url);
         appendText(hash, item.title);
+        if (youtube_request) {
+            const auto& youtube = *item.youtube;
+            appendText(hash, youtube.video_id);
+            appendText(hash, youtube.title);
+            appendText(hash, youtube.artist);
+            appendText(hash, youtube.lyrics_page);
+            const char fetch_lyrics = youtube.fetch_lyrics ? 1 : 0;
+            hash.addData(QByteArrayView{&fetch_lyrics, 1});
+        }
     }
     return hash.result().toHex().toStdString();
 }

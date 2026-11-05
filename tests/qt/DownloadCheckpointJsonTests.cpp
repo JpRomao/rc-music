@@ -1,4 +1,5 @@
 #include "adapters/DownloadCheckpointJson.hpp"
+#include "m0/application/DownloadService.hpp"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -9,6 +10,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <string_view>
+#include <utility>
 
 using namespace Qt::StringLiterals;
 
@@ -99,6 +102,32 @@ namespace {
     return {.request_id = "12345678-1234-4234-8234-123456789abc",
             .items = {{.url = "https://example.org/a.mp3", .title = "A", .kind = DownloadMediaKind::Audio}}};
 }
+
+[[nodiscard]] DownloadRequest youtubeRequest() {
+    return {.request_id = "12345678-1234-4234-8234-123456789abc",
+            .items = {{.url = "https://www.youtube.com/watch?v=AbCdEf_12-3",
+                       .title = "Synthetic 日本",
+                       .kind = DownloadMediaKind::Audio,
+                       .youtube = YoutubeAudioItem{.video_id = "AbCdEf_12-3",
+                                                   .title = "Synthetic 日本",
+                                                   .artist = "Artist café",
+                                                   .lyrics_page = "https://letras.mus.br/synthetic/opening/",
+                                                   .fetch_lyrics = true}}}};
+}
+
+struct NoExecution final : DownloadExecution {
+    unsigned int starts{};
+    bool start(const std::string&, const DownloadItem&) override {
+        ++starts;
+        return false;
+    }
+    void cancel(std::string_view) override {}
+    DownloadExecutionUpdate poll(std::string_view) override { return {}; }
+};
+
+struct NoImport final : DownloadImport {
+    bool accept(const std::string&, const std::filesystem::path&) override { return false; }
+};
 
 } // namespace
 
@@ -401,6 +430,199 @@ class DownloadCheckpointJsonTests final : public QObject {
                  std::string{"c78767ac6e84df9263cf3e407ee9955e0c15f445bfee9cb793e41e2867b6fc5f"});
         audio.request_id = "an intentionally unrelated UUID";
         QCOMPARE(identity.fingerprint(audio), identity.fingerprint(request()));
+    }
+
+    void youtubeFingerprintSeparatesEveryFieldPresenceOrderAndFraming() {
+        QtDownloadRequestIdentity identity;
+        // Independent Python hashlib/struct vector: 150 bytes, domain NUL,
+        // uint64BE count/lengths, audio byte and explicit lyrics-choice byte.
+        const DownloadRequest stable{.request_id = "01234567-89ab-4cde-8fab-0123456789ab",
+                                     .items = {{.url = "https://www.youtube.com/watch?v=aB0-_Cd1EF2",
+                                                .title = "T",
+                                                .kind = DownloadMediaKind::Audio,
+                                                .youtube = YoutubeAudioItem{"aB0-_Cd1EF2", "T", "A", "", true}}}};
+        QCOMPARE(identity.fingerprint(stable),
+                 std::string("1ef716f29b85a9a66b6738168cb3f9e32675cd964178b1831f983bf4a562ec4f"));
+        const auto original = youtubeRequest();
+        const auto fingerprint = identity.fingerprint(original);
+        QCOMPARE(fingerprint.size(), std::size_t{64});
+        auto absent = original;
+        absent.items.front().youtube.reset();
+        QVERIFY(identity.fingerprint(absent) != fingerprint);
+        auto changed = original;
+        changed.items.front().youtube->artist += " changed";
+        QVERIFY(identity.fingerprint(changed) != fingerprint);
+        changed = original;
+        changed.items.front().youtube->lyrics_page += "alternate/";
+        QVERIFY(identity.fingerprint(changed) != fingerprint);
+        changed = original;
+        changed.items.front().youtube->fetch_lyrics = false;
+        QVERIFY(identity.fingerprint(changed) != fingerprint);
+        changed = original;
+        changed.items.front().youtube->video_id = "ZbCdEf_12-3";
+        changed.items.front().url = "https://www.youtube.com/watch?v=ZbCdEf_12-3";
+        QVERIFY(identity.fingerprint(changed) != fingerprint);
+        changed = original;
+        changed.items.front().title += " changed";
+        changed.items.front().youtube->title = changed.items.front().title;
+        QVERIFY(identity.fingerprint(changed) != fingerprint);
+        auto first = original;
+        first.items.front().youtube->artist = "a";
+        first.items.front().youtube->lyrics_page = "https://letras.mus.br/b/";
+        auto other = first;
+        other.items.front().youtube->artist = "ab";
+        other.items.front().youtube->lyrics_page = "https://letras.mus.br/";
+        // Both independently valid metadata combinations retain distinct identities.
+        other.items.front().youtube->lyrics_page += "c/";
+        QVERIFY(!identity.fingerprint(first).empty());
+        QVERIFY(!identity.fingerprint(other).empty());
+        QVERIFY(identity.fingerprint(first) != identity.fingerprint(other));
+        auto ordered = original;
+        ordered.items.push_back(changed.items.front());
+        ordered.items.back().youtube->video_id = "ZbCdEf_12-3";
+        ordered.items.back().url = "https://www.youtube.com/watch?v=ZbCdEf_12-3";
+        const auto before = identity.fingerprint(ordered);
+        QCOMPARE(before.size(), std::size_t{64});
+        std::reverse(ordered.items.begin(), ordered.items.end());
+        QVERIFY(identity.fingerprint(ordered) != before);
+        changed = original;
+        changed.request_id = "ABCDEFAB-CDEF-4ABC-8DEF-123456789ABC";
+        QCOMPARE(identity.fingerprint(changed), fingerprint);
+    }
+
+    void youtubeFingerprintRejectsIncoherentOrInvalidMetadata_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<QByteArray>("value");
+        QTest::newRow("short-video-id") << u"video"_s << QByteArray{"short"};
+        QTest::newRow("nonopaque-video-id") << u"video"_s << QByteArray{"/bCdEf_12-3"};
+        QTest::newRow("different-video-id") << u"video"_s << QByteArray{"ZbCdEf_12-3"};
+        QTest::newRow("empty-title") << u"title"_s << QByteArray{};
+        QTest::newRow("different-title") << u"title"_s << QByteArray{"Other"};
+        QTest::newRow("long-title") << u"both-titles"_s << QByteArray(513, 't');
+        QTest::newRow("long-artist") << u"artist"_s << QByteArray(513, 'a');
+        QTest::newRow("long-page") << u"page"_s << QByteArray(2049, 'p');
+        QTest::newRow("malformed-title-utf8") << u"both-titles"_s << QByteArray::fromHex("c0af");
+        QTest::newRow("malformed-artist-utf8") << u"artist"_s << QByteArray::fromHex("eda080");
+        QTest::newRow("malformed-page-utf8") << u"page"_s << QByteArray::fromHex("ff");
+        QTest::newRow("artist-nul") << u"artist"_s << QByteArray{"A\0B", 3};
+        QTest::newRow("artist-newline") << u"artist"_s << QByteArray{"A\nB"};
+        QTest::newRow("artist-leading-space") << u"artist"_s << QByteArray{" Artist"};
+        QTest::newRow("artist-bidi") << u"artist"_s << QByteArray::fromHex("41e280ae42");
+        QTest::newRow("page-wrong-host") << u"page"_s << QByteArray{"https://evil.example/a/"};
+        QTest::newRow("page-userinfo") << u"page"_s << QByteArray{"https://@letras.mus.br/a/"};
+        QTest::newRow("page-empty-query") << u"page"_s << QByteArray{"https://letras.mus.br/a/?"};
+        QTest::newRow("page-dot-segment") << u"page"_s << QByteArray{"https://letras.mus.br/a/../b/"};
+        QTest::newRow("page-double-escape") << u"page"_s << QByteArray{"https://letras.mus.br/%252e/"};
+        QTest::newRow("direct-url") << u"url"_s << QByteArray{"https://example.org/a.mp3"};
+        QTest::newRow("canonical-extra-query")
+            << u"url"_s << QByteArray{"https://www.youtube.com/watch?v=AbCdEf_12-3&x=1"};
+    }
+
+    void youtubeFingerprintRejectsIncoherentOrInvalidMetadata() {
+        QFETCH(QString, field);
+        QFETCH(QByteArray, value);
+        auto invalid = youtubeRequest();
+        auto& item = invalid.items.front();
+        auto& youtube = *item.youtube;
+        if (field == u"video"_s)
+            youtube.video_id = value.toStdString();
+        else if (field == u"title"_s)
+            youtube.title = value.toStdString();
+        else if (field == u"both-titles"_s)
+            youtube.title = item.title = value.toStdString();
+        else if (field == u"artist"_s)
+            youtube.artist = value.toStdString();
+        else if (field == u"page"_s)
+            youtube.lyrics_page = value.toStdString();
+        else if (field == u"url"_s)
+            item.url = value.toStdString();
+        else
+            QFAIL("Unknown synthetic test field");
+        QtDownloadRequestIdentity identity;
+        QVERIFY(identity.fingerprint(invalid).empty());
+    }
+
+    void youtubeFingerprintBoundsTheWholeBatchAndKeepsOptionalFieldsOptional() {
+        QtDownloadRequestIdentity identity;
+        auto valid = youtubeRequest();
+        auto exact = valid;
+        exact.items.front().title = std::string(512, 't');
+        exact.items.front().youtube->title = exact.items.front().title;
+        exact.items.front().youtube->artist = std::string(512, 'a');
+        constexpr std::string_view lyrics_prefix{"https://letras.mus.br/"};
+        exact.items.front().youtube->lyrics_page =
+            std::string(lyrics_prefix) + std::string(2048 - lyrics_prefix.size(), 'p');
+        QCOMPARE(identity.fingerprint(exact).size(), std::size_t{64});
+        valid.items.front().youtube->artist.clear();
+        valid.items.front().youtube->lyrics_page.clear();
+        valid.items.front().youtube->fetch_lyrics = false;
+        QCOMPARE(identity.fingerprint(valid).size(), std::size_t{64});
+        auto invalid = valid;
+        invalid.items.front().kind = DownloadMediaKind::Video;
+        QVERIFY(identity.fingerprint(invalid).empty());
+        invalid = valid;
+        invalid.items.push_back(invalid.items.front());
+        QVERIFY(identity.fingerprint(invalid).empty());
+        invalid = valid;
+        invalid.items.clear();
+        for (int index = 0; index < 20; ++index) {
+            auto item = valid.items.front();
+            item.youtube->video_id = "AbCdEf_12" + std::string(index < 10 ? "0" : "1") + std::to_string(index % 10);
+            item.url = "https://www.youtube.com/watch?v=" + item.youtube->video_id;
+            item.title.assign(512, '"');
+            item.youtube->title = item.title;
+            item.youtube->artist.assign(512, '"');
+            constexpr std::string_view prefix{"https://letras.mus.br/"};
+            item.youtube->lyrics_page = std::string(prefix) + std::string(2048 - prefix.size(), 'p');
+            invalid.items.push_back(std::move(item));
+        }
+        // Escaping otherwise bounded strings makes this typed batch exceed its 64 KiB wire budget.
+        QVERIFY(identity.fingerprint(invalid).empty());
+    }
+
+    void youtubeReplayAfterCheckpointRoundTripUsesAllMetadataWithoutPersistingSourceData() {
+        QtDownloadRequestIdentity identity;
+        NoExecution first_execution;
+        NoImport first_import;
+        DownloadService first{first_execution, first_import, "before", {}, &identity};
+        const auto original = youtubeRequest();
+        const auto accepted = first.submitStaged(original);
+        QCOMPARE(accepted.error, DownloadSubmissionError::None);
+        const auto checkpoint = first.checkpoint();
+        QVERIFY(checkpoint);
+        const auto encoded = DownloadCheckpointJson::encode(*checkpoint);
+        QVERIFY(!encoded.isEmpty());
+        const auto root = QJsonDocument::fromJson(encoded).object();
+        QCOMPARE(keys(root), (QSet<QString>{u"schemaVersion"_s, u"owner"_s, u"receipts"_s, u"jobs"_s}));
+        QCOMPARE(keys(root.value(u"receipts"_s).toArray().at(0).toObject()),
+                 (QSet<QString>{u"requestId"_s, u"fingerprint"_s, u"jobIds"_s, u"retainedRequestBytes"_s}));
+        QVERIFY(!encoded.contains("https://"));
+        QVERIFY(!encoded.contains("googlevideo"));
+        QVERIFY(!encoded.contains("lyricsPage"));
+        QVERIFY(!encoded.contains("fetchLyrics"));
+        QVERIFY(!encoded.contains("Artist caf"));
+        const auto decoded = DownloadCheckpointJson::decode(encoded);
+        QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
+        QVERIFY(decoded.checkpoint);
+        NoExecution restored_execution;
+        NoImport restored_import;
+        DownloadService restored{restored_execution, restored_import, "after", {}, &identity};
+        QVERIFY(restored.restore(*decoded.checkpoint));
+        QCOMPARE(restored.submitStaged(original).job_ids, accepted.job_ids);
+        for (int field = 0; field < 3; ++field) {
+            auto changed = original;
+            if (field == 0)
+                changed.items.front().youtube->artist += " changed";
+            else if (field == 1)
+                changed.items.front().youtube->lyrics_page += "alternate/";
+            else
+                changed.items.front().youtube->fetch_lyrics = false;
+            QCOMPARE(restored.submitStaged(changed).error, DownloadSubmissionError::InvalidRequest);
+        }
+        QCOMPARE(restored.submitStaged(original).job_ids, accepted.job_ids);
+        QCOMPARE(first_execution.starts, 0U);
+        QCOMPARE(restored_execution.starts, 0U);
+        QCOMPARE(restored.snapshot().front().state, DownloadJobState::Interrupted);
     }
 
     void typedFramingSeparatesKindsOrderAndConcatenation() {

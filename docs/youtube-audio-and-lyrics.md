@@ -1,6 +1,6 @@
 # YouTube em MP3 e letra com fallback
 
-**Estado:** cliente/codec do ingresso separado e componentes de resolução, processo e execução em worker implementados. Aquisição YouTube de produção, runtime autenticado configurado, integração Letras/fallback e instalação continuam pendentes.
+**Estado:** ingresso separado, resolução/processo/worker e composição de admissão durável/fila compartilhada implementados em código; os checks do incremento atual de admissão estão em fechamento. Aquisição YouTube de produção, runtime autenticado configurado, integração Letras/fallback e instalação continuam pendentes.
 
 O mantenedor definiu áudio do YouTube em MP3 e Letras.mus.br como fonte preferencial de letra, com outro provedor como fallback. O [ADR-0017](architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md) registra o desenho, a pesquisa e os gates. O fallback proposto é o LRCLIB já usado pelo RC Music.
 
@@ -13,6 +13,8 @@ Na extensão YouTube separada, selecionar o vídeo, conferir título/artista e e
 O primeiro cliente trata o vídeo da aba ativa, não toda uma playlist do YouTube. O contrato admite lote limitado para a evolução posterior. A principal permanece sem YouTube. O host lógico YouTube é independente, ainda sem executável/registro/configuração instalada; ausência da ponte não é download concluído nem ACK fabricado.
 
 O código agora possui resolver, adapter de processo Windows e composição de execução em worker, com rota tipada até transferência/conversão/publicação. O pipeline normal do app ainda não configura ou habilita essa aquisição. `yt-dlp` e `ffmpeg` encontrados no ambiente não são uma configuração autenticada do produto nem aprovação para empacotamento. O conjunto EJS local completo está ausente; `NoChild` continua impedindo qualificar a execução que precise de Node descendente. Não foi baixado áudio público. Os gates anteriores de produção remota permanecem abertos.
+
+A admissão YouTube agora tem ponte assíncrona e sessão de protocolo próprias, compartilhando controlador, fila e executor com mídia direta. O contexto completo identifica o pedido e é validado; não autentica a origem por si. Ainda falta o host IPC/configuração instalada que obtenha essa origem de forma confiável, além do runtime real. Os metadados completos não são persistidos como payload: ficam hash/contagem e IDs; replay explícito após reiniciar não retoma o áudio automaticamente.
 
 A consulta do exemplo do Letras foi bloqueada por HTTP 403, e não foi confirmado contrato de API/extração compatível. Não há parser Letras de produção nem comprovação das variantes dessa página. O app atual continua usando LRCLIB, com busca explícita; a cadeia Letras → LRCLIB e sua associação ao download ainda precisam ser compostas. Não tratar retorno LRCLIB como Letras. LLM, tradução e sincronização inventada continuam fora do fluxo.
 
@@ -52,3 +54,25 @@ Fechamento proporcional: **9/9 CTest, 501 casos Qt**, sem falhas/skips, incluind
 O helper nativo usa arquivos sintéticos próprios; a regressão preexistente da sessão de job também executa conversão/validação FFmpeg com fixtures locais licenciadas, por IO falso, sem internet. Não foram executados yt-dlp ou Node como runtime de mídia, navegador/GUI, novos perfis AppContainer, WFP/UAC, setup/Registro ou benchmarks. Os arquivos AppContainer em andamento, os artefatos congelados e o pacote principal da extensão foram preservados por hash.
 
 Os testes da rota usam IO falso e arquivos próprios. Isso não comprova um vídeo público, o conjunto real yt-dlp/Node/EJS, uma instalação Brave, o runtime autenticado do produto ou o ciclo completo MP3 + letra. O acesso/contrato do Letras, o fallback composto, a importação final no fluxo instalado, a integração opcional dos instaladores e os gates nativos/de distribuição permanecem pendentes. O objetivo completo não está concluído.
+
+## Evidência da admissão durável e fila compartilhada
+
+Recibos em `out/product/test-runs/youtube-admission-20261105/`. Fechamento proporcional: **10/10 CTest, 549 casos Qt**, mais **167 casos puros/4.313 assertions** do serviço/controller/checkpoint, sem falhas/skips. As contagens das seções anteriores pertencem aos seus respectivos commits e recortes.
+
+| Componente acrescentado | Contrato implementado e validado no recorte automatizado |
+|---|---|
+| Contexto opcional do `DownloadItem` | `YoutubeAudioItem` completo participa de identidade, igualdade e quotas; não concede autorização e preserva o algoritmo v1 para pedidos legados |
+| `YoutubeAudioAdmission` | Ponte `AsyncYoutubeAudioSubmission` → controlador durável comum; admissão depende do Saved correspondente |
+| `NativeYoutubeAudioSession` | Protocolo/observador separado, origem exata da configuração/transporte e limite de 64 KiB antes do corpo; Pending sem ACK; EOF/reentrada/exceções não cancelam nem repetem o trabalho admitido |
+| `makeWindowsMediaAndYoutubeExecution` | Uma fila e um executor para mídia direta e YouTube, com contexto validado e sem retirada de bloqueios do ingresso legado |
+| `WindowsPlayerDownloads` | Dois ports sobre o mesmo controlador/owner, sem registrar host ou configurar runtime automaticamente |
+
+A jornada instrumentada passou nos **7 casos Qt** do owner: entrega um frame YouTube, desconecta/reconecta, aguarda checkpoint Saved, percorre o worker com resolver falso e destino Published falso, e aguarda Session Saved da importação sem seleção/autoplay. A sessão YouTube passou **45 casos**, a ponte **7**, o executor **14**, e identity/checkpoint **107**; os restantes são regressões da principal e da execução/sessão existente. Isso verifica composição e reconhecimentos entre donos; não executa aquisição YouTube real nem conversão pelo destino falso.
+
+Red confirmado: núcleo **2 casos passaram/2 falharam**, com **45 assertions passadas/18 falhas**; identity/checkpoint **83/24**, ponte **3/4**, roteamento **11/3**, sessão YouTube **18/27**. A principal passou **190/190** já no Red porque seu guard de roundtrip existente recusou mecanicamente o novo contexto; não se inventou falha para ele. Avisos de `nodiscard` e macro Qt obsoleta do harness foram corrigidos antes do Red comportamental. Os vetores v1 antigos continuam verdes; o novo domínio recebeu também vetor SHA-256 independente e fixo para preservar compatibilidade dos recibos.
+
+Formato dos **22 C++**, revisão e builds Release Lite/Completa, rede standalone e serviço puro sem Qt passaram. Os quatro builds `BUILD_TESTING=OFF` listaram zero testes. Documentação passou com **95 Markdown/86 requisitos/17 checks/82 etapas**; rastreabilidade conserva estados **14 planejados/70 em andamento/2 comprovados**. Não houve alteração QML ou novo setup. A regressão preexistente do job usa FFmpeg com fixtures locais; o novo fluxo usa fakes, sem baixar mídia pública, executar yt-dlp/Node como runtime, criar perfil AppContainer, consultar WFP/UAC, instalar/registrar componentes, interagir com navegador/janela nativa ou retomar benchmarks. Os seis WIP e os cinco artefatos congelados foram preservados.
+
+O recibo persistido representa hash/contagem e IDs do pedido, sem o payload completo de artista/página/opção de letra. Replay explícito depois de reiniciar verifica essa identidade sem iniciar ou retomar o áudio. Assim, o contexto em memória não é tratado como uma fila persistente de downloads retomáveis. Não se deve anunciar recuperação automática de resolução, progresso ou consulta de letras a partir desse recibo.
+
+Continuam pendentes host IPC e instalação, origem real autenticada no browser, runtime autenticado/configurado, EJS e execução de Node compatível com `NoChild`, aquisição pública e cadeia Letras → LRCLIB com associação da letra final. Os novos componentes não instalam ferramentas, registram integrações nem habilitam downloads de produção no app normal. O objetivo completo não está concluído.
