@@ -10,6 +10,8 @@ Quando fornecido explicitamente, o valor identifica um **header C++ absoluto e r
 
 A função adiciona o provider e liga o owner somente ao target consumidor. As definições `RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED` e `RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER` são `PRIVATE`: não alteram a ABI da UI nem propagam configuração para os outros executáveis. O cache vazio não adiciona esse bootstrap ao player. A funcionalidade exige o shell Windows com áudio e os módulos de execução/persistência; um ingresso nativo ativo também exige o módulo Native Messaging.
 
+Com Native Messaging disponível, a composição usa por padrão `RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER`, um caminho interno gerado pelo build a partir dos mesmos valores que configuram os hosts. O argumento opcional `NATIVE_PROFILE_HEADER` de `rc_music_configure_player_downloads` permite um header C++ revisado específico do consumidor, como nas fixtures; exige suporte Native e caminho absoluto existente ou declarado `GENERATED`. A definição correspondente também é `PRIVATE`. Esse argumento não cria configuração por JSON, ambiente ou CLI do produto.
+
 O header revisado fornece esta função em `music_player::m0`:
 
 ```cpp
@@ -33,9 +35,23 @@ O provider é chamado uma vez pelo bootstrap. `config_root` é o diretório de c
 
 [`makeWindowsConfiguredDownloadExecution`](../src/adapters/WindowsConfiguredDownloadExecution.hpp) reutiliza o executor e as tarefas existentes. Mídia direta e YouTube, quando configurado, compartilham a fila e o destino de transferência/conversão/publicação. Os preparadores continuam no worker, com leases próprios por job; não há cache de runtime preparado entre jobs. A fábrica copia strings e hashes, inclusive dados Qt que poderiam ter vindo de `fromRawData`.
 
-`job.ownership_store` emprestado é recusado pela fábrica. Um perfil YouTube precisa de relógio de época explícito. Um ingresso Native YouTube com origem **ou** endpoint preenchido exige `execution.youtube`; o getter recusa essa combinação antes de criar o executor. Isso verifica a presença do resolver, sem substituir a validação dos perfis nativos pelo owner. O ingresso principal continua válido sem resolver YouTube.
+`job.ownership_store` emprestado é recusado pela fábrica. Um perfil YouTube precisa de relógio de época explícito. Um ingresso Native YouTube com origem **ou** endpoint preenchido exige `execution.youtube`; o getter recusa essa combinação antes de criar o executor. O ingresso principal continua válido sem resolver YouTube. A presença do resolver e o matching abaixo não substituem a validação dos perfis nativos pelo owner.
 
 O bootstrap não cria diretórios, não corrige ACLs, não instala ferramentas e não registra hosts. O diretório de checkpoint/journal precisa cumprir o contrato de DACL privada dos stores existentes. Os pais de runtime, staging e publicação também são entradas confiáveis previamente provisionadas. Hashes e identidades de arquivo não equivalem a confiança no publisher, autenticação do Brave ou sandbox.
+
+## Perfis Native compilados
+
+`NativeHostBuildProfiles` reúne os canais `principal` e `youtube`. O header gerado fornece `nativeHostBuildProfiles()`; o helper público `compiledPlayerNativeIngressProfiles()` os converte nas opções de ingresso do owner, sem definir callbacks de peer check. Um provider pode usar diretamente:
+
+```cpp
+profile.options.native_ingress = compiledPlayerNativeIngressProfiles();
+```
+
+Sem header Native compilado, ou com ambos os canais desabilitados, o helper retorna `std::nullopt`. Os caminhos das imagens são resolvidos ao lado do executável atual pelo helper existente; o layout revisado precisa conservar essa correspondência entre player e hosts.
+
+Antes de criar o executor, `playerDownloadsBuildProfile()` compara cada canal ativo retornado pelo provider com o canal compilado correspondente. Um canal é ativo quando origem ou endpoint está preenchido. A origem precisa ser exatamente igual; o nome do pipe ignora caixa. As listas de imagens esperadas são comparadas como conjuntos que ignoram caixa e ordem, sem permitir ampliar ou substituir o conjunto compilado. As factories de peer check não fazem parte da identidade comparada.
+
+O provider pode desligar um canal compilado ativo, inclusive ambos. Não pode ativar canal compilado desabilitado nem fornecer canal ativo quando o header Native está ausente. Divergência faz o getter retornar `std::nullopt`, preservando o player local; não escolhe outro host ou configuração de fallback. As identidades de produção continuam vazias por padrão.
 
 ## Sessão, UI e fechamento
 
@@ -69,6 +85,12 @@ O cliente Native C++ real do suporte de teste usa um perfil explícito que permi
 O suporte só declara a jornada concluída após dois ACKs idempotentes e um job com ID correspondente em `Completed`/`Imported`, além da fila esperada. O driver observa os recibos duráveis de admissão e de importação (`Saved` nos respectivos contratos), confirma MP3 publicado e ausência de autoplay. Após a saída, verifica checkpoint final, fechamento do cliente e remoção dos runtimes/staging próprios. A segunda execução com restauração de fila desativada preserva os recibos, aceita replay sem novo arquivo/importação e mantém a fila vazia. As variantes sem header e com provider `None` permanecem sem binding e sem diretórios de downloads.
 
 Os targets focados são `rc_music_configured_downloads_bootstrap_tests` e `rc_music_configured_downloads_profile_tests`; os testes CTest são `rc_music.process.configured-downloads-bootstrap` e `rc_music.process.configured-downloads-profile`. O recorte depende dos módulos e fixtures de teste já configurados, sem novo protocolo ou flag de smoke no produto.
+
+### Vínculo com os perfis Native compilados
+
+O matching teve Red de **12 casos Qt passados/8 falhos**, mantendo os oito oráculos anteriores verdes, seguido de **20/20 Qt Green**. A fixture sem header compilado teve Red **2 passados/1 falho** e Green **3/3 Qt**. O novo target é `rc_music_configured_downloads_profile_off_tests`, registrado como `rc_music.process.configured-downloads-profile-off`; cobre a ausência do header e a recusa de canais ativos, além do opt-out local. Os testes do matching também verificam helper, divergência de origem/endpoint/imagens, comparação sem depender de ordem/caixa e exclusão dos callbacks da identidade. O Red está registrado em `matching-red-tests.log`.
+
+O target sem header roda numa configuração com Native Messaging disponível. Ele **não é prova de um build com o módulo Native OFF**, nem substitui o build Release separado; os resultados Release OFF descritos acima pertencem ao fechamento anterior. Esses checks não executam aquisição pública, instalação ou qualificação do Brave.
 
 ## Limites de aceitação
 

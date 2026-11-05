@@ -8,9 +8,8 @@ void configuredDownloadsProfileObserved();
 
 namespace music_player::m0 {
 inline NativeHostConfiguration configuredDownloadsFixtureNativeProfile() {
-    const auto self = nativeDownloadSiblingImages({QStringLiteral("rc_music_configured_downloads_shell.exe")});
-    return {QStringLiteral("chrome-extension://dddddddddddddddddddddddddddddddd/"),
-            QStringLiteral("@fixture_endpoint@"), self, self};
+    const auto profiles = compiledPlayerNativeIngressProfiles();
+    return profiles ? profiles->principal : NativeHostConfiguration{};
 }
 inline std::optional<WindowsPlayerDownloadProfile> configuredPlayerDownloadsBuildProfile(const QString& root) {
     configuredDownloadsProfileObserved();

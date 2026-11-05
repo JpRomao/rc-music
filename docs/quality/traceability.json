@@ -1153,6 +1153,11 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "activeYoutubeProfileMustMatchEveryCompiledIdentityField" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "principalIdentityAlsoMustMatchTheCompiledProfile" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "endpointAndImageAllowsetsIgnoreCaseAndImageOrder" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "nativeOffHasNoCompiledProfileAndRefusesActiveProviderChannels" },
+        { "path": "tests/cmake/NativeHostBuildProfileTests.cmake", "marker": "Native host build profile: ${passed}/${total} cases passed" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "directRequestsInAMixedProfileUseOnlyTheExistingPreparedWorker" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "configurationSnapshotsNetworkMediaAndJournalBeforeAdmission" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "youtubePreparationFailureNeverFallsBackToDirectAcquisition" },
@@ -1187,6 +1192,7 @@
         { "path": "tests/extensions/youtube-native-client.test.mjs", "marker": "YouTube bridge is separate and acknowledges admission rather than completion" }
       ],
       "evidence": [
+        { "path": "docs/native-host-build-profile.md", "marker": "# Recibo do perfil compilado dos hosts nativos" },
         { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
         { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Factory do executor configurado" },
@@ -1214,6 +1220,7 @@
         }
       ],
       "remaining": [
+        "O matching dos canais ativos já recusa divergências entre provider e perfis Native compilados, e os recibos de build registram a consistência dos dados CMake/header com hash e tamanho do executável, mantendo os defaults de produção desabilitados; autenticação do Brave/publisher, perfil real e instalação continuam pendentes.",
           "Cliente/codec, resolver/sessão, rede por capability, ingresso assíncrono e handoff no worker implementados. O bootstrap opcional no main real agora aceita perfil C++ revisado, com factory configurada, captura própria e preparo por job na worker; ausência de header ou retorno None mantém o player local sem criar owner/listeners/trabalho. Ingresso YouTube ativo exige perfil de resolver explícito. Controlador/fila comuns aguardam Saved; checkpoint não persiste payloads de origem nem retoma áudio automaticamente. O ensaio offline separado executou Python/yt-dlp, Node e EJS reais fixados sob broker com processos irmãos Job=1/NoChild, cinco vetores sintéticos, ausência observada de HTTP/socket/inicialização remota e encerramento reconhecido. A composição opcional de WindowsPlayerDownloads também passou com host/servidor reais, perfis próprios, checkpoint/Session reais e duas barreiras Saved; usa resolver fixture e helper de DNS/transferência com AAC licenciado, seguido de Media Foundation, validação MP3, publicação/importação e replay/reinício reais em TEMP. O novo ensaio do main configurado valida executor, ownership, persistência e replay locais, sem promover essa prova a aquisição de vídeo público. Letras após publicação reconhecida têm fallback LRCLIB, preview e salvamento explícito no catálogo; sua prova usa rede falsa e JSON TEMP real. O inventário privado autentica/copia fontes declaradas, mas hashes/execução offline não qualificam segurança, publisher ou distribuição do perfil do produto. Faltam perfil real de distribuição e composição instalada de produção, host/origens confiáveis, Brave, opcionais, pacote e os gates próprios de ferramentas/licenças/privacidade/isolamento. O gerador do pacote separado mantém identity_pending e não instala/registra o host. Letras primário depende de acesso/contrato compatível após HTTP 403 e continua sem parser funcional. O app distribuído mantém perfis/downloads remotos OFF e a principal continua separada."
       ]
     },
@@ -1641,6 +1648,11 @@
       "status": "em andamento",
       "verification": "mixed",
       "tests": [
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "activeYoutubeProfileMustMatchEveryCompiledIdentityField" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "principalIdentityAlsoMustMatchTheCompiledProfile" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "endpointAndImageAllowsetsIgnoreCaseAndImageOrder" },
+        { "path": "tests/process/qtest/ConfiguredDownloadsProfileTests.cpp", "marker": "nativeOffHasNoCompiledProfileAndRefusesActiveProviderChannels" },
+        { "path": "tests/cmake/NativeHostBuildProfileTests.cmake", "marker": "Native host build profile: ${passed}/${total} cases passed" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "directRequestsInAMixedProfileUseOnlyTheExistingPreparedWorker" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "configurationSnapshotsNetworkMediaAndJournalBeforeAdmission" },
         { "path": "tests/qt/WindowsConfiguredDownloadExecutionTests.cpp", "marker": "youtubePreparationFailureNeverFallsBackToDirectAcquisition" },
@@ -2163,6 +2175,7 @@
         }
       ],
       "evidence": [
+        { "path": "docs/native-host-build-profile.md", "marker": "# Recibo do perfil compilado dos hosts nativos" },
         { "path": "docs/player-downloads-bootstrap.md", "marker": "# Bootstrap opcional de downloads no player Windows" },
         { "path": "docs/youtube-extension-package.md", "marker": "# Pacote opcional da extensão YouTube" },
         { "path": "docs/youtube-audio-and-lyrics.md", "marker": "## Factory do executor configurado" },
@@ -2241,6 +2254,7 @@
         }
       ],
       "remaining": [
+        "O matching dos canais ativos já recusa divergências entre provider e perfis Native compilados, e os recibos de build registram a consistência dos dados CMake/header com hash e tamanho do executável, mantendo os defaults de produção desabilitados; autenticação do Brave/publisher, perfil real e instalação continuam pendentes.",
         "Cliente/fronteira/serviço/transporte cobrem schema/origem/idempotência, cancelamento/timeout, DNS/redirects/SSRF e TLS loopback em testes de componentes. Host real opt-in/OFF por padrão exige identidade confiável, pipes binários limitados, clock pós-read e watchdog próprio; não adota argv/ambiente/JSON e não muda OpenSources. Cliente/servidor do canal dedicado exigem resposta única/correlacionada, nenhum ACK Pending, incerteza pós-escrita sem retry/cancelamento do dono e drain após callbacks/poll. Processo contra peer falso testa framing/EOF/hostilidade/watchdog, não continuidade do owner real; composição instrumentada com quatro hosts e owner/UI/stores/workers reais prova replay/restart e saída Saved+drain, com publicação exclusivamente sintética e produto remoto inativo. Origem/pipe do mesmo usuário não autentica browser; identidade instalada, primeira instância/colisão do pipe, signed HWND/Brave real e registro/upgrade permanecem gates. Worker/proxy exigem Terminal/exit/pipes antes de selar/converter/limpar; launcher autentica cópias privadas/bootstrap antes de carregar Qt, preparado na thread privada por job. Porta rápida só publica terminal após destruir tarefa; RAII/QtDownloadIo não qualificam ACK. Checkpoint assíncrono e journal de ownership preservam falhas ambíguas/candidatos privados, sem ações automáticas. Importador Session é append-only com fila+recibo no mesmo documento e Importing até Saved matching; Failed/readback não vira ACK, retry explícito não repete append/download e guard fecha reentradas. Bootstrap conserva recibos sem hidratar quando restore está OFF. Reconciliação estrita bloqueia conflitos/saúde de sessão inválida sem rewrite, preserva métricas/candidatos privados e não transforma Completed sem recibo em importação confirmada; órfãos reservam namespace sem jobs/quotas inventados. Ensaios anteriores de MP3/MP4→serviço usam importador falso e processos/arquivos/conversor reais, separados da composição instrumentada sem conversão/rede. Faltam promoção protegida para produção, composição da reconciliação com ownership e divergências/recuperação/capacidade acionáveis, resíduos de runtime, perfil exato/distribuição, demais gates TLS e ferramenta corrigida/proveniência/licenças/sandbox, edições/instaladores e expiração/live/restrições/headers/seek. Sem backend completo no app, exactly-once universal ou aprovação de mídia remota/distribuição."
       ]
     },

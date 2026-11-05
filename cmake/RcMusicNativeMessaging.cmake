@@ -73,23 +73,69 @@ set(RC_MUSIC_NATIVE_YOUTUBE_ORIGIN "" CACHE STRING "Trusted exact origin of the 
 set(RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT "" CACHE STRING "Trusted separate YouTube app-owner pipe name (no path)")
 rc_music_validate_native_messaging_identities("${RC_MUSIC_NATIVE_MAIN_ORIGIN}" "${RC_MUSIC_NATIVE_ENDPOINT}"
     "${RC_MUSIC_NATIVE_YOUTUBE_ORIGIN}" "${RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT}")
-set(native_config_origin "${RC_MUSIC_NATIVE_MAIN_ORIGIN}")
-set(native_config_endpoint "${RC_MUSIC_NATIVE_ENDPOINT}")
-set(native_config_owner_images "QStringLiteral(\"RCMusic.exe\")")
-set(native_config_host_images "QStringLiteral(\"rc_music_native_host.exe\")")
+
+# Basenames are the one source for both generated C++ and the post-link
+# consistency receipt. Neither receipt nor cache path activates a host.
+function(rc_music_native_image_literals output)
+    set(literals "")
+    foreach(image IN LISTS ARGN)
+        list(APPEND literals "QStringLiteral(\"${image}\")")
+    endforeach()
+    list(JOIN literals ", " literals)
+    set(${output} "${literals}" PARENT_SCOPE)
+endfunction()
+
+function(rc_music_add_native_host_build_profile target configuration protocol host_name origin endpoint
+        owner_images host_images output cache_name)
+    file(SHA256 "${configuration}" configured_sha256)
+    set(${cache_name} "${output}" CACHE INTERNAL "Post-link native host build consistency receipt" FORCE)
+    set_property(TARGET ${target} PROPERTY RC_MUSIC_NATIVE_HOST_BUILD_PROFILE "${output}")
+    set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS
+        "${RC_MUSIC_SOURCE_ROOT}/cmake/WriteNativeHostBuildProfile.cmake" "${configuration}")
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${output}" "-DEXECUTABLE=$<TARGET_FILE:${target}>"
+            "-DCONFIGURATION=${configuration}" "-DEXPECTED_CONFIGURATION_SHA256=${configured_sha256}"
+            "-DPROTOCOL=${protocol}" "-DHOST_NAME=${host_name}" "-DORIGIN=${origin}" "-DENDPOINT=${endpoint}"
+            "-DOWNER_IMAGES=${owner_images}" "-DHOST_IMAGES=${host_images}"
+            -P "${RC_MUSIC_SOURCE_ROOT}/cmake/WriteNativeHostBuildProfile.cmake"
+        BYPRODUCTS "${output}"
+        COMMENT "Record the compiled ${target} build profile without installing it"
+        VERBATIM)
+endfunction()
+
+set(native_owner_basenames "RCMusic.exe")
+set(native_main_origin "${RC_MUSIC_NATIVE_MAIN_ORIGIN}")
+set(native_main_endpoint "${RC_MUSIC_NATIVE_ENDPOINT}")
+set(native_main_host_basenames "rc_music_native_host.exe")
+set(native_youtube_origin "${RC_MUSIC_NATIVE_YOUTUBE_ORIGIN}")
+set(native_youtube_endpoint "${RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT}")
+set(native_youtube_host_basenames "rc_music_youtube_native_host.exe")
+rc_music_native_image_literals(native_main_owner_images ${native_owner_basenames})
+rc_music_native_image_literals(native_main_host_images ${native_main_host_basenames})
+rc_music_native_image_literals(native_youtube_owner_images ${native_owner_basenames})
+rc_music_native_image_literals(native_youtube_host_images ${native_youtube_host_basenames})
+
+set(native_config_origin "${native_main_origin}")
+set(native_config_endpoint "${native_main_endpoint}")
+set(native_config_owner_images "${native_main_owner_images}")
+set(native_config_host_images "${native_main_host_images}")
 configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/native-host/NativeHostBuildConfiguration.hpp" @ONLY)
 add_executable(rc_music_native_host "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
 target_include_directories(rc_music_native_host PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/native-host")
 target_link_libraries(rc_music_native_host PRIVATE rc_music_native_messaging)
 rc_music_configure_cpp(rc_music_native_host)
+rc_music_add_native_host_build_profile(rc_music_native_host
+    "${CMAKE_CURRENT_BINARY_DIR}/native-host/NativeHostBuildConfiguration.hpp" "direct.media.v1" "com.rcmusic.media"
+    "${native_main_origin}" "${native_main_endpoint}" "${native_owner_basenames}" "${native_main_host_basenames}"
+    "${CMAKE_CURRENT_BINARY_DIR}/native-host/rc_music_native_host.build-profile.json" RC_MUSIC_NATIVE_MAIN_BUILD_PROFILE)
 
 # A separate executable/profile selects the typed YouTube session. It has no
 # installation or registration step, and empty trusted defaults disable it.
-set(native_config_origin "${RC_MUSIC_NATIVE_YOUTUBE_ORIGIN}")
-set(native_config_endpoint "${RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT}")
-set(native_config_owner_images "QStringLiteral(\"RCMusic.exe\")")
-set(native_config_host_images "QStringLiteral(\"rc_music_youtube_native_host.exe\")")
+set(native_config_origin "${native_youtube_origin}")
+set(native_config_endpoint "${native_youtube_endpoint}")
+set(native_config_owner_images "${native_youtube_owner_images}")
+set(native_config_host_images "${native_youtube_host_images}")
 configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildConfiguration.hpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/youtube-native-host/NativeHostBuildConfiguration.hpp" @ONLY)
 add_executable(rc_music_youtube_native_host "${RC_MUSIC_SOURCE_ROOT}/src/app/native_host_main.cpp")
@@ -97,8 +143,24 @@ target_compile_definitions(rc_music_youtube_native_host PRIVATE RC_MUSIC_YOUTUBE
 target_include_directories(rc_music_youtube_native_host PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/youtube-native-host")
 target_link_libraries(rc_music_youtube_native_host PRIVATE rc_music_native_messaging)
 rc_music_configure_cpp(rc_music_youtube_native_host)
+rc_music_add_native_host_build_profile(rc_music_youtube_native_host
+    "${CMAKE_CURRENT_BINARY_DIR}/youtube-native-host/NativeHostBuildConfiguration.hpp" "youtube.audio.v1" "com.rcmusic.youtube"
+    "${native_youtube_origin}" "${native_youtube_endpoint}" "${native_owner_basenames}" "${native_youtube_host_basenames}"
+    "${CMAKE_CURRENT_BINARY_DIR}/youtube-native-host/rc_music_youtube_native_host.build-profile.json"
+    RC_MUSIC_NATIVE_YOUTUBE_BUILD_PROFILE)
+
+# The optional player compares its reviewed provider against these same host
+# profiles. JSON receipts remain packaging evidence, never runtime authority.
+set(RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/native-host/NativeHostBuildProfiles.hpp"
+    CACHE INTERNAL "Generated trusted C++ profiles of both compiled native hosts" FORCE)
+configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildProfiles.hpp.in"
+    "${RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER}" @ONLY)
 
 if(BUILD_TESTING)
+    add_test(NAME rc_music.native.build-profile COMMAND "${CMAKE_COMMAND}"
+        -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/NativeHostBuildProfileTests.cmake")
+    set_tests_properties(rc_music.native.build-profile PROPERTIES LABELS "native;boundary;build-profile" TIMEOUT 20)
     add_test(NAME rc_music.native.build-boundary COMMAND "${CMAKE_COMMAND}"
         "-DBUILD_DIRECTORY=${CMAKE_BINARY_DIR}" "-DNINJA_COMMAND=${CMAKE_MAKE_PROGRAM}"
         -P "${RC_MUSIC_SOURCE_ROOT}/tests/cmake/NativeMessagingBuildBoundaryTests.cmake")

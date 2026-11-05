@@ -77,7 +77,8 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
     target_link_libraries(rc_music_configured_downloads_profile_tests PRIVATE rc_music_player_downloads Qt6::Test)
     target_compile_definitions(rc_music_configured_downloads_profile_tests PRIVATE
-        RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")
+        RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp"
+        RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")
     rc_music_configure_cpp(rc_music_configured_downloads_profile_tests)
     set_target_properties(rc_music_configured_downloads_profile_tests PROPERTIES AUTOMOC ON)
     add_test(NAME rc_music.process.configured-downloads-profile COMMAND rc_music_configured_downloads_profile_tests -o -,txt)
@@ -85,10 +86,35 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
         LABELS "windows;desktop;qt;downloads;bootstrap"
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_executable(rc_music_configured_downloads_profile_off_tests
+        qtest/ConfiguredDownloadsProfileTests.cpp
+        "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
+    target_link_libraries(rc_music_configured_downloads_profile_off_tests PRIVATE rc_music_player_downloads Qt6::Test)
+    target_compile_definitions(rc_music_configured_downloads_profile_off_tests PRIVATE
+        RC_MUSIC_TEST_NATIVE_PROFILE_OFF
+        RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")
+    rc_music_configure_cpp(rc_music_configured_downloads_profile_off_tests)
+    set_target_properties(rc_music_configured_downloads_profile_off_tests PROPERTIES AUTOMOC ON)
+    add_test(NAME rc_music.process.configured-downloads-profile-off COMMAND rc_music_configured_downloads_profile_off_tests -o -,txt)
+    set_tests_properties(rc_music.process.configured-downloads-profile-off PROPERTIES TIMEOUT 15
+        LABELS "windows;desktop;qt;downloads;bootstrap"
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1;QT_FATAL_WARNINGS=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # Same main, production presenter ABI and real owner; no legacy smoke
     # composition, command flag or replacement executor enters these targets.
     string(SHA256 configured_downloads_identity "${CMAKE_BINARY_DIR}")
     string(SUBSTRING "${configured_downloads_identity}" 0 16 configured_downloads_identity)
+    set(native_main_origin "chrome-extension://dddddddddddddddddddddddddddddddd/")
+    set(native_main_endpoint "rc-music-configured-downloads-${configured_downloads_identity}")
+    set(native_main_owner_images "QStringLiteral(\"rc_music_configured_downloads_shell.exe\")")
+    set(native_main_host_images "${native_main_owner_images}")
+    set(native_youtube_origin "")
+    set(native_youtube_endpoint "")
+    set(native_youtube_owner_images "")
+    set(native_youtube_host_images "")
+    set(configured_downloads_native_profile "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/NativeHostBuildProfiles.hpp")
+    configure_file("${RC_MUSIC_SOURCE_ROOT}/src/app/NativeHostBuildProfiles.hpp.in"
+        "${configured_downloads_native_profile}" @ONLY)
     set(configured_downloads_profile "${CMAKE_CURRENT_BINARY_DIR}/configured-downloads/ConfiguredDownloadsFixtureProfile.hpp")
     set(configured_downloads_template "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsFixtureProfile.hpp.in")
     add_custom_command(OUTPUT "${configured_downloads_profile}"
@@ -123,10 +149,12 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
             RC_MUSIC_CONFIGURED_DOWNLOADS_EXPECT_BINDING=$<IF:$<STREQUAL:${mode},configured>,1,0>)
         if(mode STREQUAL "configured")
             add_dependencies(${target} rc_music_configured_downloads_profile)
-            rc_music_configure_player_downloads(${target} "${configured_downloads_profile}")
+            rc_music_configure_player_downloads(${target} "${configured_downloads_profile}"
+                NATIVE_PROFILE_HEADER "${configured_downloads_native_profile}")
         elseif(mode STREQUAL "none")
             rc_music_configure_player_downloads(${target}
-                "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsNoneProfile.hpp")
+                "${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsNoneProfile.hpp"
+                NATIVE_PROFILE_HEADER "${configured_downloads_native_profile}")
         endif()
     endforeach()
     add_executable(rc_music_configured_downloads_bootstrap_tests qtest/ConfiguredDownloadsBootstrapTests.cpp)

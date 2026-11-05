@@ -800,7 +800,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — bootstrap opcional e componente YouTube
+### Checkpoint atual — perfil compilado dos hosts e matching do player
+
+O [recibo de build dos hosts](native-host-build-profile.md) usa a mesma configuração CMake dos headers selecionados e do header C++ compartilhado. O writer fixa o hash do header no configure e registra hash/tamanho do executável após o link; JSON é evidência de consistência local, sem autoridade de runtime ou autenticação do Brave/publisher. Ambos os hosts reais compilaram e produziram recibos conferidos com `enabled: false`.
+
+O [provider do player](player-downloads-bootstrap.md) pode obter os perfis compilados pelo helper, sem duplicar identidades. Canais ativos precisam corresponder à origem exata, pipe e conjuntos de imagens compilados; canais podem ser omitidos. Sem header compilado, um provider não pode ativar um canal. Red do matching: **12 passados/8 falhos**, e sem-header **2/1**; Green **20 + 3 Qt**. Writer: Red **41/49**, Green **50/50 casos CMake**.
+
+Fechamento proporcional: **9/9 CTest, 71 Qt**, mais **50 casos do writer e 18 de configuração CMake**, sem falhas/skips. Inclui bootstrap pela mesma `main`, processos dos dois hosts e fronteiras de build. Formato dos **7 C++** passou. Player Release com Native OFF e sem testes compilou com provider `None` independente e foi restaurado/recompilado com cache vazio, zero CTest. O teste sem-header dentro do build Native ON não substitui essa compilação OFF. Recibos ficam em `out/product/test-runs/native-manifest-20261105/`.
+
+Próximo desenvolvimento: manifest opcional vinculado ao ID real da extensão e recibo de host habilitado, perfil de distribuição com runtime/ambiente/diretórios existentes e aquisição protegida. O ID Brave ainda precisa ser informado; não inventar identidade/chave. Defaults de produção permanecem OFF; Letras primário, integração instalada e gates de segurança/licenças/distribuição continuam pendentes. Não houve setup/Registro, novos perfis/AppContainer, WFP/UAC, GUI nativa, mídia pública ou benchmarks.
+
+### Checkpoint anterior — bootstrap opcional e componente YouTube
 
 O [bootstrap opcional](player-downloads-bootstrap.md) liga o mesmo `main`, presenter, sessão, writer de letras e painel ao owner existente por configuração C++ explícita do build. Header vazio não cria owner; módulos opcionais ON não ativam downloads. A factory captura rede/MF/job/journal e YouTube opcional para preparo na worker, sem descoberta de ferramentas, loader de recibo, criação de diretórios ou reparo de ACL na UI. Ingresso YouTube ativo exige o resolver configurado; erros não fazem fallback para aquisição direta. O owner mantém sua gate e lifetime, inclusive se um listener não iniciar.
 

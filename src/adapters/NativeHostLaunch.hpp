@@ -19,6 +19,10 @@ struct NativeHostConfiguration final {
     QStringList expected_host_images{};
 };
 
+struct NativeHostBuildProfiles final {
+    NativeHostConfiguration principal{}, youtube{};
+};
+
 enum class NativeHostLaunchError { None, Disabled, InvalidConfiguration, InvalidArguments, UnauthorizedOrigin };
 
 struct NativeHostLaunchResult final {

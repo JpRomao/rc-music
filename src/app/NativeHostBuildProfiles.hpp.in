@@ -1,0 +1,22 @@
+#pragma once
+
+#include "adapters/NativeDownloadPeerImages.hpp"
+#include "adapters/NativeHostLaunch.hpp"
+
+namespace music_player::m0 {
+[[nodiscard]] inline NativeHostBuildProfiles nativeHostBuildProfiles() {
+    const auto profile = [](const QString& origin, const QString& endpoint, const QStringList& owners,
+                            const QStringList& hosts) {
+        if (origin.isEmpty() && endpoint.isEmpty())
+            return NativeHostConfiguration{};
+        return NativeHostConfiguration{origin, endpoint, nativeDownloadSiblingImages(owners),
+                                       nativeDownloadSiblingImages(hosts)};
+    };
+    // clang-format off
+    return {profile(QStringLiteral("@native_main_origin@"), QStringLiteral("@native_main_endpoint@"),
+                    {@native_main_owner_images@}, {@native_main_host_images@}),
+            profile(QStringLiteral("@native_youtube_origin@"), QStringLiteral("@native_youtube_endpoint@"),
+                    {@native_youtube_owner_images@}, {@native_youtube_host_images@})};
+    // clang-format on
+}
+} // namespace music_player::m0

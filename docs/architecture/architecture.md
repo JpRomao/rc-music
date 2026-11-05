@@ -72,6 +72,8 @@ A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-
 
 ### Composição opcional de downloads
 
+O [perfil compilado dos hosts](../native-host-build-profile.md) tem uma fonte CMake para os headers de cada host, o header C++ compartilhado e seus recibos após o link. O provider do player pode obter os perfis compilados pelo helper; canais ativos divergentes são recusados antes da fábrica de execução. Os recibos JSON servem ao empacotamento, sem serem carregados como autoridade no produto. Origem exata, pipe e allowsets coerentes não atestam Brave/publisher ou segurança do runtime.
+
 A [composição opcional de downloads do player](../download-jobs.md#composição-opcional-do-player-windows) possui execução, importador `Session`, worker de checkpoint, serviço, controlador de admissão e binding no mesmo proprietário. A UI e os adaptadores continuam usando os contratos existentes; o proprietário expõe os ports assíncronos principal/YouTube sobre o mesmo controller. O journal pertence à tarefa preparada no worker. Cada variante liga exatamente um ABI do presenter, mantendo cenários fora da biblioteca de produção. `makeWindowsConfiguredDownloadExecution` captura perfis próprios e reúne o destino preparado com o broker opcional; a UI não prepara arquivos ou descobre ferramentas. O bootstrap preserva a sessão antes do move para o presenter e conserva o owner entre o lifetime do engine QML e seus writers emprestados. Header de build vazio não cria owner ou ingresso; identidade instalada, recuperação e sandbox conservam seus gates.
 
 ### Seleção de mídia no navegador experimental

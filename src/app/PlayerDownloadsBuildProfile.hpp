@@ -17,7 +17,15 @@ struct WindowsPlayerDownloadProfile final {
     WindowsPlayerDownloadsOptions options{};
 };
 
+// Trusted compiled Native identities only. Missing support or two disabled
+// channels returns nullopt. Providers may use this directly without repeating
+// origins/endpoints/image allowlists; peer-check callbacks remain unconfigured.
+[[nodiscard]] std::optional<WindowsPlayerNativeIngressOptions> compiledPlayerNativeIngressProfiles();
+
 // No configured header means no composition. Building optional modules alone
 // does not enable admission, native listeners, tools or remote acquisition.
+// Active provider channels must match the compiled identities. Origins compare
+// exactly; pipe names and image allowsets ignore case (and image ordering).
+// A compiled active channel may be omitted by the provider as an opt-out.
 [[nodiscard]] std::optional<WindowsPlayerDownloadProfile> playerDownloadsBuildProfile(const QString& config_root);
 } // namespace music_player::m0
