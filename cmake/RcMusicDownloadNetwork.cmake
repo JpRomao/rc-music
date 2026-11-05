@@ -23,6 +23,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadWorkspace.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeResolverProcess.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
@@ -62,7 +63,7 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsYoutubeResolverProcess WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsYoutubeResolverProcess WindowsYoutubeRuntime WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask)
@@ -198,5 +199,9 @@ if(BUILD_TESTING)
             ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
+        if(unit STREQUAL "WindowsYoutubeRuntime")
+            set_tests_properties("rc_music.download-network.${unit}" PROPERTIES
+                LABELS "download-network;qt;FR-050;FR-052")
+        endif()
     endforeach()
 endif()
