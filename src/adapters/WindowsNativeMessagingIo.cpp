@@ -18,6 +18,7 @@ struct WindowsNativeMessagingIo::Impl {
     HANDLE input;
     HANDLE output;
     bool valid;
+    qsizetype maximum_snapshot;
     bool closing{false};
     bool input_terminal{false};
     bool timing_failed{false};
@@ -30,7 +31,11 @@ struct WindowsNativeMessagingIo::Impl {
     std::thread writer;
     HANDLE writer_handle{nullptr};
 
-    Impl(const HANDLE in, const HANDLE out) : input(in), output(out), valid(isPipe(in) && isPipe(out)) {}
+    Impl(const HANDLE in, const HANDLE out, const qsizetype maximum_input_payload_bytes)
+        : input(in), output(out),
+          valid(maximum_input_payload_bytes > 0 && maximum_input_payload_bytes <= native_message_max_payload_bytes &&
+                isPipe(in) && isPipe(out)),
+          maximum_snapshot(valid ? maximum_input_payload_bytes + 5 : 0) {}
     bool stopped() const noexcept {
         return !writer.joinable() || WaitForSingleObject(writer_handle, 0) == WAIT_OBJECT_0;
     }
@@ -45,7 +50,13 @@ struct WindowsNativeMessagingIo::Impl {
 WindowsNativeMessagingIo::WindowsNativeMessagingIo()
     : WindowsNativeMessagingIo(GetStdHandle(STD_INPUT_HANDLE), GetStdHandle(STD_OUTPUT_HANDLE)) {}
 WindowsNativeMessagingIo::WindowsNativeMessagingIo(void* input, void* output)
-    : impl_(std::make_unique<Impl>(input, output)) {}
+    : WindowsNativeMessagingIo(input, output, native_message_max_payload_bytes) {}
+WindowsNativeMessagingIo::WindowsNativeMessagingIo(const qsizetype maximum_input_payload_bytes)
+    : WindowsNativeMessagingIo(GetStdHandle(STD_INPUT_HANDLE), GetStdHandle(STD_OUTPUT_HANDLE),
+                               maximum_input_payload_bytes) {}
+WindowsNativeMessagingIo::WindowsNativeMessagingIo(void* input, void* output,
+                                                   const qsizetype maximum_input_payload_bytes)
+    : impl_(std::make_unique<Impl>(input, output, maximum_input_payload_bytes)) {}
 WindowsNativeMessagingIo::~WindowsNativeMessagingIo() {
     beginShutdown();
     while (!impl_->stopped()) {
@@ -71,8 +82,7 @@ NativeStdioInput WindowsNativeMessagingIo::readAvailable() {
     // A full snapshot includes an already-present trailing byte, even when the
     // valid first frame ends at a former arbitrary chunk boundary. A larger
     // snapshot is refused before allocating/copying anything or admitting it.
-    constexpr qsizetype maximum_snapshot = native_message_max_payload_bytes + 4 + 1;
-    if (available > static_cast<DWORD>(maximum_snapshot)) {
+    if (available > static_cast<DWORD>(impl_->maximum_snapshot)) {
         impl_->input_terminal = true;
         return {};
     }

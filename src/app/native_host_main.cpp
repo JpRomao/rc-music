@@ -1,9 +1,16 @@
 #include "NativeHostBuildConfiguration.hpp"
 #include "NativeHostInputStep.hpp"
-#include "adapters/NativeDownloadSession.hpp"
-#include "adapters/QtNativeDownloadClient.hpp"
 #include "adapters/WindowsNativeHostWatchdog.hpp"
 #include "adapters/WindowsNativeMessagingIo.hpp"
+
+#ifdef RC_MUSIC_YOUTUBE_NATIVE_HOST
+#include "adapters/NativeYoutubeAudioSession.hpp"
+#include "adapters/QtNativeYoutubeAudioClient.hpp"
+#include "adapters/YoutubeAudioCodec.hpp"
+#else
+#include "adapters/NativeDownloadSession.hpp"
+#include "adapters/QtNativeDownloadClient.hpp"
+#endif
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -11,16 +18,25 @@
 
 namespace {
 using namespace music_player::m0;
+#ifdef RC_MUSIC_YOUTUBE_NATIVE_HOST
+using HostSubmissionClient = QtNativeYoutubeAudioClient;
+using HostAdmissionSession = NativeYoutubeAudioSession;
+constexpr auto maximum_input_payload_bytes = static_cast<qsizetype>(youtube_audio_max_payload_bytes);
+#else
+using HostSubmissionClient = QtNativeDownloadClient;
+using HostAdmissionSession = NativeDownloadSession;
+constexpr auto maximum_input_payload_bytes = native_message_max_payload_bytes;
+#endif
 
 int runHost(int argc, char** argv, const NativeHostConfiguration& config, const QString& caller) {
     QCoreApplication application{argc, argv};
-    WindowsNativeMessagingIo io;
+    WindowsNativeMessagingIo io{maximum_input_payload_bytes};
     if (!io.valid())
         return 2;
-    QtNativeDownloadClient submission{config};
+    HostSubmissionClient submission{config};
     QElapsedTimer elapsed;
     elapsed.start();
-    NativeDownloadSession session{caller, config.allowed_origin, submission};
+    HostAdmissionSession session{caller, config.allowed_origin, submission};
     enum class Phase { Receiving, Writing, Closing };
     Phase phase{Phase::Receiving};
     int result = 2;

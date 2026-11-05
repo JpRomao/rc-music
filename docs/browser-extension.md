@@ -1,8 +1,8 @@
 # Extensão principal Brave/Chromium
 
-**Estado:** cliente, biblioteca Qt Core de recepção e host/transporte Native Messaging Windows opcionais implementados. A configuração de produção do host fica vazia/desabilitada e o player de produção continua sem ingresso/serviço remoto ativo. Não há extensão/host instalados ou prova no Brave real; a [navegação interna experimental](embedded-browser.md) tem composição opt-in própria e não ativa essa ponte. Não é uma entrega funcional instalada nem extensão publicada.
+**Estado:** cliente, biblioteca Qt Core de recepção e hosts/transportes Native Messaging Windows opcionais implementados, com perfil YouTube separado. As configurações de produção ficam vazias/desabilitadas e o player de produção continua sem ingresso/serviço remoto ativo, inclusive sem servidor YouTube composto. Não há extensão/host instalados ou prova no Brave real; a [navegação interna experimental](embedded-browser.md) tem composição opt-in própria e não ativa essa ponte. Não é uma entrega funcional instalada nem extensão publicada.
 
-Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. O [cliente e codec YouTube independentes](youtube-audio-and-lyrics.md) já têm testes próprios, sem host/execução no player normal. A principal conserva seus bloqueios e não encaminha pedidos para esse outro cliente.
+Contratos: [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md), [ADR-0007](architecture/decisions/0007-main-extension-boundary.md), [ameaças e limites](security/browser-extension-threat-model.md); R1.7/FR-051–053. O [cliente e codec YouTube independentes](youtube-audio-and-lyrics.md) têm host/IPC próprios, sem ativação no player normal. A principal conserva seus bloqueios e não encaminha pedidos para esse outro cliente.
 
 ## Implementação do cliente
 
@@ -111,6 +111,23 @@ O CTest configura PATH e saída Qt dos cinco executáveis; não precisa de janel
 
 Limitar o pipe ao usuário e comparar a origem não autentica outro processo do mesmo usuário nem prova lançamento pelo browser. A [reserva nativa abaixo](#reserva-nativa-do-nome-do-pipe) exige primeira instância e conserva o nome; identidade instalada, disponibilidade entre usuários, propriedade/upgrade/registro do manifest e o formato real de HWND/`--parent-window` do Brave continuam gates. Não habilitar a configuração de produção para contorná-los. Lite/Completa usam a mesma futura composição protegida; navegação interna e YouTube permanecem separados.
 
+#### Host YouTube separado
+
+O alvo opcional `rc_music_youtube_native_host`, destinado ao host `com.rcmusic.youtube`, compila o mesmo [main](../src/app/native_host_main.cpp) com a macro fixa `RC_MUSIC_YOUTUBE_NATIVE_HOST`. Ela seleciona `NativeYoutubeAudioSession` e `QtNativeYoutubeAudioClient`; o executável principal conserva sua sessão/client de downloads diretos. Não há seleção de protocolo por argumento, ambiente ou mensagem.
+
+`RC_MUSIC_NATIVE_YOUTUBE_ORIGIN` e `RC_MUSIC_NATIVE_YOUTUBE_ENDPOINT` são caches confiáveis de build, vazios por padrão. Usam a mesma gramática da principal e exigem o par completo. Quando ambos os perfis estão configurados, o configure recusa a mesma origem e endpoints iguais sem distinguir maiúsculas de minúsculas. A reserva de pipe continua usando SID/endpoint normalizado; trocar o tipo de protocolo não cria outra identidade para o mesmo nome.
+
+O [template de configuração](../src/app/NativeHostBuildConfiguration.hpp.in) é gerado separadamente em `youtube-native-host/NativeHostBuildConfiguration.hpp`, com include privado desse alvo. O perfil autoriza `RCMusic.exe` como owner e apenas `rc_music_youtube_native_host.exe` como host; o perfil principal continua autorizando `rc_music_native_host.exe`. Ambos os caches YouTube vazios encerram o processo antes de criar `QCoreApplication`, stdio ou IPC; isso não impede o loader do Windows de carregar as DLLs Qt necessárias ao executável. `RC_MUSIC_BUILD_NATIVE_MESSAGING` permanece OFF por padrão e nenhum desses alvos instala ou registra o host.
+
+| Canal | Pedido tipado e preâmbulo | Corpo máximo |
+|---|---|---:|
+| Principal | `download.request`, `RCMDLIPC` + versão 1 + origem | 256 KiB |
+| YouTube | `youtube.audio.request`, `RCMYTIPC` + versão 1 + origem | 64 KiB |
+
+Cada preâmbulo tem 61 bytes e precede o frame uint32 little-endian. O canal YouTube usa `AsyncYoutubeAudioSubmission`, preserva IDs/metadados tipados e recusa pedidos/respostas da principal; a principal mantém sua recusa de YouTube. A resposta de ambos tem corpo de até 4.096 bytes e exige correlação e EOF do peer. O snapshot de stdin usa o teto fixo do respectivo host, mais prefixo e um byte para detectar excesso; o relógio continua sendo observado depois da leitura.
+
+`Pending` não produz ACK, e EOF/desconexão/timeout não cancelam nem reenviam um lote já pertencente ao owner. Na composição com admissão durável, o estado público `Queued`/aceito só pode ser declarado após o `Saved` correspondente: significa pedido persistido na fila, sem afirmar MP3 baixado, convertido ou importado. O transporte não produz essa durabilidade por si só. O servidor YouTube ainda não está ativo na composição do player; identidade instalada/atestação da origem, manifest/Registro e jornada no Brave real continuam pendentes.
+
 #### Exclusividade cooperativa do dono
 
 [WindowsNativeDownloadLease](../src/adapters/WindowsNativeDownloadLease.hpp) reserva a identidade antes de `QtNativeDownloadServer::listen`, sem alterar a eleição do player/`OpenSources`. O nome é `Global\RCMusic.NativeDownloadOwner.v1.` seguido de SHA-256 sobre SID textual do `TokenUser` em UTF-8, NUL e endpoint ASCII em minúsculas. Origem da extensão, edição, perfil e CWD não entram na chave: um mesmo usuário/endpoint não deve admitir lotes em donos concorrentes por mudar esses campos. O namespace Global evita que sessões Windows do mesmo usuário obtenham reservas distintas. [Namespaces de objetos Windows](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces).
@@ -160,7 +177,7 @@ $rcCatch2 = Join-Path $rcSource 'out/m0/toolchains/Catch2-3.15.3'
 $rcNinja = 'C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
 $rcFormat = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-format.exe'
 Get-ChildItem src/adapters/NativeHostLaunch.*, src/adapters/NativeDownloadCodec.*, src/adapters/NativeDownloadIpcProtocol.hpp, src/adapters/QtNativeDownload*.?pp, src/adapters/WindowsNative*.?pp, src/app/native_host_main.cpp, src/app/NativeHostInputStep.hpp, tests/qt/NativeHost*Tests.cpp, tests/qt/NativeHostWatchdogHelper.cpp, tests/qt/NativeDownloadOwner*.cpp, tests/qt/QtNativeDownloadTransportTests.cpp, tests/qt/WindowsNativeMessagingIoTests.cpp, tests/qt/WindowsNativeDownloadLeaseTests.cpp | ForEach-Object { & $rcFormat --dry-run --Werror $_.FullName; if ($LASTEXITCODE -ne 0) { throw 'Formato do host nativo falhou' } }
-cmake -S . -B out/product/native-messaging-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DRC_MUSIC_BUILD_NATIVE_MESSAGING=ON -DRC_MUSIC_BUILD_DESKTOP=OFF -DBUILD_TESTING=ON -DRC_MUSIC_NATIVE_MAIN_ORIGIN= -DRC_MUSIC_NATIVE_ENDPOINT= "-DCMAKE_PREFIX_PATH=$rcQt" "-DRC_MUSIC_CATCH2_SOURCE_DIR=$rcCatch2" "-DCMAKE_MAKE_PROGRAM=$rcNinja"
+cmake -S . -B out/product/native-messaging-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DRC_MUSIC_BUILD_NATIVE_MESSAGING=ON -DRC_MUSIC_BUILD_DESKTOP=OFF -DBUILD_TESTING=ON -DRC_MUSIC_NATIVE_MAIN_ORIGIN= -DRC_MUSIC_NATIVE_ENDPOINT= -DRC_MUSIC_NATIVE_YOUTUBE_ORIGIN= -DRC_MUSIC_NATIVE_YOUTUBE_ENDPOINT= "-DCMAKE_PREFIX_PATH=$rcQt" "-DRC_MUSIC_CATCH2_SOURCE_DIR=$rcCatch2" "-DCMAKE_MAKE_PROGRAM=$rcNinja"
 if ($LASTEXITCODE -ne 0) { throw 'Configure do host nativo falhou' }
 cmake --build out/product/native-messaging-tests --parallel 4
 if ($LASTEXITCODE -ne 0) { throw 'Build Release do host nativo falhou' }
@@ -175,6 +192,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Diff inválido' }
 ```
 
 O filtro acima é do host/codec, não a suíte inteira nem a composição gráfica. Para build sem testes, usar cache novo com `-DBUILD_TESTING=OFF` e compilar `rc_music_native_host`; configuração vazia continua desabilitada e não exige Qt Test. Essa receita não instala/lança setup, registra Native Messaging, carrega extensão ou acessa navegador/rede/conversor.
+
+O host YouTube separado usa o alvo `rc_music_youtube_native_host` na mesma receita; sua configuração também permanece vazia. O build dos dois hosts com testes OFF passou, com zero testes registrados, no recorte de 2026-11-05 documentado abaixo.
 
 ### Contrato de recepção
 
@@ -216,6 +235,12 @@ A consolidação Release ON/build + `all_qmllint` passou, seguida de **470/470 r
 ### Incremento de reserva cooperativa de 2026-10-02
 
 As regressões novas começaram Red: transporte **27 passagens/3 falhas**, depois **27/4** com failed-listen contra stub; lease **14/9** com aquisição ausente; processo **3/4** contra servidor anterior sem reserva. A seleção focada passou **3/3 CTest em 4,82 s**, sem skips: transporte **31/31 QtTest**, `WindowsNativeDownloadLeaseTests` **23/23** e `NativeDownloadOwnerProcessTests` **7/7**. Há cobertura de mesma thread/processos, endpoint case-insensitive, campos excluídos da chave, DACL, marker livre preexistente, colisão de tipo, retenção pelo último handle, failed-listen e lifecycle até destruição/morte reconhecida do filho próprio. Não herança foi conferida no `SECURITY_ATTRIBUTES` do código, sem ensaio de filho herdando handles. Isso não comprova outra sessão/usuário, pipe hostil ou identidade/ownership instalados. Os **470/470** acima pertencem ao incremento anterior; gates globais e de produção desta mudança são registrados separadamente no [checkpoint central](development-plan.md#17-próxima-sequência-segura).
+
+### Incremento de host YouTube separado de 2026-11-05
+
+A seleção focada passou **13/13 CTest, 319 casos Qt**, incluindo o processo YouTube **11**, processo principal **32**, cliente YouTube **30**, servidor YouTube **18**, passo de leitura **7** e I/O Win32 **19**, sem falhas ou skips. Esses recortes integram o total, não devem ser somados a ele. Os **18 casos** de configuração CMake e a inspeção de boundary passaram, cobrindo defaults, gramática, configuração parcial, colisões e separação dos perfis/targets.
+
+Os Reds confirmaram os **13 perfis inválidos** aceitos pelo validador vazio e o alvo YouTube de produção ausente; o processo inicialmente teve **5 passagens/6 falhas** contra o main sem seleção tipada. O Green usa main/stdio/pipe e processos reais próprios, com identidades sintéticas compiladas e owner/admissão de teste. Exerce frame fragmentado, recusa de origem/pedido/resposta da principal, resposta correlacionada, host ausente e EOF sem ACK/retry. O build dos dois hosts com `BUILD_TESTING=OFF` passou em `out/product/native-messaging-release-off-20261002`, com **zero CTest** registrados. Formato de **18 arquivos C++** passou; não houve alteração QML. Não executa Brave, registro/instalação, download público, conversão ou importação de MP3, nem encerra os respectivos gates.
 
 ## Pendências e próxima integração
 

@@ -6,6 +6,8 @@
 
 #include <qt_windows.h>
 
+#include <limits>
+
 using namespace music_player::m0;
 namespace {
 struct Pipe final {
@@ -138,6 +140,43 @@ class WindowsNativeMessagingIoTests final : public QObject {
         QVERIFY(io.stopped());
         QCOMPARE(io.outputState(), NativeStdioOutputState::Idle);
         QCOMPARE(take(output), QByteArray{});
+    }
+    void rejectsInvalidTrustedInputCeilings_data() {
+        QTest::addColumn<qsizetype>("ceiling");
+        QTest::newRow("negative") << qsizetype{-1};
+        QTest::newRow("zero") << qsizetype{0};
+        QTest::newRow("above-principal-limit") << native_message_max_payload_bytes + 1;
+        QTest::newRow("overflow") << std::numeric_limits<qsizetype>::max();
+    }
+    void rejectsInvalidTrustedInputCeilings() {
+        QFETCH(qsizetype, ceiling);
+        Pipe input, output;
+        WindowsNativeMessagingIo io{input.reader, output.writer, ceiling};
+        QVERIFY(!io.valid());
+        QCOMPARE(io.readAvailable().state, NativeStdioInputState::Failed);
+        QVERIFY(io.stopped());
+    }
+    void enforcesTheTrustedYoutubeSnapshotCeilingBeforeReading_data() {
+        QTest::addColumn<qsizetype>("size");
+        QTest::addColumn<bool>("accepted");
+        QTest::newRow("youtube-frame-and-excess-byte") << qsizetype{64 * 1024 + 5} << true;
+        QTest::newRow("above-youtube-snapshot") << qsizetype{64 * 1024 + 6} << false;
+    }
+    void enforcesTheTrustedYoutubeSnapshotCeilingBeforeReading() {
+        QFETCH(qsizetype, size);
+        QFETCH(bool, accepted);
+        Pipe input{128 * 1024}, output;
+        WindowsNativeMessagingIo io{input.reader, output.writer, 64 * 1024};
+        QVERIFY(io.valid());
+        QVERIFY(put(input, QByteArray(size, 'x')));
+        const auto received = io.readAvailable();
+        QCOMPARE(received.state, accepted ? NativeStdioInputState::Data : NativeStdioInputState::Failed);
+        QCOMPARE(received.bytes.size(), accepted ? size : qsizetype{0});
+        DWORD available{};
+        QVERIFY(PeekNamedPipe(input.reader, nullptr, 0, nullptr, &available, nullptr));
+        QCOMPARE(available, accepted ? DWORD{0} : static_cast<DWORD>(size));
+        if (!accepted)
+            QCOMPARE(io.readAvailable().state, NativeStdioInputState::Closed);
     }
     void brokenOutputCannotBecomeCompleted() {
         Pipe input, output;

@@ -23,6 +23,10 @@ class WindowsNativeMessagingIo final {
   public:
     WindowsNativeMessagingIo();
     WindowsNativeMessagingIo(void* input_handle, void* output_handle);
+    // Trusted host profile, never input from argv/environment or message JSON.
+    // Existing constructors retain the principal protocol's default ceiling.
+    explicit WindowsNativeMessagingIo(qsizetype maximum_input_payload_bytes);
+    WindowsNativeMessagingIo(void* input_handle, void* output_handle, qsizetype maximum_input_payload_bytes);
     ~WindowsNativeMessagingIo();
     WindowsNativeMessagingIo(const WindowsNativeMessagingIo&) = delete;
     WindowsNativeMessagingIo& operator=(const WindowsNativeMessagingIo&) = delete;
