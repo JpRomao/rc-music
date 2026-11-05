@@ -10,6 +10,7 @@ ApplicationWindow {
     required property PlayerPresenter presenter
     property var downloads: null
     property var embeddedBrowser: null
+    property var lyrics: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -53,7 +54,7 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
@@ -376,6 +377,7 @@ ApplicationWindow {
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
+                    compact: lyricsPanel.visible
                     onOpenAudioRequested: opener => window.openAudio(opener)
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
@@ -415,6 +417,15 @@ ApplicationWindow {
             }
             onTextChanged: Qt.callLater(updateAnnouncement)
             onVisibleChanged: Qt.callLater(updateAnnouncement)
+        }
+        LyricsPanel {
+            id: lyricsPanel
+            Layout.fillWidth: true
+            visible: window.lyrics !== null && window.presenter.hasCurrentTrack
+            contract: window.uiContract
+            lyrics: window.lyrics
+            trackIdentity: window.presenter.currentOccurrenceId
+            enabled: !window.presenter.exiting
         }
         TransportBar {
             id: transport

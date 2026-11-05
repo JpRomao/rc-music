@@ -3,7 +3,7 @@
 **Estado:** baseline vigente; stack Windows aceita no ADR-0005
 
 **Versão alvo:** MVP 0.1  
-**Última revisão:** 2026-09-06
+**Última revisão:** 2026-11-04
 
 **Nome do produto:** RC Music, confirmado pelo mantenedor em 2026-09-05; [ADR-0004](../architecture/decisions/0004-rc-music-identity.md). A confirmação não altera os requisitos ou as prioridades abaixo.
 
@@ -41,7 +41,7 @@ O [recorte de seleção principal assíncrona](../../experiments/m0/candidates/q
 | ID | Prioridade | Origem | Requisito e critério principal |
 |---|---:|---|---|
 | FR-010 | P0 | Confirmado | Reproduzir e pausar mantendo posição e volume. |
-| FR-011 | P0 | Derivado | Oferecer faixa anterior, próxima, volume e mudo. Ao terminar uma faixa, avançar para o próximo item reproduzível. |
+| FR-011 | P0 | Derivado | Oferecer faixa anterior, próxima, volume e mudo. Ao terminar uma faixa, avançar para o próximo item reproduzível. Mostrar a porcentagem atual de volume, de 0 a 100%, ao passar o mouse sobre o controle ou arrastá-lo; atualizar o indicador em tempo real, conservá-lo durante o arraste e ocultá-lo ao sair quando não houver arraste. |
 | FR-012 | P0 | Confirmado | Exibir tempo decorrido, duração e barra de progresso clicável e arrastável para voltar ou avançar. |
 | FR-013 | P0 | Confirmado | Oferecer botões de retrocesso e avanço de 5 s por padrão. Os dois valores são configuráveis e persistidos; faixa proposta de 1 a 300 s. |
 | FR-014 | P0 | Derivado | Limitar seek e saltos ao intervalo `0..duração`. Seek em pausa mantém pausa; mídia não seekable desabilita o controle e explica o motivo. |
@@ -50,6 +50,8 @@ O [recorte de seleção principal assíncrona](../../experiments/m0/candidates/q
 | FR-017 | P1 | Derivado | “Anterior” reinicia a faixa quando a posição passou de 3 s; antes disso, navega para o item anterior. O limiar poderá virar preferência somente se houver necessidade real. |
 | FR-018 | P2 | Derivado | Em evolução futura, permitir escolher um dispositivo de saída quando o backend e a plataforma oferecerem essa capacidade. Mudanças e desconexões devem ser recuperáveis. |
 | FR-019 | P1 | Confirmado | Pedido de 2026-09-06: F1 liga/desliga modo aleatório das próximas ocorrências sem interromper a atual; F2 liga/desliga repetição da fila, movendo a ocorrência concluída ao fim sem ressuscitar itens removidos. IDs, duplicatas e metadados são preservados; ambos os modos são persistidos. Desligar aleatório conserva a ordem exibida. Velocidade e repetir somente uma faixa continuam evoluções futuras separadas. |
+
+O indicador de porcentagem de `FR-011` é um refinamento confirmado pelo mantenedor em 2026-11-04. Exibe um inteiro arredondado do volume vigente, acompanha alterações por teclado e não altera volume ou mudo ao apenas passar o mouse. Sua implementação compartilha o controle de volume existente.
 
 ### 2.3 Metadados
 
@@ -119,6 +121,16 @@ Incremento worker-only de ownership de 2026-10-02: [journal privado de arquivos]
 Incremento de importação durável de 2026-10-02: o [modo Session do importador](../download-jobs.md#importação-local-de-resultado-publicado) conserva fila+recibo por job/path no mesmo `session.json` v2, com migração de v1 para recibos vazios e sem expulsão nos tetos de 128 recibos/1 MiB nativo. O serviço permanece `Importing` até Saved matching; falha exige retry explícito sem novo append/download, e backup/estado inválido/futuro bloqueiam novas importações duráveis. Bootstrap/autosave preservam o ledger mesmo com restauração e opcionais OFF, sem hidratar/tocar suas faixas; remoção manual não ressuscita importação. Paths recuperados não autorizam ações e a atomicidade não é exactly-once universal nem transação global entre documentos. São componentes sem serviço/host/UI de downloads instanciado no app; reconciliação/capacidade acionáveis, resíduos do runtime, ferramentas/sandbox, Brave, Completa e instaladores continuam pendentes. FR-051–053 permanecem abertos.
 
 Incremento de reconciliação histórica de 2026-10-02: o [restore estrito](../download-jobs.md) reconhece ID exato de recibo de sessão saudável mesmo com checkpoint de admissão antigo Queued/parcial/sem path, tornando o job `Imported` sem executar/importar arquivos ou inventar contadores. Candidato distinto/estado de falha ou cancelamento conflitante bloqueia tudo sem rewrite; conclusão sem recibo vira Unconfirmed/Interrupted, e órfãos apenas são relatados/protegem namespace, sem fabricar jobs ou consumir quotas de downloads. Controller captura ledger limitado/detached de Loaded primário ou Missing exatamente vazio antes de Ready; backup/defaults/futuro/DTO inválido bloqueiam novas admissões, e retry de downloads não altera a saúde de sessão. Model mostra “Já importado na fila”, sem path/ações; paths privados nunca são capabilities. Reconciliação física/acionável, resíduos, composição dos serviços no app, Brave/Completa/opcionais/instaladores e gates de segurança/release continuam pendentes; FR-051–053 não estão concluídos.
+
+### 2.7 Letras das músicas
+
+| ID | Prioridade | Origem | Requisito e critério principal |
+|---|---:|---|---|
+| FR-054 | P1 | Confirmado | Exibir a letra original acima da barra de progresso, sincronizada por linha com a posição confirmada da música, incluindo pausa e seek. Carregar o arquivo local `.lrc` correspondente e oferecer busca online opcional no LRCLIB, mediante confirmação explícita dos metadados. Permitir corrigir título/artista para a consulta, apresentar texto sem sincronização quando disponível e conservar a reprodução local quando a letra estiver ausente ou houver falha. |
+
+Pedido confirmado em 2026-11-04: a letra funciona como legenda da música, sem tradução ou transcrição de áudio. O mantenedor definiu sua posição acima da barra de progresso e escolheu incluir busca online, além do suporte local. O [ADR-0013](../architecture/decisions/0013-lyrics-and-online-lookup.md) delimita esse novo escopo: o arquivo local funciona offline; abrir o diálogo não consulta o provedor; o envio explícito usa somente título, artista e, quando disponíveis e válidos, álbum e duração. Áudio e caminhos locais não são enviados. Troca da ocorrência revoga o diálogo e resultados atrasados não podem substituir a letra da faixa atual.
+
+A matriz inicial de letras locais aceita um `.lrc` UTF-8 regular com o mesmo nome base do áudio, sem UNC ou symlink. Offset diferente de zero não é aceito neste recorte. Cobertura, versão da música e precisão dos tempos do provedor podem variar; não há promessa de encontrar letras para todas as faixas. A consulta de texto é independente da extensão, do navegador e do downloader; não encerra FR-050–053, licenças ou distribuição.
 
 ## 3. Requisitos de UX e acessibilidade
 

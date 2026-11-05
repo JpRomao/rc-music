@@ -775,6 +775,16 @@ Mutation testing pode rodar periodicamente no domínio crítico (fila, seek, pre
 
 ## 15. Evidência no commit
 
+### Letras e indicador percentual de volume
+
+O [ADR-0013](../architecture/decisions/0013-lyrics-and-online-lookup.md) acrescenta parser/lookup puros, leitura local assíncrona, consulta LRCLIB explícita e binding/UI acima do progresso. Fixtures locais e transporte falso cobrem limite/UTF-8, pausa/seek, troca de faixa, resposta obsoleta, timeout, 429/Retry-After, serialização, saída cancelada e ausência de rede automática. Os testes QML verificam texto simples, confirmação/edição dos metadados, fechamento do diálogo ao trocar ocorrência, geometria em 720 × 520 e porcentagem de volume no hover/arraste/teclado.
+
+Em `out/product/test-runs/lyrics-volume-20261104/`, Reds registram **2/11 casos Core**, **2/12 Qt do serviço**, **14/3 da extensão de rate limit**, **2/3 do binding**, **2/2 da UI** e **2/6 do volume**, antes das implementações correspondentes. A regressão de geometria teve **4/1** e a de fase observável de saída **5/1**. O fechamento recompilado passou **257/257 CTest**: **254 testes Core**, **17 Qt do serviço**, **6 do binding** e **291 Quick**, sem falhas/skips, em **48,57 s**. A seleção é Core/letras/Quick, não a suíte inteira de processos, instaladores ou AppContainer.
+
+O smoke manual `rc_music_lyrics_online_probe --public-example`, separado do CTest, consultou uma vez os metadados públicos do exemplo da documentação com o serviço/Qt TLS reais: **Ready, 47 cues e 1042 bytes de texto**, exit 0. Não imprimiu letras nem enviou áudio. Isso prova somente esse endpoint/faixa/runtime naquele instante, sem validar catálogo universal, sincronização em arquivos pessoais ou pacote instalado.
+
+Release e `all_qmllint` passaram. O formato dos **11 C++ alterados e 65 QML** passou; o check C++ global encontrou uma violação preexistente em `AppContainerRegistryLocationRun.hpp`, rascunho do trabalho pausado, que foi preservado. A exportação opcional de screenshots offscreen não foi qualificada; os asserts de geometria e interação passaram. Não houve novo perfil AppContainer, instalação ou alteração da tarefa pausada.
+
 Para [diagnóstico local Windows](../../experiments/m0/candidates/qt/README.md#local-diagnostics), separar os testes puros de formato/fila/limites dos testes físicos de slots e dos subprocessos. Um controle sem proteção precisa demonstrar os canais Qt/CRT/Win32 antes de exigir silêncio no filho protegido; stdout fixo e encerramento fatal continuam observáveis. A jornada do executável usa WAV sintético silencioso e config temporária, verifica opt-in, decoder real e evento de sessão inválida, sem suprimir mensagens no runner. Symlink indisponível por política do host é skip registrado, nunca aprovação. Rodar com Qt habilitado não substitui o core Qt OFF.
 
 Antes de commitar comportamento:

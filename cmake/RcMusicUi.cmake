@@ -1,5 +1,14 @@
 include_guard(GLOBAL)
 
+find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Network Concurrent)
+add_library(rc_music_lyrics STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.cpp")
+target_include_directories(rc_music_lyrics PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Network PRIVATE Qt6::Concurrent)
+set_target_properties(rc_music_lyrics PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_lyrics)
+
 # Reuse exactly the same presentation sources for production and the isolated
 # scenario-test variant. Each caller owns its plugin and QML output directory.
 function(rc_music_add_ui target support qml_output)
@@ -18,6 +27,7 @@ function(rc_music_add_ui target support qml_output)
             TransportBar.qml
             TransportText.qml
             TransportSlider.qml
+            LyricsPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
@@ -55,6 +65,8 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ApplicationText.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.hpp"
@@ -82,6 +94,7 @@ function(rc_music_add_ui target support qml_output)
         Qt6::Quick
         Qt6::QuickControls2
         Qt6::QuickLayouts
+        rc_music_lyrics
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         target_sources(${target} PRIVATE

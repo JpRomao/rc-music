@@ -25,6 +25,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0010](0010-experimental-webview2-browser.md) | Proposto | Navegação Windows experimental WebView2 opt-in; Lite sem engine, sem downloads ou pacote Completa aprovado |
 | [0011](0011-media-worker-appcontainer.md) | Proposto | Isolamento AppContainer opcional do worker de mídia, perfil e prova física separados da ativação do produto |
 | [0012](0012-experimental-edition-packaging.md) | Proposto | Receitas privadas Lite/Completa experimental, notices e troca de payload em uma instalação compartilhada |
+| [0013](0013-lyrics-and-online-lookup.md) | Aceito | Letras locais e sincronizadas acima do progresso, busca LRCLIB explícita por metadados e refinamento do indicador de volume |
 
 ## Processo
 

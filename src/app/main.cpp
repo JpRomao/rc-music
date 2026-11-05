@@ -2,6 +2,7 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
 #include "adapters/WindowsWebView2Browser.hpp"
@@ -31,6 +32,7 @@
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/LifecycleText.hpp"
+#include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "presentation/PlayerPresenterScenarioControl.hpp"
@@ -446,6 +448,8 @@ int main(int argc, char* argv[]) {
                                                     lifecycle_text.exitAction(), lifecycle_text.noTrack()},
                                                    std::move(availability_reader));
         music_player::m0::QtSystemAppearance system_appearance;
+        music_player::m0::QtLyricsService lyrics_service;
+        music_player::m0::LyricsBinding lyrics_binding(lyrics_service);
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
@@ -508,8 +512,9 @@ int main(int argc, char* argv[]) {
             }
         };
         presenter.setSourceExitDrainedProbe([&] {
+            const bool lyrics_drained = lyrics_binding.prepareExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
-                   source_dispatcher.hasDrainedAcceptedWork();
+                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -622,8 +627,24 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"unable to enter the frozen unavailable scenario"};
         }
 #endif
+        const auto update_lyrics = [&] {
+            if (presenter.exiting()) {
+                static_cast<void>(lyrics_binding.prepareExit());
+                return;
+            }
+            lyrics_binding.setTrack(presenter.detailsFilePath(), presenter.currentTitle(), presenter.currentArtist(),
+                                    presenter.currentAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0);
+            lyrics_binding.setPosition(presenter.confirmedPositionMs());
+        };
+        QObject::connect(&presenter, &PlayerPresenter::stateChanged, &lyrics_binding, update_lyrics);
+        QObject::connect(&presenter, &PlayerPresenter::playbackChanged, &lyrics_binding, update_lyrics);
+        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &lyrics_binding, update_lyrics);
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, &lyrics_binding,
+                         &music_player::m0::LyricsBinding::beginShutdown);
+        update_lyrics();
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
+                                       {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

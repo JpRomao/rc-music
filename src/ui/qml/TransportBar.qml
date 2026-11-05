@@ -228,6 +228,11 @@ ColumnLayout {
             objectName: "volume"
             enabled: root.playbackEnabled
             contract: root.contract
+            hoverEnabled: true
+            ToolTip.text: Math.round(root.presenter.volume * 100) + "%"
+            ToolTip.visible: enabled && (hovered || pressed)
+            ToolTip.delay: 0
+            ToolTip.timeout: -1
             from: 0
             to: 100
             property bool synchronizingValue: false

@@ -7,6 +7,8 @@ ColumnLayout {
     objectName: "playing-state"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    property bool compact: false
+    readonly property real coverExtent: compact && parent ? Math.max(0, Math.min(128, parent.height - titleLabel.implicitHeight - artistLabel.implicitHeight - albumLabel.implicitHeight - openAudioButton.implicitHeight - detailsButton.implicitHeight - spacing * 5 - 4)) : 192
     signal openAudioRequested(Item opener)
     signal detailsRequested(Item opener)
 
@@ -15,8 +17,8 @@ ColumnLayout {
     }
 
     Item {
-        implicitWidth: 192
-        implicitHeight: 192
+        implicitWidth: root.coverExtent
+        implicitHeight: root.coverExtent
         Layout.alignment: Qt.AlignHCenter
 
         Image {
@@ -40,6 +42,7 @@ ColumnLayout {
         }
     }
     Text {
+        id: titleLabel
         objectName: "current-title"
         text: root.presenter.currentTitle
         textFormat: Text.PlainText
@@ -50,6 +53,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
+        id: artistLabel
         objectName: "current-artist"
         text: root.presenter.currentArtist
         textFormat: Text.PlainText
@@ -60,6 +64,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
+        id: albumLabel
         objectName: "current-album"
         text: root.presenter.currentAlbum
         textFormat: Text.PlainText

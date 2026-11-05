@@ -7,6 +7,8 @@
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
 
+Pedido de UX de 2026-11-04: [letras originais locais e busca online explícita](architecture/decisions/0013-lyrics-and-online-lookup.md), acima da barra de progresso, acrescentam FR-054/M3.9. O volume mostra 0–100% em hover/arraste. Esse incremento é independente da investigação AppContainer pausada; seus arquivos em andamento permanecem preservados e as autorizações físicas anteriores continuam consumidas.
+
 Preparação atual: a [consulta contextual do Registro](media-profile-lifecycle.md#consulta-contextual-do-registro) tem helper/protocolo próprios, sem Qt no filho ou dependência dos probes congelados. Os testes automáticos usam portas falsas e entradas recusadas antes de APIs nativas. O modo contextual não foi executado; ainda faltam composição confiável no launcher, deadline/ACK de processo e pipes, correlação física e um ensaio especificamente autorizado. Storage ausente continua lacuna; as quatro raízes permanecem obrigatórias e nenhuma política/DACL foi aplicada.
 
 Checkpoint de 2026-11-04: o [inventário autorizado com Storage ausente](media-profile-lifecycle.md#inventário-autorizado-com-storage-ausente) executou uma vez o probe revisado de `c840fe1`, com perfil próprio S_OK. Retornou **Incomplete/root, exit 1**: PackageRoot, `AC` e Mappings/SID presentes, Storage/SID Missing/erro 2. O snapshot foi salvo; a prova viva S_OK, os gates duráveis do mesmo owner e o read Closed/0 permitiram remover somente seu perfil e confirmar Removed Saved. A evidência/journal foi preservada. A autorização específica foi consumida. Esse resultado não comprova enumeração de descendentes ou a sobreposição de `AC`, não muda o critério das quatro raízes e não aprova política/MIC, rede ou produção.
@@ -435,6 +437,7 @@ O recorte de seleção principal assíncrona de M2.1/M3.1 substitui o seletor es
 | M3.6 | Strings centralizadas, pt-BR, microcopy e erros acionáveis — funcional no candidato Qt/Windows; gates nativos permanecem pendentes | UX-008–010 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-DOC`, `CHK-CLOSE` | nenhuma string essencial espalhada; layout suporta texto longo |
 | M3.7 | Teclado/foco, atalhos, leitor de tela, escala, contraste e movimento reduzido — funcional no candidato Qt/Windows no recorte automatizável; gates nativos pendentes | FR-037, UX-004–007 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-E2E`, `CHK-CLOSE` | zero controle P0 mouse-only, sem nome ou sem foco visível |
 | M3.8 | Revisão UX, desempenho de 1.000 itens e convergência visual | UX-001–010, NFR-PERF-004, NFR-PERF-006 | `CHK-UI`, `CHK-A11Y`, `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | jornadas 1–4, 8–9 e decisão visual registradas |
+| M3.9 | Letras originais acima do progresso: LRC local e consulta LRCLIB explícita, pausa/seek, fallback de texto e volume percentual | FR-054, FR-011 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | parser/serviço/binding/UI validados; resposta obsoleta não troca faixa e rede não bloqueia áudio |
 
 O fechamento funcional de M3.6 no candidato Qt/Windows usa catálogos QML `*Text.qml`, catálogo C++ para o filtro nativo e pt-BR compilado por `qt_add_translations` e instalado em runtime por `QTranslator`, com `numerus` cobrindo “1 segundo”. Erros locais possuem causas tipadas, texto seguro e ação de recuperação; seleção não vazia rejeitada de modo síncrono mantém fila/contexto e publica recuperação. A fila acessível omite IDs/códigos técnicos, resultados parciais ou rejeitados de importação oferecem nova escolha e a UI mantém ação/texto longo dentro de 720 × 520. O fechamento automatizado passou 174/174 no Release combinado, 135/135 no core Qt OFF, Quick 64/64 nas escalas padrão, 1,5× e 2×, `qmllint` silencioso, formato de 90 C++/39 QML e a composição `BUILD_TESTING=OFF` com zero testes e rejeição dos argumentos reservados em exit 1. Isso não substitui NVDA, DPI, alto contraste ou movimento reduzido nativos, nem pacote/E2E; um target SDK Qt enxuto exige `QT_HOST_PATH` para as ferramentas host de tradução. Nenhum benchmark foi executado.
 
@@ -645,7 +648,7 @@ Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos
 | Backlog | FR-025 | exclusão intencional documentada |
 | R1 | FR-050–053, NFR-PRIV-004 | threat model, política, harness e ADR |
 
-### 15.1 Destino individual dos 83 requisitos
+### 15.1 Destino individual dos 84 requisitos
 
 Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica onde o requisito é primeiro provado ou deliberadamente descartado; não significa que o teste já exista. O [manifesto de M1.2](quality/traceability.json) mantém uma linha por ID, links para testes/evidências, lacunas e estado (`planejado`, `em andamento`, `comprovado`, `excepcionado` ou `fora de escopo`). O [validador integrado ao runner](quality/traceability.md) confere inventário, destinos e referências literais, com consulta inversa por teste/evidência; não executa os testes citados nem comprova automaticamente seus critérios. `Excepcionado` vale somente para gates/desvios que o contrato permita; P0 funcional falho precisa ser corrigido ou alterado/repriorizado antes do RC.
 
@@ -692,6 +695,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-051` | R1.1–R1.2, R1.4–R1.10 | extensão Brave/Chromium, Lite/Completa e download/conversão isolados do playback |
 | `FR-052` | R1.2–R1.4, R1.6, R1.9–R1.10 | fontes oficiais, engine/ferramentas, licença/distribuição por artefato e ADR |
 | `FR-053` | R1.2, R1.4–R1.10 | harness remoto, timeout/cancelamento, arquivos finais seguros e zero concatenação shell |
+| `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |

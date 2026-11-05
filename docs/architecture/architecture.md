@@ -21,6 +21,8 @@ A arquitetura deve:
 
 Não é objetivo criar framework de plugins, microserviços, servidor local público, banco ou sincronização.
 
+As [letras locais e consulta online explícita](decisions/0013-lyrics-and-online-lookup.md) usam `LyricsDocument`/parser e seleção por posição no domínio puro. `QtLyricsService` limita a leitura de um `.lrc` irmão a um worker ativo e uma substituição pendente; a busca de texto usa Qt Network com endpoint HTTPS fixo, prazo, limites e revogação de respostas antigas. `LyricsBinding` projeta texto/estado e usa a posição confirmada do presenter. O bootstrap inclui sua drenagem na saída e rearma a leitura quando a saída é cancelada. QML apresenta a letra e solicita confirmação dos metadados; não lê arquivos nem acessa rede diretamente.
+
 ## 2. Contexto
 
 ```text
