@@ -23,7 +23,7 @@ A [licença preservada](../tests/audio/corpus/LICENSE.assets.txt), `LicenseRef-M
 
 Incremento posterior: o [catálogo factual](../tests/audio/corpus/catalog.v1.json) descreve somente sete fixtures básicas elegíveis para a [declaração de formatos do instalador](windows-installer.md). Seus tamanhos/hashes são conferidos contra os pins abaixo; não substitui o corpus, a licença ou um resultado de execução e não promove Opus/ALAC/entradas edge a suporte aprovado.
 
-[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
+[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos originais e dos cinco arquivos da extensão canônica de truncamento descrita abaixo. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
 
 [RcMusicAudioTests.cmake](../cmake/RcMusicAudioTests.cmake) fornece `rc_music_add_audio_tests(corpus_root)`. A integração raiz autentica e registra o corpus somente com desktop e `BUILD_TESTING=ON`; produção OFF não lê esse módulo de fixtures, não compila essas suites nem adquire uma dependência do corpus. Os nomes técnicos `M0_TEST_AUDIO_*` permanecem para preservar as fontes dos testes, sem tornar o experimento um pré-requisito.
 
@@ -63,6 +63,16 @@ A separação corresponde ao comportamento do [CTest 3.31.5](https://github.com/
 - A raiz registra agora **297 entradas CTest**. Esta alteração somente nos checks CMake não repetiu a suíte completa de áudio/UI, build de produção ou benchmarks; o total completo **296/296** do [incremento anterior](process-tests.md) continua sendo evidência daquele checkpoint.
 
 Esta correção não recupera logs históricos truncados nem amplia a validação funcional/nativa do produto.
+
+## Prefixos truncados canônicos
+
+Em 2026-11-05, quatro prefixos de 64 bytes passaram a integrar o corpus do produto: MP3 CBR, M4A/AAC, FLAC e Ogg/Vorbis. O [manifesto e receita](../tests/audio/corpus/hostile-truncation.v1.json) registra fontes, tamanhos, hashes, licença privada existente e o resultado esperado `MetadataReadError::InvalidData`. A reprodução consiste em copiar os primeiros 64 bytes da fonte indicada; não exige encoder, rede ou áudio pessoal.
+
+A regressão `MR-103` lê essas fixtures diretamente, verifica sua igualdade com os prefixos das fontes autenticadas e preserva as exigências de erro tipado, mensagem não vazia e ausência de exceção. O configure autentica também o novo manifesto. O consumidor histórico usa somente essa extensão do corpus do produto, mantendo seus arquivos, manifesto e caminhos básicos originais. Os testes de playback continuam gerando seus prefixos temporários; este incremento não lhes atribui uma nova execução nem publica capacidades de áudio.
+
+Validação proporcional: build Release do alvo de metadados, **36/36 CTest** (35 casos de metadados e integridade do corpus, com seis probes), formato do C++ alterado, validação documental e rastreabilidade passaram. A conferência independente confirmou receita/hash dos quatro prefixos e preservação dos três probes congelados e do recibo do ensaio do instalador. Evidências em `out/product/test-runs/canonical-truncation-20261105/`. Não foi recompilado o consumidor histórico, o player ou o instalador; o código funcional permanece igual.
+
+Os casos canônicos de arte e bordas reais de tamanho ainda faltam. Este incremento resolve o versionamento dos quatro truncados de `M0.5`/`M5.2`, sem encerrar esses marcos ou os gates de release.
 
 ## Limites
 

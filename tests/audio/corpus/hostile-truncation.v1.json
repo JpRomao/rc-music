@@ -1,0 +1,257 @@
+{
+  "schema_id": "rcmusic.audio-hostile-truncation.v1",
+  "schema_version": 1,
+  "purpose": "canonical-metadata-rejection-inputs-not-runtime-approval",
+  "hash_algorithm": "sha256",
+  "license": "LicenseRef-MusicPlayer-M0-Private",
+  "license_path": "LICENSE.assets.txt",
+  "scope": "Four exact 64-byte prefixes for MetadataReader rejection. No playback capabilities or new format support are asserted.",
+  "canonical_text": {
+    "encoding": "utf-8",
+    "bom": false,
+    "newline": "lf",
+    "final_newline_count": 1
+  },
+  "fixtures": [
+    {
+      "id": "truncated-mp3-cbr",
+      "relative_path": "fixtures/hostile/truncated-mp3-cbr.mp3",
+      "sha256": "f5262c2a9e396f187f802f54804404eaa4357c5379fe169aaf544dfa07f518dd",
+      "size_bytes": 64,
+      "source_or_generation_recipe": {
+        "algorithm": "prefix-bytes",
+        "offset_bytes": 0,
+        "length_bytes": 64,
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "container_and_codec_basis": "Inherited source classification; no probe of the truncated input is claimed.",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "not_published",
+        "encoded_size_bytes": null,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "reject_metadata"
+      },
+      "expected_capabilities": {
+        "metadata_read": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "decodable": null,
+        "duration_known": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expected_error_message": "non_empty",
+      "expectation_basis": "tests/audio/TagLibMetadataExtractorTests.cpp: MR-103 rejects structurally recognizable truncated codec fixtures safely",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "truncated-m4a-aac",
+      "relative_path": "fixtures/hostile/truncated-m4a-aac.m4a",
+      "sha256": "1ae4b833a65b5827c36d828fd03eaa11de4f4a6ab815830287f2928a64984854",
+      "size_bytes": 64,
+      "source_or_generation_recipe": {
+        "algorithm": "prefix-bytes",
+        "offset_bytes": 0,
+        "length_bytes": 64,
+        "source": {
+          "id": "m4a-aac-lc",
+          "relative_path": "fixtures/valid/m4a-aac-lc.m4a",
+          "size_bytes": 33400,
+          "sha256": "aefe894a1a9277bf4795d421c97d4780fa342eef300819a459ca45329a614558"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "ISO MP4/M4A",
+      "codec_and_profile": "AAC Low Complexity 128 kb/s in ISO BMFF/M4A",
+      "container_and_codec_basis": "Inherited source classification; no probe of the truncated input is claimed.",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "not_published",
+        "encoded_size_bytes": null,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "reject_metadata"
+      },
+      "expected_capabilities": {
+        "metadata_read": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "decodable": null,
+        "duration_known": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expected_error_message": "non_empty",
+      "expectation_basis": "tests/audio/TagLibMetadataExtractorTests.cpp: MR-103 rejects structurally recognizable truncated codec fixtures safely",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "truncated-flac",
+      "relative_path": "fixtures/hostile/truncated-flac.flac",
+      "sha256": "b21f4b7ab4d617d6c78f46720b2b753824d47aa44c00bf96b33707c7f72e7c03",
+      "size_bytes": 64,
+      "source_or_generation_recipe": {
+        "algorithm": "prefix-bytes",
+        "offset_bytes": 0,
+        "length_bytes": 64,
+        "source": {
+          "id": "flac-16-stereo",
+          "relative_path": "fixtures/valid/flac-16-stereo.flac",
+          "size_bytes": 60531,
+          "sha256": "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "FLAC",
+      "codec_and_profile": "FLAC 16-bit compression level 5",
+      "container_and_codec_basis": "Inherited source classification; no probe of the truncated input is claimed.",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "not_published",
+        "encoded_size_bytes": null,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "reject_metadata"
+      },
+      "expected_capabilities": {
+        "metadata_read": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "decodable": null,
+        "duration_known": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expected_error_message": "non_empty",
+      "expectation_basis": "tests/audio/TagLibMetadataExtractorTests.cpp: MR-103 rejects structurally recognizable truncated codec fixtures safely",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "truncated-ogg-vorbis",
+      "relative_path": "fixtures/hostile/truncated-ogg-vorbis.ogg",
+      "sha256": "520134b5a783f2b0676fc870ce9aae7e54be5fe80c7e83fdfa8487971a5f5479",
+      "size_bytes": 64,
+      "source_or_generation_recipe": {
+        "algorithm": "prefix-bytes",
+        "offset_bytes": 0,
+        "length_bytes": 64,
+        "source": {
+          "id": "ogg-vorbis",
+          "relative_path": "fixtures/valid/ogg-vorbis.ogg",
+          "size_bytes": 12605,
+          "sha256": "abab4db40eb8380974e1c6ea69eb4c24bfd8eb2803b67b79e2a1a49523a7096f"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "Ogg",
+      "codec_and_profile": "Vorbis quality 4 in Ogg",
+      "container_and_codec_basis": "Inherited source classification; no probe of the truncated input is claimed.",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published",
+        "title": null,
+        "artist": null,
+        "album": null,
+        "track": null,
+        "year": null
+      },
+      "expected_artwork": {
+        "state": "not_published",
+        "encoded_size_bytes": null,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "reject_metadata"
+      },
+      "expected_capabilities": {
+        "metadata_read": false,
+        "tags_present": false,
+        "artwork_present": false,
+        "decodable": null,
+        "duration_known": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expected_error_message": "non_empty",
+      "expectation_basis": "tests/audio/TagLibMetadataExtractorTests.cpp: MR-103 rejects structurally recognizable truncated codec fixtures safely",
+      "requirement_ids": [
+        "FR-005",
+        "NFR-REL-001"
+      ]
+    }
+  ]
+}

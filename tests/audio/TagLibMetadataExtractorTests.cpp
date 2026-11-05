@@ -41,6 +41,9 @@
 #ifndef M0_TEST_AUDIO_CORPUS_ROOT
 #error "M0_TEST_AUDIO_CORPUS_ROOT must identify the authenticated M0 audio corpus"
 #endif
+#ifndef M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT
+#error "M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT must identify the authenticated truncation corpus"
+#endif
 
 namespace music_player::m0::test {
 namespace {
@@ -625,29 +628,30 @@ TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures saf
           "[m0][qt][metadata][taglib][hostile][codec-matrix][MR-103]") {
     struct TruncatedCodecCase final {
         std::filesystem::path relative_path;
-        std::filesystem::path temporary_filename;
+        std::filesystem::path truncated_relative_path;
     };
 
     constexpr std::size_t truncated_size = 64;
-    const ScopedTemporaryDirectory directory;
+    const std::filesystem::path truncation_corpus_root{M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT};
     const TagLibMetadataExtractor reader;
 
     for (const auto& codec_case : {
-             TruncatedCodecCase{"fixtures/valid/mp3-cbr-stereo.mp3", "truncated-mp3-cbr.mp3"},
-             TruncatedCodecCase{"fixtures/valid/m4a-aac-lc.m4a", "truncated-m4a-aac.m4a"},
-             TruncatedCodecCase{"fixtures/valid/flac-16-stereo.flac", "truncated-flac.flac"},
-             TruncatedCodecCase{"fixtures/valid/ogg-vorbis.ogg", "truncated-ogg-vorbis.ogg"},
+             TruncatedCodecCase{"fixtures/valid/mp3-cbr-stereo.mp3", "fixtures/hostile/truncated-mp3-cbr.mp3"},
+             TruncatedCodecCase{"fixtures/valid/m4a-aac-lc.m4a", "fixtures/hostile/truncated-m4a-aac.m4a"},
+             TruncatedCodecCase{"fixtures/valid/flac-16-stereo.flac", "fixtures/hostile/truncated-flac.flac"},
+             TruncatedCodecCase{"fixtures/valid/ogg-vorbis.ogg", "fixtures/hostile/truncated-ogg-vorbis.ogg"},
          }) {
         CAPTURE(codec_case.relative_path.string());
         const auto authenticated = readBytes(fixture(codec_case.relative_path));
         REQUIRE(authenticated.size() > truncated_size);
 
-        const ScopedTemporaryFile truncated{temporaryPath(directory, codec_case.temporary_filename)};
-        writeBytes(truncated.path(),
-                   std::vector<std::uint8_t>{authenticated.begin(), authenticated.begin() + truncated_size});
+        const auto truncated = truncation_corpus_root / codec_case.truncated_relative_path;
+        const auto truncated_bytes = readBytes(truncated);
+        REQUIRE(truncated_bytes.size() == truncated_size);
+        REQUIRE(std::equal(truncated_bytes.begin(), truncated_bytes.end(), authenticated.begin()));
 
         std::optional<MetadataReadResult> result;
-        REQUIRE_NOTHROW(result.emplace(reader.read(truncated.path())));
+        REQUIRE_NOTHROW(result.emplace(reader.read(truncated)));
         REQUIRE(result.has_value());
         const auto& read_error = requireError(*result);
         CHECK(read_error.code == MetadataReadErrorCode::InvalidData);

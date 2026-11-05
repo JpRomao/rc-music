@@ -22,7 +22,21 @@ function(_rc_music_require_audio_fixture corpus relative_path expected_size expe
     endif()
 endfunction()
 
+function(rc_music_validate_truncated_audio_corpus corpus)
+    _rc_music_require_audio_fixture("${corpus}" "hostile-truncation.v1.json" 8812
+        "22f48fa95594aa77fce7c8ea742adc1cfc449ac9c68bbef8cd9201b9eadc6dad")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/truncated-mp3-cbr.mp3" 64
+        "f5262c2a9e396f187f802f54804404eaa4357c5379fe169aaf544dfa07f518dd")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/truncated-m4a-aac.m4a" 64
+        "1ae4b833a65b5827c36d828fd03eaa11de4f4a6ab815830287f2928a64984854")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/truncated-flac.flac" 64
+        "b21f4b7ab4d617d6c78f46720b2b753824d47aa44c00bf96b33707c7f72e7c03")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/truncated-ogg-vorbis.ogg" 64
+        "520134b5a783f2b0676fc870ce9aae7e54be5fe80c7e83fdfa8487971a5f5479")
+endfunction()
+
 function(rc_music_validate_audio_corpus corpus)
+    rc_music_validate_truncated_audio_corpus("${corpus}")
     _rc_music_require_audio_fixture("${corpus}" "LICENSE.assets.txt" 663
         "54b7a0cbbf8050b2ac4e24cf8afd74c68a2c6d6c6b22c0487599dd84d23b8b13")
     _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/empty.bin" 0

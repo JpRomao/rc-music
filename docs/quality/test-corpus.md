@@ -1,7 +1,7 @@
 # Corpus de áudio e fixtures
 
-**Estado:** M0.5 em andamento; WAV e matriz básica de codecs autenticados, arte/limites e truncados por contêiner pendentes
-**Última revisão:** 2026-08-29
+**Estado:** M0.5 em andamento; WAV, matriz básica e truncados dos contêineres básicos autenticados; arte e limites canônicos pendentes
+**Última revisão:** 2026-11-05
 
 ## 1. Objetivo
 
@@ -64,7 +64,9 @@ Os dois primeiros incrementos de M0.5 materializam 12 fixtures sintéticas em [`
 
 O segundo incremento acrescenta sinais estéreo determinísticos de 2 s/48 kHz em `mp3-cbr-stereo`, `mp3-vbr-stereo`, `mp3-unicode-tags`, `m4a-aac-lc`, `flac-16-stereo`, `ogg-vorbis`, `opus-candidate` e `m4a-alac-candidate`. Todos carregam tags Unicode fixas; Opus e ALAC continuam apenas candidatos. Os bytes foram gerados por uma ferramenta FFmpeg local autenticada e reproduzidos duas vezes, mas os checks cotidianos validam somente os arquivos commitados, receitas, recibos e hashes, sem exigir FFmpeg.
 
-O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), as receitas/recibo, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo permanece `partial`, nenhum formato foi declarado suportado e M0.5 não está concluído: truncados por contêiner e casos de arte/limites ainda faltam.
+O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), as receitas/recibo, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo histórico permanece `partial`; ele não declara suporte nem é alterado pelas extensões do produto.
+
+O [corpus do produto](../audio-tests.md#prefixos-truncados-canônicos) acrescenta quatro prefixos canônicos de 64 bytes para MP3, M4A/AAC, FLAC e Ogg/Vorbis, autenticados antes do teste real de metadados. Seu manifesto registra a receita e a expectativa de rejeição, sem inventar propriedades do áudio truncado. O WAV truncado já existente cobre o quinto contêiner básico. M0.5 continua aberto pelos casos canônicos de arte e limites e demais critérios; os arquivos históricos permanecem intactos.
 
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
 
