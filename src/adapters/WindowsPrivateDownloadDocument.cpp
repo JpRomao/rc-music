@@ -164,6 +164,56 @@ bool pinDirectory(const QString& configured, const PrivateSecurity& security, Pr
     return !directory.canonical.isEmpty() && directory.unchanged(security);
 }
 
+bool storageParentSyntax(const QString& original) {
+    // Run this before validPath's drive query or any handle open. The existing
+    // document parser remains unchanged; storage creation additionally refuses
+    // DOS device components, including extension and superscript aliases.
+    if (original.size() < 4 || original.size() > 30'000 || original.at(1) != QLatin1Char(':') ||
+        (original.at(2) != QLatin1Char('/') && original.at(2) != QLatin1Char('\\')) ||
+        !((original.at(0) >= QLatin1Char('A') && original.at(0) <= QLatin1Char('Z')) ||
+          (original.at(0) >= QLatin1Char('a') && original.at(0) <= QLatin1Char('z'))))
+        return false;
+    const auto normalized = QDir::fromNativeSeparators(original);
+    for (const auto& component : normalized.mid(3).split(QLatin1Char('/'))) {
+        auto stem = component.section(QLatin1Char('.'), 0, 0);
+        while (stem.endsWith(QLatin1Char(' ')))
+            stem.chop(1);
+        for (const auto* reserved : {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}) {
+            if (stem.compare(QLatin1StringView{reserved}, Qt::CaseInsensitive) == 0)
+                return false;
+        }
+        if (stem.size() == 4 && (stem.first(3).compare(QLatin1StringView{"COM"}, Qt::CaseInsensitive) == 0 ||
+                                 stem.first(3).compare(QLatin1StringView{"LPT"}, Qt::CaseInsensitive) == 0)) {
+            const auto suffix = stem.at(3).unicode();
+            if ((suffix >= '1' && suffix <= '9') || suffix == 0x00b9 || suffix == 0x00b2 || suffix == 0x00b3)
+                return false;
+        }
+    }
+    return true;
+}
+
+bool prepareStorageDirectory(const QString& path, PrivateSecurity& security, PrivateDirectory& directory) {
+    directory.path = path;
+    if (!security.valid() || !download_artifacts::pinAncestors(path, directory.pins))
+        return false;
+    if (!CreateDirectoryW(nativePath(path).c_str(), security.attributes())) {
+        const auto error = GetLastError();
+        if (error != ERROR_ALREADY_EXISTS && error != ERROR_FILE_EXISTS)
+            return false;
+    }
+    // Unlike a store's rename-capable leaf pin, these pins have no DELETE
+    // access and deny write/delete sharing. Keeping root pinned is compatible
+    // with pinAncestors opening it again while preparing the fixed children.
+    Handle pin{CreateFileW(nativePath(path).c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | READ_CONTROL,
+                           FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                           FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr)};
+    if (!pin.valid() || !download_artifacts::information(pin.get(), true, directory.identity))
+        return false;
+    directory.pins.push_back(std::move(pin));
+    directory.canonical = finalPath(directory.pins.back().get());
+    return !directory.canonical.isEmpty() && directory.unchanged(security);
+}
+
 bool regularPrivateFile(HANDLE handle, const PrivateSecurity& security, FILE_ID_INFO& identity, quint64& size) {
     BY_HANDLE_FILE_INFORMATION basic{};
     LARGE_INTEGER bytes{};
@@ -342,6 +392,58 @@ bool renameAtomically(HANDLE file, const PrivateDirectory& directory, const Poli
 }
 
 } // namespace
+
+WindowsDownloadStoragePaths windowsDownloadStoragePaths(const QString& config_root) {
+    const auto root = config_root + QStringLiteral("/downloads");
+    return {root,
+            root + QStringLiteral("/state"),
+            root + QStringLiteral("/network"),
+            root + QStringLiteral("/media"),
+            root + QStringLiteral("/youtube"),
+            root + QStringLiteral("/staging"),
+            root + QStringLiteral("/published")};
+}
+bool prepareWindowsDownloadStorage(const QString& config_root) {
+    try {
+        QString normalized;
+        if (!storageParentSyntax(config_root) || !download_artifacts::validPath(config_root, normalized))
+            return false;
+        const auto layout = windowsDownloadStoragePaths(normalized);
+        const std::array paths{layout.root,    layout.state,   layout.network,  layout.media,
+                               layout.youtube, layout.staging, layout.published};
+        for (const auto& path : paths) {
+            if (path.size() > 29'900)
+                return false;
+        }
+        // The configured parent is pre-existing and trusted, but need not have
+        // the dedicated store DACL. Do not create it or change its permissions.
+        std::vector<Handle> parent_pins;
+        if (!download_artifacts::pinAncestors(layout.root, parent_pins) || parent_pins.empty())
+            return false;
+        FILE_ID_INFO parent_identity{};
+        if (!download_artifacts::information(parent_pins.back().get(), true, parent_identity))
+            return false;
+        const auto parent_final = finalPath(parent_pins.back().get());
+        if (parent_final.isEmpty())
+            return false;
+
+        PrivateSecurity security;
+        std::array<PrivateDirectory, 7> directories;
+        for (std::size_t index = 0; index < paths.size(); ++index) {
+            if (!prepareStorageDirectory(paths[index], security, directories[index]))
+                return false;
+        }
+        FILE_ID_INFO after{};
+        if (!download_artifacts::information(parent_pins.back().get(), true, after) ||
+            !sameIdentity(parent_identity, after) || finalPath(parent_pins.back().get()) != parent_final)
+            return false;
+        return std::all_of(directories.begin(), directories.end(),
+                           [&security](const auto& directory) { return directory.unchanged(security); });
+    } catch (...) {
+        // No rollback or cleanup: existing and partially created data remain.
+        return false;
+    }
+}
 
 WindowsPrivateDownloadDocument::WindowsPrivateDownloadDocument(QString directory,
                                                                WindowsPrivateDownloadDocumentKind kind,

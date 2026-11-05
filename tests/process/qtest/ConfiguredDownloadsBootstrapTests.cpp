@@ -1,47 +1,20 @@
 #include "adapters/QtJsonWindowsPreferencesStore.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
-#include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
-#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
-
-#include <Sddl.h>
 
 using namespace music_player::m0;
 namespace {
 QString configured_shell, none_shell, off_shell;
-
-bool privateDocuments(const QString& path) {
-    HANDLE raw = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw))
-        return false;
-    const download_artifacts::Handle token{raw};
-    DWORD size{};
-    static_cast<void>(GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size));
-    std::vector<unsigned char> user(size);
-    if (user.empty() || !GetTokenInformation(token.get(), TokenUser, user.data(), size, &size))
-        return false;
-    LPWSTR sid = nullptr;
-    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid, &sid))
-        return false;
-    const auto release_sid = qScopeGuard([&] { LocalFree(sid); });
-    const auto sddl = QStringLiteral("D:P(A;;FA;;;SY)(A;;FA;;;") + QString::fromWCharArray(sid) + QLatin1Char(')');
-    PSECURITY_DESCRIPTOR descriptor = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.toStdWString().c_str(), SDDL_REVISION_1, &descriptor,
-                                                              nullptr))
-        return false;
-    const auto release_descriptor = qScopeGuard([&] { LocalFree(descriptor); });
-    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
-    return CreateDirectoryW(download_artifacts::nativePath(path).c_str(), &attributes) != FALSE;
-}
 
 struct ChildGuard final {
     QProcess& child;
@@ -81,9 +54,7 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
     void configuredMainUsesRealOwnerExecutionPersistenceAndReplay() {
         QTemporaryDir root{QDir::tempPath() + QStringLiteral("/RC Music bootstrap espaço-音-XXXXXX")};
         QVERIFY(root.isValid());
-        QVERIFY(privateDocuments(root.filePath(QStringLiteral("private"))));
-        for (const auto* name : {"network", "media", "staging", "published"})
-            QVERIFY(QDir{}.mkdir(root.filePath(QLatin1StringView{name})));
+        QVERIFY(!QFile::exists(root.filePath(QStringLiteral("downloads"))));
         Preferences preferences;
         preferences.restore_last_session = false;
         QtJsonWindowsPreferencesStore preferences_store{root.path()};
@@ -108,6 +79,9 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
             QCOMPARE(ready.value("profileCalls").toInt(), 1);
             QVERIFY2(ready.value("binding").toBool(), output.constData());
             QVERIFY(ready.value("lyrics").toBool());
+            QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(root.filePath(QStringLiteral("downloads/state"))) ||
+                                         app.state() == QProcess::NotRunning,
+                                     5'000);
             QTRY_VERIFY_WITH_TIMEOUT(!observation(output, "finished").isEmpty() ||
                                          !observation(output, "failure").isEmpty() ||
                                          app.state() == QProcess::NotRunning,
@@ -115,6 +89,13 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
             QVERIFY2(observation(output, "failure").isEmpty(), output.constData());
             const auto finished = observation(output, "finished");
             QVERIFY2(!finished.isEmpty(), output.constData());
+            // Finished observes the prepared store and committed job. The
+            // earlier state-directory observation alone can see partial setup.
+            for (const auto* name : {"state", "network", "media", "youtube", "staging", "published"})
+                QVERIFY2(QFileInfo(root.filePath(QStringLiteral("downloads/") + QLatin1StringView{name})).isDir(),
+                         output.constData());
+            for (const auto* name : {"private", "network", "media", "staging", "published"})
+                QVERIFY(!QFile::exists(root.filePath(QLatin1StringView{name})));
             QCOMPARE(finished.value("acks").toInt(), 2);
             QCOMPARE(finished.value("queue").toInt(), run == 0 ? 1 : 0);
             QCOMPARE(finished.value("jobState").toString(),
@@ -133,7 +114,7 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
             if (run == 0)
                 original_job = receipt.job_id;
             QCOMPARE(receipt.job_id, original_job);
-            WindowsDownloadCheckpointStore checkpoint_store{root.filePath(QStringLiteral("private"))};
+            WindowsDownloadCheckpointStore checkpoint_store{root.filePath(QStringLiteral("downloads/state"))};
             const auto checkpoint = checkpoint_store.load();
             QCOMPARE(checkpoint.status, DownloadCheckpointLoadStatus::Loaded);
             QVERIFY(checkpoint.checkpoint);
@@ -155,9 +136,11 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
             QVERIFY(final_checkpoint.checkpoint);
             QCOMPARE(final_checkpoint.checkpoint->jobs.front().state,
                      run == 0 ? DownloadJobState::Completed : DownloadJobState::Imported);
-            QCOMPARE(directoryEntries(root.filePath(QStringLiteral("published"))).size(), 1);
-            for (const auto* name : {"network", "media", "staging"})
-                QVERIFY2(directoryEntries(root.filePath(QLatin1StringView{name})).isEmpty(), name);
+            QCOMPARE(directoryEntries(root.filePath(QStringLiteral("downloads/published"))).size(), 1);
+            for (const auto* name : {"network", "media", "youtube", "staging"})
+                QVERIFY2(
+                    directoryEntries(root.filePath(QStringLiteral("downloads/") + QLatin1StringView{name})).isEmpty(),
+                    name);
         }
     }
 
@@ -190,7 +173,7 @@ class ConfiguredDownloadsBootstrapTests final : public QObject {
         QCOMPARE(finished.value("acks").toInt(), 0);
         QCOMPARE(finished.value("queue").toInt(), 0);
         QVERIFY(!finished.value("playing").toBool());
-        for (const auto* name : {"private", "network", "media", "staging", "published"})
+        for (const auto* name : {"downloads", "private", "network", "media", "staging", "published"})
             QVERIFY(!QFile::exists(root.filePath(QLatin1StringView{name})));
         QVERIFY(marker(root.filePath(QStringLiteral("configured-downloads-exit"))));
         QTRY_COMPARE_WITH_TIMEOUT(app.state(), QProcess::NotRunning, 10'000);

@@ -800,7 +800,17 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — gerador de manifest Native YouTube
+### Checkpoint atual — preparo assíncrono do storage de downloads
+
+O [armazenamento privado do bootstrap](player-download-storage.md) prepara `downloads/{state,network,media,youtube,staging,published}` pelo worker de checkpoint, com opt-in C++ falso por padrão. O layout deriva do mesmo `config_root` e preserva pins, limites e opções; o provider e a factory não fazem I/O. Somente load tenta preparar: falha/ausência/exceção vira Unreadable e permite retry explícito no mesmo wrapper; save antes do sucesso falha sem provisionamento. Após sucesso, o wrapper não reprovisiona e os stores mantêm suas validações.
+
+O preparador reutiliza a DACL exata dos documentos, não o helper de runtime com herança. Aceita existentes somente com owner/DACL conformes, recusa colisões e reparse points, não cria ancestrais ausentes, repara ACLs ou remove dados. A preparação sequencial preserva progresso parcial. Pins sem DELETE evitam conflito de compartilhamento com as aberturas dos filhos; os stores existentes não foram alterados.
+
+Reds: adaptador **16 passados/6 falhos**, perfil **21/7** e bootstrap **4/1**, por `downloads/state` ausente. Greens: **22 + 28 + 3 + 5 Qt** nos recortes. Fechamento **8/8 CTest, 143 Qt**, sem falhas, com dois skips antigos de symlink do checkpoint por política do host; os três junctions novos passaram sem skip. Formato **9 C++** e player Release Native OFF com provider `None`, depois restaurado/recompilado com cache vazio e zero CTest, passaram. A jornada pela mesma main não precria storage: conversão MF/MP3, checkpoints/Session e replay em dois boots continuam reais, com DNS/bytes de fixture local e sem autoplay. Recibos: `out/product/test-runs/download-storage-20261105/`.
+
+Próximo desenvolvimento: perfil distribuível com inventários e ambiente revisados, caminhos das ferramentas relativos ao pacote e montagem dos componentes opcionais; o ID real da extensão continua pendente para host/manifest habilitados correspondentes. Instalação opcional, aquisição pública, Letras primário e gates de segurança/licenças/distribuição permanecem abertos. Defaults de produção continuam OFF. Nenhum setup/Registro, novo perfil/AppContainer, WFP/UAC, GUI nativa, mídia pública ou benchmark foi executado.
+
+### Checkpoint anterior — gerador de manifest Native YouTube
 
 O [gerador de manifest candidato](youtube-native-manifest.md) exige ID explícito da extensão, recibo de build confiável com pin SHA-256 e host com bytes correspondentes. Produz somente `com.rcmusic.youtube.json` e recibo `installation_pending`, em saída nova. O parser limita schema/UTF-8/campos/tipos/paths e recusa perfil desabilitado, principal, origem divergente e alterações após o plano. Não copia ou executa o host nem registra componentes.
 

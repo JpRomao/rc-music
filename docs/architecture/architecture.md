@@ -72,6 +72,8 @@ A [reserva Windows do dono dos downloads](../browser-extension.md#exclusividade-
 
 ### Composição opcional de downloads
 
+O [storage opt-in do bootstrap](../player-download-storage.md) deriva um layout fixo do diretório de configuração existente e o prepara somente no load do worker de checkpoint. O wrapper conserva retry explícito após falha, sem reprovisionar depois do primeiro sucesso ou reparar objetos existentes. O default continua usando os caminhos já provisionados. Nenhuma página ou documento persistido escolhe essas pastas; Saved, ownership, importação e drenagem mantêm seus contratos anteriores.
+
 O [gerador de manifest Native YouTube](../youtube-native-manifest.md) é uma receita de empacotamento separada: confere recibo de build confiável, ID e host e escreve somente dois JSONs candidatos. Não fornece configuração ao domínio ou ao player, não monta runtime e não registra componentes. O candidato de fontes continua com identidade pendente até a escolha real da extensão.
 
 O [perfil compilado dos hosts](../native-host-build-profile.md) tem uma fonte CMake para os headers de cada host, o header C++ compartilhado e seus recibos após o link. O provider do player pode obter os perfis compilados pelo helper; canais ativos divergentes são recusados antes da fábrica de execução. Os recibos JSON servem ao empacotamento, sem serem carregados como autoridade no produto. Origem exata, pipe e allowsets coerentes não atestam Brave/publisher ou segurança do runtime.

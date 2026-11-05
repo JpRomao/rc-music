@@ -14,6 +14,7 @@ inline NativeHostConfiguration configuredDownloadsFixtureNativeProfile() {
 inline std::optional<WindowsPlayerDownloadProfile> configuredPlayerDownloadsBuildProfile(const QString& root) {
     configuredDownloadsProfileObserved();
     WindowsPlayerDownloadProfile profile;
+    profile.prepare_storage = true;
     profile.checkpoint_directory = QDir{root}.filePath(QStringLiteral("private"));
     profile.execution.journal_directory = profile.checkpoint_directory;
     profile.execution.network.runtime_parent = QDir{root}.filePath(QStringLiteral("network"));

@@ -7,7 +7,6 @@
 #error The configured player downloads composition requires the Windows audio shell
 #endif
 #include "PlayerDownloadsBuildProfile.hpp"
-#include "adapters/WindowsDownloadCheckpointStore.hpp"
 #endif
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
@@ -600,20 +599,14 @@ int main(int argc, char* argv[]) {
             try {
                 auto profile = music_player::m0::playerDownloadsBuildProfile(config_root);
                 if (profile) {
+                    auto checkpoint_factory =
+                        music_player::m0::makePlayerDownloadCheckpointFactory(*profile, config_root);
                     auto execution =
                         music_player::m0::makeWindowsConfiguredDownloadExecution(std::move(profile->execution));
                     if (execution) {
-                        // QString::fromRawData may still borrow provider memory.
-                        // The worker receives an independent owned path snapshot.
-                        const QString checkpoint_directory{profile->checkpoint_directory.constData(),
-                                                           profile->checkpoint_directory.size()};
                         profile->options.lyrics_writer = &lyrics_binding;
                         player_downloads = std::make_unique<music_player::m0::WindowsPlayerDownloads>(
-                            presenter, downloads_initial_session, std::move(execution),
-                            [checkpoint_directory] {
-                                return std::make_unique<music_player::m0::WindowsDownloadCheckpointStore>(
-                                    checkpoint_directory);
-                            },
+                            presenter, downloads_initial_session, std::move(execution), std::move(checkpoint_factory),
                             std::move(profile->options));
                     } else {
                         qInfo("The configured download profile is unavailable");

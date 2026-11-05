@@ -30,14 +30,25 @@ O provider é chamado uma vez pelo bootstrap. `config_root` é o diretório de c
 | Campo | Contrato |
 | --- | --- |
 | `execution` | `WindowsDownloadExecutionProfile`: fontes e pins da rede/conversão, workspace, journal e resolver YouTube opcional. |
-| `checkpoint_directory` | Diretório privado existente, usado pelo store no worker de checkpoint. |
+| `checkpoint_directory` | Diretório privado existente no modo padrão; com preparo opt-in, usa o `state` do layout fixo. |
 | `options` | `WindowsPlayerDownloadsOptions`: projeção, namespace, dependências emprestadas e perfis Native Messaging opcionais. |
+| `prepare_storage` | `false` por padrão; habilita explicitamente o preparo do layout privado pelo worker de checkpoint. |
 
 [`makeWindowsConfiguredDownloadExecution`](../src/adapters/WindowsConfiguredDownloadExecution.hpp) reutiliza o executor e as tarefas existentes. Mídia direta e YouTube, quando configurado, compartilham a fila e o destino de transferência/conversão/publicação. Os preparadores continuam no worker, com leases próprios por job; não há cache de runtime preparado entre jobs. A fábrica copia strings e hashes, inclusive dados Qt que poderiam ter vindo de `fromRawData`.
 
 `job.ownership_store` emprestado é recusado pela fábrica. Um perfil YouTube precisa de relógio de época explícito. Um ingresso Native YouTube com origem **ou** endpoint preenchido exige `execution.youtube`; o getter recusa essa combinação antes de criar o executor. O ingresso principal continua válido sem resolver YouTube. A presença do resolver e o matching abaixo não substituem a validação dos perfis nativos pelo owner.
 
-O bootstrap não cria diretórios, não corrige ACLs, não instala ferramentas e não registra hosts. O diretório de checkpoint/journal precisa cumprir o contrato de DACL privada dos stores existentes. Os pais de runtime, staging e publicação também são entradas confiáveis previamente provisionadas. Hashes e identidades de arquivo não equivalem a confiança no publisher, autenticação do Brave ou sandbox.
+Com `prepare_storage=false`, os diretórios continuam sendo entradas confiáveis previamente provisionadas. Com a opção ligada, o worker pode criar somente os diretórios do [layout privado fixo](player-download-storage.md#configuração-e-layout), a partir do `config_root` existente. O bootstrap não instala ferramentas, registra hosts ou repara ACLs. Hashes e identidades de arquivo não equivalem a confiança no publisher, autenticação do Brave ou sandbox.
+
+## Armazenamento privado opt-in
+
+`playerDownloadsBuildProfile()` aplica o layout puro quando `prepare_storage=true`: checkpoint e journal usam `downloads/state`; os pais dos runtimes são `downloads/network`, `downloads/media` e, quando há resolver YouTube, `downloads/youtube`; o workspace usa `downloads/staging` e `downloads/published`. Pins, limites, backend de conversão, identidades Native e demais opções são preservados. Derivar esses caminhos não abre arquivos ou consulta o drive, nem cria um resolver ausente.
+
+`makePlayerDownloadCheckpointFactory()` captura cópias próprias de `config_root` e do caminho de checkpoint, incluindo strings Qt apoiadas em memória externa. No opt-in, deriva sempre o `state` desse mesmo root, mesmo que receba um perfil com `checkpoint_directory` customizado ainda não atualizado. Criar a factory ou construir seu store permanece sem provisionamento.
+
+Somente `load()` no worker de checkpoint chama o preparador confiável, cujo default é `prepareWindowsDownloadStorage()`. Callback ausente, retorno `false` ou exceção produz `Unreadable`, sem tornar o checkpoint saudável ou admitir downloads; um novo load explícito, pelo retry existente, pode tentar novamente. `save()` antes do preparo bem-sucedido retorna `Failed` sem chamar o preparador. Após o primeiro sucesso, o wrapper não reprovisiona ou repara: o backend conserva as verificações de cada load/save. O modo padrão mantém o store/caminho anteriores e nunca chama esse preparador.
+
+Criação e validação físicas permanecem fora da UI. O [contrato do storage](player-download-storage.md#preparação-e-persistência) exige DACL privada exata, preserva diretórios preexistentes e qualquer progresso parcial e recusa objetos incompatíveis sem alteração de permissões. Esse preparo não substitui Saved ou o reconhecimento de drenagem dos workers.
 
 ## Perfis Native compilados
 
@@ -57,7 +68,7 @@ O provider pode desligar um canal compilado ativo, inclusive ambos. Não pode at
 
 O `main` preserva uma cópia do `SessionLoadResult` antes de mover o snapshot para o presenter. O owner recebe os mesmos recibos duráveis, inclusive quando a restauração da fila está desativada. Isso permite reconciliar um replay sem importar novamente a faixa.
 
-O owner é criado depois do presenter e do writer de letras, e antes do `QQmlApplicationEngine`. Os objetos QML são destruídos antes do owner; presenter, autosave, writer de sessão e writer de letras sobrevivem a ele. O bootstrap captura uma cópia independente de `checkpoint_directory` antes de entregar a factory ao worker de checkpoint.
+O owner é criado depois do presenter e do writer de letras, e antes do `QQmlApplicationEngine`. Os objetos QML são destruídos antes do owner; presenter, autosave, writer de sessão e writer de letras sobrevivem a ele. O `main` cria `makePlayerDownloadCheckpointFactory(*profile, config_root)` antes de mover `profile.execution`, preservando o snapshot independente dos caminhos, e entrega essa factory ao worker existente do owner.
 
 `options.lyrics_writer` recebe o `LyricsBinding` existente do player; `options.lyrics_network` fornecido pelo perfil é preservado. Dependências emprestadas precisam sobreviver ao owner. A mesma propriedade `downloads` do `Main.qml` recebe `owner.binding()`, sem novo painel, API de submissão QML ou segundo presenter.
 
@@ -78,7 +89,7 @@ Os dois recortes passaram em **2/2 CTest**. O fechamento proporcional passou **7
 
 Compilaram em Release com `BUILD_TESTING=OFF` o módulo de rede standalone e o player com Native Messaging OFF, tanto com um header explícito que retorna `None` quanto após restaurar o cache ao header vazio. Ambos os diretórios listaram zero CTest. O grafo final do player restaurado não inclui perfil configurado, hooks/Qt Test ou a biblioteca Native Messaging. O executável de produção não foi iniciado; a jornada acima usa os executáveis privados de teste.
 
-A jornada positiva compila o mesmo `main` com a ABI de UI de produção e um header sintético privado do teste. Os pins desse header são calculados **depois** do build das dependências, não a partir de outputs antigos durante configure nem no thread da UI. O driver provisiona somente diretórios TEMP próprios, com a DACL exigida pelos stores.
+A jornada positiva compila o mesmo `main` com a ABI de UI de produção e um header sintético privado do teste. Os pins desse header são calculados **depois** do build das dependências, não a partir de outputs antigos durante configure nem no thread da UI. No ensaio original, o driver preprovisionava os diretórios TEMP privados dos stores. A evolução opt-in abaixo retira esse preprovisionamento dos diretórios geridos e exige sua criação pelo bootstrap.
 
 O cliente Native C++ real do suporte de teste usa um perfil explícito que permite a imagem do próprio executável nos dois lados. Não é um host instalado no Brave. O pedido percorre ingresso real, admissão durável, owner, execução preparada e o mesmo painel. Um helper de transporte fornece DNS e bytes AAC/MP4 da fixture local; Media Foundation realiza a conversão, e validação, publicação MP3, checkpoint e sessão usam os adapters reais.
 
@@ -91,6 +102,14 @@ Os targets focados são `rc_music_configured_downloads_bootstrap_tests` e `rc_mu
 O matching teve Red de **12 casos Qt passados/8 falhos**, mantendo os oito oráculos anteriores verdes, seguido de **20/20 Qt Green**. A fixture sem header compilado teve Red **2 passados/1 falho** e Green **3/3 Qt**. O novo target é `rc_music_configured_downloads_profile_off_tests`, registrado como `rc_music.process.configured-downloads-profile-off`; cobre a ausência do header e a recusa de canais ativos, além do opt-out local. Os testes do matching também verificam helper, divergência de origem/endpoint/imagens, comparação sem depender de ordem/caixa e exclusão dos callbacks da identidade. O Red está registrado em `matching-red-tests.log`.
 
 O target sem header roda numa configuração com Native Messaging disponível. Ele **não é prova de um build com o módulo Native OFF**, nem substitui o build Release separado; os resultados Release OFF descritos acima pertencem ao fechamento anterior. Esses checks não executam aquisição pública, instalação ou qualificação do Brave.
+
+### Preparo assíncrono do armazenamento privado
+
+O perfil teve Red de **21 casos Qt passados/7 falhos**, preservando os 20 anteriores e o novo caso do default, seguido de **28/28 Qt Green**. O target sem header conservou **3/3 Qt**. Os novos testes cobrem layout/preservação, cópias de strings emprestadas, passividade da factory/store, callback na worker, falha/ausência/exceção, retry explícito, save antes do preparo, sucesso cacheado sem reparo e uso do mesmo `state` apesar de checkpoint customizado.
+
+A jornada do bootstrap teve Red **4 passados/1 falho**, pela ausência de `downloads/state`, e passou **5/5 Qt** após a integração. O driver agora não precria as pastas geridas: exige `downloads/state`, os demais pais fixos e ausência dos caminhos antigos, mantendo as verificações de persistência e replay. O adaptador de storage passou **22/22 Qt**, com sua [evidência própria](player-download-storage.md#evidência-do-adaptador).
+
+O fechamento integrado deste recorte passou **8/8 CTest, 143 Qt**, sem falhas, com dois skips antigos de symlink do checkpoint por política do host; os junctions novos passaram sem skip. Formato dos **9 C++** e player Release Native OFF com provider independente `None`, depois restaurado/recompilado com cache vazio e zero CTest, passaram. Esses resultados são separados do fechamento histórico de **36 Qt** acima. Não ativam o perfil distribuído, instalação ou aquisição pública. Recibos e limites ficam no [guia do storage](player-download-storage.md#evidência-do-adaptador).
 
 ## Limites de aceitação
 
