@@ -29,7 +29,7 @@ A receita aceita `-DownloadPackageReceipt` e `-DownloadPackageReceiptSha256` jun
 
 O leitor confere JSON estrito, papéis, limites, header, hashes e árvore física fechada; caminhos históricos de receitas e do recibo YouTube são proveniência inerte. A análise PE separa rede, Media Foundation, extrator e Node, inclui `.pyd` e resolve imports privados dentro de cada árvore. Não procura dependências no Python global, no payload do player ou em DLLs arbitrárias de System32. Isso verifica imports PE declarados, sem provar todo carregamento dinâmico, isolamento, licença ou funcionamento público.
 
-Os arquivos são copiados sem achatar a árvore e reconferidos antes/depois da montagem. O manifesto acrescenta `download_component`, seleção padrão falsa, inventário e descrição do marcador. **O marcador não é criado pela montagem**: cabe ao futuro instalador publicá-lo após seleção e verificação. O instalador v1 recusa esse manifesto, preservando a exigência da opção inicialmente desmarcada; essa montagem não registra host nem instala extensão.
+Os arquivos são copiados sem achatar a árvore e reconferidos antes/depois da montagem. O manifesto acrescenta `download_component`, seleção padrão falsa, inventário e descrição do marcador. **O marcador não é criado pela montagem**: o [instalador opcional](windows-installer.md#seleção-opcional-das-ferramentas-de-download) o publica após seleção e verificação. Essa montagem não registra host nem instala extensão.
 
 ```powershell
 pwsh -NoProfile -File packaging/windows/New-RcMusicLocalRuntime.ps1 -BuildDirectory '<build Release OFF>' -OutputDirectory '<destino novo em out/product>' -DownloadPackageReceipt '<recibo absoluto revisado>' -DownloadPackageReceiptSha256 '<sha256 minúsculo do recibo>'
@@ -50,7 +50,7 @@ O commit limpo `bbff186cf7f8b48e92d2565616a5541383d65e46` foi compilado em workt
 
 Cada runtime contém os **45 arquivos de ferramentas**, inclusive **18 `.pyd`**, e o relatório dos **37 PEs**. Todos os arquivos do payload tiveram tamanho/hash conferidos independentemente do copiador. Os dois `RCMusic.exe` conservam subsistema **Windows GUI**, sem console; a Lite continua sem WebEngine. A seleção padrão é falsa e o marcador não existe. A chamada do planejador v1 foi recusada para ambos antes de gerar saída, pelo guard explícito de componente opcional. Não houve setup, instalação, Registro, execução do player, engine ou ferramenta, nem aquisição pública.
 
-`runtime-verification.json` registra a conferência; `runtime-locations.json` registra a mudança dos diretórios próprios para o local final, com manifestos intactos. Os candidatos anteriores, SDKs e seis alterações preexistentes foram preservados. Próximo passo: seleção/ownership do componente no instalador, seguida da composição dos hosts e identidade real Brave. Estes runtimes são candidatos privados com integração desativada, não releases ou prova de download público.
+`runtime-verification.json` registra a conferência; `runtime-locations.json` registra a mudança dos diretórios próprios para o local final, com manifestos intactos. Os candidatos anteriores, SDKs e seis alterações preexistentes foram preservados. A seleção/ownership do componente já foi implementada e os [setups de `54e25a9`](windows-installer.md#setups-locais-de-2026-11-05) foram compilados sem instalar; lifecycle físico, composição dos hosts e identidade real Brave continuam pendentes. Estes runtimes são candidatos privados com integração desativada, não releases ou prova de download público.
 
 ### Montagem sem o componente de downloads
 

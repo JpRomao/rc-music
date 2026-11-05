@@ -1,9 +1,9 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental compilados e conferidos em 2026-11-04 sem instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Estado:** setups privados Lite e Completa experimental com seleção opcional de ferramentas compilados e conferidos em 2026-11-05, sem executar ou instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
 **Data:** 2026-11-05.
 
-A [entrega mais recente de `2144cfd`](local-delivery-2144cfd-20261104.md) contém os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
+A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) contém os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
@@ -69,6 +69,19 @@ O builder materializa um arquivo de 24 bytes LF, sem sobrescrita. O setup copia 
 Evidência de 2026-11-05: **135 casos** nos cinco checks focados: planejador 94, componente 15, builder 6, fontes 5 e edições 15. O último inclui quatro compilações completas de fixtures (Lite/Completa × componente ausente/disponível), sem executar os binários. Reds: componente 1/13, planejador 86/7, builder 4/2 e pré-processamento 4/6. Regressões adicionais confirmaram classificação por separadores (91/3 com tamanhos), nome real `pyinstaller-COPYING.txt` (13/2) e tamanhos separados da UI (10/1). Correções do harness prepararam o input do compilador e aceitaram a sintaxe real do pré-processador sem mudar os contratos. Logs em `out/product/test-runs/installer-download-selection-20261105/`.
 
 Essas provas verificam planejamento, fluxo gerado e compilação. Interação real com checkbox, instalação, upgrade e remoção continuam pendentes; nenhum setup, hive de Registro, perfil AppContainer ou app foi executado por esses checks.
+
+### Setups locais de 2026-11-05
+
+Os runtimes preservados de `bbff186` foram empacotados pela receita limpa `54e25a926bd2d6cb20a16eef5a84888cf040423b`, sem recompilar o player. Os dois setups têm componente disponível com seleção inicial desligada, IDs base/downloads distintos, 45 ferramentas e o input do marcador de 24 bytes. Associações permanecem OFF.
+
+| Edição | Diretório em `out/product/rc-music-installer/` | Bytes de `RCMusic-Setup.exe` | SHA-256 |
+|---|---|---:|---|
+| Lite | `rc-music-54e25a9-tools-Lite-20261105` | 89.720.105 | `8740ec58ea599118c8ae4fd856401337e688c818a3eab1062147e36da1a72533` |
+| Completa experimental | `rc-music-54e25a9-tools-CompleteExperimental-20261105` | 89.784.654 | `4b9ec92bb2574664854be6f112f87f2cbff0315c9ef09972b0e5cce8d4021c2b` |
+
+SHA-256 dos recibos: Lite `c97c236c3cd49903dee46946a2ae13b2c59a038b23a0ceaf0988470632c44682`; Completa `9047b6a78f6f936701e88fb003d06f8bdacf3d299723238e682825ff64ea9468`. A conferência independente vinculou os 11 inputs de receita, setup, configuração, marcador gerado e os manifestos dos runtimes. Os runtimes de origem continuam sem marcador; não houve instalação ou execução dos setups. Authenticode retornou `NotSigned` para ambos. A evidência fica em `out/product/test-runs/installer-download-selection-20261105/delivery-verification.json` e `signatures.json`.
+
+Estes são candidatos privados para revisão. O lifecycle instalado e o checkbox em UI real ainda não foram exercitados; extensão, host Brave e aquisição pública permanecem etapas próprias. Dados pessoais, SDKs, candidatos anteriores e as seis alterações preexistentes foram preservados.
 
 <a id="checks-sem-compilação-ou-instalação"></a>
 
