@@ -7,9 +7,17 @@ $testId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path $testParent $testId
 $state = @{ Passed = 0; Failed = 0; Fixtures = 0 }
 $assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs', 'popup.css', 'popup.html', 'popup.mjs')
-$recipes = @('New-RcMusicYoutubeExtensionPackage.ps1', 'RcMusicYoutubeExtensionPackage.psm1')
+$recipes = @('New-RcMusicYoutubeExtensionPackage.ps1', 'New-RcMusicChromiumExtensionPackage.ps1',
+    'RcMusicYoutubeExtensionPackage.psm1', 'RcMusicChromiumIdentity.psm1')
 $inputs = @('extensions/chromium/youtube', 'packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1',
-    'packaging/windows/RcMusicYoutubeExtensionPackage.psm1')
+    'packaging/windows/New-RcMusicChromiumExtensionPackage.ps1', 'packaging/windows/RcMusicYoutubeExtensionPackage.psm1',
+    'packaging/windows/RcMusicChromiumIdentity.psm1')
+# Public-only RSA-2048 fixtures. IDs/pins were independently computed with
+# Python hashlib; tests neither generate nor read any private key or out file.
+$youtubePublicKey = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsJmJ6eCY4G5chs/I8sD1xnEmue2mffsMr7Ya5gymCGYNpufwaECbeRMh3cAz0xjy7VB0+m25bVWrWAll9xJdPqPahx7aJ0on4T2666fSrzrhGm2Rq5RxVUFcHAmV+GZF1W+1evt1TO3EuNT8WW9+74Ysph6cbo2nm7JEwurhsZ4uBb8vtEQyg1AvE/osIL6qUEW0SRwXabhVL1H911jDHM+tocePeX4BsFfoZMRTaAO94MlWFPniUskPmSQ0o80q+9HP9h5ovZidDfEkB2Ifq+sMFKPJOhJUAHPZhD7HmTFymwfJlQg6XOIQNYUOe6Xm1Vl7gdRfjl4W9XM08yu5tQIDAQAB'
+$youtubePublicId = 'lhcdmfamadilnahlckpalijljfohjgkc'
+$youtubePublicHash = 'b723c50c038bd07b2af0b89b95e796a22a30d1fc00d790f98b218ae24a676724'
+$mainPublicKey = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqX9/7jyIe6knu4ZGOK+J3L7DrO16UrFM7AjYtt3tBD7ROepgbUEnrkg1RFLKiUcuAZIIF3qfvLdwZiY3ZebHReloePi/ZhmwKNoey4JeBnlZpZhrFdzI+WBFWTr92Ams1x6LwU6ugdEwfr5uZxUX/hEYUqqcdblF06YntRwu8rPr8tmsGl9s+rZw6L5arTz3Mn1Pw4Y1Wt4q+NRlWYso14doQZ8s/OHuJFRY7kc8MhpIN05ayPlcv2VQIe+xWdm67nR8nWlbsr08c0bQNrgAqCmmnCrWUPW3IXvbcb+4rnL4xiyYnXnxLRPJMpz3fNkpIu7aziR1869t9Hiz2hJ5cQIDAQAB'
 
 function Assert-True([bool] $Value, [string] $Message) { if (-not $Value) { throw $Message } }
 function Assert-Equal($Actual, $Expected, [string] $Message = 'Values differ') {
@@ -49,7 +57,7 @@ function Invoke-OwnedGit([string] $Root, [string[]] $Arguments) {
     if ($LASTEXITCODE -ne 0) { throw 'Owned Git fixture operation failed' }
     return ($result -join "`n").Trim()
 }
-function New-Fixture([switch] $WithoutGit) {
+function New-Fixture([switch] $WithoutGit, [string] $PublicKey) {
     $state.Fixtures++
     $root = Join-Path $testRoot ('source exportada 日本 ' + $state.Fixtures)
     $extension = Join-Path $root 'extensions/chromium/youtube'
@@ -59,6 +67,15 @@ function New-Fixture([switch] $WithoutGit) {
     foreach ($name in $assets) {
         Copy-Item -LiteralPath (Join-Path $repository ('extensions/chromium/youtube/' + $name)) -Destination $extension
     }
+    # These legacy scenarios deliberately remain keyless even when the actual
+    # product source has a fixed public identity. Keyed fixtures opt in below.
+    $manifestPath = Join-Path $extension 'manifest.json'
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest.PSObject.Properties.Remove('key')
+    if ($PSBoundParameters.ContainsKey('PublicKey')) {
+        Add-Member -InputObject $manifest -MemberType NoteProperty -Name key -Value $PublicKey
+    }
+    Write-Utf8 $manifestPath ($manifest | ConvertTo-Json -Depth 8)
     Write-Utf8 (Join-Path $extension 'README.md') 'Owned non-runtime fixture documentation.'
     Write-Utf8 (Join-Path $extension 'extra-sensitive.pem') 'Synthetic exclusion marker, not a key.'
     $mainSentinel = Join-Path $main 'preserve.keep'
@@ -92,7 +109,7 @@ Assert-SafeTestRoot
 if (Test-Path -LiteralPath $testRoot) { throw 'Test root must be fresh' }
 $null = New-Item -ItemType Directory -Path $testRoot
 try {
-    Test-Case 'planning is read-only with a fixed seven-file YouTube inventory and both recipe hashes' {
+    Test-Case 'planning is read-only with a fixed seven-file YouTube inventory and all four recipe hashes' {
         $f = New-Fixture
         $plan = New-Plan $f
         Assert-True ($null -ne $plan) 'Planner returned no candidate'
@@ -112,7 +129,7 @@ try {
             Assert-Equal $entry.sha256 (Hash $entry.source)
             Assert-Equal $entry.size_bytes ([IO.FileInfo]::new($entry.source).Length)
         }
-        Assert-Equal $plan.recipe_files.Count 2
+        Assert-Equal $plan.recipe_files.Count 4
         foreach ($entry in $plan.recipe_files) {
             Assert-True ($entry.path -in @($recipes | ForEach-Object { 'packaging/windows/' + $_ })) 'Unexpected recipe recorded'
             Assert-Equal $entry.sha256 (Hash (Join-Path $f.Root $entry.path))
@@ -136,7 +153,7 @@ try {
         Assert-Equal $receipt.native_host_name 'com.rcmusic.youtube'
         Assert-True ($null -eq $receipt.native_manifest) 'Source-only package gained an activatable native manifest'
         Assert-Equal $receipt.source_commit $f.Commit
-        Assert-Equal $receipt.recipe_files.Count 2
+        Assert-Equal $receipt.recipe_files.Count 4
         Assert-Equal $receipt.files.Count 7
         $physical = @(Get-ChildItem -LiteralPath $f.Output -File -Recurse | ForEach-Object {
             [IO.Path]::GetRelativePath($f.Output, $_.FullName).Replace('\', '/')
@@ -286,6 +303,83 @@ try {
         Assert-Equal $receipt.source_commit $f.Commit
         Assert-Equal $receipt.files.Count 7
         Assert-Equal (Hash $f.Main) $f.MainHash
+    }
+    Test-Case 'a fixed public manifest key binds the YouTube plan and receipt without rewriting any asset' {
+        $f = New-Fixture -PublicKey $youtubePublicKey
+        $sourceHash = Hash (Join-Path $f.Extension 'manifest.json')
+        $plan = New-Plan $f
+        Assert-Equal $plan.channel 'Youtube'
+        Assert-Equal $plan.identity_state 'public_key_bound'
+        Assert-Equal $plan.extension_identity.extension_id $youtubePublicId
+        Assert-Equal $plan.extension_identity.origin ('chrome-extension://' + $youtubePublicId + '/')
+        Assert-Equal $plan.extension_identity.public_key_sha256 $youtubePublicHash
+        Assert-Equal @($plan.extension_identity.PSObject.Properties).Count 3
+        Assert-True ($null -eq $plan.native_manifest) 'A public key activated a native manifest'
+        $result = Copy-RcMusicYoutubeExtensionPackagePlan -Plan $plan
+        $receipt = Get-Content -LiteralPath $result.receipt_path -Raw | ConvertFrom-Json
+        Assert-Equal $receipt.channel 'Youtube'
+        Assert-Equal $receipt.identity_state 'public_key_bound'
+        Assert-Equal $receipt.extension_identity.extension_id $youtubePublicId
+        Assert-Equal $receipt.extension_identity.origin ('chrome-extension://' + $youtubePublicId + '/')
+        Assert-Equal $receipt.extension_identity.public_key_sha256 $youtubePublicHash
+        Assert-True ($null -eq $receipt.native_manifest) 'The receipt invented native registration'
+        Assert-Equal (Hash (Join-Path $result.extension_directory 'manifest.json')) $sourceHash
+        Assert-Equal (Hash (Join-Path $f.Extension 'manifest.json')) $sourceHash
+        Assert-Equal (@(Get-ChildItem -LiteralPath $result.extension_directory -File).Count) 7
+        Assert-Equal (Hash $f.Main) $f.MainHash
+    }
+    Test-Case 'malformed or ambiguous manifest identity is rejected before creating output' {
+        $invalid = @(
+            [pscustomobject]@{ bytes = [byte[]]@(0xff, 0xfe, 0x7b) },
+            [pscustomobject]@{ bytes = [Text.UTF8Encoding]::new($false).GetBytes('{') },
+            [pscustomobject]@{ bytes = [Text.UTF8Encoding]::new($false).GetBytes('{"manifest_version":3,"key":"%%%"}') },
+            [pscustomobject]@{ bytes = [Text.UTF8Encoding]::new($false).GetBytes('{"manifest_version":3,"key":null}') },
+            [pscustomobject]@{ bytes = [Text.UTF8Encoding]::new($false).GetBytes('{"manifest_version":3,"key":"' + $youtubePublicKey + '","key":"' + $youtubePublicKey + '"}') }
+        )
+        foreach ($entry in $invalid) {
+            $f = New-Fixture
+            $path = Join-Path $f.Extension 'manifest.json'
+            [IO.File]::WriteAllBytes($path, $entry.bytes)
+            $before = Hash $path
+            Assert-Throws { New-Plan $f } 'An invalid or ambiguous manifest was packaged'
+            Assert-Equal (Hash $path) $before 'Manifest validation changed its source'
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Invalid identity created output'
+            Assert-Equal (Hash $f.Main) $f.MainHash
+        }
+    }
+    Test-Case 'changing any derived identity field in a reviewed plan is rejected before output' {
+        foreach ($field in @('extension_id', 'origin', 'public_key_sha256')) {
+            $f = New-Fixture -PublicKey $youtubePublicKey
+            $plan = New-Plan $f
+            $plan.extension_identity.$field = 'forged'
+            Assert-Throws { Copy-RcMusicYoutubeExtensionPackagePlan -Plan $plan } 'A forged derived identity was accepted'
+            Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Forged identity created output'
+        }
+    }
+    Test-Case 'a public-key change after planning invalidates materialization without changing the new source' {
+        $f = New-Fixture -PublicKey $youtubePublicKey
+        $plan = New-Plan $f
+        $path = Join-Path $f.Extension 'manifest.json'
+        $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $manifest.key = $mainPublicKey
+        Write-Utf8 $path ($manifest | ConvertTo-Json -Depth 8)
+        $changed = Hash $path
+        Assert-Throws { Copy-RcMusicYoutubeExtensionPackagePlan -Plan $plan } 'A changed public key kept a stale identity'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Key drift created output'
+        Assert-Equal (Hash $path) $changed
+    }
+    Test-Case 'the same public key in two different checkout paths has the same identity' {
+        $first = New-Fixture -PublicKey $youtubePublicKey
+        $firstPlan = New-Plan $first
+        $second = New-Fixture -PublicKey $youtubePublicKey
+        $secondPlan = New-Plan $second
+        Assert-True ($first.Root -cne $second.Root) 'Fixture paths are not distinct'
+        Assert-Equal $firstPlan.extension_identity.extension_id $youtubePublicId
+        Assert-Equal $secondPlan.extension_identity.extension_id $youtubePublicId
+        Assert-Equal $firstPlan.extension_identity.origin $secondPlan.extension_identity.origin
+        Assert-Equal $firstPlan.extension_identity.public_key_sha256 $secondPlan.extension_identity.public_key_sha256
+        Assert-True (-not (Test-Path -LiteralPath $first.Output)) 'Identity planning wrote its first output'
+        Assert-True (-not (Test-Path -LiteralPath $second.Output)) 'Identity planning wrote its second output'
     }
 } finally {
     Remove-Module RcMusicYoutubeExtensionPackage -Force -ErrorAction SilentlyContinue

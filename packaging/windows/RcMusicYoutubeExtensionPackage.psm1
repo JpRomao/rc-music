@@ -2,15 +2,28 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Source-only candidate. No extension identity, native host manifest, browser
-# registration, installer execution or binary runtime qualification is provided.
+# Two fixed source-only candidates. A supplied public key can bind an identity;
+# native registration, installation and binary qualification remain separate.
 $script:modulePath = [IO.Path]::GetFullPath($PSCommandPath)
-$script:assetNames = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs',
-    'popup.css', 'popup.html', 'popup.mjs')
-$script:recipePaths = @('packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1',
-    'packaging/windows/RcMusicYoutubeExtensionPackage.psm1')
-$script:extensionPath = 'extensions/chromium/youtube'
-$script:inputPaths = @($script:extensionPath) + $script:recipePaths
+$script:families = @{
+    Main = [pscustomobject]@{
+        channel = 'Main'; component = 'main-extension-source'; native_host_name = 'com.rcmusic.media'
+        extension_path = 'extensions/chromium/main'
+        assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs',
+            'popup.css', 'popup.html', 'popup.mjs', 'detector.js', 'media-collector.js')
+        recipes = @('packaging/windows/New-RcMusicChromiumExtensionPackage.ps1',
+            'packaging/windows/RcMusicYoutubeExtensionPackage.psm1', 'packaging/windows/RcMusicChromiumIdentity.psm1')
+    }
+    Youtube = [pscustomobject]@{
+        channel = 'Youtube'; component = 'youtube-extension-source'; native_host_name = 'com.rcmusic.youtube'
+        extension_path = 'extensions/chromium/youtube'
+        assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs',
+            'popup.css', 'popup.html', 'popup.mjs')
+        recipes = @('packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1',
+            'packaging/windows/New-RcMusicChromiumExtensionPackage.ps1',
+            'packaging/windows/RcMusicYoutubeExtensionPackage.psm1', 'packaging/windows/RcMusicChromiumIdentity.psm1')
+    }
+}
 
 function Get-YoutubePackageAbsolutePath([string] $Path) {
     if ([string]::IsNullOrWhiteSpace($Path) -or -not [IO.Path]::IsPathFullyQualified($Path)) {
@@ -41,15 +54,15 @@ function Invoke-YoutubePackageGit([string] $Root, [string[]] $Arguments) {
     return [pscustomobject]@{ code = $LASTEXITCODE; lines = $lines }
 }
 
-function Get-YoutubePackageFile([string] $Root, [string] $RelativePath) {
+function Get-YoutubePackageFile([string] $Root, [string] $RelativePath, [IO.Stream] $Stream) {
     $source = Join-Path $Root $RelativePath
-    Assert-YoutubePackagePlainPath $source
-    if (-not [IO.File]::Exists($source)) { throw 'A required YouTube package source file is missing' }
+    $Stream.Position = 0
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Stream)).ToLowerInvariant()
     return [pscustomobject]@{
         path = $RelativePath
         source = $source
-        size_bytes = [IO.FileInfo]::new($source).Length
-        sha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+        size_bytes = $Stream.Length
+        sha256 = $hash
     }
 }
 
@@ -74,7 +87,9 @@ function Test-YoutubePackageDirty([string] $Root, [string[]] $Paths, [string[]] 
     return $false
 }
 
-function Get-YoutubePackagePlan([string] $RepositoryRoot, [string] $OutputDirectory, [switch] $AllowExistingOutput) {
+function Get-YoutubePackagePlan([string] $RepositoryRoot, [string] $OutputDirectory, [switch] $AllowExistingOutput,
+        [ValidateSet('Main', 'Youtube')][string] $Channel = 'Youtube') {
+    $family = $script:families[$Channel]
     $root = Get-YoutubePackageAbsolutePath $RepositoryRoot
     $output = Get-YoutubePackageAbsolutePath $OutputDirectory
     Assert-YoutubePackagePlainPath $root
@@ -101,33 +116,69 @@ function Get-YoutubePackagePlan([string] $RepositoryRoot, [string] $OutputDirect
     if ($head.code -ne 0 -or $head.lines.Count -ne 1 -or [string]$head.lines[0] -cnotmatch '^[0-9a-f]{40}$') {
         throw 'YouTube package source must have a committed HEAD'
     }
-    $criticalAssets = @($script:assetNames | ForEach-Object { $script:extensionPath + '/' + $_ })
-    $files = @(foreach ($name in $script:assetNames) {
-        $inputFile = Get-YoutubePackageFile $root ($script:extensionPath + '/' + $name)
-        [pscustomobject]@{ source = $inputFile.source; relative_path = ('extension/' + $name)
-            size_bytes = $inputFile.size_bytes; sha256 = $inputFile.sha256 }
-    })
-    $recipeFiles = @(foreach ($relative in $script:recipePaths) {
-        $inputFile = Get-YoutubePackageFile $root $relative
-        [pscustomobject]@{ path = $relative; size_bytes = $inputFile.size_bytes; sha256 = $inputFile.sha256 }
-    })
-    $extensionDirty = Test-YoutubePackageDirty $root @($script:extensionPath) $criticalAssets
-    $recipeDirty = Test-YoutubePackageDirty $root $script:recipePaths $script:recipePaths
-    return [pscustomobject]@{
-        schema_version = 1
-        component = 'youtube-extension-source'
-        identity_state = 'identity_pending'
-        native_host_name = 'com.rcmusic.youtube'
-        native_manifest = $null
-        repository_root = $root
-        output = $output
-        source_commit = [string]$head.lines[0]
-        extension_dirty = [bool]$extensionDirty
-        recipe_dirty = [bool]$recipeDirty
-        source_dirty = [bool]($extensionDirty -or $recipeDirty)
-        source_inputs = @($script:inputPaths)
-        recipe_files = $recipeFiles
-        files = $files
+    $criticalAssets = @($family.assets | ForEach-Object { $family.extension_path + '/' + $_ })
+    $streams = @{}
+    try {
+        # The manifest and identity implementation are the same held inputs
+        # whose hashes are recorded. The planner never rewrites a source asset.
+        foreach ($relative in @($criticalAssets) + @($family.recipes)) {
+            $source = Join-Path $root $relative
+            Assert-YoutubePackagePlainPath $source
+            if (-not [IO.File]::Exists($source)) { throw 'A required Chromium package source file is missing' }
+            $streams[$relative] = [IO.File]::Open($source, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        }
+        $files = @(foreach ($name in $family.assets) {
+            $relative = $family.extension_path + '/' + $name
+            $inputFile = Get-YoutubePackageFile $root $relative $streams[$relative]
+            [pscustomobject]@{ source = $inputFile.source; relative_path = ('extension/' + $name)
+                size_bytes = $inputFile.size_bytes; sha256 = $inputFile.sha256 }
+        })
+        $recipeFiles = @(foreach ($relative in $family.recipes) {
+            $inputFile = Get-YoutubePackageFile $root $relative $streams[$relative]
+            [pscustomobject]@{ path = $relative; size_bytes = $inputFile.size_bytes; sha256 = $inputFile.sha256 }
+        })
+        $manifest = $streams[$family.extension_path + '/manifest.json']
+        if ($manifest.Length -lt 1 -or $manifest.Length -gt 65536) {
+            throw 'Chromium manifest must contain between 1 and 65536 bytes'
+        }
+        $manifest.Position = 0
+        $manifestBytes = [byte[]]::new([int] $manifest.Length)
+        $offset = 0
+        while ($offset -lt $manifestBytes.Length) {
+            $read = $manifest.Read($manifestBytes, $offset, $manifestBytes.Length - $offset)
+            if ($read -eq 0) { throw 'Chromium manifest ended before its pinned size' }
+            $offset += $read
+        }
+        $manifestHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($manifestBytes)).ToLowerInvariant()
+        $manifestEntry = @($files | Where-Object relative_path -CEQ 'extension/manifest.json')[0]
+        if ($manifestEntry.sha256 -cne $manifestHash -or $manifestEntry.size_bytes -ne $manifestBytes.Length) {
+            throw 'Chromium manifest identity does not match its source snapshot'
+        }
+        $identityModule = Import-Module (Join-Path $root 'packaging/windows/RcMusicChromiumIdentity.psm1') -Force -PassThru
+        $identityCommand = $identityModule.ExportedFunctions['Get-RcMusicChromiumManifestIdentity']
+        $identity = & $identityCommand -ManifestBytes $manifestBytes
+        $extensionDirty = Test-YoutubePackageDirty $root @($family.extension_path) $criticalAssets
+        $recipeDirty = Test-YoutubePackageDirty $root $family.recipes $family.recipes
+        return [pscustomobject]@{
+            schema_version = 1
+            component = $family.component
+            channel = $family.channel
+            extension_identity = $identity
+            identity_state = if ($null -eq $identity) { 'identity_pending' } else { 'public_key_bound' }
+            native_host_name = $family.native_host_name
+            native_manifest = $null
+            repository_root = $root
+            output = $output
+            source_commit = [string]$head.lines[0]
+            extension_dirty = [bool]$extensionDirty
+            recipe_dirty = [bool]$recipeDirty
+            source_dirty = [bool]($extensionDirty -or $recipeDirty)
+            source_inputs = @($family.extension_path) + @($family.recipes)
+            recipe_files = $recipeFiles
+            files = $files
+        }
+    } finally {
+        foreach ($stream in $streams.Values) { $stream.Dispose() }
     }
 }
 
@@ -144,17 +195,27 @@ function New-RcMusicYoutubeExtensionPackagePlan {
         [Parameter(Mandatory)][string] $RepositoryRoot,
         [Parameter(Mandatory)][string] $OutputDirectory
     )
-    return Get-YoutubePackagePlan $RepositoryRoot $OutputDirectory
+    return Get-YoutubePackagePlan $RepositoryRoot $OutputDirectory -Channel Youtube
 }
 
 function Copy-RcMusicYoutubeExtensionPackagePlan {
     [CmdletBinding()]
     param([Parameter(Mandatory)][object] $Plan)
-    $current = Get-YoutubePackagePlan $Plan.repository_root $Plan.output
+    if ($Plan.channel -cne 'Youtube') { throw 'The legacy YouTube copier requires a YouTube plan' }
+    return Copy-RcMusicChromiumExtensionPackagePlan -Plan $Plan
+}
+
+function Copy-RcMusicChromiumExtensionPackagePlan {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object] $Plan)
+    if ($Plan.channel -isnot [string] -or $Plan.channel -cnotin @('Main', 'Youtube')) {
+        throw 'A canonical Main or Youtube package channel is required'
+    }
+    $current = Get-YoutubePackagePlan $Plan.repository_root $Plan.output -Channel $Plan.channel
     Assert-YoutubePackagePlanMatches $Plan $current
     $streams = @{}
     try {
-        # Keep the nine critical inputs open without write/delete sharing until
+        # Keep every critical input open without write/delete sharing until
         # the receipt is closed. The candidate never replaces a source or output.
         $sourcePaths = @($current.files.source) + @($current.recipe_files | ForEach-Object {
             Join-Path $current.repository_root $_.path
@@ -162,7 +223,7 @@ function Copy-RcMusicYoutubeExtensionPackagePlan {
         foreach ($source in $sourcePaths) {
             $streams[$source] = [IO.File]::Open($source, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         }
-        $current = Get-YoutubePackagePlan $Plan.repository_root $Plan.output
+        $current = Get-YoutubePackagePlan $Plan.repository_root $Plan.output -Channel $Plan.channel
         Assert-YoutubePackagePlanMatches $Plan $current
         $null = New-Item -ItemType Directory -Path $current.output -ErrorAction Stop
         $extension = Join-Path $current.output 'extension'
@@ -181,11 +242,13 @@ function Copy-RcMusicYoutubeExtensionPackagePlan {
                 throw 'Copied YouTube package bytes do not match the source inventory; partial output was preserved'
             }
         }
-        $after = Get-YoutubePackagePlan $current.repository_root $current.output -AllowExistingOutput
+        $after = Get-YoutubePackagePlan $current.repository_root $current.output -AllowExistingOutput -Channel $current.channel
         Assert-YoutubePackagePlanMatches $current $after
         $receipt = [ordered]@{
             schema_version = 1
             component = $current.component
+            channel = $current.channel
+            extension_identity = $current.extension_identity
             identity_state = $current.identity_state
             native_host_name = $current.native_host_name
             native_manifest = $null
@@ -212,4 +275,15 @@ function Copy-RcMusicYoutubeExtensionPackagePlan {
     }
 }
 
-Export-ModuleMember -Function New-RcMusicYoutubeExtensionPackagePlan, Copy-RcMusicYoutubeExtensionPackagePlan
+function New-RcMusicChromiumExtensionPackagePlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $RepositoryRoot,
+        [Parameter(Mandatory)][string] $OutputDirectory,
+        [Parameter(Mandatory)][ValidateSet('Main', 'Youtube')][string] $Channel
+    )
+    return Get-YoutubePackagePlan $RepositoryRoot $OutputDirectory -Channel $Channel
+}
+
+Export-ModuleMember -Function New-RcMusicYoutubeExtensionPackagePlan, Copy-RcMusicYoutubeExtensionPackagePlan,
+    New-RcMusicChromiumExtensionPackagePlan, Copy-RcMusicChromiumExtensionPackagePlan

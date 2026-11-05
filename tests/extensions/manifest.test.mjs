@@ -10,7 +10,7 @@ test('MV3 main extension requests only temporary detection and explicit native m
   assert.equal(manifest.minimum_chrome_version, '106');
   assert.deepEqual([...manifest.permissions].sort(), ['activeTab', 'nativeMessaging', 'scripting'].sort());
   for (const field of ['host_permissions', 'optional_host_permissions', 'content_scripts', 'background',
-    'externally_connectable', 'web_accessible_resources', 'update_url', 'key']) {
+    'externally_connectable', 'web_accessible_resources', 'update_url']) {
     assert.equal(Object.hasOwn(manifest, field), false, field);
   }
   assert.equal(manifest.action.default_popup, 'popup.html');

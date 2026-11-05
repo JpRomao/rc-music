@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "RC Music — Mídia da página",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqX9/7jyIe6knu4ZGOK+J3L7DrO16UrFM7AjYtt3tBD7ROepgbUEnrkg1RFLKiUcuAZIIF3qfvLdwZiY3ZebHReloePi/ZhmwKNoey4JeBnlZpZhrFdzI+WBFWTr92Ams1x6LwU6ugdEwfr5uZxUX/hEYUqqcdblF06YntRwu8rPr8tmsGl9s+rZw6L5arTz3Mn1Pw4Y1Wt4q+NRlWYso14doQZ8s/OHuJFRY7kc8MhpIN05ayPlcv2VQIe+xWdm67nR8nWlbsr08c0bQNrgAqCmmnCrWUPW3IXvbcb+4rnL4xiyYnXnxLRPJMpz3fNkpIu7aziR1869t9Hiz2hJ5cQIDAQAB",
   "description": "Selecione áudio e vídeo da página para enviar ao RC Music. Requer integração local; não inclui YouTube.",
   "minimum_chrome_version": "106",
   "permissions": ["activeTab", "scripting", "nativeMessaging"],

@@ -800,7 +800,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — montagem opcional dos hosts
+### Checkpoint atual — identidades fixas das extensões
+
+O mantenedor autorizou gerar identidades locais fixas. Os dois manifestos agora incluem somente suas chaves públicas, com IDs distintos derivados do DER; as privadas ficam fora do repositório. O [gerador de pacotes Chromium](youtube-extension-package.md) prepara separadamente principal/YouTube, confere e registra identidade, inventário e fontes e preserva candidatos sem chave como `identity_pending`. A integração instalada e aquisição pública continuam pendentes; o default do app permanece OFF.
+
+### Checkpoint anterior — montagem opcional dos hosts
 
 A [receita de runtime com hosts](windows-runtime.md#montagem-opcional-dos-dois-hosts-native-messaging) aceita os dois recibos/hash explícitos, confere sua correspondência com cache/headers/executáveis e mantém hosts e manifestos portáveis como irmãos do player. O instalador inclui os quatro arquivos somente na seleção opcional das ferramentas, sem registro. Identidade definitiva das extensões, montagem física com esses IDs, instalação/registro e aquisição pública continuam pendentes; o default permanece OFF. Evidências e comandos ficam no guia do runtime.
 
