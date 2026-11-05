@@ -151,6 +151,65 @@ try {
         Assert-True ($p.config.Contains('!define RCMUSIC_REQUIRES_WEBVIEW2 0')) 'Lite unexpectedly requires a browser runtime'
         Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Edition planning created output'
     }
+    foreach ($edition in @('Lite', 'CompleteExperimental')) {
+        foreach ($declaration in @(
+            @{ Name = 'object'; Value = [pscustomobject]@{ available = $true; files = @() } },
+            @{ Name = 'null'; Value = $null },
+            @{ Name = 'false'; Value = $false }
+        )) {
+            Test-Case "$edition refuses declared download_component even when its value is $($declaration.Name)" {
+                $f = if ($edition -ceq 'Lite') { New-Fixture } else { New-CompleteFixture }
+                $baseline = New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition
+                Assert-True ($null -ne $baseline) 'The existing local fixture must be valid before declaration'
+                Add-Member -InputObject $f.Manifest -MemberType NoteProperty -Name download_component -Value $declaration.Value
+                Save-Manifest $f
+                $manifestBefore = (Get-FileHash -LiteralPath $f.ManifestPath).Hash
+                $appBefore = (Get-FileHash -LiteralPath (Join-Path $f.App 'RCMusic.exe')).Hash
+                Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition }
+                Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Unsupported declaration created installer output'
+                Assert-True ((Get-FileHash -LiteralPath $f.ManifestPath).Hash -ceq $manifestBefore) 'Declaration refusal changed its manifest'
+                Assert-True ((Get-FileHash -LiteralPath (Join-Path $f.App 'RCMusic.exe')).Hash -ceq $appBefore) 'Declaration refusal changed the player'
+            }
+        }
+        foreach ($relative in @(
+            'download-tools/network/RCMusicDownloadWorker.exe',
+            'DOWNLOAD-TOOLS/network/RCMusicDownloadWorker.exe',
+            'DoWnLoAd-ToOlS\network\RCMusicDownloadWorker.exe',
+            'download-tools/installed-v1',
+            'DOWNLOAD-TOOLS\installed-v1'
+        )) {
+            Test-Case "$edition refuses undeclared optional payload path $relative" {
+                $f = if ($edition -ceq 'Lite') { New-Fixture } else { New-CompleteFixture }
+                $baseline = New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition
+                Assert-True ($null -ne $baseline) 'The existing local fixture must be valid before optional files'
+                $path = Join-Path $f.App $relative.Replace('\', '/')
+                $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+                [IO.File]::WriteAllText($path, 'Synthetic optional payload input, never executed: ' + $relative)
+                $before = (Get-FileHash -LiteralPath $path).Hash
+                $f.Manifest.files += [pscustomobject]@{ relative_path = $relative; source = 'owned optional fixture only'
+                    size_bytes = (Get-Item -LiteralPath $path).Length; sha256 = $before.ToLowerInvariant() }
+                Save-Manifest $f
+                $manifestBefore = (Get-FileHash -LiteralPath $f.ManifestPath).Hash
+                Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output -Edition $edition }
+                Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Undeclared optional files created installer output'
+                Assert-True ((Get-FileHash -LiteralPath $path).Hash -ceq $before) 'Optional path refusal changed its source'
+                Assert-True ((Get-FileHash -LiteralPath $f.ManifestPath).Hash -ceq $manifestBefore) 'Optional path refusal changed the manifest'
+            }
+        }
+    }
+    Test-Case 'ordinary local filenames resembling the optional prefix remain supported' {
+        $f = New-Fixture
+        $relative = 'download-tools-notes.txt'
+        $path = Join-Path $f.App $relative
+        [IO.File]::WriteAllText($path, 'Ordinary local runtime note')
+        $f.Manifest.files += [pscustomobject]@{ relative_path = $relative; source = 'owned local fixture only'
+            size_bytes = (Get-Item -LiteralPath $path).Length
+            sha256 = (Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant() }
+        Save-Manifest $f
+        $plan = New-RcMusicInstallerPlan $f.App $f.Output
+        Assert-True ($plan.files.relative_path -ccontains $relative) 'The guard blocked a filename outside the reserved prefix'
+        Assert-True (-not (Test-Path -LiteralPath $f.Output)) 'Ordinary filename planning created output'
+    }
     Test-Case 'explicit Lite metadata and legacy metadata share the same payload identity' {
         $f = New-Fixture
         $legacy = New-RcMusicInstallerPlan $f.App $f.Output

@@ -58,6 +58,10 @@ Leitura e planejamento reais passaram sem escrita: sete formatos/callbacks exato
 
 ## Checks sem compilação ou instalação
 
+O planejador v1 ainda extrai um inventário obrigatório único. Por isso recusa, antes de gerar saída, a propriedade `download_component` com qualquer valor e entradas sob `download-tools/`, sem distinguir caixa ou separadores. Essa proteção vale para Lite e Completa experimental; a seleção inicialmente desmarcada, ownership, upgrade e remoção do componente opcional continuam pendentes. Não basta acrescentar arquivos ao manifesto para instalar ferramentas de download.
+
+Regressão de 2026-11-05: Red **71 passados/16 falhos**, Green **87/87** em `WindowsInstallerPlan.Tests.ps1`, com fontes/manifestos preservados e zero saída nas recusas. Os testes usam arquivos sintéticos, sem executar NSIS, setup ou Registro. Logs em `out/product/test-runs/component-activation-20261105/installer-{red,green}.log`.
+
 Na raiz, PowerShell 7 x64:
 
 ```powershell

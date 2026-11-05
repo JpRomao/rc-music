@@ -65,6 +65,12 @@ function New-RcMusicInstallerPlan {
         $manifest.distribution -cne 'private-local-development-only') {
         throw 'Installer requires a clean private production-mode x64 runtime manifest'
     }
+    # This installer still extracts one unconditional inventory. A declared
+    # optional component must wait for an explicit selection/ownership flow;
+    # even null or false metadata cannot silently become a base installation.
+    if ($null -ne $manifest.PSObject.Properties['download_component']) {
+        throw 'Installer v1 does not support an optional download component'
+    }
     $canonicalEdition = if ($Edition -ieq 'CompleteExperimental') { 'CompleteExperimental' } else { 'Lite' }
     $editionProperty = $manifest.PSObject.Properties['edition']
     $manifestEdition = 'Lite'
@@ -92,6 +98,9 @@ function New-RcMusicInstallerPlan {
         if ($entry.relative_path -isnot [string] -or $entry.sha256 -cnotmatch '^[0-9a-f]{64}$' -or
             $entry.relative_path -match '^(?i:Uninstall\.exe|\.rcmusic-install\.ini)(?:[\\/]|$)') {
             throw 'Invalid or installer-reserved runtime entry'
+        }
+        if ($entry.relative_path.Replace('\', '/').StartsWith('download-tools/', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Installer v1 cannot install undeclared download tools'
         }
         @{ source = (Join-Path $runtime $entry.relative_path); relative_path = $entry.relative_path }
     }
