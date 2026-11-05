@@ -1,6 +1,6 @@
 # Corpus de áudio e fixtures
 
-**Estado:** M0.5 em andamento; WAV, matriz básica e truncados dos contêineres básicos autenticados; arte e limites canônicos pendentes
+**Estado:** M0.5 em andamento; matriz básica, truncados e capas MP3 com bordas reais autenticados; demais capas e limites textuais canônicos pendentes
 **Última revisão:** 2026-11-05
 
 ## 1. Objetivo
@@ -67,6 +67,8 @@ O segundo incremento acrescenta sinais estéreo determinísticos de 2 s/48 kHz e
 O [manifesto](../../experiments/m0/shared/audio-corpus/manifest.v1.json), as receitas/recibo, a licença privada e o catálogo completo de IDs `PlaybackBackend`/`MetadataReader` são versionados. O catálogo histórico permanece `partial`; ele não declara suporte nem é alterado pelas extensões do produto.
 
 O [corpus do produto](../audio-tests.md#prefixos-truncados-canônicos) acrescenta quatro prefixos canônicos de 64 bytes para MP3, M4A/AAC, FLAC e Ogg/Vorbis, autenticados antes do teste real de metadados. Seu manifesto registra a receita e a expectativa de rejeição, sem inventar propriedades do áudio truncado. O WAV truncado já existente cobre o quinto contêiner básico. M0.5 continua aberto pelos casos canônicos de arte e limites e demais critérios; os arquivos históricos permanecem intactos.
+
+O recorte de [capas canônicas](../audio-tests.md#capas-canônicas-e-bordas-reais) acrescenta 14 MP3 com arte válida/inválida e casos reais abaixo/no/acima dos três limites de imagem. Receita, propriedades esperadas e hashes são versionados; o teste valida a capa e preservação dos metadados. Arte em outros contêineres e limites textuais canônicos permanecem pendentes, sem alterar o manifesto histórico.
 
 Usar duração de 1–5 s nas fixtures comuns. Fixtures específicas de seek podem ter 30–60 s e ser geradas sob demanda se o tamanho ficar alto.
 

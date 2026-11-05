@@ -23,7 +23,7 @@ A [licença preservada](../tests/audio/corpus/LICENSE.assets.txt), `LicenseRef-M
 
 Incremento posterior: o [catálogo factual](../tests/audio/corpus/catalog.v1.json) descreve somente sete fixtures básicas elegíveis para a [declaração de formatos do instalador](windows-installer.md). Seus tamanhos/hashes são conferidos contra os pins abaixo; não substitui o corpus, a licença ou um resultado de execução e não promove Opus/ALAC/entradas edge a suporte aprovado.
 
-[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos originais e dos cinco arquivos da extensão canônica de truncamento descrita abaixo. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
+[RcMusicAudioFixtures.cmake](../cmake/RcMusicAudioFixtures.cmake) fixa explicitamente tamanho e SHA-256 dos 13 arquivos originais, dos cinco arquivos da extensão de truncamento e do gerador, manifesto e 14 arquivos de arte descritos abaixo. A validação é somente leitura: recusa arquivo ausente, diretório, tamanho ou hash divergente, e aceita o arquivo vazio autenticado. Não gera, repara ou substitui entradas para fazer o teste passar. No configure, os arquivos validados entram em `CMAKE_CONFIGURE_DEPENDS`.
 
 [RcMusicAudioTests.cmake](../cmake/RcMusicAudioTests.cmake) fornece `rc_music_add_audio_tests(corpus_root)`. A integração raiz autentica e registra o corpus somente com desktop e `BUILD_TESTING=ON`; produção OFF não lê esse módulo de fixtures, não compila essas suites nem adquire uma dependência do corpus. Os nomes técnicos `M0_TEST_AUDIO_*` permanecem para preservar as fontes dos testes, sem tornar o experimento um pré-requisito.
 
@@ -72,7 +72,19 @@ A regressão `MR-103` lê essas fixtures diretamente, verifica sua igualdade com
 
 Validação proporcional: build Release do alvo de metadados, **36/36 CTest** (35 casos de metadados e integridade do corpus, com seis probes), formato do C++ alterado, validação documental e rastreabilidade passaram. A conferência independente confirmou receita/hash dos quatro prefixos e preservação dos três probes congelados e do recibo do ensaio do instalador. Evidências em `out/product/test-runs/canonical-truncation-20261105/`. Não foi recompilado o consumidor histórico, o player ou o instalador; o código funcional permanece igual.
 
-Os casos canônicos de arte e bordas reais de tamanho ainda faltam. Este incremento resolve o versionamento dos quatro truncados de `M0.5`/`M5.2`, sem encerrar esses marcos ou os gates de release.
+Este incremento resolveu o versionamento dos quatro truncados de `M0.5`/`M5.2`, sem encerrar esses marcos ou os gates de release. O recorte posterior abaixo acrescenta arte canônica.
+
+## Capas canônicas e bordas reais
+
+O [manifesto de arte](../tests/audio/corpus/artwork.v1.json) registra 14 MP3 derivados do sinal sintético existente, com **31.971.521 bytes** no total. Há um controle PNG de 1 × 1, arte inválida e casos abaixo/no/acima de 10 MiB codificados, 4.096 pixels em cada eixo e 16.000.000 pixels. O caso abaixo do limite agregado usa 3.999 × 4.001 = 15.999.999 pixels. Os sinais e tags originais são preservados; somente um frame APIC ID3v2.3 é acrescentado.
+
+O [gerador](../scripts/fixtures/generate_artwork_corpus.py) usa apenas Python stdlib, autentica a fonte e exige um stage novo sob `out/m0`. PNG usa grayscale8 preto, filter 0, zlib nível 9 e CRC por chunk; padding privado `raNd` em chunks de até 1 MiB ajusta o tamanho codificado exato. A receita registra versões Python/zlib, hash do script e da fonte. Duas gerações produziram bytes e manifestos idênticos; saídas existentes ou fora do stage foram recusadas sem escrita. Os testes cotidianos usam os binários versionados, sem executar o gerador.
+
+`MR-006`, `MR-007`, `MR-009` e `MR-010` agora percorrem contêiner, TagLib e decoder reais. Nove entradas aceitas e cinco rejeitadas verificam thumbnail/diagnóstico e preservação das propriedades de áudio e título. O Red encontrou quatro falhas: capas de 4.095/4.096 × 1 e 1 × 4.095/4.096 eram descartadas após o arredondamento de um eixo para zero. A correção conserva pelo menos um pixel por eixo no cálculo do thumbnail.
+
+Green: **39/39 CTest** (37 casos de metadados, integração local e integridade), build Release do player sem testes e formato dos dois C++ alterados aprovados. A inspeção independente confirmou os 14 hashes, frames APIC, tags/áudio originais, CRCs e dimensões físicas dos PNG. Evidências em `out/product/test-runs/artwork-boundaries-20261105/`. O consumidor histórico recebeu os caminhos/autenticação novos, sem ser recompilado; seus assets originais permanecem intactos.
+
+Este recorte não cobre arte canônica nos outros contêineres ou todas as bordas textuais. TagLib ainda materializa a tag antes do gate de tamanho do produto; a proteção de pré-alocação do parser, `NFR-LIMIT-001`/`SEC-002` e os gates amplos continuam parciais. Não houve execução do player, atualização dos instaladores ou aceitação nativa.
 
 ## Limites
 

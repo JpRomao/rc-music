@@ -3218,16 +3218,24 @@
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-011 rejects real embedded MP3 artwork beyond dimension and pixel boundaries"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-006 MR-007 MR-009 and MR-010 decode canonical embedded artwork below and at every limit"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "Canonical embedded artwork above each limit is rejected while metadata remains readable"
         }
       ],
       "evidence": [
         {
-          "path": "docs/development-plan.md",
-          "marker": "`MR-006`/`MR-007`/`MR-009`/`MR-010` ainda têm somente policy aritmética"
+          "path": "docs/audio-tests.md",
+          "marker": "## Capas canônicas e bordas reais"
         }
       ],
       "remaining": [
-        "Adicionar bordas reais abaixo/exatamente nos limites de bytes/dimensões e fixtures canônicas de arte; a policy aritmética não substitui todas as imagens reais.",
+        "Completar capas canônicas nos demais contêineres e proteção de pré-alocação do parser TagLib; o gate posterior de tamanho não cobre sua materialização interna.",
         "Completar a validação integrada de placeholder sem impedir playback para o corpus declarado."
       ]
     },

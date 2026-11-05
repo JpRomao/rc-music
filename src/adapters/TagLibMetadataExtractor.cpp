@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QImage>
 #include <QImageReader>
+#include <QSize>
 
 #include <apetag.h>
 #include <audioproperties.h>
@@ -239,6 +240,15 @@ void recordArtworkDiagnostic(TrackMetadata& metadata, const ArtworkDiagnosticCod
     return ArtworkDiagnosticCode::InvalidData;
 }
 
+[[nodiscard]] QSize artworkThumbnailSize(QSize source_size) {
+    source_size.scale(static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels),
+                      static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels), Qt::KeepAspectRatio);
+    // Integer aspect-ratio scaling can round a valid thin image's short axis to zero.
+    source_size.setWidth(std::max(1, source_size.width()));
+    source_size.setHeight(std::max(1, source_size.height()));
+    return source_size;
+}
+
 void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVector>& encoded_artwork) {
     if (!encoded_artwork.has_value()) {
         return;
@@ -289,10 +299,7 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
 
     if (source_size.width() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels) ||
         source_size.height() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels)) {
-        auto thumbnail_size = source_size;
-        thumbnail_size.scale(static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels),
-                             static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels), Qt::KeepAspectRatio);
-        reader.setScaledSize(thumbnail_size);
+        reader.setScaledSize(artworkThumbnailSize(source_size));
     }
 
     auto image = reader.read();
@@ -303,9 +310,7 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
     }
     if (image.width() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels) ||
         image.height() > static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels)) {
-        image = image.scaled(static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels),
-                             static_cast<int>(ArtworkLimits::thumbnail_max_axis_pixels), Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
+        image = image.scaled(artworkThumbnailSize(image.size()), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     }
     image = image.convertToFormat(QImage::Format_RGBA8888);
     if (image.isNull()) {

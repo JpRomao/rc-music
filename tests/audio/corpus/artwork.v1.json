@@ -1,0 +1,1068 @@
+{
+  "schema_id": "rcmusic.audio-artwork.v1",
+  "schema_version": 1,
+  "purpose": "canonical-artwork-limit-fixtures-not-runtime-approval",
+  "hash_algorithm": "sha256",
+  "license": "LicenseRef-MusicPlayer-M0-Private",
+  "license_source": {
+    "relative_path": "tests/audio/corpus/LICENSE.assets.txt",
+    "size_bytes": 663,
+    "sha256": "54b7a0cbbf8050b2ac4e24cf8afd74c68a2c6d6c6b22c0487599dd84d23b8b13"
+  },
+  "limits": {
+    "max_encoded_bytes": 10485760,
+    "max_axis_pixels": 4096,
+    "max_pixel_count": 16000000
+  },
+  "recipe": {
+    "id": "rcmusic-artwork-generator-v1",
+    "script": {
+      "relative_path": "scripts/fixtures/generate_artwork_corpus.py",
+      "size_bytes": 12184,
+      "sha256": "777a490529fb493b26ff166658baa7d38e20ac070e57eaf31cd1a40072ae8a2a"
+    },
+    "python_version": "3.13.1",
+    "python_implementation": "CPython",
+    "zlib_compile_version": "1.3.1",
+    "zlib_runtime_version": "1.3.1",
+    "arguments": [
+      "--repository-root",
+      "<absolute-repository-root>",
+      "--output-directory",
+      "<new-descendant-of-out/m0>"
+    ],
+    "source": {
+      "id": "mp3-cbr-stereo",
+      "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+      "size_bytes": 33318,
+      "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+    },
+    "id3": {
+      "version": "2.3.0",
+      "flags": 0,
+      "frame": "APIC",
+      "frame_size_encoding": "big-endian-uint32",
+      "mime": "image/png",
+      "picture_type": 3,
+      "description_encoding": "ISO-8859-1",
+      "description": "",
+      "placement": "before-original-tag-body",
+      "audio_and_original_tag_body": "unchanged"
+    },
+    "png": {
+      "bit_depth": 8,
+      "color_type": 0,
+      "pixel_value": 0,
+      "scanline_filter": 0,
+      "interlace": 0,
+      "zlib_level": 9,
+      "exact_size_padding": {
+        "chunk": "raNd",
+        "value": 0,
+        "position": "before-IEND",
+        "max_payload_bytes": 1048576,
+        "crc": "PNG CRC32"
+      }
+    },
+    "invalid_artwork": {
+      "encoding": "ASCII",
+      "content": "not-an-image"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mp3-png-small",
+      "relative_path": "fixtures/artwork/mp3-png-small.mp3",
+      "sha256": "3aa115e7bbabd810d5f0a3dbb20b8e83f74da0ec2c2270d52cb7788c721426d5",
+      "size_bytes": 33408,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-small",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 67,
+        "sha256": "a4d4c009619311d9b83904acfd62fe3b7f918c312522bbcc6ad51cdec4fd1edf",
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 67,
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-bytes-below",
+      "relative_path": "fixtures/artwork/mp3-png-bytes-below.mp3",
+      "sha256": "4e0bc923d83b4569ee322c07197e33ba9ba7799d34fa8fc0dae78cd780e71284",
+      "size_bytes": 10519100,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-bytes-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 10485759,
+        "sha256": "e18f6bede06a8c81ac0e3b2e725f288c5fe612e62986700df87b1c89149a5603",
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 10485759,
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-bytes-at",
+      "relative_path": "fixtures/artwork/mp3-png-bytes-at.mp3",
+      "sha256": "ec2aafaec021ba119e25e60489b4df9cdaf6e07211bac16862587f9c171d29b3",
+      "size_bytes": 10519101,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-bytes-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 10485760,
+        "sha256": "43efd52518f864e94c2500b5c145049087c5081258ce0632981626f380bd9690",
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 10485760,
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-bytes-above",
+      "relative_path": "fixtures/artwork/mp3-png-bytes-above.mp3",
+      "sha256": "18d765c9e25d36088644f2338d2f86c8b2075bd6776accbea555055070c0dce9",
+      "size_bytes": 10519102,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-bytes-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 10485761,
+        "sha256": "ad94a2e019a130ef64fe6c91022d82ecd9a8d73e4aa12aece0818a9acd7f6925",
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1
+      },
+      "expected_artwork": {
+        "state": "rejected",
+        "encoded_size_bytes": 10485761,
+        "width_px": 1,
+        "height_px": 1,
+        "pixel_count": 1,
+        "expected_action": "discard_artwork_keep_metadata",
+        "diagnostic_code": "EncodedBytesExceeded",
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-width-below",
+      "relative_path": "fixtures/artwork/mp3-png-width-below.mp3",
+      "sha256": "84fb86306f045864f0539ea85861ee3cd51ccb6dcab2e99c2ffd6ab77f5a6383",
+      "size_bytes": 33424,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-width-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 83,
+        "sha256": "ff36c6d7fc893d8ca7f5feb331cd04efd155713aa62629dcaa3365941590a753",
+        "width_px": 4095,
+        "height_px": 1,
+        "pixel_count": 4095
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 83,
+        "width_px": 4095,
+        "height_px": 1,
+        "pixel_count": 4095,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-width-at",
+      "relative_path": "fixtures/artwork/mp3-png-width-at.mp3",
+      "sha256": "7bc86ab909b282b4a92c3ef39eec80c24eeb4132171f1bcdf886c952588d81e6",
+      "size_bytes": 33424,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-width-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 83,
+        "sha256": "9c33ed629b2872bb5df7452fc10a96e415ed63268f5ab109cf99f3dd00aab4e0",
+        "width_px": 4096,
+        "height_px": 1,
+        "pixel_count": 4096
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 83,
+        "width_px": 4096,
+        "height_px": 1,
+        "pixel_count": 4096,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-width-above",
+      "relative_path": "fixtures/artwork/mp3-png-width-above.mp3",
+      "sha256": "5febc383540591baa74b3af42200ba2c91c7f03bf22853d5021c9d32c56e6283",
+      "size_bytes": 33424,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-width-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 83,
+        "sha256": "6ab0289e9961730abf3faa625f4ea4e5f28f72725369b7a554300cf3a8c6a876",
+        "width_px": 4097,
+        "height_px": 1,
+        "pixel_count": 4097
+      },
+      "expected_artwork": {
+        "state": "rejected",
+        "encoded_size_bytes": 83,
+        "width_px": 4097,
+        "height_px": 1,
+        "pixel_count": 4097,
+        "expected_action": "discard_artwork_keep_metadata",
+        "diagnostic_code": "AxisPixelsExceeded",
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-height-below",
+      "relative_path": "fixtures/artwork/mp3-png-height-below.mp3",
+      "sha256": "2bca0195537835e5d84bf022a9c05b674ed9dca9c56afe3c3733c9e8c4a58056",
+      "size_bytes": 33429,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-height-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 88,
+        "sha256": "efad46b7d58af4f0d3870638e61f5f38717d8f2c8566ddda848bfbf00ff9d3fc",
+        "width_px": 1,
+        "height_px": 4095,
+        "pixel_count": 4095
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 88,
+        "width_px": 1,
+        "height_px": 4095,
+        "pixel_count": 4095,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-height-at",
+      "relative_path": "fixtures/artwork/mp3-png-height-at.mp3",
+      "sha256": "2d5aab05baf44e7ce8add584346ed21ef62700a02b93efe3930008111828bba3",
+      "size_bytes": 33429,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-height-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 88,
+        "sha256": "8d384a26d88c67fe38f93ea9250886b669bb6b3890ef6b7860228a7747a09458",
+        "width_px": 1,
+        "height_px": 4096,
+        "pixel_count": 4096
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 88,
+        "width_px": 1,
+        "height_px": 4096,
+        "pixel_count": 4096,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-height-above",
+      "relative_path": "fixtures/artwork/mp3-png-height-above.mp3",
+      "sha256": "8140c7e427aa7d59d8371f2d5c21d8ca711981d049421293392a0afd951351f1",
+      "size_bytes": 33429,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-height-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 88,
+        "sha256": "9728aa541003a7b69509c119f299f52f0d7c1ee4be600ddba258ebf0578fbd49",
+        "width_px": 1,
+        "height_px": 4097,
+        "pixel_count": 4097
+      },
+      "expected_artwork": {
+        "state": "rejected",
+        "encoded_size_bytes": 88,
+        "width_px": 1,
+        "height_px": 4097,
+        "pixel_count": 4097,
+        "expected_action": "discard_artwork_keep_metadata",
+        "diagnostic_code": "AxisPixelsExceeded",
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-pixels-below",
+      "relative_path": "fixtures/artwork/mp3-png-pixels-below.mp3",
+      "sha256": "3d22c64a774ac1d2a717c5aef297ee301a76175bef74effc035ad64320205827",
+      "size_bytes": 48964,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-pixels-below",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 15623,
+        "sha256": "0f1093b85f35d2e7a278f8b1231903579fdc0e78e96ec158ec06af20747614d9",
+        "width_px": 3999,
+        "height_px": 4001,
+        "pixel_count": 15999999
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 15623,
+        "width_px": 3999,
+        "height_px": 4001,
+        "pixel_count": 15999999,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-pixels-at",
+      "relative_path": "fixtures/artwork/mp3-png-pixels-at.mp3",
+      "sha256": "c558e78e4cfb911b5f4ee37d14c332e6664771e81148ec8993949f0d39c8b221",
+      "size_bytes": 48964,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-pixels-at",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 15623,
+        "sha256": "4a5e1c4f52fa18c7943114c2d1d00a3ce72073b7a11ee9eac5415e7e380c5dac",
+        "width_px": 4000,
+        "height_px": 4000,
+        "pixel_count": 16000000
+      },
+      "expected_artwork": {
+        "state": "present",
+        "encoded_size_bytes": 15623,
+        "width_px": 4000,
+        "height_px": 4000,
+        "pixel_count": 16000000,
+        "expected_action": "decode_and_thumbnail",
+        "diagnostic_code": null,
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": true,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-png-pixels-above",
+      "relative_path": "fixtures/artwork/mp3-png-pixels-above.mp3",
+      "sha256": "7f0ffd5dea14ac3c0d6d965ffd727867a40eaeaffa52b88eed049a838f61686b",
+      "size_bytes": 48970,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-png-pixels-above",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 15629,
+        "sha256": "e3234b6737b1e90bd020eea28497b520958c7744e7d0e1bbfc3f694ff5aee6be",
+        "width_px": 4001,
+        "height_px": 4000,
+        "pixel_count": 16004000
+      },
+      "expected_artwork": {
+        "state": "rejected",
+        "encoded_size_bytes": 15629,
+        "width_px": 4001,
+        "height_px": 4000,
+        "pixel_count": 16004000,
+        "expected_action": "discard_artwork_keep_metadata",
+        "diagnostic_code": "PixelCountExceeded",
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "mp3-invalid-art",
+      "relative_path": "fixtures/artwork/mp3-invalid-art.mp3",
+      "sha256": "28905103380715e5a9c1e184e63582b7f3c777042e2b09559765b87643bacf58",
+      "size_bytes": 33353,
+      "source_or_generation_recipe": {
+        "recipe_id": "rcmusic-artwork-generator-v1",
+        "case_id": "mp3-invalid-art",
+        "source": {
+          "id": "mp3-cbr-stereo",
+          "relative_path": "tests/audio/corpus/fixtures/valid/mp3-cbr-stereo.mp3",
+          "size_bytes": 33318,
+          "sha256": "b7d0f99cf733c7458dbec3ab62ad397cd98cc6b069db5c12cbb9834885e66b62"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "MP3",
+      "codec_and_profile": "MP3 Layer III CBR 128 kb/s",
+      "duration_ms": 2000,
+      "duration_tolerance_ms": 50,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": null,
+      "bitrate_mode": "constant",
+      "audio_properties_basis": "source-derived; audio bytes unchanged",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "encoded_artwork": {
+        "mime_type": "image/png",
+        "size_bytes": 12,
+        "sha256": "f2e2c6db1745cc40df646dc40c385487c36e4ceb3f1d5c8d6ad1f7620af1ebae",
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null
+      },
+      "expected_artwork": {
+        "state": "rejected",
+        "encoded_size_bytes": 12,
+        "width_px": null,
+        "height_px": null,
+        "pixel_count": null,
+        "expected_action": "discard_artwork_keep_metadata",
+        "diagnostic_code": "InvalidData",
+        "thumbnail_width_px": null,
+        "thumbnail_height_px": null,
+        "thumbnail_max_axis_px": 1024
+      },
+      "expected_capabilities": {
+        "metadata_read": true,
+        "duration_known": true,
+        "tags_present": true,
+        "artwork_present": false,
+        "decodable": null,
+        "seekable": null,
+        "play_to_end": null
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "requirement_ids": [
+        "FR-020",
+        "FR-021",
+        "NFR-LIMIT-001",
+        "NFR-REL-001"
+      ]
+    }
+  ]
+}

@@ -1147,6 +1147,7 @@ if(BUILD_TESTING)
     if(M0_QT_AUDIO_SUPPORT)
         include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioFixtures.cmake")
         rc_music_validate_truncated_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
+        rc_music_validate_artwork_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         add_executable(m0_taglib_metadata_extractor_tests
             "${RC_MUSIC_SOURCE_ROOT}/tests/audio/TagLibMetadataExtractorTests.cpp"
         )
@@ -1160,7 +1161,7 @@ if(BUILD_TESTING)
         target_compile_features(m0_taglib_metadata_extractor_tests PRIVATE cxx_std_20)
         target_compile_definitions(m0_taglib_metadata_extractor_tests PRIVATE
             M0_TEST_AUDIO_CORPUS_ROOT="${M0_AUDIO_CORPUS_ROOT}"
-            M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus"
+            M0_TEST_AUDIO_PRODUCT_CORPUS_ROOT="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus"
         )
         if(MSVC)
             target_compile_options(m0_taglib_metadata_extractor_tests PRIVATE /W4 /WX /permissive-)

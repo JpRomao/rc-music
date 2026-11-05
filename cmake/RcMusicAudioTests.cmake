@@ -69,7 +69,7 @@ function(rc_music_add_audio_tests corpus_root)
     rc_music_configure_cpp(rc_music_taglib_metadata_extractor_tests)
     target_compile_definitions(rc_music_taglib_metadata_extractor_tests PRIVATE
         M0_TEST_AUDIO_CORPUS_ROOT="${corpus_root}"
-        M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT="${corpus_root}")
+        M0_TEST_AUDIO_PRODUCT_CORPUS_ROOT="${corpus_root}")
     add_custom_command(TARGET rc_music_taglib_metadata_extractor_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:TagLib::tag>"

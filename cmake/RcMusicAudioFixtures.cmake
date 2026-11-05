@@ -35,7 +35,43 @@ function(rc_music_validate_truncated_audio_corpus corpus)
         "520134b5a783f2b0676fc870ce9aae7e54be5fe80c7e83fdfa8487971a5f5479")
 endfunction()
 
+function(rc_music_validate_artwork_audio_corpus corpus)
+    _rc_music_require_audio_fixture("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." "scripts/fixtures/generate_artwork_corpus.py" 12184
+        "777a490529fb493b26ff166658baa7d38e20ac070e57eaf31cd1a40072ae8a2a")
+    _rc_music_require_audio_fixture("${corpus}" "artwork.v1.json" 35129
+        "fe5183a82d3ab31ff38ca1416a469f731d8959a9c54df66f16f96aac3691b9af")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-small.mp3" 33408
+        "3aa115e7bbabd810d5f0a3dbb20b8e83f74da0ec2c2270d52cb7788c721426d5")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-bytes-below.mp3" 10519100
+        "4e0bc923d83b4569ee322c07197e33ba9ba7799d34fa8fc0dae78cd780e71284")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-bytes-at.mp3" 10519101
+        "ec2aafaec021ba119e25e60489b4df9cdaf6e07211bac16862587f9c171d29b3")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-bytes-above.mp3" 10519102
+        "18d765c9e25d36088644f2338d2f86c8b2075bd6776accbea555055070c0dce9")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-width-below.mp3" 33424
+        "84fb86306f045864f0539ea85861ee3cd51ccb6dcab2e99c2ffd6ab77f5a6383")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-width-at.mp3" 33424
+        "7bc86ab909b282b4a92c3ef39eec80c24eeb4132171f1bcdf886c952588d81e6")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-width-above.mp3" 33424
+        "5febc383540591baa74b3af42200ba2c91c7f03bf22853d5021c9d32c56e6283")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-height-below.mp3" 33429
+        "2bca0195537835e5d84bf022a9c05b674ed9dca9c56afe3c3733c9e8c4a58056")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-height-at.mp3" 33429
+        "2d5aab05baf44e7ce8add584346ed21ef62700a02b93efe3930008111828bba3")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-height-above.mp3" 33429
+        "8140c7e427aa7d59d8371f2d5c21d8ca711981d049421293392a0afd951351f1")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-pixels-below.mp3" 48964
+        "3d22c64a774ac1d2a717c5aef297ee301a76175bef74effc035ad64320205827")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-pixels-at.mp3" 48964
+        "c558e78e4cfb911b5f4ee37d14c332e6664771e81148ec8993949f0d39c8b221")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-png-pixels-above.mp3" 48970
+        "7f0ffd5dea14ac3c0d6d965ffd727867a40eaeaffa52b88eed049a838f61686b")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/artwork/mp3-invalid-art.mp3" 33353
+        "28905103380715e5a9c1e184e63582b7f3c777042e2b09559765b87643bacf58")
+endfunction()
+
 function(rc_music_validate_audio_corpus corpus)
+    rc_music_validate_artwork_audio_corpus("${corpus}")
     rc_music_validate_truncated_audio_corpus("${corpus}")
     _rc_music_require_audio_fixture("${corpus}" "LICENSE.assets.txt" 663
         "54b7a0cbbf8050b2ac4e24cf8afd74c68a2c6d6c6b22c0487599dd84d23b8b13")

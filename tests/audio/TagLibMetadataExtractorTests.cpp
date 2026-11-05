@@ -41,8 +41,8 @@
 #ifndef M0_TEST_AUDIO_CORPUS_ROOT
 #error "M0_TEST_AUDIO_CORPUS_ROOT must identify the authenticated M0 audio corpus"
 #endif
-#ifndef M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT
-#error "M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT must identify the authenticated truncation corpus"
+#ifndef M0_TEST_AUDIO_PRODUCT_CORPUS_ROOT
+#error "M0_TEST_AUDIO_PRODUCT_CORPUS_ROOT must identify the authenticated product corpus"
 #endif
 
 namespace music_player::m0::test {
@@ -54,6 +54,10 @@ const std::filesystem::path corpus_root{M0_TEST_AUDIO_CORPUS_ROOT};
 
 [[nodiscard]] std::filesystem::path fixture(const std::filesystem::path& relative_path) {
     return corpus_root / relative_path;
+}
+
+[[nodiscard]] std::filesystem::path productFixture(const std::filesystem::path& relative_path) {
+    return std::filesystem::path{M0_TEST_AUDIO_PRODUCT_CORPUS_ROOT} / relative_path;
 }
 
 [[nodiscard]] const TrackMetadata& requireMetadata(const MetadataReadResult& result) {
@@ -632,7 +636,6 @@ TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures saf
     };
 
     constexpr std::size_t truncated_size = 64;
-    const std::filesystem::path truncation_corpus_root{M0_TEST_AUDIO_TRUNCATION_CORPUS_ROOT};
     const TagLibMetadataExtractor reader;
 
     for (const auto& codec_case : {
@@ -645,7 +648,7 @@ TEST_CASE("MR-103 rejects structurally recognizable truncated codec fixtures saf
         const auto authenticated = readBytes(fixture(codec_case.relative_path));
         REQUIRE(authenticated.size() > truncated_size);
 
-        const auto truncated = truncation_corpus_root / codec_case.truncated_relative_path;
+        const auto truncated = productFixture(codec_case.truncated_relative_path);
         const auto truncated_bytes = readBytes(truncated);
         REQUIRE(truncated_bytes.size() == truncated_size);
         REQUIRE(std::equal(truncated_bytes.begin(), truncated_bytes.end(), authenticated.begin()));
@@ -809,6 +812,85 @@ TEST_CASE("MR-008 rejects embedded MP3 artwork above the encoded byte limit befo
     CHECK(metadata.artwork_diagnostics.front().height_pixels == 0);
     REQUIRE(metadata.audio.duration_ms.has_value());
     CHECK(*metadata.audio.duration_ms > 0);
+}
+
+TEST_CASE("MR-006 MR-007 MR-009 and MR-010 decode canonical embedded artwork below and at every limit",
+          "[m0][qt][metadata][taglib][artwork][limits][MR-006][MR-007][MR-009][MR-010]") {
+    struct AcceptedArtworkCase final {
+        const char* filename;
+        std::uint32_t thumbnail_width;
+        std::uint32_t thumbnail_height;
+    };
+    const TagLibMetadataExtractor reader;
+    const auto source_result = reader.read(fixture("fixtures/valid/mp3-cbr-stereo.mp3"));
+    const auto& source_metadata = requireMetadata(source_result);
+    for (const auto& artwork_case : {
+             AcceptedArtworkCase{"mp3-png-small.mp3", 1, 1},
+             AcceptedArtworkCase{"mp3-png-bytes-below.mp3", 1, 1},
+             AcceptedArtworkCase{"mp3-png-bytes-at.mp3", 1, 1},
+             AcceptedArtworkCase{"mp3-png-width-below.mp3", 1'024, 1},
+             AcceptedArtworkCase{"mp3-png-width-at.mp3", 1'024, 1},
+             AcceptedArtworkCase{"mp3-png-height-below.mp3", 1, 1'024},
+             AcceptedArtworkCase{"mp3-png-height-at.mp3", 1, 1'024},
+             AcceptedArtworkCase{"mp3-png-pixels-below.mp3", 1'023, 1'024},
+             AcceptedArtworkCase{"mp3-png-pixels-at.mp3", 1'024, 1'024},
+         }) {
+        DYNAMIC_SECTION(artwork_case.filename) {
+            CAPTURE(artwork_case.filename);
+            std::optional<MetadataReadResult> result;
+            REQUIRE_NOTHROW(result.emplace(
+                reader.read(productFixture(std::filesystem::path{"fixtures/artwork"} / artwork_case.filename))));
+            const auto& metadata = requireMetadata(*result);
+            REQUIRE(metadata.artwork.has_value());
+            CHECK(metadata.artwork->width_pixels == artwork_case.thumbnail_width);
+            CHECK(metadata.artwork->height_pixels == artwork_case.thumbnail_height);
+            REQUIRE(metadata.artwork->rgba8888 != nullptr);
+            CHECK(metadata.artwork->rgba8888->size() ==
+                  static_cast<std::size_t>(artwork_case.thumbnail_width) * artwork_case.thumbnail_height * 4U);
+            CHECK(metadata.artwork_diagnostics.empty());
+            CHECK(metadata.audio.duration_ms == source_metadata.audio.duration_ms);
+            CHECK(metadata.audio.sample_rate_hz == source_metadata.audio.sample_rate_hz);
+            CHECK(metadata.audio.channels == source_metadata.audio.channels);
+            CHECK(metadata.tags.title == std::optional<std::string>{"Canção determinística 日本語 🎵"});
+        }
+    }
+}
+
+TEST_CASE("Canonical embedded artwork above each limit is rejected while metadata remains readable",
+          "[m0][qt][metadata][taglib][artwork][limits][MR-005][MR-008][MR-011]") {
+    struct RejectedArtworkCase final {
+        const char* filename;
+        ArtworkDiagnosticCode diagnostic;
+        std::uint32_t width;
+        std::uint32_t height;
+    };
+    const TagLibMetadataExtractor reader;
+    const auto source_result = reader.read(fixture("fixtures/valid/mp3-cbr-stereo.mp3"));
+    const auto& source_metadata = requireMetadata(source_result);
+    for (const auto& artwork_case : {
+             RejectedArtworkCase{"mp3-png-bytes-above.mp3", ArtworkDiagnosticCode::EncodedBytesExceeded, 0, 0},
+             RejectedArtworkCase{"mp3-png-width-above.mp3", ArtworkDiagnosticCode::AxisPixelsExceeded, 4'097, 1},
+             RejectedArtworkCase{"mp3-png-height-above.mp3", ArtworkDiagnosticCode::AxisPixelsExceeded, 1, 4'097},
+             RejectedArtworkCase{"mp3-png-pixels-above.mp3", ArtworkDiagnosticCode::PixelCountExceeded, 4'001, 4'000},
+             RejectedArtworkCase{"mp3-invalid-art.mp3", ArtworkDiagnosticCode::InvalidData, 0, 0},
+         }) {
+        DYNAMIC_SECTION(artwork_case.filename) {
+            CAPTURE(artwork_case.filename);
+            std::optional<MetadataReadResult> result;
+            REQUIRE_NOTHROW(result.emplace(
+                reader.read(productFixture(std::filesystem::path{"fixtures/artwork"} / artwork_case.filename))));
+            const auto& metadata = requireMetadata(*result);
+            CHECK_FALSE(metadata.artwork.has_value());
+            REQUIRE(metadata.artwork_diagnostics.size() == 1);
+            CHECK(metadata.artwork_diagnostics.front().code == artwork_case.diagnostic);
+            CHECK(metadata.artwork_diagnostics.front().width_pixels == artwork_case.width);
+            CHECK(metadata.artwork_diagnostics.front().height_pixels == artwork_case.height);
+            CHECK(metadata.audio.duration_ms == source_metadata.audio.duration_ms);
+            CHECK(metadata.audio.sample_rate_hz == source_metadata.audio.sample_rate_hz);
+            CHECK(metadata.audio.channels == source_metadata.audio.channels);
+            CHECK(metadata.tags.title == std::optional<std::string>{"Canção determinística 日本語 🎵"});
+        }
+    }
 }
 
 TEST_CASE("MR-011 rejects real embedded MP3 artwork beyond dimension and pixel boundaries",
