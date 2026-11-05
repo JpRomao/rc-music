@@ -1,6 +1,6 @@
-# Pacotes opcionais das extensões Chromium
+# Pacote opcional da extensão YouTube
 
-O gerador prepara diretórios separados com as fontes executáveis das extensões principal e YouTube e um recibo dos arquivos copiados. Eles podem ser consumidos por uma etapa posterior de empacotamento. Não representam extensões instaladas e funcionais no Brave.
+Este guia também cobre o empacotador compartilhado da extensão principal. O gerador prepara diretórios separados com as fontes executáveis das extensões principal e YouTube e um recibo dos arquivos copiados. Eles podem ser consumidos por uma etapa posterior de empacotamento. Não representam extensões instaladas e funcionais no Brave.
 
 Após autorização do mantenedor, cada manifesto contém uma chave pública fixa própria. O gerador deriva e registra o ID dessa chave como `identity_state: public_key_bound`; manifestos sem chave continuam produzindo `identity_pending`. O gerador não cria chaves, produz manifesto Native Messaging ou registra hosts. As duas extensões continuam separadas.
 
@@ -91,4 +91,13 @@ O ciclo original do gerador YouTube foi Red com 14 casos, Red com 15 após acres
 
 O candidato local `out/product/youtube-extension-20261105-01/` foi gerado após o commit da receita `de73e985ab4729fcc4f3b412932fee6910404660`: **7 assets/21.197 bytes**, com `extension_dirty`, `recipe_dirty` e `source_dirty` falsos no recorte declarado. A conferência independente confirmou inventário, tamanhos e hashes contra as fontes, incluindo as duas receitas. O SHA-256 de `package-receipt.json` é `e9aa509677051485298c3afcb5720bbd18f4f77d70ec1c92776587b065eae626`. Plano e verificação ficam em `out/product/test-runs/download-bootstrap-20261105/`. O candidato é preservado como `identity_pending`; não é setup ou integração instalada.
 
-O [gerador separado de manifest Native](youtube-native-manifest.md) prepara os dois JSONs candidatos quando recebe ID explícito, recibo de build confiável habilitado e host correspondente. Ele não altera este pacote-fonte ou seu recibo. Os IDs agora estão definidos; a [montagem dos hosts](windows-runtime.md#montagem-opcional-dos-dois-hosts-native-messaging), integração opcional das extensões com o instalador e validação no navegador continuam com seus próprios gates. Segurança, privacidade, licenças e distribuição permanecem abertos.
+## Candidatos com identidade fixa
+
+O commit `7601247dc3291b8c5919b1167473011887b5d1eb` gerou e teve seus pacotes conferidos por inventário físico, tamanhos/hashes, identidade derivada e fontes. Os três indicadores `dirty` são falsos. Os candidatos antigos permanecem intactos.
+
+| Diretório em `out/product/` | Assets/bytes | SHA-256 do recibo |
+|---|---|---|
+| `chromium-main-7601247-20261105` | 9 / 48.449 | `d8cb44716acd7a2a0fdf2f28e84e3fa6a4ae7a038537fa1d5bb39b7d708bbfdd` |
+| `chromium-youtube-7601247-20261105` | 7 / 21.602 | `c299704171d4fb80a7708bc16077cec6776cf26c8d984ee8dd26c95b3f514020` |
+
+`out/product/test-runs/extension-identity-20261105/candidate-verification.json` registra a conferência independente com Python. As pastas contêm somente os assets listados e o recibo, sem chaves privadas. Os [runtimes com hosts correspondentes](windows-runtime.md#runtimes-com-hosts-montados-em-2026-11-05) foram montados separadamente; registro, integração opcional das extensões com o instalador, aquisição pública e validação no navegador permanecem pendentes, com os gates próprios de segurança, privacidade, licenças e distribuição.

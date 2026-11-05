@@ -1,6 +1,6 @@
 # Recibo do perfil compilado dos hosts nativos
 
-**Estado:** writer validado em **50/50 casos CMake** e executado no `POST_BUILD` dos dois hosts de produção. Ambos os recibos reais registraram `enabled: false`, conforme os defaults vazios. Os executáveis não foram iniciados para produzir esses recibos. Não houve instalação, Registro ou interação com navegador.
+**Estado:** writer validado em **50/50 casos CMake** e executado no `POST_BUILD` dos dois hosts de produção. Os recibos iniciais registraram `enabled: false`, conforme os defaults vazios. Os [runtimes privados de `7601247`](windows-runtime.md#runtimes-com-hosts-montados-em-2026-11-05) agora possuem recibos `enabled: true`, com as duas identidades públicas definitivas. Os executáveis não foram iniciados para produzir esses recibos; não houve instalação, Registro ou interação com navegador.
 
 O recibo registra a consistência entre um executável recém-linkado e os dados CMake que produziram seu header de configuração. Ele é um artefato local e mutável do build. Não autentica publisher, código carregado ou lançamento pelo Brave, e não é uma configuração JSON que o app lê para conceder autoridade.
 

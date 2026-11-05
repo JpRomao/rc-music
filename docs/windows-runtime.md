@@ -1,7 +1,7 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtimes privados Lite e Completa experimental montados e hashes conferidos em 2026-11-04, com setups gerados sem instalar. O smoke de startup/codecs abaixo pertence ao runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
-**Data:** 2026-11-04.
+**Estado:** runtimes privados Lite e Completa experimental com hosts Native montados em 2026-11-05. Os setups anteriores continuam preservados; o smoke de startup/codecs abaixo pertence a um runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Data:** 2026-11-05.
 
 Os [runtimes mais recentes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados e montados em worktree isolada: Lite com 554 arquivos e Completa experimental com 557. Ambos permanecem íntegros após a limpeza; os payloads anteriores `4125f46`/`51cd067` foram substituídos, preservando seus manifests e setups históricos.
 
@@ -45,11 +45,24 @@ Além dos parâmetros de ferramentas, `New-RcMusicLocalRuntime.ps1` aceita o gru
 
 `Get-RcMusicNativeHostComponentPlan` reaproveita o leitor JSON estrito para as duas famílias fixas. Confere pins explícitos, paths fixos sob o mesmo build, executáveis, headers de configuração e peers singleton `RCMusic.exe`/host correspondente. O header compartilhado tem hash próprio; seus bytes são evidência de build, sem interpretar texto como autoridade. A receita reconfere esse snapshot após o build incremental conjunto do player e dos dois hosts e antes/depois da cópia. Divergência exige revisar os inputs; pins não são atualizados automaticamente.
 
-Os hosts são copiados ao lado de `RCMusic.exe`, com dependências verificadas pelo resolver PE do player. Dois manifestos UTF-8/LF, `com.rcmusic.media.json` e `com.rcmusic.youtube.json`, usam o basename do host como `path` e uma origem exata cada, preservando a realocação da árvore Windows conforme o [contrato Chromium para caminhos relativos](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging#native-messaging-host-location). O manifesto do runtime registra `download_component.native_hosts` com schema 1, hash do header compartilhado e dois canais contendo protocolo, nome, origem, endpoint e hashes dos recibos/configurações. Os quatro arquivos entram no inventário opcional, separados da closure privada das ferramentas. A receita registra nove fontes na Lite e dez na Completa nesse modo.
+Os hosts são copiados ao lado de `RCMusic.exe`, com dependências verificadas pelo resolver PE do player. Dois manifestos UTF-8 terminados em LF, `com.rcmusic.media.json` e `com.rcmusic.youtube.json`, usam o basename do host como `path` e uma origem exata cada, preservando a realocação da árvore Windows conforme o [contrato Chromium para caminhos relativos](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging#native-messaging-host-location). O manifesto do runtime registra `download_component.native_hosts` com schema 1, hash do header compartilhado e dois canais contendo protocolo, nome, origem, endpoint e hashes dos recibos/configurações. Os quatro arquivos entram no inventário opcional, separados da closure privada das ferramentas. A receita registra nove fontes na Lite e dez na Completa nesse modo.
 
-O instalador conserva esses quatro arquivos sob a mesma escolha desmarcada das ferramentas, exige metadados correspondentes e verifica os hashes dos manifestos canônicos. Ausência de metadados não pode promover um host a arquivo obrigatório. Não registra o host no Windows, carrega a extensão ou publica o marcador durante a montagem. Registro, identidade estável das extensões, seleção independente delas e aceitação instalada continuam pendentes; os setups anteriores permanecem intactos.
+O instalador conserva esses quatro arquivos sob a mesma escolha desmarcada das ferramentas, exige metadados correspondentes e verifica os hashes dos manifestos canônicos. Ausência de metadados não pode promover um host a arquivo obrigatório. Não registra o host no Windows, carrega a extensão ou publica o marcador durante a montagem. As [identidades públicas locais](youtube-extension-package.md#identidades-públicas-estáveis) já estão definidas; registro, seleção independente das extensões e aceitação instalada continuam pendentes. Os setups anteriores permanecem intactos.
 
 TDD e fechamento proporcional: reader **14 passados/7 falhos → 21/21**, componente **0/13 → 13/13**, configuração **142/8 → 150/150**, receita **12/8 → 20/20**, instalador/componente **17/2 → 19/19**, mais **97/97** do plano e **6/6** da receita do instalador. São **326 casos PowerShell** verdes, além dos checks documentais/rastreabilidade. Evidências em `out/product/test-runs/native-host-packaging-20261105/`. As fixtures usam IDs sintéticos e arquivos próprios, sem executar hosts, setup, GUI, rede ou Registro. Não houve nova montagem física ou compilação do app; C++/QML não foram alterados. Esses checks não qualificam aquisição pública ou um runtime instalado no Brave.
+
+### Runtimes com hosts montados em 2026-11-05
+
+O commit limpo `7601247dc3291b8c5919b1167473011887b5d1eb` gerou dois runtimes Release/x64 em worktree isolada, reutilizando o SDK e o build existentes. Os hosts usam os IDs definitivos dos [dois pacotes-fonte](youtube-extension-package.md#candidatos-com-identidade-fixa), com origens/endpoints distintos, headers correspondentes e recibos `enabled: true`. Esses executáveis não foram iniciados. Os 45 arquivos de ferramentas foram preservados e acrescidos de dois hosts/dois manifestos opcionais.
+
+| Diretório em `out/product/rc-music-local/` | Arquivos/bytes do app | SHA-256 do manifesto |
+|---|---|---|
+| `rc-music-7601247-native-Lite-20261105` | 603 / 231.844.062 | `7d998c49f426911af08a6e4a0a8c5154dbcb76730e0671de11abf1ab773bdf9c` |
+| `rc-music-7601247-native-CompleteExperimental-20261105` | 606 / 232.054.517 | `3cefbc5742d3ef8c5ee7abe43770b0e76f4cd6d8a770f125335daf5f3a297e3e` |
+
+Os dois builds listam zero CTest e a receita está limpa. A conferência independente passou com inventários físicos fechados, tamanhos/hashes de todos os arquivos, identidades dos pacotes-fonte, recibos/headers arquivados e manifestos Native correspondentes. Cada runtime tem **110 PEs x64**, player em subsistema GUI e ausência de marcador/arquivos de teste. Os planos reais do instalador também passaram em modo somente leitura, com **49 arquivos opcionais**, IDs distintos por seleção e associações OFF, sem criar setup ou diretório de instalação. Evidências em `out/product/test-runs/extension-identity-20261105/`, especialmente `native-runtime-verification.json` e `real-installer-plans.json`.
+
+Os pacotes anteriores e as seis alterações AppContainer preexistentes foram preservados. Não houve execução do player, hosts, setup ou navegador, nem Registro, AppContainer, aquisição pública ou benchmark. Os novos runtimes são candidatos privados sem ativação; não comprovam uma integração instalada.
 
 ### Runtimes com ferramentas montados em 2026-11-05
 
