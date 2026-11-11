@@ -1,5 +1,7 @@
 # Instalador Windows — receita de produto
 
+Os setups privados mais recentes são os de `1b320f3`, com Qt Network, FFmpeg e TagLib atualizados no player. [Setups privados de 1b320f3](#setups-privados-de-1b320f3)
+
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
 As duas edições também têm setups privados com o FFmpeg `7.1.5-rcmusic1`, com sete formatos validados por edição e os hashes das DLLs conferidos por leitura estática dos instaladores. [Setups com FFmpeg corrigido](delivery/windows-f8a593b-ffmpeg.md#setups-privados-com-ffmpeg-corrigido)
@@ -12,6 +14,23 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setups privados de 1b320f3
+
+Os dois builds Release x64 vieram de `1b320f3`, com `qmllint` aprovado e zero testes registrados na configuração de produção. Os runtimes passaram em 17 cenários de áudio e 19 casos Qt por edição, com zero skips. Cada declaração de associações v2 vincula sete extensões ao manifesto e ao resultado do smoke correspondente.
+
+| Edição | Bytes | SHA-256 do setup | SBOM CycloneDX 1.6 |
+| --- | ---: | --- | --- |
+| Lite | 90.829.654 | `9432bb42887cc40ef931679c24b23bfc72669dc9e522237d80f34c0dcbfc9d3b` | [Lite](delivery/rc-music-1b320f3-lite.cdx.json) |
+| Completa experimental | 90.900.189 | `6b67e52b57034a533a0bd390b647fe227d47db9709fe04f99a17ccef75aa49e6` | [Completa experimental](delivery/rc-music-1b320f3-complete-experimental.cdx.json) |
+
+A receita `724ba1d` ampliou o prazo de compilação do NSIS de 60 para 180 segundos após o primeiro timeout observado na Lite. Os dois setups foram compilados em sequência com NSIS 3.12. A leitura estática conferiu 641 membros na Lite e 644 na Completa, as cinco combinações de componentes e o SHA-256 de 55 e 58 membros selecionados, respectivamente. Os itens lidos incluem o player, as DLLs atualizadas, as extensões e os avisos. A navegação da Completa requer WebView2 Evergreen x64 já presente.
+
+Os setups oferecem downloads, extensão principal e extensão do YouTube como componentes opcionais. O player leva FFmpeg `7.1.5-rcmusic2`, TagLib 2.3.2 e a DLL Qt Network corrigida. O perfil de downloads reutilizado tem uma DLL Qt Network separada com o hash anterior, identificada nos SBOMs.
+
+Os SBOMs passaram na validação offline do esquema CycloneDX 1.6. Eles vinculam os setups, recibos e manifestos por hash e inventariam até 638 arquivos na Lite e 641 na Completa, conforme a seleção. A composição permanece incompleta enquanto a cobertura de dependências transitivas e as obrigações de distribuição estiverem em revisão. Instalação, upgrade, remoção e navegação nativa seguem pendentes.
+
+Os setups, matrizes e recibos ficam em `out/product/windows-1b320f3/`. As verificações estáticas ficam em `out/product/windows-1b320f3-verify/` e `out/product/windows-1b320f3-sbom/`. Os runtimes e smokes ficam em `out/product/r9/out/product/windows-1b320f3/`.
 
 ## Fonte única e proveniência
 

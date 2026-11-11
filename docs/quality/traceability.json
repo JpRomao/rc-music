@@ -3312,12 +3312,16 @@
           "marker": "## TagLib no runtime Windows"
         },
         {
+          "path": "docs/windows-installer.md",
+          "marker": "## Setups privados de 1b320f3"
+        },
+        {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
           "marker": "Distribuição permanece privada/experimental até seus próprios gates"
         }
       ],
       "remaining": [
-        "Completar dependências transitivas, notices e fontes correspondentes nos SBOMs de f8a593b. Qualificar as DLLs para distribuição e revisar os demais avisos, os termos dos pré-requisitos Microsoft e os componentes opcionais.",
+        "Completar dependências transitivas, avisos e fontes correspondentes dos pacotes atuais. Qualificar as DLLs para distribuição e revisar os demais avisos, os termos dos pré-requisitos Microsoft e os componentes opcionais.",
         "Definir licença pública quando autorizada; licença/proveniência local das fixtures não equivale a autorização de publicação."
       ]
     },
