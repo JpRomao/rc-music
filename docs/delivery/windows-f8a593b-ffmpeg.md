@@ -71,4 +71,17 @@ A receita padrão das edições Lite e Completa experimental inclui 13 arquivos 
 - FFmpeg `7.1.5-rcmusic1` leva o texto LGPL 2.1, os créditos e os avisos do FFmpeg, IJG, Boost.Math e zlib 1.3.1. O aviso registra as fontes autenticadas, os patches ADX/VobSub/`inflateSync` e os ajustes do build Windows. [Aviso do FFmpeg](../../packaging/windows/notices/ffmpeg/NOTICE.txt)
 - Qt Multimedia 6.11.2 leva os textos de Signalsmith Stretch e Signalsmith DSP, presentes no conversor de áudio do plugin FFmpeg, e os de dr_wav e TLSF, compilados em `Qt6Multimedia.dll`. O aviso identifica as duas DLLs auditadas e os caminhos dos textos no arquivo-fonte oficial. [Aviso do Qt Multimedia](../../packaging/windows/notices/qt-multimedia/NOTICE.txt) · [Conversor de áudio](https://github.com/qt/qtmultimedia/blob/v6.11.2/src/plugins/multimedia/ffmpeg/playbackengine/qffmpegaudioframeconverter.cpp#L74-L145) · [Decoder WAV](https://github.com/qt/qtmultimedia/blob/v6.11.2/src/multimedia/audio/qsamplecache_p.cpp#L101-L123)
 
+Em `9a3e43b`, a receita passou 25 testes e a montagem real do runtime Lite conferiu os 567 arquivos. Os 554 arquivos anteriores mantiveram tamanho e SHA-256. Os 13 avisos novos aparecem no manifesto SHA-256 `0dd0a0f238e4e7fa3d28d5a277360aa16027212352cdf22efe0f080bffecfef4` e na seção obrigatória do plano Lite do instalador. O recibo está em `out/product/r9/out/product/qualified-lite-notices/notice-verification.json`. A edição Completa experimental foi coberta pelo teste da receita. A verificação do instalador ficou no plano gerado.
+
 M5.7 ainda exige o inventário das demais licenças incorporadas ao FFmpeg, os termos aplicáveis ao próprio Qt, as fontes correspondentes e a revisão de distribuição e segurança. A troca das DLLs ou da configuração precisa de nova conferência dos avisos. [Checklist de distribuição do FFmpeg](https://ffmpeg.org/legal.html)
+
+## Correções de segurança pendentes no FFmpeg corrigido
+
+A configuração de `7.1.5-rcmusic1` habilita `CONFIG_RASC_DECODER`, `CONFIG_IAMF_DEMUXER` e `CONFIG_IAMFDEC`. Os patches abaixo passaram em `git apply --check` na árvore que gerou o runtime e falharam no sentido reverso. Essa prova registra a aplicabilidade das correções. A análise de alcance pelo player é estática. O recibo e os patches estão em `out/product/test-runs/ffmpeg-rcmusic1-rasc-iamf/`.
+
+| Aviso | Componente | Correção upstream |
+| --- | --- | --- |
+| [CVE-2026-58049](https://www.vulncheck.com/advisories/ffmpeg-out-of-bounds-write-in-rasc-decoder-decode-dlta), High | Escrita fora dos limites no decoder RASC | [Limitar acessos de 32 bits à linha](https://github.com/FFmpeg/FFmpeg/commit/11ff18a6c80187405fc492f9bb07ba9f2f663f76) |
+| [CVE-2026-66037](https://www.vulncheck.com/advisories/ffmpeg-iamf-demuxer-uncontrolled-resource-consumption-via-mix-presentation-obu), High | Alocação de memória desproporcional no parser IAMF | [Conferir a contagem pelos bytes disponíveis](https://github.com/FFmpeg/FFmpeg/commit/86708357d126af84c16f80d9c57335d1e8c845c5) |
+
+As correções precisam de regressões, nova build e qualificação das DLLs Windows. M5.7 permanece aberto.
