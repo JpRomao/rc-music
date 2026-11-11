@@ -52,7 +52,13 @@ Dialog {
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
     signal queuedFormClosed(bool submitted)
-    onOpened: variantList.forceActiveFocus(Qt.TabFocusReason)
+    onOpened: {
+        variantList.restoreCursor(selectedId);
+        if (canSelect)
+            variantList.forceActiveFocus(Qt.TabFocusReason);
+        else
+            closeButton.forceActiveFocus(Qt.TabFocusReason);
+    }
     onClosed: {
         if (formDialog && formMode !== "queued")
             formDialog.close();
@@ -333,6 +339,7 @@ Dialog {
         }
         ListView {
             id: variantList
+            property string cursorId: ""
             objectName: "lyrics-variants-list"
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -341,8 +348,72 @@ Dialog {
             clip: true
             spacing: root.contract.spacingUnit
             boundsBehavior: Flickable.StopAtBounds
-            activeFocusOnTab: true
-            keyNavigationEnabled: true
+            activeFocusOnTab: root.canSelect && count > 0
+            keyNavigationEnabled: false
+            Accessible.role: Accessible.List
+            Accessible.name: qsTr("Versões da letra")
+            Accessible.focusable: activeFocusOnTab
+            Accessible.focused: activeFocus
+
+            function indexOfId(variantId) {
+                for (let index = 0; index < model.length; ++index) {
+                    if (model[index].id === variantId)
+                        return index;
+                }
+                return -1;
+            }
+            function moveCursor(index, reveal) {
+                const next = model.length > 0 ? Math.max(0, Math.min(index, model.length - 1)) : -1;
+                cursorId = next < 0 ? "" : model[next].id;
+                currentIndex = next;
+                if (reveal && next >= 0)
+                    positionViewAtIndex(next, ListView.Contain);
+            }
+            function restoreCursor(preferredId) {
+                const index = indexOfId(preferredId);
+                moveCursor(index >= 0 ? index : indexOfId(root.selectedId), activeFocus);
+            }
+            function activateRow(variantId, reason) {
+                const index = indexOfId(variantId);
+                if (!root.canSelect || index < 0)
+                    return;
+                moveCursor(index, true);
+                forceActiveFocus(reason);
+                root.lyrics.selectVariant(variantId);
+            }
+
+            onModelChanged: restoreCursor(cursorId)
+            onActiveFocusChanged: {
+                if (activeFocus)
+                    restoreCursor(cursorId);
+            }
+            Keys.onPressed: event => {
+                if (!root.canSelect || count === 0 || (event.modifiers !== Qt.NoModifier && event.modifiers !== Qt.KeypadModifier))
+                    return;
+                switch (event.key) {
+                case Qt.Key_Up:
+                    moveCursor(currentIndex - 1, true);
+                    break;
+                case Qt.Key_Down:
+                    moveCursor(currentIndex + 1, true);
+                    break;
+                case Qt.Key_Home:
+                    moveCursor(0, true);
+                    break;
+                case Qt.Key_End:
+                    moveCursor(model.length - 1, true);
+                    break;
+                case Qt.Key_Return:
+                case Qt.Key_Enter:
+                case Qt.Key_Space:
+                    if (!event.isAutoRepeat)
+                        activateRow(cursorId, Qt.TabFocusReason);
+                    break;
+                default:
+                    return;
+                }
+                event.accepted = true;
+            }
             ScrollBar.vertical: AccessibleScrollBar {
                 contract: root.contract
             }
@@ -350,31 +421,26 @@ Dialog {
                 id: variantRow
                 required property var modelData
                 required property int index
+                readonly property bool cursorFocused: root.canSelect && variantList.activeFocus && ListView.isCurrentItem
                 width: variantList.width
                 implicitHeight: 62
                 enabled: root.canSelect
-                activeFocusOnTab: true
+                activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
                 highlighted: modelData.id === root.selectedId
+                Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.name + (root.rowDetails(modelData).length ? " · " + root.rowDetails(modelData) : "")
-                onClicked: {
-                    if (enabled && root.canSelect)
-                        root.lyrics.selectVariant(modelData.id);
-                }
-                Keys.onReturnPressed: event => {
-                    if (enabled)
-                        clicked();
-                    event.accepted = true;
-                }
-                Keys.onEnterPressed: event => {
-                    if (enabled)
-                        clicked();
-                    event.accepted = true;
-                }
+                Accessible.focusable: enabled
+                Accessible.focused: cursorFocused
+                Accessible.selectable: true
+                Accessible.selected: highlighted
+                Accessible.onPressAction: variantList.activateRow(modelData.id, Qt.OtherFocusReason)
+                onClicked: variantList.activateRow(modelData.id, Qt.MouseFocusReason)
                 background: Rectangle {
                     color: variantRow.highlighted ? root.contract.surfaceColor : "transparent"
                     radius: root.contract.radiusSmall
-                    border.width: variantRow.activeFocus ? 3 : (variantRow.highlighted ? 1 : 0)
-                    border.color: variantRow.activeFocus ? root.contract.focusColor : root.contract.accentColor
+                    border.width: variantRow.cursorFocused ? 3 : (variantRow.highlighted ? 1 : 0)
+                    border.color: variantRow.cursorFocused ? root.contract.focusColor : root.contract.accentColor
                 }
                 contentItem: Column {
                     spacing: root.contract.spacingUnit
@@ -412,6 +478,7 @@ Dialog {
                 Layout.fillWidth: true
             }
             AccessibleTransportButton {
+                id: closeButton
                 objectName: "lyrics-variant-close"
                 contract: root.contract
                 text: qsTr("Fechar")

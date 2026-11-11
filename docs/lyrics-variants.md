@@ -68,3 +68,7 @@ A chegada de tags ou duração da mesma faixa preserva a busca já confirmada. A
 ### Edição pela fila — 2026-11-11
 
 Os testes reproduziram a falta da ação no menu e a perda do aviso durante a troca de faixa. A validação final passou **3/3 CTest**, com **58 casos Qt** dos bindings e **374 casos Qt Quick**, além do build Release e `all_qmllint`. Os casos usam fila e armazenamento de teste para conferir um caminho FLAC Unicode, revalidação do destino, falha e retry da gravação, preservação da letra atual e foco por teclado. Recibos em `out/product/test-runs/queued-lyrics-20261111/`. A aceitação instalada permanece pendente.
+
+### Navegação nas versões por teclado
+
+No Red, End manteve o foco no primeiro item de uma lista com 16 versões salvas. O Green passou em 22/22 Qt Quick, incluindo navegação até a última versão, preservação do cursor pelo ID textual após reordenação e retorno a **Arquivo / busca atual**. O teste conferiu o ID `9007199254740993`, a seleção por Enter e Espaço e a reprodução inalterada. Build Release focado, formato e lint dos QML alterados passaram. Logs em `out/product/test-runs/lyrics-variants-keyboard-20261111/`. [Atalhos no manual](user-guide.md#letras-das-músicas)

@@ -14,6 +14,8 @@ No painel, **↑**, **↓**, **Home** e **End** movem o foco nas listas. **Enter
 
 Use **Versões** para guardar várias formas da letra da música atual. **Adicionar versão** permite colar texto ou LRC com nome, idioma, escrita e origem; escolha Original ou Romanizada e informe se foi gerada por uma ferramenta. Não é necessário ter as duas formas. **Salvar letra atual** guarda a letra do arquivo/busca atual; se uma versão salva estiver selecionada, volte primeiro a **Arquivo / busca atual**. O app não consulta serviços nem salva letras online automaticamente ao abrir esse painel.
 
+Na lista de versões, use **↑/↓** para mover o cursor e **Home/End** para ir ao início ou ao fim. **Enter** ou **Espaço** aplicam a versão em foco à letra exibida, preservando a reprodução.
+
 Para editar a letra de outra música sem interromper a atual, abra o menu da faixa na **Fila** e selecione **Adicionar versão da letra**. Em caso de falha, use **Revisar salvamento** junto à letra para tentar novamente.
 
 Escolha uma versão para exibi-la acima do progresso. LRC mantém seus tempos; texto comum fica sem sincronização. Excluir pede confirmação e remove somente aquela versão, preservando o áudio e as outras letras. As versões sobrevivem ao reinício e são associadas ao caminho exato do arquivo; mover/renomear a música não transfere a associação automaticamente. Em falha, tente salvar novamente ou recarregue do disco mediante confirmação; se a fila já não tiver faixa atual, a ação **Abandonar alteração** descarta apenas o candidato em memória, sem desfazer uma gravação anterior. Veja [limites e recuperação](lyrics-variants.md).

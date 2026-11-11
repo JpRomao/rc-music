@@ -619,12 +619,49 @@ TestCase {
         tryCompare(findChild(shell, "lyrics-versions"), "activeFocus", true);
     }
     function test_keyboardCanChooseASavedVersionWithoutTransportShortcuts() {
+        const lastId = "9007199254740993";
+        backend.variants = Array.from({
+            length: 16
+        }, (_, index) => ({
+                    id: index === 15 ? lastId : String(index + 1),
+                    name: "Version " + index,
+                    language: "ja",
+                    script: "Latn",
+                    source: "",
+                    kind: "romanized",
+                    generated: false
+                }));
         openPanel();
-        const row = rowAt(2);
-        row.forceActiveFocus(Qt.TabFocusReason);
-        tryCompare(row, "activeFocus", true);
+        const list = findChild(shell, "lyrics-variants-list");
+        tryCompare(list, "activeFocus", true);
+        compare(list.count, 17);
+        verify(list.itemAtIndex(16) === null);
+        keyClick(Qt.Key_End);
+        tryCompare(list, "currentIndex", 16);
+        tryVerify(function () {
+            const row = list.itemAtIndex(16);
+            return row && row.mapToItem(list, 0, row.height).y <= list.height + 1;
+        });
+        compare(backend.calls.length, 0);
+        const reordered = backend.variants.slice();
+        reordered.splice(2, 0, reordered.pop());
+        backend.variants = reordered;
+        tryCompare(list, "currentIndex", 3);
         keyClick(Qt.Key_Return);
-        compare(lastCall("select").args[0], "9007199254740993");
+        compare(lastCall("select").args[0], lastId);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "lyrics-variant-remove"), "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        tryCompare(list, "activeFocus", true);
+        keyClick(Qt.Key_Home);
+        tryCompare(list, "currentIndex", 0);
+        compare(backend.selectedVariantId, lastId);
+        keyClick(Qt.Key_Space);
+        compare(lastCall("select").args[0], "");
+        keyClick(Qt.Key_Down);
+        tryCompare(list, "currentIndex", 1);
+        keyClick(Qt.Key_Up);
+        tryCompare(list, "currentIndex", 0);
         compare(presenter.playbackState, PlayerPresenter.Playing);
     }
 }
