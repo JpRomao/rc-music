@@ -74,7 +74,9 @@ O build Release e a montagem Lite de `dd0e650` passaram pelo fluxo padrão. O ma
 
 A receita atual inclui 19 avisos do Qtbase. Os 18 textos upstream foram conferidos contra o snapshot de Qtbase e a fonte do rebuild de Qt Network. O aviso identifica o backport FreeType, as correções do Qt Network e a origem do plugin Schannel restrito do worker. As fontes correspondentes, demais atribuições e condições de distribuição continuam em revisão. [Aviso no pacote](../packaging/windows/notices/qtbase/NOTICE.txt) · [Auditoria Qtbase](delivery/runtime-3f22fda-qtbase.md) · [Condições Qt](https://www.qt.io/development/open-source-lgpl-obligations)
 
-Os textos de licença e os metadados de atribuição do JavaScriptCore Macro Assembler, Yoga, sombras Angular Material e XSVG estão em `out/product/qt-declarative-svg-notice-inputs-20261111/`. O recibo `provenance.json` registra os blobs Git e os SHA-256 de cada entrada. Os metadados conferem com o SPDX do SDK e os cinco binários identificados têm os mesmos hashes nas duas edições montadas. Esses quatro textos e seus créditos ainda precisam entrar na receita. [Qt Declarative 6.11.2](https://github.com/qt/qtdeclarative/tree/4e3399c26ec57246c08de019cfcbda8d23604cfa) · [Qt SVG 6.11.2](https://github.com/qt/qtsvg/tree/17ca512f903f935282ebeca496aac5d11ba4199a)
+### Avisos de Qt Declarative e Qt SVG
+
+A receita inclui quatro textos de licença sem alterações e um aviso com os créditos do JavaScriptCore Macro Assembler, Yoga, sombras Angular Material e XSVG. Os metadados de atribuição conferem com o SPDX do SDK, e os cinco binários identificados têm os mesmos hashes nas duas edições de `ba112a6`. O recibo `out/product/qt-declarative-svg-notice-inputs-20261111/provenance.json` registra os blobs Git e os SHA-256 das entradas. Os setups de `ba112a6` antecedem essa mudança. [Aviso no pacote](../packaging/windows/notices/qt-declarative-svg/NOTICE.txt) · [Qt Declarative 6.11.2](https://github.com/qt/qtdeclarative/tree/4e3399c26ec57246c08de019cfcbda8d23604cfa) · [Qt SVG 6.11.2](https://github.com/qt/qtsvg/tree/17ca512f903f935282ebeca496aac5d11ba4199a)
 
 ## TagLib no runtime Windows
 

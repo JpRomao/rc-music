@@ -1,0 +1,48 @@
+RC Music Windows x64 Qt Declarative and Qt SVG third-party notices
+
+These notices cover components in the Qt Declarative and Qt SVG 6.11.2
+binaries listed below. See ../qtbase/LGPL-3.0-only.txt and
+../qtbase/GPL-3.0-only.txt for the Qt license texts.
+
+Qt Declarative revision 4e3399c26ec57246c08de019cfcbda8d23604cfa
+https://github.com/qt/qtdeclarative/tree/4e3399c26ec57246c08de019cfcbda8d23604cfa
+
+JavaScriptCore Macro Assembler (BSD-2-Clause)
+Qt6Qml.dll
+License: QtDeclarative-masm-LICENSE.txt
+Source attribution: src/3rdparty/masm/qt_attribution.json
+Copyright (C) 2003-2018 Apple Inc. All rights reserved.
+Copyright (C) 2007 Justin Haygood (jhaygood@reaktix.com)
+Copyright (C) 2007-2009 Torch Mobile, Inc. All rights reserved. (http://www.torchmobile.com/)
+Copyright (C) 2009, 2010 University of Szeged
+Copyright (C) 2009-2011 STMicroelectronics. All rights reserved.
+Copyright (C) 2010 MIPS Technologies, Inc. All rights reserved.
+Copyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged
+Copyright (C) 2010, 2011 Research In Motion Limited. All rights reserved.
+Copyright (C) 2011 Google Inc. All rights reserved.
+Copyright (C) 2013 Samsung Electronics. All rights reserved.
+Copyright (C) 2015 Cisco Systems, Inc. All rights reserved.
+Copyright (c) 2002-2009 Vivek Thampi
+
+Yoga 2.0.1 (MIT)
+Qt6QuickLayouts.dll
+License: QtDeclarative-yoga-LICENSE.txt
+Source attribution: src/3rdparty/yoga/qt_attribution.json
+Copyright (c) Facebook, Inc. and its affiliates.
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Shadow values from Angular Material (MIT)
+Qt6QuickControls2Material.dll
+qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll
+License: QtDeclarative-material-LICENSE.ANGULARJS.txt
+Source attribution: src/quickcontrols/material/qt_attribution.json
+Copyright (c) 2014-2016 Google, Inc
+
+Qt SVG revision 17ca512f903f935282ebeca496aac5d11ba4199a
+https://github.com/qt/qtsvg/tree/17ca512f903f935282ebeca496aac5d11ba4199a
+
+XSVG (HPND-sell-variant)
+Qt6Svg.dll
+License: QtSvg-LICENSE.XSVG.txt
+Source attribution: src/svg/qt_attribution.json
+Copyright 2002 USC/Information Sciences Institute

@@ -87,7 +87,12 @@ function Get-RuntimeRecipeFiles {
         'notices/qtbase/Qtbase-libjpeg-COPYRIGHT.txt', 'notices/qtbase/Qtbase-harfbuzz-ng-COPYING.txt',
         'notices/qtbase/Qtbase-double-conversion-LICENSE.txt', 'notices/qtbase/Qtbase-libpsl-PSL-LICENSE.txt',
         'notices/qtbase/Qtbase-libpsl-LICENSE.chromium.txt', 'notices/qtbase/Qtbase-md4c-LICENSE.txt',
-        'notices/qtbase/Qtbase-D3D12MemoryAllocator-LICENSE.txt')
+        'notices/qtbase/Qtbase-D3D12MemoryAllocator-LICENSE.txt',
+        'notices/qt-declarative-svg/NOTICE.txt',
+        'notices/qt-declarative-svg/QtDeclarative-masm-LICENSE.txt',
+        'notices/qt-declarative-svg/QtDeclarative-yoga-LICENSE.txt',
+        'notices/qt-declarative-svg/QtDeclarative-material-LICENSE.ANGULARJS.txt',
+        'notices/qt-declarative-svg/QtSvg-LICENSE.XSVG.txt')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
