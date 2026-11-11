@@ -22,6 +22,8 @@ A consulta do exemplo do Letras foi bloqueada por HTTP 403, e não foi confirmad
 
 O popup guarda a aba, a janela e a URL confirmada do vídeo escolhido. Antes de enviar, confere se a aba continua ativa na janela de origem, se a janela está focada e se a página conserva a mesma URL sem navegação pendente. Uma troca observada durante a leitura revoga a seleção e invalida a resposta atrasada. Se o envio já começou, confira a fila do RC Music antes de tentar de novo. Essas verificações usam as APIs de abas e janelas do Chromium. [Aba e navegação](https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab) · [Foco da janela](https://developer.chrome.com/docs/extensions/reference/api/windows#event-onFocusChanged)
 
+Se a confirmação ficar incerta, **Repetir o mesmo pedido** revalida o vídeo e conserva o ID e os campos enviados, inclusive a escolha de letra. A opção vale para o popup aberto e a seleção confirmada. [Reenvio e identificação na fila](browser-extension.md#protocolo-nativo-de-desenvolvimento)
+
 ## Evidência do ingresso separado
 
 Recibos locais em `out/product/test-runs/youtube-audio-20261104/`. O Red Node passou **5 casos e falhou 18**, antes do comportamento de policy/ponte/controller. O Red Qt passou **38 casos e falhou 26**, com stubs vazios. Depois, o novo teste de montagem DOM real com browser falso teve Red **35/1**; o clique e a renderização foram implementados sem remover suas assertions.

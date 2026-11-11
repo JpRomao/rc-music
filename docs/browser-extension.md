@@ -64,11 +64,13 @@ Host planejado `com.rcmusic.media`, não registrado. Pedido v1:
 
 Resposta aceita tem exatamente `schemaVersion: 1`, `type: "download.response"`, mesmo `requestId`, `status: "accepted"` e `jobIds` distintos (um por item). IDs de job usam 1–80 caracteres ASCII alfanuméricos/`_`/`-`. Rejeição usa `status: "rejected"` e `code` de `unsupported_source`, `invalid_request`, `busy`, `not_available` ou `limit_exceeded`, sem `jobIds` ou texto livre. A decisão do lote é atômica; não existe aceitação parcial silenciosa.
 
-Receber timeout ou desconexão não prova que o host não aceitou o pedido. Não reenviar automaticamente. A futura fila do app deverá permitir consulta e cancelamento e deduplicar IDs, sobrevivendo ao fechamento do popup. `OpenSources` continua estritamente local e não recebe este JSON.
+Quando a confirmação fica incerta, o popup aberto oferece **Repetir o mesmo pedido**. A ação reconfere aba, documento e fontes e envia novamente o JSON original com o mesmo `requestId`. A fila durável reconhece o reenvio e devolve os IDs já atribuídos quando o lote foi admitido. Alterações na seleção, na origem ou no consentimento revogam a opção. Fechar ou atualizar o popup descarta a cópia em memória. Se a revalidação falhar, confira o pedido na fila do app. O reenvio exige um clique explícito. `OpenSources` continua reservado à abertura de arquivos locais.
 
 ## Checks locais
 
 ### Cliente
+
+As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.
 
 Usar Node.js já disponível (validado com v24.20.0); sem `npm install` ou downloads:
 

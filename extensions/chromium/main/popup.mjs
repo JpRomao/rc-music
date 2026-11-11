@@ -57,8 +57,9 @@ export function mountPopup(document, controller) {
     elements.authorize.checked = state.authorized;
     elements.authorize.disabled = !interactive || state.checkingSelection || state.selectedUrls.length === 0;
     elements.refresh.disabled = busy;
-    elements.send.disabled = !state.canSend || busy;
-    elements.send.textContent = state.status === 'sending' ? 'Enviando…' : 'Baixar selecionados';
+    elements.send.disabled = busy || (!state.canSend && !state.canRetry);
+    elements.send.textContent = state.status === 'sending' ? 'Enviando…'
+      : state.canRetry ? 'Repetir o mesmo pedido' : 'Baixar selecionados';
     elements.list.setAttribute('aria-busy', String(state.status === 'loading'));
     for (const [url, record] of rows) {
       if (!state.candidates.some((candidate) => candidate.url === url)) {
@@ -91,7 +92,10 @@ export function mountPopup(document, controller) {
 
   listen(elements.authorize, 'change', () => controller.setAuthorized(elements.authorize.checked));
   listen(elements.refresh, 'click', () => { void controller.refresh(); });
-  listen(elements.send, 'click', () => { void controller.submit(); });
+  listen(elements.send, 'click', () => {
+    if (controller.getState().canRetry) void controller.retry();
+    else void controller.submit();
+  });
   render(controller.getState());
 
   function dispose() {

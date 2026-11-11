@@ -10,9 +10,11 @@ const messages = {
   invalid_request: 'Confira o título, o artista e a página do Letras antes de enviar.',
   limit_exceeded: 'Os dados do pedido excedem o limite. Reduza o título, o artista ou a página informada.',
 };
+const uncertainReply = new Set(['bridge_unavailable', 'bridge_timeout', 'invalid_response']);
 export function createYoutubePopupController({ chrome, newRequestId, sendRequest = sendYoutubeAudioRequest, onState = () => {} }) {
   let disposed = false, epoch = 0;
   let binding = null, refreshWindowId = null, dispatched = false;
+  let retryableRequest = null;
   let state = { status: 'idle', candidate: null, selected: false, title: '', artist: '', lyricsPage: '',
     fetchLyrics: true, message: 'Abra um vídeo do YouTube e clique em Atualizar vídeo.' };
   const fields = () => ({ title: state.title, artist: state.artist, lyricsPage: state.lyricsPage, fetchLyrics: state.fetchLyrics });
@@ -20,7 +22,8 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     if (disposed || state.status !== 'ready' || !state.candidate || !state.selected) return false;
     try { buildYoutubeAudioRequest(state.candidate, fields(), previewId); return true; } catch { return false; }
   };
-  const getState = () => structuredClone({ ...state, canSend: canSend() });
+  const canRetry = () => !disposed && state.status === 'error' && retryableRequest !== null;
+  const getState = () => structuredClone({ ...state, canSend: canSend(), canRetry: canRetry() });
   const publish = changes => {
     if (disposed) return;
     state = { ...state, ...changes };
@@ -29,11 +32,12 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   const live = token => !disposed && epoch === token;
   const invalidate = () => {
     if (disposed || (!binding && state.status !== 'loading')) return;
-    const uncertain = dispatched;
+    const uncertain = dispatched || retryableRequest !== null;
     epoch++;
     binding = null;
     refreshWindowId = null;
     dispatched = false;
+    retryableRequest = null;
     publish({ status: 'stale', candidate: null, selected: false,
       message: uncertain ? 'A página mudou após o início do envio. Confira a fila no app antes de reenviar.'
         : 'O vídeo mudou ou foi fechado. Atualize e selecione o vídeo novamente.' });
@@ -78,6 +82,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     const token = ++epoch;
     binding = null;
     refreshWindowId = null;
+    retryableRequest = null;
     publish({ status: 'loading', candidate: null, selected: false, title: '', artist: '', lyricsPage: '', fetchLyrics: true,
       message: 'Lendo o vídeo da aba atual…' });
     if (!live(token)) return false;
@@ -102,18 +107,23 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     }
   }
   function setSelected(selected) {
+    if (canRetry() && typeof selected === 'boolean') { invalidate(); return; }
     if (state.status === 'ready' && typeof selected === 'boolean') publish({ selected });
   }
   function setFields(changes) {
-    if (disposed || state.status !== 'ready' || !changes || typeof changes !== 'object') return;
+    if (disposed || (state.status !== 'ready' && !canRetry()) || !changes || typeof changes !== 'object') return;
     const edited = {};
     for (const key of ['title', 'artist', 'lyricsPage']) if (typeof changes[key] === 'string') edited[key] = changes[key];
     if (typeof changes.fetchLyrics === 'boolean') edited.fetchLyrics = changes.fetchLyrics;
+    if (canRetry()) {
+      if (Object.keys(edited).some(key => edited[key] !== state[key])) invalidate();
+      return;
+    }
     publish(edited);
   }
-  async function send() {
-    if (!binding || !canSend()) return false;
+  async function transmit(retainedRequest = null) {
     const token = epoch, expected = binding, candidate = structuredClone(state.candidate), metadata = fields();
+    let request = retainedRequest;
     publish({ status: 'checking', message: 'Conferindo o vídeo selecionado…' });
     if (!live(token)) return false;
     try {
@@ -123,36 +133,47 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       const windowId = await focusedWindowId();
       if (!live(token)) return false;
       if (windowId !== expected.windowId) { invalidate(); return false; }
-      const request = buildYoutubeAudioRequest(candidate, metadata, newRequestId());
+      request ??= buildYoutubeAudioRequest(candidate, metadata, newRequestId());
       if (!live(token) || state.status !== 'checking') return false;
       publish({ status: 'sending', message: 'Enviando pedido ao componente YouTube…' });
       if (!live(token) || state.status !== 'sending') return false;
       dispatched = true;
-      const result = await sendRequest(chrome, request);
+      const result = await sendRequest(chrome, structuredClone(request));
       if (!live(token)) return false;
       if (!result || result.status !== 'accepted' || result.requestId !== request.requestId
         || !Array.isArray(result.jobIds) || result.jobIds.length !== 1) throw Object.assign(new Error('invalid_response'), { code: 'invalid_response' });
       dispatched = false;
+      retryableRequest = null;
       publish({ status: 'accepted', selected: false, message: 'Pedido aceito pelo app. Acompanhe o progresso e a conclusão no RC Music.' });
       return true;
     } catch (error) {
       if (!live(token)) return false;
       if (state.status === 'checking') { invalidate(); return false; }
       const code = Object.hasOwn(messages, error?.code) ? error.code : 'invalid_response';
+      retryableRequest = dispatched && uncertainReply.has(code) ? request : null;
       dispatched = false;
-      publish({ status: 'error', selected: false, message: error?.serverCode === 'not_available' ? messages.bridge_unavailable : messages[code] });
+      const message = error?.serverCode === 'not_available' ? messages.bridge_unavailable : messages[code];
+      publish({ status: 'error', selected: false, message: retryableRequest
+        ? message + ' Você pode repetir o mesmo pedido neste popup.' : message });
       return false;
     }
+  }
+  async function send() {
+    return binding && canSend() ? transmit() : false;
+  }
+  async function retry() {
+    return binding && canRetry() ? transmit(retryableRequest) : false;
   }
   function dispose() {
     if (disposed) return;
     disposed = true; epoch++;
     binding = null;
     refreshWindowId = null;
+    retryableRequest = null;
     chrome.tabs.onUpdated.removeListener(onUpdated);
     chrome.tabs.onRemoved.removeListener(onRemoved);
     chrome.tabs.onActivated.removeListener(onActivated);
     chrome.windows.onFocusChanged.removeListener(onFocusChanged);
   }
-  return { getState, refresh, setSelected, setFields, send, dispose };
+  return { getState, refresh, setSelected, setFields, send, retry, dispose };
 }

@@ -22,8 +22,8 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     }
     nodes['fetch-lyrics'].checked = state.fetchLyrics;
     nodes['fetch-lyrics'].disabled = !editable;
-    nodes.send.textContent = state.fetchLyrics ? 'Baixar MP3 + letra' : 'Baixar MP3';
-    nodes.send.disabled = !state.canSend;
+    nodes.send.textContent = state.canRetry ? 'Repetir o mesmo pedido' : state.fetchLyrics ? 'Baixar MP3 + letra' : 'Baixar MP3';
+    nodes.send.disabled = !state.canSend && !state.canRetry;
     nodes.refresh.disabled = ['loading', 'checking', 'sending'].includes(state.status);
   }
   const controller = createYoutubePopupController({ chrome, newRequestId, sendRequest, onState: render });
@@ -37,7 +37,10 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
   listen(nodes.selected, 'change', () => controller.setSelected(nodes.selected.checked));
   for (const id of ['title', 'artist', 'lyrics-page']) listen(nodes[id], 'input', edit);
   listen(nodes['fetch-lyrics'], 'change', edit);
-  listen(nodes.send, 'click', () => { void controller.send(); });
+  listen(nodes.send, 'click', () => {
+    if (controller.getState().canRetry) void controller.retry();
+    else void controller.send();
+  });
   render(controller.getState());
   void controller.refresh();
   return {

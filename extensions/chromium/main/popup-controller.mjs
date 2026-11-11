@@ -13,6 +13,8 @@ const messages = {
   invalid_request: 'Não foi possível validar o pedido. Clique em Atualizar e faça uma nova seleção.',
 };
 const messageFor = (code, fallback) => Object.hasOwn(messages, code) ? messages[code] : fallback;
+const uncertainReply = new Set(['bridge_unavailable', 'bridge_timeout', 'invalid_response']);
+const checkPreviousHandoff = ' Confira a fila no app antes de reenviar.';
 
 export function createPopupController({
   chrome, normalizeSnapshot, buildDownloadRequest, isSelectionCurrent, sendDownloadRequest, newRequestId,
@@ -29,6 +31,7 @@ export function createPopupController({
   let pendingSnapshot = null;
   let checkingSnapshot = false;
   let submission = null;
+  let retryableSubmission = null;
   let state = {
     status: 'idle', candidates: [], selectedUrls: [], authorized: false,
     truncated: false, pageOrigin: '', acceptedCount: 0,
@@ -40,6 +43,7 @@ export function createPopupController({
     return structuredClone({ ...state, checkingSelection,
       canSend: state.status === 'ready' && !checkingSelection
         && state.authorized && state.selectedUrls.length > 0,
+      canRetry: retryableSubmission !== null,
     });
   }
 
@@ -68,6 +72,7 @@ export function createPopupController({
     pendingSnapshot = null;
     checkingSnapshot = false;
     submission = null;
+    retryableSubmission = null;
   }
 
   function finish(status, message, { acceptedCount = 0, retainList = false } = {}) {
@@ -80,7 +85,7 @@ export function createPopupController({
   }
 
   function invalidate() {
-    const message = state.status === 'sending'
+    const message = state.status === 'sending' || retryableSubmission
       ? `${messages.navigation} Se o envio já começou, confira a fila no app antes de reenviar.`
       : messages.navigation;
     finish('disconnected', message);
@@ -89,10 +94,10 @@ export function createPopupController({
   const live = (token) => !disposed && token === epoch;
   const staleError = () => Object.assign(new Error('Session changed'), { code: 'navigation' });
 
-  function armDeadline(token, code) {
+  function armDeadline(token, expire) {
     clearDeadline();
     timer = setTimer(() => {
-      if (live(token)) finish('error', messages[code]);
+      if (live(token)) expire();
     }, timeoutMs);
   }
 
@@ -140,7 +145,7 @@ export function createPopupController({
     checkingSnapshot = true;
     publish({});
     if (!live(token)) return;
-    armDeadline(token, 'inspection_timeout');
+    armDeadline(token, () => finish('error', messages.inspection_timeout));
     try {
       while (pendingSnapshot && live(token) && state.status !== 'sending') {
         const next = pendingSnapshot;
@@ -181,8 +186,15 @@ export function createPopupController({
       const next = normalizeSnapshot(raw);
       if (next.pageUrl !== binding?.pageUrl) { invalidate(); return; }
       if (state.status === 'sending') {
-        if (submission && !submission.sent && !isSelectionCurrent(submission.snapshot, raw, submission.selected)) {
-          finish('error', messages.source_changed);
+        if (submission && !isSelectionCurrent(submission.snapshot, raw, submission.selected)) {
+          if (submission.sent) submission.revoked = true;
+          else failSubmission(submission, 'source_changed');
+        }
+        return;
+      }
+      if (retryableSubmission) {
+        if (!isSelectionCurrent(retryableSubmission.snapshot, raw, retryableSubmission.selected)) {
+          finish('error', messages.source_changed + checkPreviousHandoff);
         }
         return;
       }
@@ -205,7 +217,7 @@ export function createPopupController({
     const token = epoch;
     publish({ status: 'loading', candidates: [], selectedUrls: [], authorized: false,
       truncated: false, pageOrigin: '', acceptedCount: 0, message: 'Procurando áudio e vídeo nesta página…' });
-    armDeadline(token, 'inspection_timeout');
+    armDeadline(token, () => finish('error', messages.inspection_timeout));
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!live(token)) return;
@@ -236,6 +248,10 @@ export function createPopupController({
   }
 
   function setSelected(url, selected) {
+    if (retryableSubmission && typeof selected === 'boolean') {
+      finish('error', messages.invalid_selection);
+      return;
+    }
     if (disposed || state.status !== 'ready' || typeof selected !== 'boolean'
       || !state.candidates.some((item) => item.url === url)) return;
     const selection = new Set(state.selectedUrls);
@@ -250,40 +266,75 @@ export function createPopupController({
   }
 
   function setAuthorized(authorized) {
+    if (retryableSubmission && authorized === false) {
+      finish('error', messages.invalid_selection);
+      return;
+    }
     if (disposed || state.status !== 'ready' || typeof authorized !== 'boolean'
       || (authorized && (checkingSnapshot || pendingSnapshot))) return;
     publish({ authorized });
   }
 
-  async function submit() {
-    if (disposed || !getState().canSend || !currentSnapshot) return;
+  function failSubmission(attempt, code) {
+    const status = code === 'bridge_unavailable' ? 'disconnected' : 'error';
+    const message = messageFor(code, messages.invalid_response);
+    if (!attempt.sent || attempt.revoked || !uncertainReply.has(code)) {
+      const previousHandoffUncertain = attempt.retrying && !attempt.sent && !uncertainReply.has(code);
+      finish(status, previousHandoffUncertain ? message + checkPreviousHandoff : message);
+      return;
+    }
+    clearDeadline();
+    submission = null;
+    retryableSubmission = attempt;
+    // Keep watching the authorized document, but expose only the repeat action.
+    publish({ status, message: message + ' Você pode repetir o mesmo pedido neste popup.',
+      candidates: [], selectedUrls: [], authorized: false, acceptedCount: 0, truncated: false });
+  }
+
+  async function transmit({ snapshot, selected, request }) {
     const token = epoch;
-    const snapshot = structuredClone(currentSnapshot);
-    const selected = [...state.selectedUrls];
-    const attempt = { snapshot, selected, sent: false };
+    const attempt = { snapshot, selected, request, retrying: request !== undefined, sent: false, revoked: false };
     submission = attempt;
+    retryableSubmission = null;
+    const current = () => live(token) && submission === attempt;
+    const waitFor = (code) => armDeadline(token, () => {
+      if (current()) failSubmission(attempt, code);
+    });
     publish({ status: 'sending', message: 'Validando a página e enviando a seleção…' });
-    armDeadline(token, 'bridge_timeout');
+    if (!current()) return;
+    waitFor('inspection_timeout');
+    if (!current()) return;
     try {
-      const request = buildDownloadRequest(snapshot, selected, newRequestId());
+      attempt.request ??= buildDownloadRequest(snapshot, selected, newRequestId());
       await verifyCurrent(token);
-      if (!live(token)) return;
+      if (!current()) return;
       await verifySelectedSources(token, snapshot, selected);
-      if (!live(token)) return;
+      if (!current()) return;
       await verifyCurrent(token);
-      if (!live(token)) return;
-      armDeadline(token, 'bridge_timeout');
+      if (!current()) return;
+      waitFor('bridge_timeout');
+      if (!current()) return;
       attempt.sent = true;
-      const response = await sendDownloadRequest(chrome, request, { timeoutMs });
-      if (!live(token)) return;
+      const response = await sendDownloadRequest(chrome, structuredClone(attempt.request), { timeoutMs });
+      if (!current()) return;
       finish('accepted', 'Pedidos aceitos pelo RC Music. Acompanhe os downloads e a conversão no app.', {
         acceptedCount: response.jobIds.length, retainList: true,
       });
     } catch (error) {
-      if (!live(token)) return;
+      if (!current()) return;
       if (error?.code === 'navigation' || (!attempt.sent && !Object.hasOwn(messages, error?.code))) invalidate();
-      else finish(error?.code === 'bridge_unavailable' ? 'disconnected' : 'error', messageFor(error?.code, messages.invalid_response));
+      else failSubmission(attempt, Object.hasOwn(messages, error?.code) ? error.code : 'invalid_response');
     }
+  }
+
+  async function submit() {
+    if (disposed || !getState().canSend || !currentSnapshot) return;
+    return transmit({ snapshot: structuredClone(currentSnapshot), selected: [...state.selectedUrls] });
+  }
+
+  async function retry() {
+    if (disposed || !retryableSubmission) return;
+    return transmit(retryableSubmission);
   }
 
   const onUpdated = (tabId, change) => {
@@ -313,5 +364,5 @@ export function createPopupController({
     chrome.windows.onFocusChanged.removeListener(onFocusChanged);
   }
 
-  return { refresh, submit, setSelected, setAuthorized, dispose, getState };
+  return { refresh, submit, retry, setSelected, setAuthorized, dispose, getState };
 }

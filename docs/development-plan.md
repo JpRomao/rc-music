@@ -878,6 +878,8 @@ O fluxo YouTube do player Windows configurado passou do host nativo e resolvedor
 
 As extensões reconferem a aba e a janela focada antes de enviar. A principal revoga autorização quando observa mudança de uma fonte selecionada, inclusive durante atualizações seguidas da lista. O YouTube invalida a seleção ao mudar a URL confirmada do vídeo. [Contexto da extensão principal](browser-extension.md#contexto-da-aba-e-foco-no-popup) · [Contexto do YouTube](youtube-audio-and-lyrics.md#contexto-do-vídeo-no-popup)
 
+Após uma confirmação incerta, os popups oferecem reenvio explícito do mesmo ID e conteúdo enquanto a seleção continuar válida. Passaram 247 casos Node. [Protocolo e reenvio](browser-extension.md#protocolo-nativo-de-desenvolvimento)
+
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. **Descartar tentativa** permite retomar a revisão após uma recusa antes da gravação. **Concluir revisão** libera o pedido para arquivamento na sessão atual. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
 A revisão abre no navegador a página do Letras informada no pedido e permite atribuir esse endereço a cada versão colada. A busca automática continua pelo LRCLIB. [Página informada e checks](download-lyrics.md#página-do-letras-informada-no-pedido)

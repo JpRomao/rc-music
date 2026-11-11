@@ -170,6 +170,64 @@ test('missing component and protocol errors remain actionable without pretending
   assert.match(controller.getState().message, /componente YouTube no player/u);
   assert.doesNotMatch(controller.getState().message, /private details/u);
 });
+test('explicit retry repeats the unchanged YouTube request and metadata after uncertainty', async () => {
+  const h = harness();
+  const requests = [];
+  let ids = 0;
+  const controller = createYoutubePopupController({ chrome: h.chrome,
+    newRequestId() { ids += 1; return requestId; },
+    async sendRequest(_chrome, request) {
+      requests.push(structuredClone(request));
+      if (requests.length === 1) {
+        request.items[0].artist = 'Mutation after the handoff';
+        throw Object.assign(new Error('No receipt'), { code: 'invalid_response' });
+      }
+      return { status: 'accepted', requestId, jobIds: ['same-job'] };
+    },
+  });
+  await controller.refresh();
+  controller.setSelected(true);
+  controller.setFields({ title: '曲名', artist: 'Artist', lyricsPage: 'https://www.letras.mus.br/artist/song/' });
+  assert.equal(await controller.send(), false);
+  assert.equal(controller.getState().canRetry, true);
+  assert.equal(await controller.send(), false);
+  assert.equal(requests.length, 1);
+  assert.equal(await controller.retry(), true);
+  assert.equal(requests.length, 2);
+  assert.equal(JSON.stringify(requests[1]), JSON.stringify(requests[0]));
+  assert.equal(ids, 1);
+  assert.equal(controller.getState().status, 'accepted');
+  assert.equal(controller.getState().canRetry, false);
+  controller.dispose();
+});
+test('YouTube context and metadata changes revoke an uncertain request', async t => {
+  for (const [name, change] of [
+    ['unannounced navigation', (h) => { h.tab.url += '&t=12'; }],
+    ['focus loss', (h) => h.chrome.windows.onFocusChanged.emit(4)],
+    ['metadata edit', (_h, controller) => controller.setFields({ artist: 'Other artist' })],
+    ['selection change', (_h, controller) => controller.setSelected(false)],
+  ]) {
+    await t.test(name, async () => {
+      const h = harness();
+      let calls = 0;
+      const controller = createYoutubePopupController({ chrome: h.chrome, newRequestId: () => requestId,
+        async sendRequest() {
+          calls += 1;
+          throw Object.assign(new Error('Lost receipt'), { code: 'bridge_timeout' });
+        },
+      });
+      await controller.refresh();
+      controller.setSelected(true);
+      assert.equal(await controller.send(), false);
+      assert.equal(controller.getState().canRetry, true);
+      change(h, controller);
+      assert.equal(await controller.retry(), false);
+      assert.equal(calls, 1);
+      assert.equal(controller.getState().canRetry, false);
+      controller.dispose();
+    });
+  }
+});
 test('unsupported pages and empty active tabs never become downloadable', async () => {
   const h = harness(); h.tab.url = 'https://example.com/video';
   await h.controller.refresh();
@@ -188,7 +246,11 @@ test('mounted popup renders tab text literally and sends only after a real selec
   }
   const document = { getElementById: id => elements.get(id) };
   const view = mountYoutubePopup({ document, chrome: h.chrome, newRequestId: () => requestId,
-    sendRequest: async (_, request) => { h.sends.push(request); return { status: 'accepted', requestId, jobIds: ['job-1'] }; } });
+    sendRequest: async (_, request) => {
+      h.sends.push(request);
+      if (h.sends.length === 1) throw Object.assign(new Error('No receipt'), { code: 'bridge_timeout' });
+      return { status: 'accepted', requestId, jobIds: ['job-1'] };
+    } });
   await flush();
   assert.equal(elements.get('video-title').textContent, '<b>曲名</b>');
   assert.equal(elements.get('selection').hidden, false);
@@ -201,6 +263,10 @@ test('mounted popup renders tab text literally and sends only after a real selec
   elements.get('send').emit('click'); await flush();
   assert.equal(h.sends.length, 1);
   assert.equal(h.sends[0].items[0].title, '<img src=x> 曲名');
+  assert.equal(elements.get('send').disabled, false);
+  assert.equal(elements.get('send').textContent, 'Repetir o mesmo pedido');
+  elements.get('send').emit('click'); await flush();
+  assert.deepEqual(h.sends, [h.sends[0], h.sends[0]]);
   assert.match(elements.get('status').textContent, /Pedido aceito/u);
   view.dispose();
   assert.equal([...elements.values()].reduce((count, node) => count + node.listenerCount, 0), 0);

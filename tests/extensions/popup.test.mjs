@@ -638,11 +638,163 @@ test('bridge errors are safe, clear the batch and never retry automatically', as
     assert.ok(['error', 'disconnected'].includes(h.controller.getState().status));
     assert.doesNotMatch(h.controller.getState().message, /secret|hidden|token|C:\//);
     if (code === 'bridge_unavailable') assert.match(h.controller.getState().message, /fila no app/i);
+    assert.equal(h.controller.getState().canRetry, code !== 'rejected');
     assert.deepEqual(h.controller.getState().selectedUrls, []);
     await h.controller.submit();
     assert.equal(calls, 1);
     h.controller.dispose();
   }
+});
+
+test('an explicit retry revalidates and repeats the exact batch after an uncertain reply', async () => {
+  const requests = [];
+  let ids = 0;
+  const h = harness({
+    newRequestId() { ids += 1; return '11111111-1111-4111-8111-111111111111'; },
+    async sendDownloadRequest(_chrome, request) {
+      requests.push(structuredClone(request));
+      if (requests.length === 1) {
+        request.items[0].title = 'Mutation after the handoff';
+        throw Object.assign(new Error('No receipt'), { code: 'bridge_timeout' });
+      }
+      return { status: 'accepted', requestId: request.requestId, jobIds: ['same-job'] };
+    },
+  });
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  await h.controller.submit();
+  assert.equal(h.controller.getState().canRetry, true);
+  await h.controller.submit();
+  assert.equal(requests.length, 1);
+  const verified = h.injections.length;
+  await h.controller.retry();
+  assert.ok(h.injections.length > verified);
+  assert.equal(requests.length, 2);
+  assert.equal(JSON.stringify(requests[1]), JSON.stringify(requests[0]));
+  assert.equal(ids, 1);
+  assert.equal(h.controller.getState().status, 'accepted');
+  assert.equal(h.controller.getState().canRetry, false);
+  h.controller.dispose();
+});
+
+test('source, context and consent changes revoke an uncertain batch', async t => {
+  for (const [name, change] of [
+    ['selected source without a detector event', h => {
+      const next = h.freshSnapshot;
+      next.candidates[0].sourceId = 'c1:d2';
+      h.freshSnapshot = next;
+    }],
+    ['source change announced and then restored', h => {
+      const next = snapshot();
+      next.candidates[0].sourceId = 'c1:d2';
+      h.ports[0].onMessage.emit(next);
+      h.ports[0].onMessage.emit(snapshot());
+    }],
+    ['focus', h => h.chrome.windows.onFocusChanged.emit(4)],
+    ['consent', h => h.controller.setAuthorized(false)],
+  ]) {
+    await t.test(name, async () => {
+      let calls = 0;
+      const h = harness({ async sendDownloadRequest() {
+        calls += 1;
+        throw Object.assign(new Error('Lost receipt'), { code: 'bridge_unavailable' });
+      } });
+      await h.ready();
+      h.controller.setSelected(media(0).url, true);
+      h.controller.setAuthorized(true);
+      await h.controller.submit();
+      assert.equal(h.controller.getState().canRetry, true);
+      change(h);
+      await h.controller.retry();
+      assert.equal(calls, 1);
+      assert.equal(h.controller.getState().canRetry, false);
+      h.controller.dispose();
+    });
+  }
+});
+
+test('an old receipt cannot settle an explicit retry of the same batch', async () => {
+  const replies = [deferred(), deferred()];
+  const requests = [];
+  const h = harness({ sendDownloadRequest(_chrome, request) {
+    requests.push(request);
+    return replies[requests.length - 1].promise;
+  } });
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  const sending = h.controller.submit();
+  await flush();
+  h.expire();
+  const retry = h.controller.retry();
+  await flush();
+  assert.deepEqual(requests, [requests[0], requests[0]]);
+  const reply = { status: 'accepted', requestId: requests[0].requestId, jobIds: ['same-job'] };
+  replies[0].resolve(reply);
+  await sending;
+  assert.equal(h.controller.getState().status, 'sending');
+  replies[1].resolve(reply);
+  await retry;
+  assert.equal(h.controller.getState().status, 'accepted');
+  h.controller.dispose();
+});
+
+test('a failed revalidation still warns about the first uncertain handoff', async t => {
+  for (const problem of ['changed source on scan', 'changed source event', 'inspection timeout']) {
+    await t.test(problem, async () => {
+      let sends = 0;
+      const h = harness({ async sendDownloadRequest() {
+        sends += 1;
+        throw Object.assign(new Error('Lost receipt'), { code: 'bridge_timeout' });
+      } });
+      await h.ready();
+      h.controller.setSelected(media(0).url, true);
+      h.controller.setAuthorized(true);
+      await h.controller.submit();
+      const changed = snapshot();
+      changed.candidates[0].sourceId = 'c1:d2';
+      if (problem === 'changed source on scan') {
+        h.freshSnapshot = changed;
+        await h.controller.retry();
+      } else {
+        const tab = deferred();
+        h.chrome.tabs.get = () => tab.promise;
+        const retry = h.controller.retry();
+        if (problem === 'inspection timeout') h.expire();
+        else h.ports[0].onMessage.emit(changed);
+        tab.resolve({ ...h.currentTab });
+        await retry;
+      }
+      const state = h.controller.getState();
+      assert.match(state.message, problem === 'inspection timeout' ? /não respondeu a tempo/iu : /fonte selecionada mudou/iu);
+      assert.match(state.message, /confira a fila no app/iu);
+      assert.equal(state.canRetry, false);
+      assert.equal(sends, 1);
+      h.controller.dispose();
+    });
+  }
+});
+
+test('a selected source change after dispatch prevents a later retry', async () => {
+  const response = deferred();
+  let calls = 0;
+  const h = harness({ sendDownloadRequest() { calls += 1; return response.promise; } });
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  const sending = h.controller.submit();
+  await flush();
+  const next = snapshot();
+  next.candidates[0].sourceId = 'c1:d2';
+  h.ports[0].onMessage.emit(next);
+  h.ports[0].onMessage.emit(snapshot());
+  response.reject(Object.assign(new Error('No receipt'), { code: 'bridge_timeout' }));
+  await sending;
+  assert.equal(h.controller.getState().canRetry, false);
+  await h.controller.retry();
+  assert.equal(calls, 1);
+  h.controller.dispose();
 });
 
 test('initial inspection timeout is bounded and late completion cannot reconnect', async () => {
@@ -838,4 +990,33 @@ test('DOM restores keyboard focus only to the same available media after reorder
   view.render({ ...state, candidates: [media(1)] });
   assert.equal(document.activeElement, null);
   view.dispose();
+});
+
+test('DOM exposes repeat as a distinct action after an uncertain reply', async () => {
+  const document = fakeDocument();
+  const requests = [];
+  let view;
+  const h = harness({
+    onState: state => view?.render(state),
+    async sendDownloadRequest(_chrome, request) {
+      requests.push(request);
+      if (requests.length === 1) throw Object.assign(new Error('No receipt'), { code: 'bridge_timeout' });
+      return { status: 'accepted', requestId: request.requestId, jobIds: ['same-job'] };
+    },
+  });
+  view = mountPopup(document, h.controller);
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  document.ids.send.emit('click');
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(document.ids.send.disabled, false);
+  assert.equal(document.ids.send.textContent, 'Repetir o mesmo pedido');
+  document.ids.send.emit('click');
+  await flush();
+  assert.deepEqual(requests, [requests[0], requests[0]]);
+  assert.equal(h.controller.getState().status, 'accepted');
+  view.dispose();
+  h.controller.dispose();
 });
