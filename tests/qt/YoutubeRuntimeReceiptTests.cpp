@@ -265,6 +265,27 @@ class YoutubeRuntimeReceiptTests final : public QObject {
             QVERIFY(!decode(object).receipt);
         }
     }
+    void reviewedPythonVersionsArePreservedExactly() {
+        for (const auto version : {"3.13.1", "3.14.10"}) {
+            auto object = fixture();
+            changeRecord(object, "sources", 0, "version", QString::fromLatin1(version));
+            const auto result = decode(object);
+            QVERIFY(result.receipt);
+            QCOMPARE(result.error, YoutubeRuntimeReceiptError::None);
+            QCOMPARE(result.receipt->sources.front().name, QStringLiteral("python"));
+            QCOMPARE(result.receipt->sources.front().version, QLatin1String(version));
+        }
+        for (const auto version : {"3.13.17", "3.14.9", "3.14.10 "}) {
+            auto object = fixture();
+            changeRecord(object, "sources", 0, "version", QString::fromLatin1(version));
+            const auto result = decode(object);
+            QVERIFY(!result.receipt);
+            QCOMPARE(result.error, YoutubeRuntimeReceiptError::InvalidSource);
+        }
+        auto object = fixture();
+        changeRecord(object, "sources", 1, "version", QStringLiteral("3.14.10"));
+        QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
+    }
     void sourceMetadataRequiresExactBoundedFields() {
         const auto before = fixture();
         const auto row = before.value("sources").toArray().first().toObject();

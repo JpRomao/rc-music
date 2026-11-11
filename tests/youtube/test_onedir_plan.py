@@ -8,6 +8,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import pyexpat
 import sys
 import types
 import unittest
@@ -36,7 +37,7 @@ PROJECT_PATHS = {
 def inputs(mode="prod"):
     sources = [
         {"name": name, "version": version,
-         "path": ("C:/Python313/python.exe" if name == "python" else
+         "path": ("C:/Python314/python.exe" if name == "python" else
                   "C:/Program Files/nodejs/node.exe" if name == "node" else
                   f"{REPOSITORY}/out/product/wheels/{name}-{version}.whl"),
          "sha256": SHA, "provenance": f"reviewed official source: {name}"}
@@ -108,6 +109,15 @@ class OnedirPlanTests(unittest.TestCase):
             values["sources"][index]["version"] += ".unreviewed"
             with self.subTest(source=values["sources"][index]["name"]), self.assertRaises(ValueError):
                 planner.make_build_plan(**values)
+
+    def test_new_build_requires_the_current_python_pin(self):
+        values = inputs()
+        python = next(source for source in values["sources"] if source["name"] == "python")
+        python["version"] = "3.14.10"
+        planner.make_build_plan(**values)
+        python["version"] = "3.13.1"
+        with self.assertRaisesRegex(ValueError, "unreviewed source version"):
+            planner.make_build_plan(**values)
 
     def test_every_required_source_is_present_once(self):
         for index in range(len(inputs()["sources"])):
@@ -343,7 +353,7 @@ class OnedirPlanTests(unittest.TestCase):
 
 
 class RecipeContracts(unittest.TestCase):
-    def execute_recipe(self, mode):
+    def execute_recipe(self, mode, *, python_version=(3, 14, 10), expat_version=(2, 9, 0)):
         captured = {}
 
         def analysis(scripts, **kwargs):
@@ -380,6 +390,8 @@ class RecipeContracts(unittest.TestCase):
                                                "PyInstaller.utils": types.ModuleType("PyInstaller.utils"),
                                                "PyInstaller.utils.hooks": hooks}), \
                 mock.patch.object(sys, "argv", [str(RECIPE), "--mode", mode]), \
+                mock.patch.object(sys, "version_info", python_version), \
+                mock.patch.object(pyexpat, "version_info", expat_version), \
                 mock.patch.object(importlib.metadata, "version", side_effect=lambda name: planner.SOURCE_PINS[name]), \
                 mock.patch.object(importlib.metadata, "distribution", return_value=Distribution()):
             try:
@@ -387,6 +399,14 @@ class RecipeContracts(unittest.TestCase):
             except SystemExit as error:
                 captured["exit"] = error.code
         return captured
+
+    def test_recipe_rejects_legacy_python_and_outdated_expat(self):
+        old_python = self.execute_recipe("prod", python_version=(3, 13, 1))
+        self.assertEqual(old_python.get("exit"), "expected reviewed CPython 3.14.10 Windows x64 build interpreter")
+        old_expat = self.execute_recipe("prod", expat_version=(2, 8, 5))
+        self.assertEqual(old_expat.get("exit"), "expected reviewed Expat 2.9.0 build dependency")
+        self.assertNotIn("analysis", old_python)
+        self.assertNotIn("analysis", old_expat)
 
     def test_recipe_selects_only_known_entrypoints_and_keeps_onedir_console_io(self):
         for mode, relative in (("prod", PROJECT_PATHS["entrypoint"]), ("offline", PROJECT_PATHS["offline-entry"])):

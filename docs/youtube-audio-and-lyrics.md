@@ -178,6 +178,16 @@ O alvo `rc_music_youtube_runtime_smoke` é `EXCLUDE_FROM_ALL`, invocado explicit
 
 Também foi empacotado o candidato de produção `prod-artifacts-01`: **35 arquivos/120.041.581 bytes**, manifesto `out/product/youtube-runtime-20261105/prod-source-auth-01.json`, SHA-256 `68c21e2772defc5f586b5cea5bcdcac2b4e9661bcac14262cd8e7181f8da2de4`. Ele não inclui a fixture nem os metadados de distribuição exclusivos do probe e **não foi executado**. O build não comprova aquisição pública, segurança/isolamento do runtime, licenças/distribuição aprovadas, host instalado/origem autenticada no Brave ou integração no produto. Letras continua com HTTP 403/sem parser de produção; o fallback LRCLIB existente não é reclassificado como Letras. Downloads de produção permanecem **OFF** e o objetivo completo continua pendente.
 
+### Candidato com CPython 3.14.10
+
+O ZIP x64 publicado pela Python Software Foundation foi conferido contra o SHA-256 do manifesto oficial. O executável apresentou assinatura Authenticode válida da PSF. Um venv privado recebeu os nove wheels fixados a partir do cache local. O `pip check` passou, e os módulos carregados informaram Expat 2.9.0 e OpenSSL 3.5.9. [Release do CPython](https://www.python.org/downloads/release/python-31410/) · [Manifesto Windows](https://www.python.org/ftp/python/3.14.10/windows-3.14.10.json)
+
+O PyInstaller gerou 36 arquivos no candidato de produção e 42 no ensaio offline. Nos dois, `pyexpat.pyd` e `python314.dll` têm os hashes dos binários do ZIP oficial. O ensaio com o wheel fixado e um MPD sintético encontrou áudio AAC/M4A com URL HTTPS direta. O controle que desabilita DASH deixou de encontrar essa faixa. Logs do MPD em `out/product/youtube-dash-regression-20261111/` e recibos do build em `out/product/youtube-runtime-python31410-20261111/`.
+
+Passaram 100 testes Python do resolver/builder, 26 do perfil e 64 casos Qt do leitor do recibo offline. O smoke C++ com os 42 artefatos autenticados validou cinco vetores, entregou a capability ao consumidor de teste e encerrou os processos com ACK. O recibo registra zero tentativas de HTTP, socket ou inicialização remota pelo extractor. A primeira execução falhou com um TEMP mais profundo. A repetição passou com o mesmo executável e manifesto e um TEMP mais curto. Os dois recibos ficam em `out/product/youtube-runtime-python31410-20261111/cpp-receipt-checks/`.
+
+O candidato de produção permanece privado. As correções posteriores de Expat 2.10.0, o comportamento com caminhos temporários mais profundos e a aquisição pública seguem em aberto. [Expat 2.10.0](https://github.com/libexpat/libexpat/blob/R_2_10_0/expat/Changes)
+
 ## Factory de runtime na worker
 
 **Estado deste incremento:** broker, factory e jornada real na worker implementados e validados no recorte abaixo. Os números e o smoke das seções anteriores pertencem aos respectivos recortes e não comprovam esta composição.

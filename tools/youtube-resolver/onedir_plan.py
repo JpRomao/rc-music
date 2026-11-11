@@ -12,7 +12,7 @@ import re
 
 
 SOURCE_PINS = {
-    "python": "3.13.1",
+    "python": "3.14.10",
     "node": "24.20.0",
     "altgraph": "0.17.5",
     "packaging": "26.3",

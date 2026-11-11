@@ -16,9 +16,11 @@ from types import ModuleType
 
 ROOT = Path(os.path.abspath(__file__)).parents[2]
 ONEDIR = ROOT / "tools/youtube-resolver/onedir_plan.py"
-EXPAT_NOTICE = {"role": "Support", "path": "notices/Expat-COPYING.txt", "bytes": 1144,
-                "sha256": "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"}
-EXPAT_NOTICE_SOURCE = ROOT / "tools/download-runtime" / EXPAT_NOTICE["path"]
+EXPAT_NOTICE_PATH = "notices/Expat-COPYING.txt"
+EXPAT_LICENSES = {
+    "3.13.1": ("Expat-COPYING.txt", 1144, "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"),
+    "3.14.10": ("Expat-2.9.0-COPYING.txt", 1144, "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"),
+}
 NETWORK = (
     ("Bootstrap", "RCMusicDownloadWorker.exe"), ("Payload", "rcmusic-download-network.dll"),
     ("Core", "Qt6Core.dll"), ("Network", "Qt6Network.dll"), ("Msvcp140", "msvcp140.dll"),
@@ -268,7 +270,9 @@ def _youtube(value):
     for source in values:
         _closed(source, ("name", "version", "path", "sha256", "provenance"))
         name = _text(source["name"], 64)
-        if name not in required or name in seen or type(source["version"]) is not str or source["version"] != required[name]:
+        allowed_versions = EXPAT_LICENSES if name == "python" else (required.get(name),)
+        if (name not in required or name in seen or type(source["version"]) is not str or
+                source["version"] not in allowed_versions):
             raise ValueError("unknown, duplicate or unreviewed production source")
         seen.add(name)
         path = _local(source["path"])
@@ -284,12 +288,14 @@ def _youtube(value):
     _tree(root, inventory)
     artifact_sources = {row["path"]: root / row["path"] for row in inventory}
     if any(path.casefold() == "extractor/_internal/pyexpat.pyd" for path in artifact_sources):
-        notice_path = EXPAT_NOTICE["path"]
-        existing = next((row for row in inventory if row["path"].casefold() == notice_path.casefold()), None)
+        python_version = next(source["version"] for source in values if source["name"] == "python")
+        license_name, license_size, license_sha = EXPAT_LICENSES[python_version]
+        notice = {"role": "Support", "path": EXPAT_NOTICE_PATH, "bytes": license_size, "sha256": license_sha}
+        existing = next((row for row in inventory if row["path"].casefold() == EXPAT_NOTICE_PATH.casefold()), None)
         if existing is None:
-            inventory = planner.validate_inventory([*inventory, EXPAT_NOTICE])
-            artifact_sources[notice_path] = EXPAT_NOTICE_SOURCE
-        elif existing != EXPAT_NOTICE:
+            inventory = planner.validate_inventory([*inventory, notice])
+            artifact_sources[EXPAT_NOTICE_PATH] = ROOT / "tools/download-runtime/notices" / license_name
+        elif existing != notice:
             raise ValueError("Expat notice does not match its reviewed name and identity")
     files = [{"component": "youtube", "role": row["role"], "source_path": str(artifact_sources[row["path"]]),
               "relative_path": "payload/download-tools/youtube/" + row["path"],

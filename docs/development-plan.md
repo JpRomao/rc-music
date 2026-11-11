@@ -850,6 +850,8 @@ Em M3.9, a lista de versões da letra passou a navegar até itens fora da área 
 
 Para UX-004, o painel Downloads agora indica qual cartão recebe o teclado e oferece Home e End. Tab e Shift+Tab conservam a associação entre o cartão e seus botões. A cobertura focada passou em 47/47 Qt Quick. [Testes do painel](ui-tests.md)
 
+Em R1.8 e M5.7, o novo perfil privado YouTube usa CPython 3.14.10 com Expat 2.9.0. A regressão sintética preservou áudio direto via DASH, o smoke offline do worker passou com TEMP curto e os 38 PEs do perfil passaram na inspeção estática. A revisão dos avisos posteriores do Expat, caminhos temporários mais profundos e aquisição pública permanecem abertas. [Runtime e checks](youtube-audio-and-lyrics.md#candidato-com-cpython-31410)
+
 Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer por trabalho. O conversor precisa receber a credencial do owner e o perfil só é retirado após a drenagem. A opção permanece desligada no perfil instalável enquanto a qualificação física estiver pendente. [Composição e validação do worker](download-conversion.md#perfil-appcontainer-por-trabalho)
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)

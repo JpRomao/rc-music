@@ -132,14 +132,16 @@ inline constexpr std::array<WindowsYoutubeRuntimeRole, 4> roles{
 inline constexpr std::array<const char*, 5> notice_paths{{"notices/python-LICENSE.txt", "notices/node-LICENSE.txt",
                                                           "notices/yt-dlp-LICENSE.txt", "notices/ejs-LICENSE.txt",
                                                           "notices/pyinstaller-COPYING.txt"}};
-inline std::optional<QString> version(const QString& name) {
+inline bool matchesVersion(const QString& name, const QString& observed) {
+    if (name == QLatin1String("python") && observed == QLatin1String("3.14.10"))
+        return true;
     for (const auto& [known, pinned] : required_sources)
         if (name == QLatin1String(known))
-            return QString::fromLatin1(pinned);
+            return observed == QLatin1String(pinned);
     for (const auto known : optional_sources)
         if (name == QLatin1String(known))
-            return QStringLiteral("project");
-    return {};
+            return observed == QLatin1String("project");
+    return false;
 }
 inline bool provenance(const QString& text) {
     return !text.trimmed().isEmpty() && text.size() <= 2048 &&
@@ -186,15 +188,15 @@ inline bool provenance(const QString& text) {
             if (!source.value(QLatin1String(key)).isString())
                 return failed(Error::InvalidSource);
         const auto name = source.value("name").toString();
-        const auto expected = version(name);
+        const auto observed_version = source.value("version").toString();
         const auto path = localPath(source.value("path").toString());
         const auto pin = source.value("sha256").toString();
         const auto observed = source.value("provenance").toString();
-        if (!expected || source.value("version").toString() != *expected || source_names.contains(name) || !path ||
-            !sha256(pin) || !provenance(observed))
+        if (!matchesVersion(name, observed_version) || source_names.contains(name) || !path || !sha256(pin) ||
+            !provenance(observed))
             return failed(Error::InvalidSource);
         source_names.insert(name);
-        receipt.sources.push_back({name, *expected, *path, observed, pin.toLatin1()});
+        receipt.sources.push_back({name, observed_version, *path, observed, pin.toLatin1()});
     }
     for (const auto& [name, pinned] : required_sources) {
         static_cast<void>(pinned);

@@ -32,6 +32,7 @@ PINS = {
 NOTICES = ("python-LICENSE.txt", "node-LICENSE.txt", "yt-dlp-LICENSE.txt", "ejs-LICENSE.txt", "pyinstaller-COPYING.txt")
 EXPAT_NOTICE = "notices/Expat-COPYING.txt"
 EXPAT_SHA256 = "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"
+EXPAT_290_SHA256 = "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"
 YT_ROLES = {
     "Extractor": "extractor/yt-dlp.exe", "Node": "javascript/node.exe",
     "EjsCore": "extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js",
@@ -285,6 +286,20 @@ class BuildProfileTests(unittest.TestCase):
         candidate = self.module.plan(self.config)
         relative = "payload/download-tools/youtube/" + EXPAT_NOTICE
         self.assertEqual(sum(row["relative_path"] == relative for row in candidate["files"]), 1)
+
+    def test_current_python_profile_uses_its_own_expat_notice(self):
+        yt = self.add_youtube()
+        next(source for source in yt.receipt["sources"] if source["name"] == "python")["version"] = "3.14.10"
+        self.add_youtube_support("extractor/_internal/pyexpat.pyd", b"synthetic CPython 3.14 extension")
+        relative = "payload/download-tools/youtube/" + EXPAT_NOTICE
+        candidate = self.module.plan(self.config)
+        rows = [row for row in candidate["files"] if row["relative_path"] == relative]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sha256"], EXPAT_290_SHA256)
+        old_license = REPOSITORY / "tools/download-runtime" / EXPAT_NOTICE
+        self.add_youtube_support(EXPAT_NOTICE, old_license.read_bytes())
+        with self.assertRaisesRegex(ValueError, "Expat notice"):
+            self.module.plan(self.config)
 
     def test_youtube_profile_rejects_a_substituted_expat_notice_for_pyexpat(self):
         self.add_youtube()

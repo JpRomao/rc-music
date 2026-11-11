@@ -24,7 +24,7 @@ Checks nativos do broker passaram **36/36 Qt**, após Red **2 passados/34 falhos
 
 A composição C++ usa `makeWindowsYoutubeBrokerResolverFactory` com `WindowsYoutubeRuntimeConfig` revisado e ambiente explícito, seguida de `makeWindowsMediaAndYoutubeExecution`. A factory faz cópias próprias dos dados e permanece passiva. Cada job prepara seu runtime na worker; `broker.start()` retorna após preparar e validar, e o primeiro `poll()` válido lança o extractor. Assim o executor pode observar cancelamento/shutdown recebido durante a cópia antes do lançamento. O manifesto JSON do ensaio continua exclusivo de testes.
 
-O ambiente de build é um venv Windows x64 separado, com CPython 3.13.1 e os nove wheels fixados em `requirements-build.lock`. Node 24.20.0 é um input separado. Esses pins reproduzem o candidato de desenvolvimento verificado; não representam aprovação de segurança ou distribuição das versões.
+O ambiente de build é um venv Windows x64 separado, com CPython 3.14.10, Expat 2.9.0 e os nove wheels fixados em `requirements-build.lock`. Node 24.20.0 é um input separado. A spec confere as versões efetivas de CPython e Expat antes de empacotar. [Proveniência e validação do candidato](../../docs/youtube-audio-and-lyrics.md#candidato-com-cpython-31410)
 
 Instale os wheels previamente obtidos e conferidos no venv usando `pip install --no-index --find-links <diretório-de-wheels> --require-hashes --only-binary=:all: -r tools/youtube-resolver/requirements-build.lock`. O builder não instala nem baixa dependências.
 
