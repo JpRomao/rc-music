@@ -6,6 +6,9 @@ $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $testRoot = Join-Path $repository ('out/product/runtime-recipe-' + [guid]::NewGuid().ToString('N'))
 $sourceNames = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
     'qt.conf', 'LOCAL-DEVELOPMENT.txt')
+$ffmpegRecipeNames = @('RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json')
+$multimediaStagerName = 'New-RcMusicQtMultimediaSdk.ps1'
+$ffmpegNames = @('avcodec-61.dll', 'avformat-61.dll', 'avutil-59.dll', 'swresample-5.dll', 'swscale-8.dll')
 $componentNames = @('RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
 $nativeNames = @('RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1')
 $state = @{ Passed = 0; Failed = 0 }
@@ -15,6 +18,14 @@ function Test-Case([string] $Name, [scriptblock] $Body) {
 }
 function Assert-Equal($Actual, $Expected) {
     if ($Actual -cne $Expected) { throw "Expected '$Expected', found '$Actual'." }
+}
+function Assert-Rejected([scriptblock] $Operation, [string] $Pattern) {
+    try { $null = & $Operation }
+    catch {
+        if ($_.Exception.Message -notmatch $Pattern) { throw "Wrong rejection: $($_.Exception.Message)" }
+        return
+    }
+    throw 'Expected the operation to be rejected.'
 }
 function Assert-SafeTestRoot {
     $parent = [IO.Path]::GetFullPath((Join-Path $repository 'out/product')).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
@@ -43,7 +54,7 @@ function Read-RecipeFiles([string] $Edition = 'Lite', [switch] $DownloadComponen
     }, $true))
     Assert-Equal $functions.Count 1
     # Execute only this inventory function, never the script body. The AST keeps
-    # the exported file identity so PSScriptRoot resolves beside the five copies.
+    # the exported file identity so PSScriptRoot resolves beside the copies.
     return @(& $functions[0].Body.GetScriptBlock() -Edition $Edition -DownloadComponent:$DownloadComponent `
         -NativeHostComponent:$NativeHostComponent)
 }
@@ -78,6 +89,20 @@ function Invoke-RecipeChild([string[]] $Arguments) {
         } finally { $process.Dispose() }
     }
 }
+function Get-TestFilePin([string] $Path) {
+    [ordered]@{ size_bytes = (Get-Item -LiteralPath $Path).Length
+        sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
+}
+function Write-TestFfmpegManifest($Manifest) {
+    [IO.File]::WriteAllText($ffmpegManifest, ($Manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+}
+function Read-TestFfmpegRuntime {
+    $module = Join-Path $exportDirectory $ffmpegRecipeNames[0]
+    if (-not [IO.File]::Exists($module)) { throw 'Required validator module is absent.' }
+    Import-Module $module -Force
+    Get-RcMusicFfmpegRuntime -ManifestPath $ffmpegManifest -DllDirectory $ffmpegBin `
+        -PluginPath $ffmpegPlugin -Destination (Join-Path $testRoot 'unused-ffmpeg-runtime')
+}
 Assert-SafeTestRoot
 if (Test-Path -LiteralPath $testRoot) { throw 'Test root already exists.' }
 $null = New-Item -ItemType Directory -Path $testRoot
@@ -87,7 +112,7 @@ try {
     $buildDirectory = Join-Path $exportRoot 'out/product/build inválido'
     $foreignDirectory = Join-Path $testRoot 'cwd alheio'
     $null = New-Item -ItemType Directory -Path $exportDirectory, $buildDirectory, $foreignDirectory
-    foreach ($name in $sourceNames + @(($componentNames + $nativeNames) | Where-Object {
+    foreach ($name in $sourceNames + @(($ffmpegRecipeNames + $multimediaStagerName + $componentNames + $nativeNames) | Where-Object {
         Test-Path -LiteralPath (Join-Path $repository ('packaging/windows/' + $_))
     })) {
         $original = Join-Path $repository ('packaging/windows/' + $name)
@@ -99,9 +124,11 @@ try {
     $exportedRecipe = Join-Path $exportDirectory 'New-RcMusicLocalRuntime.ps1'
     $cache = "CMAKE_BUILD_TYPE:STRING=Debug`nBUILD_TESTING:BOOL=OFF`nCMAKE_HOME_DIRECTORY:INTERNAL=$exportRoot`nRC_MUSIC_BUILD_DESKTOP:BOOL=ON`n"
     [IO.File]::WriteAllText((Join-Path $buildDirectory 'CMakeCache.txt'), $cache, [Text.UTF8Encoding]::new($false))
-    Test-Case 'all three exported PowerShell files parse without historical files' {
+    Test-Case 'exported PowerShell files parse without historical files' {
         Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'experiments')) $false
-        foreach ($name in $sourceNames | Where-Object { $_ -match '\.ps(?:1|m1)$' }) {
+        foreach ($name in ($sourceNames + $ffmpegRecipeNames) | Where-Object {
+            $_ -match '\.ps(?:1|m1)$' -and (Test-Path -LiteralPath (Join-Path $exportDirectory $_))
+        }) {
             $null = Read-Ast (Join-Path $exportDirectory $name)
         }
     }
@@ -136,16 +163,16 @@ try {
             Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-downloads')) $false
         }
     }
-    Test-Case 'optional recipe provenance includes both component validators while default stays unchanged' {
+    Test-Case 'optional recipe provenance includes both download component validators' {
         $files = @(Read-RecipeFiles -DownloadComponent)
-        Assert-Equal $files.Count 7
+        Assert-Equal $files.Count 9
         foreach ($name in $componentNames) {
             $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
             Assert-Equal $entry.Count 1
             Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
         }
-        Assert-Equal @(Read-RecipeFiles).Count 5
-        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count 8
+        Assert-Equal @(Read-RecipeFiles).Count 7
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count 10
     }
     foreach ($arguments in @(
         @('-MainNativeBuildReceipt', 'C:/missing/main.json'),
@@ -170,18 +197,20 @@ try {
     }
     Test-Case 'native recipe provenance binds its reader and component planner only for explicit opt-in' {
         $files = @(Read-RecipeFiles -DownloadComponent -NativeHostComponent)
-        Assert-Equal $files.Count 9
+        Assert-Equal $files.Count 11
         foreach ($name in $nativeNames) {
             $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
             Assert-Equal $entry.Count 1
             Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
         }
-        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent -NativeHostComponent).Count 10
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent -NativeHostComponent).Count 12
     }
-    Test-Case 'the recipe inventories exactly five repository-relative paths and their exported bytes' {
+    Test-Case 'the recipe inventories the default files and the FFmpeg validator and manifest' {
         $files = @(Read-RecipeFiles)
-        Assert-Equal $files.Count 5
-        Assert-Equal (($files.path | Sort-Object -CaseSensitive) -join '|') (($sourceNames | ForEach-Object { 'packaging/windows/' + $_ } | Sort-Object -CaseSensitive) -join '|')
+        Assert-Equal $files.Count 7
+        Assert-Equal (($files.path | Sort-Object -CaseSensitive) -join '|') ((($sourceNames + $ffmpegRecipeNames) | ForEach-Object {
+            'packaging/windows/' + $_
+        } | Sort-Object -CaseSensitive) -join '|')
         foreach ($entry in $files) {
             if ($entry.sha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Invalid recipe SHA256.' }
             Assert-Equal $entry.sha256 ((Get-FileHash -LiteralPath (Join-Path $exportRoot $entry.path)).Hash.ToLowerInvariant())
@@ -205,11 +234,11 @@ try {
     }
     Test-Case 'Complete recipe provenance additionally binds its own exported prerequisite notice' {
         $files = @(Read-RecipeFiles -Edition CompleteExperimental)
-        Assert-Equal $files.Count 6
+        Assert-Equal $files.Count 8
         $extra = @($files | Where-Object path -CEQ 'packaging/windows/WEBVIEW2-DEVELOPMENT.txt')
         Assert-Equal $extra.Count 1
         Assert-Equal $extra[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory 'WEBVIEW2-DEVELOPMENT.txt')).Hash.ToLowerInvariant())
-        Assert-Equal @(Read-RecipeFiles -Edition Lite).Count 5
+        Assert-Equal @(Read-RecipeFiles -Edition Lite).Count 7
     }
     Test-Case 'changing only the exported parser changes only that recorded hash' {
         $before = @(Read-RecipeFiles)
@@ -227,6 +256,114 @@ try {
         Assert-Equal $changed[0].path 'packaging/windows/PeDependencyReport.psm1'
         Assert-Equal $changed[0].sha256 ((Get-FileHash -LiteralPath $parserCopy).Hash.ToLowerInvariant())
         Assert-Equal ((Get-FileHash -LiteralPath $parserOriginal).Hash) $originalHash
+    }
+
+    $multimediaRoot = Join-Path $testRoot 'Qt Multimedia 日本'
+    $ffmpegBin = Join-Path $multimediaRoot 'bin'
+    $ffmpegPlugin = Join-Path $multimediaRoot 'plugins/multimedia/ffmpegmediaplugin.dll'
+    $ffmpegManifest = Join-Path $exportDirectory $ffmpegRecipeNames[1]
+    $multimediaConfig = Join-Path $multimediaRoot 'lib/cmake/Qt6Multimedia'
+    $null = New-Item -ItemType Directory -Path $ffmpegBin, (Split-Path -Parent $ffmpegPlugin), $multimediaConfig
+    $ffmpegFiles = @(foreach ($name in $ffmpegNames) {
+        $path = Join-Path $ffmpegBin $name
+        [IO.File]::WriteAllText($path, "Synthetic FFmpeg fixture: $name")
+        [ordered]@{ name = $name } + (Get-TestFilePin $path)
+    })
+    [IO.File]::WriteAllText($ffmpegPlugin, 'Synthetic Qt multimedia plugin')
+    $ffmpegPins = [ordered]@{ schema_version = 1; product_version = '7.1.5-rcmusic1'
+        qualified_build_receipt_sha256 = 'a' * 64; plugin = Get-TestFilePin $ffmpegPlugin; files = $ffmpegFiles }
+    Write-TestFfmpegManifest $ffmpegPins
+
+    Test-Case 'FFmpeg verification binds the complete runtime inventory and receipt without creating output' {
+        $runtime = Read-TestFfmpegRuntime
+        Assert-Equal $runtime.product_version $ffmpegPins.product_version
+        Assert-Equal $runtime.qualified_build_receipt_sha256 $ffmpegPins.qualified_build_receipt_sha256
+        $expectedPaths = @($ffmpegNames) + 'plugins/multimedia/ffmpegmediaplugin.dll'
+        Assert-Equal (($runtime.files.relative_path | Sort-Object -CaseSensitive) -join '|') `
+            (($expectedPaths | Sort-Object -CaseSensitive) -join '|')
+        foreach ($entry in $runtime.files) {
+            $file = if ($entry.relative_path -in $ffmpegNames) { Join-Path $ffmpegBin $entry.relative_path } else { $ffmpegPlugin }
+            $expected = Get-TestFilePin $file
+            Assert-Equal $entry.size_bytes $expected.size_bytes
+            Assert-Equal $entry.sha256 $expected.sha256
+        }
+        Assert-Equal (Test-Path -LiteralPath (Join-Path $testRoot 'unused-ffmpeg-runtime')) $false
+    }
+    Test-Case 'FFmpeg verification rejects duplicate DLL names even with valid hashes and five entries' {
+        try {
+            $ffmpegPins.files = @($ffmpegFiles[0], $ffmpegFiles[0]) + $ffmpegFiles[2..4]
+            Write-TestFfmpegManifest $ffmpegPins
+            Assert-Rejected { Read-TestFfmpegRuntime } 'FFmpeg'
+        } finally {
+            $ffmpegPins.files = $ffmpegFiles
+            Write-TestFfmpegManifest $ffmpegPins
+        }
+    }
+    Test-Case 'FFmpeg verification rejects a substituted Qt plugin of the original size' {
+        $original = [IO.File]::ReadAllBytes($ffmpegPlugin)
+        $changed = [byte[]] $original.Clone()
+        $changed[0] = $changed[0] -bxor 1
+        try {
+            [IO.File]::WriteAllBytes($ffmpegPlugin, $changed)
+            Assert-Rejected { Read-TestFfmpegRuntime } 'ffmpegmediaplugin\.dll'
+        } finally { [IO.File]::WriteAllBytes($ffmpegPlugin, $original) }
+    }
+    Test-Case 'the standard Lite recipe rejects a stale FFmpeg DLL before running build tools or creating output' {
+        $cachePath = Join-Path $buildDirectory 'CMakeCache.txt'
+        $previousCache = [IO.File]::ReadAllText($cachePath)
+        $dll = Join-Path $ffmpegBin $ffmpegNames[0]
+        $original = [IO.File]::ReadAllBytes($dll)
+        $changed = [byte[]] $original.Clone()
+        $changed[0] = $changed[0] -bxor 1
+        try {
+            $releaseCache = @('CMAKE_BUILD_TYPE:STRING=Release', 'BUILD_TESTING:BOOL=OFF',
+                "CMAKE_HOME_DIRECTORY:INTERNAL=$exportRoot", 'RC_MUSIC_BUILD_DESKTOP:BOOL=ON',
+                "Qt6_DIR:PATH=$multimediaConfig", "Qt6Multimedia_DIR:PATH=$multimediaConfig",
+                "TagLib_DIR:PATH=$multimediaConfig", "CMAKE_CXX_COMPILER:FILEPATH=$testRoot/unused-compiler.exe",
+                "CMAKE_COMMAND:INTERNAL=$testRoot/unused-cmake.exe")
+            [IO.File]::WriteAllLines($cachePath, $releaseCache)
+            [IO.File]::WriteAllBytes($dll, $changed)
+            $result = Invoke-RecipeChild @('-BuildDirectory', $buildDirectory, '-OutputDirectory', 'out/product/rejected-ffmpeg')
+            Assert-Equal $result.ExitCode 1
+            Assert-Equal $result.Stdout ''
+            if ($result.Stderr -notmatch 'avcodec-61\.dll') { throw "Wrong FFmpeg preflight: $($result.Stderr)" }
+            Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-ffmpeg')) $false
+        } finally {
+            [IO.File]::WriteAllBytes($dll, $original)
+            [IO.File]::WriteAllText($cachePath, $previousCache, [Text.UTF8Encoding]::new($false))
+        }
+    }
+    Test-Case 'the SDK stager copies the vendor SDK with the five pinned replacements' {
+        $stager = Join-Path $exportDirectory $multimediaStagerName
+        if (-not [IO.File]::Exists($stager)) { throw 'Required SDK stager is absent.' }
+        $vendorRoot = Join-Path $testRoot 'vendor Multimedia 日本'
+        $vendorBin = Join-Path $vendorRoot 'bin'
+        $vendorConfig = Join-Path $vendorRoot 'lib/cmake/Qt6Multimedia'
+        $vendorPlugin = Join-Path $vendorRoot 'plugins/multimedia/ffmpegmediaplugin.dll'
+        $null = New-Item -ItemType Directory -Path $vendorBin, $vendorConfig, (Split-Path -Parent $vendorPlugin)
+        $nonFfmpeg = @('lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake', 'bin/Qt6Multimedia.dll',
+            'plugins/multimedia/ffmpegmediaplugin.dll')
+        [IO.File]::WriteAllText((Join-Path $vendorRoot $nonFfmpeg[0]), '# Synthetic Qt Multimedia config')
+        [IO.File]::WriteAllText((Join-Path $vendorRoot $nonFfmpeg[1]), 'Synthetic Qt Multimedia library')
+        Copy-Item -LiteralPath $ffmpegPlugin -Destination $vendorPlugin
+        foreach ($name in $ffmpegNames) {
+            [IO.File]::WriteAllText((Join-Path $vendorBin $name), "Synthetic vendor FFmpeg: $name")
+        }
+        $vendorPaths = $nonFfmpeg + @($ffmpegNames | ForEach-Object { 'bin/' + $_ })
+        $originalPins = @{}
+        foreach ($relative in $vendorPaths) { $originalPins[$relative] = Get-TestFilePin (Join-Path $vendorRoot $relative) }
+
+        $output = Join-Path $exportRoot 'out/product/corrected Qt Multimedia 日本'
+        $null = & $stager -VendorSdkRoot $vendorRoot -FfmpegBinDirectory $ffmpegBin -OutputDirectory $output
+        foreach ($relative in $vendorPaths) {
+            Assert-Equal (Get-TestFilePin (Join-Path $vendorRoot $relative)).sha256 $originalPins[$relative].sha256
+        }
+        foreach ($relative in $nonFfmpeg) {
+            Assert-Equal (Get-TestFilePin (Join-Path $output $relative)).sha256 $originalPins[$relative].sha256
+        }
+        foreach ($entry in $ffmpegFiles) {
+            Assert-Equal (Get-TestFilePin (Join-Path $output ('bin/' + $entry.name))).sha256 $entry.sha256
+        }
     }
 } finally {
     Assert-SafeTestRoot

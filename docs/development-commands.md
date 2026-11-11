@@ -11,6 +11,17 @@ Execute em PowerShell 7 x64 no Windows. O arquivo de ferramentas padrão é `.to
 
 O runner não instala nem baixa dependências. A configuração é um `.psd1` de dados com campos conhecidos: `CMake`, `CTest`, `Ninja`, `Compiler`, `ClangFormat`, `QmlFormat`, `VisualStudioRoot`, `QtPrefix`, `QtMultimediaPackage`, `QtHost`, `TagLibPrefix` e `Catch2Source`. Os caminhos exigidos dependem da ação; campos desconhecidos, caminhos inválidos ou ferramentas ausentes são recusados. `format` e `check` não exigem CMake, compilador, Qt de destino ou Catch2: exigem os dois formatters locais. Git deve estar disponível para os checks documentais e de diff; `rg` é opcional para a enumeração de fontes.
 
+### Qt Multimedia com FFmpeg corrigido
+
+Com o SDK original e as DLLs qualificadas já disponíveis, execute uma vez na raiz do projeto:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicQtMultimediaSdk.ps1
+pwsh -NoProfile -File scripts/develop.ps1 build -ToolchainFile tools/windows.example.psd1 -BuildDirectory out/product/desktop-ffmpeg-release
+```
+
+O primeiro comando cria um SDK separado em `out/product/qt-multimedia-6.11.2-rcmusic1` a partir do Qt Multimedia 6.11.2 e dos binários de `out/product/fffix/install/bin`. A cópia ocupa cerca de 485 MB. Em outro host, forneça os caminhos dos dois insumos com `-VendorSdkRoot` e `-FfmpegBinDirectory`. Se já houver `.tools/windows.psd1`, atualize `QtMultimediaPackage` para o caminho retornado pelo primeiro comando e use um diretório de build novo. Ações `build`, `test`, `lint` e `validate` exigem os hashes qualificados das cinco DLLs e do plugin do Qt antes de configurar ou compilar. [Proveniência e montagem do runtime](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
+
 Versões desta receita:
 
 - clang-format **19.1.1** e qmlformat **6.11.2**, conferidos por `--version` antes de formatar;

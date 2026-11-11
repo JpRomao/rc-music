@@ -45,7 +45,7 @@ Os checks de regressão usaram uma transição legal estéreo → mono no ADX, t
 
 ## Validação dos runtimes corrigidos
 
-Cada cópia isolada de `f8a593b` substituiu as cinco DLLs e vinculou seus hashes ao recibo do build. A conferência cobriu 603 arquivos na Lite e 606 na Completa. Cada edição passou nos 17 cenários de áudio, com 19 casos Qt aprovados e zero skips. O Windows confirmou que o probe de cada edição carregou as cinco DLLs corrigidas e o plugin Qt a partir da cópia isolada. O diagnóstico informou `7.1.5-rcmusic1`. Os manifestos, resultados e declarações dos sete formatos estão em `out/product/fffix/qa/v2/`. A promoção do FFmpeg corrigido para o fluxo padrão de build e os demais requisitos de M5.7 continuam pendentes.
+Cada cópia isolada de `f8a593b` substituiu as cinco DLLs e vinculou seus hashes ao recibo do build. A conferência cobriu 603 arquivos na Lite e 606 na Completa. Cada edição passou nos 17 cenários de áudio, com 19 casos Qt aprovados e zero skips. O Windows confirmou que o probe de cada edição carregou as cinco DLLs corrigidas e o plugin Qt a partir da cópia isolada. O diagnóstico informou `7.1.5-rcmusic1`. Os manifestos, resultados e declarações dos sete formatos estão em `out/product/fffix/qa/v2/`.
 
 ## Setups privados com FFmpeg corrigido
 
@@ -55,3 +55,9 @@ Os setups em `out/product/fffix/setups/` foram montados com os runtimes corrigid
 | --- | ---: | --- |
 | Lite | 90.019.051 | `3cde05503a5bfe4b52005559421e23cb1f83e2c42c4329403b83e54ae7d882e4` |
 | Completa experimental | 90.090.411 | `f56f85baec26279d033b4cdab9e7f4d223ae329850b6a0b7e9658c164dd70605` |
+
+## Uso no fluxo Windows
+
+O SDK preparado pelo projeto usa as cinco DLLs `7.1.5-rcmusic1` e o plugin Qt que passou na qualificação. O runner Windows e `New-RcMusicLocalRuntime.ps1` conferem os seis arquivos com os hashes versionados antes do build. A montagem repete a conferência sobre os arquivos selecionados e grava a versão e o SHA-256 do recibo de qualificação no manifesto do runtime. Os binários originais do SDK do fornecedor permanecem disponíveis para as evidências históricas. [Comandos de preparação](../development-commands.md#qt-multimedia-com-ffmpeg-corrigido) · [Hashes dos arquivos qualificados](../../packaging/windows/ffmpeg-runtime.v1.json)
+
+Os hashes fixam a build qualificada existente. Uma nova compilação precisa de qualificação e de novos hashes. Os PEs atuais incluem caminhos absolutos na configuração embutida. O preparo do SDK e a montagem padrão são para desenvolvimento privado. O empacotador de instaladores ainda aceita manifestos históricos escolhidos explicitamente. A revisão dos demais avisos, os notices e a qualificação de distribuição seguem em M5.7.

@@ -3301,7 +3301,7 @@
         },
         {
           "path": "docs/delivery/windows-f8a593b-ffmpeg.md",
-          "marker": "## Validação dos runtimes corrigidos"
+          "marker": "## Uso no fluxo Windows"
         },
         {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
@@ -3309,7 +3309,7 @@
         }
       ],
       "remaining": [
-        "Completar dependências transitivas, notices e fontes correspondentes nos SBOMs de f8a593b. Promover o FFmpeg corrigido ao fluxo padrão e revisar os demais avisos, os termos dos pré-requisitos Microsoft e os componentes opcionais.",
+        "Completar dependências transitivas, notices e fontes correspondentes nos SBOMs de f8a593b. Qualificar as DLLs para distribuição e revisar os demais avisos, os termos dos pré-requisitos Microsoft e os componentes opcionais.",
         "Definir licença pública quando autorizada; licença/proveniência local das fixtures não equivale a autorização de publicação."
       ]
     },

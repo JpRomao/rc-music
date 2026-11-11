@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "product_version": "7.1.5-rcmusic1",
+  "qualified_build_receipt_sha256": "4b346bdc43a8f631de4013b8e0270a2bfaa202482f4f23dc99d024c923a3c862",
+  "plugin": {
+    "size_bytes": 701752,
+    "sha256": "f0913ee8f3d732640e23b90002e4fa720cc762c5807b05df4daafca400ad97ee"
+  },
+  "files": [
+    {
+      "name": "avcodec-61.dll",
+      "size_bytes": 14048256,
+      "sha256": "a8a26b474c8a348fab903de2009f9e8687fbaacc16c9449346a3ff9bd9897f38"
+    },
+    {
+      "name": "avformat-61.dll",
+      "size_bytes": 2632192,
+      "sha256": "2e90c5a022ce55ca827d8de01455032001a4f870a8398f93a378acaaca9049f3"
+    },
+    {
+      "name": "avutil-59.dll",
+      "size_bytes": 1137152,
+      "sha256": "9220aac77bd85d633e2325c4dcb1d86574dc7f3ef3b0981eb4af0f6e70007f58"
+    },
+    {
+      "name": "swresample-5.dll",
+      "size_bytes": 232960,
+      "sha256": "5798665ee6a49e4d0737330f6fcf5b4351b2fd851e3c9d81c986b953cc514064"
+    },
+    {
+      "name": "swscale-8.dll",
+      "size_bytes": 749056,
+      "sha256": "995dd7faedcdd453c20114587954f469c470166cd358b6413294b565679155f4"
+    }
+  ]
+}

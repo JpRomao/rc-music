@@ -44,6 +44,7 @@ if ($componentEnabled -and (-not $PSBoundParameters.ContainsKey('DownloadPackage
 }
 Import-Module (Join-Path $PSScriptRoot 'RcMusicRuntimePlan.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'PeDependencyReport.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'RcMusicFfmpegRuntime.psm1') -Force
 $downloadComponent = $null
 if ($componentEnabled) {
     Import-Module (Join-Path $PSScriptRoot 'RcMusicDownloadComponent.psm1') -Force
@@ -65,7 +66,7 @@ function Get-RuntimeRecipeFiles {
     param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
         [switch] $DownloadComponent, [switch] $NativeHostComponent)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
-        'qt.conf', 'LOCAL-DEVELOPMENT.txt')
+        'qt.conf', 'LOCAL-DEVELOPMENT.txt', 'RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
@@ -143,6 +144,10 @@ if ($nativeEnabled) {
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
+$payload = Join-Path $OutputDirectory 'app'
+$ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpeg-runtime.v1.json') `
+    -DllDirectory (Join-Path $multimedia 'bin') `
+    -PluginPath (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') -Destination $payload
 $dumpbin = Join-Path ([IO.Path]::GetDirectoryName($cache.CMAKE_CXX_COMPILER)) 'dumpbin.exe'
 $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 # This is an incremental application build, never a Qt SDK rebuild or benchmark.
@@ -259,7 +264,6 @@ if ($componentEnabled) {
     foreach ($import in $componentClosure.windows_external) { $null = $external.Add($import.name) }
     Assert-DownloadPackageUnchanged
 }
-$payload = Join-Path $OutputDirectory 'app'
 $allowedRoots = @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot)
 if ($configuration.browser_sdk_root) { $allowedRoots += $configuration.browser_sdk_root }
 if ($componentEnabled) { $allowedRoots += $downloadComponent.package_root }
@@ -282,6 +286,13 @@ if ($nativeEnabled) {
     $allowedRoots += $manifestSources
 }
 $plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots $allowedRoots -Destination $payload
+foreach ($expected in $ffmpeg.files) {
+    $collected = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
+    if ($collected.Count -ne 1 -or $collected[0].source -cne $expected.source -or
+        $collected[0].size_bytes -ne $expected.size_bytes -or $collected[0].sha256 -cne $expected.sha256) {
+        throw "Collected FFmpeg runtime differs from its qualified input: $($expected.relative_path)"
+    }
+}
 if ($componentEnabled) {
     foreach ($expected in $downloadComponent.files) {
         $copied = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
@@ -317,6 +328,10 @@ $manifest = [ordered]@{
     recipe_path_base = 'repository'; recipe_files = $recipeFiles
     distribution = 'private-local-development-only'
     format_matrix = 'experimental; packaged codec checks pending; no registered associations'
+    ffmpeg_runtime = [ordered]@{
+        product_version = $ffmpeg.product_version
+        qualified_build_receipt_sha256 = $ffmpeg.qualified_build_receipt_sha256
+    }
     files = $plan.files; pe_imports = @($reports); external_prerequisites = @($external | Sort-Object)
 }
 if ($componentEnabled) {
