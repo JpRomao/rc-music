@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza após a entrega de 8982c60
+
+Foram removidos **1.995 arquivos (1.157.657.216 bytes lógicos)**. A seleção incluiu os dois setups substituídos de `6d7ae8b` e 1.207 arquivos de seus runtimes, 569 intermediários declarados pelo Ninja, 12 cópias temporárias de probes, 203 arquivos gerados de um cache CMake cuja fonte foi removida e dois PDBs cujo conteúdo foi conferido no arquivo `.7z` preservado.
+
+A conferência releu cinco grafos Ninja e verificou 8.098 entradas por SHA-256, incluindo os quatro setups atuais, os dois runtimes de `8982c60` e as alterações preexistentes. Os players de `6d7ae8b` ficaram como referências, com seus manifestos e recibos. Os SDKs ativos de `q` e `out/m0` foram preservados. Os planos e resultados estão em `out/product/cleanup-request-8982c60-20261111/`. Os próximos builds afetados regeneram os intermediários. [Setups atuais](windows-installer.md#setups-de-8982c60)
+
 ### Intermediários dos instaladores de 8982c60
 
 Após conferir os [dois setups](windows-installer.md#setups-de-8982c60), foram removidos **496 objetos e bibliotecas intermediárias (278.580.879 bytes lógicos)** declarados nos grafos Ninja de `out/product/r7/out/product/{l,c}`. A limpeza conferiu por hash 16 arquivos protegidos, incluindo os setups, executáveis e manifestos, e releu os dois grafos. Plano e resultado em `out/product/test-runs/windows-candidates-8982c60-20261111/`.

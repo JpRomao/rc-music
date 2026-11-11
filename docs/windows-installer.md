@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental de `8982c60` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
+Os setups privados de `8982c60` foram conferidos em 2026-11-11. Cada edição tem um setup com associações e outro sem, ambos sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
 A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os setups de `ebb093a`. As limpezas anteriores retiraram os setups de `a469f8d`, `cf34cd8` e `26cc641`. Os recibos, configurações e evidências foram preservados. Os registros históricos abaixo documentam a geração original.
@@ -103,11 +103,20 @@ As duas edições incluem escolha da saída de áudio para a sessão, reconexão
 
 A inspeção conferiu os inventários de 619 e 622 arquivos, cinco combinações de seleção, associações OFF e setups PE x86 GUI sem assinatura. A leitura com 7-Zip conferiu 21 arquivos embutidos na Lite e 24 na Completa. Recibos em `out/product/test-runs/windows-candidates-8982c60-20261111/`. Instalação, atualização, remoção, uso com dispositivos físicos e integração instalada com Brave continuam pendentes.
 
+### Declarações e setups de 8982c60 com associações
+
+As declarações v2 vinculam as associações `.flac`, `.m4a`, `.mp3`, `.mp4`, `.oga`, `.ogg` e `.wav` à validação dos perfis básicos no runtime de cada edição. O setup habilita o registro das associações, e o aplicativo padrão é escolhido pelo usuário no Windows. A inspeção estática conferiu as cinco combinações de seleção e a leitura com 7-Zip conferiu 21 arquivos embutidos na Lite e 24 na Completa. Os setups não foram executados. Os recibos ficam em `out/product/test-runs/windows-associations-8982c60-20261111/`.
+
+| Edição | Pasta em `out/product/rc-music-installer` | Bytes do setup | SHA-256 |
+| --- | --- | ---: | --- |
+| Lite | `rc-music-8982c60-formats-v2-Lite-20261111` | 90.082.460 | `a174e80071a87b277ab031ed9e77eff99be99a71b4a5963a59f5f196a713343d` |
+| Completa experimental | `rc-music-8982c60-formats-v2-CompleteExperimental-20261111` | 90.153.003 | `17b610d2c02ba5b927a7070f3cd00609138d17570d147acdcc88d546bd8606b8` |
+
 ### Setups de 6d7ae8b
 
 O par inclui a edição de letras pelo menu da fila, seleção de playlists por teclado, correções de pesquisa no Lidarr e no LRCLIB, conclusão da revisão de letras antes do arquivamento e detecção e limites de leitura dos metadados. As duas extensões usam os pacotes de `9a3e257`, com reconferência da aba focada antes do envio. Ferramentas e extensões são opções inicialmente desmarcadas. [Runtimes de 6d7ae8b](windows-runtime.md#runtimes-de-6d7ae8b)
 
-Cada subdiretório em `out/product/rc-music-installer/` contém um `RCMusic-Setup.exe`.
+As pastas em `out/product/rc-music-installer/` preservam as configurações e os recibos. Os executáveis abaixo foram retirados na limpeza. [Limpeza após a entrega de 8982c60](development-commands.md#limpeza-após-a-entrega-de-8982c60)
 
 | Edição | Subdiretório | Bytes | SHA-256 |
 |---|---|---:|---|
