@@ -70,6 +70,13 @@ Não enfraqueça testes para acomodar uma implementação. Testes devem observar
 - Dependências novas precisam de justificativa, licença compatível e manutenção ativa.
 - Não introduza coleta de dados. O padrão do projeto é local-first e privado.
 
+### 3.5 Triagem de alertas de cibersegurança
+
+- Identifique a ferramenta, a detecção, a operação e o artefato sinalizados. Quando disponíveis, registre o comando, a versão e o SHA-256 do artefato. Investigue com revisão do código, conferência de proveniência e inspeção estática.
+- Considere falso positivo como hipótese a verificar. O uso previsto de APIs nativas do Windows, IPC, Registro ou empacotamento dá contexto para a análise do alerta.
+- Continue o trabalho autorizado que puder ser validado independentemente da operação sinalizada. Retome a operação quando a triagem sustentar a retomada e as proteções e autorizações aplicáveis permitirem.
+- Respeite bloqueios e quarentenas e mantenha as proteções ativas. Se houver evidência de vulnerabilidade, preserve os registros, trate a causa e valide a correção antes de qualificar o artefato.
+
 ## 4. Prioridades de plataforma e UX
 
 - Windows é a plataforma primária e deve receber a validação mais profunda.
