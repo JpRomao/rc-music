@@ -444,6 +444,12 @@ bool removedUnderPinnedParents(const Workspace& workspace) {
     return temporaryFilesAbsent(workspace) && observe(workspace.final_path, false).state == OpenState::Missing;
 }
 
+bool pinCleanedAbsence(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
+                       Workspace& workspace) {
+    return record.cleanup_complete && !pinWorkspaceRoots(config, record, workspace) &&
+           removedUnderPinnedParents(workspace);
+}
+
 bool pinReclaimable(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
                     const bool import_retired, Workspace& workspace) {
     if (pinWorkspaceRoots(config, record, workspace) || !temporaryFilesAbsent(workspace))
@@ -569,13 +575,33 @@ DownloadOwnershipAssessment WindowsDownloadOwnershipRecovery::assess(const Windo
     }
 }
 
+bool WindowsDownloadOwnershipRecovery::cleanedWithoutFiles(const WindowsDownloadWorkspaceConfig& config,
+                                                           const DownloadOwnershipRecord& record) noexcept {
+    try {
+        Workspace workspace;
+        return pinCleanedAbsence(config, record, workspace);
+    } catch (...) {
+        return false;
+    }
+}
+
 DownloadOwnershipDiscardOutcome
 WindowsDownloadOwnershipRecovery::discardPartials(const WindowsDownloadWorkspaceConfig& config,
                                                   const DownloadOwnershipRecord& record,
                                                   DownloadOwnershipStore& store) noexcept {
     bool mutation_started = false;
-    bool physically_removed = false;
+    bool cleanup_proven = false;
     try {
+        if (record.cleanup_complete) {
+            Workspace pinned;
+            if (pinCleanedAbsence(config, record, pinned)) {
+                cleanup_proven = true;
+                const auto saved =
+                    store.acknowledgeCleanedRecord(record, [&] { return removedUnderPinnedParents(pinned); });
+                return saved == DownloadCheckpointSaveStatus::Saved ? DiscardOutcome::Discarded
+                                                                    : DiscardOutcome::Unconfirmed;
+            }
+        }
         Workspace workspace;
         const auto assessment = assessExisting(config, record, workspace, true);
         if (assessment != Assessment::OwnedPartial)
@@ -592,13 +618,12 @@ WindowsDownloadOwnershipRecovery::discardPartials(const WindowsDownloadWorkspace
             return DiscardOutcome::Incomplete;
         if (!eraseOwned(workspace.job, workspace.job_path, true) || !removedUnderPinnedParents(workspace))
             return DiscardOutcome::Incomplete;
-        physically_removed = true;
-        // This exact acknowledgement, not a subsequent load/readback, is the
-        // only durable success. Pins outlive it. Never retry an ambiguous save.
+        cleanup_proven = true;
+        // This action requires its own durable acknowledgement. Pins outlive the save.
         return store.record(cleaned) == DownloadCheckpointSaveStatus::Saved ? DiscardOutcome::Discarded
                                                                             : DiscardOutcome::Unconfirmed;
     } catch (...) {
-        return physically_removed ? DiscardOutcome::Unconfirmed
+        return cleanup_proven     ? DiscardOutcome::Unconfirmed
                : mutation_started ? DiscardOutcome::Incomplete
                                   : DiscardOutcome::Unreadable;
     }

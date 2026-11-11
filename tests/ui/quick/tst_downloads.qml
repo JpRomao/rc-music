@@ -353,6 +353,8 @@ TestCase {
         openDownloads();
         const discard = findChild(rowAt(0), "download-discard-partials");
         verifyTarget(discard);
+        compare(discard.text, "Encerrar recuperação…");
+        compare(discard.Accessible.name, discard.text);
         discard.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Return);
         compare(downloads.discardedIds.length, 0);
@@ -361,8 +363,10 @@ TestCase {
         tryVerify(function () {
             return popup.opened;
         });
-        verify(visibleText(popup.contentItem).includes("MP3 final"));
-        verify(visibleText(popup.contentItem).includes("temporários"));
+        const advice = visibleText(popup.contentItem);
+        verify(advice.includes("MP3 final"));
+        verify(advice.includes("temporários ainda presentes"));
+        verify(advice.includes("arquivar o pedido"));
         compare(findChild(shell, "download-discard-advice").textFormat, Text.PlainText);
         compare(findChild(shell, "download-discard-cancel").Accessible.name, "Cancelar");
         verify(popup.x >= 0 && popup.y >= 0);
@@ -379,6 +383,8 @@ TestCase {
         });
         const confirm = findChild(shell, "download-discard-confirm");
         verifyTarget(confirm);
+        compare(confirm.text, "Encerrar recuperação");
+        compare(confirm.Accessible.name, confirm.text);
         mouseClick(confirm);
         compare(downloads.discardedIds.length, 1);
         compare(downloads.discardedIds[0], "partials-a");

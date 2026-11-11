@@ -19,7 +19,8 @@ enum class DownloadRecoveryReviewOutcome {
     HistoryFuture,
     Discarded,
     DiscardIncomplete,
-    DiscardUnconfirmed
+    DiscardUnconfirmed,
+    CleanupCandidate // Read-only: cleanup was recorded and no expected workspace or publication remains.
 };
 enum class DownloadRecoveryReviewAction { ReviewFiles, DiscardPartials };
 enum class DownloadRecoveryReviewCommand { Accepted, Busy, Closed, InvalidRequest };

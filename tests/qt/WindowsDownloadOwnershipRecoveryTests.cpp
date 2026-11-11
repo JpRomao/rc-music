@@ -2,6 +2,7 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
+#include "adapters/WindowsDownloadRecoveryReview.hpp"
 #include "m0/ports/DownloadExecution.hpp"
 
 #include <QCryptographicHash>
@@ -274,6 +275,98 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void reviewOffersCleanupOnlyForProvenCleanAbsence_data() {
+        QTest::addColumn<int>("kind");
+        QTest::addColumn<DownloadRecoveryReviewOutcome>("expected");
+        using Outcome = DownloadRecoveryReviewOutcome;
+        QTest::newRow("clean-planned") << 0 << Outcome::CleanupCandidate;
+        QTest::newRow("clean-ready") << 1 << Outcome::CleanupCandidate;
+        QTest::newRow("unconfirmed-missing") << 2 << Outcome::Missing;
+        QTest::newRow("clean-with-residual") << 3 << Outcome::Conflict;
+        QTest::newRow("clean-with-final") << 4 << Outcome::OwnedFinalCandidate;
+        QTest::newRow("wrong-roots") << 5 << Outcome::Conflict;
+    }
+
+    void reviewOffersCleanupOnlyForProvenCleanAbsence() {
+        QFETCH(int, kind);
+        QFETCH(DownloadRecoveryReviewOutcome, expected);
+        Fixture f;
+        QVERIFY(f.initialized);
+        if (kind != 0) {
+            QVERIFY(f.ready());
+            if (kind == 4)
+                QVERIFY(f.publish());
+            if (kind != 3)
+                QVERIFY(f.removeTemps());
+        }
+        f.record.cleanup_complete = kind != 2;
+        auto config = f.config();
+        if (kind == 5)
+            config.publish_parent = config.staging_parent;
+        const auto before = DownloadOwnershipJson::encode({{f.record}});
+        const auto directory = seedJournal(f, before);
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadRecoveryReview review(directory, config);
+        QCOMPARE(review.startReview(1, f.record.job_id), DownloadRecoveryReviewCommand::Accepted);
+        std::optional<DownloadRecoveryReviewResult> result;
+        QTRY_VERIFY(result.has_value() || (result = review.poll(1)).has_value());
+        QCOMPARE(result->action, DownloadRecoveryReviewAction::ReviewFiles);
+        QCOMPARE(result->outcome, expected);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), before);
+        review.shutdown();
+        QTRY_VERIFY(review.stopped());
+    }
+
+    void cleanedAbsentDiscardRequiresNewExactAcknowledgement_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("new-ack-after-ambiguous-commit") << 0;
+        QTest::newRow("journal-row-removed") << 1;
+        QTest::newRow("journal-row-changed") << 2;
+    }
+
+    void cleanedAbsentDiscardRequiresNewExactAcknowledgement() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        auto before = DownloadOwnershipJournal{{f.record}};
+        if (kind == 1)
+            before.records.clear();
+        if (kind == 2)
+            before.records.front().cleanup_complete = false;
+        const auto encoded = DownloadOwnershipJson::encode(before);
+        const auto directory = seedJournal(f, encoded);
+        QVERIFY(!directory.isEmpty());
+        bool failed_after_commit = false;
+        WindowsDownloadOwnershipStore faulted(directory, {.inject_fault = [&](const auto point) {
+                                                  failed_after_commit =
+                                                      point == WindowsDownloadOwnershipFaultPoint::AfterCommit;
+                                                  return failed_after_commit;
+                                              }});
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, faulted),
+                 DownloadOwnershipDiscardOutcome::Unconfirmed);
+        QCOMPARE(failed_after_commit, kind == 0);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), encoded);
+        if (kind != 0)
+            return;
+
+        bool saw_pinned_parent = false;
+        WindowsDownloadOwnershipStore retried(
+            directory, {.inject_fault = [&](const auto point) {
+                if (point == WindowsDownloadOwnershipFaultPoint::BeforeCommit) {
+                    Handle replaceable(CreateFileW(native(f.staging).c_str(), DELETE,
+                                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+                    saw_pinned_parent = !replaceable.valid();
+                }
+                return false;
+            }});
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, retried),
+                 DownloadOwnershipDiscardOutcome::Discarded);
+        QVERIFY(saw_pinned_parent);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), encoded);
+    }
+
     void fullJournalReclaimsOnePublishedRowAndKeepsThePhysicalFile_data() {
         QTest::addColumn<int>("fault");
         QTest::newRow("saved") << 0;
@@ -945,11 +1038,17 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
             QCOMPARE(after, before);
         else
             QVERIFY(after != before);
-        // A visible cleanup=true after Failed is not an acknowledgement, and a
-        // retry on absent physical objects performs no repair or second save.
+        // A stale record without cleanup confirmation cannot authorize another save.
         QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store),
                  DownloadOwnershipDiscardOutcome::Missing);
         QCOMPARE(readFile(journal), after);
+        if (kind == 2) {
+            // A new explicit discard with current evidence can obtain its own Saved acknowledgement.
+            QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), loaded.journal->records.front(),
+                                                                       restarted),
+                     DownloadOwnershipDiscardOutcome::Discarded);
+            QCOMPARE(readFile(journal), after);
+        }
     }
 
     void discardRequiresSavedNotAReadableCommitAfterRemoval_data() {

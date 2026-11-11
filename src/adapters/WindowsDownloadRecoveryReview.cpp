@@ -33,6 +33,7 @@ DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewAction action, Downl
     case DownloadRecoveryReviewOutcome::HistoryFuture:
         return outcome;
     case DownloadRecoveryReviewOutcome::OwnedPartial:
+    case DownloadRecoveryReviewOutcome::CleanupCandidate:
         return action == DownloadRecoveryReviewAction::ReviewFiles ? outcome : uncertain(action);
     case DownloadRecoveryReviewOutcome::Discarded:
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
@@ -88,6 +89,8 @@ DownloadRecoveryReviewOutcome assess(DownloadOwnershipStore& store, const Window
         }
         return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
     }
+    if (WindowsDownloadOwnershipRecovery::cleanedWithoutFiles(config, *found))
+        return DownloadRecoveryReviewOutcome::CleanupCandidate;
     switch (WindowsDownloadOwnershipRecovery::assess(config, *found)) {
     case DownloadOwnershipAssessment::Unverified:
         return DownloadRecoveryReviewOutcome::Unverified;

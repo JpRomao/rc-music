@@ -19,6 +19,9 @@ class WindowsDownloadOwnershipStore final : public DownloadOwnershipStore {
     explicit WindowsDownloadOwnershipStore(QString config_directory, WindowsDownloadOwnershipStoreOptions options = {});
     [[nodiscard]] DownloadOwnershipLoadResult load() override;
     [[nodiscard]] DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& record) override;
+    [[nodiscard]] DownloadCheckpointSaveStatus
+    acknowledgeCleanedRecord(const DownloadOwnershipRecord& expected,
+                             const std::function<bool()>& still_absent) override;
 
   private:
     friend class WindowsDownloadOwnershipRecovery;
@@ -26,6 +29,10 @@ class WindowsDownloadOwnershipStore final : public DownloadOwnershipStore {
     // journal is locked. Only a full journal can release one record.
     [[nodiscard]] DownloadCheckpointSaveStatus reclaimAtCapacity(const DownloadOwnershipRecord& expected,
                                                                  const std::function<bool()>& still_reclaimable);
+    enum class CleanedRecordChange { Acknowledge, ReclaimAtCapacity };
+    [[nodiscard]] DownloadCheckpointSaveStatus changeCleanedRecord(const DownloadOwnershipRecord& expected,
+                                                                   const std::function<bool()>& still_verified,
+                                                                   CleanedRecordChange change);
     QString directory_;
     WindowsDownloadOwnershipStoreOptions options_;
 };

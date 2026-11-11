@@ -128,6 +128,11 @@ bool sameSnapshot(const DownloadJobSnapshot& left, const DownloadJobSnapshot& ri
            left.completed_mp3 == right.completed_mp3 && left.error == right.error;
 }
 
+bool discardCandidate(const DownloadRecoveryReviewOutcome outcome) {
+    return outcome == DownloadRecoveryReviewOutcome::OwnedPartial ||
+           outcome == DownloadRecoveryReviewOutcome::CleanupCandidate;
+}
+
 QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
     switch (outcome) {
     case DownloadRecoveryReviewOutcome::Unverified:
@@ -136,6 +141,9 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
     case DownloadRecoveryReviewOutcome::OwnedPartial:
         return DownloadJobsModel::tr("Arquivos parciais reconhecidos e preservados. Não há áudio pronto para importar; "
                                      "selecione a mídia novamente se necessário.");
+    case DownloadRecoveryReviewOutcome::CleanupCandidate:
+        return DownloadJobsModel::tr(
+            "O histórico registra a limpeza e a verificação confirmou que os arquivos deste download estão ausentes.");
     case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
         return DownloadJobsModel::tr(
             "Arquivo final reconhecido; conteúdo ainda não validado ou importado. Nada foi alterado.");
@@ -160,7 +168,7 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
                                      "use uma versão compatível do RC Music.");
     case DownloadRecoveryReviewOutcome::Discarded:
         return DownloadJobsModel::tr(
-            "Temporários descartados e histórico confirmado. O MP3 final, se existir, não foi removido.");
+            "Limpeza dos temporários confirmada no registro. O MP3 final, se existir, foi preservado.");
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
         return DownloadJobsModel::tr("O descarte dos temporários não foi concluído. Parte deles pode ter sido "
                                      "removida; o MP3 final não é alvo. Verifique novamente antes de outra tentativa.");
@@ -267,14 +275,18 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
         return review_available_ && !review_unavailable_ && review_job_id_.isEmpty() && validation_job_id_.isEmpty() &&
                item.state == DownloadJobState::Interrupted;
     case ReviewTextRole: {
-        if (item.state != DownloadJobState::Interrupted)
-            return QString{};
         const auto job_id = QString::fromStdString(item.job_id);
+        const auto found = reviews_.constFind(job_id);
+        if (item.state != DownloadJobState::Interrupted) {
+            return item.state == DownloadJobState::Cancelled && found != reviews_.cend() &&
+                           *found == DownloadRecoveryReviewOutcome::Discarded
+                       ? reviewText(*found)
+                       : QString{};
+        }
         if (review_job_id_ == job_id)
             return review_action_ == DownloadRecoveryReviewAction::ReviewFiles
                        ? tr("Verificando arquivos locais; nada será alterado.")
-                       : tr("Descartando apenas temporários próprios; o MP3 final não é alvo.");
-        const auto found = reviews_.constFind(job_id);
+                       : tr("Encerrando a recuperação. Temporários próprios ainda presentes podem ser removidos.");
         if (review_unavailable_ && found != reviews_.cend() && *found == DownloadRecoveryReviewOutcome::Unreadable)
             return tr("Não foi possível verificar os arquivos. Reinicie o RC Music antes de tentar novamente. Tudo foi "
                       "preservado.");
@@ -289,7 +301,7 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
         const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
         return review_available_ && !review_unavailable_ && discard_supported_ && review_job_id_.isEmpty() &&
                validation_job_id_.isEmpty() && item.state == DownloadJobState::Interrupted &&
-               found != reviews_.cend() && *found == DownloadRecoveryReviewOutcome::OwnedPartial;
+               found != reviews_.cend() && discardCandidate(*found) && service_.canSettleRecoveredDiscard(item.job_id);
     }
     case CanValidateMediaRole: {
         const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
@@ -366,9 +378,9 @@ int DownloadJobsModel::activeCount() const noexcept { return active_count_; }
 int DownloadJobsModel::completedCount() const noexcept { return completed_count_; }
 void DownloadJobsModel::notifyReviewChanged() {
     if (!items_.empty())
-        emit dataChanged(
-            index(0, 0), index(rowCount() - 1, 0),
-            {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole, CanValidateMediaRole});
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
+                         {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole,
+                          CanValidateMediaRole, ValidationTextRole});
 }
 void DownloadJobsModel::notifyValidationChanged() {
     if (!items_.empty())
@@ -404,10 +416,12 @@ bool DownloadJobsModel::beginReview(const QString& job_id, const DownloadRecover
         return false;
     if (action == DownloadRecoveryReviewAction::DiscardPartials) {
         const auto found = reviews_.constFind(job_id);
-        if (!discard_supported_ || found == reviews_.cend() || *found != DownloadRecoveryReviewOutcome::OwnedPartial)
+        if (!discard_supported_ || found == reviews_.cend() || !discardCandidate(*found) ||
+            !service_.canSettleRecoveredDiscard(job_id.toStdString()))
             return false;
         reviews_.remove(job_id);
     }
+    validations_.remove(job_id);
     review_action_ = action;
     review_job_id_ = job_id;
     notifyReviewChanged();

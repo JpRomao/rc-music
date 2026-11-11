@@ -822,6 +822,8 @@ O painel comum mostra a capacidade real do histórico, inclusive reservas penden
 
 O player Windows configurado liga a revisão, o descarte confirmado e a importação de arquivos recuperados ao mesmo journal e diretórios da execução. Novos downloads aguardam a liberação quando uma recuperação está em curso. A validação de MP3 usa Media Foundation com ferramenta autenticada. O perfil AppContainer ainda exige uma composição própria para essa validação. [Recuperação de arquivos no player](download-jobs.md#recuperação-de-arquivos-no-player-configurado)
 
+O painel pode encerrar um item interrompido após confirmar a limpeza dos temporários. Se a limpeza já foi registrada antes de o app fechar, uma nova verificação e confirmação permitem encerrar ao reabrir. Pedidos inteiros passam a ser arquiváveis quando todos os seus itens estão encerrados. [Encerrar recuperação](download-jobs.md#descarte-confirmado-de-temporários-interrompidos)
+
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
 ### Checkpoint anterior — extensões opcionais no instalador

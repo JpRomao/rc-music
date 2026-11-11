@@ -275,6 +275,7 @@ class WindowsDownloadRecoveryReviewTests final : public QObject {
         QTest::newRow("review-cannot-claim-discarded") << false << 3;
         QTest::newRow("review-cannot-claim-incomplete") << false << 4;
         QTest::newRow("review-cannot-claim-unconfirmed") << false << 5;
+        QTest::newRow("discard-cannot-offer-cleanup") << true << 6;
     }
     void malformed_or_throwing_discard_work_is_never_promoted_to_cleanup_success() {
         QFETCH(bool, discard);
@@ -291,6 +292,8 @@ class WindowsDownloadRecoveryReviewTests final : public QObject {
                     return DownloadRecoveryReviewOutcome::Discarded;
                 if (kind == 4)
                     return DownloadRecoveryReviewOutcome::DiscardIncomplete;
+                if (kind == 6)
+                    return DownloadRecoveryReviewOutcome::CleanupCandidate;
                 return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
             };
         });

@@ -237,10 +237,20 @@ struct DownloadService::Impl {
           limits(caps), valid_configuration(validPrefix(prefix) && limits.max_jobs > 0 && limits.max_requests > 0 &&
                                             limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0) {}
 
-    Job* find(const std::string_view id) {
+    Job* find(const std::string_view id) noexcept {
         const auto found =
             std::find_if(jobs.begin(), jobs.end(), [id](const Job& job) { return job.view.job_id == id; });
         return found == jobs.end() ? nullptr : &*found;
+    }
+
+    Job* recoveredDiscardTarget(const std::string_view id) noexcept {
+        if (calling_port || closed || staged_archive || !valid_configuration)
+            return nullptr;
+        auto* const job = find(id);
+        if (!job || job->view.state != DownloadJobState::Interrupted || job->recovered_import ||
+            !receipts[job->receipt_index].recovered)
+            return nullptr;
+        return job;
     }
 
     DownloadSubmissionError checkReplayFingerprint(const DownloadRequest& request, const std::string_view expected) {
@@ -1063,6 +1073,22 @@ bool DownloadService::retryImport(const std::string_view job_id) {
     if (job == nullptr || job->view.state != DownloadJobState::ImportFailed)
         return false;
     return state.import(*job);
+}
+
+bool DownloadService::canSettleRecoveredDiscard(const std::string_view job_id) const noexcept {
+    return impl_->recoveredDiscardTarget(job_id) != nullptr;
+}
+
+bool DownloadService::settleRecoveredDiscard(const std::string_view job_id) {
+    auto& state = *impl_;
+    auto* const job = state.recoveredDiscardTarget(job_id);
+    if (!job)
+        return false;
+    job->view.state = DownloadJobState::Cancelled;
+    job->view.error = DownloadFailure::None;
+    job->candidate_mp3.clear();
+    std::erase_if(state.recovery_report.items, [job](const auto& item) { return item.job_id == job->view.job_id; });
+    return true;
 }
 
 bool DownloadService::canImportRecovered(const std::string_view job_id) const {

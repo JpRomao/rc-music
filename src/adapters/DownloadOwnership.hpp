@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -56,6 +57,12 @@ class DownloadOwnershipStore {
     virtual ~DownloadOwnershipStore() = default;
     [[nodiscard]] virtual DownloadOwnershipLoadResult load() = 0;
     [[nodiscard]] virtual DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord&) = 0;
+    // Rewrite only an exact, already-cleaned row. Recheck the physical proof
+    // under the writer lock, and never create a missing row during a retry.
+    [[nodiscard]] virtual DownloadCheckpointSaveStatus acknowledgeCleanedRecord(const DownloadOwnershipRecord&,
+                                                                                const std::function<bool()>&) {
+        return DownloadCheckpointSaveStatus::Failed;
+    }
 };
 
 } // namespace music_player::m0

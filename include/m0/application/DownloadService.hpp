@@ -108,6 +108,11 @@ class DownloadService final : public DownloadSubmission {
     void tick(std::int64_t now_ms, const std::function<bool()>& allow_start = {});
     [[nodiscard]] bool cancel(std::string_view job_id);
     [[nodiscard]] bool retryImport(std::string_view job_id);
+    // Trusted caller settles only the exact restored job whose temporary
+    // cleanup was physically confirmed and acknowledged by the journal.
+    // A subsequent checkpoint save persists the change to the history.
+    [[nodiscard]] bool canSettleRecoveredDiscard(std::string_view job_id) const noexcept;
+    [[nodiscard]] bool settleRecoveredDiscard(std::string_view job_id);
     // Trusted composition only, after explicit consent and fresh retained
     // ownership/media/publication proof. Stored paths are never authority.
     // Pending/Failed recovery stays Interrupted; only durable commitment makes

@@ -1038,7 +1038,7 @@ Popup {
         contentItem: ColumnLayout {
             id: discardContent
 
-            Accessible.name: labels.discardPartials
+            Accessible.name: labels.confirmDiscard
             Accessible.role: Accessible.Dialog
             spacing: root.contract.spacingUnit * 3
 
@@ -1046,7 +1046,7 @@ Popup {
                 Layout.fillWidth: true
                 color: root.contract.textPrimaryColor
                 font.bold: true
-                text: labels.discardPartials
+                text: labels.confirmDiscard
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
             }
@@ -1085,7 +1085,7 @@ Popup {
                     contract: root.contract
                     enabled: root.discardConsentCurrent
                     objectName: "download-discard-confirm"
-                    text: labels.discardPartials
+                    text: labels.confirmDiscard
 
                     onClicked: root.confirmDiscardConsent()
                 }

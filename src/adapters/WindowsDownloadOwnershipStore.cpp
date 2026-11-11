@@ -81,11 +81,25 @@ DownloadCheckpointSaveStatus WindowsDownloadOwnershipStore::record(const Downloa
 }
 
 DownloadCheckpointSaveStatus
+WindowsDownloadOwnershipStore::acknowledgeCleanedRecord(const DownloadOwnershipRecord& expected,
+                                                        const std::function<bool()>& still_absent) {
+    return changeCleanedRecord(expected, still_absent, CleanedRecordChange::Acknowledge);
+}
+
+DownloadCheckpointSaveStatus
 WindowsDownloadOwnershipStore::reclaimAtCapacity(const DownloadOwnershipRecord& expected,
                                                  const std::function<bool()>& still_reclaimable) {
+    return changeCleanedRecord(expected, still_reclaimable, CleanedRecordChange::ReclaimAtCapacity);
+}
+
+DownloadCheckpointSaveStatus
+WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord& expected,
+                                                   const std::function<bool()>& still_verified,
+                                                   const CleanedRecordChange change) {
     try {
-        if (!expected.cleanup_complete || !validDownloadOwnershipRecord(expected) || !still_reclaimable)
+        if (!expected.cleanup_complete || !validDownloadOwnershipRecord(expected) || !still_verified)
             return DownloadCheckpointSaveStatus::Failed;
+        const bool reclaim = change == CleanedRecordChange::ReclaimAtCapacity;
         WindowsPrivateDownloadDocument document(directory_, WindowsPrivateDownloadDocumentKind::Ownership,
                                                 validateOwnership, options_);
         return document.update([&](const WindowsPrivateDownloadDocumentResult& current) {
@@ -95,13 +109,14 @@ WindowsDownloadOwnershipStore::reclaimAtCapacity(const DownloadOwnershipRecord& 
                 return blocked;
             auto decoded = DownloadOwnershipJson::decode(current.bytes);
             if (decoded.status != DownloadCheckpointLoadStatus::Loaded || !decoded.journal ||
-                decoded.journal->records.size() != DownloadOwnershipJournal::maximum_records)
+                (reclaim && decoded.journal->records.size() != DownloadOwnershipJournal::maximum_records))
                 return blocked;
             auto& records = decoded.journal->records;
             const auto found = std::ranges::find(records, expected);
-            if (found == records.end() || !still_reclaimable())
+            if (found == records.end() || !still_verified())
                 return blocked;
-            records.erase(found);
+            if (reclaim)
+                records.erase(found);
             return WindowsPrivateDownloadDocumentMutation{.status = DownloadCheckpointSaveStatus::Saved,
                                                           .bytes = DownloadOwnershipJson::encode(*decoded.journal)};
         });

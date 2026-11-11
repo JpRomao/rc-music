@@ -60,6 +60,7 @@ bool validReviewOutcome(const DownloadRecoveryReviewOutcome outcome, const Downl
     case DownloadRecoveryReviewOutcome::HistoryFuture:
         return true;
     case DownloadRecoveryReviewOutcome::OwnedPartial:
+    case DownloadRecoveryReviewOutcome::CleanupCandidate:
         return action == DownloadRecoveryReviewAction::ReviewFiles;
     case DownloadRecoveryReviewOutcome::Discarded:
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
@@ -570,12 +571,8 @@ bool DownloadApplicationBinding::canDiscardForJob(const QString& job_id) const {
     for (int row = 0; row < impl_->model.rowCount(); ++row) {
         const auto index = impl_->model.index(row, 0);
         if (impl_->model.data(index, DownloadJobsModel::JobIdRole).toString() == job_id &&
-            impl_->model.data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool()) {
-            const auto jobs = impl_->download_service.snapshot();
-            return std::ranges::any_of(jobs, [&](const DownloadJobSnapshot& job) {
-                return job.state == DownloadJobState::Interrupted && QString::fromStdString(job.job_id) == job_id;
-            });
-        }
+            impl_->model.data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool())
+            return impl_->download_service.canSettleRecoveredDiscard(job_id.toStdString());
     }
     return false;
 }
@@ -755,8 +752,11 @@ void DownloadApplicationBinding::pollReview() {
         return;
     }
     impl_->review_operation.reset();
-    if (!impl_->review_unavailable)
-        static_cast<void>(impl_->model.finishReview(QString::fromStdString(operation.job_id), result->outcome));
+    if (impl_->review_unavailable)
+        return;
+    if (!impl_->closing && result->outcome == DownloadRecoveryReviewOutcome::Discarded)
+        static_cast<void>(impl_->download_service.settleRecoveredDiscard(operation.job_id));
+    static_cast<void>(impl_->model.finishReview(QString::fromStdString(operation.job_id), result->outcome));
 }
 
 bool DownloadApplicationBinding::start() {

@@ -291,6 +291,29 @@ class DownloadJobsModelTests final : public QObject {
         QCOMPARE(h.execution.starts, 0);
         QCOMPARE(h.importer.calls, 0);
     }
+    void freshReviewClearsOnlyTheSameJobsTerminalValidation() {
+        RecoveryModelHarness h;
+        QVERIFY(h.restored);
+        h.model.setValidationAvailable(true);
+        for (const auto& id : {QStringLiteral("previous-1"), QStringLiteral("previous-2")}) {
+            QVERIFY(h.reviewed(id, DownloadRecoveryReviewOutcome::OwnedFinalCandidate));
+            QVERIFY(h.model.beginValidation(id));
+            QVERIFY(h.model.finishValidation(id, DownloadRecoveryValidationOutcome::InvalidMedia));
+        }
+        const auto other_validation = value(h.model, DownloadJobsModel::ValidationTextRole, 1).toString();
+        QVERIFY(!other_validation.isEmpty());
+        QVERIFY(!value(h.model, DownloadJobsModel::ValidationTextRole).toString().isEmpty());
+
+        QSignalSpy changed(&h.model, &QAbstractItemModel::dataChanged);
+        QVERIFY(h.model.beginReview(QStringLiteral("previous-1")));
+        QCOMPARE(changed.size(), 1);
+        QVERIFY(changed.front().at(2).value<QList<int>>().contains(DownloadJobsModel::ValidationTextRole));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationTextRole).toString().isEmpty());
+        QCOMPARE(value(h.model, DownloadJobsModel::ValidationTextRole, 1).toString(), other_validation);
+        QVERIFY(h.model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::CleanupCandidate));
+        QVERIFY(value(h.model, DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("limpeza")));
+        QVERIFY(value(h.model, DownloadJobsModel::ValidationTextRole).toString().isEmpty());
+    }
     void validationCanBeReleasedWhilePendingAndCannotRaceAnotherReview() {
         RecoveryModelHarness h;
         QVERIFY(h.restored);
@@ -345,7 +368,13 @@ class DownloadJobsModelTests final : public QObject {
         QVERIFY(h.model.beginValidation(QStringLiteral("previous-1")));
         QVERIFY(observed);
     }
+    void discardCapabilityNeedsOwnPartialsAndConsumesTheirOldAssessment_data() {
+        QTest::addColumn<int>("assessment");
+        QTest::newRow("owned partials") << int(DownloadRecoveryReviewOutcome::OwnedPartial);
+        QTest::newRow("cleanup candidate") << int(DownloadRecoveryReviewOutcome::CleanupCandidate);
+    }
     void discardCapabilityNeedsOwnPartialsAndConsumesTheirOldAssessment() {
+        QFETCH(int, assessment);
         ReviewIdentity identity;
         Execution execution;
         Importer importer;
@@ -360,17 +389,21 @@ class DownloadJobsModelTests final : public QObject {
         model.setDiscardSupported(true);
         QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
         QVERIFY(model.beginReview(QStringLiteral("previous-1")));
-        QVERIFY(model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::OwnedPartial));
+        QVERIFY(
+            model.finishReview(QStringLiteral("previous-1"), static_cast<DownloadRecoveryReviewOutcome>(assessment)));
         QVERIFY(value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(!value(model, DownloadJobsModel::CanValidateMediaRole).toBool());
         QVERIFY(model.beginReview(QStringLiteral("previous-1"), DownloadRecoveryReviewAction::DiscardPartials));
         QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
         QVERIFY(value(model, DownloadJobsModel::ReviewBusyRole).toBool());
-        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole).toString().contains(QStringLiteral("Descartando")));
+        QVERIFY(value(model, DownloadJobsModel::ReviewTextRole)
+                    .toString()
+                    .contains(QStringLiteral("Encerrando a recuperação")));
         QVERIFY(model.finishReview(QStringLiteral("previous-1"), DownloadRecoveryReviewOutcome::Discarded));
         QVERIFY(!value(model, DownloadJobsModel::CanDiscardPartialsRole).toBool());
         QVERIFY(value(model, DownloadJobsModel::ReviewTextRole)
                     .toString()
-                    .contains(QStringLiteral("histórico confirmado")));
+                    .contains(QStringLiteral("confirmada no registro")));
         QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
         QCOMPARE(service.snapshot()[0].state, DownloadJobState::Interrupted);
         QCOMPARE(execution.starts, 0);
@@ -380,7 +413,7 @@ class DownloadJobsModelTests final : public QObject {
         QTest::addColumn<int>("outcome");
         QTest::addColumn<QString>("expected");
         QTest::newRow("confirmed") << int(DownloadRecoveryReviewOutcome::Discarded)
-                                   << QStringLiteral("histórico confirmado");
+                                   << QStringLiteral("confirmada no registro");
         QTest::newRow("incomplete") << int(DownloadRecoveryReviewOutcome::DiscardIncomplete)
                                     << QStringLiteral("não foi concluído");
         QTest::newRow("unconfirmed") << int(DownloadRecoveryReviewOutcome::DiscardUnconfirmed)

@@ -1110,15 +1110,22 @@ class DownloadApplicationBindingTests final : public QObject {
         QCOMPARE(h.importer.calls, 0);
         QCOMPARE(h.execution.starts, 0);
     }
+    void partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback_data() {
+        QTest::addColumn<int>("assessment");
+        QTest::newRow("owned partials") << int(DownloadRecoveryReviewOutcome::OwnedPartial);
+        QTest::newRow("cleanup candidate") << int(DownloadRecoveryReviewOutcome::CleanupCandidate);
+    }
     void partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback() {
+        QFETCH(int, assessment);
         Harness h({}, true);
         h.review.discard_supported = true;
         QVERIFY(h.interrupted());
         QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
         QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
-        h.review.complete(DownloadRecoveryReviewOutcome::OwnedPartial);
+        h.review.complete(static_cast<DownloadRecoveryReviewOutcome>(assessment));
         h.binding.poll();
         QVERIFY(h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
         QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
         const auto token = h.binding.discardConsentToken();
         QCOMPARE(h.binding.discardConsentJobId(), QStringLiteral("old-1"));
@@ -1135,13 +1142,24 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
         QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
         QVERIFY(!h.binding.requestDiscardPartials(QStringLiteral("old-1")));
+        bool observed_settlement = false;
+        auto* const model = h.binding.jobsModel();
+        connect(model, &QAbstractItemModel::dataChanged, &h.binding, [&] {
+            if (h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool())
+                return;
+            QCOMPARE(h.service.snapshot().front().state, DownloadJobState::Cancelled);
+            observed_settlement = true;
+        });
         h.review.complete(DownloadRecoveryReviewOutcome::Discarded);
         h.binding.poll();
+        QVERIFY(observed_settlement);
         QVERIFY(h.reviewValue(DownloadJobsModel::ReviewTextRole)
                     .toString()
-                    .contains(QStringLiteral("histórico confirmado")));
+                    .contains(QStringLiteral("confirmada no registro")));
         QVERIFY(!h.reviewValue(DownloadJobsModel::CanDiscardPartialsRole).toBool());
-        QCOMPARE(h.service.snapshot()[0].state, DownloadJobState::Interrupted);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QCOMPARE(h.reviewValue(DownloadJobsModel::StateRole).toString(), QStringLiteral("cancelled"));
+        QCOMPARE(h.service.snapshot()[1].state, DownloadJobState::Interrupted);
         QVERIFY(h.reviewValue(DownloadJobsModel::OutputPathRole).toString().isEmpty());
         QCOMPARE(h.execution.starts, 0);
         QCOMPARE(h.importer.calls, 0);
@@ -1194,6 +1212,7 @@ class DownloadApplicationBindingTests final : public QObject {
         QTest::newRow("poll throws") << 1;
         QTest::newRow("wrong action result") << 2;
         QTest::newRow("read-only partial outcome for discard") << 3;
+        QTest::newRow("read-only cleanup outcome for discard") << 4;
     }
     void uncertainDiscardUsesMutationSpecificDiagnosticAndDrainsOriginalAction() {
         QFETCH(int, fault);
@@ -1215,6 +1234,8 @@ class DownloadApplicationBindingTests final : public QObject {
                 h.review.completion->action = DownloadRecoveryReviewAction::ReviewFiles;
             if (fault == 3)
                 h.review.completion->outcome = DownloadRecoveryReviewOutcome::OwnedPartial;
+            if (fault == 4)
+                h.review.completion->outcome = DownloadRecoveryReviewOutcome::CleanupCandidate;
             h.binding.poll();
         }
         const auto text = h.reviewValue(DownloadJobsModel::ReviewTextRole).toString();

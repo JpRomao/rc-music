@@ -233,6 +233,90 @@ TEST_CASE("Legacy download import begin preserves its synchronous acceptance con
     REQUIRE(importer.DownloadImport::pollImport("job-1") == DownloadImportState::Failed);
 }
 
+TEST_CASE("Settling a confirmed recovered discard preserves replay and archives only the complete batch",
+          "[download][recovered-discard]") {
+    auto original = interruptedCheckpoint(true);
+    auto sibling = original.jobs.front();
+    sibling.job_id = "old-2";
+    original.receipts.front().job_ids.push_back(sibling.job_id);
+    original.jobs.push_back(sibling);
+    RecoveryHarness h({}, original);
+    STATIC_REQUIRE(noexcept(h.service.canSettleRecoveredDiscard("old-1")));
+    REQUIRE(h.service.recoveryReport().items.size() == 2);
+    REQUIRE_FALSE(h.service.canSettleRecoveredDiscard("unknown"));
+    REQUIRE_FALSE(h.service.settleRecoveredDiscard("unknown"));
+    REQUIRE(h.service.checkpoint() == original);
+
+    REQUIRE(h.service.canSettleRecoveredDiscard("old-1"));
+    REQUIRE(h.service.settleRecoveredDiscard("old-1"));
+    REQUIRE_FALSE(h.service.canSettleRecoveredDiscard("old-1"));
+    REQUIRE_FALSE(h.service.settleRecoveredDiscard("old-1"));
+    auto settled = original;
+    auto& resolved = settled.jobs.front();
+    resolved.state = DownloadJobState::Cancelled;
+    resolved.error = DownloadFailure::None;
+    resolved.completed_mp3.clear();
+    REQUIRE(h.service.checkpoint() == settled);
+    REQUIRE(h.service.snapshot().front() == resolved);
+    REQUIRE(validDownloadCheckpoint(settled));
+    REQUIRE(h.service.recoveryReport().items ==
+            std::vector<DownloadRecoveryItem>{{"old-2", DownloadRecoveryDisposition::Unchanged}});
+    REQUIRE_FALSE(h.service.canArchiveSettled());
+    REQUIRE_FALSE(h.service.stageSettledArchive());
+    REQUIRE(h.service.submit(request(1, 2)).job_ids == original.receipts.front().job_ids);
+
+    RecoveryHarness restarted({}, settled);
+    REQUIRE(restarted.service.checkpoint() == settled);
+    REQUIRE_FALSE(restarted.service.canSettleRecoveredDiscard("old-1"));
+    REQUIRE(restarted.service.settleRecoveredDiscard("old-2"));
+    const auto archive = restarted.service.stageSettledArchive();
+    REQUIRE(archive);
+    REQUIRE(archive->jobs.empty());
+    REQUIRE(archive->receipts.empty());
+    REQUIRE(archive->archived_receipts.size() == 1);
+    REQUIRE(archive->archived_receipts.front().job_ids == original.receipts.front().job_ids);
+    REQUIRE(restarted.service.confirmSettledArchive());
+    REQUIRE(restarted.service.submit(request(1, 2)).job_ids == original.receipts.front().job_ids);
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.importer.capability_queries == 0);
+    REQUIRE(restarted.execution.starts.empty());
+    REQUIRE(restarted.importer.imports.empty());
+}
+
+TEST_CASE("Recovered discard cannot settle an active, guarded or previously imported job",
+          "[download][recovered-discard]") {
+    RecoveryHarness h({}, interruptedCheckpoint(true));
+    std::string id{"old-1"};
+    SECTION("live queued job") {
+        const auto admitted = h.service.submit(request(2));
+        REQUIRE(admitted.error == DownloadSubmissionError::None);
+        id = admitted.job_ids.front();
+    }
+    SECTION("closed owner") { h.service.shutdown(); }
+    SECTION("archive staged") {
+        const auto admitted = h.service.submit(request(2));
+        REQUIRE(admitted.error == DownloadSubmissionError::None);
+        REQUIRE(h.service.cancel(admitted.job_ids.front()));
+        REQUIRE(h.service.stageSettledArchive());
+    }
+    SECTION("prior recovery import") {
+        const auto result =
+            GENERATE(DownloadImportState::Pending, DownloadImportState::Failed, DownloadImportState::Committed);
+        h.importer.begin_state = result;
+        REQUIRE(h.service.beginRecoveredImport(id, finalPath()) == (result != DownloadImportState::Failed));
+        REQUIRE(h.service.recoveredImportState(id) == result);
+    }
+    const auto before = h.service.checkpoint();
+    const auto report = h.service.recoveryReport();
+    REQUIRE_FALSE(h.service.canSettleRecoveredDiscard(id));
+    REQUIRE_FALSE(h.service.settleRecoveredDiscard(id));
+    REQUIRE(h.service.checkpoint() == before);
+    REQUIRE(h.service.recoveryReport().items == report.items);
+    REQUIRE(h.execution.starts.empty());
+}
+
 TEST_CASE("Recovered import preserves the original job and partial telemetry until durable commitment",
           "[download][recovered-import][FR-051]") {
     RecoveryHarness h;
@@ -336,6 +420,8 @@ TEST_CASE("Recovered import capability is prompt guarded and never authorizes a 
     h.importer.on_capability = [&] {
         REQUIRE_FALSE(h.service.canImportRecovered("old-1"));
         REQUIRE_FALSE(h.service.beginRecoveredImport("old-1", finalPath()));
+        REQUIRE_FALSE(h.service.canSettleRecoveredDiscard("old-1"));
+        REQUIRE_FALSE(h.service.settleRecoveredDiscard("old-1"));
         REQUIRE(h.service.submit(request(2)).error == DownloadSubmissionError::Busy);
         REQUIRE(h.service.snapshot().size() == 1);
     };
