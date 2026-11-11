@@ -8,9 +8,9 @@ Este incremento liga um MP3 com publicação reconhecida ao catálogo de [versõ
 
 1. O pedido YouTube deve conter a opção de buscar letra. Depois de reconhecida a publicação do MP3, a composição oferece a consulta usando o contexto original daquele job. Não usa paths ou metadados reconstruídos de histórico recuperado.
 2. Título e artista disponíveis iniciam a busca no LRCLIB. Se faltarem, a revisão pede seu preenchimento; **Buscar letra** permite corrigir esses campos e tentar novamente. A abertura do app ou de um histórico não inicia uma consulta.
-3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente; isso não significa que o provedor ofereça original e romanização para toda música.
+3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente. A ação **Colar letra** aceita texto simples ou LRC, inclusive quando a busca falha ou não encontra uma versão.
 4. Informe o nome e escolha explicitamente **Original** ou **Romanizada**. Idioma e escrita são opcionais. O app não detecta idioma/alfabeto, não converte a escrita e não traduz o texto.
-5. **Guardar como nova versão** grava um candidato por vez no catálogo do arquivo publicado. Versões existentes são preservadas; conteúdo canônico já guardado para a mesma forma não é duplicado. A ação permite conservar uma versão divergente junto às anteriores.
+5. **Guardar como nova versão** grava uma letra por vez no catálogo do arquivo publicado. Versões existentes são preservadas. Conteúdo canônico já guardado para a mesma forma não é duplicado.
 6. Após a confirmação, outra versão encontrada pode ser guardada. **Próxima** dispensa a revisão atual e permite oferecer outro job elegível; **Fechar** apenas fecha o diálogo, que pode ser reaberto. Uma gravação sem confirmação precisa ser resolvida antes de dispensar sua aquisição.
 7. Ao tocar esse arquivo depois, abra **Versões** junto à letra e selecione a versão desejada. Guardar uma letra não troca a faixa, não seleciona automaticamente a nova versão nem altera a letra atualmente exibida de outra faixa.
 
@@ -22,7 +22,9 @@ Falha, ausência ou resultado instrumental da letra conservam o MP3 e a importa�
 
 `DownloadLyricsLookup` usa um `QtLyricsService` exclusivo, separado da letra da faixa em reprodução. `setLookupTrack` configura somente metadados: não abre o áudio nem lê um `.lrc` irmão. O mesmo serviço permanece entre consultas, preservando cooldown, limites e cancelamento; resultados antigos são revogados por geração. A página Letras não é consultada enquanto esse adapter estiver indisponível. A origem dos candidatos deste incremento é LRCLIB.
 
-`DownloadLyricsBinding` conserva a identidade do alvo e o `requestToken` da revisão. QML valida backend/token e os metadados usados na busca antes de guardar; trocar a identidade revoga ações antigas. Nome e forma são escolhas explícitas, com texto simples na prévia. A consulta não grava automaticamente o catálogo.
+`DownloadLyricsBinding` conserva a identidade do alvo e o `requestToken` da revisão. Ações antigas são revogadas quando a identidade muda. Para versões encontradas, o diálogo também confere os metadados usados na busca. O texto colado passa pelo mesmo parser LRC e recebe origem manual no catálogo. Seus tempos, quando fornecidos, são preservados.
+
+O alvo é validado antes de aparecer no diálogo. Cancelar a saída restaura a edição manual da revisão válida e mantém a busca parada até uma nova ação do usuário.
 
 `LyricsBinding::appendAcquiredLyrics` compartilha **o mesmo writer** das edições manuais. A reserva cobre load → merge → save; nenhuma edição manual ou outra aquisição atravessa essa operação. O merge puro preserva o catálogo existente e atribui IDs locais novos. A seleção atual só é atualizada para o alvo correspondente depois de `Saved`; resultado de outra faixa não é aplicado à faixa atual.
 
@@ -54,3 +56,7 @@ TDD: merge teve Red 2 casos passados/19 falhos (144 assertions passadas/30 falha
 A jornada de composição usa catálogo real somente em TEMP próprio, com rede, resolver e publicação falsos. Ela separa confirmação do MP3, importação e gravação de letra, e verifica preservação de fila/áudio e resultados recuperados inertes. Não equivale a um download YouTube público ou a um novo ensaio online do LRCLIB; a consulta LRCLIB está implementada em código real, mas sua rede foi substituída nos testes novos.
 
 Não foram executados yt-dlp/Node como runtime, mídia pública, perfis AppContainer, UAC/WFP, Registro, setup, GUI nativa ou benchmarks. Runtime/host autenticados e instalados, Letras primário acessível com contrato compatível, aquisição pública, aceitação Brave/Windows e distribuição continuam gates próprios. LLM, tradução, romanização automática e sincronização inventada permanecem fora do fluxo. Os ADRs [0016](architecture/decisions/0016-lyrics-variants.md) e [0017](architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md) conservam seus estados distintos; este recorte não aprova o runtime ou encerra o plano integral.
+
+### Inclusão manual na revisão
+
+O Red confirmou a ausência da ação em três casos do binding e dois do painel. Uma regressão adicional reproduziu a perda da edição manual ao cancelar a saída durante a busca inicial. O fechamento passou **4/4 alvos CTest com 111 casos Qt** e **90 casos Quick** nas quatro suítes de downloads e letras, sem falhas ou skips. Build Release, `all_qmllint` e formato passaram. Os testes usaram rede e catálogo de teste para conferir letras japonesas e romanizadas, tempos de LRC, falha de consulta, deduplicação, retry da escrita e proteção do alvo. Recibos em `out/product/test-runs/download-lyrics-paste-20261111/`.

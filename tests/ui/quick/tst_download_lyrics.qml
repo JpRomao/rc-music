@@ -19,6 +19,7 @@ TestCase {
             property bool hasRequest: true
             property bool busy: false
             property bool canSave: true
+            property bool canSavePasted: true
             property bool canRetry: true
             property bool canRetrySave: false
             property bool canDismiss: true
@@ -42,6 +43,7 @@ TestCase {
             ]
             property int retryCalls: 0
             property int saveCalls: 0
+            property int pasteCalls: 0
             property int retrySaveCalls: 0
             property int dismissCalls: 0
             property string submittedTitle: ""
@@ -51,7 +53,10 @@ TestCase {
             property string submittedLanguage: ""
             property string submittedScript: ""
             property string submittedKind: ""
+            property string submittedToken: ""
+            property string submittedContent: ""
             property bool retryAccepted: true
+            property bool pasteAccepted: true
             signal changed
             function retry(title, artist) {
                 fake.retryCalls++;
@@ -72,6 +77,16 @@ TestCase {
                 fake.submittedScript = script;
                 fake.submittedKind = kind;
                 return true;
+            }
+            function savePasted(token, content, name, language, script, kind) {
+                ++fake.pasteCalls;
+                fake.submittedToken = token;
+                fake.submittedContent = content;
+                fake.submittedName = name;
+                fake.submittedLanguage = language;
+                fake.submittedScript = script;
+                fake.submittedKind = kind;
+                return fake.pasteAccepted;
             }
             function retrySave() {
                 fake.retrySaveCalls++;
@@ -360,6 +375,62 @@ TestCase {
         backend.changed();
         verify(!field("save").enabled);
         compare(backend.saveCalls, 0);
+    }
+    function test_pastedLrcCanSaveWithoutLookupCandidates() {
+        backend.candidates = [];
+        backend.canSave = false;
+        backend.canRetry = false;
+        field("title").text = "An unsubmitted lookup edit";
+        backend.busy = true;
+        const paste = field("paste");
+        const content = field("pasted-content");
+        verify(!content.visible);
+        paste.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryCompare(content, "activeFocus", true);
+        verify(content.visible && !content.readOnly);
+        verify(content.Accessible.name.length > 0);
+        compare(content.textFormat, TextEdit.PlainText);
+        const lrc = "[00:01.125]日本語 <b>literal</b>\n[00:05.000]次の行";
+        content.text = lrc;
+        field("version-name").text = "Japonês original";
+        verify(!field("save").enabled, "Pasted text still requires an explicit form choice");
+        field("kind").currentIndex = 0;
+        field("language").text = "ja";
+        field("script").text = "Jpan";
+        press(field("save"));
+        compare(backend.pasteCalls, 1);
+        compare(backend.submittedToken, "request-a");
+        compare(backend.submittedContent, lrc);
+        compare(backend.submittedName, "Japonês original");
+        compare(backend.submittedLanguage, "ja");
+        compare(backend.submittedScript, "Jpan");
+        compare(backend.submittedKind, "original");
+        compare(backend.retryCalls, 0);
+        compare(backend.saveCalls, 0);
+    }
+    function test_pastedDraftSurvivesRefusedSaveAndCannotRetarget() {
+        backend.pasteAccepted = false;
+        press(field("paste"));
+        const content = field("pasted-content");
+        const plain = "Dokujino tesuto\nTsugino gyō";
+        content.text = plain;
+        prepareVersion(1);
+        const staleSave = field("save");
+        press(staleSave);
+        compare(backend.pasteCalls, 1);
+        compare(content.text, plain);
+        compare(field("version-name").text, "Versão revisada");
+        compare(backend.submittedKind, "romanized");
+        backend.requestToken = "request-b";
+        tryCompare(shell.panel, "visible", false);
+        staleSave.Accessible.pressAction();
+        compare(backend.pasteCalls, 1);
+        shell.panel.open();
+        tryCompare(shell.panel, "opened", true);
+        press(field("paste"));
+        compare(content.text, "");
+        verify(!field("save").enabled);
     }
     function test_dialogFitsTheMinimumWindowAndItsFormCanScroll() {
         const panel = shell.panel;

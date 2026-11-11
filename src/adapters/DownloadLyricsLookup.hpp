@@ -37,6 +37,7 @@ class DownloadLyricsLookup final : public QObject {
     };
     explicit DownloadLyricsLookup(QtLyricsService& exclusive_service, QObject* parent = nullptr);
     ~DownloadLyricsLookup() override;
+    [[nodiscard]] static bool validPublication(const PublishedLyricsRequest& request);
     // True admits a valid target, including NeedsMetadata/cooldown. Reentrant
     // revocation or closed/invalid ingress returns false. No implicit retry.
     [[nodiscard]] bool request(const PublishedLyricsRequest& request);

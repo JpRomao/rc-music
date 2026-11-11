@@ -11,13 +11,14 @@
 namespace music_player::m0 {
 class LyricsBinding;
 // One published acquisition preview. Only trusted C++ supplies publication
-// identity; QML can correct lookup metadata and explicitly save one candidate.
+// identity; QML can correct lookup metadata and explicitly save online or pasted lyrics.
 // Lookup and the shared serialized writer both outlive this projection.
 class DownloadLyricsBinding final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hasRequest READ hasRequest NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canSave READ canSave NOTIFY changed)
+    Q_PROPERTY(bool canSavePasted READ canSavePasted NOTIFY changed)
     Q_PROPERTY(bool canRetry READ canRetry NOTIFY changed)
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
     Q_PROPERTY(bool canDismiss READ canDismiss NOTIFY changed)
@@ -33,6 +34,7 @@ class DownloadLyricsBinding final : public QObject {
     [[nodiscard]] bool hasRequest() const;
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool canSave() const;
+    [[nodiscard]] bool canSavePasted() const;
     [[nodiscard]] bool canRetry() const;
     [[nodiscard]] bool canRetrySave() const;
     [[nodiscard]] bool canDismiss() const;
@@ -44,6 +46,8 @@ class DownloadLyricsBinding final : public QObject {
     Q_INVOKABLE bool retry(const QString& title, const QString& artist);
     Q_INVOKABLE bool saveCandidate(int index, const QString& name, const QString& language, const QString& script,
                                    const QString& kind);
+    Q_INVOKABLE bool savePasted(const QString& expected_request_token, const QString& content, const QString& name,
+                                const QString& language, const QString& script, const QString& kind);
     Q_INVOKABLE bool retrySave();
     Q_INVOKABLE bool dismiss();
     [[nodiscard]] bool prepareExit();

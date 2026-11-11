@@ -816,6 +816,8 @@ A receita de empacotamento agora aceita opções explícitas para esse provision
 
 O painel comum mostra a capacidade real do histórico, inclusive reservas pendentes de gravação. O arquivamento confirmado de lotes encerrados libera as cotas ativas e conserva o reconhecimento de reenvios após reiniciar. A recuperação de espaço nos recibos de importação da sessão e no journal de ownership continua pendente. [Capacidade do histórico](download-jobs.md#capacidade-do-histórico)
 
+A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
+
 ### Checkpoint anterior — extensões opcionais no instalador
 
 O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual. Os [setups reais de `cf34cd8`](windows-installer.md#setups-com-extensões-preparados-em-2026-11-05), Lite/Completa, foram compilados/conferidos sem executar, preservando os runtimes de `7601247`. O fechamento tem 165 casos estáticos/de compilação; o ensaio nativo preparado exige autorização própria. Instalação, Registro, Brave, aquisição pública e demais gates continuam pendentes; não retoma AppContainer ou benchmarks.

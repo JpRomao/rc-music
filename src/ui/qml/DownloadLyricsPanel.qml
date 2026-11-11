@@ -15,8 +15,11 @@ Dialog {
     property string queryTitle: ""
     property string queryArtist: ""
     property bool initializing: false
+    property bool pasteMode: false
     readonly property bool requestCurrent: requestOwner !== null && requestOwner === backend && previewToken.length > 0 && requestOwner.hasRequest && requestOwner.requestToken === previewToken
     readonly property bool actionsCurrent: opened && enabled && requestCurrent
+    readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
+    readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !requestOwner.busy)
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
     readonly property var candidateRows: requestCurrent ? requestOwner.candidates : []
     readonly property var selectedCandidate: candidateField.currentIndex >= 0 && candidateField.currentIndex < candidateRows.length ? candidateRows[candidateField.currentIndex] : null
@@ -49,6 +52,8 @@ Dialog {
         nameField.text = "";
         languageField.text = "";
         scriptField.text = "";
+        pasteMode = false;
+        pastedField.text = "";
         kindField.currentIndex = -1;
         candidateField.currentIndex = candidateRows.length > 0 ? 0 : -1;
         initializing = false;
@@ -65,13 +70,35 @@ Dialog {
         queryTitle = title;
         queryArtist = artist;
     }
+    function togglePaste() {
+        if (!actionsCurrent || !pasteButton.enabled)
+            return;
+        const owner = requestOwner;
+        const token = previewToken;
+        pasteMode = !pasteMode;
+        Qt.callLater(function () {
+            if (!root.actionsCurrent || root.requestOwner !== owner || root.previewToken !== token)
+                return;
+            const target = root.pasteMode ? pastedField : titleField;
+            if (target.visible && target.enabled)
+                target.forceActiveFocus(Qt.TabFocusReason);
+        });
+    }
     function saveVersion() {
-        if (!saveButton.enabled || !actionsCurrent || !metadataCurrent || selectedCandidate === null)
+        if (!saveButton.enabled || !actionsCurrent)
             return;
         const kind = kindField.currentIndex === 0 ? "original" : kindField.currentIndex === 1 ? "romanized" : "";
         if (kind.length === 0)
             return;
-        requestOwner.saveCandidate(selectedCandidate.index, nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), kind);
+        const name = nameField.text.trim();
+        const language = languageField.text.trim();
+        const script = scriptField.text.trim();
+        if (pasteMode) {
+            if (pasteAvailable)
+                requestOwner.savePasted(previewToken, pastedField.text, name, language, script, kind);
+        } else if (metadataCurrent && selectedCandidate !== null) {
+            requestOwner.saveCandidate(selectedCandidate.index, name, language, script, kind);
+        }
     }
     onBackendChanged: {
         if (visible && !initializing)
@@ -102,6 +129,8 @@ Dialog {
     onClosed: {
         requestOwner = null;
         previewToken = "";
+        pasteMode = false;
+        pastedField.text = "";
         const target = restoreFocusItem;
         Qt.callLater(function () {
             if (target && target.visible && target.enabled)
@@ -121,7 +150,7 @@ Dialog {
         Layout.fillWidth: true
         implicitHeight: root.contract.controlTargetPreferred
         maximumLength: 128
-        enabled: root.actionsCurrent && !root.requestOwner.busy
+        enabled: root.versionFieldsEditable
         activeFocusOnTab: true
         selectByMouse: true
         color: root.contract.textPrimaryColor
@@ -175,6 +204,26 @@ Dialog {
             border.color: choice.activeFocus ? root.contract.focusColor : root.contract.borderColor
         }
     }
+    component LyricsText: TextArea {
+        id: input
+        Layout.fillWidth: true
+        Layout.preferredHeight: 180
+        textFormat: TextEdit.PlainText
+        selectByMouse: true
+        activeFocusOnTab: visible && enabled
+        wrapMode: TextEdit.Wrap
+        color: root.contract.textPrimaryColor
+        placeholderTextColor: root.contract.textSecondaryColor
+        selectionColor: root.contract.accentColor
+        selectedTextColor: root.contract.accentTextColor
+        Accessible.id: objectName
+        background: Rectangle {
+            color: root.contract.surfaceColor
+            radius: root.contract.radiusSmall
+            border.width: input.activeFocus ? 3 : 1
+            border.color: input.activeFocus ? root.contract.focusColor : root.contract.borderColor
+        }
+    }
     background: Rectangle {
         color: root.contract.surfaceRaisedColor
         radius: root.contract.radiusMedium
@@ -215,42 +264,63 @@ Dialog {
                 spacing: root.contract.spacingUnit * 2
                 FieldLabel {
                     text: qsTr("Título da música")
+                    visible: !root.pasteMode
                 }
                 FormInput {
                     id: titleField
                     objectName: "download-lyrics-title"
                     maximumLength: 512
+                    visible: !root.pasteMode
                     Accessible.name: qsTr("Título da música")
                     KeyNavigation.tab: artistField
                 }
                 FieldLabel {
                     text: qsTr("Artista")
+                    visible: !root.pasteMode
                 }
                 FormInput {
                     id: artistField
                     objectName: "download-lyrics-artist"
                     maximumLength: 512
+                    visible: !root.pasteMode
                     Accessible.name: qsTr("Artista")
-                    KeyNavigation.tab: searchButton
+                    KeyNavigation.tab: searchButton.enabled ? searchButton : pasteButton.enabled ? pasteButton : candidateField
                 }
-                AccessibleTransportButton {
-                    id: searchButton
-                    objectName: "download-lyrics-search"
-                    contract: root.contract
-                    text: qsTr("Buscar letra")
-                    enabled: root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetry && titleField.text.trim().length > 0 && artistField.text.trim().length > 0
-                    KeyNavigation.tab: candidateField
-                    onClicked: root.search()
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: root.contract.spacingUnit * 2
+                    AccessibleTransportButton {
+                        id: searchButton
+                        objectName: "download-lyrics-search"
+                        contract: root.contract
+                        text: qsTr("Buscar letra")
+                        visible: !root.pasteMode
+                        enabled: visible && root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetry && titleField.text.trim().length > 0 && artistField.text.trim().length > 0
+                        KeyNavigation.tab: pasteButton.enabled ? pasteButton : candidateField
+                        onClicked: root.search()
+                    }
+                    AccessibleTransportButton {
+                        id: pasteButton
+                        objectName: "download-lyrics-paste"
+                        contract: root.contract
+                        text: root.pasteMode ? qsTr("Voltar à busca") : qsTr("Colar letra")
+                        visible: root.pasteMode || root.pasteAvailable
+                        enabled: visible && root.actionsCurrent
+                        KeyNavigation.tab: root.pasteMode ? pastedField : candidateField.enabled ? candidateField : previewField
+                        onClicked: root.togglePaste()
+                    }
                 }
                 FieldLabel {
                     text: qsTr("Versão encontrada")
+                    visible: !root.pasteMode
                 }
                 FormChoice {
                     id: candidateField
                     objectName: "download-lyrics-candidates"
                     model: root.candidateRows
                     textRole: "label"
-                    enabled: root.actionsCurrent && count > 0
+                    visible: !root.pasteMode
+                    enabled: visible && root.actionsCurrent && count > 0
                     Accessible.name: qsTr("Versão encontrada")
                     KeyNavigation.tab: previewField
                     onCountChanged: {
@@ -258,29 +328,28 @@ Dialog {
                             currentIndex = 0;
                     }
                 }
-                TextArea {
+                LyricsText {
                     id: previewField
                     objectName: "download-lyrics-preview"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 180
+                    visible: !root.pasteMode
                     text: root.selectedCandidate !== null ? root.selectedCandidate.text : ""
-                    textFormat: TextEdit.PlainText
                     readOnly: true
-                    selectByMouse: true
-                    activeFocusOnTab: true
-                    wrapMode: TextEdit.Wrap
-                    color: root.contract.textPrimaryColor
-                    selectionColor: root.contract.accentColor
-                    selectedTextColor: root.contract.accentTextColor
                     Accessible.name: qsTr("Prévia da letra")
-                    Accessible.id: objectName
                     KeyNavigation.tab: nameField
-                    background: Rectangle {
-                        color: root.contract.surfaceColor
-                        radius: root.contract.radiusSmall
-                        border.width: previewField.activeFocus ? 3 : 1
-                        border.color: previewField.activeFocus ? root.contract.focusColor : root.contract.borderColor
-                    }
+                }
+                FieldLabel {
+                    text: qsTr("Letra em texto ou LRC")
+                    visible: root.pasteMode
+                }
+                LyricsText {
+                    id: pastedField
+                    objectName: "download-lyrics-pasted-content"
+                    visible: root.pasteMode
+                    enabled: root.actionsCurrent
+                    readOnly: !root.pasteAvailable
+                    placeholderText: qsTr("Cole a letra aqui")
+                    Accessible.name: qsTr("Letra em texto ou LRC")
+                    KeyNavigation.tab: nameField
                 }
                 FieldLabel {
                     text: qsTr("Nome da versão")
@@ -328,7 +397,7 @@ Dialog {
                     model: [qsTr("Original"), qsTr("Romanizada")]
                     currentIndex: -1
                     displayText: currentIndex < 0 ? qsTr("Escolha a forma") : currentText
-                    enabled: root.actionsCurrent && !root.requestOwner.busy
+                    enabled: root.versionFieldsEditable
                     Accessible.name: qsTr("Forma da versão")
                     KeyNavigation.tab: saveButton
                 }
@@ -374,7 +443,7 @@ Dialog {
                 objectName: "download-lyrics-close"
                 contract: root.contract
                 text: qsTr("Fechar")
-                KeyNavigation.tab: saveButton
+                KeyNavigation.tab: root.pasteMode ? pasteButton : titleField
                 onClicked: root.close()
             }
             Item {
@@ -385,7 +454,7 @@ Dialog {
                 controlId: "download-lyrics-save"
                 contract: root.contract
                 text: qsTr("Guardar como nova versão")
-                enabled: root.actionsCurrent && root.metadataCurrent && !root.requestOwner.busy && root.requestOwner.canSave && root.selectedCandidate !== null && nameField.text.trim().length > 0 && (kindField.currentIndex === 0 || kindField.currentIndex === 1)
+                enabled: root.versionFieldsEditable && nameField.text.trim().length > 0 && (kindField.currentIndex === 0 || kindField.currentIndex === 1) && (root.pasteMode ? pastedField.text.trim().length > 0 : root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null)
                 KeyNavigation.tab: retrySaveButton.visible ? retrySaveButton : dismissButton
                 onClicked: root.saveVersion()
             }

@@ -141,6 +141,14 @@ class Store final : public LyricsVariantsStore {
 LyricsVariants foreignDraft() {
     return {{0, "Foreign", "", "", "manual", "Other explicit content", LyricsVariantKind::Original, false}};
 }
+bool savePasted(DownloadLyricsBinding& binding, const QString& token, const QString& content, const QString& name,
+                const QString& language = {}, const QString& script = {}, const QString& kind = "original") {
+    bool accepted{};
+    return QMetaObject::invokeMethod(&binding, "savePasted", Qt::DirectConnection, Q_RETURN_ARG(bool, accepted),
+                                     Q_ARG(QString, token), Q_ARG(QString, content), Q_ARG(QString, name),
+                                     Q_ARG(QString, language), Q_ARG(QString, script), Q_ARG(QString, kind)) &&
+           accepted;
+}
 struct Harness final {
     QTemporaryDir directory;
     Network network, playback_network;
@@ -318,6 +326,122 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(h.writer.title(), QStringLiteral("Current song"));
         QCOMPARE(h.writer.artist(), QStringLiteral("Current artist"));
         QVERIFY(h.playback_network.requests.isEmpty());
+    }
+    void pastedFormsCanBeSavedToThePublishedTrackWithoutOnlineCandidates_data() {
+        QTest::addColumn<int>("http_status");
+        QTest::newRow("not-found") << 404;
+        QTest::newRow("provider-unavailable") << 503;
+    }
+    void pastedFormsCanBeSavedToThePublishedTrackWithoutOnlineCandidates() {
+        QFETCH(int, http_status);
+        Harness h;
+        const auto current = h.directory.filePath("current.mp3");
+        h.writer.setTrack(current, "Current song", "Current artist", {}, 0);
+        QTRY_VERIFY(h.writer.variantsReady());
+        const auto request = h.request();
+        QVERIFY(h.binding.offerPublished(request));
+        const auto token = h.binding.requestToken();
+        h.network.replies.back()->finish(http_status, "{}");
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(h.binding.candidates().isEmpty());
+        QVERIFY(h.binding.property("canSavePasted").toBool());
+
+        QVERIFY(savePasted(h.binding, token, QStringLiteral("[00:01.25]日本語\r\n[00:02.10]次の行"), "Original", "ja",
+                           "Jpan"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QVERIFY(savePasted(h.binding, token, "Nihongo\nTsugi no gyou", "Romanizada", "ja", "Latn", "romanized"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+
+        const auto saved = h.store->read(request.final_mp3);
+        QCOMPARE(saved.size(), std::size_t{2});
+        QCOMPARE(saved[0].kind, LyricsVariantKind::Original);
+        QCOMPARE(saved[0].script, std::string{"Jpan"});
+        QCOMPARE(saved[0].source, std::string{"manual"});
+        QVERIFY(!saved[0].generated);
+        const auto parsed = parseLrc(saved[0].content);
+        QCOMPARE(parsed.error, LyricsParseError::None);
+        QCOMPARE(parsed.document.lines.size(), std::size_t{2});
+        QCOMPARE(parsed.document.lines.front().timestamp_ms, std::int64_t{1250});
+        QCOMPARE(parsed.document.lines.front().text, std::string{"日本語"});
+        QCOMPARE(saved[1].kind, LyricsVariantKind::Romanized);
+        QCOMPARE(saved[1].script, std::string{"Latn"});
+        QCOMPARE(saved[1].source, std::string{"manual"});
+        QCOMPARE(saved[1].content, std::string{"Nihongo\nTsugi no gyou"});
+
+        QVERIFY(savePasted(h.binding, token, QStringLiteral("[00:01.250]日本語\n[00:02.100]次の行"), "Mesmo conteúdo",
+                           "ja", "Jpan"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Unchanged);
+        QCOMPARE(h.store->saves.load(), 2);
+        QVERIFY(h.store->read(current).empty());
+        QCOMPARE(h.writer.title(), QStringLiteral("Current song"));
+        QCOMPARE(h.writer.artist(), QStringLiteral("Current artist"));
+        QCOMPARE(h.network.requests.size(), 1);
+        QVERIFY(h.playback_network.requests.isEmpty());
+    }
+    void pastedSaveRejectsStaleInvalidAndReentrantActionsAndRetriesOnlyTheSameDraft() {
+        Harness h;
+        auto request = h.request();
+        request.artist.clear();
+        QVERIFY(h.binding.offerPublished(request));
+        const auto token = h.binding.requestToken();
+        QVERIFY(!savePasted(h.binding, "stale", "Lyrics", "Name"));
+        QVERIFY(!savePasted(h.binding, token, "  \n", "Name"));
+        QVERIFY(!savePasted(h.binding, token, "[00:99.00]Invalid timestamp", "Name"));
+        QVERIFY(!savePasted(h.binding, token, QString(QChar{0xd800}), "Name"));
+        QVERIFY(!savePasted(h.binding, token, QString(lyrics_max_input_bytes / 3 + 1, QChar{0x65e5}), "Name"));
+        QVERIFY(!savePasted(h.binding, token, "Lyrics", " "));
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(!h.binding.canRetrySave());
+
+        h.store->save_status = LyricsVariantsSaveStatus::Failed;
+        bool notified{}, nested_save{}, nested_dismiss{};
+        connect(&h.writer, &LyricsBinding::changed, &h.binding, [&] {
+            if (notified || h.writer.acquiredLyricsSave().state != AcquiredLyricsSaveState::Loading)
+                return;
+            notified = true;
+            nested_save = savePasted(h.binding, token, "Different", "Other");
+            nested_dismiss = h.binding.dismiss();
+        });
+        QVERIFY(savePasted(h.binding, token, "Original text", "Name"));
+        QVERIFY(notified);
+        QVERIFY(!nested_save);
+        QVERIFY(!nested_dismiss);
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
+        QVERIFY(!h.binding.property("canSavePasted").toBool());
+        QVERIFY(!savePasted(h.binding, token, "Different", "Other"));
+        QVERIFY(h.binding.canRetrySave());
+        const auto ticket = h.writer.acquiredLyricsSave().ticket;
+        h.store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(h.binding.retrySave());
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QCOMPARE(h.writer.acquiredLyricsSave().ticket, ticket);
+        const auto attempts = h.store->attempts();
+        QCOMPARE(attempts.size(), std::size_t{2});
+        QCOMPARE(attempts[0], attempts[1]);
+        QVERIFY(h.binding.dismiss());
+        request.job_id = "replacement";
+        request.final_mp3 = h.directory.filePath("replacement.mp3");
+        QVERIFY(h.binding.offerPublished(request));
+        QVERIFY(!savePasted(h.binding, token, "Lyrics", "Name"));
+        QCOMPARE(h.store->saves.load(), 2);
+        QVERIFY(h.network.requests.isEmpty());
+        QVERIFY(h.playback_network.requests.isEmpty());
+    }
+    void invalidPublicationNeverBecomesTheReviewTarget() {
+        Harness h;
+        const auto invalid = h.request("invalid.job");
+        bool observed{};
+        connect(&h.binding, &DownloadLyricsBinding::changed, &h.binding,
+                [&] { observed |= h.binding.hasRequest() || h.binding.canSavePasted(); });
+        QVERIFY(!h.binding.offerPublished(invalid));
+        QVERIFY(!observed);
+        QVERIFY(!h.binding.canSavePasted());
+        QVERIFY(!savePasted(h.binding, h.binding.requestToken(), "Lyrics", "Name"));
+        QVERIFY(!h.binding.hasRequest());
+        QCOMPARE(h.store->loads.load(), 0);
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(h.network.requests.isEmpty());
     }
     void invalidIndexNameAndUnconfirmedOrInvalidFormNeverReachTheWriter_data() {
         QTest::addColumn<int>("scenario");
@@ -522,6 +646,26 @@ class DownloadLyricsBindingTests final : public QObject {
         QVERIFY(!h.binding.canSave());
         QVERIFY(h.binding.candidates().isEmpty());
         QVERIFY(h.binding.drained());
+    }
+    void pasteRemainsAvailableAfterCancellingExitDuringTheInitialLookup() {
+        Harness h;
+        bool preparing{};
+        connect(&h.binding, &DownloadLyricsBinding::changed, &h.binding, [&] {
+            if (!preparing && h.binding.hasRequest()) {
+                preparing = true;
+                QVERIFY(!h.binding.prepareExit());
+            }
+        });
+        QVERIFY(!h.binding.offerPublished(h.request()));
+        QVERIFY(preparing);
+        QVERIFY(h.binding.hasRequest());
+        QTRY_VERIFY(h.binding.drained());
+        h.binding.resume();
+        QVERIFY(h.binding.canSavePasted());
+        QVERIFY(h.network.requests.isEmpty());
+        QVERIFY(savePasted(h.binding, h.binding.requestToken(), "Local lyrics", "Original"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        QVERIFY(h.network.requests.isEmpty());
     }
 };
 QTEST_GUILESS_MAIN(DownloadLyricsBindingTests)

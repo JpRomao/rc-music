@@ -382,11 +382,6 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     value.duration_ms = duration_ms;
     value.lookup_only = false;
     if (same_path) {
-        if (changed_metadata && value.reply) {
-            value.revoke();
-            value.status = content(value.document) ? Status::Ready : Status::NotFound;
-            value.message.clear();
-        }
         if (changed_metadata)
             emit this->changed();
         return;

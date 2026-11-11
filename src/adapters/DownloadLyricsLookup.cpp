@@ -36,7 +36,18 @@ bool validPage(const QString& page) {
            !url.hasQuery() && !url.hasFragment() && url.path().size() > 1;
 }
 
-bool validRequest(const PublishedLyricsRequest& request) {
+PublishedLyricsRequest retained(const PublishedLyricsRequest& request) {
+    return {request.job_id,        owned(request.final_mp3),   owned(request.title),
+            owned(request.artist), owned(request.lyrics_page), owned(request.album),
+            request.duration_ms};
+}
+
+QString providerNotice() {
+    return DownloadLyricsLookup::tr("Letras indisponível nesta versão; busca alternativa no LRCLIB.");
+}
+} // namespace
+
+bool DownloadLyricsLookup::validPublication(const PublishedLyricsRequest& request) {
     if (request.job_id.empty() || request.job_id.size() > 64 ||
         !std::all_of(request.job_id.begin(), request.job_id.end(),
                      [](const char unit) {
@@ -52,17 +63,6 @@ bool validRequest(const PublishedLyricsRequest& request) {
     const auto path = QDir::fromNativeSeparators(request.final_mp3);
     return QDir::cleanPath(path) == path;
 }
-
-PublishedLyricsRequest retained(const PublishedLyricsRequest& request) {
-    return {request.job_id,        owned(request.final_mp3),   owned(request.title),
-            owned(request.artist), owned(request.lyrics_page), owned(request.album),
-            request.duration_ms};
-}
-
-QString providerNotice() {
-    return DownloadLyricsLookup::tr("Letras indisponível nesta versão; busca alternativa no LRCLIB.");
-}
-} // namespace
 
 struct DownloadLyricsLookup::Impl final {
     DownloadLyricsLookup& owner;
@@ -145,7 +145,7 @@ struct DownloadLyricsLookup::Impl final {
             return false;
         // Bound and own every retained field before cancellation or notification
         // can invoke application callbacks and mutate the caller's storage.
-        const bool valid = validRequest(input);
+        const bool valid = validPublication(input);
         auto candidate = valid ? std::optional<PublishedLyricsRequest>{retained(input)} : std::nullopt;
         const auto expected = reset(valid ? State::Idle : State::Error);
         current = std::move(candidate);

@@ -16,10 +16,6 @@ bool bounded(const QString& value, const qsizetype maximum) {
     const auto bytes = value.toUtf8();
     return bytes.size() <= maximum && QString::fromUtf8(bytes) == value;
 }
-bool bounded(const PublishedLyricsRequest& request) {
-    return request.job_id.size() <= 64 && bounded(request.final_mp3, 8192) && bounded(request.title, 512) &&
-           bounded(request.artist, 512) && bounded(request.album, 512) && bounded(request.lyrics_page, 2048);
-}
 PublishedLyricsRequest owned(const PublishedLyricsRequest& request) {
     return {request.job_id,        owned(request.final_mp3),   owned(request.title),
             owned(request.artist), owned(request.lyrics_page), owned(request.album),
@@ -78,10 +74,10 @@ struct DownloadLyricsBinding::Impl final {
             return nullptr;
         return &*preview;
     }
-    bool canSave() const {
-        return allowed() && currentPreview() && !ownPending() && !writer.variantsBusy() &&
-               !writer.variantsHasPendingChange();
+    bool canSavePasted() const {
+        return allowed() && request && !ownPending() && !writer.variantsBusy() && !writer.variantsHasPendingChange();
     }
+    bool canSave() const { return canSavePasted() && currentPreview(); }
     bool canRetry() const {
         return allowed() && request && !ownPending() && lookup.state() != DownloadLyricsLookup::State::Searching;
     }
@@ -100,9 +96,42 @@ struct DownloadLyricsBinding::Impl final {
         emit owner.changed();
     }
     bool invalidSave() {
-        notice = DownloadLyricsBinding::tr("Confira o nome, a forma e os limites da versão antes de guardar.");
+        notice = DownloadLyricsBinding::tr("Confira o texto, o nome, a forma e os limites da versão antes de guardar.");
         emit owner.changed();
         return false;
+    }
+    bool saveVersion(std::string content, std::string source, const QString& name, const QString& language,
+                     const QString& script, const QString& kind) {
+        if (!bounded(name, maximum_lyrics_variant_name_bytes) || !bounded(language, maximum_lyrics_variant_tag_bytes) ||
+            !bounded(script, maximum_lyrics_variant_tag_bytes) || (kind != "original" && kind != "romanized"))
+            return invalidSave();
+        LyricsVariant draft{1,
+                            name.trimmed().toUtf8().toStdString(),
+                            language.trimmed().toUtf8().toStdString(),
+                            script.trimmed().toUtf8().toStdString(),
+                            std::move(source),
+                            std::move(content),
+                            kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
+                            false};
+        if (!isValidLyricsVariants({draft}))
+            return invalidSave();
+        const auto expected_token = token;
+        const auto ticket = newToken().toStdString();
+        const auto target = owned(request->final_mp3);
+        save_ticket = ticket;
+        save_target = target;
+        notice.clear();
+        // Reserve before the shared writer emits changes from inside this call.
+        writing_call = true;
+        const bool accepted = writer.appendAcquiredLyrics(ticket, target, {std::move(draft)}, true);
+        writing_call = false;
+        if (!accepted && !ownPending()) {
+            save_ticket.clear();
+            save_target.clear();
+        }
+        if (token == expected_token)
+            emit owner.changed();
+        return accepted;
     }
     QString statusText() const {
         const auto snapshot = writer.acquiredLyricsSave();
@@ -153,7 +182,7 @@ DownloadLyricsBinding::~DownloadLyricsBinding() {
 }
 bool DownloadLyricsBinding::offerPublished(PublishedLyricsRequest request) {
     auto& value = *impl_;
-    if (!value.allowed() || value.request || !bounded(request))
+    if (!value.allowed() || value.request || !DownloadLyricsLookup::validPublication(request))
         return false;
     const auto captured = owned(request);
     const auto expected_token = newToken();
@@ -179,6 +208,7 @@ bool DownloadLyricsBinding::offerPublished(PublishedLyricsRequest request) {
 bool DownloadLyricsBinding::hasRequest() const { return impl_->request.has_value(); }
 bool DownloadLyricsBinding::busy() const { return impl_->busy(); }
 bool DownloadLyricsBinding::canSave() const { return impl_->canSave(); }
+bool DownloadLyricsBinding::canSavePasted() const { return impl_->canSavePasted(); }
 bool DownloadLyricsBinding::canRetry() const { return impl_->canRetry(); }
 bool DownloadLyricsBinding::canRetrySave() const { return impl_->canRetrySave(); }
 bool DownloadLyricsBinding::canDismiss() const { return impl_->canDismiss(); }
@@ -229,42 +259,33 @@ bool DownloadLyricsBinding::saveCandidate(const int index, const QString& name, 
     if (!value.canSave())
         return false;
     const auto* available = value.currentPreview();
-    if (index < 0 || static_cast<std::size_t>(index) >= available->candidates.size() ||
-        !bounded(name, maximum_lyrics_variant_name_bytes) || !bounded(language, maximum_lyrics_variant_tag_bytes) ||
-        !bounded(script, maximum_lyrics_variant_tag_bytes) || (kind != "original" && kind != "romanized"))
+    if (index < 0 || static_cast<std::size_t>(index) >= available->candidates.size())
         return value.invalidSave();
-    const auto snapshot = *available;
-    const auto expected_token = value.token;
-    const auto content = lyricsDocumentAsLrc(snapshot.candidates[static_cast<std::size_t>(index)]);
+    auto content = lyricsDocumentAsLrc(available->candidates[static_cast<std::size_t>(index)]);
     if (!content)
         return value.invalidSave();
-    LyricsVariant draft{1,
-                        name.trimmed().toUtf8().toStdString(),
-                        language.trimmed().toUtf8().toStdString(),
-                        script.trimmed().toUtf8().toStdString(),
-                        snapshot.source.toUtf8().toStdString(),
-                        *content,
-                        kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
-                        false};
-    if (!isValidLyricsVariants({draft}))
+    return value.saveVersion(std::move(*content), available->source.toUtf8().toStdString(), name, language, script,
+                             kind);
+}
+bool DownloadLyricsBinding::savePasted(const QString& expected_request_token, const QString& content,
+                                       const QString& name, const QString& language, const QString& script,
+                                       const QString& kind) {
+    auto& value = *impl_;
+    if (!value.canSavePasted() || expected_request_token != value.token)
+        return false;
+    if (content.size() > static_cast<qsizetype>(lyrics_max_input_bytes))
         return value.invalidSave();
-    const auto ticket = newToken().toStdString();
-    const auto target = owned(snapshot.final_mp3);
-    value.save_ticket = ticket;
-    value.save_target = target;
-    value.notice.clear();
-    // Reserve before invoking the writer: its Loading notification can invoke
-    // QML/application callbacks before appendAcquiredLyrics returns.
-    value.writing_call = true;
-    const bool accepted = value.writer.appendAcquiredLyrics(ticket, target, {std::move(draft)}, true);
-    value.writing_call = false;
-    if (!accepted && !value.ownPending()) {
-        value.save_ticket.clear();
-        value.save_target.clear();
-    }
-    if (value.token == expected_token)
-        emit changed();
-    return accepted;
+    const auto bytes = content.toUtf8();
+    if (bytes.size() > static_cast<qsizetype>(lyrics_max_input_bytes) || QString::fromUtf8(bytes) != content)
+        return value.invalidSave();
+    auto pasted = bytes.toStdString();
+    const auto parsed = parseLrc(pasted);
+    if (parsed.error != LyricsParseError::None ||
+        parsed.document.plain_text.find_first_not_of(" \t\r\n") == std::string::npos ||
+        !lyricsDocumentAsLrc(parsed.document))
+        return value.invalidSave();
+    // Keep the user's source text. The shared writer compares canonical lyrics for duplicates.
+    return value.saveVersion(std::move(pasted), "manual", name, language, script, kind);
 }
 bool DownloadLyricsBinding::retrySave() {
     auto& value = *impl_;

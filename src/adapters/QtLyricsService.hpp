@@ -26,8 +26,8 @@ class QtLyricsService final : public QObject {
         QByteArray client_identifier = QByteArray("RCMusic/0.1 (+https://github.com/JpRomao/rc-music)"),
         int request_timeout_ms = 10'000);
     ~QtLyricsService() override;
-    // Same-path metadata updates preserve healthy local lyrics. Changed search
-    // metadata revokes an in-flight online result. Caller supplies local files.
+    // Same-path metadata updates refresh future search defaults while preserving
+    // local lyrics and an explicitly confirmed online search. Caller supplies local files.
     void setTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms);
     // Metadata-only context for a separately owned acquisition lookup. Revokes
     // earlier results without reading an audio file or its sibling .lrc.

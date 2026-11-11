@@ -284,8 +284,10 @@ class QtLyricsServiceTests final : public QObject {
         Service service(&network);
         setTrack(service);
         QVERIFY(service.searchOnline());
+        const auto revision = service.contextRevision();
         const auto old = network.replies.back();
         service.setTrack("C:/music/other.mp3", "Other", "Second artist", {}, 10'000);
+        QVERIFY(service.contextRevision() != revision);
         QVERIFY(old->aborted);
         old->finish(200, payload("[00:00.00]Wrong song"));
         awaitLocal(service);
@@ -363,6 +365,48 @@ class QtLyricsServiceTests final : public QObject {
         QCOMPARE(service.status(), Service::Status::Ready);
         QCOMPARE(service.document().lines.front().text, std::string{"Local stays"});
         QVERIFY(network.requests.isEmpty());
+    }
+    void sameTrackMetadataUpdatesKeepTheConfirmedOnlineSearchAndRefreshLaterDefaults() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto audio = temp.filePath("song.mp3");
+        Network network;
+        Service service(&network);
+        service.setTrack(audio, "Fallback title", {}, {}, 0);
+        QVERIFY(service.searchOnline("Confirmed title", "Confirmed artist"));
+        const auto revision = service.contextRevision();
+        const auto reply = network.replies.front();
+        const auto original_url = network.requests.front().url();
+
+        service.setTrack(audio, "Tagged title", "Tagged artist", "Tagged album", 27'000);
+        QCOMPARE(service.status(), Service::Status::Searching);
+        QCOMPARE(service.contextRevision(), revision);
+        QVERIFY(!reply->aborted);
+        QCOMPARE(network.requests.size(), 1);
+        QCOMPARE(network.requests.front().url(), original_url);
+        const QUrlQuery original(original_url);
+        QCOMPARE(original.queryItemValue("track_name"), "Confirmed title");
+        QCOMPARE(original.queryItemValue("artist_name"), "Confirmed artist");
+        QVERIFY(!original.hasQueryItem("album_name"));
+        QVERIFY(!original.hasQueryItem("duration"));
+
+        reply->finish(200, payload("[00:01.00]Original result", "Plain result"));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QCOMPARE(service.source(), Service::Source::Online);
+        QCOMPARE(service.contextRevision(), revision);
+        QCOMPARE(service.onlineDocuments().size(), std::size_t{2});
+        QCOMPARE(service.document().lines.front().text, std::string{"Original result"});
+
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 1500);
+        QVERIFY(service.searchOnline());
+        QVERIFY(service.contextRevision() != revision);
+        QVERIFY(service.onlineDocuments().empty());
+        QCOMPARE(network.requests.size(), 2);
+        const QUrlQuery updated(network.requests.back().url());
+        QCOMPARE(updated.queryItemValue("track_name"), "Tagged title");
+        QCOMPARE(updated.queryItemValue("artist_name"), "Tagged artist");
+        QCOMPARE(updated.queryItemValue("album_name"), "Tagged album");
+        QCOMPARE(updated.queryItemValue("duration"), "27");
     }
     void onlyOneOnlineRequestCanRunAtATime() {
         Network network;
