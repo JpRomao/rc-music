@@ -442,6 +442,8 @@ bool QtLyricsService::searchOnline(QString title_override, QString artist_overri
     QNetworkRequest request(endpoint);
     request.setRawHeader("User-Agent", value.client);
     request.setRawHeader("Accept", "application/json");
+    // Qt 6.11.2 mitigation for CVE-2026-96432.
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
     request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);

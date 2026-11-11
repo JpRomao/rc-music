@@ -273,6 +273,7 @@ class QtLyricsServiceTests final : public QObject {
         QCOMPARE(query.queryItemValue("album_name"), "Album");
         QCOMPARE(query.queryItemValue("duration"), "123");
         QVERIFY(!request.url().toString().contains("source.mp3"));
+        QCOMPARE(request.attribute(QNetworkRequest::Http2AllowedAttribute), QVariant(false));
         QCOMPARE(request.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),
                  int(QNetworkRequest::ManualRedirectPolicy));
         QVERIFY(request.rawHeader("User-Agent").startsWith("RCMusic/"));

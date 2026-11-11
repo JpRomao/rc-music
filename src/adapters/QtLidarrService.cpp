@@ -197,6 +197,8 @@ struct QtLidarrService::Impl final {
         request.setRawHeader("X-Api-Key", api_key);
         request.setRawHeader("Accept", "application/json");
         request.setRawHeader("User-Agent", "RCMusic/0.1");
+        // Qt 6.11.2 mitigation for CVE-2026-96432.
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
         request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
         request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);

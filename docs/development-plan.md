@@ -828,6 +828,10 @@ Em M5.7, `7.1.5-rcmusic2` agrega as correções de RASC e IAMF às de ADX, VobSu
 
 O build Windows também exige TagLib 2.3.2, com os avisos do TagLib e do utf8cpp incluídos na receita de runtime. A atualização passou em 52 casos de metadados e uma jornada de áudio com a nova DLL. [Proveniência e checks](desktop-build.md#taglib-no-runtime-windows)
 
+As requisições de letras e Lidarr agora desabilitam HTTP/2 no Qt Network 6.11.2, conforme a mitigação do CVE-2026-96432. As três assertions falharam antes da mudança em uma consulta de letras, um GET do Lidarr e um POST do Lidarr. Depois da mudança passaram 6/6 CTest, com 166 casos Qt usando respostas simuladas, e o build Release Windows. Logs em `out/product/r9/out/product/http2-*.log`. [Aviso do Qt](https://www.qt.io/blog/security-advisory-cve-2026-96432) · [Protocolo do Lidarr](lidarr-integration.md#conexão-e-api)
+
+Para o CVE-2026-116337, os dois patches oficiais do Qt 6.11 passaram na aplicação sequencial em uma cópia das fontes do SDK atual. O recibo está em `out/product/qtbase-cve-2026-116337-applicability/`. Build e qualificação da DLL Qt Network com esses patches seguem pendentes. [Aviso e patches do Qt](https://www.qt.io/blog/security-issue-cve-2026-116337?hsLang=en)
+
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)

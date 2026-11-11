@@ -159,6 +159,7 @@ class QtLidarrServiceTests final : public QObject {
             QVERIFY(entry.request.url().toString().startsWith("https://music.example.test/lidarr/api/v1/"));
             QVERIFY(!entry.request.url().toString().contains(api_key));
             QVERIFY(entry.request.url().query().isEmpty());
+            QCOMPARE(entry.request.attribute(QNetworkRequest::Http2AllowedAttribute), QVariant(false));
             QCOMPARE(entry.request.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),
                      int(QNetworkRequest::ManualRedirectPolicy));
             QCOMPARE(entry.request.attribute(QNetworkRequest::CookieLoadControlAttribute).toInt(),
@@ -276,6 +277,7 @@ class QtLidarrServiceTests final : public QObject {
                              [&](const auto& result) { return result.key == key; }));
         QCOMPARE(network.requests.size(), 6);
         QCOMPARE(network.requests.back().operation, QNetworkAccessManager::PostOperation);
+        QCOMPARE(network.requests.back().request.attribute(QNetworkRequest::Http2AllowedAttribute), QVariant(false));
         QCOMPARE(network.requests.back().request.url().path(), "/api/v1/command");
         const auto command = QJsonDocument::fromJson(network.requests.back().body).object();
         QCOMPARE(command.value("name").toString(), "AlbumSearch");

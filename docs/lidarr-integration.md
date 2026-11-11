@@ -22,7 +22,7 @@ A conexão explícita consulta `system/status` e carrega `rootfolder`, `qualityp
 
 O termo enviado preserva sinais de mais e sequências literais como `%2B` nos nomes pesquisados.
 
-O endereço pode usar HTTP ou HTTPS e apontar para outra máquina da rede. HTTP não criptografa a conexão, incluindo a chave enviada ao servidor; prefira HTTPS fora do próprio computador. Erros de certificado HTTPS são recusados, sem botão para ignorá-los. Redirecionamentos não são seguidos automaticamente.
+O endereço pode usar HTTP ou HTTPS e apontar para outra máquina da rede. A integração usa HTTP/1.1, inclusive sobre TLS. O servidor ou proxy precisa aceitar esse protocolo. HTTP não criptografa a conexão, incluindo a chave enviada ao servidor. Prefira HTTPS fora do próprio computador. Erros de certificado HTTPS são recusados, sem botão para ignorá-los. Redirecionamentos não são seguidos automaticamente.
 
 Para um álbum novo, o pedido `POST album` inclui as escolhas válidas e `addOptions.searchForNewAlbum: true`. Para um álbum já cadastrado, `POST command` recebe `name: "AlbumSearch"` e somente o ID escolhido em `albumIds`. A adição de um álbum pode cadastrar o artista correspondente no Lidarr; a confirmação precisa deixar essa consequência clara. O artista necessário usa `monitorNewItems: "none"`, sem `artist.addOptions`, para não solicitar a busca da discografia inteira ou monitorar automaticamente os outros álbuns novos.
 
