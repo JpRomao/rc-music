@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados de `8982c60` foram conferidos em 2026-11-11. Cada edição tem um setup com associações e outro sem, ambos sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
+Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 **Data:** 2026-11-05.
 
 A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os setups de `ebb093a`. As limpezas anteriores retiraram os setups de `a469f8d`, `cf34cd8` e `26cc641`. Os recibos, configurações e evidências foram preservados. Os registros históricos abaixo documentam a geração original.
@@ -91,6 +91,24 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups de f8a593b
+
+As duas edições incluem a recuperação de falhas ao salvar playlists durante a saída, o cancelamento cooperativo de metadados e o encerramento de downloads interrompidos após confirmar a ausência de temporários. Os builds Release/x64 da worktree limpa `f8a593b` passaram no lint QML e registraram zero testes. A Lite exclui a engine de navegação. A Completa experimental requer WebView2 Evergreen x64 já disponível. Ferramentas e extensões começam desmarcadas, e o perfil mantém desligados o provisionamento AppContainer e o envio pelo navegador integrado.
+
+| Edição | Pasta em `out/product/rc-music-local` | Arquivos / bytes do runtime | SHA-256 do manifesto |
+| --- | --- | ---: | --- |
+| Lite | `rc-music-f8a593b-native-Lite-20261111` | 603 / 232.216.798 | `5ade4be5a964a6b3c9ebb5706c636413525cf7a8f296a99ca3b74af025751906` |
+| Completa experimental | `rc-music-f8a593b-native-CompleteExperimental-20261111` | 606 / 232.438.517 | `6c1e72f5ba4202e95b7b0d620cd04c63eaad144b1b1f3fdc2bdaaf9d0fca47f9` |
+
+Cada runtime passou 17 cenários de áudio com 19 casos Qt aprovados e zero skips. As declarações registram `.flac`, `.m4a`, `.mp3`, `.mp4`, `.oga`, `.ogg` e `.wav` para os perfis básicos comprovados. Cada declaração rejeita o manifesto da outra edição. [Declaração Lite](../packaging/windows/formats/rc-music-f8a593b-lite.v2.json) · [Declaração Completa experimental](../packaging/windows/formats/rc-music-f8a593b-complete-experimental.v2.json)
+
+| Edição | Pasta em `out/product/rc-music-installer` | Bytes do setup | SHA-256 |
+| --- | --- | ---: | --- |
+| Lite | `rc-music-f8a593b-formats-v2-Lite-20261111` | 90.085.556 | `d8b8413ae7616005a2ab11b36d5bdbd8153c0ea6a74fd0fa116033421c4d17c5` |
+| Completa experimental | `rc-music-f8a593b-formats-v2-CompleteExperimental-20261111` | 90.156.650 | `8c19356a3de5303ad042542437b10e2869713beb586aad0e0a222bc07ae27ebf` |
+
+Os setups foram compilados com a receita de `8785938`. A verificação independente conferiu os PEs, as sete associações e as cinco combinações das opções. O 7-Zip conferiu por hash 21 arquivos embutidos na Lite e 24 na Completa, incluindo os hosts, as extensões e os avisos WebView2 da Completa. Os recibos estão em `out/product/test-runs/windows-candidates-f8a593b-20261111/`. A confirmação de instalação, atualização, remoção, escolha de padrão e integração com Brave segue pendente.
 
 ### Setups de 8982c60
 

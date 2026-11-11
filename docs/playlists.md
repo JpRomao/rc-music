@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-O recurso está implementado no Windows. Os [instaladores de `8982c60`](windows-installer.md#setups-de-8982c60) incluem adição direta, localização de arquivos e navegação por teclado. A recuperação ao sair está no build local posterior. A aceitação nativa e instalada segue pendente.
+O recurso está implementado no Windows. Os [instaladores de `f8a593b`](windows-installer.md#setups-de-f8a593b) incluem adição direta, localização de arquivos, navegação por teclado e recuperação de salvamento ao sair. A aceitação nativa e instalada segue pendente.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 

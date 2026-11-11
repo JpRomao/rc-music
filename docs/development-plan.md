@@ -820,9 +820,9 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — candidatos Windows atualizados
 
-Os instaladores Lite e Completa experimental de `8982c60` incorporam o seletor de saída de áudio, reconexão no Lidarr, descarte de tentativas inválidas de guardar letras e proteção ao copiar uma fila vazia para playlists. Release, lint QML, inventários, hashes, PE e leitura de arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de 8982c60](windows-installer.md#setups-de-8982c60)
+Os instaladores Lite e Completa experimental de `f8a593b` incorporam recuperação ao sair durante o salvamento de playlists, cancelamento cooperativo de metadados e encerramento de downloads interrompidos cuja ausência de temporários foi confirmada. Release, lint QML, inventários, hashes, PE e leitura de arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de f8a593b](windows-installer.md#setups-de-f8a593b)
 
-Em M4.6, os dois runtimes de `8982c60` passaram os 17 cenários de áudio do smoke. As declarações v2 vinculam sete extensões aos resultados de cada edição. Os dois setups com associações passaram pela inspeção estática. A confirmação no Registro, no Explorer e em Aplicativos Padrão permanece pendente. [Setups com associações](windows-installer.md#declarações-e-setups-de-8982c60-com-associações)
+Em M4.6, cada runtime de `f8a593b` passou os 17 cenários de áudio. As declarações v2 vinculam sete extensões ao resultado de cada edição, e os setups com associações passaram pela inspeção estática. A confirmação no Registro, no Explorer e em Aplicativos Padrão permanece pendente. [Evidência dos candidatos](windows-installer.md#setups-de-f8a593b)
 
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 
