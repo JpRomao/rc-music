@@ -30,6 +30,9 @@ class SessionAutosave final {
     SessionAutosave(SessionWriter& writer, SessionSnapshot initial, SessionAutosaveOptions options = {});
 
     [[nodiscard]] bool scheduleStructural(const SessionSnapshot& snapshot);
+    // Update only the latest ledger, even when the saved queue was not restored
+    // into the presenter. The existing write suspension still requires retry.
+    [[nodiscard]] bool scheduleDownloadImportRetirement(std::span<const std::string> job_ids);
     [[nodiscard]] bool observeConfirmedPosition(std::int64_t position_ms);
     [[nodiscard]] bool checkpointConfirmedPosition(std::int64_t position_ms);
     void scheduleRepair();

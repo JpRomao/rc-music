@@ -480,6 +480,8 @@ class PlayerDownloadImportTests final : public QObject {
     void durableImportWaitsForMatchingSaveOfQueueAndReceipt();
     void durableSavedOlderRevisionAcknowledgesWithoutWaitingForPositionChanges();
     void durableFailureDoesNotPromoteReadbackAndExplicitRetryDoesNotAppend();
+    void retiredReceiptReleasesCapacityOnlyAfterSavedWithoutRewritingAnUnrestoredQueue();
+    void overlappingReceiptRetirementsKeepPendingImportsAndNewQueueEdits();
     void durableReplaysSurviveRemovalAndRestartWithRestoreDisabled();
     void durableReceiptsStayInStructuralSnapshotsAfterClear();
     void durableUntrustedStartupBlocksNewImports_data();
@@ -1264,6 +1266,116 @@ void PlayerDownloadImportTests::durableFailureDoesNotPromoteReadbackAndExplicitR
     h.writer.complete(SessionSaveStatus::Saved);
     h.poll();
     QCOMPARE(importer.pollImport("first"), DownloadImportState::Committed);
+}
+
+void PlayerDownloadImportTests::retiredReceiptReleasesCapacityOnlyAfterSavedWithoutRewritingAnUnrestoredQueue() {
+    const auto old_path = publishedPath();
+    const auto new_path = publishedPath(u8"New.mp3");
+    LocalFileQueue stored_queue;
+    QVERIFY(stored_queue.append({old_path}));
+    QVERIFY(stored_queue.select(0));
+    const SessionSnapshot initial{.queue = stored_queue.snapshot(),
+                                  .position_ms = 450,
+                                  .download_import_receipts = {{.job_id = "old", .source_path = old_path}}};
+    DurableHarness h(initial, SessionLoadStatus::Loaded, false);
+    PlayerDownloadImport importer(h.presenter, {.max_receipts = 1}, PlayerDownloadImportPersistence::Session);
+    QCOMPARE(h.model()->rowCount(), 0);
+    QVERIFY(!h.presenter.downloadImportRetirementPending());
+    const std::vector<std::string> archived{"old", "unknown"};
+    importer.retireArchivedReceipts(archived);
+    QVERIFY(h.presenter.downloadImportRetirementPending());
+    QVERIFY(h.writer.active);
+    QCOMPARE(h.writer.active->snapshot.queue, initial.queue);
+    QCOMPARE(h.writer.active->snapshot.position_ms, initial.position_ms);
+    QVERIFY(h.writer.active->snapshot.download_import_receipts.empty());
+    QCOMPARE(h.writer.active->snapshot.retired_download_import_job_ids, std::vector<std::string>{"old"});
+    QCOMPARE(importer.begin("old", old_path), DownloadImportState::Committed);
+    QCOMPARE(importer.begin("new", new_path), DownloadImportState::Failed);
+
+    h.writer.complete(SessionSaveStatus::Failed, true);
+    h.poll();
+    QVERIFY(h.writer.disk.download_import_receipts.empty());
+    QVERIFY(h.presenter.downloadImportRetirementPending());
+    QCOMPARE(importer.begin("new", new_path), DownloadImportState::Failed);
+    QVERIFY(!h.writer.active);
+    QCOMPARE(h.writer.starts.size(), std::size_t{1});
+    QVERIFY(h.presenter.retryPreferenceSave());
+    h.poll();
+    QVERIFY(h.writer.active);
+    QCOMPARE(h.writer.active->snapshot, h.writer.disk);
+    h.writer.complete(SessionSaveStatus::Saved);
+    h.poll();
+    QVERIFY(!h.presenter.downloadImportRetirementPending());
+    QCOMPARE(importer.begin("old", old_path), DownloadImportState::Failed);
+    QCOMPARE(h.writer.disk.queue, initial.queue);
+    QCOMPARE(h.writer.disk.position_ms, initial.position_ms);
+    QCOMPARE(h.model()->rowCount(), 0);
+    QVERIFY(h.backend.loads.empty());
+
+    DurableHarness restarted(h.writer.disk, SessionLoadStatus::Loaded, false);
+    PlayerDownloadImport restarted_importer(restarted.presenter, {.max_receipts = 1},
+                                            PlayerDownloadImportPersistence::Session);
+    QCOMPARE(restarted_importer.begin("old", old_path), DownloadImportState::Failed);
+    QVERIFY(restarted.writer.starts.empty());
+    QCOMPARE(importer.begin("new", new_path), DownloadImportState::Pending);
+    QCOMPARE(h.model()->rowCount(), 1);
+    QVERIFY(h.writer.active);
+    QCOMPARE(h.writer.active->snapshot.retired_download_import_job_ids, std::vector<std::string>{"old"});
+    h.writer.complete(SessionSaveStatus::Saved);
+    h.poll();
+}
+
+void PlayerDownloadImportTests::overlappingReceiptRetirementsKeepPendingImportsAndNewQueueEdits() {
+    const auto first = publishedPath(u8"First.mp3");
+    const auto second = publishedPath(u8"Second.mp3");
+    const auto pending = publishedPath(u8"Pending.mp3");
+    const auto local = publishedPath(u8"Local.mp3");
+    const SessionSnapshot initial{.download_import_receipts = {{.job_id = "first", .source_path = first},
+                                                               {.job_id = "second", .source_path = second}}};
+    DurableHarness h(initial, SessionLoadStatus::Loaded);
+    PlayerDownloadImport importer(h.presenter, {.max_receipts = 3}, PlayerDownloadImportPersistence::Session);
+    QCOMPARE(importer.begin("pending", pending), DownloadImportState::Pending);
+    const std::vector<std::string> first_archive{"first", "pending"};
+    importer.retireArchivedReceipts(first_archive);
+    QVERIFY(h.presenter.downloadImportRetirementPending());
+    h.writer.complete(SessionSaveStatus::Saved);
+    h.poll();
+    QVERIFY(h.writer.active);
+    QCOMPARE(h.writer.active->snapshot.retired_download_import_job_ids, std::vector<std::string>{"first"});
+    QCOMPARE(h.writer.active->snapshot.download_import_receipts.size(), std::size_t{2});
+    QCOMPARE(h.writer.active->snapshot.download_import_receipts.back().job_id, std::string{"pending"});
+
+    const std::vector<std::string> second_archive{"second", "first"};
+    importer.retireArchivedReceipts(second_archive);
+    QVERIFY(h.presenter.appendPlaylistSources({local}));
+    const auto latest = h.autosave.latestRevision();
+    h.writer.complete(SessionSaveStatus::Saved);
+    h.poll();
+    QVERIFY(h.presenter.downloadImportRetirementPending());
+    QCOMPARE(importer.begin("first", first), DownloadImportState::Failed);
+    QCOMPARE(importer.begin("second", second), DownloadImportState::Committed);
+    QVERIFY(h.writer.active);
+    QCOMPARE(h.writer.active->revision, latest);
+    QCOMPARE(h.writer.active->snapshot.retired_download_import_job_ids, (std::vector<std::string>{"first", "second"}));
+    QCOMPARE(h.writer.active->snapshot.download_import_receipts.size(), std::size_t{1});
+    QCOMPARE(h.writer.active->snapshot.download_import_receipts.front().job_id, std::string{"pending"});
+    QCOMPARE(h.writer.active->snapshot.queue.items.size(), std::size_t{2});
+    QCOMPARE(h.writer.active->snapshot.queue.items.back().source_path, local);
+
+    h.writer.complete(SessionSaveStatus::Failed, true);
+    h.poll();
+    QVERIFY(h.presenter.downloadImportRetirementPending());
+    QCOMPARE(importer.begin("second", second), DownloadImportState::Committed);
+    QVERIFY(h.presenter.retryPreferenceSave());
+    h.poll();
+    QVERIFY(h.writer.active);
+    h.writer.complete(SessionSaveStatus::Saved);
+    h.poll();
+    QVERIFY(!h.presenter.downloadImportRetirementPending());
+    QCOMPARE(importer.begin("second", second), DownloadImportState::Failed);
+    QCOMPARE(importer.begin("pending", pending), DownloadImportState::Committed);
+    QCOMPARE(h.model()->rowCount(), 2);
+    QVERIFY(h.backend.loads.empty());
 }
 
 void PlayerDownloadImportTests::durableReplaysSurviveRemovalAndRestartWithRestoreDisabled() {

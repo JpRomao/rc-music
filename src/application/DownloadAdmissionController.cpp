@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 #include <utility>
 
 namespace music_player::m0 {
@@ -64,6 +65,7 @@ struct DownloadAdmissionController::Impl {
     bool reconcile_imports{false};
     bool import_history_healthy{false};
     std::vector<DownloadImportReceipt> import_receipts{};
+    std::vector<std::string> retired_import_job_ids{};
     std::optional<DownloadCheckpoint> namespace_checkpoint{};
     DownloadRecoveryStatus blocked_recovery_status{DownloadRecoveryStatus::NotRequested};
 
@@ -82,6 +84,15 @@ struct DownloadAdmissionController::Impl {
         append(checkpoint.receipts);
         append(checkpoint.archived_receipts);
         return result;
+    }
+    bool containsRetiredImports(const DownloadCheckpoint& checkpoint) const {
+        if (retired_import_job_ids.empty())
+            return true;
+        std::unordered_set<std::string_view> missing(retired_import_job_ids.begin(), retired_import_job_ids.end());
+        for (const auto& receipt : checkpoint.archived_receipts)
+            for (const auto& id : receipt.job_ids)
+                missing.erase(id);
+        return missing.empty();
     }
     bool holdsFinalFailure() const {
         return final_save_policy == DownloadFinalSavePolicy::HoldForDecision && closing && healthy_startup &&
@@ -214,6 +225,11 @@ struct DownloadAdmissionController::Impl {
                 state = DownloadAdmissionControllerState::Blocked;
                 return;
             }
+            if (!containsRetiredImports(*checkpoint)) {
+                blocked_recovery_status = DownloadRecoveryStatus::ReceiptConflict;
+                state = DownloadAdmissionControllerState::Blocked;
+                return;
+            }
             // Allocate the complete acknowledgement index before the atomic restore.
             auto receipts = acknowledgements(*checkpoint);
             const bool restored =
@@ -228,6 +244,8 @@ struct DownloadAdmissionController::Impl {
             confirmed.swap(receipts);
             healthy_startup = true;
             state = DownloadAdmissionControllerState::Ready;
+            if (loaded.status == DownloadCheckpointLoadStatus::Loaded)
+                service.retireArchivedImportReceipts();
         } catch (...) {
             namespace_checkpoint.reset();
             blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
@@ -280,6 +298,8 @@ struct DownloadAdmissionController::Impl {
             }
             save_status = DownloadCheckpointSaveStatus::Saved;
             state = closing ? DownloadAdmissionControllerState::Stopping : DownloadAdmissionControllerState::Ready;
+            if (expected.purpose == Purpose::Archive)
+                service.retireArchivedImportReceipts();
         } catch (...) {
             // A drain-only query cannot restore protocol confidence, including
             // after an explicit lossy close. Keep both possible IDs bounded.
@@ -349,7 +369,9 @@ DownloadAdmissionController::DownloadAdmissionController(DownloadService& servic
                 : initial_session.status == SessionLoadStatus::Missing && initial_session.snapshot == SessionSnapshot{};
         if (healthy) {
             auto receipts = initial_session.snapshot.download_import_receipts;
+            auto retired = initial_session.snapshot.retired_download_import_job_ids;
             owner.import_receipts = std::move(receipts);
+            owner.retired_import_job_ids = std::move(retired);
             owner.import_history_healthy = true;
         }
     } catch (...) {
@@ -511,6 +533,8 @@ bool DownloadAdmissionController::renewStartupNamespace() {
         owner.blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
         owner.healthy_startup = true;
         owner.state = DownloadAdmissionControllerState::Ready;
+        if (owner.load_status == DownloadCheckpointLoadStatus::Loaded)
+            owner.service.retireArchivedImportReceipts();
         return true;
     } catch (...) {
         return false;
@@ -559,6 +583,8 @@ std::optional<DownloadCheckpointSaveStatus> DownloadAdmissionController::saveSta
 DownloadRecoveryReport DownloadAdmissionController::recoveryReport() const {
     if (impl_->reconcile_imports && !impl_->import_history_healthy)
         return {.status = DownloadRecoveryStatus::InvalidHistory};
+    if (impl_->blocked_recovery_status != DownloadRecoveryStatus::NotRequested)
+        return {.status = impl_->blocked_recovery_status};
     return impl_->service.recoveryReport();
 }
 } // namespace music_player::m0

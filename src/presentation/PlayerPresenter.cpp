@@ -660,6 +660,7 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
 
     download_import_receipts_ = session.initial.download_import_receipts;
     download_import_revisions_.resize(download_import_receipts_.size(), 0);
+    retired_download_import_job_ids_ = session.initial.retired_download_import_job_ids;
     if (!preferences.initial.restore_last_session || session.initial.queue.items.empty())
         return;
     if (!local_queue_.restore(session.initial.queue) || !local_queue_model_.replace(local_queue_))
@@ -680,16 +681,49 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
 }
 
 SessionSnapshot PlayerPresenter::currentSessionSnapshot() const {
-    SessionSnapshot result{
-        .queue = local_queue_.snapshot(), .position_ms = 0, .download_import_receipts = download_import_receipts_};
-    if (result.queue.current_occurrence_id.has_value() && local_track_session_ != nullptr &&
-        local_track_session_->hasTrack()) {
-        result.position_ms = restored_position_.has_value() &&
-                                     restored_position_->generation == local_track_session_->playbackGeneration()
-                                 ? restored_position_->target_ms
-                                 : std::max(controller_.confirmedSnapshot().position_ms, std::int64_t{0});
+    SessionSnapshot result{.queue = local_queue_.snapshot(),
+                           .position_ms = currentSessionPosition(),
+                           .download_import_receipts = download_import_receipts_,
+                           .retired_download_import_job_ids = retired_download_import_job_ids_};
+    // All later queue snapshots preserve the proposed retirement while the
+    // live ledger still owns its receipt and capacity until Saved.
+    for (const auto& pending : download_import_retirements_) {
+        std::erase_if(result.download_import_receipts,
+                      [&](const auto& receipt) { return receipt.job_id == pending.job_id; });
+        result.retired_download_import_job_ids.push_back(pending.job_id);
     }
     return result;
+}
+
+std::int64_t PlayerPresenter::currentSessionPosition() const {
+    if (!local_queue_.currentOccurrenceId() || local_track_session_ == nullptr || !local_track_session_->hasTrack())
+        return 0;
+    if (restored_position_ && restored_position_->generation == local_track_session_->playbackGeneration())
+        return restored_position_->target_ms;
+    return std::max(controller_.confirmedSnapshot().position_ms, std::int64_t{0});
+}
+
+bool PlayerPresenter::downloadImportRetirementPending() const noexcept {
+    return session_autosave_ && !download_import_retirements_.empty() &&
+           download_import_retirements_.back().revision > session_autosave_->savedRevision();
+}
+
+void PlayerPresenter::commitSavedDownloadImportRetirements() noexcept {
+    if (!session_autosave_ || download_import_retirements_.empty())
+        return;
+    const auto saved = session_autosave_->savedRevision();
+    const auto pending =
+        std::ranges::find_if(download_import_retirements_, [saved](const auto& item) { return item.revision > saved; });
+    for (auto item = download_import_retirements_.begin(); item != pending; ++item) {
+        const auto receipt = std::ranges::find(download_import_receipts_, item->job_id, &DownloadImportReceipt::job_id);
+        if (receipt != download_import_receipts_.end()) {
+            download_import_revisions_.erase(download_import_revisions_.begin() +
+                                             (receipt - download_import_receipts_.begin()));
+            download_import_receipts_.erase(receipt);
+        }
+        retired_download_import_job_ids_.push_back(std::move(item->job_id));
+    }
+    download_import_retirements_.erase(download_import_retirements_.begin(), pending);
 }
 
 void PlayerPresenter::discardStaleRestoredSessionState() {
@@ -732,7 +766,7 @@ void PlayerPresenter::observeSessionPosition(const bool checkpoint) {
     discardStaleRestoredSessionState();
     if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_ || restored_position_.has_value())
         return;
-    const auto position_ms = currentSessionSnapshot().position_ms;
+    const auto position_ms = currentSessionPosition();
     if (checkpoint)
         static_cast<void>(session_autosave_->checkpointConfirmedPosition(position_ms));
     else
@@ -2216,7 +2250,7 @@ void PlayerPresenter::finishFileLocation(const std::uint64_t request_generation,
             finish(false);
             return;
         }
-        const auto position = currentSessionSnapshot().position_ms;
+        const auto position = currentSessionPosition();
         const bool restore_volume = hasSourceVolumeRecovery();
         if (!local_track_session_->open(result.source_path, LocalTrackStartIntent::RestorePaused)) {
             file_location_error_ = request.occurrence_id;
@@ -3628,12 +3662,13 @@ void PlayerPresenter::preferenceDidChange() {
 void PlayerPresenter::pollPreferencePersistence() { pollPersistence(); }
 
 void PlayerPresenter::pollPersistence() {
-    if (download_append_in_progress_ || exit_preparation_call_in_progress_)
+    if (download_append_in_progress_ || download_import_call_in_progress_ || exit_preparation_call_in_progress_)
         return;
     if (preferences_autosave_ != nullptr)
         preferences_autosave_->poll();
     if (session_autosave_ != nullptr)
         session_autosave_->poll();
+    commitSavedDownloadImportRetirements();
     synchronizePreferenceWarning();
 
     if (source_exit_drain_active_) {
@@ -3899,7 +3934,7 @@ bool PlayerPresenter::recoverAudioOutput() {
     const auto current = local_queue_.currentIndex();
     if (!current.has_value())
         return false;
-    const auto position = currentSessionSnapshot().position_ms;
+    const auto position = currentSessionPosition();
     const bool restore_volume = hasSourceVolumeRecovery();
     const auto id = local_queue_.items()[*current].occurrence_id;
     if (!local_track_session_->open(local_queue_.items()[*current].source_path, LocalTrackStartIntent::RestorePaused))

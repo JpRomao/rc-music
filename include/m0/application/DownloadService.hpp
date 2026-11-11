@@ -78,6 +78,9 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] bool canArchiveSettled() const;
     [[nodiscard]] std::optional<DownloadCheckpoint> stageSettledArchive();
     [[nodiscard]] bool confirmSettledArchive() noexcept;
+    // Trusted checkpoint owner only, after authoritative primary restoration or
+    // matching archive Saved. Port failure cannot revoke the checkpoint evidence.
+    void retireArchivedImportReceipts() noexcept;
     // Live, matching publication acknowledgement plus original typed source
     // only. Historical candidate paths/receipts never authorize a new lookup.
     [[nodiscard]] std::optional<PublishedYoutubeAudio> publishedYoutubeAudio(std::string_view job_id) const;

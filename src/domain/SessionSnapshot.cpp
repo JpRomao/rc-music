@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <unordered_set>
 
 namespace music_player::m0 {
 namespace {
@@ -101,10 +102,21 @@ bool isValidDownloadImportReceipts(const std::span<const DownloadImportReceipt> 
 
 bool isValidSessionSnapshot(const SessionSnapshot& snapshot) {
     if (!isValidLocalFileQueueSnapshot(snapshot.queue) || snapshot.position_ms < 0 ||
-        !isValidDownloadImportReceipts(snapshot.download_import_receipts)) {
+        (!snapshot.queue.current_occurrence_id && snapshot.position_ms != 0) ||
+        snapshot.retired_download_import_job_ids.size() > maximum_retired_download_import_job_ids ||
+        !isValidDownloadImportReceipts(snapshot.download_import_receipts))
         return false;
-    }
-    return snapshot.queue.current_occurrence_id.has_value() || snapshot.position_ms == 0;
+    if (snapshot.retired_download_import_job_ids.empty())
+        return true;
+
+    std::unordered_set<std::string_view> ids;
+    ids.reserve(snapshot.download_import_receipts.size() + snapshot.retired_download_import_job_ids.size());
+    for (const auto& receipt : snapshot.download_import_receipts)
+        ids.insert(receipt.job_id);
+    for (const auto& id : snapshot.retired_download_import_job_ids)
+        if (!validJobId(id) || !ids.insert(id).second)
+            return false;
+    return true;
 }
 
 } // namespace music_player::m0

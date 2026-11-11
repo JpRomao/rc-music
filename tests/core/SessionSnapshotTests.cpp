@@ -129,6 +129,35 @@ TEST_CASE("session import receipt MP3 suffix and longest ASCII identity are acce
     CHECK(isValidSessionSnapshot(snapshot));
 }
 
+TEST_CASE("session retired download IDs must be valid and distinct from live receipts",
+          "[core][session][download-receipts]") {
+    SessionSnapshot snapshot{.download_import_receipts = {{"live", receiptPath()}},
+                             .retired_download_import_job_ids = {"old-1", "OLD-1", std::string(64, 'z')}};
+    REQUIRE(isValidSessionSnapshot(snapshot));
+    auto changed = snapshot;
+    changed.retired_download_import_job_ids.front() = "other";
+    CHECK_FALSE(changed == snapshot);
+    auto& retired = snapshot.retired_download_import_job_ids;
+    SECTION("duplicate") { retired.back() = retired.front(); }
+    SECTION("live collision") { retired.back() = "live"; }
+    SECTION("empty") { retired.back().clear(); }
+    SECTION("overlength") { retired.back().assign(65, 'a'); }
+    SECTION("not ASCII") { retired.back() = "faixa-日本語"; }
+    SECTION("forbidden punctuation") { retired.back() = "old.1"; }
+    SECTION("embedded null") { retired.back() = std::string{"old\0id", 6}; }
+    CHECK_FALSE(isValidSessionSnapshot(snapshot));
+}
+
+TEST_CASE("session retired download IDs have a separate bounded capacity", "[core][session][download-receipts]") {
+    SessionSnapshot snapshot{.download_import_receipts = {{"live", receiptPath()}}};
+    auto& retired = snapshot.retired_download_import_job_ids;
+    for (std::size_t index = 0; index < maximum_retired_download_import_job_ids; ++index)
+        retired.push_back("retired-" + std::to_string(index));
+    REQUIRE(isValidSessionSnapshot(snapshot));
+    retired.push_back("overflow");
+    CHECK_FALSE(isValidSessionSnapshot(snapshot));
+}
+
 TEST_CASE("session snapshot restores duplicate paths by occurrence id without transient availability",
           "[m0][qt][core][session][FR-043]") {
     const auto persisted = validSnapshot();

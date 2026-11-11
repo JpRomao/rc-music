@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -80,6 +81,10 @@ class DownloadImport {
         return accept(job_id, mp3_path) ? DownloadImportState::Committed : DownloadImportState::Failed;
     }
     [[nodiscard]] virtual DownloadImportState pollImport(std::string_view) { return DownloadImportState::Failed; }
+    // Trusted archived job IDs after authoritative checkpoint load or Saved.
+    // A durable importer may schedule receipt compaction. The span is borrowed
+    // only for this call. Media, queue occurrences and import authority are separate.
+    virtual void retireArchivedReceipts(std::span<const std::string>) {}
 };
 
 } // namespace music_player::m0

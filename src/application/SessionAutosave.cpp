@@ -1,6 +1,7 @@
 #include "m0/application/SessionAutosave.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -41,11 +42,51 @@ bool SessionAutosave::scheduleStructural(const SessionSnapshot& snapshot) {
     // state. A failed copy must not leave a partially updated latest snapshot.
     SessionSnapshot replacement = snapshot;
     const auto changed_at = automatic_rearming_suspended_ ? TimePoint{} : options_.now();
+    // The clock callback may have staged receipt retirement while the queue
+    // edit was being prepared. Every later revision must carry those IDs.
+    const auto& latest_retired = latest_.retired_download_import_job_ids;
+    auto& replacement_retired = replacement.retired_download_import_job_ids;
+    if (!latest_retired.empty() && replacement_retired != latest_retired) {
+        for (const auto& id : latest_retired) {
+            if (std::ranges::find(replacement_retired, id) != replacement_retired.end())
+                continue;
+            std::erase_if(replacement.download_import_receipts,
+                          [&](const DownloadImportReceipt& receipt) { return receipt.job_id == id; });
+            replacement_retired.push_back(id);
+        }
+        if (!isValidSessionSnapshot(replacement) || replacement == latest_)
+            return false;
+    }
     latest_ = std::move(replacement);
     ++latest_revision_;
     dirty_ = true;
     if (!automatic_rearming_suspended_)
         armStructuralWrite(changed_at);
+    return true;
+}
+
+bool SessionAutosave::scheduleDownloadImportRetirement(const std::span<const std::string> job_ids) {
+    if (job_ids.empty() || latest_revision_ == std::numeric_limits<SessionRevision>::max())
+        return false;
+    const auto due = automatic_rearming_suspended_ ? std::nullopt : std::optional{options_.now()};
+    // Copy after the clock call so a structural edit made by that callback
+    // remains part of this revision.
+    auto replacement = latest_;
+    for (const auto& id : job_ids) {
+        const auto receipt =
+            std::ranges::find(replacement.download_import_receipts, id, &DownloadImportReceipt::job_id);
+        if (receipt == replacement.download_import_receipts.end())
+            return false;
+        replacement.retired_download_import_job_ids.push_back(receipt->job_id);
+        replacement.download_import_receipts.erase(receipt);
+    }
+    if (!isValidSessionSnapshot(replacement))
+        return false;
+    latest_ = std::move(replacement);
+    ++latest_revision_;
+    dirty_ = true;
+    if (due && !automatic_rearming_suspended_)
+        immediate_due_ = due;
     return true;
 }
 

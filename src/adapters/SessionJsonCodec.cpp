@@ -17,6 +17,8 @@
 namespace music_player::m0 {
 namespace {
 
+constexpr int import_receipt_schema_version = 2;
+
 [[nodiscard]] bool containsNull(const QString& value) { return value.contains(QChar{0}); }
 
 [[nodiscard]] std::optional<std::filesystem::path> decodePath(const QJsonValue& value);
@@ -37,7 +39,7 @@ namespace {
     return true;
 }
 
-// Qt objects have already lost duplicate keys. Only the v2 acknowledgement
+// Qt objects have already lost duplicate keys. Only the acknowledgement
 // fields need this lexical pass; legacy queue and unknown-field tolerance stay
 // unchanged. Syntax and numbers are still parsed by Qt before this pass.
 class ImportKeysPreflight final {
@@ -116,7 +118,8 @@ class ImportKeysPreflight final {
                 const bool acknowledgement_key =
                     context == Context::Receipt ||
                     (context == Context::Root &&
-                     (*key == QStringLiteral("downloadImports") || *key == QStringLiteral("schemaVersion")));
+                     (*key == QStringLiteral("downloadImports") || *key == QStringLiteral("schemaVersion") ||
+                      *key == QStringLiteral("retiredDownloadImportJobIds")));
                 if (acknowledgement_key) {
                     if (keys.contains(*key))
                         return false;
@@ -176,6 +179,18 @@ class ImportKeysPreflight final {
 #endif
 }
 
+[[nodiscard]] bool validJobId(const QString& id) {
+    if (id.isEmpty() || id.size() > 64)
+        return false;
+    for (const auto unit : id) {
+        const auto code = unit.unicode();
+        if (!((code >= u'a' && code <= u'z') || (code >= u'A' && code <= u'Z') || (code >= u'0' && code <= u'9') ||
+              code == u'_' || code == u'-'))
+            return false;
+    }
+    return true;
+}
+
 [[nodiscard]] bool decodeReceipts(const QJsonValue& value, SessionSnapshot& snapshot) {
     if (!value.isArray())
         return false;
@@ -194,14 +209,8 @@ class ImportKeysPreflight final {
             !object.value(QStringLiteral("sourcePath")).isString())
             return false;
         const auto id = object.value(QStringLiteral("jobId")).toString();
-        if (id.isEmpty() || id.size() > 64 || ids.contains(id))
+        if (!validJobId(id) || ids.contains(id))
             return false;
-        for (const auto unit : id) {
-            const auto code = unit.unicode();
-            if (!((code >= u'a' && code <= u'z') || (code >= u'A' && code <= u'Z') || (code >= u'0' && code <= u'9') ||
-                  code == u'_' || code == u'-'))
-                return false;
-        }
         const auto id_bytes = static_cast<std::size_t>(id.size());
         if (id_bytes > remaining_bytes)
             return false;
@@ -222,6 +231,23 @@ class ImportKeysPreflight final {
             {object.value(QStringLiteral("jobId")).toString().toStdString(), *path});
     }
     return isValidDownloadImportReceipts(snapshot.download_import_receipts);
+}
+
+[[nodiscard]] bool decodeRetiredJobIds(const QJsonValue& value, SessionSnapshot& snapshot) {
+    if (!value.isArray())
+        return false;
+    const auto ids = value.toArray();
+    if (ids.isEmpty() || ids.size() > static_cast<qsizetype>(maximum_retired_download_import_job_ids))
+        return false;
+    auto& retired = snapshot.retired_download_import_job_ids;
+    retired.reserve(static_cast<std::size_t>(ids.size()));
+    for (const auto& item : ids) {
+        const auto id = item.toString();
+        if (!validJobId(id))
+            return false;
+        retired.push_back(id.toStdString());
+    }
+    return true;
 }
 
 [[nodiscard]] std::optional<QString> encodePath(const std::filesystem::path& path) {
@@ -329,12 +355,19 @@ QByteArray SessionJsonCodec::encode(const SessionSnapshot& snapshot) {
         });
     }
 
-    const QJsonObject root{
-        {QStringLiteral("schemaVersion"), schema_version},
+    const bool has_retired_ids = !snapshot.retired_download_import_job_ids.empty();
+    QJsonObject root{
+        {QStringLiteral("schemaVersion"), has_retired_ids ? schema_version : import_receipt_schema_version},
         {QStringLiteral("queue"), queue},
         {QStringLiteral("positionMs"), QString::number(static_cast<qlonglong>(snapshot.position_ms))},
         {QStringLiteral("downloadImports"), imports},
     };
+    if (has_retired_ids) {
+        QJsonArray retired;
+        for (const auto& id : snapshot.retired_download_import_job_ids)
+            retired.append(QString::fromStdString(id));
+        root.insert(QStringLiteral("retiredDownloadImportJobIds"), retired);
+    }
     QByteArray encoded = QJsonDocument{root}.toJson(QJsonDocument::Compact);
     if (encoded.size() > maximum_document_size)
         return {};
@@ -356,10 +389,12 @@ SessionJsonDecodeResult SessionJsonCodec::decode(const QByteArrayView bytes) {
         return {};
     if (*version > schema_version)
         return {.status = SessionJsonDecodeStatus::FutureVersion};
-    if (*version != 1 && *version != schema_version)
+    if (*version != 1 && *version != import_receipt_schema_version && *version != schema_version)
         return {};
 
-    if (*version == schema_version && !ImportKeysPreflight{bytes}.valid())
+    const auto retired_key = QStringLiteral("retiredDownloadImportJobIds");
+    if ((*version != schema_version && root.contains(retired_key)) ||
+        (*version >= import_receipt_schema_version && !ImportKeysPreflight{bytes}.valid()))
         return {};
 
     const QJsonValue queue_value = root.value(QStringLiteral("queue"));
@@ -372,7 +407,10 @@ SessionJsonDecodeResult SessionJsonCodec::decode(const QByteArrayView bytes) {
         return {};
 
     SessionSnapshot snapshot;
-    if (*version == schema_version && !decodeReceipts(root.value(QStringLiteral("downloadImports")), snapshot))
+    if (*version >= import_receipt_schema_version &&
+        !decodeReceipts(root.value(QStringLiteral("downloadImports")), snapshot))
+        return {};
+    if (*version == schema_version && !decodeRetiredJobIds(root.value(retired_key), snapshot))
         return {};
     const QJsonArray items = items_value.toArray();
     snapshot.queue.items.reserve(static_cast<std::size_t>(items.size()));

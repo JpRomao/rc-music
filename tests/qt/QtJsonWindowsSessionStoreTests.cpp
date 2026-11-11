@@ -381,7 +381,7 @@ void QtJsonWindowsSessionStoreTests::blocksFuturePrimaryUntilReplacementIsExplic
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     const SessionSnapshot backup_session = originalSession();
     const SessionSnapshot replacement = replacementSession();
     const QByteArray backup_bytes = SessionJsonCodec::encode(backup_session);
@@ -409,7 +409,7 @@ void QtJsonWindowsSessionStoreTests::preservesFutureBackupWhenExplicitReplacemen
     const SessionSnapshot original = originalSession();
     const SessionSnapshot replacement = replacementSession();
     const QByteArray original_bytes = SessionJsonCodec::encode(original);
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     QVERIFY(writeAll(sessionPath(root), original_bytes));
     QVERIFY(writeAll(backupPath(root), future));
 
@@ -432,7 +432,7 @@ void QtJsonWindowsSessionStoreTests::replacesFutureBackupOnlyAfterACommittedPrim
     QVERIFY(original_bytes.endsWith('}'));
     original_bytes.chop(1);
     original_bytes.append(",\"futureHint\":true} \r\n");
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     QVERIFY(writeAll(sessionPath(root), original_bytes));
     QVERIFY(writeAll(backupPath(root), future));
     QtJsonWindowsSessionStore store{root};
@@ -529,7 +529,7 @@ void QtJsonWindowsSessionStoreTests::futureBackupRemainsWhenFailureIsInjectedAft
     const QString root = temporary.path();
     const SessionSnapshot original = originalSession();
     const SessionSnapshot replacement = replacementSession();
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     QVERIFY(writeAll(sessionPath(root), SessionJsonCodec::encode(original)));
     QVERIFY(writeAll(backupPath(root), future));
 
@@ -546,7 +546,7 @@ void QtJsonWindowsSessionStoreTests::futureBackupCleanupFaultOccursAfterPrimaryC
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     const SessionSnapshot replacement = replacementSession();
     QVERIFY(writeAll(backupPath(root), future));
 
@@ -564,7 +564,7 @@ void QtJsonWindowsSessionStoreTests::futureBackupCleanupAfterCommitReportsFailur
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     const SessionSnapshot replacement = replacementSession();
     QVERIFY(writeAll(backupPath(root), future));
 
@@ -601,7 +601,7 @@ void QtJsonWindowsSessionStoreTests::exposesTheTransactionalCommitOrder() {
     const QString future_root = QDir{temporary.path()}.filePath(u"future"_s);
     QVERIFY(QDir{}.mkpath(future_root));
     QVERIFY(writeAll(sessionPath(future_root), SessionJsonCodec::encode(originalSession())));
-    QVERIFY(writeAll(backupPath(future_root), QByteArray{"{\"schemaVersion\":3}"}));
+    QVERIFY(writeAll(backupPath(future_root), QByteArray{"{\"schemaVersion\":4}"}));
     QVector<SessionStoreFaultPoint> future_points;
     QtJsonWindowsSessionStore future{future_root,
                                      {.inject_fault = [&future_points](const SessionStoreFaultPoint point) {
@@ -779,7 +779,7 @@ void QtJsonWindowsSessionStoreTests::refusesToOverwriteAnUnreadableBackup() {
     QVERIFY(temporary.isValid());
     const QString root = temporary.path();
     const QByteArray original_bytes = SessionJsonCodec::encode(originalSession());
-    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    const QByteArray future{"{\"schemaVersion\":4,\"future\":true}"};
     QVERIFY(writeAll(sessionPath(root), original_bytes));
     QVERIFY(writeAll(backupPath(root), future));
 

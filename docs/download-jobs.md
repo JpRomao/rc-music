@@ -38,9 +38,9 @@ Owner, importador, model e adapters emprestados devem permanecer vivos durante a
 
 ### Importação durável na sessão
 
-`PlayerDownloadImport(..., PlayerDownloadImportPersistence::Session)` usa o ledger pertencente ao presenter, não ao wrapper. Fila e `DownloadImportReceipt {job_id, source_path}` são preparados antes da projeção e movidos juntos no commit não lançante anterior aos sinais Qt. Todos os snapshots estruturais conservam esses recibos: remoção, clear, reordenação ou localização de uma ocorrência não desfazem a importação. Jobs distintos ainda podem compartilhar o mesmo path; não é deduplicação de arquivo nem uma prova de conteúdo/ownership.
+`PlayerDownloadImport(..., PlayerDownloadImportPersistence::Session)` usa o ledger do presenter. Fila e `DownloadImportReceipt {job_id, source_path}` são preparados antes da projeção e movidos juntos no commit anterior aos sinais Qt. Remoção, limpeza, reordenação ou localização de uma ocorrência preservam a evidência da importação. Jobs distintos podem compartilhar o mesmo path. Os recibos registram a importação pelo ID do job.
 
-O codec de sessão emite schema **v2**, com `downloadImports` obrigatório, e lê v1 como ledger vazio sem inventar ACK. O vetor aceita no máximo **128 recibos / 1 MiB lógico**, com IDs ASCII únicos e paths MP3 absolutos/normalizados/Unicode válidos; limites de composição podem restringir, não relaxar os tetos. Documento conserva o teto de 16 MiB. Campos desconhecidos ou duplicados nos recibos, duplicação das chaves de versão/ledger e valores inválidos são recusados. Versão superior a 2 continua futura. Ler paths só compara evidência, nunca abre, importa ou limpa arquivos.
+O codec lê v1 com ledger vazio. Usa **v2** para sessões sem IDs aposentados e **v3** quando a sessão inclui `retiredDownloadImportJobIds`. `downloadImports` permanece obrigatório em v2/v3 e aceita até **128 recibos / 1 MiB lógico**, com IDs ASCII únicos e paths MP3 absolutos e normalizados. O documento mantém o teto de 16 MiB e a proteção de versões futuras. Chaves duplicadas de versão e de recibos, campos desconhecidos nos recibos e valores inválidos são recusados.
 
 `DownloadImport::begin/pollImport` retornam rapidamente `Pending`, `Committed` ou `Failed`. A compatibilidade síncrona delega a `accept` nos importadores voláteis; somente o modo Session oferece a confirmação durável. `begin` agenda o snapshot integral e exige `SessionAutosave::savedRevision()` correspondente. Saved de uma revisão anterior que já inclui o recibo confirma essa importação sem esperar ticks ou edições mais recentes; completion não solicitada/mismatched/duplicada, Failed ou readback recuperável nunca vira ACK. Copy/clock são preparados antes de substituir o snapshot do autosave. Polling do importador não faz I/O nem rearma falhas; retry explícito grava novamente sem appendar ou executar o download outra vez.
 
@@ -335,10 +335,18 @@ O checkpoint aceita o formato v1 anterior. Quando há arquivamento, o v2 guarda 
 
 O Red confirmou a ausência do contrato de arquivamento e dos controles do painel. O fechamento passou **184 casos do núcleo (4.651 assertions)**, **8/8 CTest selecionados** com **704 casos Qt/Quick** e dois skips de symlink pela política do Windows, build Release e `all_qmllint`. A composição local importou o MP3 produzido de AAC, reteve a linha enquanto o Saved estava bloqueado e reconheceu o mesmo pedido após reiniciar sem nova conversão ou importação. A transferência nessa jornada usou fixture local. Evidências em `out/product/test-runs/download-archive-20261111/`.
 
+### Liberar vagas dos recibos de importação
+
+Após o `Saved` do arquivamento, a sessão substitui os recibos confirmados dos jobs arquivados por seus IDs. O mesmo passo é retomado ao carregar o checkpoint primário saudável, caso o player tenha fechado entre as duas gravações. A sessão preserva a fila e a posição persistidas, inclusive com a restauração da fila desligada. O painel confirma a liberação das vagas somente após o `Saved` da sessão. Em caso de falha nessa gravação, feche Downloads e use **Tentar novamente** no aviso da sessão.
+
+Os IDs aposentados têm limite próprio de 5.120, correspondente a 256 pedidos arquivados de até 20 itens. Na abertura, cada ID precisa aparecer entre os jobs arquivados do checkpoint. Se o checkpoint estiver ausente, antigo ou divergente, o controlador bloqueia a retomada para evitar uma nova importação. A garantia usa a sessão mais recente disponível. Restaurar os dois arquivos para uma versão anterior pode remover essa evidência. O limite do journal de ownership continua separado.
+
+Os checks Release passaram em **186 casos do núcleo de downloads**, **55 casos do núcleo de sessão** e **6 testes CTest / 334 casos Qt**. A composição com AAC local reteve os ACKs do checkpoint e da sessão separadamente. Também confirmou a retomada após fechar entre os dois salvamentos, preservando a fila persistida com restauração desligada. O importador comprovou o reaproveitamento da vaga após `Saved` e a retenção da cota após falha, mesmo com os bytes novos legíveis. A regressão de autosave confirmou que uma edição concorrente da fila preserva os IDs aposentados. Evidências em `out/product/test-runs/retire-archived-imports-20261111/`.
+
 ## Pendências funcionais
 
 1. Promover host/IPC Native Messaging e reserva cooperativa já implementados para composição/prefixo/identidade instalados e ownership de produção.
 2. Download real protegido contra SSRF/redirects e conversão isolada, com ferramentas corrigidas e verificadas conforme ADR-0009; fakes não provam esses controles.
-3. Tratar cotas e divergências no histórico, nos recibos de importação e no journal de ownership, preservando a reconciliação de arquivos e pedidos anteriores.
+3. Liberar capacidade do journal de ownership e tratar divergências ainda sem reconciliação segura, preservando a identidade dos arquivos e o reconhecimento de pedidos anteriores.
 4. Qualificar o perfil protegido, identidade/namespace, tratamento de resíduos e ingresso/host instalados. A transferência por fixture comprova a integração local de conversão, publicação e importação. Mídia pública e sandbox exigem validação própria.
 5. Navegação interna da Completa, integração comum instalada nas duas edições, opcionais do setup e testes reais autorizados do Brave. YouTube continua separado.

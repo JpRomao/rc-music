@@ -713,4 +713,34 @@ TEST_CASE("session structural preparation failure preserves the previous snapsho
     CHECK(writer.starts.front().snapshot == changed);
 }
 
+TEST_CASE("session queue edit preserves retirement staged while preparing the write",
+          "[core][session][download-receipts]") {
+    RecordingSessionWriter writer;
+    ManualClock clock;
+    auto initial = snapshot(1);
+    const std::vector<std::string> retired{"archived-1"};
+    initial.download_import_receipts = {{retired.front(), initial.queue.items.front().source_path}};
+    auto changed = snapshot(2, 45);
+    changed.download_import_receipts = initial.download_import_receipts;
+
+    SessionAutosave* retire_during_clock = nullptr;
+    auto scheduling = options(clock);
+    scheduling.now = [&] {
+        if (auto* autosave = std::exchange(retire_during_clock, nullptr))
+            REQUIRE(autosave->scheduleDownloadImportRetirement(retired));
+        return clock.now();
+    };
+    SessionAutosave autosave{writer, initial, std::move(scheduling)};
+    retire_during_clock = &autosave;
+    REQUIRE(autosave.scheduleStructural(changed));
+    autosave.requestSaveNow();
+
+    REQUIRE(writer.starts.size() == 1);
+    const auto& saved = writer.starts.front().snapshot;
+    CHECK(saved.queue == changed.queue);
+    CHECK(saved.position_ms == changed.position_ms);
+    CHECK(saved.download_import_receipts.empty());
+    CHECK(saved.retired_download_import_job_ids == retired);
+}
+
 } // namespace music_player::m0::test

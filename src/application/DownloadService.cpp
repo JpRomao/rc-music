@@ -939,6 +939,26 @@ bool DownloadService::confirmSettledArchive() noexcept {
     return true;
 }
 
+void DownloadService::retireArchivedImportReceipts() noexcept {
+    auto& state = *impl_;
+    if (state.calling_port || state.archived_receipts.empty())
+        return;
+    try {
+        std::size_t count = 0;
+        for (const auto& receipt : state.archived_receipts)
+            count += receipt.job_ids.size();
+        std::vector<std::string> archived_job_ids;
+        archived_job_ids.reserve(count);
+        for (const auto& receipt : state.archived_receipts)
+            archived_job_ids.insert(archived_job_ids.end(), receipt.job_ids.begin(), receipt.job_ids.end());
+        const PortCall guard(state.calling_port);
+        state.importer.retireArchivedReceipts(archived_job_ids);
+    } catch (...) {
+        // The checkpoint is already committed. Receipt compaction may be
+        // offered again on a later authoritative load or archive acknowledgement.
+    }
+}
+
 void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()>& allow_start) {
     auto& state = *impl_;
     if (state.calling_port || state.staged_archive || !state.valid_configuration)

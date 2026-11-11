@@ -132,6 +132,52 @@ bool PlayerDownloadImport::supportsDurableRecovery() const {
            !state.presenter->exiting_;
 }
 
+void PlayerDownloadImport::retireArchivedReceipts(const std::span<const std::string> archived_job_ids) {
+    if (archived_job_ids.empty() || !supportsDurableRecovery())
+        return;
+    auto& owner = *impl_->presenter;
+    if (owner.download_import_call_in_progress_ || owner.download_append_in_progress_)
+        return;
+    const QScopedValueRollback guard(owner.download_import_call_in_progress_, true);
+    try {
+        owner.commitSavedDownloadImportRetirements();
+        const auto saved = owner.session_autosave_->savedRevision();
+        auto pending = owner.download_import_retirements_;
+        const auto previous_pending = pending.size();
+        std::vector<std::string> ids;
+        for (std::size_t index = 0; index < owner.download_import_receipts_.size(); ++index) {
+            if (owner.retired_download_import_job_ids_.size() + pending.size() >=
+                maximum_retired_download_import_job_ids)
+                break;
+            const auto& id = owner.download_import_receipts_[index].job_id;
+            const auto revision = owner.download_import_revisions_[index];
+            if (revision == std::numeric_limits<SessionRevision>::max() || revision > saved ||
+                std::ranges::find(archived_job_ids, id) == archived_job_ids.end() ||
+                std::ranges::find(pending, id, &PlayerPresenter::DownloadImportRetirement::job_id) != pending.end())
+                continue;
+            ids.push_back(id);
+            pending.push_back({.job_id = id});
+        }
+        if (ids.empty())
+            return;
+        owner.retired_download_import_job_ids_.reserve(owner.retired_download_import_job_ids_.size() + pending.size());
+        if (!owner.session_autosave_->scheduleDownloadImportRetirement(ids))
+            return;
+        const auto revision = owner.session_autosave_->latestRevision();
+        for (auto index = previous_pending; index < pending.size(); ++index)
+            pending[index].revision = revision;
+        owner.download_import_retirements_ = std::move(pending);
+        owner.reconcileTimer();
+        // Start a healthy due save without rearming a failed one.
+        owner.session_autosave_->poll();
+        owner.commitSavedDownloadImportRetirements();
+        owner.reconcileTimer();
+    } catch (...) {
+        // The live receipts stay counted until a matching Saved. Keep any
+        // staged candidate for the ordinary session persistence flow.
+    }
+}
+
 DownloadImportState PlayerDownloadImport::begin(const std::string& id, const std::filesystem::path& path) {
     auto& state = *impl_;
     if (state.persistence == PlayerDownloadImportPersistence::Volatile)
@@ -146,6 +192,11 @@ DownloadImportState PlayerDownloadImport::begin(const std::string& id, const std
         const bool reentrant = state.calling_presenter || owner.download_import_call_in_progress_;
         const QScopedValueRollback call_guard(state.calling_presenter, true);
         const QScopedValueRollback owner_guard(owner.download_import_call_in_progress_, true);
+        if (!reentrant && !owner.download_append_in_progress_)
+            owner.commitSavedDownloadImportRetirements();
+        if (std::ranges::find(owner.retired_download_import_job_ids_, id) !=
+            owner.retired_download_import_job_ids_.end())
+            return DownloadImportState::Failed;
         auto find = [&] {
             return std::ranges::find(owner.download_import_receipts_, id, &DownloadImportReceipt::job_id);
         };

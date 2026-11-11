@@ -44,7 +44,7 @@ namespace {
 
 [[nodiscard]] QJsonObject validObject() {
     return {
-        {u"schemaVersion"_s, SessionJsonCodec::schema_version},
+        {u"schemaVersion"_s, 2},
         {u"queue"_s,
          QJsonObject{
              {u"items"_s,
@@ -128,6 +128,64 @@ class SessionJsonCodecTests final : public QObject {
         QCOMPARE(keySet(imports.at(0).toObject()), QSet<QString>({u"jobId"_s, u"sourcePath"_s}));
         QCOMPARE(imports.at(0).toObject().value(u"jobId"_s), QJsonValue{u"job-1"_s});
         QCOMPARE(SessionJsonCodec::decode(encoded).snapshot, std::optional<SessionSnapshot>{expected});
+    }
+
+    void writesVersionThreeOnlyWhenRetiredDownloadIdsArePresent() {
+        auto expected = exactSnapshot();
+#ifdef _WIN32
+        expected.download_import_receipts = {{ "live-1", nativePath(uR"(C:\Downloads\live.mp3)"_s) }};
+#else
+        expected.download_import_receipts = {{"live-1", nativePath(u"/downloads/live.mp3"_s)}};
+#endif
+        const auto legacy = SessionJsonCodec::encode(expected);
+        const auto legacy_root = QJsonDocument::fromJson(legacy).object();
+        QCOMPARE(legacy_root.value(u"schemaVersion"_s), QJsonValue{2});
+        QVERIFY(!legacy_root.contains(u"retiredDownloadImportJobIds"_s));
+        QCOMPARE(SessionJsonCodec::decode(legacy).snapshot, std::optional<SessionSnapshot>{expected});
+
+        expected.retired_download_import_job_ids = {"retired-1", "RETIRED-1"};
+        const auto encoded = SessionJsonCodec::encode(expected);
+        const auto root = QJsonDocument::fromJson(encoded).object();
+        QCOMPARE(root.value(u"schemaVersion"_s), QJsonValue{3});
+        QCOMPARE(root.value(u"retiredDownloadImportJobIds"_s),
+                 (QJsonValue{QJsonArray{u"retired-1"_s, u"RETIRED-1"_s}}));
+        const auto decoded = SessionJsonCodec::decode(encoded);
+        QCOMPARE(decoded.status, SessionJsonDecodeStatus::Valid);
+        QCOMPARE(decoded.snapshot, std::optional<SessionSnapshot>{expected});
+        QCOMPARE(SessionJsonCodec::encode(*decoded.snapshot), encoded);
+    }
+
+    void retiredDownloadIdsRejectMalformedOrDowngradedDocuments() {
+        auto root = validObject();
+        root.insert(u"schemaVersion"_s, 3);
+        const auto key = u"retiredDownloadImportJobIds"_s;
+        QCOMPARE(SessionJsonCodec::decode(bytes(root)).status, SessionJsonDecodeStatus::Invalid);
+        for (const auto& value : {QJsonValue{}, QJsonValue{u"retired-1"_s}, QJsonValue{QJsonArray{}},
+                                  QJsonValue{QJsonArray{1}}, QJsonValue{QJsonArray{u"retired-1"_s, u"retired-1"_s}},
+                                  QJsonValue{QJsonArray{u"retired.1"_s}}, QJsonValue{QJsonArray{QString(65, u'x')}}}) {
+            root.insert(key, value);
+            QCOMPARE(SessionJsonCodec::decode(bytes(root)).status, SessionJsonDecodeStatus::Invalid);
+        }
+        QJsonArray overflow;
+        for (std::size_t index = 0; index <= maximum_retired_download_import_job_ids; ++index)
+            overflow.append(u"job-"_s + QString::number(index));
+        root.insert(key, overflow);
+        QCOMPARE(SessionJsonCodec::decode(bytes(root)).status, SessionJsonDecodeStatus::Invalid);
+
+        root.insert(key, QJsonArray{u"retired-1"_s});
+        for (const int older : {1, 2}) {
+            root.insert(u"schemaVersion"_s, older);
+            QCOMPARE(SessionJsonCodec::decode(bytes(root)).status, SessionJsonDecodeStatus::Invalid);
+        }
+        const QByteArray duplicate_fence{
+            R"({"schemaVersion":3,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[],"retiredDownloadImportJobIds":["retired-1"],"retiredDownloadImportJob\u0049ds":["retired-2"]})"};
+        const QByteArray duplicate_version{
+            R"({"schemaVersion":2,"schema\u0056ersion":3,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[],"retiredDownloadImportJobIds":["retired-1"]})"};
+        const QByteArray downgraded_fence{
+            R"({"schemaVersion":3,"schema\u0056ersion":1,"queue":{"items":[],"currentOccurrenceId":null},"positionMs":"0","downloadImports":[],"retiredDownloadImportJob\u0049ds":["retired-1"]})"};
+        QCOMPARE(SessionJsonCodec::decode(duplicate_fence).status, SessionJsonDecodeStatus::Invalid);
+        QCOMPARE(SessionJsonCodec::decode(duplicate_version).status, SessionJsonDecodeStatus::Invalid);
+        QCOMPARE(SessionJsonCodec::decode(downgraded_fence).status, SessionJsonDecodeStatus::Invalid);
     }
 
     void rejectsMalformedImportReceipts_data() {
@@ -335,11 +393,11 @@ class SessionJsonCodecTests final : public QObject {
 
     void classifiesFutureVersionBeforeReadingItsFields_data() {
         QTest::addColumn<QByteArray>("json");
-        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":3})"};
+        QTest::newRow("version only") << QByteArray{R"({"schemaVersion":4})"};
         QTest::newRow("missing current fields") << QByteArray{R"({"schemaVersion":99,"queue":false})"};
         QTest::newRow("large numeric version") << QByteArray{R"({"schemaVersion":2147483648})"};
         QTest::newRow("hostile current fields")
-            << QByteArray{R"({"schemaVersion":3,"queue":"C:\\private\\session.json","positionMs":{}})"};
+            << QByteArray{R"({"schemaVersion":4,"queue":"C:\\private\\session.json","positionMs":{}})"};
     }
 
     void classifiesFutureVersionBeforeReadingItsFields() {

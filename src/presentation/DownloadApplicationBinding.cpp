@@ -1240,6 +1240,8 @@ void DownloadApplicationBinding::refreshProjection() {
     Impl::Projection next;
     const auto state = impl_->controller.state();
     const auto startup_action = impl_->controller.startupRecoveryAction();
+    const auto* presenter = impl_->presenter.data();
+    const bool retiring_imports = presenter && presenter->downloadImportRetirementPending();
     switch (state) {
     case DownloadAdmissionControllerState::NotStarted:
         next.status = tr("Downloads ainda não inicializados");
@@ -1248,8 +1250,17 @@ void DownloadApplicationBinding::refreshProjection() {
         next.status = tr("Carregando histórico de downloads");
         break;
     case DownloadAdmissionControllerState::Ready:
-        next.status = impl_->recoveryBusy() ? tr("Novos downloads aguardam a liberação dos arquivos em recuperação")
-                                            : tr("Histórico de downloads carregado");
+        if (impl_->recoveryBusy())
+            next.status = tr("Novos downloads aguardam a liberação dos arquivos em recuperação");
+        else if (retiring_imports)
+            next.status = tr("Aguardando a sessão confirmar a liberação de vagas para importação");
+        else
+            next.status = tr("Histórico de downloads carregado");
+        if (retiring_imports && presenter->preferenceWarning() == PlayerPresenter::PreferenceWarning::SaveFailed &&
+            (presenter->persistenceWarningScope() == PlayerPresenter::PersistenceWarningScope::SessionPersistence ||
+             presenter->persistenceWarningScope() == PlayerPresenter::PersistenceWarningScope::CombinedPersistence))
+            next.warning = tr("As vagas de importação continuam reservadas. Feche Downloads e selecione Tentar "
+                              "novamente no aviso da sessão.");
         break;
     case DownloadAdmissionControllerState::AdmissionPending:
         next.status = tr("Confirmando solicitação de download");

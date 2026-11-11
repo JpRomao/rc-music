@@ -57,6 +57,8 @@ struct AdmissionImport final : DownloadImport {
     bool pending{false};
     DownloadImportState polled{DownloadImportState::Pending};
     std::function<void()> on_poll{};
+    std::vector<std::vector<std::string>> retirement_offers{};
+    std::function<void()> on_retire{};
     bool accept(const std::string&, const std::filesystem::path&) override {
         ++calls;
         return true;
@@ -71,6 +73,11 @@ struct AdmissionImport final : DownloadImport {
         if (on_poll)
             on_poll();
         return polled;
+    }
+    void retireArchivedReceipts(const std::span<const std::string> archived_job_ids) override {
+        retirement_offers.emplace_back(archived_job_ids.begin(), archived_job_ids.end());
+        if (on_retire)
+            on_retire();
     }
 };
 
@@ -273,6 +280,70 @@ TEST_CASE("Durable admission reconciles a saved session beyond a queued checkpoi
     h.io.saved();
     h.controller.tick(1001);
     REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.importer.calls == 0);
+}
+
+TEST_CASE("A session with retired import IDs blocks missing rolled back or divergent download history",
+          "[download][retired-imports]") {
+    enum class History { Missing, LiveOnly, DifferentArchive };
+    const auto history = GENERATE(History::Missing, History::LiveOnly, History::DifferentArchive);
+    const SessionLoadResult session{.snapshot = {.retired_download_import_job_ids = {"prior-1"}},
+                                    .status = SessionLoadStatus::Loaded};
+    RecoveryAdmissionHarness h{session};
+    if (history == History::Missing) {
+        h.load({.status = DownloadCheckpointLoadStatus::Missing});
+    } else if (history == History::LiveOnly) {
+        h.load({.checkpoint = recoveryAdmissionCheckpoint(DownloadJobState::Completed),
+                .status = DownloadCheckpointLoadStatus::Loaded});
+    } else {
+        DownloadCheckpoint checkpoint;
+        checkpoint.archived_receipts.push_back(
+            {.request_id = admissionInput().request_id, .fingerprint = std::string(64, 'a'), .job_ids = {"other-1"}});
+        h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    }
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Blocked);
+    REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::ReviewHistory);
+    REQUIRE(h.controller.recoveryReport().status == DownloadRecoveryStatus::ReceiptConflict);
+    REQUIRE_FALSE(h.controller.retryStartup());
+    REQUIRE_FALSE(h.controller.renewStartupNamespace());
+    REQUIRE(h.controller.begin(admissionInput()).result.error == DownloadSubmissionError::NotAvailable);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.importer.retirement_offers.empty());
+    REQUIRE(h.importer.calls == 0);
+    h.controller.shutdown();
+    h.io.allow_stopped = true;
+    h.controller.tick(1);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Primary archived history resumes receipt retirement only after complete restore",
+          "[download][retired-imports]") {
+    const bool renew_namespace = GENERATE(false, true);
+    auto session = healthyAdmissionSession("session-only-1");
+    session.snapshot.retired_download_import_job_ids = {"prior-1"};
+    DownloadCheckpoint checkpoint;
+    checkpoint.archived_receipts.push_back({.request_id = admissionInput().request_id,
+                                            .fingerprint = std::string(64, 'a'),
+                                            .job_ids = {"prior-1", "prior-2"}});
+    RecoveryAdmissionHarness h{session, renew_namespace ? "prior" : "owner"};
+    DownloadSubmissionError nested = DownloadSubmissionError::None;
+    h.importer.on_retire = [&] { nested = h.service.submit(admissionInput(2)).error; };
+    h.load({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    if (renew_namespace) {
+        REQUIRE(h.controller.startupRecoveryAction() == DownloadStartupRecoveryAction::RenewNamespace);
+        REQUIRE(h.importer.retirement_offers.empty());
+        REQUIRE(h.controller.renewStartupNamespace());
+    }
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.importer.retirement_offers == std::vector<std::vector<std::string>>{{"prior-1", "prior-2"}});
+    REQUIRE(nested == DownloadSubmissionError::Busy);
+    REQUIRE(h.controller.recoveryReport().session_only_job_ids == std::vector<std::string>{"session-only-1"});
+    REQUIRE(h.controller.begin(admissionInput(1, 2)).result.job_ids == checkpoint.archived_receipts.front().job_ids);
+    REQUIRE(h.io.loads.size() == 1);
+    REQUIRE(h.io.saves.empty());
+    REQUIRE(h.execution.starts.empty());
     REQUIRE(h.importer.calls == 0);
 }
 
@@ -949,12 +1020,14 @@ TEST_CASE("Archive frees active admission only after Saved and preserves replay 
     const auto candidate = h.io.saves.back().checkpoint;
     REQUIRE(candidate.jobs.empty());
     REQUIRE(candidate.receipts.empty());
+    REQUIRE(h.importer.retirement_offers.empty());
     h.io.saved();
     h.controller.tick(1);
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
     REQUIRE(h.service.capacity().jobs == 0);
     REQUIRE(h.service.capacity().requests == 0);
     REQUIRE(h.service.capacity().retained_request_bytes == 0);
+    REQUIRE(h.importer.retirement_offers == std::vector<std::vector<std::string>>{original.receipts.front().job_ids});
     REQUIRE(h.controller.begin(request).result.job_ids == original.receipts[0].job_ids);
     REQUIRE(h.io.saves.size() == 1);
 
@@ -989,6 +1062,7 @@ TEST_CASE("Failed or miscorrelated archive save keeps history and requires an ex
     h.controller.tick(1);
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::ArchiveFailed);
     REQUIRE(h.service.snapshot().size() == 1);
+    REQUIRE(h.importer.retirement_offers.empty());
     REQUIRE_FALSE(h.controller.archiveSettled());
     REQUIRE_FALSE(h.controller.retryAdmission());
     h.controller.tick(2);
@@ -1001,6 +1075,7 @@ TEST_CASE("Failed or miscorrelated archive save keeps history and requires an ex
     h.controller.tick(3);
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
     REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.importer.retirement_offers == std::vector<std::vector<std::string>>{{"old-1"}});
     REQUIRE(h.execution.starts.empty());
 }
 

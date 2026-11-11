@@ -406,6 +406,7 @@ class PlayerPresenter final : public QObject {
     // without selection, decoding, autoplay or a download receipt.
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] bool downloadImportRetirementPending() const noexcept;
     [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
     Q_INVOKABLE bool cancelSourceImport();
@@ -481,6 +482,8 @@ class PlayerPresenter final : public QObject {
     void initializePersistedPreferences(const PlayerPresenterPreferences& preferences);
     void initializePersistedSession(const PlayerPresenterPreferences& preferences);
     [[nodiscard]] SessionSnapshot currentSessionSnapshot() const;
+    [[nodiscard]] std::int64_t currentSessionPosition() const;
+    void commitSavedDownloadImportRetirements() noexcept;
     [[nodiscard]] bool appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
                                                 const std::string* download_job_id);
     [[nodiscard]] bool appendLocalSourcesWithoutPlayback(std::vector<std::filesystem::path> source_paths,
@@ -645,6 +648,13 @@ class PlayerPresenter final : public QObject {
     // maximum revision marks a live append not yet staged into the autosave.
     std::vector<DownloadImportReceipt> download_import_receipts_{};
     std::vector<SessionRevision> download_import_revisions_{};
+    struct DownloadImportRetirement final {
+        std::string job_id;
+        SessionRevision revision{0};
+    };
+    std::vector<std::string> retired_download_import_job_ids_{};
+    // Each new retirement's revision covers every older staged retirement.
+    std::vector<DownloadImportRetirement> download_import_retirements_{};
     bool download_import_persistence_ready_{false};
     bool download_import_call_in_progress_{false};
     PreferenceWarning preference_persistence_warning_{PreferenceWarning::NoPreferenceWarning};

@@ -126,12 +126,14 @@ struct Observation final {
     Gate admission_ack;
     Gate archive_ack;
     Gate session_ack;
+    Gate retirement_ack;
     std::atomic<bool> admission_saved{false};
     std::atomic<bool> factory_before_saved{false};
     std::atomic<bool> factory_on_ui{false};
     std::atomic<bool> checkpoint_on_ui{false};
     std::atomic<bool> checkpoint_destroyed{false};
     std::atomic<bool> fail_session_before_commit{false};
+    std::atomic<bool> hold_retirement_ack{false};
     std::atomic<int> factories{0};
     std::atomic<int> resolvers{0};
     std::atomic<bool> resolver_before_saved{false}, resolver_on_ui{false};
@@ -140,6 +142,7 @@ struct Observation final {
         admission_ack.release();
         archive_ack.release();
         session_ack.release();
+        retirement_ack.release();
         fail_session_before_commit = false;
     }
 };
@@ -357,8 +360,12 @@ struct Player final {
                                                       ++state->session_failures;
                                                       return true;
                                                   }
-                                                  if (point == SessionStoreFaultPoint::AfterPrimaryCommit)
-                                                      state->session_ack.hold();
+                                                  if (point == SessionStoreFaultPoint::AfterPrimaryCommit) {
+                                                      if (state->hold_retirement_ack)
+                                                          state->retirement_ack.hold();
+                                                      else
+                                                          state->session_ack.hold();
+                                                  }
                                                   return false;
                                               }}),
           loaded(session_store.load()), writer(session_store),
@@ -625,6 +632,7 @@ class PlayerDownloadsCompositionTests final : public QObject {
         const auto batch = request(suffix);
         std::vector<std::string> admitted_ids;
         SessionSnapshot committed;
+        SessionSnapshot archived_session;
         QByteArray final_hash;
         {
             Player player{files};
@@ -692,6 +700,8 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QCOMPARE(player.audio.plays, 0);
             QVERIFY(!player.presenter.hasCurrentTrack());
             if (archive) {
+                const auto imported_revision = player.autosave.savedRevision();
+                player.observation->hold_retirement_ack = true;
                 auto* binding = player.owner->binding();
                 QVERIFY(binding->canArchiveSettled());
                 QVERIFY(binding->requestArchiveConfirmation());
@@ -706,9 +716,28 @@ class PlayerDownloadsCompositionTests final : public QObject {
                 QVERIFY(archived.checkpoint->jobs.empty());
                 QCOMPARE(archived.checkpoint->archived_receipts.size(), std::size_t{1});
                 QCOMPARE(archived.checkpoint->archived_receipts.front().job_ids, admitted_ids);
+                QCOMPARE(fresh_session.load().snapshot, committed);
+                QVERIFY(!player.observation->retirement_ack.entered);
                 player.observation->archive_ack.release();
                 QVERIFY(waitFor([&] { return player.jobs()->rowCount() == 0; }));
+                QVERIFY2(waitFor([&] { return player.observation->retirement_ack.entered.load(); }),
+                         "Confirmed archive must schedule receipt retirement through the real session writer");
+                QCOMPARE(player.autosave.savedRevision(), imported_revision);
+                QVERIFY(waitFor([&] {
+                    return binding->statusText() ==
+                           DownloadApplicationBinding::tr(
+                               "Aguardando a sessão confirmar a liberação de vagas para importação");
+                }));
+                const auto retired = fresh_session.load();
+                QCOMPARE(retired.status, SessionLoadStatus::Loaded);
+                archived_session = retired.snapshot;
+                QCOMPARE(archived_session.queue, committed.queue);
+                QCOMPARE(archived_session.position_ms, committed.position_ms);
+                QVERIFY(archived_session.download_import_receipts.empty());
+                QCOMPARE(archived_session.retired_download_import_job_ids, admitted_ids);
                 QCOMPARE(player.presenter.queueModelObject()->rowCount(), 1);
+                player.observation->retirement_ack.release();
+                QVERIFY(waitFor([&] { return player.autosave.savedRevision() > imported_revision; }));
             }
             QVERIFY(player.drain());
             QVERIFY(player.owner->stopped());
@@ -722,7 +751,7 @@ class PlayerDownloadsCompositionTests final : public QObject {
             observation->release();
             Player restarted{files, observation};
             QCOMPARE(restarted.loaded.status, SessionLoadStatus::Loaded);
-            QCOMPARE(restarted.loaded.snapshot.download_import_receipts, committed.download_import_receipts);
+            QCOMPARE(restarted.loaded.snapshot, archive ? archived_session : committed);
             QVERIFY(!restarted.presenter.restoreLastSession());
             QCOMPARE(restarted.presenter.queueModelObject()->rowCount(), 0);
             QCOMPARE(restarted.audio.loads, 0);
@@ -741,7 +770,7 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QCOMPARE(restarted.metadata.reads, 0);
             QCOMPARE(restarted.autosave.savedRevision(), SessionRevision{0});
             QtJsonWindowsSessionStore fresh_session{files.documents};
-            QCOMPARE(fresh_session.load().snapshot.download_import_receipts, committed.download_import_receipts);
+            QCOMPARE(fresh_session.load().snapshot, archive ? archived_session : committed);
             QCOMPARE(
                 fileHash(QString::fromStdWString(committed.download_import_receipts.front().source_path.wstring())),
                 final_hash);
@@ -751,6 +780,48 @@ class PlayerDownloadsCompositionTests final : public QObject {
         }
         QVERIFY(files.transientParentsEmpty());
         QVERIFY(files.sourcesPreserved());
+    }
+
+    void startupCompletesReceiptRetirementWithoutReplacingTheUnrestoredQueue() {
+        Files files;
+        QVERIFY(files.initialize());
+        const std::filesystem::path source{(files.publication + QStringLiteral("/previous.mp3")).toStdWString()};
+        const std::vector<std::string> jobs{"archived-1"};
+        const SessionSnapshot original{
+            .queue = {.items = {{.occurrence_id = LocalQueueOccurrenceId{1}, .source_path = source}},
+                      .current_occurrence_id = LocalQueueOccurrenceId{1}},
+            .position_ms = 1234,
+            .download_import_receipts = {{jobs.front(), source}}};
+        QtJsonWindowsSessionStore session{files.documents};
+        QCOMPARE(session.save({.snapshot = original}), SessionSaveStatus::Saved);
+        WindowsDownloadCheckpointStore checkpoint{files.documents};
+        const DownloadCheckpoint archived{
+            .archived_receipts = {{request(QStringLiteral("mp3")).request_id, std::string(64, 'a'), jobs}}};
+        QCOMPARE(checkpoint.save(archived), DownloadCheckpointSaveStatus::Saved);
+
+        Player player{files};
+        QCOMPARE(player.loaded.snapshot, original);
+        QVERIFY(!player.presenter.restoreLastSession());
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+        player.observation->hold_retirement_ack = true;
+        player.started = player.owner->start();
+        QVERIFY(player.started);
+        QVERIFY2(waitFor([&] { return player.observation->retirement_ack.entered.load(); }),
+                 "A durable archive must resume incomplete receipt retirement after restart");
+        QCOMPARE(player.autosave.savedRevision(), SessionRevision{0});
+        const auto compacted = session.load();
+        QCOMPARE(compacted.status, SessionLoadStatus::Loaded);
+        QCOMPARE(compacted.snapshot.queue, original.queue);
+        QCOMPARE(compacted.snapshot.position_ms, original.position_ms);
+        QCOMPARE(compacted.snapshot.retired_download_import_job_ids, jobs);
+        QVERIFY(compacted.snapshot.download_import_receipts.empty());
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+        QCOMPARE(player.observation->factories.load(), 0);
+        QCOMPARE(player.audio.loads, 0);
+        QCOMPARE(player.audio.plays, 0);
+        player.observation->retirement_ack.release();
+        QVERIFY(waitFor([&] { return player.autosave.savedRevision() > 0; }));
+        QVERIFY(player.drain());
     }
 
     void configuredOwnerReviewsValidatesAndImportsOnlyAfterConsent() {

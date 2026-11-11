@@ -23,11 +23,11 @@ struct SessionJsonDecodeResult final {
 
 class SessionJsonCodec final {
   public:
-    static constexpr int schema_version = 2;
+    static constexpr int schema_version = 3;
     static constexpr qsizetype maximum_document_size = 16 * 1024 * 1024;
 
     // Invalid snapshots and documents above the safety boundary produce no bytes.
-    // Encoding writes v2; decoding migrates v1 with an empty import-receipt ledger.
+    // Encoding writes v2 until a retired import ID requires v3. v1 has no import ledger.
     [[nodiscard]] static QByteArray encode(const SessionSnapshot& snapshot);
     [[nodiscard]] static SessionJsonDecodeResult decode(QByteArrayView bytes);
 };
