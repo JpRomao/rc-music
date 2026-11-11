@@ -128,6 +128,12 @@ Os testes usam cópias temporárias do Vorbis sintético do corpus. Um leitor de
 
 O limite se aplica aos três pacotes que o leitor de metadados pode montar. A verificação valida a geometria das páginas necessárias para eles. O pico de memória das bibliotecas e o isolamento da reprodução continuam pendentes.
 
+## Cancelamento cooperativo de metadados
+
+A extração observa o cancelamento ao trocar de faixa, cancelar a leitura, atingir o prazo de 2 s ou encerrar o leitor. O TagLib verifica o sinal durante a abertura, antes e depois das leituras de entrada e nas etapas de extração de capa. O worker conserva somente o pedido pendente mais recente e continua filtrando resultados por geração e prazo. Uma chamada bloqueante do sistema, do parser ou do decoder de imagem precisa retornar para que a próxima verificação aconteça.
+
+No Red, a extração simulada continuou ocupando a thread nas quatro jornadas, e o extrator real devolveu erro de origem, sucesso ou erro de contêiner em vez de cancelamento. No Green, o core passou **311/311 CTest** e o extrator real passou **52/52 CTest**, incluindo cancelamento antes de abrir a origem, após a consulta de data e depois da leitura de um cabeçalho. A integração de áudio local e a integridade do corpus passaram **2/2 CTest**. O build Release do player passou com `BUILD_TESTING=OFF`. Os logs ficam em `out/product/test-runs/metadata-cancellation-20261111/`. A validação com I/O físico lento e no pacote instalado permanece pendente.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.

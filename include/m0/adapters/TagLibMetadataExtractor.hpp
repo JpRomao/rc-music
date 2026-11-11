@@ -15,7 +15,8 @@ class TagLibMetadataExtractor final : public MetadataExtractor {
   public:
     explicit TagLibMetadataExtractor(TagLibMetadataExtractorOptions options = {});
 
-    [[nodiscard]] MetadataReadResult read(const std::filesystem::path& source_path) const override;
+    [[nodiscard]] MetadataReadResult read(const std::filesystem::path& source_path,
+                                          const MetadataReadCancellation& should_cancel = {}) const override;
 
   private:
     TagLibMetadataExtractorOptions options_;

@@ -144,7 +144,12 @@ void SingleWorkerMetadataReader::runWorker() {
         const auto started_at = observeTime();
         if (started_at.has_value() && *started_at < work.deadline) {
             try {
-                result.emplace(extractor_->read(work.request.source_path));
+                result.emplace(extractor_->read(work.request.source_path, [this, &work] {
+                    const auto observed_at = observeTime();
+                    std::lock_guard lock{mutex_};
+                    return isWorkInvalidatedLocked(work.request.generation) ||
+                           (observed_at.has_value() && *observed_at >= work.deadline);
+                }));
             } catch (...) {
                 result.emplace(exceptionResult());
             }
@@ -152,8 +157,7 @@ void SingleWorkerMetadataReader::runWorker() {
         const auto finished_at = observeTime();
 
         std::lock_guard lock{mutex_};
-        if (stopping_ || work.request.generation != highest_generation_ || current_state_ == CurrentState::Cancelled ||
-            current_state_ == CurrentState::Expired) {
+        if (isWorkInvalidatedLocked(work.request.generation)) {
             continue;
         }
         if ((started_at.has_value() && *started_at >= work.deadline) ||
@@ -174,6 +178,11 @@ void SingleWorkerMetadataReader::runWorker() {
         });
         current_state_ = CurrentState::Completed;
     }
+}
+
+bool SingleWorkerMetadataReader::isWorkInvalidatedLocked(const MetadataGeneration generation) const noexcept {
+    return stopping_ || generation != highest_generation_ || current_state_ == CurrentState::Cancelled ||
+           current_state_ == CurrentState::Expired;
 }
 
 MetadataPollResult SingleWorkerMetadataReader::pollLocked(const MetadataGeneration generation,

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -101,6 +102,7 @@ enum class MetadataReadErrorCode {
     UnsupportedFormat,
     InvalidData,
     ReadFailed,
+    Cancelled,
 };
 
 struct MetadataReadError final {
@@ -109,12 +111,15 @@ struct MetadataReadError final {
 };
 
 using MetadataReadResult = std::variant<TrackMetadata, MetadataReadError>;
+using MetadataReadCancellation = std::function<bool()>;
 
 class MetadataExtractor {
   public:
     virtual ~MetadataExtractor() = default;
 
-    [[nodiscard]] virtual MetadataReadResult read(const std::filesystem::path& source_path) const = 0;
+    // The callback is valid for this call only. Check it between potentially long steps.
+    [[nodiscard]] virtual MetadataReadResult read(const std::filesystem::path& source_path,
+                                                  const MetadataReadCancellation& should_cancel = {}) const = 0;
 };
 
 } // namespace music_player::m0

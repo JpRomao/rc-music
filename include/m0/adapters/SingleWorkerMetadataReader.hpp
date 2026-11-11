@@ -53,6 +53,7 @@ class SingleWorkerMetadataReader final : public MetadataReader {
     };
 
     void runWorker();
+    [[nodiscard]] bool isWorkInvalidatedLocked(MetadataGeneration generation) const noexcept;
     [[nodiscard]] static MetadataReadResult exceptionResult();
     [[nodiscard]] std::optional<Deadline> observeTime() const noexcept;
     [[nodiscard]] MetadataPollResult pollLocked(MetadataGeneration generation, std::optional<Deadline> observed_at);

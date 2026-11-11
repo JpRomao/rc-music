@@ -282,6 +282,8 @@ QString metadataReadErrorId(const MetadataReadErrorCode code) {
         return QStringLiteral("invalid_data");
     case MetadataReadErrorCode::ReadFailed:
         return QStringLiteral("read_failed");
+    case MetadataReadErrorCode::Cancelled:
+        return QStringLiteral("cancelled");
     }
     return QStringLiteral("read_failed");
 }

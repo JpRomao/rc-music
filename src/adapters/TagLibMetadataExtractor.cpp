@@ -68,11 +68,23 @@ enum class VorbisHeaderCheck { Complete, Invalid, PacketTooLarge };
 
 enum class MetadataReadLimit { SingleRead, TotalBytes, ReadCalls };
 
+struct MetadataReadCancelled final {};
+
+void throwIfCancelled(const MetadataReadCancellation& should_cancel) {
+    if (should_cancel && should_cancel()) {
+        throw MetadataReadCancelled{};
+    }
+}
+
 class MetadataFileStream final : public TagLib::FileStream {
   public:
-    explicit MetadataFileStream(const std::filesystem::path& path) : FileStream(path.c_str(), true) {}
+    MetadataFileStream(const std::filesystem::path& path, const MetadataReadCancellation& should_cancel)
+        : FileStream(path.c_str(), true), should_cancel_(should_cancel) {}
+
+    void checkCancellation() const { throwIfCancelled(should_cancel_); }
 
     TagLib::ByteVector readBlock(std::size_t requested_bytes) override {
+        checkCancellation();
         if (remaining_calls_ == 0)
             throw MetadataReadLimit::ReadCalls;
         --remaining_calls_;
@@ -93,11 +105,13 @@ class MetadataFileStream final : public TagLib::FileStream {
             requested_bytes = static_cast<std::size_t>(readable);
         }
         auto bytes = FileStream::readBlock(requested_bytes);
+        checkCancellation();
         remaining_bytes_ -= bytes.size();
         return bytes;
     }
 
   private:
+    const MetadataReadCancellation& should_cancel_;
     std::size_t remaining_bytes_{maximum_metadata_total_bytes};
     std::size_t remaining_calls_{maximum_metadata_read_calls};
 };
@@ -359,7 +373,9 @@ void recordArtworkDiagnostic(TrackMetadata& metadata, const ArtworkDiagnosticCod
     return source_size;
 }
 
-void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVector>& encoded_artwork) {
+void applyArtwork(TrackMetadata& metadata, const TagLib::File& file, const MetadataFileStream& stream) {
+    stream.checkCancellation();
+    const auto encoded_artwork = embeddedArtwork(file);
     if (!encoded_artwork.has_value()) {
         return;
     }
@@ -412,7 +428,9 @@ void applyArtwork(TrackMetadata& metadata, const std::optional<TagLib::ByteVecto
         reader.setScaledSize(artworkThumbnailSize(source_size));
     }
 
+    stream.checkCancellation();
     auto image = reader.read();
+    stream.checkCancellation();
     if (image.isNull()) {
         recordArtworkDiagnostic(metadata, ArtworkDiagnosticCode::InvalidData, encoded_bytes, width_pixels,
                                 height_pixels);
@@ -668,7 +686,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 }
 
-[[nodiscard]] MetadataReadResult readWave(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+[[nodiscard]] MetadataReadResult readWave(MetadataFileStream& stream, const std::filesystem::path& source_path,
                                           const std::uintmax_t file_size) {
     TagLib::RIFF::WAV::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
@@ -682,7 +700,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.ID3v2Tag(), file.InfoTag()}));
-    applyArtwork(metadata, embeddedArtwork(file));
+    applyArtwork(metadata, file, stream);
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
     metadata.audio.container = "WAV";
@@ -690,7 +708,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readMp3(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+[[nodiscard]] MetadataReadResult readMp3(MetadataFileStream& stream, const std::filesystem::path& source_path,
                                          const std::uintmax_t file_size) {
     TagLib::MPEG::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
@@ -708,14 +726,14 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
 
     auto metadata = baseMetadata(
         source_path, file_size, readTags(file.tag(), {file.ID3v2Tag(false), file.APETag(false), file.ID3v1Tag(false)}));
-    applyArtwork(metadata, embeddedArtwork(file));
+    applyArtwork(metadata, file, stream);
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "MP3";
     metadata.audio.codec = codec;
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readFlac(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+[[nodiscard]] MetadataReadResult readFlac(MetadataFileStream& stream, const std::filesystem::path& source_path,
                                           const std::uintmax_t file_size) {
     TagLib::FLAC::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
@@ -726,7 +744,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     auto metadata =
         baseMetadata(source_path, file_size,
                      readTags(file.tag(), {file.xiphComment(false), file.ID3v2Tag(false), file.ID3v1Tag(false)}));
-    applyArtwork(metadata, embeddedArtwork(file));
+    applyArtwork(metadata, file, stream);
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.bit_depth = static_cast<std::uint16_t>(properties->bitsPerSample());
     metadata.audio.container = "FLAC";
@@ -734,7 +752,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readM4aAac(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+[[nodiscard]] MetadataReadResult readM4aAac(MetadataFileStream& stream, const std::filesystem::path& source_path,
                                             const std::uintmax_t file_size) {
     TagLib::MP4::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
@@ -749,14 +767,14 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.tag()}));
-    applyArtwork(metadata, embeddedArtwork(file));
+    applyArtwork(metadata, file, stream);
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "ISO MP4/M4A";
     metadata.audio.codec = "AAC";
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readVorbis(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+[[nodiscard]] MetadataReadResult readVorbis(MetadataFileStream& stream, const std::filesystem::path& source_path,
                                             const std::uintmax_t file_size) {
     TagLib::Vorbis::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
@@ -765,7 +783,7 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 
     auto metadata = baseMetadata(source_path, file_size, readTags(file.tag(), {file.tag()}));
-    applyArtwork(metadata, embeddedArtwork(file));
+    applyArtwork(metadata, file, stream);
     applyCommonAudioProperties(metadata, *properties);
     metadata.audio.container = "Ogg";
     metadata.audio.codec = "Vorbis";
@@ -777,19 +795,24 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
 TagLibMetadataExtractor::TagLibMetadataExtractor(TagLibMetadataExtractorOptions options)
     : options_{std::move(options)} {}
 
-MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& source_path) const {
+MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& source_path,
+                                                 const MetadataReadCancellation& should_cancel) const {
     try {
+        throwIfCancelled(should_cancel);
         std::error_code file_error;
         const auto status = std::filesystem::status(source_path, file_error);
+        throwIfCancelled(should_cancel);
         if (file_error || !std::filesystem::is_regular_file(status)) {
             return error(MetadataReadErrorCode::SourceUnavailable, "metadata source is not a readable regular file");
         }
 
-        MetadataFileStream stream{source_path};
+        MetadataFileStream stream{source_path, should_cancel};
+        stream.checkCancellation();
         if (!stream.isOpen()) {
             return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be opened");
         }
         const auto length = stream.length();
+        stream.checkCancellation();
         if (length <= 0) {
             return error(MetadataReadErrorCode::InvalidData, "metadata source is empty or its size is unavailable");
         }
@@ -809,11 +832,13 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
         }
 
         const auto readMetadata = [&](const auto reader) -> MetadataReadResult {
+            stream.checkCancellation();
             stream.clear();
             stream.seek(0);
             if (stream.tell() != 0)
                 return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be rewound");
             auto result = reader(stream, source_path, file_size);
+            stream.checkCancellation();
             if (auto* metadata = std::get_if<TrackMetadata>(&result); metadata != nullptr) {
                 metadata->last_modified_time = last_modified_time;
             }
@@ -866,6 +891,8 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return readMetadata(readMp3);
         }
         return error(MetadataReadErrorCode::UnsupportedFormat, "metadata source container is not supported");
+    } catch (const MetadataReadCancelled&) {
+        return error(MetadataReadErrorCode::Cancelled, "metadata read cancelled");
     } catch (const MetadataReadLimit limit) {
         if (limit == MetadataReadLimit::TotalBytes)
             return error(MetadataReadErrorCode::InvalidData, "metadata extraction exceeds 64 MiB of input");

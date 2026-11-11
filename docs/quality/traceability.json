@@ -692,16 +692,24 @@
         {
           "path": "tests/core/LocalTrackSessionTests.cpp",
           "marker": "stale metadata completion leaves the current track pending"
+        },
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "an active metadata extraction can stop without waiting for the old source"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-024 cancels a TagLib metadata read before returning results"
         }
       ],
       "evidence": [
         {
           "path": "docs/audio-tests.md",
-          "marker": "## Evidência e checks"
+          "marker": "## Cancelamento cooperativo de metadados"
         }
       ],
       "remaining": [
-        "Concluir a validação do pipeline no corpus final sob I/O/parser lento; a invalidação por geração está testada, mas cancelar logicamente não demonstra interromper toda leitura interna do extrator."
+        "Concluir a validação do pipeline no corpus final sob I/O ou parser lento. A extração já observa cancelamento entre operações. Uma chamada bloqueada permanece em execução até retornar."
       ]
     },
     {
@@ -3365,17 +3373,20 @@
         {
           "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
           "marker": "MR-020 expires queued work without accumulation and remains usable"
+        },
+        {
+          "path": "tests/core/SingleWorkerMetadataReaderTests.cpp",
+          "marker": "the active extraction observes its deadline without polling the reader"
         }
       ],
       "evidence": [
         {
-          "path": "experiments/m0/candidates/qt/README.md",
-          "marker": "uma chamada TagLib já iniciada não é fisicamente interrompida."
+          "path": "docs/audio-tests.md",
+          "marker": "## Cancelamento cooperativo de metadados"
         }
       ],
       "remaining": [
-        "Completar a comprovação do budget interativo no corpus real; os testes determinísticos demonstram descarte/limite de jobs, não prazo de execução interna do TagLib.",
-        "Registrar o efeito de uma extração síncrona bloqueada sobre os pedidos seguintes e a saída sem alegar cancelamento físico do parser."
+        "Completar a comprovação do prazo interativo no corpus final, inclusive quando uma chamada bloqueante atrasa a próxima faixa ou a saída."
       ]
     },
     {

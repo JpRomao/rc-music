@@ -381,6 +381,59 @@ TEST_CASE("FR-022 keeps readable metadata when the optional modification time is
     CHECK(*metadata.audio.duration_ms == 1'000);
 }
 
+TEST_CASE("FR-024 cancels a TagLib metadata read before returning results",
+          "[m0][qt][metadata][taglib][cancellation][FR-024]") {
+    const auto source = fixture("fixtures/valid/wav-pcm-mono.wav");
+
+    SECTION("cancellation takes precedence over opening the source") {
+        const ScopedTemporaryDirectory directory;
+        const auto result = TagLibMetadataExtractor{}.read(temporaryPath(directory, "absent.wav"), [] { return true; });
+
+        CHECK(requireError(result).code == MetadataReadErrorCode::Cancelled);
+    }
+
+    SECTION("cancellation during the file timestamp lookup stops metadata extraction") {
+        bool cancelled = false;
+        const TagLibMetadataExtractor extractor{{
+            .last_write_time =
+                [&](const std::filesystem::path& path, std::error_code& error) {
+                    cancelled = true;
+                    return std::filesystem::last_write_time(path, error);
+                },
+        }};
+
+        const auto result = extractor.read(source, [&] { return cancelled; });
+
+        CHECK(cancelled);
+        CHECK(requireError(result).code == MetadataReadErrorCode::Cancelled);
+        const auto next = extractor.read(source);
+        CHECK(requireMetadata(next).display_title == "wav-pcm-mono");
+    }
+
+    SECTION("cancellation is observed after reading the container header") {
+        const ScopedTemporaryDirectory directory;
+        const ScopedTemporaryFile truncated{temporaryPath(directory, "truncated.wav")};
+        writeBytes(truncated.path(), {'R'});
+        bool starting_header_read = false;
+        unsigned header_checks = 0;
+        const TagLibMetadataExtractor extractor{{
+            .last_write_time =
+                [&](const std::filesystem::path& path, std::error_code& error) {
+                    starting_header_read = true;
+                    return std::filesystem::last_write_time(path, error);
+                },
+        }};
+
+        const auto result = extractor.read(truncated.path(), [&] {
+            // Let the first read proceed, then stop before interpreting its result.
+            return starting_header_read && ++header_checks >= 2;
+        });
+
+        CHECK(requireError(result).code == MetadataReadErrorCode::Cancelled);
+        CHECK(requireError(extractor.read(truncated.path())).code == MetadataReadErrorCode::InvalidData);
+    }
+}
+
 TEST_CASE("MR-014 and MR-015 enforce the retained metadata aggregate boundary without overflow",
           "[m0][qt][metadata][limits][MR-014][MR-015]") {
     MetadataRetentionBudget budget;
