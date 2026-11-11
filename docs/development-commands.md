@@ -183,6 +183,10 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Intermediários dos instaladores de 6d7ae8b
+
+Após conferir os [dois setups](windows-installer.md#setups-de-6d7ae8b), foram removidos **496 objetos e bibliotecas intermediárias**, somando **276.191.535 bytes**. A seleção veio dos grafos Ninja de `out/product/r6/out/product/{l,c}`. A verificação reconferiu os hashes dos dois setups, players, manifestos e artefatos de build, além da leitura dos dois grafos. A seleção e o resultado estão em `out/product/test-runs/windows-candidates-6d7ae8b-20261111/`.
+
 ### Intermediários dos builds desktop
 
 Foram removidos **700 arquivos (384.928.200 bytes lógicos)** dos builds desktop ON e OFF. A seleção incluiu objetos, bibliotecas estáticas e estatísticas QML declaradas pelo Ninja, além de duas bibliotecas antigas que ficaram no diretório raiz do build OFF depois de os alvos passarem para `src/`. O próximo build regenera os intermediários em uso. O checkout atual usa CMake/Ninja e não tem um projeto Cargo.

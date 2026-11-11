@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental de `35e999d` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
+**Estado:** setups privados Lite e Completa experimental de `6d7ae8b` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
 A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os setups de `ebb093a`. As limpezas anteriores retiraram os setups de `a469f8d`, `cf34cd8` e `26cc641`. Os recibos, configurações e evidências foram preservados. Os registros históricos abaixo documentam a geração original.
@@ -91,6 +91,19 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups de 6d7ae8b
+
+O par inclui a edição de letras pelo menu da fila, seleção de playlists por teclado, correções de pesquisa no Lidarr e no LRCLIB, conclusão da revisão de letras antes do arquivamento e detecção e limites de leitura dos metadados. As duas extensões usam os pacotes de `9a3e257`, com reconferência da aba focada antes do envio. Ferramentas e extensões são opções inicialmente desmarcadas. [Runtimes de 6d7ae8b](windows-runtime.md#runtimes-de-6d7ae8b)
+
+Cada subdiretório em `out/product/rc-music-installer/` contém um `RCMusic-Setup.exe`.
+
+| Edição | Subdiretório | Bytes | SHA-256 |
+|---|---|---:|---|
+| Lite | `rc-music-6d7ae8b-extensions-Lite-20261111` | 90.051.926 | `0649ed73d43adffdca6805a6aa05373617cb391ca3a48c0f966c5da13c1930fa` |
+| Completa experimental | `rc-music-6d7ae8b-extensions-CompleteExperimental-20261111` | 90.124.151 | `e635c1eeb43dfa63218166ad140960657fdb0a7d0d9f2d1dae71c5999b75bc94` |
+
+A inspeção conferiu os inventários de 619 e 622 arquivos, cinco combinações de seleção, associações OFF e o formato PE x86 GUI dos setups sem assinatura. O 7-Zip conferiu os hashes de 21 arquivos embutidos na Lite e 24 na Completa, incluindo player, hosts, extensões e os avisos WebView2 da Completa. Recibos em `out/product/test-runs/windows-candidates-6d7ae8b-20261111/`. Os testes de instalação, atualização, remoção e integração instalada com Brave permanecem pendentes.
 
 ### Setups de 35e999d
 
