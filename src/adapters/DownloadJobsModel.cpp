@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 
 namespace music_player::m0 {
 namespace {
@@ -128,9 +129,13 @@ bool sameSnapshot(const DownloadJobSnapshot& left, const DownloadJobSnapshot& ri
            left.completed_mp3 == right.completed_mp3 && left.error == right.error;
 }
 
-bool discardCandidate(const DownloadRecoveryReviewOutcome outcome) {
-    return outcome == DownloadRecoveryReviewOutcome::OwnedPartial ||
-           outcome == DownloadRecoveryReviewOutcome::CleanupCandidate;
+std::optional<DownloadRecoveryReviewAction> discardAction(const DownloadRecoveryReviewOutcome outcome) {
+    if (outcome == DownloadRecoveryReviewOutcome::PlannedWithoutFiles)
+        return DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
+    if (outcome == DownloadRecoveryReviewOutcome::OwnedPartial ||
+        outcome == DownloadRecoveryReviewOutcome::CleanupCandidate)
+        return DownloadRecoveryReviewAction::DiscardPartials;
+    return std::nullopt;
 }
 
 QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
@@ -144,6 +149,9 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
     case DownloadRecoveryReviewOutcome::CleanupCandidate:
         return DownloadJobsModel::tr(
             "O histórico registra a limpeza e a verificação confirmou que os arquivos deste download estão ausentes.");
+    case DownloadRecoveryReviewOutcome::PlannedWithoutFiles:
+        return DownloadJobsModel::tr(
+            "A verificação confirmou a ausência dos arquivos esperados. Você pode encerrar a recuperação.");
     case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
         return DownloadJobsModel::tr(
             "Arquivo final reconhecido; conteúdo ainda não validado ou importado. Nada foi alterado.");
@@ -168,7 +176,7 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
                                      "use uma versão compatível do RC Music.");
     case DownloadRecoveryReviewOutcome::Discarded:
         return DownloadJobsModel::tr(
-            "Limpeza dos temporários confirmada no registro. O MP3 final, se existir, foi preservado.");
+            "Recuperação encerrada e confirmada no registro. O MP3 final, se existir, foi preservado.");
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
         return DownloadJobsModel::tr("O descarte dos temporários não foi concluído. Parte deles pode ter sido "
                                      "removida; o MP3 final não é alvo. Verifique novamente antes de outra tentativa.");
@@ -176,6 +184,9 @@ QString reviewText(const DownloadRecoveryReviewOutcome outcome) {
         return DownloadJobsModel::tr(
             "O descarte não foi confirmado no histórico. Temporários podem ter sido removidos; o MP3 final não é alvo. "
             "Não é possível afirmar que o histórico foi salvo.");
+    case DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed:
+        return DownloadJobsModel::tr(
+            "O encerramento sem arquivos não foi confirmado no histórico. Verifique o item novamente.");
     }
     return reviewText(DownloadRecoveryReviewOutcome::Unreadable);
 }
@@ -283,15 +294,22 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
                        ? reviewText(*found)
                        : QString{};
         }
-        if (review_job_id_ == job_id)
-            return review_action_ == DownloadRecoveryReviewAction::ReviewFiles
-                       ? tr("Verificando arquivos locais; nada será alterado.")
-                       : tr("Encerrando a recuperação. Temporários próprios ainda presentes podem ser removidos.");
+        if (review_job_id_ == job_id) {
+            switch (review_action_) {
+            case DownloadRecoveryReviewAction::ReviewFiles:
+                return tr("Verificando arquivos locais; nada será alterado.");
+            case DownloadRecoveryReviewAction::DiscardPartials:
+                return tr("Encerrando a recuperação. Temporários próprios ainda presentes podem ser removidos.");
+            case DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles:
+                return tr("Confirmando a ausência dos arquivos antes de encerrar a recuperação.");
+            }
+        }
         if (review_unavailable_ && found != reviews_.cend() && *found == DownloadRecoveryReviewOutcome::Unreadable)
             return tr("Não foi possível verificar os arquivos. Reinicie o RC Music antes de tentar novamente. Tudo foi "
                       "preservado.");
         if (review_unavailable_ && found != reviews_.cend() &&
-            *found == DownloadRecoveryReviewOutcome::DiscardUnconfirmed)
+            (*found == DownloadRecoveryReviewOutcome::DiscardUnconfirmed ||
+             *found == DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed))
             return reviewText(*found) + tr(" Reinicie o RC Music antes de verificar novamente.");
         return found != reviews_.cend() ? reviewText(*found) : QString{};
     }
@@ -301,7 +319,13 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
         const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
         return review_available_ && !review_unavailable_ && discard_supported_ && review_job_id_.isEmpty() &&
                validation_job_id_.isEmpty() && item.state == DownloadJobState::Interrupted &&
-               found != reviews_.cend() && discardCandidate(*found) && service_.canSettleRecoveredDiscard(item.job_id);
+               found != reviews_.cend() && discardAction(*found).has_value() &&
+               service_.canSettleRecoveredDiscard(item.job_id);
+    }
+    case RecoveryWithoutFilesRole: {
+        const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
+        return item.state == DownloadJobState::Interrupted && found != reviews_.cend() &&
+               *found == DownloadRecoveryReviewOutcome::PlannedWithoutFiles;
     }
     case CanValidateMediaRole: {
         const auto found = reviews_.constFind(QString::fromStdString(item.job_id));
@@ -371,7 +395,8 @@ QHash<int, QByteArray> DownloadJobsModel::roleNames() const {
             {ValidationTextRole, "validationText"},
             {ValidationBusyRole, "validationBusy"},
             {CanReleaseValidationRole, "canReleaseValidation"},
-            {CanImportRecoveredRole, "canImportRecovered"}};
+            {CanImportRecoveredRole, "canImportRecovered"},
+            {RecoveryWithoutFilesRole, "recoveryWithoutFiles"}};
 }
 
 int DownloadJobsModel::activeCount() const noexcept { return active_count_; }
@@ -380,7 +405,7 @@ void DownloadJobsModel::notifyReviewChanged() {
     if (!items_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
                          {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole,
-                          CanValidateMediaRole, ValidationTextRole});
+                          CanValidateMediaRole, ValidationTextRole, RecoveryWithoutFilesRole});
 }
 void DownloadJobsModel::notifyValidationChanged() {
     if (!items_.empty())
@@ -407,16 +432,14 @@ void DownloadJobsModel::setDiscardSupported(const bool supported) {
     notifyReviewChanged();
 }
 bool DownloadJobsModel::beginReview(const QString& job_id, const DownloadRecoveryReviewAction action) {
-    if (action != DownloadRecoveryReviewAction::ReviewFiles && action != DownloadRecoveryReviewAction::DiscardPartials)
-        return false;
     if (!review_available_ || review_unavailable_ || !review_job_id_.isEmpty() || !validation_job_id_.isEmpty() ||
         std::ranges::none_of(items_, [&](const DownloadJobSnapshot& item) {
             return item.state == DownloadJobState::Interrupted && QString::fromStdString(item.job_id) == job_id;
         }))
         return false;
-    if (action == DownloadRecoveryReviewAction::DiscardPartials) {
+    if (action != DownloadRecoveryReviewAction::ReviewFiles) {
         const auto found = reviews_.constFind(job_id);
-        if (!discard_supported_ || found == reviews_.cend() || !discardCandidate(*found) ||
+        if (!discard_supported_ || found == reviews_.cend() || discardAction(*found) != action ||
             !service_.canSettleRecoveredDiscard(job_id.toStdString()))
             return false;
         reviews_.remove(job_id);

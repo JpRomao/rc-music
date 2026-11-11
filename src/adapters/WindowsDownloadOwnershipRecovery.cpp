@@ -450,6 +450,17 @@ bool pinCleanedAbsence(const WindowsDownloadWorkspaceConfig& config, const Downl
            removedUnderPinnedParents(workspace);
 }
 
+std::optional<Assessment> pinPlannedAbsence(const WindowsDownloadWorkspaceConfig& config,
+                                            const DownloadOwnershipRecord& record, Workspace& workspace) {
+    if (record.stage != DownloadOwnershipStage::Planned)
+        return Assessment::Unverified;
+    if (const auto failed = pinWorkspaceRoots(config, record, workspace))
+        return failed;
+    if (!removedUnderPinnedParents(workspace))
+        return Assessment::Unverified;
+    return {};
+}
+
 bool pinReclaimable(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
                     const bool import_retired, Workspace& workspace) {
     if (pinWorkspaceRoots(config, record, workspace) || !temporaryFilesAbsent(workspace))
@@ -582,6 +593,35 @@ bool WindowsDownloadOwnershipRecovery::cleanedWithoutFiles(const WindowsDownload
         return pinCleanedAbsence(config, record, workspace);
     } catch (...) {
         return false;
+    }
+}
+
+bool WindowsDownloadOwnershipRecovery::plannedWithoutFiles(const WindowsDownloadWorkspaceConfig& config,
+                                                           const DownloadOwnershipRecord& record) noexcept {
+    try {
+        Workspace workspace;
+        return !pinPlannedAbsence(config, record, workspace);
+    } catch (...) {
+        return false;
+    }
+}
+
+DownloadOwnershipDiscardOutcome
+WindowsDownloadOwnershipRecovery::confirmPlannedWithoutFiles(const WindowsDownloadWorkspaceConfig& config,
+                                                             const DownloadOwnershipRecord& record,
+                                                             DownloadOwnershipStore& store) noexcept {
+    bool absence_proven = false;
+    try {
+        Workspace workspace;
+        if (const auto failed = pinPlannedAbsence(config, record, workspace))
+            return refusedDiscard(*failed);
+        absence_proven = true;
+        const auto still_absent = [&workspace] { return removedUnderPinnedParents(workspace); };
+        const auto saved = record.cleanup_complete ? store.acknowledgeCleanedRecord(record, still_absent)
+                                                   : store.markPlannedCleaned(record, still_absent);
+        return saved == DownloadCheckpointSaveStatus::Saved ? DiscardOutcome::Discarded : DiscardOutcome::Unconfirmed;
+    } catch (...) {
+        return absence_proven ? DiscardOutcome::Unconfirmed : DiscardOutcome::Unreadable;
     }
 }
 

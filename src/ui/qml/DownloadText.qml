@@ -16,6 +16,7 @@ QtObject {
     readonly property string progress: qsTr("Progresso do download")
     readonly property string discardPartials: qsTr("Encerrar recuperação…")
     readonly property string discardPartialsAdvice: qsTr("Após nova verificação, o RC Music poderá remover os arquivos temporários ainda presentes deste download. O MP3 final, se existir, será preservado. Quando todos os itens estiverem encerrados, você poderá arquivar o pedido.")
+    readonly property string discardWithoutFilesAdvice: qsTr("A verificação confirmou a ausência dos arquivos locais esperados. O RC Music fará uma nova verificação antes de registrar o encerramento. Depois de encerrar todos os itens, você poderá arquivar o pedido.")
     readonly property string reviewFiles: qsTr("Verificar arquivos")
     readonly property string reviewingFiles: qsTr("Verificando arquivos")
     readonly property string reviewFilesAgain: qsTr("Reverificar arquivos")

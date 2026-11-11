@@ -1428,7 +1428,7 @@
         },
         {
           "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
-          "marker": "realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent"
+          "marker": "realMainEndsOnlyFreshlyVerifiedRecoveryAfterExplicitConsent"
         },
         {
           "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",
@@ -2005,9 +2005,11 @@
           "path": "tests/ui/quick/tst_downloads.qml",
           "marker": "test_partialDiscardRequiresSeparateConsentAndPreservesFinalAdvice"
         },
+        { "path": "tests/qt/WindowsDownloadOwnershipRecoveryTests.cpp", "marker": "plannedAbsenceConfirmationMarksTheExactRowWithoutDeletingFiles" },
+        { "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp", "marker": "planned-final-appears" },
         {
           "path": "tests/ui/qtest/DownloadRecoveryReviewCompositionTests.cpp",
-          "marker": "realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent"
+          "marker": "realMainEndsOnlyFreshlyVerifiedRecoveryAfterExplicitConsent"
         },
         {
           "path": "tests/ui/qtest/DownloadApplicationBindingTests.cpp",

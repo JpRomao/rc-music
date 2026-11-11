@@ -12,8 +12,9 @@ namespace music_player::m0 {
 // from a checkpoint/page/QML. A private thread exists after construction, but
 // factory/load/actions run only after an explicit operation. Work/factory
 // resources are destroyed there before stopped. Review is read-only;
-// separately requested discard freshly verifies and removes only owned partials,
-// then acknowledges the journal. No creation, permission repair or import.
+// discard freshly verifies and removes only owned partials before acknowledging
+// the journal. Confirming an absent Planned job only revalidates the absence and
+// acknowledges the journal. No creation, permission repair or import.
 class WindowsDownloadRecoveryReview final : public DownloadRecoveryReview {
   public:
     using Work = std::function<DownloadRecoveryReviewOutcome(DownloadRecoveryReviewAction, std::string_view)>;
@@ -30,6 +31,8 @@ class WindowsDownloadRecoveryReview final : public DownloadRecoveryReview {
     [[nodiscard]] bool supportsDiscardPartials() const override { return true; }
     [[nodiscard]] DownloadRecoveryReviewCommand startDiscardPartials(std::uint64_t operation_id,
                                                                      std::string_view job_id) override;
+    [[nodiscard]] DownloadRecoveryReviewCommand startConfirmPlannedWithoutFiles(std::uint64_t operation_id,
+                                                                                std::string_view job_id) override;
     [[nodiscard]] std::optional<DownloadRecoveryReviewResult> poll(std::uint64_t operation_id) override;
     void shutdown() override;
     [[nodiscard]] bool stopped() const override;

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 class PlayerPresenter;
@@ -61,6 +62,7 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(bool canCloseAfterFinalSaveFailure READ canCloseAfterFinalSaveFailure NOTIFY stateChanged)
     Q_PROPERTY(QString discardConsentJobId READ discardConsentJobId NOTIFY discardConsentChanged)
     Q_PROPERTY(QString discardConsentToken READ discardConsentToken NOTIFY discardConsentChanged)
+    Q_PROPERTY(bool discardConsentWithoutFiles READ discardConsentWithoutFiles NOTIFY discardConsentChanged)
     Q_PROPERTY(QString importConsentJobId READ importConsentJobId NOTIFY importConsentChanged)
     Q_PROPERTY(QString importConsentToken READ importConsentToken NOTIFY importConsentChanged)
     Q_PROPERTY(QString archiveConsentToken READ archiveConsentToken NOTIFY archiveConsentChanged)
@@ -87,6 +89,7 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canCloseAfterFinalSaveFailure() const;
     [[nodiscard]] QString discardConsentJobId() const;
     [[nodiscard]] QString discardConsentToken() const;
+    [[nodiscard]] bool discardConsentWithoutFiles() const;
     [[nodiscard]] QString importConsentJobId() const;
     [[nodiscard]] QString importConsentToken() const;
     [[nodiscard]] QString archiveConsentToken() const;
@@ -136,7 +139,7 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canImportForJob(const QString& job_id) const;
     [[nodiscard]] bool canValidateForJob(const QString& job_id) const;
     void invalidateDiscardConsent();
-    [[nodiscard]] bool canDiscardForJob(const QString& job_id) const;
+    [[nodiscard]] std::optional<DownloadRecoveryReviewAction> discardActionForJob(const QString& job_id) const;
     [[nodiscard]] bool archiveActionsAllowed() const;
     void invalidateArchiveConsent();
     [[nodiscard]] bool startReviewAction(const QString& job_id, DownloadRecoveryReviewAction action);

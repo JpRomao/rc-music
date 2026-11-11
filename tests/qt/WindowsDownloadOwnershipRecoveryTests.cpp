@@ -279,7 +279,7 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         QTest::addColumn<int>("kind");
         QTest::addColumn<DownloadRecoveryReviewOutcome>("expected");
         using Outcome = DownloadRecoveryReviewOutcome;
-        QTest::newRow("clean-planned") << 0 << Outcome::CleanupCandidate;
+        QTest::newRow("clean-planned") << 0 << Outcome::PlannedWithoutFiles;
         QTest::newRow("clean-ready") << 1 << Outcome::CleanupCandidate;
         QTest::newRow("unconfirmed-missing") << 2 << Outcome::Missing;
         QTest::newRow("clean-with-residual") << 3 << Outcome::Conflict;
@@ -365,6 +365,96 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
                  DownloadOwnershipDiscardOutcome::Discarded);
         QVERIFY(saw_pinned_parent);
         QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), encoded);
+    }
+
+    void plannedAbsenceConfirmationMarksTheExactRowWithoutDeletingFiles_data() {
+        QTest::addColumn<bool>("ambiguous_commit");
+        QTest::newRow("saved") << false;
+        QTest::newRow("failure-after-commit-needs-new-acknowledgement") << true;
+    }
+
+    void plannedAbsenceConfirmationMarksTheExactRowWithoutDeletingFiles() {
+        QFETCH(bool, ambiguous_commit);
+        Fixture f;
+        QVERIFY(f.initialized);
+        const auto sentinel = f.staging + QStringLiteral("/keep-sibling.bin");
+        QVERIFY(createFile(sentinel, "keep-sibling", f.security));
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode({{f.record}}));
+        QVERIFY(!directory.isEmpty());
+        bool saw_pinned_parent = false;
+        WindowsDownloadOwnershipStore store(
+            directory, {.inject_fault = [&](const auto point) {
+                if (point == WindowsDownloadOwnershipFaultPoint::BeforeCommit) {
+                    Handle replaceable(CreateFileW(native(f.staging).c_str(), DELETE,
+                                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+                    saw_pinned_parent = !replaceable.valid();
+                }
+                return ambiguous_commit && point == WindowsDownloadOwnershipFaultPoint::AfterCommit;
+            }});
+        using Outcome = DownloadOwnershipDiscardOutcome;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::discardPartials(f.config(), f.record, store), Outcome::Unverified);
+        QVERIFY(WindowsDownloadOwnershipRecovery::plannedWithoutFiles(f.config(), f.record));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::confirmPlannedWithoutFiles(f.config(), f.record, store),
+                 ambiguous_commit ? Outcome::Unconfirmed : Outcome::Discarded);
+        QVERIFY(saw_pinned_parent);
+        QVERIFY(!QFile::exists(f.job));
+        QVERIFY(!QFile::exists(f.final));
+        QCOMPARE(readFile(sentinel), QByteArray("keep-sibling"));
+        const auto loaded = store.load();
+        QCOMPARE(loaded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.journal);
+        auto cleaned = f.record;
+        cleaned.cleanup_complete = true;
+        QCOMPARE(loaded.journal->records, std::vector{cleaned});
+        if (ambiguous_commit) {
+            WindowsDownloadOwnershipStore retry(directory);
+            QVERIFY(WindowsDownloadOwnershipRecovery::plannedWithoutFiles(f.config(), cleaned));
+            QCOMPARE(WindowsDownloadOwnershipRecovery::confirmPlannedWithoutFiles(f.config(), cleaned, retry),
+                     Outcome::Discarded);
+        }
+    }
+
+    void plannedAbsenceConfirmationRefusesObjectsOrChangedHistory_data() {
+        QTest::addColumn<int>("scenario");
+        QTest::newRow("unowned-temporaries") << 0;
+        QTest::newRow("unowned-final") << 1;
+        QTest::newRow("journal-row-removed") << 2;
+        QTest::newRow("journal-row-changed") << 3;
+        QTest::newRow("advanced-stage-with-owned-files") << 4;
+    }
+
+    void plannedAbsenceConfirmationRefusesObjectsOrChangedHistory() {
+        QFETCH(int, scenario);
+        Fixture f;
+        QVERIFY(f.initialized);
+        const auto planned = f.record;
+        if (scenario == 0 || scenario == 4)
+            QVERIFY(f.ready());
+        if (scenario == 1)
+            QVERIFY(createFile(f.final, output_content, f.security));
+        const auto expected = scenario == 4 ? f.record : planned;
+        auto journal = DownloadOwnershipJournal{{expected}};
+        if (scenario == 2)
+            journal.records.clear();
+        if (scenario == 3)
+            ++journal.records.front().maximum_workspace_bytes;
+        const auto before = DownloadOwnershipJson::encode(journal);
+        const auto directory = seedJournal(f, before);
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        using Outcome = DownloadOwnershipDiscardOutcome;
+        const bool files_absent = scenario == 2 || scenario == 3;
+        QCOMPARE(WindowsDownloadOwnershipRecovery::plannedWithoutFiles(f.config(), expected), files_absent);
+        QCOMPARE(WindowsDownloadOwnershipRecovery::confirmPlannedWithoutFiles(f.config(), expected, store),
+                 files_absent ? Outcome::Unconfirmed : Outcome::Unverified);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), before);
+        if (scenario == 0 || scenario == 4) {
+            QCOMPARE(readFile(f.input), QByteArray(input_content));
+            QCOMPARE(readFile(f.output), QByteArray(output_content));
+        }
+        if (scenario == 1)
+            QCOMPARE(readFile(f.final), QByteArray(output_content));
     }
 
     void fullJournalReclaimsOnePublishedRowAndKeepsThePhysicalFile_data() {

@@ -34,6 +34,8 @@
 namespace music_player::m0::test {
 namespace {
 constexpr auto old_job = "old-1";
+enum class RecoverySetup { OwnedPartials, AlreadyClean, Planned };
+enum class Interference { None, ReplaceInput, CreateWorkspace, CreateFinal };
 
 // Only create a new directory inside the test's own TEMP. Do not repair an
 // existing ACL, consult user configuration or install/register any component.
@@ -438,16 +440,24 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(review.stopped(), 5'000);
         root.reset();
     }
-    void realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent_data() {
-        QTest::addColumn<bool>("substitute_after_consent");
-        QTest::addColumn<bool>("already_clean_after_restart");
-        QTest::newRow("owned-partials") << false << false;
-        QTest::newRow("substituted-after-consent") << true << false;
-        QTest::newRow("cleanup-saved-before-restart") << false << true;
+    void realMainEndsOnlyFreshlyVerifiedRecoveryAfterExplicitConsent_data() {
+        QTest::addColumn<int>("setup");
+        QTest::addColumn<int>("interference");
+        QTest::newRow("owned-partials") << int(RecoverySetup::OwnedPartials) << int(Interference::None);
+        QTest::newRow("substituted-after-consent")
+            << int(RecoverySetup::OwnedPartials) << int(Interference::ReplaceInput);
+        QTest::newRow("cleanup-saved-before-restart") << int(RecoverySetup::AlreadyClean) << int(Interference::None);
+        QTest::newRow("planned-with-no-files") << int(RecoverySetup::Planned) << int(Interference::None);
+        QTest::newRow("planned-workspace-appears") << int(RecoverySetup::Planned) << int(Interference::CreateWorkspace);
+        QTest::newRow("planned-final-appears") << int(RecoverySetup::Planned) << int(Interference::CreateFinal);
     }
-    void realMainDiscardsOnlyFreshlyVerifiedPartialsAfterExplicitConsent() {
-        QFETCH(bool, substitute_after_consent);
-        QFETCH(bool, already_clean_after_restart);
+    void realMainEndsOnlyFreshlyVerifiedRecoveryAfterExplicitConsent() {
+        QFETCH(int, setup);
+        QFETCH(int, interference);
+        const auto initial = static_cast<RecoverySetup>(setup);
+        const auto change = static_cast<Interference>(interference);
+        const bool planned = initial == RecoverySetup::Planned;
+        const bool refused = change != Interference::None;
         QTemporaryDir temporary{QDir::tempPath() + QStringLiteral("/rc-music-discard-espaço-音-XXXXXX")};
         QVERIFY(temporary.isValid());
         const auto documents = temporary.filePath(QStringLiteral("documents"));
@@ -461,10 +471,9 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
             QDir{config.staging_parent}.filePath(QStringLiteral("rc-music-job-") + QString::fromStdString(uuid));
         const auto input = QDir{job}.filePath(QStringLiteral("input.bin"));
         const auto output = QDir{job}.filePath(QStringLiteral("converted.part"));
+        const auto final_path = QDir{config.publish_parent}.filePath(
+            QStringLiteral("rc-music-") + QString::fromStdString(uuid) + QStringLiteral(".mp3"));
         const QByteArray input_bytes{"owned synthetic input"}, output_bytes{"owned partial output"};
-        QVERIFY(createPrivateObject(job, nullptr, true));
-        QVERIFY(createPrivateObject(input, &input_bytes, true));
-        QVERIFY(createPrivateObject(output, &output_bytes, true));
         const auto sibling = QDir{config.staging_parent}.filePath(QStringLiteral("not-owned.txt"));
         const auto other_final = QDir{config.publish_parent}.filePath(QStringLiteral("other-final.mp3"));
         const QByteArray sentinel{"preserve sibling and final byte for byte"};
@@ -472,20 +481,23 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QVERIFY(createPrivateObject(other_final, &sentinel));
         const auto staging_id = ownIdentity(config.staging_parent, true);
         const auto publish_id = ownIdentity(config.publish_parent, true);
-        const auto job_id = ownIdentity(job, true);
-        const auto input_id = ownIdentity(input, false);
-        const auto output_id = ownIdentity(output, false);
-        QVERIFY(staging_id && publish_id && job_id && input_id && output_id);
+        QVERIFY(staging_id && publish_id);
         WindowsDownloadOwnershipStore ownership{documents};
         DownloadOwnershipRecord record{
             .job_id = old_job, .workspace_id = uuid, .staging_parent = *staging_id, .publish_parent = *publish_id};
         QCOMPARE(ownership.record(record), DownloadCheckpointSaveStatus::Saved);
-        record.stage = DownloadOwnershipStage::WorkspaceReady;
-        record.job_directory = *job_id;
-        record.input = *input_id;
-        record.output = *output_id;
-        QCOMPARE(ownership.record(record), DownloadCheckpointSaveStatus::Saved);
-        if (already_clean_after_restart) {
+        if (!planned) {
+            QVERIFY(createPrivateObject(job, nullptr, true));
+            QVERIFY(createPrivateObject(input, &input_bytes, true));
+            QVERIFY(createPrivateObject(output, &output_bytes, true));
+            record.stage = DownloadOwnershipStage::WorkspaceReady;
+            record.job_directory = ownIdentity(job, true);
+            record.input = ownIdentity(input, false);
+            record.output = ownIdentity(output, false);
+            QVERIFY(record.job_directory && record.input && record.output);
+            QCOMPARE(ownership.record(record), DownloadCheckpointSaveStatus::Saved);
+        }
+        if (initial == RecoverySetup::AlreadyClean) {
             QVERIFY(QFile::remove(input));
             QVERIFY(QFile::remove(output));
             QVERIFY(QDir{}.rmdir(job));
@@ -570,23 +582,29 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
             5'000);
         QVERIFY(click(*window, cancel_button));
         QTRY_VERIFY_WITH_TIMEOUT(binding.discardConsentToken().isEmpty(), 5'000);
-        if (already_clean_after_restart) {
+        if (initial != RecoverySetup::OwnedPartials) {
             QVERIFY(!QDir{job}.exists());
         } else {
             QCOMPARE(readOwnedFile(input), input_bytes);
             QCOMPARE(readOwnedFile(output), output_bytes);
         }
+        QVERIFY(!QFile::exists(final_path));
         QCOMPARE(readOwnedFile(ownership_path), ownership_before);
         QVERIFY(!binding.confirmDiscardPartials(QString::fromLatin1(old_job), cancelled_token));
         QVERIFY(click(*window, discard_button));
         QTRY_VERIFY_WITH_TIMEOUT(!binding.discardConsentToken().isEmpty(), 5'000);
         QVERIFY(binding.discardConsentToken() != cancelled_token);
         QByteArray replacement{"unowned replacement after consent"};
-        if (substitute_after_consent) {
+        if (change == Interference::ReplaceInput) {
             // Keep the old object alive under another leaf so its file ID cannot
             // be recycled; the UI's preceding review/token is not a capability.
             QVERIFY(QFile::rename(input, temporary.filePath(QStringLiteral("unowned-old-input"))));
             QVERIFY(createPrivateObject(input, &replacement, true));
+        } else if (change == Interference::CreateWorkspace) {
+            QVERIFY(createPrivateObject(job, nullptr, true));
+            QVERIFY(createPrivateObject(input, &replacement, true));
+        } else if (change == Interference::CreateFinal) {
+            QVERIFY(createPrivateObject(final_path, &replacement, true));
         }
         QQuickItem* confirm_button = nullptr;
         QTRY_VERIFY_WITH_TIMEOUT(
@@ -597,21 +615,31 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QTest::keyClick(window, Qt::Key_Return);
         QTRY_VERIFY_WITH_TIMEOUT(binding.discardConsentToken().isEmpty(), 5'000);
         QTRY_VERIFY_WITH_TIMEOUT(!model->data(index, DownloadJobsModel::ReviewBusyRole).toBool(), 5'000);
-        if (substitute_after_consent) {
-            QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
-                        .toString()
-                        .contains(QStringLiteral("conflito"), Qt::CaseInsensitive));
-            QCOMPARE(readOwnedFile(input), replacement);
-            QCOMPARE(readOwnedFile(output), output_bytes);
+        if (refused) {
+            if (change == Interference::ReplaceInput) {
+                QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
+                            .toString()
+                            .contains(QStringLiteral("conflito"), Qt::CaseInsensitive));
+                QCOMPARE(readOwnedFile(output), output_bytes);
+            }
+            if (change == Interference::CreateFinal) {
+                QCOMPARE(readOwnedFile(final_path), replacement);
+                QVERIFY(!QDir{job}.exists());
+            } else {
+                QCOMPARE(readOwnedFile(input), replacement);
+                QVERIFY(QDir{job}.exists());
+            }
             QCOMPARE(readOwnedFile(ownership_path), ownership_before);
-            QVERIFY(QDir{job}.exists());
         } else {
-            QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
-                        .toString()
-                        .contains(QStringLiteral("confirmada no registro"), Qt::CaseInsensitive));
+            if (!planned) {
+                QVERIFY(model->data(index, DownloadJobsModel::ReviewTextRole)
+                            .toString()
+                            .contains(QStringLiteral("confirmada no registro"), Qt::CaseInsensitive));
+            }
             QVERIFY(!QFile::exists(input));
             QVERIFY(!QFile::exists(output));
             QVERIFY(!QDir{job}.exists());
+            QVERIFY(!QFile::exists(final_path));
             const auto after = ownership.load();
             QCOMPARE(after.status, DownloadCheckpointLoadStatus::Loaded);
             QVERIFY(after.journal && after.journal->records.size() == 1);
@@ -630,12 +658,12 @@ class DownloadRecoveryReviewCompositionTests final : public QObject {
         QCOMPARE(metadata.reads, 0);
         QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
         QCOMPARE(model->data(index, DownloadJobsModel::StateRole).toString(),
-                 substitute_after_consent ? QStringLiteral("interrupted") : QStringLiteral("cancelled"));
+                 refused ? QStringLiteral("interrupted") : QStringLiteral("cancelled"));
         QVERIFY(model->data(index, DownloadJobsModel::OutputPathRole).toString().isEmpty());
         QVERIFY(!model->data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool());
         QVERIFY(!binding.warningText().contains(temporary.path()));
         QVERIFY(!binding.statusText().contains(temporary.path()));
-        if (!substitute_after_consent) {
+        if (!refused) {
             QVERIFY(binding.canArchiveSettled());
             QVERIFY(binding.requestArchiveConfirmation());
             QVERIFY(binding.confirmArchive(binding.archiveConsentToken()));

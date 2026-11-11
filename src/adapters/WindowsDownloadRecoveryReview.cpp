@@ -18,13 +18,19 @@ bool validJob(std::string_view id) {
     });
 }
 DownloadRecoveryReviewOutcome uncertain(DownloadRecoveryReviewAction action) {
-    return action == DownloadRecoveryReviewAction::DiscardPartials ? DownloadRecoveryReviewOutcome::DiscardUnconfirmed
-                                                                   : DownloadRecoveryReviewOutcome::Unreadable;
+    switch (action) {
+    case DownloadRecoveryReviewAction::DiscardPartials:
+        return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+    case DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles:
+        return DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed;
+    case DownloadRecoveryReviewAction::ReviewFiles:
+        return DownloadRecoveryReviewOutcome::Unreadable;
+    }
+    return DownloadRecoveryReviewOutcome::Unreadable;
 }
 DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewAction action, DownloadRecoveryReviewOutcome outcome) {
     switch (outcome) {
     case DownloadRecoveryReviewOutcome::Unverified:
-    case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
     case DownloadRecoveryReviewOutcome::Missing:
     case DownloadRecoveryReviewOutcome::Conflict:
     case DownloadRecoveryReviewOutcome::Unreadable:
@@ -32,13 +38,22 @@ DownloadRecoveryReviewOutcome checked(DownloadRecoveryReviewAction action, Downl
     case DownloadRecoveryReviewOutcome::HistoryInvalid:
     case DownloadRecoveryReviewOutcome::HistoryFuture:
         return outcome;
+    case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
+        return action != DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles ? outcome : uncertain(action);
     case DownloadRecoveryReviewOutcome::OwnedPartial:
     case DownloadRecoveryReviewOutcome::CleanupCandidate:
+    case DownloadRecoveryReviewOutcome::PlannedWithoutFiles:
         return action == DownloadRecoveryReviewAction::ReviewFiles ? outcome : uncertain(action);
     case DownloadRecoveryReviewOutcome::Discarded:
+        return action == DownloadRecoveryReviewAction::DiscardPartials ||
+                       action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles
+                   ? outcome
+                   : uncertain(action);
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
     case DownloadRecoveryReviewOutcome::DiscardUnconfirmed:
         return action == DownloadRecoveryReviewAction::DiscardPartials ? outcome : uncertain(action);
+    case DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed:
+        return action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles ? outcome : uncertain(action);
     }
     return uncertain(action);
 }
@@ -68,8 +83,14 @@ DownloadRecoveryReviewOutcome assess(DownloadOwnershipStore& store, const Window
         std::find_if(records.begin(), records.end(), [&](const auto& item) { return item.job_id == job_id; });
     if (found == records.end())
         return DownloadRecoveryReviewOutcome::Unverified;
-    if (action == DownloadRecoveryReviewAction::DiscardPartials) {
-        switch (WindowsDownloadOwnershipRecovery::discardPartials(config, *found, store)) {
+    if (action != DownloadRecoveryReviewAction::ReviewFiles) {
+        const bool confirm_absence = action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
+        if (!confirm_absence && found->stage == DownloadOwnershipStage::Planned)
+            return DownloadRecoveryReviewOutcome::Unverified;
+        const auto outcome = confirm_absence
+                                 ? WindowsDownloadOwnershipRecovery::confirmPlannedWithoutFiles(config, *found, store)
+                                 : WindowsDownloadOwnershipRecovery::discardPartials(config, *found, store);
+        switch (outcome) {
         case DownloadOwnershipDiscardOutcome::Discarded:
             return DownloadRecoveryReviewOutcome::Discarded;
         case DownloadOwnershipDiscardOutcome::Missing:
@@ -77,18 +98,22 @@ DownloadRecoveryReviewOutcome assess(DownloadOwnershipStore& store, const Window
         case DownloadOwnershipDiscardOutcome::Unverified:
             return DownloadRecoveryReviewOutcome::Unverified;
         case DownloadOwnershipDiscardOutcome::OwnedFinalCandidate:
-            return DownloadRecoveryReviewOutcome::OwnedFinalCandidate;
+            return confirm_absence ? uncertain(action) : DownloadRecoveryReviewOutcome::OwnedFinalCandidate;
         case DownloadOwnershipDiscardOutcome::Conflict:
             return DownloadRecoveryReviewOutcome::Conflict;
         case DownloadOwnershipDiscardOutcome::Unreadable:
             return DownloadRecoveryReviewOutcome::Unreadable;
         case DownloadOwnershipDiscardOutcome::Incomplete:
-            return DownloadRecoveryReviewOutcome::DiscardIncomplete;
+            return confirm_absence ? uncertain(action) : DownloadRecoveryReviewOutcome::DiscardIncomplete;
         case DownloadOwnershipDiscardOutcome::Unconfirmed:
-            return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+            return uncertain(action);
         }
-        return DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+        return uncertain(action);
     }
+    if (found->stage == DownloadOwnershipStage::Planned)
+        return WindowsDownloadOwnershipRecovery::plannedWithoutFiles(config, *found)
+                   ? DownloadRecoveryReviewOutcome::PlannedWithoutFiles
+                   : DownloadRecoveryReviewOutcome::Unverified;
     if (WindowsDownloadOwnershipRecovery::cleanedWithoutFiles(config, *found))
         return DownloadRecoveryReviewOutcome::CleanupCandidate;
     switch (WindowsDownloadOwnershipRecovery::assess(config, *found)) {
@@ -163,7 +188,10 @@ struct WindowsDownloadRecoveryReview::Impl final {
         return drained;
     }
     static DownloadRecoveryReviewResult failure(const Request& request) {
-        return {request.operation_id, request.job_id, DownloadRecoveryReviewOutcome::Unreadable, request.action};
+        const auto outcome = request.action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles
+                                 ? DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed
+                                 : DownloadRecoveryReviewOutcome::Unreadable;
+        return {request.operation_id, request.job_id, outcome, request.action};
     }
     void run(Factory& factory) {
         Work work;
@@ -247,6 +275,10 @@ DownloadRecoveryReviewCommand WindowsDownloadRecoveryReview::startReview(std::ui
 DownloadRecoveryReviewCommand WindowsDownloadRecoveryReview::startDiscardPartials(std::uint64_t id,
                                                                                   std::string_view job_id) {
     return impl_->start(id, job_id, DownloadRecoveryReviewAction::DiscardPartials);
+}
+DownloadRecoveryReviewCommand WindowsDownloadRecoveryReview::startConfirmPlannedWithoutFiles(std::uint64_t id,
+                                                                                             std::string_view job_id) {
+    return impl_->start(id, job_id, DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles);
 }
 std::optional<DownloadRecoveryReviewResult> WindowsDownloadRecoveryReview::poll(std::uint64_t id) {
     return impl_->poll(id);

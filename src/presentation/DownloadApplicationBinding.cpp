@@ -51,7 +51,6 @@ bool validValidationOutcome(const DownloadRecoveryValidationOutcome outcome) {
 bool validReviewOutcome(const DownloadRecoveryReviewOutcome outcome, const DownloadRecoveryReviewAction action) {
     switch (outcome) {
     case DownloadRecoveryReviewOutcome::Unverified:
-    case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
     case DownloadRecoveryReviewOutcome::Missing:
     case DownloadRecoveryReviewOutcome::Conflict:
     case DownloadRecoveryReviewOutcome::Unreadable:
@@ -59,13 +58,20 @@ bool validReviewOutcome(const DownloadRecoveryReviewOutcome outcome, const Downl
     case DownloadRecoveryReviewOutcome::HistoryInvalid:
     case DownloadRecoveryReviewOutcome::HistoryFuture:
         return true;
+    case DownloadRecoveryReviewOutcome::OwnedFinalCandidate:
+        return action != DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
     case DownloadRecoveryReviewOutcome::OwnedPartial:
     case DownloadRecoveryReviewOutcome::CleanupCandidate:
+    case DownloadRecoveryReviewOutcome::PlannedWithoutFiles:
         return action == DownloadRecoveryReviewAction::ReviewFiles;
     case DownloadRecoveryReviewOutcome::Discarded:
+        return action == DownloadRecoveryReviewAction::DiscardPartials ||
+               action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
     case DownloadRecoveryReviewOutcome::DiscardIncomplete:
     case DownloadRecoveryReviewOutcome::DiscardUnconfirmed:
         return action == DownloadRecoveryReviewAction::DiscardPartials;
+    case DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed:
+        return action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
     }
     return false;
 }
@@ -85,6 +91,7 @@ struct DownloadApplicationBinding::Impl {
     struct DiscardConsent final {
         QString job_id;
         QString token;
+        DownloadRecoveryReviewAction action;
     };
     struct ImportConsent final {
         QString job_id;
@@ -137,7 +144,7 @@ struct DownloadApplicationBinding::Impl {
     std::optional<DiscardConsent> discard_consent{};
     std::optional<ImportConsent> import_consent{};
     std::optional<ArchiveConsent> archive_consent{};
-    bool discard_uncertain{false};
+    DownloadRecoveryReviewAction uncertain_review_action{DownloadRecoveryReviewAction::ReviewFiles};
     std::uint64_t validation_operation_id{0};
     std::optional<ValidationOperation> validation_operation{};
     bool validation_shutdown_requested{false};
@@ -566,32 +573,43 @@ QString DownloadApplicationBinding::discardConsentJobId() const {
 QString DownloadApplicationBinding::discardConsentToken() const {
     return impl_->discard_consent ? impl_->discard_consent->token : QString{};
 }
+bool DownloadApplicationBinding::discardConsentWithoutFiles() const {
+    return impl_->discard_consent &&
+           impl_->discard_consent->action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles;
+}
 void DownloadApplicationBinding::invalidateDiscardConsent() {
     if (!impl_->discard_consent)
         return;
     impl_->discard_consent.reset();
     emit discardConsentChanged();
 }
-bool DownloadApplicationBinding::canDiscardForJob(const QString& job_id) const {
+std::optional<DownloadRecoveryReviewAction>
+DownloadApplicationBinding::discardActionForJob(const QString& job_id) const {
     if (!impl_->gate_attached || impl_->closing || impl_->review_unavailable || impl_->recoveryBusy() ||
         !impl_->options.recovery_review || impl_->download_service.hasActiveExecution() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
-        return false;
+        return std::nullopt;
     for (int row = 0; row < impl_->model.rowCount(); ++row) {
         const auto index = impl_->model.index(row, 0);
         if (impl_->model.data(index, DownloadJobsModel::JobIdRole).toString() == job_id &&
-            impl_->model.data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool())
-            return impl_->download_service.canSettleRecoveredDiscard(job_id.toStdString());
+            impl_->model.data(index, DownloadJobsModel::CanDiscardPartialsRole).toBool()) {
+            return impl_->model.data(index, DownloadJobsModel::RecoveryWithoutFilesRole).toBool()
+                       ? DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles
+                       : DownloadRecoveryReviewAction::DiscardPartials;
+        }
     }
-    return false;
+    return std::nullopt;
 }
 bool DownloadApplicationBinding::requestDiscardPartials(const QString& job_id) {
     if (QThread::currentThread() != thread() || impl_->operating ||
-        impl_->consent_revision == std::numeric_limits<std::uint64_t>::max() || !canDiscardForJob(job_id))
+        impl_->consent_revision == std::numeric_limits<std::uint64_t>::max())
+        return false;
+    const auto action = discardActionForJob(job_id);
+    if (!action)
         return false;
     const QPointer<DownloadApplicationBinding> guard{this};
     impl_->operating = true;
-    impl_->discard_consent = Impl::DiscardConsent{job_id, QString::number(++impl_->consent_revision)};
+    impl_->discard_consent = Impl::DiscardConsent{job_id, QString::number(++impl_->consent_revision), *action};
     emit discardConsentChanged();
     if (!guard)
         return false;
@@ -615,9 +633,11 @@ void DownloadApplicationBinding::cancelDiscardPartialsConfirmation(const QString
 }
 bool DownloadApplicationBinding::confirmDiscardPartials(const QString& job_id, const QString& token) {
     if (QThread::currentThread() != thread() || impl_->operating || !impl_->discard_consent ||
-        impl_->discard_consent->job_id != job_id || impl_->discard_consent->token != token || !canDiscardForJob(job_id))
+        impl_->discard_consent->job_id != job_id || impl_->discard_consent->token != token ||
+        discardActionForJob(job_id) != impl_->discard_consent->action)
         return false;
     const auto trusted_job_id = impl_->discard_consent->job_id;
+    const auto action = impl_->discard_consent->action;
     const QPointer<DownloadApplicationBinding> guard{this};
     impl_->operating = true;
     invalidateDiscardConsent();
@@ -631,7 +651,7 @@ bool DownloadApplicationBinding::confirmDiscardPartials(const QString& job_id, c
         beginShutdown();
         return false;
     }
-    return startReviewAction(trusted_job_id, DownloadRecoveryReviewAction::DiscardPartials);
+    return startReviewAction(trusted_job_id, action);
 }
 bool DownloadApplicationBinding::reviewFiles(const QString& job_id) {
     return startReviewAction(job_id, DownloadRecoveryReviewAction::ReviewFiles);
@@ -643,7 +663,7 @@ bool DownloadApplicationBinding::startReviewAction(const QString& job_id, const 
         impl_->download_service.hasActiveExecution() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
-    if (action == DownloadRecoveryReviewAction::DiscardPartials && !canDiscardForJob(job_id))
+    if (action != DownloadRecoveryReviewAction::ReviewFiles && discardActionForJob(job_id) != action)
         return false;
     const auto jobs = impl_->download_service.snapshot();
     const auto found = std::ranges::find_if(jobs, [&](const DownloadJobSnapshot& job) {
@@ -668,9 +688,18 @@ bool DownloadApplicationBinding::startReviewAction(const QString& job_id, const 
     bool failed = false;
     if (projected && !impl_->closing) {
         try {
-            const auto command = action == DownloadRecoveryReviewAction::ReviewFiles
-                                     ? review->startReview(id, trusted_job_id)
-                                     : review->startDiscardPartials(id, trusted_job_id);
+            auto command = DownloadRecoveryReviewCommand::InvalidRequest;
+            switch (action) {
+            case DownloadRecoveryReviewAction::ReviewFiles:
+                command = review->startReview(id, trusted_job_id);
+                break;
+            case DownloadRecoveryReviewAction::DiscardPartials:
+                command = review->startDiscardPartials(id, trusted_job_id);
+                break;
+            case DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles:
+                command = review->startConfirmPlannedWithoutFiles(id, trusted_job_id);
+                break;
+            }
             accepted = command == DownloadRecoveryReviewCommand::Accepted;
             failed =
                 command != DownloadRecoveryReviewCommand::Accepted && command != DownloadRecoveryReviewCommand::Busy;
@@ -726,11 +755,15 @@ void DownloadApplicationBinding::failReview() {
         if (!guard)
             return;
         if (impl_->review_operation) {
-            impl_->discard_uncertain = impl_->review_operation->action == DownloadRecoveryReviewAction::DiscardPartials;
-            static_cast<void>(impl_->model.finishReview(QString::fromStdString(impl_->review_operation->job_id),
-                                                        impl_->discard_uncertain
-                                                            ? DownloadRecoveryReviewOutcome::DiscardUnconfirmed
-                                                            : DownloadRecoveryReviewOutcome::Unreadable));
+            const auto action = impl_->review_operation->action;
+            impl_->uncertain_review_action = action;
+            auto outcome = DownloadRecoveryReviewOutcome::Unreadable;
+            if (action == DownloadRecoveryReviewAction::DiscardPartials)
+                outcome = DownloadRecoveryReviewOutcome::DiscardUnconfirmed;
+            if (action == DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles)
+                outcome = DownloadRecoveryReviewOutcome::PlannedClosureUnconfirmed;
+            static_cast<void>(
+                impl_->model.finishReview(QString::fromStdString(impl_->review_operation->job_id), outcome));
         }
         if (!guard)
             return;
@@ -1237,7 +1270,7 @@ void DownloadApplicationBinding::refreshProjection() {
         invalidateImportConsent();
     if (!guard)
         return;
-    if (impl_->discard_consent && !canDiscardForJob(impl_->discard_consent->job_id))
+    if (impl_->discard_consent && discardActionForJob(impl_->discard_consent->job_id) != impl_->discard_consent->action)
         invalidateDiscardConsent();
     if (!guard)
         return;
@@ -1329,13 +1362,22 @@ void DownloadApplicationBinding::refreshProjection() {
     }
     if (impl_->poll_failed)
         next.warning = tr("Não foi possível confirmar o andamento dos downloads. O encerramento permanece bloqueado.");
-    else if (impl_->review_unavailable)
-        next.warning = impl_->discard_uncertain
-                           ? tr("O descarte de temporários não foi confirmado. Reinicie o RC Music para verificar "
-                                "novamente; não é possível afirmar o que foi removido ou salvo.")
-                           : tr("A verificação de arquivos foi interrompida. Reinicie o RC Music para tentar "
-                                "novamente; os dados foram preservados.");
-    else if (impl_->validation_unavailable)
+    else if (impl_->review_unavailable) {
+        switch (impl_->uncertain_review_action) {
+        case DownloadRecoveryReviewAction::DiscardPartials:
+            next.warning = tr("O descarte de temporários não foi confirmado. Reinicie o RC Music para verificar "
+                              "novamente; não é possível afirmar o que foi removido ou salvo.");
+            break;
+        case DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles:
+            next.warning = tr("O encerramento sem arquivos não foi confirmado no histórico. Reinicie o RC Music "
+                              "para verificar novamente.");
+            break;
+        case DownloadRecoveryReviewAction::ReviewFiles:
+            next.warning = tr("A verificação de arquivos foi interrompida. Reinicie o RC Music para tentar "
+                              "novamente; os dados foram preservados.");
+            break;
+        }
+    } else if (impl_->validation_unavailable)
         next.warning = tr("A validação do MP3 foi interrompida. Reinicie o RC Music para verificar novamente; "
                           "não há confirmação de importação ou liberação do arquivo.");
     next.capacity = impl_->projection.capacity;

@@ -63,6 +63,12 @@ class DownloadOwnershipStore {
                                                                                 const std::function<bool()>&) {
         return DownloadCheckpointSaveStatus::Failed;
     }
+    // Mark only an exact, existing Planned row after rechecking absence under
+    // the writer lock. A missing or advanced row must never be replaced.
+    [[nodiscard]] virtual DownloadCheckpointSaveStatus markPlannedCleaned(const DownloadOwnershipRecord&,
+                                                                          const std::function<bool()>&) {
+        return DownloadCheckpointSaveStatus::Failed;
+    }
 };
 
 } // namespace music_player::m0

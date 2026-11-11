@@ -37,7 +37,8 @@ class DownloadJobsModel final : public QAbstractListModel {
         ValidationTextRole,
         ValidationBusyRole,
         CanReleaseValidationRole,
-        CanImportRecoveredRole
+        CanImportRecoveredRole,
+        RecoveryWithoutFilesRole
     };
     Q_ENUM(Role)
 

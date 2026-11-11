@@ -68,6 +68,13 @@ class WindowsDownloadOwnershipRecovery final {
     // Read-only review of a cleaned record under freshly pinned configured roots.
     [[nodiscard]] static bool cleanedWithoutFiles(const WindowsDownloadWorkspaceConfig& config,
                                                   const DownloadOwnershipRecord& record) noexcept;
+    // Planned rows supply names and root identities, but own no physical files.
+    [[nodiscard]] static bool plannedWithoutFiles(const WindowsDownloadWorkspaceConfig& config,
+                                                  const DownloadOwnershipRecord& record) noexcept;
+    // Recheck absence and acknowledge the exact Planned row. Never deletes files.
+    [[nodiscard]] static DownloadOwnershipDiscardOutcome
+    confirmPlannedWithoutFiles(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
+                               DownloadOwnershipStore& store) noexcept;
     [[nodiscard]] static DownloadFinalPinResult pinFinal(const WindowsDownloadWorkspaceConfig& config,
                                                          const DownloadOwnershipRecord& record) noexcept;
     // Separate explicit worker-only action: freshly verify the entire workspace,

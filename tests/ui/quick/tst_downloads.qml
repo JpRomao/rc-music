@@ -29,6 +29,7 @@ TestCase {
             "canRetryImport": canRetryImport,
             "canReviewFiles": false,
             "canDiscardPartials": false,
+            "recoveryWithoutFiles": false,
             "canValidateMedia": false,
             "canImportRecovered": false,
             "canReleaseValidation": false,
@@ -389,6 +390,68 @@ TestCase {
         compare(downloads.discardedIds.length, 1);
         compare(downloads.discardedIds[0], "partials-a");
         compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_plannedRecoveryExplainsThatConfirmationClosesTheRecord() {
+        addJob("planned-a", "interrupted", "Interrompido", false, false, false, 0);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        jobs.setProperty(0, "recoveryWithoutFiles", true);
+        openDownloads();
+        const discard = findChild(rowAt(0), "download-discard-partials");
+        discard.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const popup = findChild(shell, "downloads-discard-confirmation");
+        const cancel = findChild(shell, "download-discard-cancel");
+        const confirm = findChild(shell, "download-discard-confirm");
+        tryCompare(popup, "opened", true);
+        tryCompare(cancel, "activeFocus", true);
+        compare(findChild(shell, "download-discard-advice").text, "A verificação confirmou a ausência dos arquivos locais esperados. O RC Music fará uma nova verificação antes de registrar o encerramento. Depois de encerrar todos os itens, você poderá arquivar o pedido.");
+        compare(downloads.discardedIds.length, 0);
+        keyClick(Qt.Key_Tab);
+        tryCompare(confirm, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(popup, "visible", false);
+        compare(downloads.discardedIds.length, 1);
+        compare(downloads.discardedIds[0], "planned-a");
+        compare(downloads.archives, 0);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_discardConsentCannotOpenAfterSynchronousCloseOrOwnerReplacement(data) {
+        addJob("planned-a", "interrupted", "Interrompido", false, false, false, 0);
+        jobs.setProperty(0, "canDiscardPartials", true);
+        jobs.setProperty(0, "recoveryWithoutFiles", true);
+        const panel = openDownloads();
+        const original = downloads;
+        const replacement = data.replaceOwner ? createTemporaryObject(bindingComponent, testCase) : null;
+        if (replacement)
+            verify(replacement.requestDiscardPartials("planned-a"));
+        original.onDiscardRequest = function () {
+            if (replacement) {
+                downloads = replacement;
+                shell.downloads = replacement;
+            } else {
+                panel.close();
+            }
+        };
+        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        verify(!findChild(shell, "downloads-discard-confirmation").visible);
+        compare(original.discardConsentToken, "");
+        compare(original.discardedIds.length, 0);
+        if (replacement) {
+            compare(replacement.discardConsentToken, "1");
+            compare(replacement.discardedIds.length, 0);
+        }
+    }
+    function test_discardConsentCannotOpenAfterSynchronousCloseOrOwnerReplacement_data() {
+        return [
+            {
+                tag: "closed",
+                replaceOwner: false
+            },
+            {
+                tag: "replaced",
+                replaceOwner: true
+            }
+        ];
     }
     function test_partialDiscardConsentCannotFollowAReplacedOwnerOrRevokedRevision() {
         addJob("partials-a", "interrupted", "Interrompido", false, false, false, 0);
@@ -1206,7 +1269,9 @@ TestCase {
             property int importRevision: 0
             property string discardConsentJobId: ""
             property string discardConsentToken: ""
+            property bool discardConsentWithoutFiles: false
             property int discardRevision: 0
+            property var onDiscardRequest: null
             property string historyCapacityText: ""
             property string statusText: "Downloads disponíveis"
             property int unsafeCloses: 0
@@ -1287,8 +1352,18 @@ TestCase {
                 }
             }
             function requestDiscardPartials(jobId) {
+                discardConsentWithoutFiles = false;
+                for (let index = 0; index < jobs.count; ++index) {
+                    const job = jobs.get(index);
+                    if (job.jobId === jobId) {
+                        discardConsentWithoutFiles = job.recoveryWithoutFiles;
+                        break;
+                    }
+                }
                 discardConsentJobId = jobId;
                 discardConsentToken = String(++discardRevision);
+                if (onDiscardRequest)
+                    onDiscardRequest();
                 return true;
             }
             function confirmDiscardPartials(jobId, token) {
@@ -1296,6 +1371,7 @@ TestCase {
                     return false;
                 discardConsentJobId = "";
                 discardConsentToken = "";
+                discardConsentWithoutFiles = false;
                 discardedIds = discardedIds.concat([jobId]);
                 return true;
             }
@@ -1303,6 +1379,7 @@ TestCase {
                 if (jobId === discardConsentJobId && token === discardConsentToken) {
                     discardConsentJobId = "";
                     discardConsentToken = "";
+                    discardConsentWithoutFiles = false;
                 }
             }
         }

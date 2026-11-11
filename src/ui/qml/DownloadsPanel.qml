@@ -16,8 +16,9 @@ Popup {
     property var discardConsentOwner: null
     property string discardConsentJobId: ""
     property string discardConsentToken: ""
+    property bool discardConsentWithoutFiles: false
     property Item discardRestoreFocusItem: null
-    readonly property bool discardConsentCurrent: discardConsentOwner !== null && discardConsentOwner === downloads && discardConsentToken.length > 0 && downloads.discardConsentJobId === discardConsentJobId && downloads.discardConsentToken === discardConsentToken
+    readonly property bool discardConsentCurrent: opened && !lyricsDialog.visible && discardConsentOwner !== null && discardConsentOwner === downloads && discardConsentToken.length > 0 && downloads.discardConsentJobId === discardConsentJobId && downloads.discardConsentToken === discardConsentToken && discardConsentWithoutFiles === (downloads.discardConsentWithoutFiles === true)
     property var importConsentOwner: null
     property string importConsentJobId: ""
     property string importConsentToken: ""
@@ -80,12 +81,26 @@ Popup {
         if (archiveConfirmation.visible)
             archiveConfirmation.close();
     }
+    function canPromptDiscard() {
+        return opened && downloads !== null && !archiveConfirmation.visible && !discardConfirmation.visible && !exitConfirmation.visible && !importConfirmation.visible && !lyricsDialog.visible;
+    }
     function requestDiscardConsent(jobId, opener) {
-        if (downloads === null || archiveConfirmation.visible || discardConfirmation.visible || exitConfirmation.visible || importConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
+        if (!canPromptDiscard())
             return;
-        discardConsentOwner = downloads;
-        discardConsentJobId = downloads.discardConsentJobId;
-        discardConsentToken = downloads.discardConsentToken;
+        const owner = downloads;
+        if (owner.requestDiscardPartials(jobId) !== true || !owner)
+            return;
+        const token = owner.discardConsentToken;
+        const jobMatches = owner.discardConsentJobId === jobId;
+        if (owner !== downloads || !canPromptDiscard() || !jobMatches || !token) {
+            if (jobMatches && token)
+                owner.cancelDiscardPartialsConfirmation(jobId, token);
+            return;
+        }
+        discardConsentOwner = owner;
+        discardConsentJobId = jobId;
+        discardConsentWithoutFiles = owner.discardConsentWithoutFiles === true;
+        discardConsentToken = token;
         discardRestoreFocusItem = opener;
         if (discardConsentCurrent)
             discardConfirmation.open();
@@ -99,6 +114,7 @@ Popup {
         discardConsentOwner = null;
         discardConsentJobId = "";
         discardConsentToken = "";
+        discardConsentWithoutFiles = false;
         if (owner !== null && token.length > 0)
             owner.cancelDiscardPartialsConfirmation(jobId, token);
         if (discardConfirmation.visible)
@@ -1056,7 +1072,7 @@ Popup {
                 Layout.fillWidth: true
                 color: root.contract.textPrimaryColor
                 objectName: "download-discard-advice"
-                text: labels.discardPartialsAdvice
+                text: root.discardConsentWithoutFiles ? labels.discardWithoutFilesAdvice : labels.discardPartialsAdvice
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
             }

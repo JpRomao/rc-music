@@ -87,6 +87,12 @@ WindowsDownloadOwnershipStore::acknowledgeCleanedRecord(const DownloadOwnershipR
 }
 
 DownloadCheckpointSaveStatus
+WindowsDownloadOwnershipStore::markPlannedCleaned(const DownloadOwnershipRecord& expected,
+                                                  const std::function<bool()>& still_absent) {
+    return changeCleanedRecord(expected, still_absent, CleanedRecordChange::MarkPlannedCleaned);
+}
+
+DownloadCheckpointSaveStatus
 WindowsDownloadOwnershipStore::reclaimAtCapacity(const DownloadOwnershipRecord& expected,
                                                  const std::function<bool()>& still_reclaimable) {
     return changeCleanedRecord(expected, still_reclaimable, CleanedRecordChange::ReclaimAtCapacity);
@@ -97,7 +103,11 @@ WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord
                                                    const std::function<bool()>& still_verified,
                                                    const CleanedRecordChange change) {
     try {
-        if (!expected.cleanup_complete || !validDownloadOwnershipRecord(expected) || !still_verified)
+        const bool mark_planned = change == CleanedRecordChange::MarkPlannedCleaned;
+        const bool valid_transition =
+            mark_planned ? expected.stage == DownloadOwnershipStage::Planned && !expected.cleanup_complete
+                         : expected.cleanup_complete;
+        if (!valid_transition || !validDownloadOwnershipRecord(expected) || !still_verified)
             return DownloadCheckpointSaveStatus::Failed;
         const bool reclaim = change == CleanedRecordChange::ReclaimAtCapacity;
         WindowsPrivateDownloadDocument document(directory_, WindowsPrivateDownloadDocumentKind::Ownership,
@@ -117,6 +127,8 @@ WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord
                 return blocked;
             if (reclaim)
                 records.erase(found);
+            else if (mark_planned)
+                found->cleanup_complete = true;
             return WindowsPrivateDownloadDocumentMutation{.status = DownloadCheckpointSaveStatus::Saved,
                                                           .bytes = DownloadOwnershipJson::encode(*decoded.journal)};
         });

@@ -152,6 +152,10 @@ class Review final : public DownloadRecoveryReview {
     DownloadRecoveryReviewCommand startDiscardPartials(std::uint64_t operation_id, std::string_view job_id) override {
         return startAction(operation_id, job_id, DownloadRecoveryReviewAction::DiscardPartials);
     }
+    DownloadRecoveryReviewCommand startConfirmPlannedWithoutFiles(std::uint64_t operation_id,
+                                                                  std::string_view job_id) override {
+        return startAction(operation_id, job_id, DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles);
+    }
     bool supportsDiscardPartials() const override { return discard_supported; }
     DownloadRecoveryReviewCommand startAction(std::uint64_t operation_id, std::string_view job_id,
                                               DownloadRecoveryReviewAction action) {
@@ -1114,6 +1118,7 @@ class DownloadApplicationBindingTests final : public QObject {
         QTest::addColumn<int>("assessment");
         QTest::newRow("owned partials") << int(DownloadRecoveryReviewOutcome::OwnedPartial);
         QTest::newRow("cleanup candidate") << int(DownloadRecoveryReviewOutcome::CleanupCandidate);
+        QTest::newRow("planned without files") << int(DownloadRecoveryReviewOutcome::PlannedWithoutFiles);
     }
     void partialDiscardRequiresExplicitCurrentOneShotConsentAndDoesNotChangePlayback() {
         QFETCH(int, assessment);
@@ -1128,6 +1133,8 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
         QVERIFY(h.binding.requestDiscardPartials(QStringLiteral("old-1")));
         const auto token = h.binding.discardConsentToken();
+        const bool without_files = assessment == int(DownloadRecoveryReviewOutcome::PlannedWithoutFiles);
+        QCOMPARE(h.binding.property("discardConsentWithoutFiles").toBool(), without_files);
         QCOMPARE(h.binding.discardConsentJobId(), QStringLiteral("old-1"));
         QVERIFY(!token.isEmpty());
         QCOMPARE(h.review.requests.size(), std::size_t{1});
@@ -1137,7 +1144,8 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(h.binding.discardConsentToken().isEmpty());
         QVERIFY(!h.binding.confirmDiscardPartials(QStringLiteral("old-1"), token));
         QCOMPARE(h.review.requests.size(), std::size_t{2});
-        QCOMPARE(h.review.actions.back(), DownloadRecoveryReviewAction::DiscardPartials);
+        QCOMPARE(h.review.actions.back(), without_files ? DownloadRecoveryReviewAction::ConfirmPlannedWithoutFiles
+                                                        : DownloadRecoveryReviewAction::DiscardPartials);
         QVERIFY(h.review.requests.back().first > h.review.requests.front().first);
         QVERIFY(h.reviewValue(DownloadJobsModel::ReviewBusyRole).toBool());
         QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
