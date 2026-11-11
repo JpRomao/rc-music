@@ -842,6 +842,8 @@ Em R1.9, a janela da Completa reconfere a seleção no clique de download e envi
 
 A navegação por Tab e Shift+Tab da Completa agora mantém a direção entre a toolbar, a página e o painel de mídia. Os testes offscreen passaram com a superfície e o painel de produção. A confirmação no WebView2 real permanece pendente. [Contrato de foco e checks](embedded-browser.md#foco-entre-a-página-e-os-controles)
 
+Os setups privados com a receita de `cea27cf` incluem os avisos de Qt Declarative e SVG nas duas edições e a correção de foco na Completa. O áudio offscreen, a leitura dos setups e a validação offline dos SBOMs passaram. [Setups e evidências](windows-installer.md#setups-privados-com-a-receita-de-cea27cf)
+
 Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer por trabalho. O conversor precisa receber a credencial do owner e o perfil só é retirado após a drenagem. A opção permanece desligada no perfil instalável enquanto a qualificação física estiver pendente. [Composição e validação do worker](download-conversion.md#perfil-appcontainer-por-trabalho)
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)

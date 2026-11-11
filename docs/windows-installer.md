@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados mais recentes são os de `ba112a6`, com a mesma Qt Network qualificada no player e no worker de downloads. [Setups privados de ba112a6](#setups-privados-de-ba112a6)
+Os setups privados mais recentes usam a receita de `cea27cf` e incluem os novos avisos de Qt Declarative e Qt SVG. A Completa experimental também inclui a correção de foco por teclado no navegador. [Setups privados com a receita de cea27cf](#setups-privados-com-a-receita-de-cea27cf)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,19 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setups privados com a receita de cea27cf
+
+| Edição | Revisão do runtime | Bytes | SHA-256 do setup | SBOM CycloneDX 1.6 |
+| --- | --- | ---: | --- | --- |
+| Lite | `937ca73` | 90.131.458 | `a9c6e7fda15d3b93194a7fed54972a18ac89f38c45ba3a683daffbcaa0623449` | [Lite](delivery/rc-music-937ca73-lite.cdx.json) |
+| Completa experimental | `cea27cf` | 90.202.396 | `52b4e0ca4fdbad7ba705a3d3466a721abd2b18c03a3b6fe4080ec072481d2a55` | [Completa experimental](delivery/rc-music-cea27cf-complete-experimental.cdx.json) |
+
+A receita reaproveitou o runtime Lite já conferido e montou a Completa com o executável Release corrigido. Os dois runtimes incluem os cinco novos arquivos de avisos e preservam a DLL Qt Network qualificada no player e no worker. Cada edição passou em 17 cenários de áudio e 19 casos Qt offscreen. As matrizes v2 vinculam sete extensões ao manifesto e ao smoke da edição correspondente. [Avisos Qt](desktop-build.md#avisos-de-qt-declarative-e-qt-svg) · [Correção de foco](embedded-browser.md#foco-entre-a-página-e-os-controles)
+
+A inspeção estática conferiu as cinco combinações de opcionais, 665 e 668 membros no arquivo NSIS e o SHA-256 de 79 e 82 membros extraídos, respectivamente. Os três componentes opcionais começam desmarcados. Os SBOMs passaram no esquema offline CycloneDX 1.6 e inventariam até 662 e 665 arquivos instaláveis, conforme a seleção. A cobertura transitiva continua em revisão.
+
+Os setups privados e sem assinatura ficam em `out/product/windows-cea27cf/`. As evidências estáticas e os recibos dos SBOMs ficam em `out/product/windows-cea27cf-verify/` e `out/product/windows-cea27cf-sbom/`. Instalação, atualização, remoção e foco no WebView2 real continuam pendentes.
 
 ## Setups privados de ba112a6
 
