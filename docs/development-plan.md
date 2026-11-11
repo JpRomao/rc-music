@@ -830,6 +830,8 @@ As extensões reconferem a aba e a janela focada antes de enviar. A principal re
 
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. **Concluir revisão** libera o pedido para arquivamento na sessão atual. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
+Em M3.9, o menu da fila permite adicionar uma letra a uma faixa disponível mantendo a reprodução atual. A gravação revalida a ocorrência e seu caminho e usa o catálogo assíncrono compartilhado. [Letras e versões](lyrics-variants.md#usar-as-versões)
+
 ### Checkpoint anterior — extensões opcionais no instalador
 
 O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual. Os [setups reais de `cf34cd8`](windows-installer.md#setups-com-extensões-preparados-em-2026-11-05), Lite/Completa, foram compilados/conferidos sem executar, preservando os runtimes de `7601247`. O fechamento tem 165 casos estáticos/de compilação; o ensaio nativo preparado exige autorização própria. Instalação, Registro, Brave, aquisição pública e demais gates continuam pendentes; não retoma AppContainer ou benchmarks.

@@ -1,10 +1,13 @@
 #include "LyricsBinding.hpp"
 #include "adapters/QtLyricsService.hpp"
+#include "boundary/FilesystemPath.hpp"
 #include "m0/domain/AcquiredLyrics.hpp"
+#include "m0/domain/LocalAudioFilePolicy.hpp"
 #include "m0/ports/LyricsVariantsStore.hpp"
 
 #include <QDir>
 #include <QFutureWatcher>
+#include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
@@ -70,8 +73,40 @@ bool boundedDrafts(const LyricsVariants& values) {
     }
     return true;
 }
+bool queuedTarget(const QString& value) {
+    if (value.size() > 32768 || !isAbsoluteFilesystemSourcePath(value) || !QDir::isAbsolutePath(value) ||
+        QString::fromUtf8(value.toUtf8()) != value)
+        return false;
+    const auto path = nativePath(value);
+    return path.is_absolute() && LocalAudioFilePolicy::isCandidate(path);
+}
+std::optional<LyricsVariant> makeVariant(const std::uint64_t id, const QString& name, const QString& language,
+                                         const QString& script, const QString& source, const QString& kind,
+                                         const QString& content, const bool generated) {
+    if (name.size() > static_cast<qsizetype>(maximum_lyrics_variant_name_bytes) ||
+        language.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
+        script.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
+        source.size() > static_cast<qsizetype>(maximum_lyrics_variant_source_bytes) ||
+        content.size() > static_cast<qsizetype>(lyrics_max_input_bytes) || (kind != "original" && kind != "romanized"))
+        return {};
+    const auto label = utf8(name, true), lang = utf8(language, true), alphabet = utf8(script, true),
+               origin = utf8(source, true), body = utf8(content, false);
+    if (!label || !lang || !alphabet || !origin || !body)
+        return {};
+    return LyricsVariant{id,
+                         *label,
+                         *lang,
+                         *alphabet,
+                         *origin,
+                         *body,
+                         kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
+                         generated};
+}
 } // namespace
 struct LyricsBinding::VariantsState final {
+    struct QueueTarget final {
+        QString occurrence, path, token;
+    };
     LyricsBinding& owner;
     std::shared_ptr<LyricsVariantsStore> store;
     LyricsVariants library;
@@ -83,6 +118,9 @@ struct LyricsBinding::VariantsState final {
     bool busy{}, loading{}, ready{};
     AcquiredLyricsSaveSnapshot acquired;
     std::shared_ptr<const LyricsVariants> acquired_drafts;
+    std::function<QString(const QString&)> queue_source;
+    std::optional<QueueTarget> queue_target;
+    std::string queued_write_ticket;
     bool acquired_pending{}, acquired_loading{}, keep_distinct{};
     VariantsState(LyricsBinding& binding, std::shared_ptr<LyricsVariantsStore> source)
         : owner(binding), store(std::move(source)) {
@@ -90,7 +128,18 @@ struct LyricsBinding::VariantsState final {
     }
     bool allowed() const { return !owner.shutting_down_ && !owner.exit_preparing_; }
     bool hasPending() const { return pending.has_value() || acquired_pending; }
-    bool editable() const { return store && allowed() && ready && !busy && !hasPending(); }
+    bool canAppend() const { return store && allowed() && !busy && !hasPending(); }
+    bool editable() const { return ready && canAppend(); }
+    bool append(std::string ticket, QString target, LyricsVariants drafts, const bool keep_distinct_versions) {
+        auto retained = std::make_shared<const LyricsVariants>(std::move(drafts));
+        target = owned(target);
+        acquired = {std::move(ticket), target, AcquiredLyricsSaveState::Loading};
+        acquired_drafts = std::move(retained);
+        acquired_pending = true;
+        keep_distinct = keep_distinct_versions;
+        pending_path = std::move(target);
+        return loadAcquired();
+    }
     auto find(const std::uint64_t id) const {
         return std::find_if(library.begin(), library.end(), [id](const auto& item) { return item.id == id; });
     }
@@ -278,7 +327,7 @@ struct LyricsBinding::VariantsState final {
                 acquired_drafts.reset();
                 pending_path.clear();
                 notice = LyricsBinding::tr("Estas versões já estavam guardadas.");
-                if (!same_track && allowed() && !owner.path_.isEmpty())
+                if (!same_track && !ready && allowed() && !owner.path_.isEmpty())
                     static_cast<void>(load());
             } else if (result.merged.status == AcquiredLyricsMergeStatus::Added) {
                 pending = std::move(result.merged.variants);
@@ -329,8 +378,8 @@ struct LyricsBinding::VariantsState final {
                     resetAllocator();
                 else
                     next_id = next_after_save;
-                notice = LyricsBinding::tr("Versão da letra salva.");
             }
+            notice = LyricsBinding::tr("Versão da letra salva.");
             pending.reset();
             pending_path.clear();
             if (acquired_pending) {
@@ -349,7 +398,7 @@ struct LyricsBinding::VariantsState final {
                          : LyricsBinding::tr("Não foi possível confirmar o salvamento. Tente salvar novamente ou "
                                              "recarregue as versões do disco.");
         }
-        if (!same_track && allowed() && !hasPending() && !owner.path_.isEmpty())
+        if (!same_track && !ready && allowed() && !hasPending() && !owner.path_.isEmpty())
             static_cast<void>(load());
         emit owner.changed();
     }
@@ -365,19 +414,67 @@ LyricsBinding::LyricsBinding(QtLyricsService& service, std::shared_ptr<LyricsVar
     });
 }
 LyricsBinding::~LyricsBinding() = default;
+void LyricsBinding::setQueueLyricsSource(std::function<QString(const QString&)> source) {
+    variants_->queue_target.reset();
+    variants_->queue_source = std::move(source);
+    emit changed();
+}
+bool LyricsBinding::queueVariantAvailable() const { return variants_->canAppend() && bool(variants_->queue_source); }
+QString LyricsBinding::queuedVariantStatusText() const {
+    if (variants_->queued_write_ticket.empty() || variants_->queued_write_ticket != variants_->acquired.ticket)
+        return {};
+    switch (variants_->acquired.state) {
+    case AcquiredLyricsSaveState::Loading:
+        return tr("Preparando versões da letra para guardar…");
+    case AcquiredLyricsSaveState::Saving:
+        return tr("Salvando versão da letra…");
+    case AcquiredLyricsSaveState::Saved:
+        return tr("Versão da letra salva.");
+    case AcquiredLyricsSaveState::Unchanged:
+        return tr("Estas versões já estavam guardadas.");
+    default:
+        return variants_->hasPending() ? variantsStatusText() : QString{};
+    }
+}
+QString LyricsBinding::prepareQueuedVariant(const QString& occurrence_id) {
+    if (!queueVariantAvailable() || occurrence_id.isEmpty())
+        return {};
+    const auto path = variants_->queue_source(occurrence_id);
+    if (!queuedTarget(path))
+        return {};
+    auto token = QStringLiteral("queue-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    variants_->queue_target = VariantsState::QueueTarget{owned(occurrence_id), owned(path), token};
+    return token;
+}
+bool LyricsBinding::addQueuedVariant(const QString& token, const QString& name, const QString& language,
+                                     const QString& script, const QString& source, const QString& kind,
+                                     const QString& content, const bool generated) {
+    const auto& target = variants_->queue_target;
+    if (!queueVariantAvailable() || !target || target->token != token)
+        return false;
+    if (variants_->queue_source(target->occurrence) != target->path) {
+        variants_->queue_target.reset();
+        return false;
+    }
+    const auto draft = makeVariant(1, name, language, script, source, kind, content, generated);
+    if (!draft || !isValidLyricsVariants({*draft}))
+        return variants_->invalid();
+    // Consume before the shared writer emits its first change. Retrying an
+    // admitted write uses the original path and candidate, even after removal.
+    auto captured = std::move(*variants_->queue_target);
+    variants_->queue_target.reset();
+    variants_->queued_write_ticket = captured.token.toStdString();
+    return variants_->append(variants_->queued_write_ticket, std::move(captured.path), {*draft}, true);
+}
+void LyricsBinding::cancelQueuedVariant(const QString& token) {
+    if (variants_->queue_target && variants_->queue_target->token == token)
+        variants_->queue_target.reset();
+}
 bool LyricsBinding::appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
                                          bool keep_distinct_versions) {
-    if (!variants_->allowed() || !variants_->store || variants_->busy || variants_->hasPending() ||
-        !acquiredTicket(ticket) || !acquiredTarget(target) || !boundedDrafts(drafts))
+    if (!variants_->canAppend() || !acquiredTicket(ticket) || !acquiredTarget(target) || !boundedDrafts(drafts))
         return false;
-    auto retained = std::make_shared<const LyricsVariants>(std::move(drafts));
-    target = owned(target);
-    variants_->acquired = {std::move(ticket), target, AcquiredLyricsSaveState::Loading};
-    variants_->acquired_drafts = std::move(retained);
-    variants_->acquired_pending = true;
-    variants_->keep_distinct = keep_distinct_versions;
-    variants_->pending_path = std::move(target);
-    return variants_->loadAcquired();
+    return variants_->append(std::move(ticket), std::move(target), std::move(drafts), keep_distinct_versions);
 }
 AcquiredLyricsSaveSnapshot LyricsBinding::acquiredLyricsSave() const { return variants_->acquired; }
 QVariantList LyricsBinding::variants() const {
@@ -398,7 +495,7 @@ QString LyricsBinding::selectedVariantId() const {
 bool LyricsBinding::variantsBusy() const { return variants_->busy; }
 bool LyricsBinding::variantsReady() const { return variants_->ready; }
 QString LyricsBinding::variantsStatusText() const {
-    if (variants_->hasPending() && variants_->pending_path != path_)
+    if (!variants_->busy && variants_->hasPending() && variants_->pending_path != path_)
         return tr(
             "Há um salvamento pendente de outra faixa. Tente salvar novamente ou recarregue as versões do disco.");
     return variants_->notice;
@@ -468,20 +565,12 @@ bool LyricsBinding::addVariant(const QString& name, const QString& language, con
                                const bool generated) {
     if (!variants_->editable())
         return false;
-    if (name.size() > static_cast<qsizetype>(maximum_lyrics_variant_name_bytes) ||
-        language.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
-        script.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
-        source.size() > static_cast<qsizetype>(maximum_lyrics_variant_source_bytes) ||
-        content.size() > static_cast<qsizetype>(lyrics_max_input_bytes))
-        return variants_->invalid();
-    const auto label = utf8(name, true), lang = utf8(language, true), alphabet = utf8(script, true),
-               origin = utf8(source, true), body = utf8(content, false);
-    if (!label || !lang || !alphabet || !origin || !body || (kind != "original" && kind != "romanized"))
+    const auto id = variants_->allocateId();
+    auto draft = makeVariant(id, name, language, script, source, kind, content, generated);
+    if (!draft)
         return variants_->invalid();
     auto candidate = variants_->library;
-    const auto id = variants_->allocateId();
-    candidate.push_back({id, *label, *lang, *alphabet, *origin, *body,
-                         kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized, generated});
+    candidate.push_back(std::move(*draft));
     if (!isValidLyricsVariants(candidate))
         return variants_->invalid();
     variants_->pending = std::move(candidate);
@@ -571,12 +660,14 @@ void LyricsBinding::setPosition(const qint64 position) {
 }
 void LyricsBinding::beginShutdown() {
     shutting_down_ = true;
+    variants_->queue_target.reset();
     service_.beginShutdown();
 }
 bool LyricsBinding::stopped() const { return service_.stopped() && !variants_->busy && !variants_->hasPending(); }
 bool LyricsBinding::prepareExit() {
     if (!exit_preparing_) {
         exit_preparing_ = true;
+        variants_->queue_target.reset();
         service_.cancel();
         // Force the presenter through its observable preparation phase even
         // when already drained; a synchronous save refusal can then rearm us.

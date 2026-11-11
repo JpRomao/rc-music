@@ -1875,6 +1875,14 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
     return appendPublishedAudioImpl(path, committed, nullptr);
 }
 LocalFileQueueSnapshot PlayerPresenter::playlistQueueSnapshot() const { return local_queue_.snapshot(); }
+QString PlayerPresenter::queuedLyricsSource(const QString& occurrence_id) const {
+    if (uses_frozen_fixture_ || exiting_)
+        return {};
+    const auto index = localOccurrenceIndex(occurrence_id);
+    if (!index || !local_queue_.items()[*index].available)
+        return {};
+    return displayPath(local_queue_.items()[*index].source_path);
+}
 bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> paths) {
     if (QThread::currentThread() != thread() || download_import_call_in_progress_)
         return false;

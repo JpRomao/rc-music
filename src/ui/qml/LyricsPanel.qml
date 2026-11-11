@@ -11,6 +11,12 @@ Item {
     property string trackIdentity: ""
     property string queryTrackIdentity: ""
     readonly property bool variantsAvailable: lyrics !== null && typeof lyrics.variants !== "undefined"
+    property bool queuedSaveFeedback: false
+    readonly property bool variantsPending: variantsAvailable && lyrics.variantsHasPendingChange === true
+    readonly property bool reviewSaveAvailable: variantsPending && !lyrics.variantsBusy
+    readonly property string queuedFeedbackText: queuedSaveFeedback && variantsAvailable && typeof lyrics.queuedVariantStatusText === "string" ? lyrics.queuedVariantStatusText : ""
+    readonly property bool queueVariantActionSupported: variantsAvailable && typeof lyrics.queueVariantAvailable === "boolean"
+    readonly property bool queueVariantActionAvailable: queueVariantActionSupported && enabled && lyrics.queueVariantAvailable
     readonly property bool queryOpen: queryDialog.visible || variantsPanel.visible || variantsPanel.childDialogOpen
     readonly property bool synchronizedLyrics: lyrics !== null && lyrics.hasSyncedLyrics
     readonly property bool plainLyrics: lyrics !== null && !lyrics.hasSyncedLyrics && lyrics.plainText.length > 0
@@ -18,14 +24,23 @@ Item {
     implicitHeight: 96
     Layout.minimumHeight: 96
     Layout.maximumHeight: 96
+    signal queuedVariantFormClosed
+
+    function openQueuedVariant(occurrenceId, title) {
+        if (queueVariantActionAvailable && !queryOpen)
+            variantsPanel.openQueuedForm(occurrenceId, title);
+    }
 
     onTrackIdentityChanged: {
+        if (!variantsPending)
+            queuedSaveFeedback = false;
         if (queryDialog)
             queryDialog.close();
         if (variantsPanel)
             variantsPanel.close();
     }
     onLyricsChanged: {
+        queuedSaveFeedback = false;
         if (queryDialog)
             queryDialog.close();
         if (variantsPanel)
@@ -55,7 +70,13 @@ Item {
             Text {
                 objectName: "lyrics-status"
                 Layout.fillWidth: true
-                text: root.lyrics && root.lyrics.statusText.length > 0 ? root.lyrics.statusText : qsTr("Letra")
+                text: {
+                    if (root.queuedFeedbackText.length > 0)
+                        return root.queuedFeedbackText;
+                    if (root.variantsPending && root.lyrics.variantsStatusText.length > 0)
+                        return root.lyrics.variantsStatusText;
+                    return root.lyrics && root.lyrics.statusText.length > 0 ? root.lyrics.statusText : qsTr("Letra");
+                }
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.contract.textSecondaryColor
@@ -66,14 +87,16 @@ Item {
                 id: versionsButton
                 objectName: "lyrics-versions"
                 contract: root.contract
-                text: qsTr("Versões")
-                accessibleName: qsTr("Versões da letra")
+                text: root.reviewSaveAvailable ? qsTr("Revisar salvamento") : qsTr("Versões")
+                accessibleName: root.reviewSaveAvailable ? qsTr("Revisar salvamento da letra") : qsTr("Versões da letra")
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 visible: root.variantsAvailable
                 enabled: visible && root.enabled
                 onClicked: {
                     if (!enabled || !root.visible)
                         return;
+                    if (!root.reviewSaveAvailable)
+                        root.queuedSaveFeedback = false;
                     queryDialog.close();
                     variantsPanel.open();
                 }
@@ -89,6 +112,7 @@ Item {
                 onClicked: {
                     if (!searchButton.enabled)
                         return;
+                    root.queuedSaveFeedback = false;
                     variantsPanel.close();
                     root.queryTrackIdentity = root.trackIdentity;
                     titleField.text = root.lyrics ? root.lyrics.title : "";
@@ -162,7 +186,15 @@ Item {
         lyrics: root.variantsAvailable ? root.lyrics : null
         trackIdentity: root.trackIdentity
         enabled: root.enabled
+        queuedFeedbackText: root.queuedFeedbackText
+        onQueuedFormClosed: submitted => {
+            if (submitted)
+                root.queuedSaveFeedback = true;
+            root.queuedVariantFormClosed();
+        }
         onClosed: {
+            if (!root.variantsPending)
+                root.queuedSaveFeedback = false;
             if (root.visible && root.enabled && versionsButton.visible)
                 versionsButton.forceActiveFocus(Qt.TabFocusReason);
         }

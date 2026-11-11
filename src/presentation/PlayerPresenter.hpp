@@ -406,6 +406,7 @@ class PlayerPresenter final : public QObject {
     // without selection, decoding, autoplay or a download receipt.
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] QString queuedLyricsSource(const QString& occurrence_id) const;
     [[nodiscard]] bool downloadImportRetirementPending() const noexcept;
     [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);

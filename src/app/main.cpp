@@ -768,6 +768,10 @@ int main(int argc, char* argv[]) {
         });
         QObject::connect(&application, &QCoreApplication::aboutToQuit, playlists_binding.get(),
                          &music_player::m0::PlaylistsBinding::beginShutdown);
+        lyrics_binding.setQueueLyricsSource(
+            [guarded_presenter = QPointer<PlayerPresenter>{&presenter}](const QString& occurrence_id) {
+                return guarded_presenter ? guarded_presenter->queuedLyricsSource(occurrence_id) : QString{};
+            });
         const auto update_lyrics = [&] {
             if (presenter.exiting()) {
                 static_cast<void>(lyrics_binding.prepareExit());

@@ -471,11 +471,15 @@ ApplicationWindow {
         LyricsPanel {
             id: lyricsPanel
             Layout.fillWidth: true
-            visible: window.lyrics !== null && (window.presenter.hasCurrentTrack || (typeof window.lyrics.variantsHasPendingChange !== "undefined" && window.lyrics.variantsHasPendingChange))
+            visible: window.lyrics !== null && (window.presenter.hasCurrentTrack || queuedSaveFeedback || (typeof window.lyrics.variantsHasPendingChange !== "undefined" && window.lyrics.variantsHasPendingChange))
             contract: window.uiContract
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId
             enabled: !window.presenter.exiting
+            onQueuedVariantFormClosed: Qt.callLater(function () {
+                if (queuePanel.visible && window.active && window.windowShortcutsEnabled)
+                    queuePanel.listView.forceActiveFocus(Qt.TabFocusReason);
+            })
         }
         TransportBar {
             id: transport
@@ -498,9 +502,12 @@ ApplicationWindow {
         overlayMode: window.width < 900
         contract: window.uiContract
         presenter: window.presenter
+        lyricVariantActionSupported: lyricsPanel.queueVariantActionSupported
+        lyricVariantActionAvailable: lyricsPanel.queueVariantActionAvailable
         locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
         onCloseRequested: window.setQueueOpen(false)
         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
+        onAddLyricVariantRequested: (occurrenceId, title) => lyricsPanel.openQueuedVariant(occurrenceId, title)
     }
     SourceImportStatus {
         id: sourceImportStatus

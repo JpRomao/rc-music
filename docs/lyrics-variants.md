@@ -10,6 +10,10 @@ Abra **Versões** junto à letra. Adicione texto ou LRC com nome, idioma, escrit
 
 Adicionar outra versão depois mantém as anteriores. Excluir remove somente o texto escolhido, após confirmação, e conserva áudio, fila, playlists e `.lrc` irmão. O salvamento é explícito; abrir o player ou buscar uma letra não cria cache persistente automaticamente.
 
+Para acrescentar uma versão sem trocar o áudio em reprodução, abra o menu de uma faixa disponível na **Fila** e escolha **Adicionar versão da letra**. Confira o nome da faixa no formulário, cole o texto ou LRC e clique em **Salvar**. O formulário mantém o alvo se a reprodução avançar. Se o item for removido ou realocado antes de salvar, abra o formulário novamente para escolher o destino.
+
+O aviso acima da barra de progresso acompanha a gravação. Em caso de falha, **Revisar salvamento** abre as opções de recuperação. Uma gravação já iniciada continua vinculada ao arquivo escolhido, inclusive se a faixa sair da fila. A edição pela fila reaproveita o texto idêntico já guardado para a mesma forma, idioma e escrita.
+
 LRC conserva seus tempos quando aceito pelo parser; texto comum permanece sem sincronização. Não há geração automática de tempos, romanização ou tradução. Idioma, escrita e origem são informados pelo usuário; a indicação de conteúdo gerado permite identificar texto produzido externamente.
 
 ### Resultados da busca no player
@@ -60,3 +64,7 @@ Red observado no binding por ausência da seleção/revisão e no painel Quick c
 Os casos novos usam resposta de rede falsa e armazenamento temporário. Conferem uma única busca, prévia e salvamento dos dois conteúdos, tempos preservados, seleção salva, áudio sentinela e rejeição de formulários de outra escolha, busca ou faixa. Recibos em `out/product/test-runs/online-lyrics-variants-20261110/`.
 
 A chegada de tags ou duração da mesma faixa preserva a busca já confirmada. A próxima busca usa os novos metadados. Trocar de faixa revoga a resposta anterior. A regressão reproduziu o cancelamento indevido antes da correção e passou com resposta de rede falsa. O serviço e o lookup de downloads passaram **2/2 CTest, 57 casos Qt**. Recibos em `out/product/test-runs/download-lyrics-paste-20261111/`.
+
+### Edição pela fila — 2026-11-11
+
+Os testes reproduziram a falta da ação no menu e a perda do aviso durante a troca de faixa. A validação final passou **3/3 CTest**, com **58 casos Qt** dos bindings e **374 casos Qt Quick**, além do build Release e `all_qmllint`. Os casos usam fila e armazenamento de teste para conferir um caminho FLAC Unicode, revalidação do destino, falha e retry da gravação, preservação da letra atual e foco por teclado. Recibos em `out/product/test-runs/queued-lyrics-20261111/`. A aceitação instalada permanece pendente.

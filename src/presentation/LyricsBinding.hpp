@@ -6,6 +6,7 @@
 #include <QString>
 #include <QVariantList>
 
+#include <functional>
 #include <memory>
 
 namespace music_player::m0 {
@@ -52,6 +53,8 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(bool variantsCanEdit READ variantsCanEdit NOTIFY changed)
     Q_PROPERTY(bool variantsCanRetrySave READ variantsCanRetrySave NOTIFY changed)
     Q_PROPERTY(bool variantsHasPendingChange READ variantsHasPendingChange NOTIFY changed)
+    Q_PROPERTY(bool queueVariantAvailable READ queueVariantAvailable NOTIFY changed)
+    Q_PROPERTY(QString queuedVariantStatusText READ queuedVariantStatusText NOTIFY changed)
     Q_PROPERTY(bool canSaveCurrentLyrics READ canSaveCurrentLyrics NOTIFY changed)
     Q_PROPERTY(QVariantList onlineLyricsCandidates READ onlineLyricsCandidates NOTIFY onlineLyricsCandidatesChanged)
     Q_PROPERTY(int selectedOnlineLyricsCandidate READ selectedOnlineLyricsCandidate NOTIFY changed)
@@ -64,6 +67,8 @@ class LyricsBinding final : public QObject {
     void setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
                   qint64 duration_ms);
     void setPosition(qint64 confirmed_position_ms);
+    // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
+    void setQueueLyricsSource(std::function<QString(const QString&)> source);
     // Trusted publication/consent owner only, never a QML/browser path. Uses
     // the same serialized writer as manual edits and never changes playback.
     [[nodiscard]] bool appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
@@ -90,6 +95,8 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool variantsCanEdit() const;
     [[nodiscard]] bool variantsCanRetrySave() const;
     [[nodiscard]] bool variantsHasPendingChange() const;
+    [[nodiscard]] bool queueVariantAvailable() const;
+    [[nodiscard]] QString queuedVariantStatusText() const;
     [[nodiscard]] bool canSaveCurrentLyrics() const;
     [[nodiscard]] QVariantList onlineLyricsCandidates() const;
     [[nodiscard]] int selectedOnlineLyricsCandidate() const;
@@ -99,6 +106,11 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE bool selectOnlineLyricsCandidate(int index);
     Q_INVOKABLE bool addVariant(const QString& name, const QString& language, const QString& script,
                                 const QString& source, const QString& kind, const QString& content, bool generated);
+    Q_INVOKABLE QString prepareQueuedVariant(const QString& occurrence_id);
+    Q_INVOKABLE bool addQueuedVariant(const QString& token, const QString& name, const QString& language,
+                                      const QString& script, const QString& source, const QString& kind,
+                                      const QString& content, bool generated);
+    Q_INVOKABLE void cancelQueuedVariant(const QString& token);
     Q_INVOKABLE bool saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
                                        const QString& kind, const QString& expected_revision);
     Q_INVOKABLE bool removeVariant(const QString& id);

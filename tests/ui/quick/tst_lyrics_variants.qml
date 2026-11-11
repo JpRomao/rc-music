@@ -36,6 +36,9 @@ TestCase {
         property bool variantsCanRetrySave: false
         property bool variantsHasPendingChange: false
         property bool canSaveCurrentLyrics: true
+        property bool queueVariantAvailable: true
+        property string queuedToken: ""
+        property string queuedVariantStatusText: ""
         property var calls: []
         function record(action, args) {
             calls = calls.concat([
@@ -64,6 +67,26 @@ TestCase {
         }
         function addVariant(name, language, script, source, kind, content, generated) {
             return record("add", [name, language, script, source, kind, content, generated]);
+        }
+        function prepareQueuedVariant(occurrenceId) {
+            record("prepareQueued", [occurrenceId]);
+            queuedToken = "opaque-variant-token";
+            return queuedToken;
+        }
+        function addQueuedVariant(token, name, language, script, source, kind, content, generated) {
+            if (token.length === 0 || token !== queuedToken)
+                return false;
+            queuedToken = "";
+            variantsHasPendingChange = true;
+            variantsBusy = true;
+            queuedVariantStatusText = "Salvando versão da letra…";
+            return record("addQueued", [token, name, language, script, source, kind, content, generated]);
+        }
+        function cancelQueuedVariant(token) {
+            if (token.length > 0 && token === queuedToken) {
+                queuedToken = "";
+                record("cancelQueued", [token]);
+            }
         }
         function saveCurrentLyrics(name, language, script, kind, revision) {
             return record("saveCurrent", [name, language, script, kind, selectedOnlineLyricsCandidate, revision]);
@@ -99,6 +122,10 @@ TestCase {
         backend.variantsCanEdit = true;
         backend.variantsCanRetrySave = false;
         backend.variantsHasPendingChange = false;
+        backend.variantsStatusText = "Versões guardadas";
+        backend.queueVariantAvailable = true;
+        backend.queuedToken = "";
+        backend.queuedVariantStatusText = "";
         backend.canSaveCurrentLyrics = true;
         backend.selectedVariantId = "";
         backend.variants = [
@@ -175,6 +202,46 @@ TestCase {
         tryCompare(findChild(shell, "lyrics-variant-form"), "visible", true);
         verify(waitForPolish(shell));
     }
+    function openQueueVariantMenu() {
+        driver.enqueueLocalSelection(["C:/Music/Segunda.flac", "C:/Music/日本語.flac"]);
+        verify(presenter.addAudio());
+        const list = findChild(shell, "queue-list");
+        tryCompare(list, "count", 3);
+        tryCompare(presenter, "selectingAudioFiles", false);
+        shell.requestActivate();
+        tryCompare(shell, "active", true);
+        shell.setQueueOpen(true);
+        tryCompare(list, "visible", true);
+        wait(0);
+        list.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(list, "activeFocus", true);
+        list.currentIndex = 2;
+        list.positionViewAtIndex(2, ListView.Contain);
+        list.forceLayout();
+        const target = list.currentItem.occurrenceId;
+        const title = list.currentItem.title;
+        list.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Menu);
+        tryCompare(findChild(shell, "queue-row-menu"), "opened", true);
+        const action = findChild(shell, "queue-menu-add-lyrics-variant");
+        verify(action && action.visible, "Queue row menu must offer a lyric variant");
+        return {
+            list: list,
+            target: target,
+            title: title,
+            action: action
+        };
+    }
+    function activateQueuedVariantAction(menu) {
+        verify(menu.action.enabled);
+        menu.action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const form = findChild(shell, "lyrics-variant-form");
+        tryCompare(form, "visible", true);
+        tryCompare(findChild(shell, "lyrics-variant-name-input"), "activeFocus", true);
+        compare(lastCall("prepareQueued").args[0], menu.target);
+        return form;
+    }
     function showOnlineCandidates() {
         backend.onlineLyricsCandidates = [
             {
@@ -243,6 +310,82 @@ TestCase {
         const call = lastCall("add");
         compare(call.args.join("|"), "Romanizada 日本|ja|Latn|Local source|romanized|[00:01.000]<b>Romaji</b>|true");
         compare(backend.variants.length, 2); // UI cannot publish an unacknowledged save.
+    }
+    function test_queueVariantKeepsItsTargetWhilePlaybackAdvances() {
+        const menu = openQueueVariantMenu();
+        const form = activateQueuedVariantAction(menu);
+        const target = findChild(shell, "lyrics-variant-queued-target");
+        verify(target && target.visible);
+        compare(target.text, menu.title);
+        compare(target.textFormat, Text.PlainText);
+        compare(shell.windowShortcutsEnabled, false);
+        const name = findChild(shell, "lyrics-variant-name-input");
+        const submit = findChild(shell, "lyrics-variant-submit");
+        name.text = "Romaji 日本";
+        findChild(shell, "lyrics-variant-content-input").text = "[00:01.000]<b>Romaji</b>";
+        backend.queueVariantAvailable = false;
+        compare(name.enabled, true);
+        compare(submit.enabled, false);
+        const initial = presenter.currentOccurrenceId;
+        driver.publishLocalSourceUnavailable();
+        tryVerify(function () {
+            return presenter.currentOccurrenceId !== initial && presenter.currentOccurrenceId !== menu.target;
+        });
+        driver.publishLocalReady();
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        const playing = presenter.currentOccurrenceId;
+        const loads = driver.localLoadCount();
+        const plays = driver.localPlayCount();
+        compare(form.visible, true);
+        compare(target.text, menu.title);
+        compare(name.text, "Romaji 日本");
+        backend.queueVariantAvailable = true;
+        findChild(shell, "lyrics-variant-language-input").text = "ja";
+        findChild(shell, "lyrics-variant-script-input").text = "Latn";
+        findChild(shell, "lyrics-variant-source-input").text = "Origem local";
+        findChild(shell, "lyrics-variant-kind-input").currentIndex = 1;
+        findChild(shell, "lyrics-variant-generated-input").checked = true;
+        mouseClick(submit);
+        tryCompare(form, "visible", false);
+        compare(lastCall("addQueued").args.join("|"), "opaque-variant-token|Romaji 日本|ja|Latn|Origem local|romanized|[00:01.000]<b>Romaji</b>|true");
+        compare(backend.calls.length, 2);
+        compare(backend.variants.length, 2);
+        compare(presenter.currentOccurrenceId, playing);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        compare(driver.localLoadCount(), loads);
+        compare(driver.localPlayCount(), plays);
+        compare(menu.list.count, 3);
+        const status = findChild(shell, "lyrics-status");
+        compare(status.text, "Salvando versão da letra…");
+        verify(presenter.clearQueue());
+        tryCompare(presenter, "hasCurrentTrack", false);
+        backend.variantsStatusText = "Carregando versões da letra…";
+        compare(status.text, "Salvando versão da letra…");
+        backend.variantsBusy = false;
+        backend.variantsCanRetrySave = true;
+        compare(findChild(shell, "lyrics-versions").text, "Revisar salvamento");
+        backend.variantsCanRetrySave = false;
+        backend.queuedVariantStatusText = "Versão da letra salva.";
+        backend.variantsHasPendingChange = false;
+        compare(findChild(shell, "lyrics-panel").visible, true);
+        compare(status.text, "Versão da letra salva.");
+    }
+    function test_queueVariantEscapeCancelsOnlyThePreparedTargetAndRestoresFocus() {
+        const menu = openQueueVariantMenu();
+        const form = activateQueuedVariantAction(menu);
+        const current = presenter.currentOccurrenceId;
+        const submit = findChild(shell, "lyrics-variant-submit");
+        findChild(shell, "lyrics-variant-name-input").text = "Original";
+        findChild(shell, "lyrics-variant-content-input").text = "日本語";
+        keyClick(Qt.Key_Escape);
+        tryCompare(form, "visible", false);
+        tryCompare(menu.list, "activeFocus", true);
+        compare(lastCall("cancelQueued").args[0], "opaque-variant-token");
+        submit.Accessible.pressAction();
+        compare(backend.calls.length, 2);
+        compare(presenter.currentOccurrenceId, current);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
     }
     function test_savingCurrentLyricsDoesNotAskForReplacementText() {
         openPanel();

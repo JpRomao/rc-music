@@ -146,6 +146,115 @@ class OnlineNetwork final : public QNetworkAccessManager {
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void queuedVariantKeepsTheCurrentLyricAndRetriesTheExactUnicodeAudioPath() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto current = temp.filePath("current.mp3");
+        const auto target = temp.filePath(QStringLiteral("別の曲.FLAC"));
+        save(target, "preserved audio bytes");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->disk[nativePath(current)] = {{12, "Current", {}, {}, "Manual", "Current lyric"}};
+        store->disk[nativePath(target)] = {{45, "Original", "ja", "Jpan", "Manual", "[00:01.000]風"}};
+        ReleaseBlockedStore release{store};
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setQueueLyricsSource([&](const QString& id) { return id == "second" ? target : QString{}; });
+        binding.setTrack(current, "Current", {}, {}, 9000);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.selectVariant("12"));
+        QVERIFY(binding.queueVariantAvailable());
+        const auto token = binding.prepareQueuedVariant("second");
+        QVERIFY(!token.isEmpty());
+        QVERIFY(!token.contains(target));
+        store->block_save = true;
+        store->save_status = LyricsVariantsSaveStatus::Failed;
+        QVERIFY(binding.addQueuedVariant(token, "Romanizada", "ja", "Latn", "Manual", "romanized", "Kaze", false));
+        QTRY_COMPARE(store->save_entered.available(), 1);
+        QVERIFY(!binding.queueVariantAvailable());
+        QCOMPARE(binding.selectedVariantId(), QStringLiteral("12"));
+        QCOMPARE(binding.plainText(), QStringLiteral("Current lyric"));
+        store->save_release.release();
+        QTRY_VERIFY(binding.variantsCanRetrySave());
+        QVERIFY(!binding.addQueuedVariant(token, "Outra", {}, {}, "Manual", "original", "Other", false));
+        QCOMPARE(store->read(nativePath(target)).size(), std::size_t{1});
+        store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(binding.retryVariantsSave());
+        QTRY_VERIFY(!binding.variantsBusy() && !binding.variantsHasPendingChange());
+        QCOMPARE(binding.selectedVariantId(), QStringLiteral("12"));
+        QCOMPARE(binding.plainText(), QStringLiteral("Current lyric"));
+        QCOMPARE(store->attempts.size(), std::size_t{2});
+        QCOMPARE(store->attempts[0].first, nativePath(target));
+        QCOMPARE(store->attempts[1].first, nativePath(target));
+        const auto saved = store->read(nativePath(target));
+        QCOMPARE(saved.size(), std::size_t{2});
+        QCOMPARE(saved[0].id, std::uint64_t{45});
+        QCOMPARE(saved[1].content, std::string{"Kaze"});
+        QCOMPARE(saved[1].kind, LyricsVariantKind::Romanized);
+        QCOMPARE(store->read(nativePath(current)).size(), std::size_t{1});
+        QFile audio(target);
+        QVERIFY(audio.open(QIODevice::ReadOnly));
+        QCOMPARE(audio.readAll(), QByteArray("preserved audio bytes"));
+    }
+    void queuedVariantRejectsRemovedRelocatedCancelledAndSupersededTargets() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto target = temp.filePath("queued.ogg");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        QVERIFY(!binding.queueVariantAvailable());
+        binding.setQueueLyricsSource([&](const QString& id) { return id == "queued" ? target : QString{}; });
+        QVERIFY(binding.prepareQueuedVariant("unknown").isEmpty());
+        auto submit = [&](const QString& token) {
+            return binding.addQueuedVariant(token, "Original", {}, {}, "Manual", "original", "Text", false);
+        };
+        const auto relocated = binding.prepareQueuedVariant("queued");
+        QVERIFY(!relocated.isEmpty());
+        target = temp.filePath("different.ogg");
+        QVERIFY(!submit(relocated));
+        const auto removed = binding.prepareQueuedVariant("queued");
+        QVERIFY(!removed.isEmpty());
+        target.clear();
+        QVERIFY(!submit(removed));
+        target = temp.filePath("new.wav");
+        const auto first = binding.prepareQueuedVariant("queued");
+        const auto second = binding.prepareQueuedVariant("queued");
+        QVERIFY(!first.isEmpty() && !second.isEmpty() && first != second);
+        QVERIFY(!submit(first));
+        binding.cancelQueuedVariant(first);
+        binding.cancelQueuedVariant(second);
+        QVERIFY(!submit(second));
+        const auto exit_token = binding.prepareQueuedVariant("queued");
+        QVERIFY(!exit_token.isEmpty());
+        QVERIFY(!binding.prepareExit());
+        QVERIFY(!submit(exit_token));
+        QCOMPARE(store->load_calls.load(), 0);
+        QCOMPARE(store->save_calls.load(), 0);
+    }
+    void queuedSaveFeedbackSurvivesPlaybackAdvanceBeforeTheWriteIsConfirmed() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto target = temp.filePath("queued.ogg");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        ReleaseBlockedStore release{store};
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setQueueLyricsSource([&](const QString&) { return target; });
+        binding.setTrack(temp.filePath("first.mp3"), "First", {}, {}, 9000);
+        QTRY_VERIFY(binding.variantsReady());
+        const auto token = binding.prepareQueuedVariant("queued");
+        QVERIFY(!token.isEmpty());
+        store->block_save = true;
+        QVERIFY(binding.addQueuedVariant(token, "Original", {}, {}, {}, "original", "Queued text", false));
+        QTRY_COMPARE(store->save_entered.available(), 1);
+        binding.setTrack(temp.filePath("next.mp3"), "Next", {}, {}, 9000);
+        QCOMPARE(binding.property("queuedVariantStatusText").toString(), QStringLiteral("Salvando versão da letra…"));
+        store->save_release.release();
+        QTRY_VERIFY(binding.variantsReady() && !binding.variantsBusy());
+        QCOMPARE(binding.property("queuedVariantStatusText").toString(), QStringLiteral("Versão da letra salva."));
+        QCOMPARE(binding.title(), QStringLiteral("Next"));
+        QCOMPARE(store->read(nativePath(target)).size(), std::size_t{1});
+    }
     void oneSearchPreviewsAndSavesTheTwoDistinctOnlineDocuments() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

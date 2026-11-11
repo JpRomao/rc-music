@@ -17,6 +17,8 @@ FocusScope {
     property string selectedTitle: ""
     property bool selectedAvailable: false
     property string menuOccurrenceId: ""
+    property bool lyricVariantActionSupported: false
+    property bool lyricVariantActionAvailable: false
     readonly property bool menuTargetSelected: {
         const row = queueList.currentItem as QueueOccurrenceDelegate;
         return root.visible && root.enabled && !root.presenter.exiting && menuOccurrenceId.length > 0 && selectedOccurrenceId === menuOccurrenceId && row !== null && row.occurrenceId === menuOccurrenceId;
@@ -37,6 +39,7 @@ FocusScope {
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
+    signal addLyricVariantRequested(string occurrenceId, string title)
 
     QueueText {
         id: queueText
@@ -544,6 +547,21 @@ FocusScope {
             onTriggered: {
                 if (root.menuTargetSelected)
                     root.playRow(queueList.currentItem, Qt.TabFocusReason);
+            }
+        }
+        MenuItem {
+            id: queuedVariantMenuItem
+            objectName: "queue-menu-add-lyrics-variant"
+            text: qsTr("Adicionar versão da letra")
+            visible: root.lyricVariantActionSupported && !root.presenter.usesFrozenFixture
+            enabled: visible && root.lyricVariantActionAvailable && root.queueModesAvailable && root.menuTargetSelected && root.selectedAvailable
+            onTriggered: {
+                if (!queuedVariantMenuItem.enabled)
+                    return;
+                const occurrenceId = root.menuOccurrenceId;
+                const title = root.selectedTitle;
+                rowMenu.close();
+                root.addLyricVariantRequested(occurrenceId, title);
             }
         }
         MenuItem {

@@ -11,10 +11,13 @@ Dialog {
     required property ShellUiContract contract
     property var lyrics: null
     property string trackIdentity: ""
+    property string queuedFeedbackText: ""
     property string formMode: ""
     property var formOwner: null
     property string formTrack: ""
     property string formLyricsRevision: ""
+    property string queuedToken: ""
+    property string queuedTitle: ""
     property bool formRejected: false
     property string confirmMode: ""
     property var confirmOwner: null
@@ -35,7 +38,9 @@ Dialog {
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
     readonly property bool childDialogOpen: formDialog.visible || confirmation.visible
-    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision))
+    readonly property bool textEntryMode: formMode === "add" || formMode === "queued"
+    readonly property bool queuedFormAvailable: enabled && supported && typeof lyrics.queueVariantAvailable === "boolean" && lyrics.queueVariantAvailable
+    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && (formMode === "queued" ? enabled && queuedToken.length > 0 : formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision)))
     readonly property bool confirmCurrent: confirmation.visible && confirmOwner === lyrics && confirmTrack === trackIdentity && (confirmMode === "reload" ? (canReload && lyrics.variantsHasPendingChange) : (canEdit && targetCurrent()))
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -46,15 +51,19 @@ Dialog {
     focus: true
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
+    signal queuedFormClosed(bool submitted)
     onOpened: variantList.forceActiveFocus(Qt.TabFocusReason)
     onClosed: {
-        if (formDialog)
+        if (formDialog && formMode !== "queued")
             formDialog.close();
         if (confirmation)
             confirmation.close();
     }
     onLyricsChanged: revokeDialogs()
-    onTrackIdentityChanged: revokeDialogs()
+    onTrackIdentityChanged: {
+        if (formMode !== "queued")
+            revokeDialogs();
+    }
     onCurrentLyricsRevisionChanged: {
         if (formMode === "current" && formLyricsRevision !== currentLyricsRevision && formDialog && formDialog.visible)
             formDialog.close();
@@ -123,6 +132,24 @@ Dialog {
     function openForm(mode) {
         if (!canEdit || (mode === "current" && !canSaveCurrent))
             return;
+        startForm(mode);
+    }
+    function openQueuedForm(occurrenceId, title) {
+        if (!queuedFormAvailable || visible || childDialogOpen)
+            return;
+        const owner = lyrics;
+        const token = owner.prepareQueuedVariant(occurrenceId);
+        if (token.length === 0)
+            return;
+        if (owner !== lyrics || !queuedFormAvailable) {
+            owner.cancelQueuedVariant(token);
+            return;
+        }
+        queuedToken = token;
+        queuedTitle = title;
+        startForm("queued");
+    }
+    function startForm(mode) {
         formMode = mode;
         formOwner = lyrics;
         formTrack = trackIdentity;
@@ -213,7 +240,7 @@ Dialog {
         Text {
             objectName: "lyrics-variants-status"
             Layout.fillWidth: true
-            text: root.supported ? root.lyrics.variantsStatusText : ""
+            text: root.queuedFeedbackText.length > 0 ? root.queuedFeedbackText : (root.supported ? root.lyrics.variantsStatusText : "")
             textFormat: Text.PlainText
             color: root.contract.textSecondaryColor
             wrapMode: Text.WordWrap
@@ -420,7 +447,7 @@ Dialog {
     Dialog {
         id: formDialog
         objectName: "lyrics-variant-form"
-        parent: Overlay.overlay
+        parent: root.parent
         anchors.centerIn: parent
         width: Math.min(600, parent ? parent.width - root.contract.spacingUnit * 8 : 600)
         height: Math.min(620, parent ? parent.height - root.contract.spacingUnit * 8 : 620)
@@ -432,10 +459,19 @@ Dialog {
         onOpened: nameField.forceActiveFocus(Qt.TabFocusReason)
         onClosed: {
             const mode = root.formMode;
+            const owner = root.formOwner;
+            const token = root.queuedToken;
             root.formMode = "";
             root.formOwner = null;
+            root.formTrack = "";
             root.formLyricsRevision = "";
-            if (root.visible && root.enabled) {
+            root.queuedToken = "";
+            root.queuedTitle = "";
+            if (mode === "queued") {
+                if (owner && token.length > 0)
+                    owner.cancelQueuedVariant(token);
+                root.queuedFormClosed(token.length === 0);
+            } else if (root.visible && root.enabled) {
                 if (mode === "current")
                     saveCurrentButton.forceActiveFocus(Qt.TabFocusReason);
                 else
@@ -460,6 +496,17 @@ Dialog {
                 font.bold: true
                 font.pixelSize: 20
                 Accessible.ignored: true
+            }
+            Text {
+                objectName: "lyrics-variant-queued-target"
+                Layout.fillWidth: true
+                visible: root.formMode === "queued"
+                text: root.queuedTitle
+                textFormat: Text.PlainText
+                color: root.contract.textSecondaryColor
+                elide: Text.ElideRight
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
             }
             ScrollView {
                 id: formScroll
@@ -522,7 +569,7 @@ Dialog {
                         enabled: root.formCurrent
                         model: [qsTr("Original"), qsTr("Romanizada")]
                         Accessible.name: qsTr("Tipo de versão")
-                        KeyNavigation.tab: root.formMode === "add" ? sourceField : formSubmit
+                        KeyNavigation.tab: root.textEntryMode ? sourceField : formSubmit
                         contentItem: Text {
                             text: kindField.displayText
                             textFormat: Text.PlainText
@@ -537,19 +584,19 @@ Dialog {
                         }
                     }
                     FieldLabel {
-                        visible: root.formMode === "add"
+                        visible: root.textEntryMode
                         text: qsTr("Origem (opcional; não é acessada pelo app)")
                     }
                     VersionInput {
                         id: sourceField
                         objectName: "lyrics-variant-source-input"
-                        visible: root.formMode === "add"
+                        visible: root.textEntryMode
                         maximumLength: 2048
                         Accessible.name: qsTr("Origem da letra")
                         KeyNavigation.tab: contentField
                     }
                     FieldLabel {
-                        visible: root.formMode === "add"
+                        visible: root.textEntryMode
                         text: qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
                     }
                     TextArea {
@@ -557,7 +604,7 @@ Dialog {
                         objectName: "lyrics-variant-content-input"
                         Layout.fillWidth: true
                         Layout.preferredHeight: 180
-                        visible: root.formMode === "add"
+                        visible: root.textEntryMode
                         enabled: root.formCurrent
                         textFormat: TextEdit.PlainText
                         wrapMode: TextEdit.Wrap
@@ -580,7 +627,7 @@ Dialog {
                         id: generatedField
                         objectName: "lyrics-variant-generated-input"
                         Layout.fillWidth: true
-                        visible: root.formMode === "add"
+                        visible: root.textEntryMode
                         enabled: root.formCurrent
                         text: qsTr("Texto gerado por ferramenta")
                         Accessible.name: text
@@ -599,7 +646,7 @@ Dialog {
             Text {
                 Layout.fillWidth: true
                 visible: root.formRejected
-                text: qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
+                text: root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
                 textFormat: Text.PlainText
                 color: root.contract.textSecondaryColor
                 wrapMode: Text.WordWrap
@@ -621,20 +668,33 @@ Dialog {
                     controlId: "lyrics-variant-submit"
                     contract: root.contract
                     text: qsTr("Salvar")
-                    enabled: root.formCurrent && nameField.text.trim().length > 0 && (root.formMode === "current" || contentField.text.trim().length > 0)
+                    enabled: root.formCurrent && (root.formMode !== "queued" || root.queuedFormAvailable) && nameField.text.trim().length > 0 && (root.formMode === "current" || contentField.text.trim().length > 0)
                     KeyNavigation.tab: nameField
                     onClicked: {
                         if (!enabled || !root.formCurrent)
                             return;
                         const owner = root.formOwner;
+                        const mode = root.formMode;
+                        const token = root.queuedToken;
+                        const name = nameField.text.trim();
+                        const language = languageField.text.trim();
+                        const script = scriptField.text.trim();
                         const kind = kindField.currentIndex === 1 ? "romanized" : "original";
-                        const accepted = root.formMode === "current" ? owner.saveCurrentLyrics(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), kind, root.formLyricsRevision) : owner.addVariant(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+                        let accepted;
+                        if (mode === "current")
+                            accepted = owner.saveCurrentLyrics(name, language, script, kind, root.formLyricsRevision);
+                        else if (mode === "queued")
+                            accepted = owner.addQueuedVariant(token, name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+                        else
+                            accepted = owner.addVariant(name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
                         if (!formDialog.visible)
                             return;
-                        if (accepted)
+                        if (accepted) {
+                            root.queuedToken = "";
                             formDialog.accept();
-                        else
+                        } else {
                             root.formRejected = true;
+                        }
                     }
                 }
             }
