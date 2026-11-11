@@ -1,0 +1,71 @@
+RC Music Windows x64 multimedia notices
+
+FFmpeg 7.1.5-rcmusic1
+
+RC Music uses the FFmpeg libraries avcodec-61.dll, avformat-61.dll,
+avutil-59.dll, swresample-5.dll and swscale-8.dll through Qt Multimedia.
+Copyright (c) the FFmpeg developers. The libraries are licensed under the GNU
+Lesser General Public License version 2.1 or later. The shared-library build
+has GPL, nonfree and version 3 components disabled. See FFmpeg-COPYING.LGPLv2.1.txt,
+FFmpeg-LICENSE.txt and FFmpeg-CREDITS.txt.
+
+The upstream source is FFmpeg n7.1.5, commit
+3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587.
+https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1.5
+SHA-256 e3963a50831c985933e1a625ed566ec4c7adb5c012c34fa9f84438e1d61bdacc
+
+The RC Music build applies two upstream changes to that source.
+
+- The ADX decoder syncs its channel state when reading a new header and clears
+  its predictor state when the channel count changes.
+  CVE-2026-64835, libavcodec/adxdec.c
+  https://github.com/FFmpeg/FFmpeg/commit/1836ef96846937a6cc2443698a693104f5c0b21e
+- The VobSub demuxer reuses subtitle streams by ID and caps the stream count.
+  CVE-2026-64830, libavformat/mpeg.c
+  https://github.com/FFmpeg/FFmpeg/commit/dbd495f066a85ba96b17433f4306582aa37c3951
+
+The Windows x64 build uses MSVC 19.44.35228, Windows SDK 10.0.22621.0,
+GNU Make 4.4.1 and NASM 3.02. It follows the Qt 6.11.2 Windows FFmpeg recipe,
+with REVISION=7.1.5 and EXTRA_VERSION=rcmusic1 set for the build.
+https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/install-ffmpeg.ps1
+
+Independent JPEG Group
+
+This software is based in part on the work of the Independent JPEG Group.
+FFmpeg adapted code by Thomas G. Lane in libavcodec/jfdctfst.c,
+libavcodec/jfdctint_template.c and libavcodec/jrevdct.c. The RC Music patches
+leave those files unchanged. See FFmpeg-IJG.txt for their original notices
+and the FFmpeg source history for the upstream changes to each file.
+https://github.com/FFmpeg/FFmpeg/commits/n7.1.5/libavcodec/jfdctfst.c
+https://github.com/FFmpeg/FFmpeg/commits/n7.1.5/libavcodec/jfdctint_template.c
+https://github.com/FFmpeg/FFmpeg/commits/n7.1.5/libavcodec/jrevdct.c
+
+Boost.Math
+
+The FFmpeg source includes Boost.Math algorithms under the Boost Software
+License 1.0. The erf fallback in libavutil/libm.h is copyright (c) 2006
+John Maddock. The Windows build uses the platform's erf implementation.
+The Bessel function in libavutil/mathematics.c uses code attributed to
+copyright (c) 2006 Xiaogang Zhang. See Boost-LICENSE.txt and the Qt
+Multimedia attribution for FFmpeg 7.1.5.
+https://github.com/qt/qtmultimedia/blob/884fc4a59bb96b6dc18a0f17ccbb5bd650db2176/src/3rdparty/ffmpeg/qt_attribution.json
+
+zlib 1.3.1
+
+The FFmpeg build uses an altered zlib 1.3.1, linked statically in
+avcodec-61.dll and avformat-61.dll. Copyright (C) 1995-2022 Jean-loup Gailly
+and Mark Adler. See zlib-LICENSE.txt. FFmpeg's libavutil/adler32.c is also
+based on zlib code and retains the original notice of Mark Adler (1995).
+
+https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+SHA-256 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+
+The build applies the upstream inflateSync fix to inflate.c (TOB-ZLIB-004).
+The Qt Windows build adjustments remove the unistd.h include from zconf.h
+and the preferred base-address option from win32/Makefile.msc. The zlib
+static library is built with the MSVC /MT option.
+https://github.com/madler/zlib/commit/8179479c6274c0041189882b8746a33e2376eaf0
+https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/zlib.ps1
+
+This notice accompanies a private development build. The complete
+corresponding source package and its distribution are pending.

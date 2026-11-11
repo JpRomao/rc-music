@@ -3301,7 +3301,7 @@
         },
         {
           "path": "docs/delivery/windows-f8a593b-ffmpeg.md",
-          "marker": "## Uso no fluxo Windows"
+          "marker": "## Avisos incluídos no runtime"
         },
         {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",

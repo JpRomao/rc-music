@@ -66,7 +66,13 @@ function Get-RuntimeRecipeFiles {
     param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
         [switch] $DownloadComponent, [switch] $NativeHostComponent)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
-        'qt.conf', 'LOCAL-DEVELOPMENT.txt', 'RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json')
+        'qt.conf', 'LOCAL-DEVELOPMENT.txt', 'RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json',
+        'notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
+        'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
+        'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
+        'notices/qt-multimedia/NOTICE.txt', 'notices/qt-multimedia/Signalsmith-Stretch-LICENSE.txt',
+        'notices/qt-multimedia/Signalsmith-DSP-LICENSE.txt', 'notices/qt-multimedia/dr-libs-LICENSE.txt',
+        'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
@@ -77,6 +83,9 @@ function Get-RuntimeRecipeFiles {
 }
 $recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled)
 $recipeBefore = ConvertTo-Json -InputObject $recipeFiles -Compress
+$runtimeNotices = @($recipeFiles | Where-Object {
+    $_.path.StartsWith('packaging/windows/notices/', [StringComparison]::Ordinal)
+})
 
 function Invoke-RuntimeTool([string] $Program, [string[]] $Arguments) {
     $start = [Diagnostics.ProcessStartInfo]::new($Program)
@@ -184,6 +193,10 @@ if ($nativeEnabled) {
 }
 Add-RuntimeFile (Join-Path $PSScriptRoot 'qt.conf') 'qt.conf'
 Add-RuntimeFile (Join-Path $PSScriptRoot 'LOCAL-DEVELOPMENT.txt') 'LOCAL-DEVELOPMENT.txt'
+foreach ($notice in $runtimeNotices) {
+    $relativePath = $notice.path.Substring('packaging/windows/'.Length)
+    Add-RuntimeFile (Join-Path $PSScriptRoot $relativePath) $relativePath
+}
 if ($configuration.edition -ceq 'CompleteExperimental') {
     Add-RuntimeFile (Join-Path $PSScriptRoot 'WEBVIEW2-DEVELOPMENT.txt') 'WEBVIEW2-DEVELOPMENT.txt'
     Add-RuntimeFile (Join-Path $configuration.browser_sdk_root 'LICENSE.txt') 'notices/WebView2-SDK-LICENSE.txt'
@@ -286,6 +299,13 @@ if ($nativeEnabled) {
     $allowedRoots += $manifestSources
 }
 $plan = New-RcMusicRuntimePlan -Files @($files.Values) -AllowedSourceRoots $allowedRoots -Destination $payload
+foreach ($notice in $runtimeNotices) {
+    $relativePath = $notice.path.Substring('packaging/windows/'.Length)
+    $collected = @($plan.files | Where-Object relative_path -CEQ $relativePath)
+    if ($collected.Count -ne 1 -or $collected[0].sha256 -cne $notice.sha256) {
+        throw "Collected runtime notice differs from its recipe: $($notice.path)"
+    }
+}
 foreach ($expected in $ffmpeg.files) {
     $collected = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
     if ($collected.Count -ne 1 -or $collected[0].source -cne $expected.source -or

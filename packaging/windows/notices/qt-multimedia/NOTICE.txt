@@ -1,0 +1,29 @@
+RC Music Windows x64 Qt Multimedia third-party notices
+
+These notices cover components compiled into the following Qt Multimedia
+6.11.2 binaries in the RC Music runtime.
+
+plugins/multimedia/ffmpegmediaplugin.dll
+SHA-256 f0913ee8f3d732640e23b90002e4fa720cc762c5807b05df4daafca400ad97ee
+
+- Signalsmith Stretch 1.0.0 (MIT): Signalsmith-Stretch-LICENSE.txt
+  Source: src/3rdparty/signalsmith-stretch/LICENSE.txt
+- Signalsmith DSP bundled with Stretch (MIT): Signalsmith-DSP-LICENSE.txt
+  Source: src/3rdparty/signalsmith-stretch/dsp/LICENSE.txt
+
+Qt6Multimedia.dll
+SHA-256 7cd2a057ca7838c0cfbc405303c53351bb4701ba47c29666fcd8ed31f267c2be
+
+- dr_libs WAV decoder 0.14.5 (Unlicense OR MIT-0): dr-libs-LICENSE.txt
+  and dr-wav-NOTICE.txt
+  Sources: src/3rdparty/dr_libs/LICENSE and src/3rdparty/dr_libs/dr_wav.h
+  (lines 9068-9116)
+- Two-Level Segregated Fit (TLSF) v3.1 (BSD-3-Clause): TLSF-LICENSE.txt
+  Source: src/3rdparty/tlsf/tlsf.h (lines 4-39)
+
+Official Qt Multimedia source archive
+https://download.qt.io/archive/qt/6.11/6.11.2/submodules/qtmultimedia-everywhere-src-6.11.2.tar.xz
+SHA-256 967b5e02ec6b793cdb360622cd6e703132836af983208d678dae4b50f109cd9f
+
+Review of the terms applicable to Qt itself and of any corresponding-source
+obligations is pending.

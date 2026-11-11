@@ -7,6 +7,13 @@ $testRoot = Join-Path $repository ('out/product/runtime-recipe-' + [guid]::NewGu
 $sourceNames = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
     'qt.conf', 'LOCAL-DEVELOPMENT.txt')
 $ffmpegRecipeNames = @('RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json')
+$noticeNames = @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
+    'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
+    'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
+    'notices/qt-multimedia/NOTICE.txt', 'notices/qt-multimedia/Signalsmith-Stretch-LICENSE.txt',
+    'notices/qt-multimedia/Signalsmith-DSP-LICENSE.txt', 'notices/qt-multimedia/dr-libs-LICENSE.txt',
+    'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt')
+$requiredRecipeNames = $sourceNames + $ffmpegRecipeNames + $noticeNames
 $multimediaStagerName = 'New-RcMusicQtMultimediaSdk.ps1'
 $ffmpegNames = @('avcodec-61.dll', 'avformat-61.dll', 'avutil-59.dll', 'swresample-5.dll', 'swscale-8.dll')
 $componentNames = @('RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
@@ -112,11 +119,12 @@ try {
     $buildDirectory = Join-Path $exportRoot 'out/product/build inválido'
     $foreignDirectory = Join-Path $testRoot 'cwd alheio'
     $null = New-Item -ItemType Directory -Path $exportDirectory, $buildDirectory, $foreignDirectory
-    foreach ($name in $sourceNames + @(($ffmpegRecipeNames + $multimediaStagerName + $componentNames + $nativeNames) | Where-Object {
+    foreach ($name in $sourceNames + @(($ffmpegRecipeNames + $noticeNames + $multimediaStagerName + $componentNames + $nativeNames) | Where-Object {
         Test-Path -LiteralPath (Join-Path $repository ('packaging/windows/' + $_))
     })) {
         $original = Join-Path $repository ('packaging/windows/' + $name)
         $copy = Join-Path $exportDirectory $name
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($copy))
         Copy-Item -LiteralPath $original -Destination $copy
         Assert-Equal ((Get-FileHash -LiteralPath $copy).Hash) ((Get-FileHash -LiteralPath $original).Hash)
     }
@@ -165,14 +173,14 @@ try {
     }
     Test-Case 'optional recipe provenance includes both download component validators' {
         $files = @(Read-RecipeFiles -DownloadComponent)
-        Assert-Equal $files.Count 9
+        Assert-Equal $files.Count ($requiredRecipeNames.Count + 2)
         foreach ($name in $componentNames) {
             $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
             Assert-Equal $entry.Count 1
             Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
         }
-        Assert-Equal @(Read-RecipeFiles).Count 7
-        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count 10
+        Assert-Equal @(Read-RecipeFiles).Count $requiredRecipeNames.Count
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent).Count ($requiredRecipeNames.Count + 3)
     }
     foreach ($arguments in @(
         @('-MainNativeBuildReceipt', 'C:/missing/main.json'),
@@ -197,18 +205,18 @@ try {
     }
     Test-Case 'native recipe provenance binds its reader and component planner only for explicit opt-in' {
         $files = @(Read-RecipeFiles -DownloadComponent -NativeHostComponent)
-        Assert-Equal $files.Count 11
+        Assert-Equal $files.Count ($requiredRecipeNames.Count + 4)
         foreach ($name in $nativeNames) {
             $entry = @($files | Where-Object path -CEQ ('packaging/windows/' + $name))
             Assert-Equal $entry.Count 1
             Assert-Equal $entry[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory $name)).Hash.ToLowerInvariant())
         }
-        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent -NativeHostComponent).Count 12
+        Assert-Equal @(Read-RecipeFiles -Edition CompleteExperimental -DownloadComponent -NativeHostComponent).Count ($requiredRecipeNames.Count + 5)
     }
-    Test-Case 'the recipe inventories the default files and the FFmpeg validator and manifest' {
+    Test-Case 'the recipe binds the default files, qualified FFmpeg inputs and runtime notices' {
         $files = @(Read-RecipeFiles)
-        Assert-Equal $files.Count 7
-        Assert-Equal (($files.path | Sort-Object -CaseSensitive) -join '|') ((($sourceNames + $ffmpegRecipeNames) | ForEach-Object {
+        Assert-Equal $files.Count $requiredRecipeNames.Count
+        Assert-Equal (($files.path | Sort-Object -CaseSensitive) -join '|') (($requiredRecipeNames | ForEach-Object {
             'packaging/windows/' + $_
         } | Sort-Object -CaseSensitive) -join '|')
         foreach ($entry in $files) {
@@ -234,11 +242,11 @@ try {
     }
     Test-Case 'Complete recipe provenance additionally binds its own exported prerequisite notice' {
         $files = @(Read-RecipeFiles -Edition CompleteExperimental)
-        Assert-Equal $files.Count 8
+        Assert-Equal $files.Count ($requiredRecipeNames.Count + 1)
         $extra = @($files | Where-Object path -CEQ 'packaging/windows/WEBVIEW2-DEVELOPMENT.txt')
         Assert-Equal $extra.Count 1
         Assert-Equal $extra[0].sha256 ((Get-FileHash -LiteralPath (Join-Path $exportDirectory 'WEBVIEW2-DEVELOPMENT.txt')).Hash.ToLowerInvariant())
-        Assert-Equal @(Read-RecipeFiles -Edition Lite).Count 7
+        Assert-Equal @(Read-RecipeFiles -Edition Lite).Count $requiredRecipeNames.Count
     }
     Test-Case 'changing only the exported parser changes only that recorded hash' {
         $before = @(Read-RecipeFiles)
