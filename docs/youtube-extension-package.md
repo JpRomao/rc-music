@@ -91,6 +91,17 @@ O ciclo original do gerador YouTube foi Red com 14 casos, Red com 15 após acres
 
 O candidato local `out/product/youtube-extension-20261105-01/` foi gerado após o commit da receita `de73e985ab4729fcc4f3b412932fee6910404660`: **7 assets/21.197 bytes**, com `extension_dirty`, `recipe_dirty` e `source_dirty` falsos no recorte declarado. A conferência independente confirmou inventário, tamanhos e hashes contra as fontes, incluindo as duas receitas. O SHA-256 de `package-receipt.json` é `e9aa509677051485298c3afcb5720bbd18f4f77d70ec1c92776587b065eae626`. Plano e verificação ficam em `out/product/test-runs/download-bootstrap-20261105/`. O candidato é preservado como `identity_pending`; não é setup ou integração instalada.
 
+## Pacotes com conferência da aba ativa
+
+Os pacotes locais de `9a3e257` incluem a [verificação de foco e de fontes da extensão principal](browser-extension.md#contexto-da-aba-e-foco-no-popup) e a [verificação do vídeo selecionado](youtube-audio-and-lyrics.md#contexto-do-vídeo-no-popup). A conferência comparou tamanhos e hashes de todos os arquivos com as fontes e derivou os IDs públicos. Os IDs e nomes dos hosts coincidem com os perfis compilados da Lite e da Completa experimental de `35e999d`.
+
+| Canal | Diretório em `out/product/` | Arquivos | SHA-256 de `package-receipt.json` |
+|---|---|---:|---|
+| Principal | `chromium-main-9a3e257-20261111` | 9 | `eb5666775fb66bae8b36df63c40ed0f760fe3626fb9beef231ce85a29c4c2c15` |
+| YouTube | `chromium-youtube-9a3e257-20261111` | 7 | `e01cec79f14f9e05be90edaaf10526aecf201beb0cc0aef2165c12cd78cd148b` |
+
+O diretório `extension/` de cada pacote é a raiz para carregamento manual. A evidência local está em `out/product/test-runs/chromium-popup-context-20261111/package-verification.json`. A validação no Brave real segue pendente.
+
 ## Pacotes atualizados em 2026-11-11
 
 A revisão limpa `a469f8d` gerou os dois pacotes-fonte usados pelos [setups atualizados](windows-installer.md#setups-atualizados-em-2026-11-11). Os inventários físicos, os avisos e os IDs públicos dos dois canais foram conferidos.
