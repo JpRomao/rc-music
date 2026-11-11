@@ -68,6 +68,10 @@ O build RelWithDebInfo x64 recompilou `Network` e suas dependências a partir de
 
 O recibo de `q/n2/build-receipt.json` tem SHA-256 `b8aad24e7bd0a08c764bbfdce418c162b10e5650c214a46ff92836e33cc8bd06`. O preparador copia o SDK e substitui a DLL e os símbolos correspondentes. O runner e o empacotador exigem o hash da DLL qualificada e o manifesto do runtime registra o recibo. [Comandos de preparo](development-commands.md#qt-multimedia-com-ffmpeg-corrigido) · [Identidade da DLL](../packaging/windows/qt-network-runtime.v1.json)
 
+A verificação física de 9.880 arquivos do SDK encontrou duas substituições, `Qt6Network.dll` e `Qt6Network.pdb`. A receita de runtime passou 26 testes e o runner passou 37. Os testes dos serviços de letras e Lidarr passaram em 68 casos com respostas simuladas e a DLL nova. Os resultados estão em `q/n2/sdk-stage-verification.json` e `out/product/qt-network-abi-check/app-services/`.
+
+O build Release e a montagem Lite de `dd0e650` passaram pelo fluxo padrão. O manifesto SHA-256 `3c28cf0f8c5e5b3ade081d4dc79bfde6c655bb1f25a34638e81ae047114e05fa` identifica os 572 arquivos em `out/product/r9/out/product/qt-network-runtime/`. O smoke offscreen passou na inicialização e em 17 cenários de áudio, com 19 casos Qt e zero skips. O recibo fica em `out/product/test-runs/rc-music-runtime-smoke/20a1f86faea948db962114fad208b1ae/`. A verificação do instalador conferiu a DLL na seção obrigatória do plano Lite.
+
 ## TagLib no runtime Windows
 
 O build de produto e os alvos de teste exigem TagLib 2.3.2. A versão traz validações de entrada em MP3, MP4, FLAC e Ogg, entre outros formatos. O adaptador conserva a recuperação do valor de faixa MP4 de 16 bits sem sinal. [Release upstream](https://github.com/taglib/taglib/releases/tag/v2.3.2)
