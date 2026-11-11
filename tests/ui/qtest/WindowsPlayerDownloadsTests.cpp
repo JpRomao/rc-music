@@ -308,21 +308,24 @@ struct Harness final {
     std::unique_ptr<WindowsPlayerDownloads> owner;
     explicit Harness(bool youtube = false, LyricsBinding* lyrics_writer = nullptr,
                      QNetworkAccessManager* lyrics_network = nullptr, bool automatic_polling = false,
-                     std::optional<WindowsPlayerNativeIngressOptions> native_ingress = {}) {
+                     std::optional<WindowsPlayerNativeIngressOptions> native_ingress = {},
+                     bool embedded_browser_ingress = false) {
         WindowsDownloadExecution::TaskFactory destination = [state = task] { return std::make_unique<Task>(state); };
         auto execution =
             youtube ? makeWindowsMediaAndYoutubeExecution(
                           [] { return std::make_unique<music_player::m0::test::FixtureYoutubeResolverProcess>(); },
                           destination, [] { return qint64{1'999'999'000}; })
                     : std::make_unique<WindowsDownloadExecution>(destination);
+        WindowsPlayerDownloadsOptions options{.job_namespace = "owner",
+                                              .binding = {.automatic_polling = automatic_polling},
+                                              .lyrics_writer = lyrics_writer,
+                                              .lyrics_network = lyrics_network,
+                                              .native_ingress = std::move(native_ingress)};
+        if (embedded_browser_ingress)
+            options.embedded_browser_ingress = true;
         owner = std::make_unique<WindowsPlayerDownloads>(
             presenter, SessionLoadResult{}, std::move(execution),
-            [state = checkpoint] { return std::make_unique<CheckpointStore>(state); },
-            WindowsPlayerDownloadsOptions{.job_namespace = "owner",
-                                          .binding = {.automatic_polling = automatic_polling},
-                                          .lyrics_writer = lyrics_writer,
-                                          .lyrics_network = lyrics_network,
-                                          .native_ingress = std::move(native_ingress)});
+            [state = checkpoint] { return std::make_unique<CheckpointStore>(state); }, std::move(options));
     }
     ~Harness() {
         // Failed assertions must not strand a deliberately held worker.
@@ -371,6 +374,50 @@ struct Harness final {
 class WindowsPlayerDownloadsTests final : public QObject {
     Q_OBJECT
   private slots:
+    void embeddedBrowserAdmissionRequiresOptInAndClosesAtExit_data() {
+        QTest::addColumn<bool>("enabled");
+        QTest::newRow("default-off") << false;
+        QTest::newRow("trusted-opt-in") << true;
+    }
+    void embeddedBrowserAdmissionRequiresOptInAndClosesAtExit() {
+        QFETCH(bool, enabled);
+        bool observed_exit = false;
+        bool available_during_exit = false;
+        Harness h(false, nullptr, nullptr, false, {}, enabled);
+        QCOMPARE(h.owner->embeddedBrowserSubmission(), nullptr);
+        QCOMPARE(h.checkpoint->loads.load(), 0);
+        QVERIFY(h.ready());
+        auto* const admission = h.owner->embeddedBrowserSubmission();
+        QCOMPARE(admission != nullptr, enabled);
+        if (admission) {
+            auto youtube = request();
+            youtube.items.front().youtube = YoutubeAudioItem{.video_id = "syntheticID"};
+            QCOMPARE(admission->begin(youtube).result.error, DownloadSubmissionError::UnsupportedSource);
+        }
+
+        connect(&h.presenter, &PlayerPresenter::lifecycleChanged, this, [&] {
+            if (h.presenter.exiting()) {
+                observed_exit = true;
+                available_during_exit = available_during_exit || h.owner->embeddedBrowserSubmission() != nullptr;
+            }
+        });
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(observed_exit);
+        QVERIFY(!available_during_exit);
+        QCOMPARE(h.owner->embeddedBrowserSubmission(), nullptr);
+        if (admission)
+            QCOMPARE(admission->begin(request()).result.error, DownloadSubmissionError::NotAvailable);
+        QVERIFY(h.drain());
+        QCOMPARE(h.task->starts.load(), 0);
+    }
+    void embeddedBrowserAdmissionStaysUnavailableWhenStartFails() {
+        Harness h(false, nullptr, nullptr, false, {}, true);
+        QVERIFY(h.presenter.setExitPreparationCallbacks(
+            {.begin = [] {}, .poll = [] { return ExitPreparationState::Ready; }}));
+        QVERIFY(!h.owner->start());
+        QCOMPARE(h.owner->embeddedBrowserSubmission(), nullptr);
+        QCOMPARE(h.checkpoint->loads.load(), 0);
+    }
 #ifdef RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
     void nativeProfilesArePassiveAndOwnTheirCapturedTransportStringsBeforeStart() {
         auto profiles = nativeProfiles();
@@ -740,16 +787,23 @@ class WindowsPlayerDownloadsTests final : public QObject {
                                                         }),
                                                         {}));
     }
+    void admissionWaitsForCheckpointAndImportWaitsForMatchingSessionSaved_data() {
+        QTest::addColumn<bool>("embedded");
+        QTest::newRow("common") << false;
+        QTest::newRow("embedded") << true;
+    }
     void admissionWaitsForCheckpointAndImportWaitsForMatchingSessionSaved() {
-        Harness h;
+        QFETCH(bool, embedded);
+        Harness h(true, nullptr, nullptr, false, {}, embedded);
         QVERIFY(h.ready());
         QVERIFY(!h.owner->start());
         QVERIFY(!h.owner->stopped());
+        auto* const admission = embedded ? h.owner->embeddedBrowserSubmission() : &h.owner->submission();
+        QVERIFY(admission);
         h.checkpoint->allow(false);
-        QVERIFY(
-            h.wait([&] { return h.owner->submission().begin(request()).state == DownloadAdmissionState::Pending; }));
+        QVERIFY(h.wait([&] { return admission->begin(request()).state == DownloadAdmissionState::Pending; }));
         QVERIFY(h.wait([&] { return h.checkpoint->saves == 1; }));
-        QVERIFY(!h.owner->submission().poll(request().request_id));
+        QVERIFY(!admission->poll(request().request_id));
         QCOMPARE(h.task->starts.load(), 0);
         QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
         h.checkpoint->allow(true);
@@ -765,7 +819,7 @@ class WindowsPlayerDownloadsTests final : public QObject {
         h.session_writer.save();
         QVERIFY(h.wait([&] { return h.state() == QStringLiteral("completed"); }));
         QCOMPARE(h.session_writer.disk.download_import_receipts.size(), std::size_t{1});
-        const auto repeated = h.owner->submission().begin(request());
+        const auto repeated = admission->begin(request());
         QCOMPARE(repeated.state, DownloadAdmissionState::Completed);
         QCOMPARE(repeated.result.error, DownloadSubmissionError::None);
         for (int index = 0; index < 5; ++index)

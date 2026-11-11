@@ -677,6 +677,13 @@ int main(int argc, char* argv[]) {
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         // The factory is inert: no browser, profile or COM resources at startup.
         music_player::m0::EmbeddedBrowserBinding embedded_browser{music_player::m0::makeWindowsWebView2Browser};
+#ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
+        const auto refresh_browser_downloads = [&] {
+            embedded_browser.setDownloadSubmission(player_downloads ? player_downloads->embeddedBrowserSubmission()
+                                                                    : nullptr);
+        };
+        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &embedded_browser, refresh_browser_downloads);
+#endif
 #endif
         QQmlApplicationEngine engine;
 #ifdef M0_QT_COMBINED_AUDIO
@@ -839,6 +846,9 @@ int main(int argc, char* argv[]) {
         // never destroy it, replace its hook or start it a second time here.
         if (player_downloads)
             static_cast<void>(player_downloads->start());
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+        refresh_browser_downloads();
+#endif
 #endif
         if (!window->setProperty("startupReady", true)) {
             throw std::runtime_error{"the QML root rejected the startup-ready transition"};
@@ -878,6 +888,9 @@ int main(int argc, char* argv[]) {
                             return;
                         // Keep the owner even if start fails after attaching its exit gate.
                         static_cast<void>(player_downloads->start());
+#ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
+                        refresh_browser_downloads();
+#endif
                         // Publishing may invoke QML and request exit synchronously; the
                         // owner is retained and its gate is already installed at that point.
                         if (guarded_window && guarded_presenter &&

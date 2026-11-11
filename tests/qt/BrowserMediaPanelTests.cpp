@@ -1,5 +1,7 @@
 #include "presentation/BrowserMediaPanel.hpp"
 
+#include "m0/ports/AsyncDownloadSubmission.hpp"
+
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -9,10 +11,12 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTest>
+#include <QUuid>
 
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace music_player::m0;
@@ -37,11 +41,13 @@ struct Harness final {
     BrowserMediaPanel panel;
     std::vector<std::uint64_t> requests;
 
-    Harness() {
+    explicit Harness(bool visible = true) {
         panel.setMaximumWidth(340);
         panel.resize(340, 360);
-        QTest::ignoreMessage(QtWarningMsg, "This plugin does not support propagateSizeHints()");
-        panel.show();
+        if (visible) {
+            QTest::ignoreMessage(QtWarningMsg, "This plugin does not support propagateSizeHints()");
+            panel.show();
+        }
         panel.setProbeHandler([this](const std::uint64_t operation) { requests.push_back(operation); });
         panel.setPage(page);
     }
@@ -65,6 +71,26 @@ struct Harness final {
         list()->item(index)->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
     }
 };
+
+struct Submission final : AsyncDownloadSubmission {
+    std::vector<DownloadRequest> requests;
+    std::vector<std::string> polls;
+    std::optional<DownloadSubmissionResult> completion;
+
+    DownloadAdmissionResult begin(const DownloadRequest& request) override {
+        requests.push_back(request);
+        return {.state = DownloadAdmissionState::Pending};
+    }
+
+    std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override {
+        polls.emplace_back(request_id);
+        return completion;
+    }
+};
+
+bool showsAccepted(Harness& harness) {
+    return harness.status()->text().contains(QStringLiteral("fila de downloads"), Qt::CaseInsensitive);
+}
 } // namespace
 
 class BrowserMediaPanelTests final : public QObject {
@@ -184,6 +210,149 @@ class BrowserMediaPanelTests final : public QObject {
         QVERIFY(!h.confirm()->isEnabled());
         QVERIFY(!h.download()->isEnabled());
         QVERIFY(h.detect()->isEnabled());
+    }
+
+    void downloadUsesFreshConfirmationAndReportsSuccessOnlyAfterDurableAdmission() {
+        Submission submission;
+        Harness h{false};
+        h.panel.setDownloadSubmission(&submission);
+        QVERIFY(h.load(snapshot(3)));
+        QVERIFY(!h.download()->isEnabled());
+        h.select(0);
+        h.select(1);
+        QVERIFY(h.download()->isEnabled());
+        h.confirm()->click();
+        QVERIFY(h.panel.pendingProbe());
+        const auto preview = *h.panel.pendingProbe();
+        h.panel.completeProbe(preview, snapshot(3));
+        QVERIFY(submission.requests.empty());
+        QVERIFY(!showsAccepted(h));
+
+        h.download()->click();
+        QVERIFY(h.panel.pendingProbe());
+        const auto fresh = *h.panel.pendingProbe();
+        QVERIFY(fresh > preview);
+        QVERIFY(!h.download()->isEnabled());
+        h.panel.completeProbe(preview, snapshot(3));
+        QCOMPARE(h.panel.pendingProbe(), std::optional{fresh});
+        QVERIFY(submission.requests.empty());
+        h.panel.completeProbe(fresh, snapshot(3));
+        QCOMPARE(submission.requests.size(), std::size_t{1});
+        const auto& request = submission.requests.front();
+        const auto uuid = QUuid{QString::fromStdString(request.request_id)};
+        QCOMPARE(uuid.version(), QUuid::Random);
+        QCOMPARE(uuid.variant(), QUuid::DCE);
+        QCOMPARE(uuid.toString(QUuid::WithoutBraces).toStdString(), request.request_id);
+        const std::vector<DownloadItem> expected{
+            {"https://cdn.example/0.mp3?token=private-value", "First song", DownloadMediaKind::Audio},
+            {"https://cdn.example/1.mp3?token=private-value", "Song 1", DownloadMediaKind::Video}};
+        QVERIFY(request.items == expected);
+        QVERIFY(!h.download()->isEnabled());
+        QVERIFY(!showsAccepted(h));
+        QVERIFY(h.status()->text().contains(QStringLiteral("Confirmando"), Qt::CaseInsensitive) ||
+                h.status()->text().contains(QStringLiteral("salvamento"), Qt::CaseInsensitive));
+        QTRY_VERIFY(!submission.polls.empty());
+        QVERIFY(!showsAccepted(h));
+        h.download()->click();
+        h.panel.completeProbe(fresh, snapshot(3));
+        QCOMPARE(submission.requests.size(), std::size_t{1});
+
+        submission.completion = {.error = DownloadSubmissionError::None, .job_ids = {"job-1", "job-2"}};
+        QTRY_VERIFY(showsAccepted(h));
+        QVERIFY(std::ranges::all_of(submission.polls, [&request](const auto& id) { return id == request.request_id; }));
+        QVERIFY(!h.status()->text().contains(QStringLiteral("private-value")));
+    }
+
+    void downloadRejectsTheWholeBatchWhenAFreshSelectedSourceChanged() {
+        Submission submission;
+        Harness h{false};
+        h.panel.setDownloadSubmission(&submission);
+        QVERIFY(h.load());
+        h.select(0);
+        h.select(1);
+        h.download()->click();
+        QVERIFY(h.panel.pendingProbe());
+        h.panel.completeProbe(*h.panel.pendingProbe(), snapshot(2, false, QStringLiteral("Changed source")));
+        QVERIFY(submission.requests.empty());
+        QVERIFY(submission.polls.empty());
+        QVERIFY(h.status()->text().contains(QStringLiteral("mud")));
+        QVERIFY(!h.download()->isEnabled());
+    }
+
+    void downloadRevocationBeforeFreshResultKeepsOldPayloadInert_data() {
+        QTest::addColumn<QString>("revocation");
+        QTest::newRow("same-url-navigation") << QStringLiteral("navigation");
+        QTest::newRow("engine-reset") << QStringLiteral("reset");
+        QTest::newRow("submission-detached") << QStringLiteral("detach");
+        QTest::newRow("timeout") << QStringLiteral("timeout");
+    }
+
+    void downloadRevocationBeforeFreshResultKeepsOldPayloadInert() {
+        QFETCH(QString, revocation);
+        Submission submission;
+        Submission replacement;
+        Harness h{false};
+        h.panel.setDownloadSubmission(&submission);
+        QVERIFY(h.load());
+        h.select(0);
+        h.download()->click();
+        QVERIFY(h.panel.pendingProbe());
+        const auto fresh = *h.panel.pendingProbe();
+        if (revocation == QStringLiteral("navigation"))
+            h.panel.setPage(page);
+        else if (revocation == QStringLiteral("reset"))
+            h.panel.resetEngine();
+        else if (revocation == QStringLiteral("detach")) {
+            h.panel.setDownloadSubmission(nullptr);
+            h.panel.setDownloadSubmission(&replacement);
+        } else
+            h.panel.expireProbe(fresh);
+        if (revocation == QStringLiteral("reset"))
+            QVERIFY(!h.panel.pendingProbe());
+        else
+            QCOMPARE(h.panel.pendingProbe(), std::optional{fresh});
+        h.panel.completeProbe(fresh, snapshot());
+        QVERIFY(!h.panel.pendingProbe());
+        QVERIFY(submission.requests.empty());
+        QVERIFY(replacement.requests.empty());
+        QVERIFY(!showsAccepted(h));
+    }
+
+    void downloadRevocationAfterBeginDropsOnlyTheObserver_data() {
+        QTest::addColumn<QString>("revocation");
+        QTest::newRow("same-url-navigation") << QStringLiteral("navigation");
+        QTest::newRow("engine-reset") << QStringLiteral("reset");
+        QTest::newRow("submission-detached") << QStringLiteral("detach");
+    }
+
+    void downloadRevocationAfterBeginDropsOnlyTheObserver() {
+        QFETCH(QString, revocation);
+        Submission submission;
+        Harness h{false};
+        h.panel.setDownloadSubmission(&submission);
+        QVERIFY(h.load());
+        h.select(0);
+        h.download()->click();
+        QVERIFY(h.panel.pendingProbe());
+        const auto fresh = *h.panel.pendingProbe();
+        h.panel.completeProbe(fresh, snapshot());
+        QCOMPARE(submission.requests.size(), std::size_t{1});
+        QTRY_VERIFY(!submission.polls.empty());
+        if (revocation == QStringLiteral("navigation"))
+            h.panel.setPage(page);
+        else if (revocation == QStringLiteral("reset"))
+            h.panel.resetEngine();
+        else
+            h.panel.setDownloadSubmission(nullptr);
+        const auto polls = submission.polls.size();
+        submission.completion = {.error = DownloadSubmissionError::None, .job_ids = {"job-1"}};
+        h.panel.completeProbe(fresh, snapshot());
+        // Wait through several admission timer intervals so a stale observer
+        // would have seen the result and reported a false success on this page.
+        QTest::qWait(150);
+        QCOMPARE(submission.polls.size(), polls);
+        QCOMPARE(submission.requests.size(), std::size_t{1});
+        QVERIFY(!showsAccepted(h));
     }
     void samePageNavigationInvalidatesDataButKeepsThePhysicalProbeSlotUntilItsCallback() {
         Harness h;

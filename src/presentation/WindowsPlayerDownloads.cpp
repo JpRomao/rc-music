@@ -24,6 +24,7 @@
 #include <QTimer>
 #include <QUuid>
 
+#include <algorithm>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -68,9 +69,11 @@ void validateAndOwnIngress(std::optional<WindowsPlayerNativeIngressOptions>& ing
 #endif
 }
 } // namespace
-struct WindowsPlayerDownloads::Impl final {
+struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
     QPointer<PlayerPresenter> presenter;
     bool ingress_ready{}, ingress_closing{};
+    const bool embedded_browser_enabled;
+    bool owner_started{};
 #ifdef RC_MUSIC_PLAYER_NATIVE_INGRESS_AVAILABLE
     // Reservations outlive every worker's destructor fallback. The destructor
     // closes observers before their borrowed controller/ports start to die.
@@ -110,6 +113,22 @@ struct WindowsPlayerDownloads::Impl final {
 #endif
     }
     bool ingressAvailable() const { return ingress_ready && !ingress_closing && presenter && !presenter->exiting(); }
+    bool embeddedBrowserAvailable() const {
+        return QThread::currentThread() == view.thread() && embedded_browser_enabled && owner_started &&
+               !ingress_closing && presenter && !presenter->exiting();
+    }
+    DownloadAdmissionResult begin(const DownloadRequest& request) override {
+        if (!embeddedBrowserAvailable())
+            return {};
+        if (std::ranges::any_of(request.items, [](const auto& item) { return item.youtube.has_value(); }))
+            return {.result = {.error = DownloadSubmissionError::UnsupportedSource}};
+        return controller.begin(request);
+    }
+    std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override {
+        if (!embeddedBrowserAvailable())
+            return DownloadSubmissionResult{};
+        return controller.poll(request_id);
+    }
     bool start() {
         if (!view.start())
             return false;
@@ -126,6 +145,7 @@ struct WindowsPlayerDownloads::Impl final {
             ingress_ready = true;
         }
 #endif
+        owner_started = true;
         return true;
     }
     void pollIngress() {
@@ -174,8 +194,9 @@ struct WindowsPlayerDownloads::Impl final {
     Impl(PlayerPresenter& presenter, const SessionLoadResult& session,
          std::unique_ptr<WindowsDownloadExecution> owned_execution,
          SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options)
-        : presenter(&presenter), execution(std::move(owned_execution)),
-          importer(presenter, {}, PlayerDownloadImportPersistence::Session), checkpoint(std::move(checkpoint_store)),
+        : presenter(&presenter), embedded_browser_enabled(options.embedded_browser_ingress),
+          execution(std::move(owned_execution)), importer(presenter, {}, PlayerDownloadImportPersistence::Session),
+          checkpoint(std::move(checkpoint_store)),
           service(*execution, importer,
                   options.job_namespace.empty() ? QUuid::createUuid().toString(QUuid::Id128).toStdString()
                                                 : std::move(options.job_namespace),
@@ -249,6 +270,9 @@ bool WindowsPlayerDownloads::start() { return impl_->start(); }
 DownloadApplicationBinding* WindowsPlayerDownloads::binding() const { return &impl_->view; }
 AsyncDownloadSubmission& WindowsPlayerDownloads::submission() { return impl_->controller; }
 AsyncYoutubeAudioSubmission& WindowsPlayerDownloads::youtubeSubmission() { return impl_->youtube; }
+AsyncDownloadSubmission* WindowsPlayerDownloads::embeddedBrowserSubmission() const {
+    return impl_->embeddedBrowserAvailable() ? impl_.get() : nullptr;
+}
 void WindowsPlayerDownloads::poll() {
     impl_->view.poll();
     impl_->pollIngress();

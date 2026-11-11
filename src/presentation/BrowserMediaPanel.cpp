@@ -1,7 +1,9 @@
 #include "BrowserMediaPanel.hpp"
 
 #include "BrowserMediaSelection.hpp"
+#include "m0/ports/AsyncDownloadSubmission.hpp"
 
+#include <QDeadlineTimer>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -11,6 +13,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -20,23 +23,38 @@
 namespace music_player::m0 {
 namespace {
 bool ownThread(const QWidget* widget) { return QThread::currentThread() == widget->thread(); }
+struct AdmissionObservation final {
+    std::string id;
+    std::size_t item_count;
+    QDeadlineTimer deadline{10'000};
+};
 } // namespace
 
 struct BrowserMediaPanel::Impl final {
     BrowserMediaSelection selection;
     ProbeHandler handler;
+    AsyncDownloadSubmission* submission{};
     std::optional<std::uint64_t> physical_probe;
+    std::optional<std::uint64_t> download_probe;
+    std::optional<AdmissionObservation> admission;
     QPushButton* detect{};
     QPushButton* confirm{};
     QPushButton* download{};
     QListWidget* list{};
     QLabel* status{};
     QLabel* count{};
+    QLabel* unavailable{};
     QTimer* timer{};
+    QTimer* admission_timer{};
     std::vector<DownloadItem> displayed;
     QString hint;
     bool invoking{false};
     bool refreshing{false};
+
+    void forgetAdmission() {
+        admission_timer->stop();
+        admission.reset();
+    }
 };
 
 BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(std::make_unique<Impl>()) {
@@ -83,7 +101,7 @@ BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(s
     actions->addWidget(impl_->download);
     actions->addStretch(1);
     layout->addLayout(actions);
-    auto* reason = new QLabel(tr("Downloads indisponíveis nesta versão."), this);
+    auto* reason = impl_->unavailable = new QLabel(tr("Downloads indisponíveis nesta versão."), this);
     reason->setObjectName(QStringLiteral("browser-media-unavailable"));
     reason->setTextFormat(Qt::PlainText);
     reason->setWordWrap(true);
@@ -96,6 +114,7 @@ BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(s
 
     QWidget::setTabOrder(impl_->detect, impl_->list);
     QWidget::setTabOrder(impl_->list, impl_->confirm);
+    QWidget::setTabOrder(impl_->confirm, impl_->download);
     impl_->timer = new QTimer(this);
     impl_->timer->setSingleShot(true);
     impl_->timer->setInterval(5000);
@@ -103,13 +122,17 @@ BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(s
         if (impl_->physical_probe)
             expireProbe(*impl_->physical_probe);
     });
-    connect(impl_->detect, &QPushButton::clicked, this, [this] { startProbe(false); });
-    connect(impl_->confirm, &QPushButton::clicked, this, [this] { startProbe(true); });
+    impl_->admission_timer = new QTimer(this);
+    impl_->admission_timer->setInterval(50);
+    connect(impl_->admission_timer, &QTimer::timeout, this, &BrowserMediaPanel::pollAdmission);
+    connect(impl_->detect, &QPushButton::clicked, this, [this] { startProbe(ProbePurpose::Detection); });
+    connect(impl_->confirm, &QPushButton::clicked, this, [this] { startProbe(ProbePurpose::Confirmation); });
+    connect(impl_->download, &QPushButton::clicked, this, [this] { startProbe(ProbePurpose::Download); });
     connect(impl_->list, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
         if (impl_->refreshing)
             return;
         const auto row = impl_->list->row(item);
-        const bool available = !impl_->invoking && !impl_->physical_probe;
+        const bool available = !impl_->invoking && !impl_->physical_probe && !impl_->admission;
         const bool changed =
             available && row >= 0 &&
             impl_->selection.setSelected(static_cast<std::size_t>(row), item->checkState() == Qt::Checked);
@@ -119,7 +142,22 @@ BrowserMediaPanel::BrowserMediaPanel(QWidget* parent) : QWidget(parent), impl_(s
     refresh();
 }
 
-BrowserMediaPanel::~BrowserMediaPanel() { impl_->timer->stop(); }
+BrowserMediaPanel::~BrowserMediaPanel() {
+    impl_->timer->stop();
+    impl_->forgetAdmission();
+}
+
+void BrowserMediaPanel::setDownloadSubmission(AsyncDownloadSubmission* submission) {
+    if (!ownThread(this) || impl_->submission == submission)
+        return;
+    if (impl_->download_probe)
+        (void)impl_->selection.fail(*impl_->download_probe);
+    impl_->submission = submission;
+    impl_->download_probe.reset();
+    impl_->forgetAdmission();
+    impl_->hint.clear();
+    refresh();
+}
 
 void BrowserMediaPanel::setProbeHandler(ProbeHandler handler) {
     if (!ownThread(this))
@@ -130,6 +168,8 @@ void BrowserMediaPanel::setProbeHandler(ProbeHandler handler) {
 void BrowserMediaPanel::setPage(QString trusted_url) {
     if (!ownThread(this))
         return;
+    impl_->download_probe.reset();
+    impl_->forgetAdmission();
     impl_->selection.navigationChanged(std::move(trusted_url));
     if (!impl_->physical_probe)
         impl_->hint.clear();
@@ -142,6 +182,8 @@ void BrowserMediaPanel::resetEngine() {
         return;
     impl_->timer->stop();
     impl_->physical_probe.reset();
+    impl_->download_probe.reset();
+    impl_->forgetAdmission();
     impl_->selection.navigationChanged();
     impl_->hint.clear();
     refresh();
@@ -152,7 +194,12 @@ void BrowserMediaPanel::completeProbe(const std::uint64_t operation, const QByte
     impl_->timer->stop();
     impl_->physical_probe.reset();
     impl_->hint.clear();
-    (void)impl_->selection.complete(operation, payload);
+    const bool download = std::exchange(impl_->download_probe, std::nullopt) == operation;
+    const bool confirmed = impl_->selection.complete(operation, payload);
+    if (download && confirmed && impl_->submission) {
+        beginAdmission(impl_->selection.takeConfirmedItems());
+        return;
+    }
     refresh();
 }
 void BrowserMediaPanel::failProbe(const std::uint64_t operation) {
@@ -160,6 +207,7 @@ void BrowserMediaPanel::failProbe(const std::uint64_t operation) {
         return;
     impl_->timer->stop();
     impl_->physical_probe.reset();
+    impl_->download_probe.reset();
     impl_->hint.clear();
     (void)impl_->selection.fail(operation);
     refresh();
@@ -168,6 +216,7 @@ void BrowserMediaPanel::expireProbe(const std::uint64_t operation) {
     if (!ownThread(this) || impl_->physical_probe != operation)
         return;
     impl_->timer->stop();
+    impl_->download_probe.reset();
     (void)impl_->selection.timeout(operation);
     impl_->hint = tr("A página não respondeu a tempo. Reabra o navegador para tentar novamente.");
     refresh();
@@ -176,15 +225,20 @@ std::optional<std::uint64_t> BrowserMediaPanel::pendingProbe() const {
     return ownThread(this) ? impl_->physical_probe : std::nullopt;
 }
 
-void BrowserMediaPanel::startProbe(const bool confirmation) {
-    if (!ownThread(this) || impl_->invoking || impl_->physical_probe || !impl_->handler)
+void BrowserMediaPanel::startProbe(const ProbePurpose purpose) {
+    const bool download = purpose == ProbePurpose::Download;
+    if (!ownThread(this) || impl_->invoking || impl_->physical_probe || impl_->admission || !impl_->handler ||
+        (download && !impl_->submission))
         return;
     // The callable must outlive a callback that destroys this widget.
     auto handler = impl_->handler;
-    const auto operation = confirmation ? impl_->selection.beginConfirmation() : impl_->selection.beginDetection();
+    const auto operation =
+        purpose == ProbePurpose::Detection ? impl_->selection.beginDetection() : impl_->selection.beginConfirmation();
     if (!operation)
         return;
     impl_->physical_probe = operation;
+    if (download)
+        impl_->download_probe = operation;
     impl_->hint.clear();
     impl_->invoking = true;
     impl_->timer->start();
@@ -200,6 +254,7 @@ void BrowserMediaPanel::startProbe(const bool confirmation) {
         // An exception cannot prove a script physically finished. Keep its
         // slot occupied until a matching callback or engine retirement.
         if (impl_->physical_probe == operation) {
+            impl_->download_probe.reset();
             (void)impl_->selection.fail(*operation);
             impl_->hint = tr("A verificação falhou. Reabra o navegador para tentar novamente.");
         }
@@ -207,6 +262,70 @@ void BrowserMediaPanel::startProbe(const bool confirmation) {
     if (!guard)
         return;
     impl_->invoking = false;
+    refresh();
+}
+
+void BrowserMediaPanel::beginAdmission(std::vector<DownloadItem> items) {
+    if (items.empty() || !impl_->submission) {
+        refresh();
+        return;
+    }
+    const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    impl_->admission = AdmissionObservation{id, items.size()};
+    const auto selected = impl_->selection.selectedIndices();
+    for (const auto index : selected)
+        (void)impl_->selection.setSelected(index, false);
+    auto* const submission = impl_->submission;
+    const QPointer<BrowserMediaPanel> guard{this};
+    DownloadAdmissionResult decision;
+    try {
+        decision = submission->begin({id, std::move(items)});
+    } catch (...) {
+        // A failed observation cannot prove that durable admission did not begin.
+    }
+    if (!guard || !impl_->admission || impl_->admission->id != id)
+        return;
+    if (decision.state == DownloadAdmissionState::Completed) {
+        finishAdmission(decision.result);
+        return;
+    }
+    impl_->hint = tr("Confirmando o salvamento do pedido…");
+    impl_->admission_timer->start();
+    refresh();
+}
+
+void BrowserMediaPanel::pollAdmission() {
+    if (!impl_->admission || !impl_->submission)
+        return;
+    const auto id = impl_->admission->id;
+    const QPointer<BrowserMediaPanel> guard{this};
+    std::optional<DownloadSubmissionResult> result;
+    try {
+        result = impl_->submission->poll(id);
+    } catch (...) {
+        result = DownloadSubmissionResult{};
+    }
+    if (!guard || !impl_->admission || impl_->admission->id != id)
+        return;
+    if (result || impl_->admission->deadline.hasExpired())
+        finishAdmission(result.value_or(DownloadSubmissionResult{}));
+}
+
+void BrowserMediaPanel::finishAdmission(const DownloadSubmissionResult& result) {
+    const auto count = impl_->admission->item_count;
+    impl_->forgetAdmission();
+    if (result.error == DownloadSubmissionError::None && result.job_ids.size() == count &&
+        std::ranges::none_of(result.job_ids, [](const auto& id) { return id.empty(); }))
+        impl_->hint = tr("Pedido aceito na fila de downloads. Acompanhe no painel Downloads.");
+    else if (result.error == DownloadSubmissionError::Busy)
+        impl_->hint = tr("A fila de downloads está ocupada. Confira Downloads antes de tentar novamente.");
+    else if (result.error == DownloadSubmissionError::InvalidRequest ||
+             result.error == DownloadSubmissionError::UnsupportedSource)
+        impl_->hint = tr("A fila de downloads recusou a seleção. Confira as fontes e selecione novamente.");
+    else if (result.error == DownloadSubmissionError::LimitExceeded)
+        impl_->hint = tr("O pedido ultrapassou o limite da fila. Confira Downloads antes de tentar novamente.");
+    else
+        impl_->hint = tr("Não foi possível confirmar o pedido. Confira Downloads antes de tentar novamente.");
     refresh();
 }
 
@@ -245,10 +364,13 @@ void BrowserMediaPanel::refresh() {
             std::ranges::find(selected, static_cast<std::size_t>(index)) != selected.end() ? Qt::Checked
                                                                                            : Qt::Unchecked);
     impl_->refreshing = false;
-    const bool available = !impl_->invoking && !impl_->physical_probe && static_cast<bool>(impl_->handler);
+    const bool available = !impl_->invoking && !impl_->physical_probe && !impl_->admission && impl_->handler;
     impl_->detect->setEnabled(available && impl_->selection.canDetect());
     impl_->confirm->setEnabled(available && impl_->selection.canConfirm());
-    impl_->download->setEnabled(false);
+    impl_->download->setEnabled(available && impl_->submission && impl_->selection.canConfirm());
+    impl_->download->setToolTip(impl_->submission ? tr("Conferir novamente e enviar a seleção à fila de downloads.")
+                                                  : impl_->unavailable->text());
+    impl_->unavailable->setVisible(!impl_->submission);
     impl_->list->setEnabled(available && snapshot.has_value());
     impl_->count->setText(tr("Selecionados: %1 de 20").arg(static_cast<qulonglong>(selected.size())));
 
@@ -275,10 +397,12 @@ void BrowserMediaPanel::refresh() {
             message =
                 tr("Nenhuma mídia compatível encontrada. Inicie a mídia na página e tente Detectar mídia novamente.");
         else
-            message = tr("Selecione até 20 itens e clique em Conferir seleção.");
+            message = impl_->submission ? tr("Selecione até 20 itens para conferir ou baixar.")
+                                        : tr("Selecione até 20 itens e clique em Conferir seleção.");
         break;
     case BrowserMediaSelectionState::Confirmed:
-        message = tr("Seleção conferida. Downloads indisponíveis nesta versão.");
+        message = impl_->submission ? tr("Seleção conferida. Use Baixar selecionados para enviar o pedido.")
+                                    : tr("Seleção conferida. Downloads indisponíveis nesta versão.");
         break;
     case BrowserMediaSelectionState::InvalidSnapshot:
         message = tr("Não foi possível validar a lista. Clique em Detectar mídia para tentar novamente.");

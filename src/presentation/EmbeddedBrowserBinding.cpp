@@ -17,6 +17,45 @@ void EmbeddedBrowserBinding::setOwnerHandle(std::uintptr_t owner_native_handle) 
     if (!closing_)
         owner_handle_ = owner_native_handle;
 }
+void EmbeddedBrowserBinding::setDownloadSubmission(AsyncDownloadSubmission* submission) {
+    if (closing_ || download_submission_ == submission)
+        return;
+    download_submission_ = submission;
+    if (in_flight_window_) {
+        applyDownloadSubmission(*in_flight_window_);
+        return;
+    }
+    if (!window_)
+        return;
+    auto window = std::move(window_);
+    const QPointer<EmbeddedBrowserBinding> guard{this};
+    opening_ = true;
+    in_flight_window_ = window.get();
+    download_update_failed_ = false;
+    applyDownloadSubmission(*window);
+    if (guard) {
+        in_flight_window_ = nullptr;
+        if (!download_update_failed_) {
+            window_ = std::move(window);
+            opening_ = false;
+            return;
+        }
+    }
+    window->shutdown();
+    if (guard) {
+        opening_ = false;
+        setError(tr("Não foi possível atualizar os downloads do navegador. Abra o navegador novamente."));
+    }
+}
+void EmbeddedBrowserBinding::applyDownloadSubmission(EmbeddedBrowserWindow& window) {
+    const QPointer<EmbeddedBrowserBinding> guard{this};
+    try {
+        window.setDownloadSubmission(download_submission_);
+    } catch (...) {
+        if (guard)
+            download_update_failed_ = true;
+    }
+}
 void EmbeddedBrowserBinding::open() {
     if (opening_ || closing_)
         return;
@@ -38,11 +77,20 @@ void EmbeddedBrowserBinding::open() {
             if (factory)
                 window = factory();
         }
-        if (guard && window && owner_handle_)
-            shown = window->show(owner_handle_);
+        if (guard && window && owner_handle_) {
+            in_flight_window_ = window.get();
+            download_update_failed_ = false;
+            applyDownloadSubmission(*window);
+            if (guard && owner_handle_ && !download_update_failed_)
+                shown = window->show(owner_handle_);
+        }
     } catch (...) {
         // Exceptions may contain paths, URLs or runtime diagnostics. The UI gets
         // only a fixed message with a recovery action.
+    }
+    if (guard) {
+        in_flight_window_ = nullptr;
+        shown = shown && !download_update_failed_;
     }
     if (!guard || !shown) {
         if (window) {

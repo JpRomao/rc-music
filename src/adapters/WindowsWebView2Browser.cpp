@@ -108,6 +108,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
     QPushButton* stop{};
     QPushButton* go{};
     BrowserMediaPanel* media{};
+    AsyncDownloadSubmission* download_submission{};
     Surface* surface{};
     ComPtr<ICoreWebView2Environment> environment;
     ComPtr<ICoreWebView2Controller> controller;
@@ -547,7 +548,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
                                         (void)target.controller->put_IsVisible(TRUE);
                                         target.buttons();
                                         target.message(
-                                            L"Informe um endereço HTTPS para navegar. Downloads estão desativados.");
+                                            L"Informe um endereço HTTPS para navegar. Use Mídia para ver as opções.");
                                     });
                                 })
                                 .Get());
@@ -589,6 +590,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         auto* content = new QHBoxLayout;
         content->addWidget(surface, 1);
         media = new BrowserMediaPanel(window.get());
+        media->setDownloadSubmission(download_submission);
         media->setMaximumWidth(340);
         media->hide();
         content->addWidget(media);
@@ -667,6 +669,14 @@ class WindowsWebView2Browser final : public EmbeddedBrowserWindow {
   public:
     WindowsWebView2Browser() : state_(std::make_shared<BrowserState>()) {}
     ~WindowsWebView2Browser() override { shutdown(); }
+    void setDownloadSubmission(AsyncDownloadSubmission* submission) override {
+        const auto state = state_;
+        if (state->retired)
+            return;
+        state->download_submission = submission;
+        if (state->media)
+            state->media->setDownloadSubmission(submission);
+    }
     bool show(std::uintptr_t owner) override {
         const auto handle = reinterpret_cast<HWND>(owner);
         DWORD process_id = 0;

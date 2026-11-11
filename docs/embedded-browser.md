@@ -1,6 +1,6 @@
 # Navegação interna Windows opcional
 
-**Estado:** navegação e detecção/seleção de mídia experimentais opt-in; compilação e testes de contrato são separados do smoke com engine real. Downloads de produção permanecem desligados.
+**Estado:** navegação, seleção e envio à fila comum implementados na edição experimental. O envio depende de uma composição de downloads qualificada e habilitada pelo código confiável. Os perfis atuais mantêm o envio desligado.
 
 O [ADR-0010](architecture/decisions/0010-experimental-webview2-browser.md) propõe WebView2 para a primeira vertical visível da Completa, preservando o [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md). O build padrão/Lite não compila nem linka a engine. Navegação não ativa download, importação ou Native Messaging.
 
@@ -35,7 +35,7 @@ Os testes de contrato usam janela falsa e não iniciam WebView2. Build ON compro
 
 ## Detecção e seleção de mídia
 
-Na janela experimental, **Mídia → Detectar mídia** coleta candidatos da página principal, de Shadow DOM aberto e de frames cujo `contentDocument` esteja acessível pela política de mesma origem. A lista permite escolher até 20 itens; **Conferir seleção** faz outra coleta e exige URL, título e tipo iguais para cada item escolhido. Mudanças em itens não selecionados ou na ordem não ampliam nem revogam a seleção por si só. Fonte selecionada alterada/removida exige nova detecção e escolha. **Baixar selecionados** permanece desabilitado, com a razão visível: a composição protegida de downloads ainda não está habilitada. A conferência não importa, baixa ou grava mídia e não vale como autorização permanente de envio futuro.
+Na janela experimental, **Mídia → Detectar mídia** coleta candidatos da página principal, de Shadow DOM aberto e de frames cujo `contentDocument` esteja acessível pela política de mesma origem. A lista permite escolher até 20 itens. **Conferir seleção** faz uma nova coleta e exige URL, título e tipo iguais para cada item escolhido. Mudanças em itens alheios ou na ordem preservam a escolha. Fonte selecionada alterada ou removida exige nova detecção e seleção.
 
 O mesmo `extensions/chromium/main/media-collector.js` atende a extensão e o recurso embutido no C++. A função é pura, sem chrome, timers, listeners ou estado persistente. A extensão conserva sua sessão V2 no mundo isolado; o wrapper nativo cria um escopo local e chama `rcMusicCollectNativeMedia`, que habilita frames acessíveis sem sentinel global. Base e título pertencem ao documento de cada fonte; a chamada inteira compartilha os limites de 32 documentos, 64 roots, 2.000 elementos, 100 candidatos e 1 MiB. Frames de outra origem/sandbox inacessíveis, roots fechados, blob/MSE, HLS/DASH, live e DRM continuam fora desta cobertura. YouTube não se torna elegível na principal por aparecer numa página ou nesta lista.
 
@@ -47,13 +47,23 @@ O início e a conclusão de navegação de um frame também revogam os dados e a
 
 Esses eventos não autenticam todas as mudanças de documento/DOM. Navegações no mesmo documento podem não gerar `NavigationStarting`, e o Windows documenta que cancelar navegação `srcdoc` é ignorado. Não declarar bloqueio universal de conteúdo não HTTPS ou detecção contínua por esses handlers; a ação de conferência continua exigindo nova coleta. SOP, callbacks reais e comportamento do runtime precisam de smoke próprio. [Navegação no mesmo documento](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/navigation-events#navigation-ids), [limite de cancelamento](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2navigationstartingeventargs?view=webview2-1.0.3179.45#get_cancel).
 
-Esse script roda no contexto da página, não no mundo isolado da extensão. DOM e APIs JavaScript podem ser controlados pela página; limites e contexto no host não autenticam o conteúdo ou provam isolamento do runtime. Nenhum WebView2 real, perfil ou site foi iniciado neste incremento. A futura ação Baixar deve realizar conferência fresca e handoff autorizado no mesmo fluxo, com os gates próprios de execução remota.
+Esse script roda no contexto da página, onde DOM e APIs JavaScript podem ser controlados pela própria página. Limites e contexto no host protegem o processamento dos dados recebidos. A aceitação com WebView2 real continua pendente.
 
 O incremento de frames acessíveis tem evidência em `out/product/test-runs/browser-media-frames-20261104/`: baseline **162/162 Node** e **4/4 CTest/55 casos Qt**; Red **162 passagens/5 falhas Node** e **20/1 painel**; Green **167/167 Node** e **7/7 CTest/191 casos Qt**, sem skips. A entrada nativa do asset real é exercitada em VM, incluindo bases/títulos por documento, frames aninhados/inacessíveis, budgets agregados, duplicatas e nova coleta. O painel caracteriza seleção revogada e callback antigo inerte com URL principal igual. Build app Release ON/lint, grafo Lite de 255 comandos/zero testes e formato 395 C++/62 QML passaram. Nenhum desses checks abre WebView2 ou comprova seu comportamento físico.
 
 Evidências em `out/product/test-runs/browser-media-discovery-20261104/`: extensão baseline 150/150; coletor novo Red 1 passagem/10 falhas, Green 162/162 incluindo caracterização posterior do wrapper IIFE. Codec Native Messaging passou 188/188 antes/depois da extração. Novos codec/seleção tiveram Red 44/23 e 8/17, seguido de Green 68/68 e 25/25. Painel teve Red 2/15 e a regressão de aviso após timeout/navegação 17/1 → 18/18; tracker cancelado 6/1 → 7/7. Fechamento 7/7 CTest, 188 casos Qt, com painel reexecutado em 340 × 360/fontes Windows/falha em warnings inesperados. Builds/lint ON, Lite OFF/grafo 255/zero testes, biblioteca opcional Release OFF/zero testes e formato 383 C++/62 QML passaram. A única mensagem esperada do painel offscreen é a limitação exata de size hints; warnings de fonte ou de aplicação não são ignorados.
 
 `verification.json` registra o grafo ON de 287 comandos com coletor/codec/painel e sem ingresso/execução de downloads. O executável experimental mantém x64 GUI (subsistema 2), com 2.330.112 bytes e SHA-256 `0e8b65ecdd24f23029ed41f1c890dbd448d1b08514ff906c6ed08af6f1cd8669`. O receipt final vincula as fontes commitadas; nenhum instalador foi atualizado neste incremento.
+
+## Envio para a fila de downloads
+
+Quando o serviço confiável está habilitado, **Baixar selecionados** reconfere os itens no próprio clique. A conferência anterior funciona como prévia. O clique cria um pedido único com UUID do app e apenas URL, título e tipo dos itens reconferidos. O pedido entra na mesma fila durável das extensões. Conteúdo da página não escolhe o identificador, os caminhos ou a capacidade do canal. O envio de mídia da janela exclui o canal YouTube.
+
+Navegação, fechamento e revogação antes da reconferência invalidam a intenção. Depois que o serviço recebe o pedido, a janela pode parar de acompanhá-lo enquanto a fila mantém sua própria persistência e execução. A janela confirma aceitação somente após o retorno durável com todos os IDs esperados. Se o salvamento ficar incerto, o painel **Downloads** mantém as ações de inspeção e retry do pedido original.
+
+A porta fica disponível apenas após inicialização bem-sucedida e autorização explícita do perfil C++. A cada pedido ela revalida o ciclo de vida do player. O opt-in continua falso nos perfis atuais, inclusive no perfil das ferramentas instaláveis. A UI mantém visível a indisponibilidade nessa situação.
+
+O Red do painel teve 21 passagens e 9 falhas. O do binding teve 13 passagens e 1 falha, seguido por 14 passagens e 2 falhas na regressão de revogação reentrante. O teste do serviço inicialmente falhou ao compilar pela ausência da porta. O fechamento passou **8/8 CTest e 231 casos Qt**, incluindo a jornada do serviço que aguarda o checkpoint e a confirmação da importação. O build Release da Completa com o perfil atual das ferramentas compilou e registrou zero testes. Logs em `out/product/test-runs/embedded-browser-download-20261110/`. A aceitação com WebView2 real e downloads públicos continua pendente.
 
 ## Evidência anterior da navegação
 

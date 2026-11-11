@@ -36,6 +36,8 @@ struct WindowsPlayerDownloadsOptions final {
     LyricsBinding* lyrics_writer{nullptr};
     QNetworkAccessManager* lyrics_network{nullptr};
     std::optional<WindowsPlayerNativeIngressOptions> native_ingress{};
+    // Trusted opt-in for a qualified embedded media composition.
+    bool embedded_browser_ingress{false};
 };
 
 // Optional Windows application-thread composition, never a QML-created object.
@@ -66,6 +68,8 @@ class WindowsPlayerDownloads final {
     // trusted resolver-capable execution configuration and authenticated host.
     [[nodiscard]] AsyncDownloadSubmission& submission();
     [[nodiscard]] AsyncYoutubeAudioSubmission& youtubeSubmission();
+    // Borrowed UI-thread port. Availability is rechecked at every admission.
+    [[nodiscard]] AsyncDownloadSubmission* embeddedBrowserSubmission() const;
     void poll();
     // Physical service/checkpoint/execution drain, not proof of Saved. Failed
     // final persistence still requires the binding's explicit retry/decision.
