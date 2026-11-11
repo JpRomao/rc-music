@@ -16,6 +16,9 @@ from types import ModuleType
 
 ROOT = Path(os.path.abspath(__file__)).parents[2]
 ONEDIR = ROOT / "tools/youtube-resolver/onedir_plan.py"
+EXPAT_NOTICE = {"role": "Support", "path": "notices/Expat-COPYING.txt", "bytes": 1144,
+                "sha256": "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"}
+EXPAT_NOTICE_SOURCE = ROOT / "tools/download-runtime" / EXPAT_NOTICE["path"]
 NETWORK = (
     ("Bootstrap", "RCMusicDownloadWorker.exe"), ("Payload", "rcmusic-download-network.dll"),
     ("Core", "Qt6Core.dll"), ("Network", "Qt6Network.dll"), ("Msvcp140", "msvcp140.dll"),
@@ -279,7 +282,16 @@ def _youtube(value):
     inventory = planner.validate_inventory(receipt["artifacts"])
     root = _local(receipt["artifact_root"])
     _tree(root, inventory)
-    files = [{"component": "youtube", "role": row["role"], "source_path": str(root / row["path"]),
+    artifact_sources = {row["path"]: root / row["path"] for row in inventory}
+    if any(path.casefold() == "extractor/_internal/pyexpat.pyd" for path in artifact_sources):
+        notice_path = EXPAT_NOTICE["path"]
+        existing = next((row for row in inventory if row["path"].casefold() == notice_path.casefold()), None)
+        if existing is None:
+            inventory = planner.validate_inventory([*inventory, EXPAT_NOTICE])
+            artifact_sources[notice_path] = EXPAT_NOTICE_SOURCE
+        elif existing != EXPAT_NOTICE:
+            raise ValueError("Expat notice does not match its reviewed name and identity")
+    files = [{"component": "youtube", "role": row["role"], "source_path": str(artifact_sources[row["path"]]),
               "relative_path": "payload/download-tools/youtube/" + row["path"],
               "bytes": row["bytes"], "sha256": row["sha256"]} for row in inventory]
     return files, root, {"path": str(receipt_path), "sha256": expected_hash, "bytes": size}

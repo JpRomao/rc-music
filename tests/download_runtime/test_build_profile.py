@@ -30,6 +30,8 @@ PINS = {
     "pywin32-ctypes": "0.2.3", "setuptools": "84.2.1", "yt-dlp": "2026.3.17", "yt-dlp-ejs": "0.8.0",
 }
 NOTICES = ("python-LICENSE.txt", "node-LICENSE.txt", "yt-dlp-LICENSE.txt", "ejs-LICENSE.txt", "pyinstaller-COPYING.txt")
+EXPAT_NOTICE = "notices/Expat-COPYING.txt"
+EXPAT_SHA256 = "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"
 YT_ROLES = {
     "Extractor": "extractor/yt-dlp.exe", "Node": "javascript/node.exe",
     "EjsCore": "extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js",
@@ -127,6 +129,12 @@ class BuildProfileTests(unittest.TestCase):
         data = json.dumps(self.yt.receipt, ensure_ascii=False, allow_nan=False).encode() if raw is None else raw
         write(self.yt.path, data)
         self.config["youtube"] = {"receipt_path": str(self.yt.path), "receipt_sha256": digest(self.yt.path)}
+
+    def add_youtube_support(self, relative, contents):
+        path = write(self.yt.tree / relative, contents)
+        self.yt.receipt["artifacts"].append({"role": "Support", "path": relative,
+                                             "bytes": path.stat().st_size, "sha256": digest(path)})
+        self.save_youtube()
 
     def rejected(self, config=None):
         with self.assertRaises((ValueError, FileNotFoundError, FileExistsError)):
@@ -251,6 +259,40 @@ class BuildProfileTests(unittest.TestCase):
         for row in yt.receipt["artifacts"]:
             self.assertEqual(digest(self.output / "payload/download-tools/youtube" / row["path"]), row["sha256"])
         self.assertFalse((self.root / "historical-inputs").exists())
+
+    def test_youtube_profile_adds_the_exact_expat_notice_to_a_legacy_receipt_with_pyexpat(self):
+        yt = self.add_youtube()
+        self.add_youtube_support("extractor/_internal/pyexpat.pyd", b"synthetic reviewed CPython extension")
+        original_receipt = yt.path.read_bytes()
+        candidate = self.module.plan(self.config)
+        relative = "payload/download-tools/youtube/" + EXPAT_NOTICE
+        rows = [row for row in candidate["files"] if row["relative_path"] == relative]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["component"], rows[0]["role"], rows[0]["bytes"], rows[0]["sha256"]),
+                         ("youtube", "Support", 1144, EXPAT_SHA256))
+        self.assertIn('WindowsYoutubeRuntimeRole::Support, QStringLiteral("' + EXPAT_NOTICE + '")',
+                      candidate["header_text"])
+        self.module.materialize(candidate)
+        self.assertEqual(digest(self.output / relative), EXPAT_SHA256)
+        self.assertEqual(yt.path.read_bytes(), original_receipt)
+        self.assertFalse((yt.tree / EXPAT_NOTICE).exists())
+
+    def test_youtube_profile_keeps_one_matching_expat_notice(self):
+        self.add_youtube()
+        self.add_youtube_support("extractor/_internal/pyexpat.pyd", b"synthetic reviewed CPython extension")
+        license_file = REPOSITORY / "tools/download-runtime" / EXPAT_NOTICE
+        self.add_youtube_support(EXPAT_NOTICE, license_file.read_bytes())
+        candidate = self.module.plan(self.config)
+        relative = "payload/download-tools/youtube/" + EXPAT_NOTICE
+        self.assertEqual(sum(row["relative_path"] == relative for row in candidate["files"]), 1)
+
+    def test_youtube_profile_rejects_a_substituted_expat_notice_for_pyexpat(self):
+        self.add_youtube()
+        self.add_youtube_support("extractor/_internal/pyexpat.pyd", b"synthetic reviewed CPython extension")
+        self.add_youtube_support(EXPAT_NOTICE, b"a substitute of the same size".ljust(1144, b" "))
+        with self.assertRaisesRegex(ValueError, "Expat notice"):
+            self.module.plan(self.config)
+        self.assertFalse(self.output.exists())
 
     def test_network_roles_are_exact_unique_and_order_is_canonical(self):
         reversed_config = copy.deepcopy(self.config)

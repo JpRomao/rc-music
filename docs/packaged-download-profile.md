@@ -58,6 +58,8 @@ A lista de fontes exige os onze pins de `SOURCE_PINS`, os quatro inputs de proje
 
 O inventário de artefatos é validado pela função pura `onedir_plan.validate_inventory()`, incluindo os quatro papéis únicos, notices, colisões e limites de 256 arquivos, 128 MiB por arquivo e 512 MiB no conjunto YouTube. A árvore física precisa corresponder ao inventário completo. Arquivos ou diretórios extras, inclusive o marcador vazio `REQUESTED`, causam recusa e são preservados. O gerador não usa a etapa de build que remove esse marcador.
 
+Quando o inventário inclui `pyexpat.pyd`, o perfil final inclui a licença MIT do Expat com nome, tamanho e SHA-256 fixos. O gerador aceita uma cópia idêntica no recibo YouTube de origem ou usa o texto versionado após conferir a árvore de origem e os limites do inventário ampliado. O header C++ e o recibo do perfil incluem o arquivo de licença. [Texto no repositório](../tools/download-runtime/notices/Expat-COPYING.txt) · [Fonte no CPython 3.13.1](https://github.com/python/cpython/blob/067145177975eadd61a0c907d0d177f7b6a5a3de/Modules/expat/COPYING)
+
 A confiança no produtor e a escolha do pin são pré-condições. Hashes e versões estabelecem consistência dos inputs selecionados; não autenticam publicador, navegador, segurança ou licença de distribuição.
 
 ## CLI e API
@@ -167,6 +169,12 @@ O ensaio TLS 1.2 com os nove artefatos exatos do perfil passou em 1/1 CTest e 22
 O ZIP privado `out/product/rcmusic-schannel-offline-source-20261111/RCMusic-Schannel-Offline-Qt6.11.2-source.zip` contém a árvore preparada usada para compilar o plugin, os textos de licença, o script de preparação e os recibos de preparo, build e perfil. Duas gerações produziram os mesmos bytes. A verificação extraiu e conferiu os 34 membros e confirmou que a DLL do perfil tem os mesmos bytes do build histórico. O SHA-256 do ZIP é `417751a742aa9ffe359f7ca186f12243355a052f3676253c9d5fbc93e3e5a653`. O diretório reúne o gerador e o recibo da verificação.
 
 A reconstrução requer as fontes e o SDK Qt 6.11.2 com headers privados. A verificação do ZIP não executou novo build. O fornecimento das fontes do SDK, a possibilidade de relink e a revisão das obrigações de distribuição seguem pendentes.
+
+### Aviso Expat no perfil YouTube
+
+O candidato em `out/product/download-tools-expat-20261111/` contém 46 arquivos. Os 45 anteriores conferem byte a byte e a única linha nova do header registra `notices/Expat-COPYING.txt`. O leitor Windows aceitou o perfil novo e o anterior. SHA-256 do recibo novo `bc795649d1f299b8709aa1ed7616ddec703cdc78881843609e85b912a0d0efcd`. Passaram 25 casos Python do gerador, 16 do leitor Windows e 19 do planejador do componente. No Red, os testes reproduziram a licença ausente e a aceitação de um texto substituto do mesmo tamanho. Evidências em `out/product/download-vendor-notices-20261111/`.
+
+O binário `pyexpat.pyd` deste candidato continua sendo Expat 2.6.4. CVE-2024-8176 e CVE-2025-59375 afetam essa versão. No wheel fixado do yt-dlp, uma extração com respostas sintéticas demonstrou que o extractor consulta manifestos antes do filtro M4A/HTTPS. Desligar DASH descartou uma faixa AAC com URL HTTPS direta que só aparecia no manifesto. O perfil preserva esse comportamento para requalificação com um runtime corrigido. [Correção em Expat 2.7.0](https://github.com/libexpat/libexpat/blob/R_2_7_0/expat/Changes) · [Correção em Expat 2.7.2](https://github.com/libexpat/libexpat/blob/R_2_7_2/expat/Changes)
 
 ### Opções do perfil — 2026-11-11
 
