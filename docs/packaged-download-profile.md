@@ -160,6 +160,12 @@ O novo recibo tem SHA-256 `71e49af9aef049ca1a9ba1fddf470090e8723a9cf528510ff5943
 
 No Red, o perfil anterior atravessou o preflight e alcançou o caminho de compilador ausente usado pela fixture. Com a correção, a montagem recusou o perfil antes de iniciar o compilador ou criar o runtime. A validação do candidato passou em 2/2 CTest e 61 casos Qt com os bytes exatos do bootstrap e do payload. O recorte cobre HTTP em loopback, cancelamento, saída do worker e ativação Schannel com módulos autenticados. O handshake HTTPS pelo bootstrap continua pendente. Recibos em `out/product/test-runs/download-profile-qt-network-20261111/` e `out/product/download-tools-qt-network-test-20261111/`.
 
+### Fontes do plugin Schannel restrito
+
+O ZIP privado `out/product/rcmusic-schannel-offline-source-20261111/RCMusic-Schannel-Offline-Qt6.11.2-source.zip` contém a árvore preparada usada para compilar o plugin, os textos de licença, o script de preparação e os recibos de preparo, build e perfil. Duas gerações produziram os mesmos bytes. A verificação extraiu e conferiu os 34 membros e confirmou que a DLL do perfil tem os mesmos bytes do build histórico. O SHA-256 do ZIP é `417751a742aa9ffe359f7ca186f12243355a052f3676253c9d5fbc93e3e5a653`. O diretório reúne o gerador e o recibo da verificação.
+
+A reconstrução requer as fontes e o SDK Qt 6.11.2 com headers privados. A verificação do ZIP não executou novo build. O fornecimento das fontes do SDK, a possibilidade de relink e a revisão das obrigações de distribuição seguem pendentes.
+
 ### Opções do perfil — 2026-11-11
 
 O produtor teve Red em quatro métodos com seis erros pela ausência de `features`, seguido de **22/22 métodos Python**. O consumidor Windows teve Red **11 aprovados/5 falhos**, seguido de **16/16 casos PowerShell**. As quatro combinações foram materializadas com bytes sintéticos e aceitas pelo leitor real de componentes, preservando as escolhas. Foram também gerados quatro headers a partir do inventário real de **45 arquivos/133.468.285 bytes** e compilados em um smoke C++20, que confirmou os campos públicos nas quatro combinações. Nesse smoke, o helper de pacote e o provedor Native são substitutos inertes.

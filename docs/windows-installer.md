@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados mais recentes são os de `1b320f3`, com Qt Network, FFmpeg e TagLib atualizados no player. [Setups privados de 1b320f3](#setups-privados-de-1b320f3)
+Os setups privados mais recentes são os de `ba112a6`, com a mesma Qt Network qualificada no player e no worker de downloads. [Setups privados de ba112a6](#setups-privados-de-ba112a6)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,21 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setups privados de ba112a6
+
+Os runtimes Release x64 e os setups foram montados da revisão `ba112a6`. A inspeção confirmou a mesma DLL Qt Network qualificada nas duas posições e os 19 avisos novos do Qtbase. Cada runtime passou no smoke offscreen com 17 cenários de áudio e 19 casos Qt, com zero skips. Cada matriz de associações v2 vincula sete extensões ao manifesto e ao resultado da edição correspondente. [Perfil do worker](packaged-download-profile.md#qt-network-no-worker-privado)
+
+| Edição | Bytes | SHA-256 do setup | SBOM CycloneDX 1.6 |
+| --- | ---: | --- | --- |
+| Lite | 90.126.767 | `67f95ea9440de70bc966b5315a9462acd77a8ffd60fdb118ccc9b4d70f55a599` | [Lite](delivery/rc-music-ba112a6-lite.cdx.json) |
+| Completa experimental | 90.197.409 | `a8c4b30154a666b468db90b9d92aeb53e2c5b1539cb2d17e3eab6e1caeb2bd2e` | [Completa experimental](delivery/rc-music-ba112a6-complete-experimental.cdx.json) |
+
+A verificação estática conferiu 660 membros na Lite e 663 na Completa, as cinco combinações de opcionais e os hashes de 74 e 77 membros lidos dos setups, respectivamente. Os três componentes opcionais começam desmarcados. A Completa requer WebView2 Evergreen x64 já presente.
+
+Os SBOMs passaram na validação offline do esquema CycloneDX 1.6 e inventariam até 657 e 660 arquivos instaláveis, conforme a seleção. A cobertura transitiva e as obrigações de distribuição continuam em revisão. Os candidatos são privados e sem assinatura. Instalação, atualização, remoção e testes nativos continuam pendentes.
+
+Setups, matrizes e recibos ficam em `out/product/windows-ba112a6/`. A conferência estática e a verificação dos SBOMs ficam em `out/product/windows-ba112a6-verify/` e `out/product/windows-ba112a6-sbom/`. Os runtimes e resultados dos smokes ficam em `out/product/r9/out/product/worker-qt-network/`.
 
 ## Setups privados de 1b320f3
 
