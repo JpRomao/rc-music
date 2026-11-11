@@ -152,6 +152,14 @@ A fixture usa Python 3.13+ somente durante o build de testes desse recorte; `Pyt
 
 Essa geração não iniciou o runtime YouTube/Node/EJS nem executou transferência ou conversão pelos binários do candidato completo. Montagem do app com Qt, dependências PE (inclusive `.pyd`), licenças, seleção opcional/ownership do instalador, identidade real Brave e aquisição pública permanecem etapas separadas.
 
+### Qt Network no worker privado
+
+A receita gerou um novo perfil em `out/product/download-tools-qt-network-20261111` com a mesma DLL Qt Network qualificada para o player. A comparação física dos 45 arquivos identificou somente a troca de `Qt6Network.dll`. O header mudou somente no hash dessa DLL. Os nove binários de rede passaram na conferência estática de imports, com as mesmas dependências externas do perfil anterior. [Build e identidade da DLL](desktop-build.md#qt-network-no-sdk-windows)
+
+O novo recibo tem SHA-256 `71e49af9aef049ca1a9ba1fddf470090e8723a9cf528510ff5943f9d6d816654`. O header `PlayerDownloadPackageProfile.hpp` tem SHA-256 `481873032608b32284412b408b09c1f2861be498c1f1962b916b6b0eed97b9d6`. Use esse header no `RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER` e forneça o novo recibo e seu hash ao empacotador. A montagem atual exige que a DLL do worker tenha o mesmo tamanho e hash da DLL qualificada do player.
+
+No Red, o perfil anterior atravessou o preflight e alcançou o caminho de compilador ausente usado pela fixture. Com a correção, a montagem recusou o perfil antes de iniciar o compilador ou criar o runtime. A validação do candidato passou em 2/2 CTest e 61 casos Qt com os bytes exatos do bootstrap e do payload. O recorte cobre HTTP em loopback, cancelamento, saída do worker e ativação Schannel com módulos autenticados. O handshake HTTPS pelo bootstrap continua pendente. Recibos em `out/product/test-runs/download-profile-qt-network-20261111/` e `out/product/download-tools-qt-network-test-20261111/`.
+
 ### Opções do perfil — 2026-11-11
 
 O produtor teve Red em quatro métodos com seis erros pela ausência de `features`, seguido de **22/22 métodos Python**. O consumidor Windows teve Red **11 aprovados/5 falhos**, seguido de **16/16 casos PowerShell**. As quatro combinações foram materializadas com bytes sintéticos e aceitas pelo leitor real de componentes, preservando as escolhas. Foram também gerados quatro headers a partir do inventário real de **45 arquivos/133.468.285 bytes** e compilados em um smoke C++20, que confirmou os campos públicos nas quatro combinações. Nesse smoke, o helper de pacote e o provedor Native são substitutos inertes.

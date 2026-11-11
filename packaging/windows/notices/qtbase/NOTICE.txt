@@ -1,0 +1,63 @@
+RC Music Windows x64 Qt Base notices
+
+RC Music uses Qt Base 6.11.2 shared libraries and plugins from The Qt Company
+and other contributors. See LGPL-3.0-only.txt and GPL-3.0-only.txt for the
+GNU LGPL version 3 and the accompanying GPL version 3 text.
+
+Qt Base and Qt Network
+
+The Windows x64 build uses MSVC 19.44 and Qt Base revision
+ef55f427f2c8b410d34f8a7681020a3000cf6866. The Qt Base build includes the
+upstream FreeType backport 5a280ecde6f324de0d226261036e736e0cb49a71.
+https://github.com/qt/qtbase/tree/ef55f427f2c8b410d34f8a7681020a3000cf6866
+https://github.com/freetype/freetype/commit/5a280ecde6f324de0d226261036e736e0cb49a71
+
+The rebuilt Qt6Network.dll uses the same Qt Base source baseline and includes
+the two Qt patches for CVE-2026-116337 and the production source changes for
+CVE-2026-96432, adjusted to match the local 6.11.2 text literal.
+Qualified Qt6Network.dll SHA-256
+2f4fedd0e88cc53ee488b5676b0d0dea89d94933a446fc627c259a29de21a28f
+Build receipt SHA-256
+b8aad24e7bd0a08c764bbfdce418c162b10e5650c214a46ff92836e33cc8bd06
+https://download.qt.io/official_releases/qt/6.11/CVE-2026-116337-qtbase-6.11-0001.diff
+https://download.qt.io/official_releases/qt/6.11/CVE-2026-116337-qtbase-6.11-0002.diff
+https://download.qt.io/official_releases/qt/6.11/CVE-2026-96432-qtbase-6.11.diff
+
+Qt Network embeds the Public Suffix List snapshot dated 2026-05-14 under
+MPL 2.0, originally provided by Jo Hermans. Its libpsl lookup code from
+revision 664f3dc85259ec65e30248a61fa1c45b7b0e4c3f is under BSD 3-Clause,
+copyright 2014-2016 The Chromium Authors. See Qtbase-libpsl-PSL-LICENSE.txt
+and Qtbase-libpsl-LICENSE.chromium.txt.
+https://doc.qt.io/qt-6.11/qtnetwork-attribution-psl-data.html
+https://doc.qt.io/qt-6.11/qtnetwork-attribution-libpsl.html
+
+Other incorporated libraries
+
+Qt Core incorporates PCRE2 and SLJIT, Qt's zlib and double-conversion. Qt GUI
+incorporates FreeType, HarfBuzz, libpng, MD4C and D3D12 Memory Allocator.
+The qjpeg plugin incorporates libjpeg-turbo. See the corresponding Qtbase
+license and copyright files in this directory.
+
+Portions of this software are copyright © 2026 The FreeType Project
+(www.freetype.org). All rights reserved.
+
+This software is based in part on the work of the Independent JPEG Group.
+
+Optional download worker TLS plugin
+
+The optional download profile carries private copies of Qt Core and Qt
+Network. Its manifest identifies the bytes for each copy. The accompanying
+qrcmusicschanneloffline.dll is derived from the Qt Base 6.11.2 Schannel and
+shared TLS sources, with local changes to certificate revocation handling
+and a 262,144-byte TLS input limit. Its prepared source and build receipts
+identify the derived files and the original Qt inputs.
+Plugin SHA-256
+7dd37d34ba02f75d58bbf3738e27103e205f5ba99727da9812fa3c7f359a90b4
+Prepared source receipt SHA-256
+99d5c955c381569bed6f633f3c2bdf2de780619ca72583ab3bd48324f26c6865
+Build receipt SHA-256
+ea44ce5aea080a083ca71b1dbb8306c0bad1831d9a16f6cf3a65e2a3d1a51c7d
+
+This notice accompanies a private development build. The remaining
+third-party attributions, complete corresponding sources and instructions
+for replacing or relinking the libraries are pending for distribution.

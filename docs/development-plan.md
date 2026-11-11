@@ -834,6 +834,8 @@ O build Windows de Qt Network 6.11.2 incorpora os dois patches da CVE-2026-11633
 
 Os setups privados Lite e Completa experimental de `1b320f3` passaram na leitura estática com os componentes opcionais e as associações vinculadas aos smokes. Os SBOMs CycloneDX 1.6 correspondem aos setups compilados. A cobertura transitiva dos SBOMs, os avisos e fontes restantes, os checks nativos e a distribuição seguem abertos. [Setups, SBOMs e evidências](windows-installer.md#setups-privados-de-1b320f3)
 
+O perfil de downloads atualizado incorpora a DLL Qt Network qualificada. A receita de runtime exige essa DLL nos dois contextos e inclui os 19 avisos do Qtbase. O worker passou em HTTP local, cancelamento e ativação Schannel com o novo perfil. A recompilação dos setups com esse perfil e os avisos, bem como a qualificação instalada, seguem pendentes. [Perfil e checks](packaged-download-profile.md#qt-network-no-worker-privado) · [Avisos Qtbase](desktop-build.md#qt-network-no-sdk-windows)
+
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)

@@ -37,7 +37,7 @@ $inputs = @{
     DumpbinPath = 'C:\Program Files\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\dumpbin.exe'
     BootstrapPath = "$PWD\out\product\browser-integration-tests\RCMusicDownloadWorker.exe"
     PayloadPath = "$PWD\out\product\browser-integration-tests\rcmusic-download-network.dll"
-    QtBinDirectory = "$PWD\q\f75eb9bea8280844c6d1a2b3f4\sdk\bin"
+    QtBinDirectory = "$PWD\out\product\qt-network-sdk\bin"
     CrtDirectory = 'C:\Program Files\Microsoft Visual Studio\18\BuildTools\VC\Redist\MSVC\14.44.35112\x64\Microsoft.VC143.CRT'
     TlsPluginPath = "$PWD\out\product\download-tls\rcmusic-schannel-offline-20261001-03\build\plugins\tls\qrcmusicschanneloffline.dll"
 }

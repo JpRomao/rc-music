@@ -77,7 +77,17 @@ function Get-RuntimeRecipeFiles {
         'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt',
         'notices/taglib/NOTICE.txt', 'notices/taglib/TagLib-AUTHORS.txt',
         'notices/taglib/TagLib-COPYING.LGPL.txt', 'notices/taglib/TagLib-COPYING.MPL.txt',
-        'notices/taglib/utfcpp-LICENSE.txt')
+        'notices/taglib/utfcpp-LICENSE.txt',
+        'notices/qtbase/NOTICE.txt', 'notices/qtbase/LGPL-3.0-only.txt',
+        'notices/qtbase/GPL-3.0-only.txt', 'notices/qtbase/Qtbase-freetype-LICENSE.txt',
+        'notices/qtbase/Qtbase-freetype-BDF-LICENSE.txt', 'notices/qtbase/Qtbase-freetype-PCF-LICENSE.txt',
+        'notices/qtbase/Qtbase-pcre2-LICENCE.txt', 'notices/qtbase/Qtbase-pcre2-LICENSE-SLJIT.txt',
+        'notices/qtbase/Qtbase-zlib-LICENSE.txt', 'notices/qtbase/Qtbase-libpng-LICENSE.txt',
+        'notices/qtbase/Qtbase-libjpeg-LICENSE.txt', 'notices/qtbase/Qtbase-libjpeg-ijg-license.txt',
+        'notices/qtbase/Qtbase-libjpeg-COPYRIGHT.txt', 'notices/qtbase/Qtbase-harfbuzz-ng-COPYING.txt',
+        'notices/qtbase/Qtbase-double-conversion-LICENSE.txt', 'notices/qtbase/Qtbase-libpsl-PSL-LICENSE.txt',
+        'notices/qtbase/Qtbase-libpsl-LICENSE.chromium.txt', 'notices/qtbase/Qtbase-md4c-LICENSE.txt',
+        'notices/qtbase/Qtbase-D3D12MemoryAllocator-LICENSE.txt')
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
@@ -164,6 +174,13 @@ $ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpe
     -PluginPath (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') -Destination $payload
 $qtNetwork = Get-RcMusicQtNetworkRuntime -ManifestPath (Join-Path $PSScriptRoot 'qt-network-runtime.v1.json') `
     -DllDirectory (Join-Path $qt 'bin') -Destination $payload
+if ($componentEnabled) {
+    $workerNetwork = @($downloadComponent.files | Where-Object relative_path -CEQ 'download-tools/network/Qt6Network.dll')
+    if ($workerNetwork.Count -ne 1 -or $workerNetwork[0].sha256 -cne $qtNetwork.sha256 -or
+        $workerNetwork[0].size_bytes -ne $qtNetwork.size_bytes) {
+        throw 'Download worker Qt6Network.dll must match the qualified desktop runtime'
+    }
+}
 $dumpbin = Join-Path ([IO.Path]::GetDirectoryName($cache.CMAKE_CXX_COMPILER)) 'dumpbin.exe'
 $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 # This is an incremental application build, never a Qt SDK rebuild or benchmark.

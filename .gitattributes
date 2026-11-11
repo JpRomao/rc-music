@@ -33,6 +33,8 @@ packaging/windows/LOCAL-DEVELOPMENT.txt text eol=lf
 packaging/windows/notices/*/* -text
 packaging/windows/notices/*/NOTICE.txt text eol=lf
 packaging/windows/notices/qt-multimedia/TLSF-LICENSE.txt whitespace=-blank-at-eol
+packaging/windows/notices/qtbase/Qtbase-freetype-LICENSE.txt whitespace=-blank-at-eof
+packaging/windows/notices/qtbase/Qtbase-zlib-LICENSE.txt whitespace=-blank-at-eof
 packaging/windows/notices/taglib/TagLib-COPYING.MPL.txt whitespace=-blank-at-eof
 packaging/windows/qt.conf text eol=lf
 experiments/m0/candidates/qt/package-v2/PACKAGE-LIMITATIONS.txt text eol=lf

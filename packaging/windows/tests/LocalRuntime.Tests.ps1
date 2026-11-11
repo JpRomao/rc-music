@@ -31,7 +31,17 @@ foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPY
         'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt',
         'notices/taglib/NOTICE.txt', 'notices/taglib/TagLib-AUTHORS.txt',
         'notices/taglib/TagLib-COPYING.LGPL.txt', 'notices/taglib/TagLib-COPYING.MPL.txt',
-        'notices/taglib/utfcpp-LICENSE.txt')) {
+        'notices/taglib/utfcpp-LICENSE.txt',
+        'notices/qtbase/NOTICE.txt', 'notices/qtbase/LGPL-3.0-only.txt',
+        'notices/qtbase/GPL-3.0-only.txt', 'notices/qtbase/Qtbase-freetype-LICENSE.txt',
+        'notices/qtbase/Qtbase-freetype-BDF-LICENSE.txt', 'notices/qtbase/Qtbase-freetype-PCF-LICENSE.txt',
+        'notices/qtbase/Qtbase-pcre2-LICENCE.txt', 'notices/qtbase/Qtbase-pcre2-LICENSE-SLJIT.txt',
+        'notices/qtbase/Qtbase-zlib-LICENSE.txt', 'notices/qtbase/Qtbase-libpng-LICENSE.txt',
+        'notices/qtbase/Qtbase-libjpeg-LICENSE.txt', 'notices/qtbase/Qtbase-libjpeg-ijg-license.txt',
+        'notices/qtbase/Qtbase-libjpeg-COPYRIGHT.txt', 'notices/qtbase/Qtbase-harfbuzz-ng-COPYING.txt',
+        'notices/qtbase/Qtbase-double-conversion-LICENSE.txt', 'notices/qtbase/Qtbase-libpsl-PSL-LICENSE.txt',
+        'notices/qtbase/Qtbase-libpsl-LICENSE.chromium.txt', 'notices/qtbase/Qtbase-md4c-LICENSE.txt',
+        'notices/qtbase/Qtbase-D3D12MemoryAllocator-LICENSE.txt')) {
     $entry = @($manifest.files | Where-Object relative_path -CEQ $relative)
     $recipe = @($manifest.recipe_files | Where-Object path -CEQ ('packaging/windows/' + $relative))
     if ($entry.Count -ne 1 -or $recipe.Count -ne 1 -or $entry[0].sha256 -cne $recipe[0].sha256) {
