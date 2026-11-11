@@ -851,6 +851,7 @@ std::vector<DownloadJobSnapshot> DownloadService::snapshot() const {
         result.push_back(job.view);
     return result;
 }
+bool DownloadService::hasActiveExecution() const noexcept { return impl_->active.has_value(); }
 
 DownloadServiceCapacity DownloadService::capacity() const noexcept {
     const auto& state = *impl_;

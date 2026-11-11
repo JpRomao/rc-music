@@ -2,6 +2,7 @@
 
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
+#include "adapters/WindowsMediaFoundationLaunch.hpp"
 #include "adapters/WindowsRecoveredMediaValidator.hpp"
 
 #include <QElapsedTimer>
@@ -17,6 +18,22 @@
 namespace music_player::m0 {
 namespace {
 using Outcome = DownloadRecoveryValidationOutcome;
+
+QString owned(const QString& value) { return QString(value.constData(), value.size()); }
+
+WindowsDownloadWorkspaceConfig owned(WindowsDownloadWorkspaceConfig value) {
+    value.staging_parent = owned(value.staging_parent);
+    value.publish_parent = owned(value.publish_parent);
+    return value;
+}
+
+WindowsMediaFoundationLaunchConfig owned(WindowsMediaFoundationLaunchConfig value) {
+    value.runtime_parent = owned(value.runtime_parent);
+    value.source_executable = owned(value.source_executable);
+    value.source_sha256 = QByteArray(value.source_sha256.constData(), value.source_sha256.size());
+    return value;
+}
+
 bool validJob(std::string_view id) {
     return !id.empty() && id.size() <= 64 && std::ranges::all_of(id, [](unsigned char value) {
         return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') ||
@@ -70,9 +87,10 @@ Outcome ownership(DownloadOwnershipAssessment assessment) {
 class RecoveryTask final : public WindowsDownloadRecoveryValidationTask {
   public:
     RecoveryTask(QString directory, WindowsDownloadWorkspaceConfig workspace, WindowsLocalMp3ValidatorConfig tools,
-                 WindowsDownloadOwnershipStoreOptions options)
+                 WindowsDownloadOwnershipStoreOptions options,
+                 std::optional<WindowsMediaFoundationLaunchConfig> media = {})
         : directory_(std::move(directory)), workspace_(std::move(workspace)), tools_(std::move(tools)),
-          ownership_options_(std::move(options)) {}
+          ownership_options_(std::move(options)), media_(std::move(media)) {}
     bool start(const std::string& id, qint64 now_ms) override {
         if (started_)
             return false;
@@ -111,9 +129,9 @@ class RecoveryTask final : public WindowsDownloadRecoveryValidationTask {
             result_ = Outcome::Unverified;
             return true;
         }
-        validator_ = std::make_unique<WindowsRecoveredMediaValidator>(workspace_, tools_);
+        validator_ = std::make_unique<WindowsRecoveredMediaValidator>(workspace_, tools_, std::move(media_));
         static_cast<void>(validator_->start(*found, now_ms));
-        // The fast owner observes cancellation after journal/ownership proof,
+        // The owner observes cancellation after ownership and tool preparation,
         // before the first poll can launch the decoder.
         return true;
     }
@@ -205,6 +223,7 @@ class RecoveryTask final : public WindowsDownloadRecoveryValidationTask {
     WindowsDownloadWorkspaceConfig workspace_;
     WindowsLocalMp3ValidatorConfig tools_;
     WindowsDownloadOwnershipStoreOptions ownership_options_;
+    std::optional<WindowsMediaFoundationLaunchConfig> media_;
     bool started_{false};
     std::optional<Outcome> result_{};
     std::unique_ptr<WindowsRecoveredMediaValidator> validator_{};
@@ -448,6 +467,17 @@ struct WindowsDownloadRecoveryValidation::Impl {
 };
 WindowsDownloadRecoveryValidation::WindowsDownloadRecoveryValidation(TaskFactory factory)
     : impl_(std::make_unique<Impl>(std::move(factory))) {}
+WindowsDownloadRecoveryValidation::WindowsDownloadRecoveryValidation(
+    QString directory, WindowsDownloadWorkspaceConfig workspace, WindowsMediaFoundationLaunchConfig media,
+    quint64 max_process_memory_bytes, qint64 total_timeout_ms, WindowsDownloadOwnershipStoreOptions options)
+    : WindowsDownloadRecoveryValidation([directory = owned(directory), workspace = owned(std::move(workspace)),
+                                         media = owned(std::move(media)), max_process_memory_bytes, total_timeout_ms,
+                                         options = std::move(options)] {
+          WindowsLocalMp3ValidatorConfig tools{.max_process_memory_bytes = max_process_memory_bytes,
+                                               .total_timeout_ms = total_timeout_ms,
+                                               .backend = WindowsLocalMediaBackend::MediaFoundation};
+          return std::make_unique<RecoveryTask>(directory, workspace, std::move(tools), options, media);
+      }) {}
 WindowsDownloadRecoveryValidation::WindowsDownloadRecoveryValidation(QString directory,
                                                                      WindowsDownloadWorkspaceConfig workspace,
                                                                      WindowsLocalMp3ValidatorConfig tools,

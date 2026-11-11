@@ -500,6 +500,121 @@ class DownloadApplicationBindingTests final : public QObject {
         QCOMPARE(h.execution.starts, 0);
         QCOMPARE(h.importer.calls, 0);
     }
+    void activeDownloadBlocksRecoveryStart_data() {
+        QTest::addColumn<bool>("validate");
+        QTest::newRow("review") << false;
+        QTest::newRow("validation") << true;
+    }
+    void activeDownloadBlocksRecoveryStart() {
+        QFETCH(bool, validate);
+        Harness h({}, true, true);
+        QVERIFY(h.interrupted());
+        const auto job = QStringLiteral("old-1");
+        if (validate) {
+            QVERIFY(h.binding.reviewFiles(job));
+            h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+            h.binding.poll();
+        }
+        const auto role = validate ? DownloadJobsModel::CanValidateMediaRole : DownloadJobsModel::CanReviewFilesRole;
+        QVERIFY(h.reviewValue(role).toBool());
+        auto next = input();
+        next.request_id[0] = '1';
+        QCOMPARE(h.controller.begin(next).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        const auto start_recovery = [&] {
+            return validate ? h.binding.validateMedia(job) : h.binding.reviewFiles(job);
+        };
+        QVERIFY(!start_recovery());
+        QVERIFY(!h.reviewValue(role).toBool());
+        QCOMPARE(h.review.requests.size(), validate ? std::size_t{1} : std::size_t{0});
+        QVERIFY(h.validation.requests.empty());
+
+        h.execution.update.state = DownloadExecutionState::Failed;
+        h.execution.update.error = DownloadFailure::Network;
+        h.binding.poll();
+        QVERIFY(h.reviewValue(role).toBool());
+        QVERIFY(start_recovery());
+    }
+    void recoveryHoldsExecutionUntilPhysicalRelease_data() {
+        QTest::addColumn<QString>("action");
+        QTest::addColumn<bool>("uncertain");
+        QTest::newRow("review") << QStringLiteral("review") << false;
+        QTest::newRow("discard") << QStringLiteral("discard") << false;
+        QTest::newRow("validation and retained proof") << QStringLiteral("validation") << false;
+        QTest::newRow("quarantined review") << QStringLiteral("review") << true;
+        QTest::newRow("quarantined validation") << QStringLiteral("validation") << true;
+    }
+    void recoveryHoldsExecutionUntilPhysicalRelease() {
+        QFETCH(QString, action);
+        QFETCH(bool, uncertain);
+        Harness h({}, true, true);
+        h.review.discard_supported = true;
+        QVERIFY(h.interrupted());
+        const auto job = QStringLiteral("old-1");
+        const bool discard = action == QStringLiteral("discard");
+        const bool validate = action == QStringLiteral("validation");
+        QVERIFY(h.binding.reviewFiles(job));
+        if (discard || validate) {
+            h.review.complete(discard ? DownloadRecoveryReviewOutcome::OwnedPartial
+                                      : DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+            h.binding.poll();
+            if (discard) {
+                QVERIFY(h.binding.requestDiscardPartials(job));
+                QVERIFY(h.binding.confirmDiscardPartials(job, h.binding.discardConsentToken()));
+            } else {
+                QVERIFY(h.binding.validateMedia(job));
+            }
+        }
+
+        auto next = input();
+        next.request_id[0] = '1';
+        QCOMPARE(h.controller.begin(next).state, DownloadAdmissionState::Pending);
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        h.io.saved();
+        h.binding.poll();
+        const auto admitted = h.controller.poll(next.request_id);
+        QVERIFY(admitted);
+        QCOMPARE(admitted->error, DownloadSubmissionError::None);
+        QCOMPARE(h.service.snapshot().back().state, DownloadJobState::Queued);
+        QCOMPARE(h.execution.starts, 0);
+
+        if (uncertain) {
+            auto& throw_poll = validate ? h.validation.throw_poll : h.review.throw_poll;
+            throw_poll = true;
+            h.binding.poll();
+            throw_poll = false;
+            if (validate)
+                h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+            else
+                h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+            h.binding.poll();
+            h.binding.poll();
+            QVERIFY(!h.binding.reviewFiles(QStringLiteral("old-2")));
+            QCOMPARE(h.execution.starts, 0);
+            if (validate)
+                h.validation.physical_stopped = true;
+            else
+                h.review.physical_stopped = true;
+        } else if (validate) {
+            h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+            h.binding.poll();
+            QVERIFY(h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+            QCOMPARE(h.execution.starts, 0);
+            QVERIFY(h.binding.releaseValidation(job));
+            h.binding.poll();
+            QCOMPARE(h.execution.starts, 0);
+            h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        } else {
+            h.review.complete(discard ? DownloadRecoveryReviewOutcome::Discarded
+                                      : DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        }
+        h.binding.poll();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.update.job_id, admitted->job_ids.front());
+    }
     void recoveredImportRequiresCurrentOneShotConsentAndNativePreparationBeforeHandoff() {
         Harness h({}, true, true);
         QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));

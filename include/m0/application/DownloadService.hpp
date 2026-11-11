@@ -69,6 +69,7 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] DownloadSubmissionResult submitStaged(const DownloadRequest& request);
     [[nodiscard]] bool confirmStaged(std::string_view request_id);
     [[nodiscard]] std::vector<DownloadJobSnapshot> snapshot() const;
+    [[nodiscard]] bool hasActiveExecution() const noexcept;
     // Current ledger usage, including terminal history, and configured limits.
     // A pure observation: no I/O or dependency callbacks, and no quota release.
     [[nodiscard]] DownloadServiceCapacity capacity() const noexcept;

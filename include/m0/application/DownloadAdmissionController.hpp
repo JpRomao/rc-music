@@ -45,7 +45,9 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     DownloadAdmissionController(const DownloadAdmissionController&) = delete;
     DownloadAdmissionController& operator=(const DownloadAdmissionController&) = delete;
     [[nodiscard]] bool start();
-    void tick(std::int64_t now_ms);
+    // May defer the next execution while local recovery retains shared storage.
+    // Checkpoint I/O, active work, and pending import acknowledgements still drain.
+    void tick(std::int64_t now_ms, bool allow_start = true);
     [[nodiscard]] DownloadAdmissionResult begin(const DownloadRequest& request) override;
     [[nodiscard]] std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override;
     [[nodiscard]] bool retryAdmission();

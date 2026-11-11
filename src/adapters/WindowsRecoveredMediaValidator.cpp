@@ -14,8 +14,9 @@ bool terminal(LocalMp3ValidationState state) {
 }
 } // namespace
 WindowsRecoveredMediaValidator::WindowsRecoveredMediaValidator(WindowsDownloadWorkspaceConfig workspace,
-                                                               WindowsLocalMp3ValidatorConfig tools)
-    : workspace_(std::move(workspace)), tools_(std::move(tools)) {}
+                                                               WindowsLocalMp3ValidatorConfig tools,
+                                                               std::optional<WindowsMediaFoundationLaunchConfig> media)
+    : workspace_(std::move(workspace)), tools_(std::move(tools)), media_(std::move(media)) {}
 WindowsRecoveredMediaValidator::~WindowsRecoveredMediaValidator() = default;
 bool WindowsRecoveredMediaValidator::start(const DownloadOwnershipRecord& record, qint64 now_ms) {
     if (update_.state != RecoveredMediaValidationState::Idle || now_ms < 0 || tools_.total_timeout_ms <= 0 ||
@@ -26,6 +27,17 @@ bool WindowsRecoveredMediaValidator::start(const DownloadOwnershipRecord& record
     if (pin.assessment != DownloadOwnershipAssessment::OwnedFinalCandidate || !pin.candidate) {
         finish(RecoveredMediaValidationState::Failed, DownloadFailure::Publication);
         return false;
+    }
+    if (media_) {
+        if (tools_.backend != WindowsLocalMediaBackend::MediaFoundation || tools_.prepared_launch) {
+            finish(RecoveredMediaValidationState::Failed, DownloadFailure::InvalidResult);
+            return false;
+        }
+        tools_.prepared_launch = WindowsMediaFoundationLaunch::prepare(*media_);
+        if (!tools_.prepared_launch) {
+            finish(RecoveredMediaValidationState::Failed, DownloadFailure::Unavailable);
+            return false;
+        }
     }
     // Keep preparation in the original deadline. Launch is deferred so a
     // cancellation/expired clock observed after filesystem proof starts no child.

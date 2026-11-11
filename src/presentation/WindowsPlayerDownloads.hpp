@@ -18,6 +18,7 @@ class PlayerPresenter;
 class WindowsDownloadExecution;
 class LyricsBinding;
 struct SessionLoadResult;
+struct WindowsDownloadExecutionProfile;
 
 struct WindowsPlayerNativeIngressOptions final {
     // Trusted optional profiles only, never values from a page or checkpoint.
@@ -53,6 +54,11 @@ struct WindowsPlayerDownloadsOptions final {
 // prompt UI shutdown protocol. Use the same UI ABI as the borrowed presenter.
 class WindowsPlayerDownloads final {
   public:
+    // The configured owner uses the same trusted journal and workspace for
+    // execution and explicit recovery. Borrowed ports remain a legacy override.
+    [[nodiscard]] static std::unique_ptr<WindowsPlayerDownloads> createConfigured(
+        PlayerPresenter& presenter, const SessionLoadResult& session, WindowsDownloadExecutionProfile profile,
+        SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options = {});
     WindowsPlayerDownloads(PlayerPresenter& presenter, const SessionLoadResult& session,
                            std::unique_ptr<WindowsDownloadExecution> execution,
                            SingleWorkerDownloadCheckpointIo::Factory checkpoint_store,
@@ -76,6 +82,11 @@ class WindowsPlayerDownloads final {
     [[nodiscard]] bool stopped() const;
 
   private:
+    WindowsPlayerDownloads(PlayerPresenter& presenter, const SessionLoadResult& session,
+                           std::unique_ptr<WindowsDownloadExecution> execution,
+                           SingleWorkerDownloadCheckpointIo::Factory checkpoint_store,
+                           WindowsPlayerDownloadsOptions options, std::unique_ptr<DownloadRecoveryReview> review,
+                           std::unique_ptr<DownloadRecoveryValidation> validation);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -3,7 +3,10 @@
 #include "adapters/DownloadCheckpointJson.hpp"
 #include "adapters/DownloadLyricsLookup.hpp"
 #include "adapters/QtLyricsService.hpp"
+#include "adapters/WindowsConfiguredDownloadExecution.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
+#include "adapters/WindowsDownloadRecoveryReview.hpp"
+#include "adapters/WindowsDownloadRecoveryValidation.hpp"
 #include "adapters/YoutubeAudioAdmission.hpp"
 #include "m0/application/DownloadAdmissionController.hpp"
 #include "presentation/DownloadLyricsBinding.hpp"
@@ -94,7 +97,13 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
     std::unordered_set<std::string> offered_lyrics;
     bool offering_lyrics{};
     bool lyrics_wake_queued{};
+    std::unique_ptr<DownloadRecoveryReview> recovery_review;
+    std::unique_ptr<DownloadRecoveryValidation> recovery_validation;
     DownloadApplicationBinding view;
+    bool recoveryStopped() const {
+        return (!recovery_review || recovery_review->stopped()) &&
+               (!recovery_validation || recovery_validation->stopped());
+    }
     void closeIngress() {
         ingress_ready = false;
         ingress_closing = true;
@@ -191,7 +200,8 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
 
     Impl(PlayerPresenter& presenter, const SessionLoadResult& session,
          std::unique_ptr<WindowsDownloadExecution> owned_execution,
-         SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options)
+         SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options,
+         std::unique_ptr<DownloadRecoveryReview> review, std::unique_ptr<DownloadRecoveryValidation> validation)
         : presenter(&presenter), embedded_browser_enabled(options.embedded_browser_ingress),
           execution(std::move(owned_execution)), importer(presenter, {}, PlayerDownloadImportPersistence::Session),
           checkpoint(std::move(checkpoint_store)),
@@ -205,6 +215,7 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
           lyrics_lookup(lyrics_service ? std::make_unique<DownloadLyricsLookup>(*lyrics_service) : nullptr),
           lyrics_view(lyrics_lookup ? std::make_unique<DownloadLyricsBinding>(*lyrics_lookup, *lyrics_writer)
                                     : nullptr),
+          recovery_review(std::move(review)), recovery_validation(std::move(validation)),
           view(presenter, controller, service,
                {.shutdown =
                     [this] {
@@ -253,17 +264,57 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
 WindowsPlayerDownloads::WindowsPlayerDownloads(PlayerPresenter& presenter, const SessionLoadResult& session,
                                                std::unique_ptr<WindowsDownloadExecution> execution,
                                                SingleWorkerDownloadCheckpointIo::Factory checkpoint_store,
-                                               WindowsPlayerDownloadsOptions options) {
+                                               WindowsPlayerDownloadsOptions options)
+    : WindowsPlayerDownloads(presenter, session, std::move(execution), std::move(checkpoint_store), std::move(options),
+                             {}, {}) {}
+WindowsPlayerDownloads::WindowsPlayerDownloads(PlayerPresenter& presenter, const SessionLoadResult& session,
+                                               std::unique_ptr<WindowsDownloadExecution> execution,
+                                               SingleWorkerDownloadCheckpointIo::Factory checkpoint_store,
+                                               WindowsPlayerDownloadsOptions options,
+                                               std::unique_ptr<DownloadRecoveryReview> review,
+                                               std::unique_ptr<DownloadRecoveryValidation> validation) {
     if (!execution || !checkpoint_store || QThread::currentThread() != presenter.thread() ||
         (options.lyrics_writer && options.lyrics_writer->thread() != presenter.thread()) ||
         (options.lyrics_network && (!options.lyrics_writer || options.lyrics_network->thread() != presenter.thread())))
         throw std::invalid_argument{
             "player downloads requires same-thread presenter, execution and checkpoint factory"};
     validateAndOwnIngress(options.native_ingress);
+    if (review)
+        options.binding.recovery_review = review.get();
+    if (validation)
+        options.binding.recovery_validation = validation.get();
     impl_ = std::make_unique<Impl>(presenter, session, std::move(execution), std::move(checkpoint_store),
-                                   std::move(options));
+                                   std::move(options), std::move(review), std::move(validation));
 }
 WindowsPlayerDownloads::~WindowsPlayerDownloads() = default;
+std::unique_ptr<WindowsPlayerDownloads> WindowsPlayerDownloads::createConfigured(
+    PlayerPresenter& presenter, const SessionLoadResult& session, WindowsDownloadExecutionProfile profile,
+    SingleWorkerDownloadCheckpointIo::Factory checkpoint_store, WindowsPlayerDownloadsOptions options) {
+    const auto own = [](const QString& text) { return QString{text.constData(), text.size()}; };
+    const auto journal = own(profile.journal_directory);
+    auto workspace = profile.job.workspace;
+    workspace.staging_parent = own(workspace.staging_parent);
+    workspace.publish_parent = own(workspace.publish_parent);
+    const auto media = profile.media;
+    const auto memory = profile.job.converter.max_process_memory_bytes;
+    const auto timeout = profile.job.converter.total_timeout_ms;
+    const bool validation_available =
+        !profile.provision_media_profile && !media.require_app_container && !media.app_container;
+    auto execution = makeWindowsConfiguredDownloadExecution(std::move(profile));
+    if (!execution)
+        return {};
+    if (options.binding.recovery_review || options.binding.recovery_validation)
+        return std::make_unique<WindowsPlayerDownloads>(presenter, session, std::move(execution),
+                                                        std::move(checkpoint_store), std::move(options));
+    auto review = std::make_unique<WindowsDownloadRecoveryReview>(journal, workspace);
+    auto validation =
+        validation_available
+            ? std::make_unique<WindowsDownloadRecoveryValidation>(journal, std::move(workspace), media, memory, timeout)
+            : nullptr;
+    return std::unique_ptr<WindowsPlayerDownloads>{
+        new WindowsPlayerDownloads(presenter, session, std::move(execution), std::move(checkpoint_store),
+                                   std::move(options), std::move(review), std::move(validation))};
+}
 bool WindowsPlayerDownloads::start() { return impl_->start(); }
 DownloadApplicationBinding* WindowsPlayerDownloads::binding() const { return &impl_->view; }
 AsyncDownloadSubmission& WindowsPlayerDownloads::submission() { return impl_->controller; }
@@ -278,6 +329,6 @@ void WindowsPlayerDownloads::poll() {
 }
 bool WindowsPlayerDownloads::stopped() const {
     return impl_->controller.stopped() && impl_->checkpoint.stopped() && impl_->execution->stopped() &&
-           impl_->lyricsDrained() && impl_->ingressStopped();
+           impl_->lyricsDrained() && impl_->ingressStopped() && impl_->recoveryStopped();
 }
 } // namespace music_player::m0

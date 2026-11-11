@@ -364,7 +364,7 @@ bool DownloadAdmissionController::start() {
     const Impl::Guard guard(owner);
     return owner.load();
 }
-void DownloadAdmissionController::tick(const std::int64_t now_ms) {
+void DownloadAdmissionController::tick(const std::int64_t now_ms, const bool allow_start) {
     auto& owner = *impl_;
     if (owner.operating || owner.state == DownloadAdmissionControllerState::Stopped)
         return;
@@ -379,7 +379,7 @@ void DownloadAdmissionController::tick(const std::int64_t now_ms) {
     // Import acknowledgement polling may request shutdown from a trusted
     // callback inside the service port call. Recheck ingress immediately before
     // any successor is started, while execution/import draining stays enabled.
-    owner.service.tick(now_ms, [&owner] { return !owner.closing; });
+    owner.service.tick(now_ms, [&owner, allow_start] { return !owner.closing && allow_start; });
     owner.drain();
 }
 DownloadAdmissionResult DownloadAdmissionController::begin(const DownloadRequest& request) {

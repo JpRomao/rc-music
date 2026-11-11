@@ -9,6 +9,7 @@
 #include <memory>
 
 namespace music_player::m0 {
+struct WindowsMediaFoundationLaunchConfig;
 struct DownloadRecoveryImportPreparation final {
     DownloadRecoveryValidationOutcome outcome{DownloadRecoveryValidationOutcome::Unreadable};
     std::filesystem::path trusted_mp3{};
@@ -38,6 +39,12 @@ class WindowsDownloadRecoveryValidation final : public DownloadRecoveryValidatio
     explicit WindowsDownloadRecoveryValidation(TaskFactory factory);
     WindowsDownloadRecoveryValidation(QString journal_directory, WindowsDownloadWorkspaceConfig workspace,
                                       WindowsLocalMp3ValidatorConfig tools,
+                                      WindowsDownloadOwnershipStoreOptions ownership_options = {});
+    // The packaged path authenticates a fresh Media Foundation lease on the
+    // recovery worker after ownership proof. It never launches raw tools.
+    WindowsDownloadRecoveryValidation(QString journal_directory, WindowsDownloadWorkspaceConfig workspace,
+                                      WindowsMediaFoundationLaunchConfig media, quint64 max_process_memory_bytes,
+                                      qint64 total_timeout_ms,
                                       WindowsDownloadOwnershipStoreOptions ownership_options = {});
     ~WindowsDownloadRecoveryValidation() override;
     WindowsDownloadRecoveryValidation(const WindowsDownloadRecoveryValidation&) = delete;

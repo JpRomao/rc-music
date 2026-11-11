@@ -636,15 +636,12 @@ int main(int argc, char* argv[]) {
         std::unique_ptr<music_player::m0::WindowsPlayerDownloads> player_downloads;
         const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
             auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
-            auto execution = music_player::m0::makeWindowsConfiguredDownloadExecution(std::move(profile.execution));
-            if (execution) {
-                profile.options.lyrics_writer = &lyrics_binding;
-                player_downloads = std::make_unique<music_player::m0::WindowsPlayerDownloads>(
-                    presenter, downloads_initial_session, std::move(execution), std::move(checkpoint_factory),
-                    std::move(profile.options));
-            } else {
+            profile.options.lyrics_writer = &lyrics_binding;
+            player_downloads = music_player::m0::WindowsPlayerDownloads::createConfigured(
+                presenter, downloads_initial_session, std::move(profile.execution), std::move(checkpoint_factory),
+                std::move(profile.options));
+            if (!player_downloads)
                 qInfo("The configured download profile is unavailable");
-            }
         };
         // Both the timer's callbacks and the QML roots die before the retained
         // owner; presenter/session/lyrics dependencies outlive all of them.

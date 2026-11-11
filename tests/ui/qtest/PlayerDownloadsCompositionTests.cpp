@@ -1,6 +1,7 @@
 #include "../../qt/support/YoutubeResolverTestSupport.hpp"
 #include "adapters/DownloadJobsModel.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
+#include "adapters/WindowsConfiguredDownloadExecution.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
@@ -346,7 +347,8 @@ struct Player final {
     bool started{false};
 
     explicit Player(Files& paths, std::shared_ptr<Observation> state = std::make_shared<Observation>(),
-                    std::optional<WindowsPlayerNativeIngressOptions> ingress = {}, bool youtube = false)
+                    std::optional<WindowsPlayerNativeIngressOptions> ingress = {}, bool youtube = false,
+                    std::optional<WindowsDownloadExecutionProfile> configured = {})
         : files(paths), observation(std::move(state)), preferences(preferences_writer, initialPreferences()),
           session_store(files.documents, {.inject_fault =
                                               [state = observation](SessionStoreFaultPoint point) {
@@ -365,6 +367,15 @@ struct Player final {
                     {.initial = initialPreferences(),
                      .autosave = &preferences,
                      .session = {.initial = loaded.snapshot, .load_status = loaded.status, .autosave = &autosave}}) {
+        const auto checkpoint_factory = [state = observation, directory = files.documents] {
+            return std::make_unique<ObservedCheckpointStore>(directory, state);
+        };
+        WindowsPlayerDownloadsOptions options{.native_ingress = std::move(ingress)};
+        if (configured) {
+            owner = WindowsPlayerDownloads::createConfigured(presenter, loaded, std::move(*configured),
+                                                             checkpoint_factory, std::move(options));
+            return;
+        }
         WindowsDownloadExecution::TaskFactory destination = [state = observation, &paths] {
             ++state->factories;
             if (!state->admission_saved)
@@ -380,12 +391,8 @@ struct Player final {
                                    [state = observation] { return std::make_unique<ObservedYoutubeResolver>(state); },
                                    destination, [] { return qint64{1'999'999'000}; })
                              : std::make_unique<WindowsDownloadExecution>(destination);
-        owner = std::make_unique<WindowsPlayerDownloads>(
-            presenter, loaded, std::move(execution),
-            [state = observation, directory = files.documents] {
-                return std::make_unique<ObservedCheckpointStore>(directory, state);
-            },
-            WindowsPlayerDownloadsOptions{.native_ingress = std::move(ingress)});
+        owner = std::make_unique<WindowsPlayerDownloads>(presenter, loaded, std::move(execution), checkpoint_factory,
+                                                         std::move(options));
     }
     ~Player() {
         observation->release();
@@ -742,6 +749,109 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QVERIFY(restarted.drain());
             QVERIFY(observation->checkpoint_destroyed);
         }
+        QVERIFY(files.transientParentsEmpty());
+        QVERIFY(files.sourcesPreserved());
+    }
+
+    void configuredOwnerReviewsValidatesAndImportsOnlyAfterConsent() {
+        constexpr auto recovered_job = "recovery-1";
+        Files files;
+        QVERIFY(files.initialize());
+        QFile source{QFINDTESTDATA("../../audio/corpus/fixtures/valid/mp3-unicode-tags.mp3")};
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        const auto mp3 = source.readAll();
+        QCOMPARE(mp3.size(), 24966);
+        const auto mp3_hash = QCryptographicHash::hash(mp3, QCryptographicHash::Sha256).toHex();
+        QCOMPARE(mp3_hash, QByteArray{"65e66cf43d999e98cf37cb64003d29b374a1238e454eca138c0dc5be2b18c000"});
+        WindowsDownloadOwnershipStore ownership{files.documents};
+        QString final_path;
+        {
+            WindowsDownloadWorkspace workspace{files.job.workspace, recovered_job, ownership};
+            QVERIFY(workspace.create());
+            QCOMPARE(workspace.inputSink()->write(mp3), mp3.size());
+            QVERIFY(workspace.sealInput());
+            QCOMPARE(workspace.outputSink()->write(mp3), mp3.size());
+            QVERIFY(workspace.sealOutput());
+            // Seed only the ownership evidence. The configured worker below
+            // must authenticate and fully decode this MP3 before import.
+            final_path = workspace.validateAndPublish([](const QString&) { return true; });
+            QVERIFY(!final_path.isEmpty());
+        }
+        QVERIFY(publishedAndClean(files, recovered_job));
+        const auto final_source = std::filesystem::path{final_path.toStdWString()};
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = "01234567-89ab-4cde-8fab-0123456789ab",
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {recovered_job},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = recovered_job,
+                                                      .title = "Owned synthetic MP3",
+                                                      .state = DownloadJobState::Interrupted,
+                                                      .completed_mp3 = final_source,
+                                                      .error = DownloadFailure::Unavailable}}};
+        WindowsDownloadCheckpointStore checkpoint_store{files.documents};
+        QCOMPARE(checkpoint_store.save(checkpoint), DownloadCheckpointSaveStatus::Saved);
+        const auto checkpoint_path = QDir{files.documents}.filePath(QStringLiteral("download-checkpoint.json"));
+        const auto ownership_path = QDir{files.documents}.filePath(QStringLiteral("download-ownership.json"));
+        const auto checkpoint_before = fileHash(checkpoint_path);
+        const auto ownership_before = fileHash(ownership_path);
+        QVERIFY(!checkpoint_before.isEmpty() && !ownership_before.isEmpty());
+
+        auto observation = std::make_shared<Observation>();
+        observation->release();
+        Player player{files,
+                      observation,
+                      {},
+                      false,
+                      WindowsDownloadExecutionProfile{.network = files.network,
+                                                      .media = files.media,
+                                                      .job = files.job,
+                                                      .journal_directory = files.documents}};
+        QVERIFY(player.owner);
+        QVERIFY(player.ready());
+        auto* const binding = player.owner->binding();
+        const auto job = QString::fromUtf8(recovered_job);
+        const auto role = [&player](const int role) { return player.jobs()->data(player.jobs()->index(0, 0), role); };
+        QCOMPARE(player.jobs()->rowCount(), 1);
+        QCOMPARE(player.jobId(), job);
+        QCOMPARE(player.state(), QStringLiteral("interrupted"));
+        QVERIFY(files.transientParentsEmpty());
+        QVERIFY(role(DownloadJobsModel::CanReviewFilesRole).toBool());
+        QVERIFY(!role(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(!binding->validateMedia(job));
+        QVERIFY(!binding->requestRecoveredImport(job));
+        QVERIFY(binding->reviewFiles(job));
+        QVERIFY(waitFor([&] { return role(DownloadJobsModel::CanValidateMediaRole).toBool(); }));
+        QVERIFY(files.transientParentsEmpty());
+        QVERIFY(binding->validateMedia(job));
+        QVERIFY(waitFor([&] { return role(DownloadJobsModel::CanImportRecoveredRole).toBool(); }));
+        QVERIFY(!entries(files.media_parent).isEmpty());
+        QVERIFY(entries(files.network_parent).isEmpty());
+        QCOMPARE(player.state(), QStringLiteral("interrupted"));
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+        QCOMPARE(fileHash(final_path), mp3_hash);
+        QCOMPARE(fileHash(checkpoint_path), checkpoint_before);
+        QCOMPARE(fileHash(ownership_path), ownership_before);
+        QVERIFY(!QFile::exists(QDir{files.documents}.filePath(QStringLiteral("session.json"))));
+
+        QVERIFY(binding->requestRecoveredImport(job));
+        const auto token = binding->importConsentToken();
+        QVERIFY(!token.isEmpty());
+        QVERIFY(!binding->confirmRecoveredImport(job, token + QStringLiteral("-stale")));
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+        QVERIFY(binding->confirmRecoveredImport(job, token));
+        QVERIFY(waitFor([&] { return player.state() == QStringLiteral("imported") && files.transientParentsEmpty(); }));
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 1);
+        QCOMPARE(player.audio.loads, 0);
+        QCOMPARE(player.audio.plays, 0);
+        QCOMPARE(player.metadata.reads, 0);
+        const auto session = player.session_store.load();
+        QCOMPARE(session.status, SessionLoadStatus::Loaded);
+        QCOMPARE(session.snapshot.download_import_receipts.size(), std::size_t{1});
+        QCOMPARE(session.snapshot.download_import_receipts.front().job_id, std::string{recovered_job});
+        QCOMPARE(session.snapshot.download_import_receipts.front().source_path, final_source);
+        QCOMPARE(fileHash(final_path), mp3_hash);
+        QCOMPARE(fileHash(ownership_path), ownership_before);
+        QVERIFY(player.drain());
         QVERIFY(files.transientParentsEmpty());
         QVERIFY(files.sourcesPreserved());
     }

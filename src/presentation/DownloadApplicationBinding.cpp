@@ -143,6 +143,12 @@ struct DownloadApplicationBinding::Impl {
     bool validation_stopped{false};
     bool validation_unavailable{false};
 
+    bool reviewBusy() const noexcept { return !review_stopped && (review_operation || review_unavailable); }
+    bool validationBusy() const noexcept {
+        return !validation_stopped && (validation_operation || validation_unavailable);
+    }
+    bool recoveryBusy() const noexcept { return reviewBusy() || validationBusy(); }
+
     Impl(DownloadApplicationBinding& binding, PlayerPresenter& player, DownloadAdmissionController& admission,
          DownloadService& service, DownloadExecutionDrainCallbacks drain, DownloadApplicationBindingOptions settings)
         : presenter(&player), controller(admission), download_service(service), execution(std::move(drain)),
@@ -313,8 +319,8 @@ void DownloadApplicationBinding::pollRecoveredImport() {
     }
 }
 bool DownloadApplicationBinding::canValidateForJob(const QString& job_id) const {
-    if (!impl_->gate_attached || impl_->closing || impl_->validation_unavailable || impl_->validation_operation ||
-        impl_->review_operation || !impl_->options.recovery_validation ||
+    if (!impl_->gate_attached || impl_->closing || impl_->validation_unavailable || impl_->recoveryBusy() ||
+        !impl_->options.recovery_validation || impl_->download_service.hasActiveExecution() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
     for (int row = 0; row < impl_->model.rowCount(); ++row) {
@@ -557,8 +563,8 @@ void DownloadApplicationBinding::invalidateDiscardConsent() {
     emit discardConsentChanged();
 }
 bool DownloadApplicationBinding::canDiscardForJob(const QString& job_id) const {
-    if (!impl_->gate_attached || impl_->closing || impl_->review_unavailable || impl_->review_operation ||
-        impl_->validation_operation || !impl_->options.recovery_review ||
+    if (!impl_->gate_attached || impl_->closing || impl_->review_unavailable || impl_->recoveryBusy() ||
+        !impl_->options.recovery_review || impl_->download_service.hasActiveExecution() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
     for (int row = 0; row < impl_->model.rowCount(); ++row) {
@@ -626,8 +632,9 @@ bool DownloadApplicationBinding::reviewFiles(const QString& job_id) {
 }
 bool DownloadApplicationBinding::startReviewAction(const QString& job_id, const DownloadRecoveryReviewAction action) {
     if (QThread::currentThread() != thread() || impl_->operating || !impl_->gate_attached || impl_->closing ||
-        !impl_->options.recovery_review || impl_->review_unavailable || impl_->review_operation ||
-        impl_->validation_operation || impl_->review_operation_id == std::numeric_limits<std::uint64_t>::max() ||
+        !impl_->options.recovery_review || impl_->review_unavailable || impl_->recoveryBusy() ||
+        impl_->review_operation_id == std::numeric_limits<std::uint64_t>::max() ||
+        impl_->download_service.hasActiveExecution() ||
         impl_->controller.state() != DownloadAdmissionControllerState::Ready)
         return false;
     if (action == DownloadRecoveryReviewAction::DiscardPartials && !canDiscardForJob(job_id))
@@ -931,7 +938,7 @@ void DownloadApplicationBinding::poll() {
         return;
     try {
         impl_->controller_tick_in_progress = true;
-        impl_->controller.tick(impl_->last_now);
+        impl_->controller.tick(impl_->last_now, !impl_->recoveryBusy());
     } catch (...) {
         if (!guard)
             return;
@@ -1180,14 +1187,15 @@ void DownloadApplicationBinding::refreshProjection() {
     if (!guard)
         return;
     impl_->model.setReviewAvailable(impl_->gate_attached && !impl_->closing && !impl_->review_unavailable &&
-                                    impl_->options.recovery_review && !impl_->validation_operation &&
+                                    impl_->options.recovery_review && !impl_->validationBusy() &&
+                                    !impl_->download_service.hasActiveExecution() &&
                                     impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
                                     impl_->review_operation_id != std::numeric_limits<std::uint64_t>::max());
     if (!guard)
         return;
     impl_->model.setValidationAvailable(
         impl_->gate_attached && !impl_->closing && !impl_->validation_unavailable &&
-        impl_->options.recovery_validation && !impl_->review_operation &&
+        impl_->options.recovery_validation && !impl_->reviewBusy() && !impl_->download_service.hasActiveExecution() &&
         impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
         (impl_->validation_operation || impl_->validation_operation_id != std::numeric_limits<std::uint64_t>::max()));
     if (!guard)
@@ -1240,7 +1248,8 @@ void DownloadApplicationBinding::refreshProjection() {
         next.status = tr("Carregando histórico de downloads");
         break;
     case DownloadAdmissionControllerState::Ready:
-        next.status = tr("Histórico de downloads carregado");
+        next.status = impl_->recoveryBusy() ? tr("Novos downloads aguardam a liberação dos arquivos em recuperação")
+                                            : tr("Histórico de downloads carregado");
         break;
     case DownloadAdmissionControllerState::AdmissionPending:
         next.status = tr("Confirmando solicitação de download");

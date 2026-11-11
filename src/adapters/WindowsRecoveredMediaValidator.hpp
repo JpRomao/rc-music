@@ -2,8 +2,10 @@
 
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsLocalMp3Validator.hpp"
+#include "adapters/WindowsMediaFoundationLaunch.hpp"
 
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 enum class RecoveredMediaValidationState { Idle, Validating, Stopping, Validated, Failed, Cancelled };
@@ -19,11 +21,13 @@ struct RecoveredMediaValidationUpdate final {
 // A successful candidate remains pinned for the owner's deferred handoff.
 // This validates media, NOT durable publication/import. PublicationPrepared is
 // never rewritten or promoted to Published/Saved. No journal or media writes.
+// A prepared Media Foundation configuration copies only the reviewed runtime.
 // Owners poll until terminal before destruction; destructor fallback may block
 // on the worker, and must never substitute for normal drain on the UI thread.
 class WindowsRecoveredMediaValidator final {
   public:
-    WindowsRecoveredMediaValidator(WindowsDownloadWorkspaceConfig workspace, WindowsLocalMp3ValidatorConfig tools);
+    WindowsRecoveredMediaValidator(WindowsDownloadWorkspaceConfig workspace, WindowsLocalMp3ValidatorConfig tools,
+                                   std::optional<WindowsMediaFoundationLaunchConfig> media = {});
     ~WindowsRecoveredMediaValidator();
     WindowsRecoveredMediaValidator(const WindowsRecoveredMediaValidator&) = delete;
     WindowsRecoveredMediaValidator& operator=(const WindowsRecoveredMediaValidator&) = delete;
@@ -39,6 +43,7 @@ class WindowsRecoveredMediaValidator final {
     void finish(RecoveredMediaValidationState state, DownloadFailure error);
     WindowsDownloadWorkspaceConfig workspace_;
     WindowsLocalMp3ValidatorConfig tools_;
+    std::optional<WindowsMediaFoundationLaunchConfig> media_;
     RecoveredMediaValidationUpdate update_{};
     qint64 started_ms_{0};
     qint64 previous_ms_{0};
