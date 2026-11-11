@@ -824,6 +824,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — candidatos Windows atualizados
 
+Os setups privados Lite e Completa experimental de `9189319` incluem as correções de fila, letras e acessibilidade das playlists e o worker atualizado para Expat 2.10.0. As duas edições passaram no build Release, no áudio offscreen, na leitura estática e na validação offline do SBOM. Instalação e gates de distribuição permanecem pendentes. [Setups e evidências](windows-installer.md#setups-privados-de-9189319)
+
 Os instaladores Lite e Completa experimental de `f8a593b` incorporam recuperação ao sair durante o salvamento de playlists, cancelamento cooperativo de metadados e encerramento de downloads interrompidos cuja ausência de temporários foi confirmada. Release, lint QML, inventários, hashes, PE e leitura de arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de f8a593b](windows-installer.md#setups-de-f8a593b)
 
 Em M4.6, cada runtime de `f8a593b` passou os 17 cenários de áudio. As declarações v2 vinculam sete extensões ao resultado de cada edição, e os setups com associações passaram pela inspeção estática. A confirmação no Registro, no Explorer e em Aplicativos Padrão permanece pendente. [Evidência dos candidatos](windows-installer.md#setups-de-f8a593b)

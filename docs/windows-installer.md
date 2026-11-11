@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados mais recentes usam a receita de `cea27cf` e incluem os novos avisos de Qt Declarative e Qt SVG. A Completa experimental também inclui a correção de foco por teclado no navegador. [Setups privados com a receita de cea27cf](#setups-privados-com-a-receita-de-cea27cf)
+Os setups privados mais recentes incluem a revisão de letras, a correção do cursor da fila e o worker YouTube com Expat 2.10.0. [Setups privados de 9189319](#setups-privados-de-9189319)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,19 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setups privados de 9189319
+
+| Edição | Bytes | SHA-256 do setup |
+| --- | ---: | --- |
+| Lite | 91.630.046 | `82da400a8b0ad476a4d03ad4ddb1258cb36f12ecfc5f68af255f22f88533f154` |
+| Completa experimental | 91.700.787 | `48dd5ce61f2404b8dd78d02301251478a0e53686a93161a4c1840be318f17fc5` |
+
+As duas edições foram compiladas em Release x64 com a mesma revisão e passaram no lint QML. Cada runtime passou em 17 cenários sintéticos de áudio e 19 casos Qt offscreen. Cada matriz v2 vincula sete extensões ao runtime e ao resultado da edição correspondente. A leitura estática confirmou os binários Expat 2.10.0, o aviso de licença e as cinco combinações de seleção. Ferramentas e extensões começam desmarcadas.
+
+Os dois SBOMs CycloneDX 1.6 passaram na validação offline e registram os imports PE observados, incluindo a resolução privada das DLLs dos workers. O inventário tem até 664 arquivos na Lite e 667 na Completa experimental. A composição permanece incompleta para dependências transitivas e obrigações de distribuição.
+
+Setups, matrizes e evidências ficam em `out/product/windows-refresh-driver-20261111/windows-9189319/`. Os SBOMs e seus recibos ficam em `out/product/windows-9189319-sbom/`. Os setups privados estão sem assinatura. Instalação, atualização, remoção e aceitação nativa no Brave e WebView2 permanecem pendentes.
 
 ## Setups privados com a receita de cea27cf
 
