@@ -37,6 +37,7 @@ PlaybackCommandResult LocalTrackSession::openWithResult(const std::filesystem::p
     has_track_ = true;
     start_intent_ = start_intent;
     start_pending_ = true;
+    source_volume_removed_ = false;
 
     const auto metadata_result = metadata_reader_.startRead(MetadataReadRequest{metadata_generation_, source_path_});
     metadata_status_ = metadata_result == MetadataCommandResult::Accepted ? LocalTrackMetadataStatus::Pending
@@ -68,6 +69,7 @@ bool LocalTrackSession::unload() {
     has_track_ = false;
     start_intent_ = LocalTrackStartIntent::Autoplay;
     start_pending_ = false;
+    source_volume_removed_ = false;
     return true;
 }
 
@@ -80,7 +82,7 @@ bool LocalTrackSession::promotePendingStartToAutoplay() noexcept {
 }
 
 LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
-    if (!has_track_ || event.snapshot.generation != playback_generation_) {
+    if (!has_track_ || event.snapshot.generation != playback_generation_ || source_volume_removed_) {
         return LocalTrackPlaybackEventResult::Ignored;
     }
 
@@ -97,6 +99,9 @@ LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const Playba
     if (event.snapshot.status == PlaybackStatus::Error) {
         start_pending_ = false;
         switch (event.snapshot.error) {
+        case PlaybackErrorCode::SourceVolumeRemoved:
+            source_volume_removed_ = true;
+            return LocalTrackPlaybackEventResult::OccurrenceUnavailable;
         case PlaybackErrorCode::SourceUnavailable:
         case PlaybackErrorCode::InvalidMedia:
         case PlaybackErrorCode::AccessDenied:

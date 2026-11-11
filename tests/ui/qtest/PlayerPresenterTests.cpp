@@ -618,6 +618,9 @@ class PlayerPresenterTests final : public QObject {
     void pickerCancellationMayDestroyThePresenter();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay();
+    void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused_data();
+    void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused();
+    void sourceVolumeRemovalDoesNotAutoplayLaterDiscoveryBatches();
     void repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads();
     void supersededAudioOutputRecoveryCannotSeekTheNewSelection();
     void outputLossDuringRecoveryPreservesThePersistedTarget_data();
@@ -3570,6 +3573,116 @@ void PlayerPresenterTests::audioOutputRecoveryPreservesOccurrenceAndPositionWith
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused_data() {
+    QTest::addColumn<bool>("locate");
+    QTest::newRow("retry after still unavailable") << false;
+    QTest::newRow("locate replacement") << true;
+}
+
+void PlayerPresenterTests::sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused() {
+    QFETCH(bool, locate);
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Unidade removida.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Áudio recuperado.wav"));
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
+    presenter.setAudioFileLocator(&locator);
+    QVERIFY(presenter.openAudio());
+    const auto occurrence = presenter.currentOccurrenceId();
+    auto* const model = presenter.queueModelObject();
+    QSignalSpy skipped(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+    const PlaybackSnapshot removed{
+        .status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceVolumeRemoved};
+    backend.publish(removed);
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QVERIFY(presenter.canLocateCurrentOccurrence());
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.errorCode(), QStringLiteral("source_volume_removed"));
+    QCOMPARE(presenter.errorMessageKey(), QStringLiteral("source_volume_removed_error"));
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{750});
+    QCOMPARE(model->data(model->index(0, 0), QueueListModel::ErrorCodeRole).toString(),
+             QStringLiteral("source_volume_removed"));
+    QVERIFY(!model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1},
+                         false);
+    backend.publishEvent(PlaybackEventType::Ended,
+                         {.status = PlaybackStatus::Ready, .position_ms = 2'000, .duration_ms = 2'000, .generation = 1},
+                         false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.errorCode(), QStringLiteral("source_volume_removed"));
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QCOMPARE(skipped.count(), 0);
+
+    std::uint64_t recovery_generation = 2;
+    if (locate) {
+        QVERIFY(presenter.locateQueueOccurrence(occurrence));
+        QCOMPARE(locator.requests, std::vector{source});
+        locator.complete({AudioFileLocationStatus::Selected, replacement});
+        QTRY_COMPARE(backend.loaded_paths, (std::vector{source, replacement}));
+    } else {
+        backend.accepted_load_status = PlaybackStatus::Error;
+        QVERIFY(presenter.retryQueueOccurrence(occurrence));
+        QVERIFY(presenter.canRetryCurrentOccurrence());
+        backend.accepted_load_status.reset();
+        QVERIFY(presenter.retryQueueOccurrence(occurrence));
+        QCOMPARE(backend.loaded_paths, (std::vector{source, source, source}));
+        recovery_generation = 3;
+    }
+    backend.publish(
+        {.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = recovery_generation});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{750}));
+    QCOMPARE(backend.pause_calls, 1);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = recovery_generation});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+    backend.publishEvent(PlaybackEventType::SnapshotChanged, removed, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::sourceVolumeRemovalDoesNotAutoplayLaterDiscoveryBatches() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto removed = localTestPath(u8"Unidade removida.wav");
+    const auto later = localTestPath(u8"Próxima faixa.wav");
+    PlayerPresenter presenter(
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; }, discovery);
+    QVERIFY(presenter.importDroppedUrls({localTestUrl(localTestPath(u8"pasta"))}, 0));
+    const auto generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {removed}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(backend.loaded_paths, std::vector{removed});
+    const auto occurrence = presenter.currentOccurrenceId();
+    backend.publish(
+        {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceVolumeRemoved});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    discovery.publishBatch(generation, 2, {later}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(backend.loaded_paths, std::vector{removed});
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.sourceImportIssueCount(), 1ULL);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
+    QCOMPARE(backend.play_calls, 0);
 }
 
 void PlayerPresenterTests::repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads() {

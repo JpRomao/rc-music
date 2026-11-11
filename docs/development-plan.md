@@ -586,6 +586,10 @@ O quinto recorte funcional local de M4.7 acrescenta `locateQueueOccurrence(ID)` 
 
 O [registro central de localização](../experiments/m0/candidates/qt/README.md#file-location-m47) concentra Reds, checks automatizados verdes de core/modelo/presenter/picker/UI/decoder, composição de produção e gates restantes, sem reutilizar checks históricos como prova nova. Também preserva o registro da falha intermitente do coordinator, cuja causa não foi demonstrada apesar da consolidação final verde. M4.7 não está concluída: seletor nativo, drive físico, NVDA, pacote/E2E Windows e Linux continuam sem fechamento. Nenhum benchmark pertence ao recorte.
 
+O sexto recorte de M4.7 trata a remoção da unidade de origem da faixa atual. O receptor Windows entrega somente a máscara das letras de volume local informadas por `DBT_DEVICEREMOVECOMPLETE`. O backend compara essa máscara com o caminho absoluto da geração ativa e desanexa o decodificador fora do filtro nativo. O player preserva a ocorrência e a posição confirmada. Tentar novamente ou localizar o arquivo recupera a faixa pausada, sem iniciar outra por conta própria. [Recuperação no player](user-guide.md#resolver-problemas) · [Evento Win32](https://learn.microsoft.com/en-us/windows/win32/devio/dbt-deviceremovecomplete)
+
+O Red reproduziu a falta de tratamento no receptor, no backend, na fila, no diagnóstico e na mensagem do painel. O fechamento passou **306 casos do núcleo**, **5/5 CTest selecionados**, **31 casos Quick**, build Release e `all_qmllint`. A regressão de symlink do núcleo registrou a limitação de permissões deste Windows. Os avisos de remoção foram simulados, inclusive nos casos com decodificador real. A desconexão física e a aceitação instalada seguem pendentes. O tratamento específico depende da letra do volume local informada pelo Windows. Evidências em `out/product/test-runs/source-volume-20261111/`.
+
 ### Gate M4
 
 - Jornadas UX 5–7 passam no Windows empacotado.

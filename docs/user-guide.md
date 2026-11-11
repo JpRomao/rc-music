@@ -114,6 +114,8 @@ Quando o componente de downloads está ativo, abra **Downloads** no player para 
 
 **Arquivo não encontrado, movido ou acesso negado:** verifique se o arquivo ou drive está disponível. Use **Tentar reproduzir novamente** para reabrir o mesmo caminho; essa ação explícita pode iniciar a reprodução. Se o arquivo mudou de lugar, use **Localizar arquivo…** na ocorrência afetada. A localização preserva sua posição na fila: se for a faixa atual em erro, tenta recuperá-la pausada e restaurar a posição; se for outra linha, não interrompe a faixa atual e pede uma tentativa de reprodução para verificar a nova origem. Cancelar a localização não troca o caminho. **Abrir outro áudio** continua sendo uma alternativa.
 
+**A unidade da faixa foi desconectada:** reconecte a unidade e use **Tentar reproduzir novamente**. O app mantém a faixa na fila e a recupera pausada, na posição anterior quando o arquivo permite. Se o Windows atribuir outra letra à unidade, use **Localizar arquivo…** para indicar o novo caminho.
+
 **Arquivo inválido ou não suportado:** consulte Detalhes da faixa e tente outro arquivo conhecido. O erro pode vir do conteúdo, não apenas da extensão; renomear a extensão não converte o áudio. Não altere o original para tentar contornar o erro.
 
 **Saída de áudio indisponível ou alterada:** conecte uma saída ou escolha a saída padrão nas configurações de som do Windows. Depois use **Tentar novamente** no aviso. A recuperação é pausada e conserva a fila; a posição é restaurada quando possível. Reconectar o dispositivo não reinicia o áudio automaticamente. Ainda não há seletor de dispositivo dentro do RC Music. Se não houver som sem aviso de erro, confira o volume/mudo do player e a saída e o volume do Windows.

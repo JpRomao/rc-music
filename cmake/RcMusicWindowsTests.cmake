@@ -9,6 +9,8 @@ function(rc_music_add_windows_tests)
 
     _rc_music_add_desktop_test(rc_music_windows_shell_platform_tests
         rc_music.windows.shell-platform QtShellPlatformTests.cpp m0_qt_shell_platform Qt6::Widgets)
+    _rc_music_add_desktop_test(rc_music_windows_source_volume_events_tests
+        rc_music.windows.source-volume-events WindowsSourceVolumeEventsTests.cpp m0_qt_shell_platform Qt6::Gui)
     _rc_music_add_desktop_test(rc_music_windows_system_appearance_tests
         rc_music.windows.system-appearance QtSystemAppearanceTests.cpp m0_qt_system_appearance)
     _rc_music_add_desktop_test(rc_music_windows_smtc_tests
@@ -27,6 +29,8 @@ function(rc_music_add_windows_tests)
         "QSG_RHI_BACKEND=software" "QT_QUICK_CONTROLS_STYLE=Basic" "QT_FATAL_WARNINGS=1")
     set_tests_properties(rc_music.windows.shell-platform PROPERTIES
         LABELS "windows;desktop;qt;tray;FR-030;FR-031;FR-035;FR-038" TIMEOUT 15)
+    set_tests_properties(rc_music.windows.source-volume-events PROPERTIES
+        LABELS "windows;desktop;qt;FR-038;NFR-REL-005" TIMEOUT 15)
     set_tests_properties(rc_music.windows.system-appearance PROPERTIES
         LABELS "windows;desktop;qt;appearance;FR-040" TIMEOUT 10)
     set_tests_properties(rc_music.windows.smtc-adapter PROPERTIES

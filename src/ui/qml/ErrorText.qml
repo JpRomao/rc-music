@@ -3,6 +3,8 @@ import QtQml
 QtObject {
     readonly property string sourceUnavailableTitle: qsTr("Arquivo não encontrado")
     readonly property string sourceUnavailableMessage: qsTr("A faixa não está mais disponível neste local.")
+    readonly property string sourceVolumeRemovedTitle: qsTr("A unidade da faixa foi desconectada")
+    readonly property string sourceVolumeRemovedMessage: qsTr("Reconecte a unidade e tente novamente ou localize o arquivo em outro local.")
     readonly property string invalidMediaTitle: qsTr("Não foi possível reproduzir esta faixa")
     readonly property string invalidMediaMessage: qsTr("O arquivo está corrompido ou usa um formato não reconhecido.")
     readonly property string accessDeniedTitle: qsTr("Acesso ao arquivo negado")
@@ -28,6 +30,8 @@ QtObject {
         switch (messageKey) {
         case "source_unavailable_error":
             return sourceUnavailableTitle;
+        case "source_volume_removed_error":
+            return sourceVolumeRemovedTitle;
         case "invalid_media_error":
             return invalidMediaTitle;
         case "access_denied_error":
@@ -48,6 +52,9 @@ QtObject {
         case "source_unavailable":
         case "source_unavailable_error":
             return sourceUnavailableMessage;
+        case "source_volume_removed":
+        case "source_volume_removed_error":
+            return sourceVolumeRemovedMessage;
         case "invalid_media":
         case "invalid_media_error":
             return invalidMediaMessage;

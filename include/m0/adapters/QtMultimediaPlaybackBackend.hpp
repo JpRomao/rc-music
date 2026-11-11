@@ -47,6 +47,8 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     PlaybackCommandResult setMuted(bool muted) override;
     PlaybackCommandResult unload() override;
     PlaybackCommandResult shutdown() override;
+    // Receives Windows volume notifications on the backend's thread.
+    void sourceVolumeRemoved(std::uint32_t drive_mask);
 
   private:
     void createPlayerForCurrentGeneration();
@@ -66,7 +68,9 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     QMediaPlayer* player_{nullptr};
     PlaybackSnapshot snapshot_{};
     std::uint64_t generation_{0};
+    std::uint32_t source_drive_mask_{0};
     PlaybackEventCallback event_callback_{};
+    bool source_volume_removal_pending_{false};
     bool ended_emitted_{false};
     bool repositioning_from_end_{false};
     bool missing_audio_rejected_{false};

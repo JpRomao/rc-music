@@ -54,6 +54,8 @@ if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
     target_link_libraries(m0_qt_shell_platform PUBLIC rc_music_contracts Qt6::Core Qt6::Gui PRIVATE Qt6::Widgets)
     if(WIN32)
         target_sources(m0_qt_shell_platform PRIVATE
+            "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsSourceVolumeEvents.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsSourceVolumeEvents.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsTaskbarEvents.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsTaskbarEvents.cpp"
         )

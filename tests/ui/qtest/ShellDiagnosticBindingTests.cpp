@@ -167,6 +167,21 @@ class ShellDiagnosticBindingTests final : public QObject {
                                                  DiagnosticSeverity::Error)});
     }
 
+    void recordsDisconnectedSourceWithoutItsPathOrDriveLetter() {
+        TestPlatform platform;
+        TestBackend backend;
+        TestMetadataReader reader;
+        RecordingSink sink;
+        PlayerPresenter presenter(platform, backend, reader, [] { return std::vector{syntheticSource()}; });
+        ShellDiagnosticBinding binding(presenter, sink);
+        QVERIFY(presenter.openAudio());
+        backend.fail(PlaybackErrorCode::SourceVolumeRemoved);
+        QTRY_VERIFY(presenter.hasError());
+        QCOMPARE(sink.entries.size(), std::size_t{1});
+        QCOMPARE(formatDiagnosticRecord({.timestamp_utc_ms = 1, .entry = sink.entries.front()}),
+                 std::string{"utc_ms=1 severity=error event=source_open_failed code=source_volume_removed count=1\n"});
+    }
+
     void recordsAutomaticSkipWithoutExposingItsTitle() {
         TestPlatform platform;
         TestBackend backend;

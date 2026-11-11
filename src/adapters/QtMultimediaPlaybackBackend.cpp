@@ -2,6 +2,7 @@
 
 #include <QMediaDevices>
 #include <QPointer>
+#include <QThread>
 #include <QUrl>
 
 #include <algorithm>
@@ -65,6 +66,27 @@ class SystemQtAudioOutputDevices final : public QtAudioOutputDevices {
 #endif
 }
 
+[[nodiscard]] std::uint32_t sourceDriveMask(const std::filesystem::path& source_path) noexcept {
+#ifdef Q_OS_WIN
+    const auto& path = source_path.native();
+    const bool extended = path.starts_with(L"\\\\?\\");
+    const std::size_t offset = extended ? 4 : 0;
+    if (path.size() < offset + 3 || path[offset + 1] != L':')
+        return 0;
+    const auto separator = path[offset + 2];
+    if (separator != L'\\' && (extended || separator != L'/'))
+        return 0;
+    const auto drive = path[offset];
+    if (drive >= L'A' && drive <= L'Z')
+        return std::uint32_t{1} << (drive - L'A');
+    if (drive >= L'a' && drive <= L'z')
+        return std::uint32_t{1} << (drive - L'a');
+#else
+    static_cast<void>(source_path);
+#endif
+    return 0;
+}
+
 } // namespace
 
 QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(QObject* parent)
@@ -124,6 +146,34 @@ void QtMultimediaPlaybackBackend::setEventCallback(PlaybackEventCallback callbac
     event_callback_ = std::move(callback);
 }
 
+void QtMultimediaPlaybackBackend::sourceVolumeRemoved(const std::uint32_t drive_mask) {
+    if (QThread::currentThread() != thread() || shutdown_ || player_ == nullptr || source_volume_removal_pending_ ||
+        (drive_mask & source_drive_mask_) == 0)
+        return;
+
+    // Suppress decoder notifications as soon as Windows reports the loss.
+    // Leave decoder teardown and application callbacks outside the native filter.
+    source_volume_removal_pending_ = true;
+    const auto removal_generation = generation_;
+    const bool queued = QMetaObject::invokeMethod(
+        this,
+        [this, removal_generation] {
+            if (shutdown_ || !source_volume_removal_pending_ || removal_generation != generation_)
+                return;
+            auto failed = snapshot_;
+            failed.status = PlaybackStatus::Error;
+            failed.seekable = false;
+            failed.error = PlaybackErrorCode::SourceVolumeRemoved;
+            const QPointer<QtMultimediaPlaybackBackend> guard{this};
+            invalidateCurrentSource();
+            if (guard && !shutdown_ && removal_generation == generation_)
+                publishSnapshot(failed);
+        },
+        Qt::QueuedConnection);
+    if (!queued)
+        source_volume_removal_pending_ = false;
+}
+
 PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::path& source_path) {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
@@ -144,12 +194,14 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
         return PlaybackCommandResult::Accepted;
     }
     audio_devices_->applyDevice(audio_output_, output_device);
+    source_drive_mask_ = sourceDriveMask(source_path);
     createPlayerForCurrentGeneration();
     QMediaPlayer* const load_player = player_;
     const auto load_generation = generation_;
     const QPointer<QtMultimediaPlaybackBackend> guard{this};
     publishSnapshot({PlaybackStatus::Loading, 0, 0, false, generation_});
-    if (guard && !shutdown_ && generation_ == load_generation && player_ == load_player) {
+    if (guard && !shutdown_ && !source_volume_removal_pending_ && generation_ == load_generation &&
+        player_ == load_player) {
         load_player->setSource(QUrl::fromLocalFile(localFilePath(source_path)));
     }
     return PlaybackCommandResult::Accepted;
@@ -159,7 +211,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::play() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status == PlaybackStatus::Playing) {
@@ -176,7 +228,8 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::play() {
     if (snapshot_.duration_ms > 0 && snapshot_.position_ms >= snapshot_.duration_ms) {
         repositioning_from_end_ = true;
         command_player->setPosition(0);
-        if (shutdown_ || generation_ != command_generation || player_ != command_player) {
+        if (shutdown_ || source_volume_removal_pending_ || generation_ != command_generation ||
+            player_ != command_player) {
             return PlaybackCommandResult::Accepted;
         }
         repositioning_from_end_ = false;
@@ -190,7 +243,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::pause() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status == PlaybackStatus::Paused) {
@@ -216,7 +269,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::seekTo(const std::int64_t pos
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status != PlaybackStatus::Ready && snapshot_.status != PlaybackStatus::Paused &&
@@ -299,8 +352,8 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::shutdown() {
 }
 
 bool QtMultimediaPlaybackBackend::interruptIfDefaultOutputChanged() {
-    if (shutdown_ || player_ == nullptr || snapshot_.status == PlaybackStatus::Empty ||
-        snapshot_.status == PlaybackStatus::Error) {
+    if (shutdown_ || source_volume_removal_pending_ || player_ == nullptr ||
+        snapshot_.status == PlaybackStatus::Empty || snapshot_.status == PlaybackStatus::Error) {
         return false;
     }
     const auto current_device = audio_devices_->defaultDevice();
@@ -319,6 +372,8 @@ bool QtMultimediaPlaybackBackend::interruptIfDefaultOutputChanged() {
 }
 
 void QtMultimediaPlaybackBackend::invalidateCurrentSource() {
+    source_drive_mask_ = 0;
+    source_volume_removal_pending_ = false;
     audio_track_validation_timer_.stop();
     missing_audio_rejected_ = false;
     if (player_ == nullptr) {
@@ -343,7 +398,8 @@ void QtMultimediaPlaybackBackend::advanceGeneration() noexcept {
 
 void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const signal_player,
                                                   const std::uint64_t signal_generation) {
-    if (shutdown_ || signal_player == nullptr || signal_player != player_ || signal_generation != generation_) {
+    if (shutdown_ || source_volume_removal_pending_ || signal_player == nullptr || signal_player != player_ ||
+        signal_generation != generation_) {
         return;
     }
     if (interruptIfDefaultOutputChanged()) {
@@ -412,10 +468,11 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
         }
         ended_emitted_ = true;
         QMediaPlayer* const ended_player = player_;
+        const QPointer<QtMultimediaPlaybackBackend> guard{this};
         publishSnapshot({PlaybackStatus::Paused, duration, duration, seekable, generation_});
-        if (!shutdown_ && generation_ == signal_generation && player_ == ended_player &&
-            snapshot_.generation == signal_generation && snapshot_.status == PlaybackStatus::Paused &&
-            snapshot_.position_ms == snapshot_.duration_ms) {
+        if (guard && !shutdown_ && !source_volume_removal_pending_ && generation_ == signal_generation &&
+            player_ == ended_player && snapshot_.generation == signal_generation &&
+            snapshot_.status == PlaybackStatus::Paused && snapshot_.position_ms == snapshot_.duration_ms) {
             publishEvent(PlaybackEventType::Ended);
         }
         return;
@@ -431,7 +488,8 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
 }
 
 void QtMultimediaPlaybackBackend::validateLoadedAudioTrack() {
-    if (shutdown_ || player_ == nullptr || player_->error() != QMediaPlayer::NoError || player_->hasAudio()) {
+    if (shutdown_ || source_volume_removal_pending_ || player_ == nullptr ||
+        player_->error() != QMediaPlayer::NoError || player_->hasAudio()) {
         return;
     }
 

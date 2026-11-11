@@ -28,6 +28,7 @@
 #include "m0/application/PreferencesAutosave.hpp"
 #ifdef M0_QT_COMBINED_AUDIO
 #include "adapters/QtJsonWindowsSessionStore.hpp"
+#include "adapters/WindowsSourceVolumeEvents.hpp"
 #include "m0/adapters/SingleWorkerSessionWriter.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/application/SessionStartup.hpp"
@@ -833,6 +834,12 @@ int main(int argc, char* argv[]) {
         music_player::m0::WindowsPowerEvents system_power_events;
         music_player::m0::SystemPowerEventsBinding system_power_events_binding(presenter, system_power_events);
         static_cast<void>(system_power_events.start());
+#ifdef M0_QT_COMBINED_AUDIO
+        music_player::m0::WindowsSourceVolumeEvents source_volume_events;
+        QObject::connect(&source_volume_events, &music_player::m0::WindowsSourceVolumeEvents::volumeRemoved, &backend,
+                         &music_player::m0::QtMultimediaPlaybackBackend::sourceVolumeRemoved);
+        static_cast<void>(source_volume_events.start());
+#endif
 #endif
         bool has_explicit_startup_sources = false;
 #ifdef M0_QT_COMBINED_AUDIO

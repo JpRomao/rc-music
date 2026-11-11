@@ -31,6 +31,7 @@ QtObject {
     readonly property string movedAnnouncement: qsTr("{title} movida para a posição {position} de {total}.")
     readonly property string positionOfTotal: qsTr("posição {position} de {total}")
     readonly property string sourceUnavailable: qsTr("Arquivo não disponível.")
+    readonly property string sourceVolumeRemoved: qsTr("Unidade desconectada.")
     readonly property string invalidMedia: qsTr("Arquivo inválido ou não suportado.")
     readonly property string accessDenied: qsTr("Acesso ao arquivo negado.")
     readonly property string openRejected: qsTr("Não foi possível abrir o arquivo.")
@@ -44,6 +45,8 @@ QtObject {
         case "source_unavailable":
         case "fixture_source_unavailable":
             return sourceUnavailable;
+        case "source_volume_removed":
+            return sourceVolumeRemoved;
         case "invalid_media":
             return invalidMedia;
         case "access_denied":

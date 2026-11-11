@@ -234,6 +234,33 @@ TEST_CASE("output interruptions preserve the source and cancel pending autoplay"
     CHECK(playback.play_calls == 0);
 }
 
+TEST_CASE("a removed source volume stops the generation until a new load", "[m0][qt][core][local-track][FR-038]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const std::filesystem::path source{L"C:\\Music\\current.wav"};
+    REQUIRE(session.open(source));
+    const PlaybackEvent removal{PlaybackEventType::SnapshotChanged,
+                                {PlaybackStatus::Error, 0, 0, false, 1, PlaybackErrorCode::SourceVolumeRemoved}};
+    CHECK(session.applyPlaybackEvent(removal) == LocalTrackPlaybackEventResult::OccurrenceUnavailable);
+    CHECK(session.sourcePath() == source);
+    CHECK_FALSE(session.promotePendingStartToAutoplay());
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}}) ==
+        LocalTrackPlaybackEventResult::Ignored);
+    CHECK(session.applyPlaybackEvent({PlaybackEventType::Ended, {PlaybackStatus::Ready, 2'000, 2'000, true, 1}}) ==
+          LocalTrackPlaybackEventResult::Ignored);
+    CHECK(playback.play_calls == 0);
+
+    REQUIRE(session.open(source, LocalTrackStartIntent::RestorePaused));
+    CHECK(session.applyPlaybackEvent(removal) == LocalTrackPlaybackEventResult::Ignored);
+    CHECK(
+        session.applyPlaybackEvent({PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 2}}) ==
+        LocalTrackPlaybackEventResult::Applied);
+    CHECK(playback.pause_calls == 1);
+    CHECK(playback.play_calls == 0);
+}
+
 TEST_CASE("current terminal events are typed and stale terminal events are ignored",
           "[m0][qt][core][local-track][playback][FR-011][FR-016]") {
     RecordingPlaybackBackend playback;

@@ -17,6 +17,9 @@ TestCase {
     ErrorText {
         id: expandedLabels
     }
+    QueueText {
+        id: queueLabels
+    }
     Component {
         id: expandedErrorHarnessComponent
         Item {
@@ -133,6 +136,12 @@ TestCase {
         compare(expandedLabels.titleFor("audio_output_changed_error"), "A saída de áudio mudou");
         compare(expandedLabels.messageFor("audio_output_changed_error"), "A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.");
         compare(expandedLabels.actionFor("recover-audio-output"), "Tentar novamente");
+    }
+
+    function test_removedSourceVolumeOffersReconnectionOrFileLocation() {
+        compare(expandedLabels.titleFor("source_volume_removed_error"), "A unidade da faixa foi desconectada");
+        compare(expandedLabels.messageFor("source_volume_removed_error"), "Reconecte a unidade e tente novamente ou localize o arquivo em outro local.");
+        compare(queueLabels.unavailableReason("source_volume_removed"), "Unidade desconectada.");
     }
 
     function enterOutputError(changed) {

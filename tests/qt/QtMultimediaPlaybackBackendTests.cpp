@@ -1,6 +1,7 @@
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 
 #include <QByteArray>
+#include <QEvent>
 #include <QFile>
 #include <QList>
 #include <QPointer>
@@ -87,6 +88,140 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
     Q_OBJECT
 
   private slots:
+#ifdef Q_OS_WIN
+    void sourceVolumeMatchingUsesOnlyAnAbsoluteDriveLetter_data() {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<bool>("matches");
+        QTest::newRow("upper-drive") << QStringLiteral("X:\\fixture\\song.wav") << true;
+        QTest::newRow("lower-drive-forward-slash") << QStringLiteral("x:/fixture/song.wav") << true;
+        QTest::newRow("extended-drive") << QStringLiteral("\\\\?\\x:\\fixture\\song.wav") << true;
+        QTest::newRow("another-drive") << QStringLiteral("Y:\\fixture\\song.wav") << false;
+        QTest::newRow("drive-relative") << QStringLiteral("X:fixture\\song.wav") << false;
+        QTest::newRow("root-relative") << QStringLiteral("\\fixture\\song.wav") << false;
+        QTest::newRow("unc") << QStringLiteral("\\\\example.invalid\\share\\song.wav") << false;
+        QTest::newRow("extended-unc") << QStringLiteral("\\\\?\\UNC\\example.invalid\\share\\song.wav") << false;
+    }
+
+    void sourceVolumeMatchingUsesOnlyAnAbsoluteDriveLetter() {
+        QFETCH(QString, path);
+        QFETCH(bool, matches);
+        QtMultimediaPlaybackBackend backend{std::make_unique<FakeAudioOutputDevices>()};
+        bool saw_loading = false;
+        backend.setEventCallback([&](const PlaybackEvent& event) {
+            if (event.snapshot.status != PlaybackStatus::Loading || saw_loading)
+                return;
+            saw_loading = true;
+            backend.sourceVolumeRemoved(std::uint32_t{1} << ('X' - 'A'));
+            const auto initial_status = backend.snapshot().status;
+            QCoreApplication::sendPostedEvents(&backend, QEvent::MetaCall);
+            const auto error = backend.snapshot().error;
+            // Stop the outer load before it gives any synthetic path to Qt.
+            const auto unload = backend.unload();
+            QCOMPARE(unload, PlaybackCommandResult::Accepted);
+            QCOMPARE(initial_status, PlaybackStatus::Loading);
+            QCOMPARE(error, matches ? PlaybackErrorCode::SourceVolumeRemoved : PlaybackErrorCode::None);
+        });
+        QCOMPARE(backend.load(nativePath(path)), PlaybackCommandResult::Accepted);
+        QVERIFY(saw_loading);
+    }
+
+    void sourceVolumeRemovalRetiresTheDecoderAndPreservesConfirmedTime() {
+        const auto fixture = QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE);
+        QVERIFY(fixture.size() > 3 && fixture[1] == u':');
+        const auto drive = fixture[0].toUpper().toLatin1();
+        QVERIFY(drive >= 'A' && drive <= 'Z');
+        const auto mask = std::uint32_t{1} << (drive - 'A');
+        QtMultimediaPlaybackBackend backend{std::make_unique<FakeAudioOutputDevices>()};
+        QCOMPARE(backend.load(nativePath(fixture)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(backend.seekTo(500), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().position_ms, std::int64_t{500}, 2'000);
+        QCOMPARE(backend.pause(), PlaybackCommandResult::Accepted);
+        const auto confirmed = backend.snapshot();
+        const QPointer<QMediaPlayer> retired = backend.findChild<QMediaPlayer*>();
+        QVERIFY(retired);
+        std::vector<PlaybackEvent> events;
+        backend.setEventCallback([&](const PlaybackEvent& event) {
+            events.push_back(event);
+            if (event.snapshot.error == PlaybackErrorCode::SourceVolumeRemoved) {
+                QVERIFY(retired);
+                QVERIFY(retired->audioOutput() == nullptr);
+                QCOMPARE(retired->playbackState(), QMediaPlayer::StoppedState);
+                QVERIFY(retired->source().isEmpty());
+            }
+        });
+
+        backend.sourceVolumeRemoved(0);
+        backend.sourceVolumeRemoved(std::uint32_t{1} << ((drive - 'A' + 1) % 26));
+        QCoreApplication::sendPostedEvents(&backend, QEvent::MetaCall);
+        QVERIFY(backend.snapshot() == confirmed);
+        backend.sourceVolumeRemoved(mask);
+        backend.sourceVolumeRemoved(mask);
+        QVERIFY(backend.snapshot() == confirmed);
+        QCOMPARE(backend.play(), PlaybackCommandResult::NotReady);
+        QCOMPARE(backend.pause(), PlaybackCommandResult::NotReady);
+        QCOMPARE(backend.seekTo(0), PlaybackCommandResult::NotReady);
+        // The decoder can drop its media before the queued removal is handled.
+        retired->setSource({});
+        QVERIFY(backend.snapshot() == confirmed);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().error, PlaybackErrorCode::SourceVolumeRemoved, 2'000);
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Error);
+        QCOMPARE(backend.snapshot().position_ms, confirmed.position_ms);
+        QCOMPARE(backend.snapshot().duration_ms, confirmed.duration_ms);
+        QCOMPARE(backend.snapshot().generation, confirmed.generation);
+        QVERIFY(!backend.snapshot().seekable);
+        backend.sourceVolumeRemoved(mask);
+        QCoreApplication::processEvents();
+        QCOMPARE(events.size(), std::size_t{1});
+        QCOMPARE(events.front().type, PlaybackEventType::SnapshotChanged);
+    }
+
+    void queuedSourceVolumeRemovalCannotRetireANewerLoadOnTheSameDrive() {
+        const auto fixture = QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE);
+        QVERIFY(fixture.size() > 3 && fixture[1] == u':');
+        const auto drive = fixture[0].toUpper().toLatin1();
+        QVERIFY(drive >= 'A' && drive <= 'Z');
+        const auto mask = std::uint32_t{1} << (drive - 'A');
+        QtMultimediaPlaybackBackend backend{std::make_unique<FakeAudioOutputDevices>()};
+        QCOMPARE(backend.load(nativePath(fixture)), PlaybackCommandResult::Accepted);
+        const auto generation = backend.snapshot().generation;
+        backend.sourceVolumeRemoved(mask);
+        QCOMPARE(backend.load(nativePath(fixture)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QVERIFY(backend.snapshot().generation > generation);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::None);
+    }
+
+    void sourceVolumeRemovalSuppressesAnEndedEventThatHasNotBeenPublished() {
+        const auto fixture = QString::fromUtf8(M0_TEST_AUDIO_WAV_FILE);
+        QVERIFY(fixture.size() > 3 && fixture[1] == u':');
+        const auto drive = fixture[0].toUpper().toLatin1();
+        QVERIFY(drive >= 'A' && drive <= 'Z');
+        const auto mask = std::uint32_t{1} << (drive - 'A');
+        QtMultimediaPlaybackBackend backend{std::make_unique<FakeAudioOutputDevices>()};
+        bool removal_reported = false;
+        int ended_count = 0;
+        backend.setEventCallback([&](const PlaybackEvent& event) {
+            if (event.type == PlaybackEventType::Ended)
+                ++ended_count;
+            if (!removal_reported && event.snapshot.status == PlaybackStatus::Paused &&
+                event.snapshot.duration_ms > 0 && event.snapshot.position_ms == event.snapshot.duration_ms) {
+                removal_reported = true;
+                backend.sourceVolumeRemoved(mask);
+            }
+        });
+        QCOMPARE(backend.setMuted(true), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.load(nativePath(fixture)), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(backend.seekTo(900), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().position_ms, std::int64_t{900}, 2'000);
+        QCOMPARE(backend.play(), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().error, PlaybackErrorCode::SourceVolumeRemoved, 2'000);
+        QVERIFY(removal_reported);
+        QCOMPARE(ended_count, 0);
+    }
+#endif
+
     void missingDefaultOutputIsActionableAndReconnectRequiresAnExplicitLoad() {
         auto devices = std::make_unique<FakeAudioOutputDevices>();
         auto* const topology = devices.get();

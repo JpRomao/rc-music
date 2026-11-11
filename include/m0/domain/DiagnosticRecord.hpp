@@ -38,6 +38,7 @@ enum class DiagnosticCode {
     UnsupportedVersion,
     Unavailable,
     Unknown,
+    SourceVolumeRemoved,
 };
 
 struct DiagnosticEntry final {

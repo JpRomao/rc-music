@@ -29,7 +29,8 @@ constexpr std::array code_names{"none"sv,
                                 "write_failed"sv,
                                 "unsupported_version"sv,
                                 "unavailable"sv,
-                                "unknown"sv};
+                                "unknown"sv,
+                                "source_volume_removed"sv};
 
 template <class Enum, std::size_t Size>
 std::string_view closedName(const Enum value, const std::array<std::string_view, Size>& names) noexcept {

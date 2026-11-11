@@ -320,15 +320,23 @@ bool isAudioOutputError(const PlaybackErrorCode error) noexcept {
     return error == PlaybackErrorCode::AudioOutputUnavailable || error == PlaybackErrorCode::AudioOutputChanged;
 }
 
+bool isSourceVolumeRemoval(const PlaybackEvent& event) noexcept {
+    return event.type == PlaybackEventType::SnapshotChanged && event.snapshot.status == PlaybackStatus::Error &&
+           event.snapshot.error == PlaybackErrorCode::SourceVolumeRemoved;
+}
+
 bool preservesPositionForRecovery(const PlaybackErrorCode error) noexcept {
-    return isAudioOutputError(error) || error == PlaybackErrorCode::SourceUnavailable ||
-           error == PlaybackErrorCode::InvalidMedia || error == PlaybackErrorCode::AccessDenied;
+    return isAudioOutputError(error) || error == PlaybackErrorCode::SourceVolumeRemoved ||
+           error == PlaybackErrorCode::SourceUnavailable || error == PlaybackErrorCode::InvalidMedia ||
+           error == PlaybackErrorCode::AccessDenied;
 }
 
 QString localPlaybackErrorCode(const PlaybackErrorCode error) {
     switch (error) {
     case PlaybackErrorCode::SourceUnavailable:
         return QStringLiteral("source_unavailable");
+    case PlaybackErrorCode::SourceVolumeRemoved:
+        return QStringLiteral("source_volume_removed");
     case PlaybackErrorCode::InvalidMedia:
         return QStringLiteral("invalid_media");
     case PlaybackErrorCode::AccessDenied:
@@ -351,6 +359,8 @@ QString localPlaybackErrorMessageKey(const PlaybackErrorCode error) {
     switch (error) {
     case PlaybackErrorCode::SourceUnavailable:
         return QStringLiteral("source_unavailable_error");
+    case PlaybackErrorCode::SourceVolumeRemoved:
+        return QStringLiteral("source_volume_removed_error");
     case PlaybackErrorCode::InvalidMedia:
         return QStringLiteral("invalid_media_error");
     case PlaybackErrorCode::AccessDenied:
@@ -690,6 +700,11 @@ void PlayerPresenter::discardStaleRestoredSessionState() {
         restored_position_.reset();
     if (restored_eof_generation_.has_value() && *restored_eof_generation_ != generation)
         restored_eof_generation_.reset();
+}
+
+bool PlayerPresenter::hasSourceVolumeRecovery() const noexcept {
+    return local_track_session_ != nullptr && restored_position_ && restored_position_->source_volume_recovery &&
+           restored_position_->generation == local_track_session_->playbackGeneration();
 }
 
 void PlayerPresenter::cancelRestoredPositionForExplicitTransport() {
@@ -2084,11 +2099,20 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
         return false;
 
     const auto id = local_queue_.items()[*target].occurrence_id;
-    if (!local_track_session_->open(local_queue_.items()[*target].source_path, LocalTrackStartIntent::Autoplay))
+    const bool restore_volume = local_queue_.currentOccurrenceId() == std::optional{id} && hasSourceVolumeRecovery();
+    const auto position = restore_volume ? restored_position_->target_ms : 0;
+    const auto intent = restore_volume ? LocalTrackStartIntent::RestorePaused : LocalTrackStartIntent::Autoplay;
+    if (!local_track_session_->open(local_queue_.items()[*target].source_path, intent))
         return false;
     if (!local_queue_.selectUnavailableForRetry(*target))
         throw std::logic_error{"an accepted unavailable occurrence retry could not be selected"};
-    occurrence_retry_ = OccurrenceRetry{id, local_track_session_->playbackGeneration()};
+    const auto generation = local_track_session_->playbackGeneration();
+    occurrence_retry_ = OccurrenceRetry{id, generation};
+    if (restore_volume) {
+        restored_position_ =
+            RestoredPosition{.generation = generation, .target_ms = position, .source_volume_recovery = true};
+        restored_eof_generation_.reset();
+    }
     if (file_location_error_ == id)
         file_location_error_.reset();
     source_import_needs_autoplay_ = false;
@@ -2193,13 +2217,15 @@ void PlayerPresenter::finishFileLocation(const std::uint64_t request_generation,
             return;
         }
         const auto position = currentSessionSnapshot().position_ms;
+        const bool restore_volume = hasSourceVolumeRecovery();
         if (!local_track_session_->open(result.source_path, LocalTrackStartIntent::RestorePaused)) {
             file_location_error_ = request.occurrence_id;
             finish(false);
             return;
         }
         const auto generation = local_track_session_->playbackGeneration();
-        restored_position_ = RestoredPosition{.generation = generation, .target_ms = position};
+        restored_position_ =
+            RestoredPosition{.generation = generation, .target_ms = position, .source_volume_recovery = restore_volume};
         restored_eof_generation_.reset();
         occurrence_retry_ = OccurrenceRetry{request.occurrence_id, generation};
         source_import_needs_autoplay_ = false;
@@ -2350,11 +2376,14 @@ bool PlayerPresenter::clearQueue() {
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exit_committed_)
         return;
+    const bool volume_removed = isSourceVolumeRemoval(event);
     if (exiting_ || download_append_in_progress_) {
         if (local_track_session_ != nullptr &&
             event.snapshot.generation == local_track_session_->playbackGeneration() &&
-            (!deferred_playback_event_.has_value() || deferred_playback_event_->type != PlaybackEventType::Ended ||
-             event.type == PlaybackEventType::Ended)) {
+            (!deferred_playback_event_ || volume_removed ||
+             (!isSourceVolumeRemoval(*deferred_playback_event_) &&
+              (deferred_playback_event_->type != PlaybackEventType::Ended ||
+               event.type == PlaybackEventType::Ended)))) {
             deferred_playback_event_ = event;
         }
         return;
@@ -2369,12 +2398,27 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (result == LocalTrackPlaybackEventResult::Ignored)
         return;
 
+    if (volume_removed) {
+        // The decoder may already have dropped its time when the volume disappeared.
+        if (before.generation == event.snapshot.generation) {
+            event.snapshot.position_ms = before.position_ms;
+            event.snapshot.duration_ms = before.duration_ms;
+        }
+        event.snapshot.seekable = false;
+        const auto position = restoring_session ? restored_position_->target_ms : event.snapshot.position_ms;
+        restored_position_ = RestoredPosition{.generation = event.snapshot.generation,
+                                              .target_ms = std::max(position, std::int64_t{0}),
+                                              .source_volume_recovery = true};
+        restored_eof_generation_.reset();
+        source_import_needs_autoplay_ = false;
+        source_import_autoplay_enabled_ = false;
+    }
     const bool retry_event = occurrence_retry_.has_value() &&
                              occurrence_retry_->generation == event.snapshot.generation &&
                              local_queue_.currentOccurrenceId() == std::optional{occurrence_retry_->occurrence_id};
     controller_.applyBackendSnapshot(event.snapshot);
     reconcileRestoredPosition();
-    bool state_projection_changed = false;
+    bool state_projection_changed = volume_removed;
     bool source_import_changed = false;
     std::optional<std::pair<QString, QString>> automatically_skipped;
     if (retry_event && event.snapshot.status != PlaybackStatus::Loading) {
@@ -2413,7 +2457,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
                     source_import_state_ = SourceImportState::CompletedWithIssues;
                 source_import_changed = true;
             }
-        } else if (retry_event) {
+        } else if (retry_event || volume_removed) {
             static_cast<void>(
                 local_queue_model_.markUnavailable(occurrence_id, localPlaybackErrorCode(event.snapshot.error)));
         }
@@ -2427,7 +2471,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         }
         local_recovery_intent_ = start_intent;
         bool recovered = false;
-        if (!restoring_session && !retry_event) {
+        if (!volume_removed && !restoring_session && !retry_event) {
             const QPointer<PlayerPresenter> guard{this};
             const auto import_generation = source_import_generation_;
             const auto import_state = source_import_state_;
@@ -2444,7 +2488,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
                 automatically_skipped.emplace(failed_title, localPlaybackErrorCode(event.snapshot.error));
             }
         }
-        if (imported_occurrence && source_import_state_ == SourceImportState::Discovering &&
+        if (!volume_removed && imported_occurrence && source_import_state_ == SourceImportState::Discovering &&
             source_import_autoplay_enabled_ && !recovered)
             source_import_needs_autoplay_ = true;
     } else if (result == LocalTrackPlaybackEventResult::Ended && !restoring_session && !suppress_restored_end) {
@@ -2468,7 +2512,7 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
         restored_eof_generation_.reset();
     }
 
-    if (state_projection_changed)
+    if (state_projection_changed && !volume_removed)
         controller_.applyBackendSnapshot(backend_.snapshot());
     if (state_projection_changed)
         sessionStructureDidChange();
@@ -3856,11 +3900,13 @@ bool PlayerPresenter::recoverAudioOutput() {
     if (!current.has_value())
         return false;
     const auto position = currentSessionSnapshot().position_ms;
+    const bool restore_volume = hasSourceVolumeRecovery();
     const auto id = local_queue_.items()[*current].occurrence_id;
     if (!local_track_session_->open(local_queue_.items()[*current].source_path, LocalTrackStartIntent::RestorePaused))
         return false;
     const auto generation = local_track_session_->playbackGeneration();
-    restored_position_ = RestoredPosition{.generation = generation, .target_ms = position};
+    restored_position_ =
+        RestoredPosition{.generation = generation, .target_ms = position, .source_volume_recovery = restore_volume};
     restored_eof_generation_.reset();
     occurrence_retry_.reset();
     if (!local_queue_.items()[*current].available)

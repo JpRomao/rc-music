@@ -79,6 +79,7 @@ class LocalTrackSession final {
     bool has_track_{false};
     LocalTrackStartIntent start_intent_{LocalTrackStartIntent::Autoplay};
     bool start_pending_{false};
+    bool source_volume_removed_{false};
 };
 
 } // namespace music_player::m0

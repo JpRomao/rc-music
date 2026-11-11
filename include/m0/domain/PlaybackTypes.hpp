@@ -25,6 +25,7 @@ enum class PlaybackErrorCode {
     BackendFailure,
     AudioOutputUnavailable,
     AudioOutputChanged,
+    SourceVolumeRemoved,
 };
 
 enum class PlaybackCommandResult {

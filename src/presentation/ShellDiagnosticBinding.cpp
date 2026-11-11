@@ -11,6 +11,8 @@ namespace {
 DiagnosticCode sourceCode(const QString& code) noexcept {
     if (code == QStringLiteral("source_unavailable"))
         return DiagnosticCode::SourceUnavailable;
+    if (code == QStringLiteral("source_volume_removed"))
+        return DiagnosticCode::SourceVolumeRemoved;
     if (code == QStringLiteral("invalid_media"))
         return DiagnosticCode::InvalidMedia;
     if (code == QStringLiteral("access_denied"))

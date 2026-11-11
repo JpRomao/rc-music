@@ -490,6 +490,7 @@ class PlayerPresenter final : public QObject {
     void sessionStructureDidChange();
     void observeSessionPosition(bool checkpoint);
     void reconcileRestoredPosition();
+    [[nodiscard]] bool hasSourceVolumeRecovery() const noexcept;
     void schedulePreferencePersistence();
     void preferenceDidChange();
     void pollPreferencePersistence();
@@ -661,6 +662,7 @@ class PlayerPresenter final : public QObject {
         std::uint64_t generation{0};
         std::int64_t target_ms{0};
         bool seek_requested{false};
+        bool source_volume_recovery{false};
     };
     std::optional<RestoredPosition> restored_position_{};
     std::optional<std::uint64_t> restored_eof_generation_{};
