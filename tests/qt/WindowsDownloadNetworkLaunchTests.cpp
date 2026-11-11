@@ -1,9 +1,17 @@
+#include "adapters/DownloadWorkerProtocol.hpp"
 #include "adapters/WindowsDownloadNetworkLaunch.hpp"
 #include "adapters/WindowsProcessDownloadIo.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QNetworkProxy>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslKey>
+#include <QSslServer>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -153,6 +161,80 @@ class WindowsDownloadNetworkLaunchTests final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(io->pollStop().stopped, 10000);
         QVERIFY(QDir(directory).exists());
         io.reset();
+        QVERIFY(!QDir(directory).exists());
+    }
+    void realBootstrapRejectsUntrustedTlsBeforeHttp() {
+        if (!realEnabled())
+            QSKIP("Reviewed synthetic-only runtime/CRT not configured");
+
+        QFile certificate_file(QFINDTESTDATA("network-fixtures/server-cert.pem"));
+        QFile key_file(QFINDTESTDATA("network-fixtures/server-key.pem"));
+        QVERIFY(certificate_file.open(QIODevice::ReadOnly));
+        QVERIFY(key_file.open(QIODevice::ReadOnly));
+        const QSslCertificate certificate(certificate_file.readAll());
+        const QSslKey key(key_file.readAll(), QSsl::Rsa);
+        QVERIFY(!certificate.isNull());
+        QVERIFY(!key.isNull());
+        QVERIFY(QSslSocket::supportsSsl());
+        QVERIFY(!QSslConfiguration::systemCaCertificates().contains(certificate));
+
+        auto tls = QSslConfiguration::defaultConfiguration();
+        tls.setLocalCertificate(certificate);
+        tls.setPrivateKey(key);
+        tls.setProtocol(QSsl::TlsV1_2);
+        tls.setPeerVerifyMode(QSslSocket::VerifyNone); // The fixture server requests no client identity.
+        int handshakes = 0;
+        QByteArray received;
+        QSslServer server;
+        server.setProxy(QNetworkProxy::NoProxy);
+        server.setSslConfiguration(tls);
+        connect(&server, &QSslServer::startedEncryptionHandshake, &server, [&](QSslSocket* socket) {
+            ++handshakes;
+            connect(socket, &QSslSocket::readyRead, &server, [&, socket] { received += socket->readAll(); });
+        });
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+        QTemporaryDir parent;
+        QVERIFY(parent.isValid());
+        auto lease = WindowsDownloadNetworkLaunch::prepare(realConfiguration(parent));
+        QVERIFY(lease);
+        QVERIFY(lease->unchanged());
+        const auto directory = lease->directory();
+        {
+            DownloadWorkerRequest request;
+            request.mode = DownloadWorkerMode::Stream;
+            request.runtime = lease->tlsConfig();
+            // The logical name matches the fixture SAN. The worker uses its unmodified default trust.
+            request.endpoint = {QHostAddress::LocalHost, QStringLiteral("media.rc-music.invalid"),
+                                QByteArrayLiteral("/synthetic"), server.serverPort(), true};
+            auto config = lease->processConfig();
+            config.standard_input = encodeDownloadWorkerRequest(request);
+            config.total_timeout_ms = 10000;
+            QVERIFY(!config.standard_input.isEmpty());
+            WindowsDownloadProcess child;
+            QElapsedTimer clock;
+            clock.start();
+            QVERIFY(child.start(config, clock.elapsed()));
+            WindowsDownloadProcessUpdate update;
+            QByteArray wire, diagnostics;
+            QTRY_VERIFY_WITH_TIMEOUT(([&] {
+                                         update = child.poll(clock.elapsed());
+                                         wire += update.stdout_chunk;
+                                         diagnostics += update.stderr_chunk;
+                                         return update.state == WindowsDownloadProcessState::Exited ||
+                                                update.state == WindowsDownloadProcessState::Failed;
+                                     }()),
+                                     10000);
+            QCOMPARE(update.state, WindowsDownloadProcessState::Exited);
+            QCOMPARE(update.exit_code, std::optional<int>{17});
+            QCOMPARE(handshakes, 1);
+            QVERIFY(received.isEmpty());
+            QVERIFY(diagnostics.isEmpty());
+            const DownloadWorkerFrame terminal{.error = DownloadWorkerError::Tls};
+            QCOMPARE(wire, encodeDownloadWorkerFrame(terminal));
+            QVERIFY(lease->unchanged());
+        }
+        lease.reset();
         QVERIFY(!QDir(directory).exists());
     }
     void realBootstrapResolvesUsingOwnedCapability() {
