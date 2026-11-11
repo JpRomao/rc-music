@@ -224,6 +224,8 @@ O broker passa um caminho Win32 estendido como nome do aplicativo para o extract
 
 Com o manifesto offline autenticado de CPython 3.14.10 e Expat 2.9.0, o Red falhou com uma raiz de 216 unidades. Com a correção, o mesmo manifesto completou cinco vetores e um handoff a 241 unidades, recebeu os ACKs e liberou a árvore temporária. As quatro suítes CTest afetadas passaram em 164 casos Qt. A suíte de identidade das cópias usa TEMP curto por causa de seu helper Win32 legado. Evidências em `out/product/deep-temp-diagnosis-20261111/`.
 
+O leitor de testes exige os dois hashes de módulo quando o recibo declara o Expat 2.10.0 e conserva a leitura dos recibos anteriores. Passaram 67 casos Qt. O manifesto novo também passou no broker direto e no worker com raiz de 241 unidades, um handoff, ACK e limpeza. O extractor registrou zero tentativas de HTTP, socket ou inicialização remota. Recibo `validated-expat-worker-receipt.json` no mesmo diretório.
+
 ## Host e canal Native Messaging YouTube
 
 **Estado deste incremento:** cliente/servidor e host separados implementados, com seleção integrada, build Release sem testes e formato verdes. Não houve instalação/registro ou ativação de aquisição no app.

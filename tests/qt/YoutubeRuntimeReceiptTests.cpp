@@ -71,6 +71,25 @@ void changeRecord(QJsonObject& object, const QString& collection, const qsizetyp
     values[index] = record;
     object.insert(collection, values);
 }
+QJsonObject expatFixture() {
+    auto object = fixture();
+    changeRecord(object, "sources", 0, "version", QStringLiteral("3.14.10"));
+    auto sources = object.value("sources").toArray();
+    auto artifacts = object.value("artifacts").toArray();
+    const auto addModule = [&sources, &artifacts](const QString& name, const QString& file, const QString& pin) {
+        auto observation = source(name, QStringLiteral("2.10.0"));
+        observation.insert("sha256", pin);
+        sources.append(observation);
+        auto module = artifact(QStringLiteral("Support"), QStringLiteral("extractor/_internal/") + file);
+        module.insert("sha256", pin);
+        artifacts.append(module);
+    };
+    addModule(QStringLiteral("pyexpat"), QStringLiteral("pyexpat.pyd"), QString(64, u'a'));
+    addModule(QStringLiteral("elementtree"), QStringLiteral("_elementtree.pyd"), QString(64, u'b'));
+    object.insert("sources", sources);
+    object.insert("artifacts", artifacts);
+    return object;
+}
 QString relativeUnits(const qsizetype units) {
     QStringList parts{QStringLiteral("notices")};
     for (int index = 0; index < 14; ++index)
@@ -285,6 +304,47 @@ class YoutubeRuntimeReceiptTests final : public QObject {
         auto object = fixture();
         changeRecord(object, "sources", 1, "version", QStringLiteral("3.14.10"));
         QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
+    }
+    void acceptsBothReviewedExpatModulesWithMatchingArtifactPins() {
+        const auto result = decode(expatFixture());
+        QVERIFY(result.receipt);
+        QCOMPARE(result.error, YoutubeRuntimeReceiptError::None);
+        QCOMPARE(result.receipt->sources.size(), std::size_t{19});
+        QCOMPARE(result.receipt->config.artifacts.size(), std::size_t{11});
+    }
+    void reviewedExpatModulesRequireThePairAndReviewedVersions() {
+        const auto before = expatFixture();
+        auto object = before;
+        changeRecord(object, "sources", 0, "version", QStringLiteral("3.13.1"));
+        QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
+        const auto sources = before.value("sources").toArray();
+        for (const auto index : {sources.size() - 2, sources.size() - 1}) {
+            object = before;
+            changeRecord(object, "sources", index, "version", QStringLiteral("2.9.0"));
+            QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
+            auto incomplete = sources;
+            incomplete.removeAt(index);
+            object = before;
+            object.insert("sources", incomplete);
+            QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
+        }
+    }
+    void reviewedExpatModulesRequireExactArtifactPathsAndPins() {
+        const auto before = expatFixture();
+        const auto artifacts = before.value("artifacts").toArray();
+        for (const auto index : {artifacts.size() - 2, artifacts.size() - 1}) {
+            auto object = before;
+            changeRecord(object, "artifacts", index, "sha256", hash);
+            QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidArtifact);
+            object = before;
+            changeRecord(object, "artifacts", index, "path", QStringLiteral("extractor/_internal/other.pyd"));
+            QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidArtifact);
+            auto incomplete = artifacts;
+            incomplete.removeAt(index);
+            object = before;
+            object.insert("artifacts", incomplete);
+            QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidArtifact);
+        }
     }
     void sourceMetadataRequiresExactBoundedFields() {
         const auto before = fixture();

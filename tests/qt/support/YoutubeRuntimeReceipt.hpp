@@ -122,6 +122,8 @@ inline constexpr std::array<std::pair<const char*, const char*>, 17> required_so
      {"build-lock", "project"}}};
 inline constexpr std::array<const char*, 5> optional_sources{
     {"python-license", "node-license", "yt-dlp-license", "ejs-license", "pyinstaller-license"}};
+inline constexpr std::array<std::pair<const char*, const char*>, 2> reviewed_expat_modules{
+    {{"pyexpat", "extractor/_internal/pyexpat.pyd"}, {"elementtree", "extractor/_internal/_elementtree.pyd"}}};
 inline constexpr std::array<const char*, 4> role_names{{"Extractor", "Node", "EjsCore", "EjsLibrary"}};
 inline constexpr std::array<const char*, 4> role_paths{{"extractor/yt-dlp.exe", "javascript/node.exe",
                                                         "extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js",
@@ -141,6 +143,9 @@ inline bool matchesVersion(const QString& name, const QString& observed) {
     for (const auto known : optional_sources)
         if (name == QLatin1String(known))
             return observed == QLatin1String("project");
+    for (const auto& module : reviewed_expat_modules)
+        if (name == QLatin1String(module.first))
+            return observed == QLatin1String("2.10.0");
     return false;
 }
 inline bool provenance(const QString& text) {
@@ -203,6 +208,16 @@ inline bool provenance(const QString& text) {
         if (!source_names.contains(QLatin1String(name)))
             return failed(Error::InvalidSource);
     }
+    const auto find_source = [&receipt](const char* name) {
+        return std::find_if(receipt.sources.cbegin(), receipt.sources.cend(),
+                            [name](const auto& source) { return source.name == QLatin1String(name); });
+    };
+    const auto expat_sources = std::count_if(
+        reviewed_expat_modules.cbegin(), reviewed_expat_modules.cend(),
+        [&source_names](const auto& module) { return source_names.contains(QLatin1String(module.first)); });
+    if (expat_sources != 0 && (expat_sources != static_cast<qsizetype>(reviewed_expat_modules.size()) ||
+                               find_source("python")->version != QLatin1String("3.14.10")))
+        return failed(Error::InvalidSource);
     const auto artifacts = object.value("artifacts").toArray();
     if (artifacts.size() > static_cast<qsizetype>(youtube_runtime_max_files))
         return failed(Error::LimitExceeded);
@@ -262,6 +277,15 @@ inline bool provenance(const QString& text) {
     for (const auto path : notice_paths)
         if (!destinations.contains(QString::fromLatin1(path).toCaseFolded()))
             return failed(Error::InvalidArtifact);
+    if (expat_sources != 0) {
+        for (const auto& [name, path] : reviewed_expat_modules) {
+            const auto artifact =
+                std::find_if(receipt.config.artifacts.cbegin(), receipt.config.artifacts.cend(),
+                             [path](const auto& row) { return row.relative_path == QLatin1String(path); });
+            if (artifact == receipt.config.artifacts.cend() || artifact->sha256 != find_source(name)->sha256)
+                return failed(Error::InvalidArtifact);
+        }
+    }
     return {Error::None, std::move(receipt)};
 }
 } // namespace music_player::m0::test_support
