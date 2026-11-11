@@ -29,6 +29,24 @@ if (-not [IO.File]::Exists($instrumentedExe)) { throw 'Missing instrumented shel
 $audioIntegrationExe = Join-Path $InstrumentedBuildDirectory $configuration.audio_integration_executable
 if (-not [IO.File]::Exists($audioIntegrationExe)) { throw 'Missing audio integration test for the selected entrypoint' }
 
+function Get-SmokeSha256([string] $Path) {
+    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+$manifestPath = Join-Path ([IO.Path]::GetDirectoryName($RuntimeDirectory.TrimEnd('\', '/'))) 'runtime-manifest.json'
+$inputPaths = [ordered]@{
+    RuntimeManifestSha256 = $manifestPath
+    FixtureCatalogSha256 = Join-Path $repository 'tests/audio/corpus/catalog.v1.json'
+    TestSourceSha256 = Join-Path $repository 'tests/qt/LocalAudioIntegrationTests.cpp'
+    ProductionExecutableSha256 = $productionExe
+    InstrumentedExecutableSha256 = $instrumentedExe
+    CodecProbeSha256 = $audioIntegrationExe
+}
+$inputHashes = [ordered]@{}
+foreach ($name in $inputPaths.Keys) {
+    $inputHashes[$name] = Get-SmokeSha256 $inputPaths[$name]
+}
+
 $testRoot = Join-Path $repository ('out/product/test-runs/rc-music-runtime-smoke/' + [Guid]::NewGuid().ToString('N'))
 $probeDirectory = Join-Path $testRoot 'probe relocatable 日本'
 $probeExe = Join-Path $probeDirectory 'm0_qt_shell.exe'
@@ -47,9 +65,7 @@ $probePlan = New-RcMusicRuntimePlan -Files @(@{ source = $instrumentedExe; relat
     -AllowedSourceRoots @($InstrumentedBuildDirectory) -Destination $probeDirectory
 $null = Copy-RcMusicRuntimePlan -Plan $probePlan
 $null = New-Item -ItemType Directory -Path $temporaryDirectory, $roamingDirectory, $localDirectory
-if ((Get-FileHash -LiteralPath $instrumentedExe -Algorithm SHA256).Hash -cne
-        (Get-FileHash -LiteralPath $probeExe -Algorithm SHA256).Hash) { throw 'Instrumented copy hash mismatch' }
-$productionHash = (Get-FileHash -LiteralPath $productionExe -Algorithm SHA256).Hash
+if ((Get-SmokeSha256 $probeExe) -cne $inputHashes.InstrumentedExecutableSha256) { throw 'Instrumented copy hash mismatch' }
 $windowsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
 $systemDirectory = [Environment]::SystemDirectory
 
@@ -160,14 +176,13 @@ Write-Host '[PASS] Production payload rejects test hooks: exit 1, stdout/stderr 
 $instrumented = Invoke-IsolatedRuntimeProcess $probeExe $probeConfigRoot
 Assert-SmokeResult $instrumented 0 'Relocated instrumented combined startup'
 if (-not [IO.Directory]::Exists($probeConfigRoot)) { throw 'Instrumented smoke did not create its isolated configuration root' }
-if ((Get-FileHash -LiteralPath $productionExe -Algorithm SHA256).Hash -cne $productionHash) {
+if ((Get-SmokeSha256 $productionExe) -cne $inputHashes.ProductionExecutableSha256) {
     throw 'Production executable changed during runtime smoke'
 }
 Write-Host '[PASS] Relocated combined startup uses the declared runtime and exits cleanly: exit 0, stdout/stderr 0 B'
 
 $probeAudioExe = Join-Path $probeDirectory 'm0_qt_local_audio_integration_tests.exe'
 $probeQtTest = Join-Path $probeDirectory 'Qt6Test.dll'
-$manifestPath = Join-Path ([IO.Path]::GetDirectoryName($RuntimeDirectory.TrimEnd('\', '/'))) 'runtime-manifest.json'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $coreEntries = @($manifest.files | Where-Object { $_.relative_path -ceq 'Qt6Core.dll' })
 if ($coreEntries.Count -ne 1) { throw 'Runtime manifest must identify exactly one Qt6Core.dll origin' }
@@ -183,12 +198,13 @@ foreach ($coreFile in @($coreEntry.source, (Join-Path $RuntimeDirectory 'Qt6Core
 # from PATH, a guessed SDK or the instrumented build's possibly different Qt.
 $qtTestSource = Join-Path ([IO.Path]::GetDirectoryName($coreEntry.source)) 'Qt6Test.dll'
 if (-not [IO.File]::Exists($qtTestSource)) { throw 'Qt6Test.dll is missing beside the recorded Qt Core origin' }
-foreach ($copy in @(@{ Source = $audioIntegrationExe; Target = $probeAudioExe },
-        @{ Source = $qtTestSource; Target = $probeQtTest })) {
+$inputPaths.QtTestSha256 = $qtTestSource
+$inputHashes.QtTestSha256 = Get-SmokeSha256 $qtTestSource
+foreach ($copy in @(@{ Source = $audioIntegrationExe; Target = $probeAudioExe; Sha256 = $inputHashes.CodecProbeSha256 },
+        @{ Source = $qtTestSource; Target = $probeQtTest; Sha256 = $inputHashes.QtTestSha256 })) {
     if (Test-Path -LiteralPath $copy.Target) { throw 'Codec probe destination already exists' }
     Copy-Item -LiteralPath $copy.Source -Destination $copy.Target
-    if ((Get-FileHash -LiteralPath $copy.Source -Algorithm SHA256).Hash -cne
-            (Get-FileHash -LiteralPath $copy.Target -Algorithm SHA256).Hash) { throw 'Codec probe copy hash mismatch' }
+    if ((Get-SmokeSha256 $copy.Target) -cne $copy.Sha256) { throw 'Codec probe copy hash mismatch' }
 }
 if (-not [IO.File]::Exists($probeAudioExe) -or -not [IO.File]::Exists($probeQtTest)) {
     throw 'Missing isolated codec probe executable or Qt6Test.dll'
@@ -196,15 +212,31 @@ if (-not [IO.File]::Exists($probeAudioExe) -or -not [IO.File]::Exists($probeQtTe
 $audio = Invoke-IsolatedRuntimeProcess -Program $probeAudioExe -AllowQTestOutput -TimeoutMilliseconds 60000 `
     -Arguments @('opensUnicodeLocalAudioAndDrivesTheRealJourney', '-o', '-,txt')
 Write-Host $audio.TestOutput
+$expectedRows = @(
+    'wav-pcm', 'mp3-cbr', 'mp3-vbr', 'mp3-unicode', 'm4a-aac', 'm4a-aac-mp4-extension', 'flac',
+    'ogg-vorbis', 'ogg-vorbis-oga-extension', 'wav-pcm-neutral-extension', 'mp3-cbr-neutral-extension',
+    'mp3-vbr-neutral-extension', 'mp3-unicode-neutral-extension', 'm4a-aac-neutral-extension',
+    'flac-neutral-extension', 'id3-prefixed-flac-with-mp3-extension', 'ogg-vorbis-neutral-extension'
+)
+$suite = 'music_player::m0::test::LocalAudioIntegrationTests'
+$rowPattern = '(?m)^PASS[ \t]*:[ \t]+' + $suite + '::opensUnicodeLocalAudioAndDrivesTheRealJourney\((?<row>[^)\r\n]+)\)\r?$'
+$passedRows = @([regex]::Matches($audio.TestOutput, $rowPattern) | ForEach-Object { $_.Groups['row'].Value })
+$totals = [regex]::Matches($audio.TestOutput, '(?m)^Totals: [^\r\n]+\r?$')
+$passedCount = $expectedRows.Count + 2 # initTestCase and cleanupTestCase.
 if ($audio.ExitCode -ne 0 -or
-        $audio.TestOutput -cnotmatch '(?m)^Totals: 18 passed, 0 failed, 0 skipped, 0 blacklisted, [0-9]+ms\r?$' -or
-        $audio.TestOutput -cmatch '(?m)^(FAIL!|SKIP)\s*:') {
-    throw "Packaged-runtime codec journey did not pass all sixteen rows without skips (exit $($audio.ExitCode))"
+        $totals.Count -ne 1 -or
+        $totals[0].Value -cnotmatch "^Totals: $passedCount passed, 0 failed, 0 skipped, 0 blacklisted, [0-9]+ms\r?$" -or
+        $audio.TestOutput -cmatch '(?m)^(FAIL!|SKIP|XFAIL|XPASS|BFAIL|BPASS)[ \t]*:' -or
+        $passedRows.Count -ne $expectedRows.Count -or
+        (Compare-Object -ReferenceObject $expectedRows -DifferenceObject $passedRows -CaseSensitive)) {
+    throw "Packaged-runtime codec journey did not pass the exact seventeen rows without skips (exit $($audio.ExitCode))"
 }
-if ((Get-FileHash -LiteralPath $productionExe -Algorithm SHA256).Hash -cne $productionHash) {
-    throw 'Production executable changed during codec smoke'
+foreach ($name in $inputPaths.Keys) {
+    if ((Get-SmokeSha256 $inputPaths[$name]) -cne $inputHashes[$name]) {
+        throw "Packaged-runtime smoke input changed: $name"
+    }
 }
-Write-Host '[PASS] Sixteen synthetic codec rows: load/pause/50% seek/metadata/play from zero to EOF, 18 passed including setup/cleanup, zero skips'
+Write-Host '[PASS] Seventeen synthetic codec rows: load/pause/50% seek/metadata/play from zero to EOF, 19 passed including setup/cleanup, zero skips'
 Write-Host '[PASS] All three owned processes exited; test executables, Qt Test and state remain outside the payload'
 $smokeResult = [pscustomobject]@{
     RuntimeDirectory = $RuntimeDirectory
@@ -212,6 +244,8 @@ $smokeResult = [pscustomobject]@{
     Production = $production
     Instrumented = $instrumented
     Audio = $audio
+    CodecRows = $passedRows
+    InputHashes = $inputHashes
 }
 [IO.File]::WriteAllText((Join-Path $testRoot 'smoke-result.json'),
     ($smokeResult | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))

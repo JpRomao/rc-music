@@ -859,7 +859,7 @@
         },
         {
           "path": "packaging/windows/tests/LocalRuntime.Smoke.ps1",
-          "marker": "Sixteen synthetic codec rows"
+          "marker": "Seventeen synthetic codec rows"
         }
       ],
       "evidence": [

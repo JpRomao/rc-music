@@ -171,10 +171,10 @@ try {
             }
         }
     }
-    Test-Case 'catalog facts match promoted bytes and the existing thirteen CMake pins' {
+    Test-Case 'catalog facts match promoted bytes and the baseline CMake pins' {
         $pins = Get-Content -LiteralPath (Join-Path $repository 'cmake/RcMusicAudioFixtures.cmake') -Raw
-        $entries = @([regex]::Matches($pins, '_rc_music_require_audio_fixture\("\$\{corpus\}" "([^"]+)" ([0-9]+)\s+"([0-9a-f]{64})"\)'))
-        Assert-Equal $entries.Count 13
+        $entries = @([regex]::Matches($pins, '_rc_music_require_audio_fixture\("\$\{corpus\}" "(fixtures/valid/[^"]+)" ([0-9]+)\s+"([0-9a-f]{64})"\)'))
+        Assert-Equal $entries.Count $catalog.fixtures.Count
         foreach ($fixture in $catalog.fixtures) {
             $matches = @($entries | Where-Object { $_.Groups[1].Value -ceq $fixture.relative_path })
             Assert-Equal $matches.Count 1
