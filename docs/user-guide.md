@@ -6,6 +6,8 @@ Este guia descreve o aplicativo Windows atual para uso local privado e experimen
 
 Abra **Playlists** para criar uma lista vazia com **Nova playlist**, ou copie a fila atual com **Salvar fila como…**. Selecione uma lista e use **Adicionar arquivos…** para escolher músicas locais ou **Adicionar fila atual** para copiar a fila. Selecione uma faixa da lista para mover, remover ou usar **Localizar arquivo…** quando ela mudar de lugar. Excluir uma lista conserva os arquivos de áudio. A alteração aparece depois da confirmação de salvamento. Em caso de falha, escolha **Tentar salvar** ou **Recarregar do disco** para conferir o que foi gravado.
 
+No painel, **↑**, **↓**, **Home** e **End** movem o foco nas listas. **Enter** ou **Espaço** seleciona a linha em foco e **Tab** leva aos controles seguintes.
+
 **Adicionar à fila** acrescenta a playlist ao fim da fila, preservando a música atual e as duplicatas. Escolher a lista não inicia áudio; para tocar, use a fila do player. As playlists ficam salvas independentemente da restauração da sessão e funcionam offline. O [guia de playlists](playlists.md) explica backup, limites e recuperação.
 
 ## Letras das músicas

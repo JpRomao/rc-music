@@ -111,20 +111,110 @@ Dialog {
         deleteRejected = false;
         deleteDialog.open();
     }
+    component LibraryList: ListView {
+        id: list
+        required property bool selectionAllowed
+        required property string selectedId
+        property string cursorId: ""
+        signal rowActivated(string rowId)
+
+        activeFocusOnTab: selectionAllowed && count > 0
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        keyNavigationEnabled: false
+        Accessible.role: Accessible.List
+        Accessible.focusable: activeFocusOnTab
+        Accessible.focused: activeFocus
+
+        function indexOfId(rowId) {
+            const rows = model || [];
+            for (let index = 0; index < rows.length; ++index) {
+                if (rows[index].id === rowId)
+                    return index;
+            }
+            return -1;
+        }
+        function moveCursor(index, reveal) {
+            const rows = model || [];
+            const next = rows.length > 0 ? Math.max(0, Math.min(index, rows.length - 1)) : -1;
+            cursorId = next < 0 ? "" : rows[next].id;
+            currentIndex = next;
+            if (reveal && next >= 0)
+                positionViewAtIndex(next, ListView.Contain);
+        }
+        function restoreCursor(preferredId) {
+            const preferred = indexOfId(preferredId);
+            moveCursor(preferred >= 0 ? preferred : indexOfId(selectedId), activeFocus);
+        }
+        function activateRow(rowId, reason) {
+            const index = indexOfId(rowId);
+            if (!selectionAllowed || index < 0)
+                return;
+            moveCursor(index, true);
+            forceActiveFocus(reason);
+            rowActivated(rowId);
+        }
+
+        Component.onCompleted: restoreCursor(selectedId)
+        onModelChanged: restoreCursor(cursorId)
+        onSelectedIdChanged: restoreCursor(selectedId)
+        onActiveFocusChanged: {
+            if (activeFocus)
+                restoreCursor(cursorId);
+        }
+        Keys.onPressed: event => {
+            if (!selectionAllowed || count === 0 || (event.modifiers !== Qt.NoModifier && event.modifiers !== Qt.KeypadModifier))
+                return;
+            switch (event.key) {
+            case Qt.Key_Up:
+                moveCursor(currentIndex - 1, true);
+                break;
+            case Qt.Key_Down:
+                moveCursor(currentIndex + 1, true);
+                break;
+            case Qt.Key_Home:
+                moveCursor(0, true);
+                break;
+            case Qt.Key_End:
+                moveCursor(model.length - 1, true);
+                break;
+            case Qt.Key_Return:
+            case Qt.Key_Enter:
+            case Qt.Key_Space:
+                if (!event.isAutoRepeat)
+                    activateRow(cursorId, Qt.TabFocusReason);
+                break;
+            default:
+                return;
+            }
+            event.accepted = true;
+        }
+    }
     component LibraryRow: ItemDelegate {
         id: row
         required property ShellUiContract contract
         property string primaryText: ""
         property string secondaryText: ""
         property string primaryObjectName: ""
+        property bool cursorFocused: false
         implicitHeight: 58
-        activeFocusOnTab: true
+        activeFocusOnTab: false
+        focusPolicy: Qt.NoFocus
+        Accessible.role: Accessible.ListItem
         Accessible.name: primaryText + (secondaryText.length > 0 ? " · " + secondaryText : "")
+        Accessible.focusable: enabled
+        Accessible.focused: cursorFocused
+        Accessible.selectable: true
+        Accessible.selected: highlighted
+        Accessible.onPressAction: {
+            if (enabled)
+                clicked();
+        }
         background: Rectangle {
             color: row.highlighted ? row.contract.surfaceColor : "transparent"
             radius: row.contract.radiusSmall
-            border.width: row.activeFocus ? 3 : (row.highlighted ? 1 : 0)
-            border.color: row.activeFocus ? row.contract.focusColor : row.contract.accentColor
+            border.width: row.cursorFocused ? 3 : (row.highlighted ? 1 : 0)
+            border.color: row.cursorFocused ? row.contract.focusColor : row.contract.accentColor
         }
         contentItem: Column {
             spacing: row.contract.spacingUnit
@@ -197,15 +287,16 @@ Dialog {
                 Layout.preferredWidth: 190
                 Layout.minimumWidth: 180
                 Layout.fillHeight: true
-                ListView {
+                LibraryList {
                     id: playlistList
                     objectName: "playlists-list"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: root.playlists !== null ? root.playlists.playlists : []
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
-                    activeFocusOnTab: true
+                    selectionAllowed: root.interactionAllowed && !root.busy && !root.playlists.hasPendingChange
+                    selectedId: root.selectedPlaylistId
+                    Accessible.name: qsTr("Playlists salvas")
+                    onRowActivated: rowId => root.playlists.selectPlaylist(rowId)
                     ScrollBar.vertical: AccessibleScrollBar {
                         contract: root.contract
                     }
@@ -217,8 +308,9 @@ Dialog {
                         secondaryText: qsTr("%1 faixas").arg(modelData.count)
                         primaryObjectName: "playlist-row-name"
                         highlighted: root.selectedPlaylistId === modelData.id
-                        enabled: root.interactionAllowed && !root.busy && !root.playlists.hasPendingChange
-                        onClicked: root.playlists.selectPlaylist(modelData.id)
+                        cursorFocused: playlistList.activeFocus && ListView.isCurrentItem
+                        enabled: playlistList.selectionAllowed
+                        onClicked: playlistList.activateRow(modelData.id, Qt.MouseFocusReason)
                     }
                     Text {
                         anchors.centerIn: parent
@@ -257,14 +349,16 @@ Dialog {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                ListView {
+                LibraryList {
                     id: entryList
                     objectName: "playlist-entries"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: root.playlists !== null ? root.playlists.entries : []
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
+                    selectionAllowed: root.canEdit
+                    selectedId: root.selectedEntryId
+                    Accessible.name: qsTr("Faixas da playlist")
+                    onRowActivated: rowId => root.selectedEntryId = rowId
                     ScrollBar.vertical: AccessibleScrollBar {
                         contract: root.contract
                     }
@@ -276,8 +370,9 @@ Dialog {
                         secondaryText: modelData.path
                         primaryObjectName: "playlist-entry-title"
                         highlighted: root.selectedEntryId === modelData.id
-                        enabled: root.canEdit
-                        onClicked: root.selectedEntryId = modelData.id
+                        cursorFocused: entryList.activeFocus && ListView.isCurrentItem
+                        enabled: entryList.selectionAllowed
+                        onClicked: entryList.activateRow(modelData.id, Qt.MouseFocusReason)
                     }
                     Text {
                         anchors.centerIn: parent

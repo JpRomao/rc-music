@@ -403,6 +403,81 @@ TestCase {
         tryCompare(findChild(shell, "playlists"), "activeFocus", true);
         compare(shell.windowShortcutsEnabled, true);
     }
+    function test_keyboardSelectsOffscreenPlaylistAndEntryBeforeInvokingRowAction() {
+        const count = 40;
+        backend.playlists = Array.from({
+            length: count
+        }, (_, i) => ({
+                    id: String(i + 1),
+                    name: "Playlist " + (i + 1),
+                    count: count
+                }));
+        backend.entries = Array.from({
+            length: count
+        }, (_, i) => ({
+                    id: String(101 + i),
+                    title: "Faixa repetida",
+                    path: "C:/Music/duplicate.mp3"
+                }));
+        driver.enqueueLocalSelection(["C:/Music/playing.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        const volume = presenter.volume;
+        const occurrence = presenter.currentOccurrenceId;
+        const loads = driver.localLoadCount();
+        const plays = driver.localPlayCount();
+        const seeks = driver.localSeekCount();
+
+        openPanel();
+        const panel = findChild(shell, "playlists-panel");
+        const lists = findChild(shell, "playlists-list");
+        const entries = findChild(shell, "playlist-entries");
+        tryCompare(lists, "activeFocus", true);
+        compare(shell.windowShortcutsEnabled, false);
+        compare(backend.calls.length, 0);
+        keyClick(Qt.Key_Down);
+        tryCompare(lists, "currentIndex", 1);
+        compare(backend.selectedPlaylistId, "1");
+        keyClick(Qt.Key_End);
+        tryCompare(lists, "currentIndex", count - 1);
+        tryVerify(function () {
+            const row = lists.itemAtIndex(count - 1);
+            return row && row.mapToItem(lists, 0, row.height).y <= lists.height + 1;
+        });
+        keyClick(Qt.Key_Return);
+        tryCompare(backend, "selectedPlaylistId", "40");
+        compare(lastCall("select").args[0], "40");
+
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "playlist-rename"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "playlist-delete"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(entries, "activeFocus", true);
+        keyClick(Qt.Key_End);
+        tryCompare(entries, "currentIndex", count - 1);
+        compare(panel.selectedEntryId, "");
+        const reordered = backend.entries.slice();
+        reordered.splice(2, 0, reordered.pop());
+        backend.entries = reordered;
+        tryCompare(entries, "currentIndex", 2);
+        tryCompare(entries, "activeFocus", true);
+        keyClick(Qt.Key_Space);
+        tryCompare(panel, "selectedEntryId", "140");
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "playlist-move-up"), "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(lastCall("moveEntry").args, ["40", "140", 1]);
+        compare(backend.calls.length, 2);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        compare(presenter.volume, volume);
+        compare(presenter.currentOccurrenceId, occurrence);
+        compare(driver.localLoadCount(), loads);
+        compare(driver.localPlayCount(), plays);
+        compare(driver.localSeekCount(), seeks);
+    }
     function test_nameDialogExposesAccessibleModeAndKeyboardSubmission() {
         openPanel();
         const cases = [

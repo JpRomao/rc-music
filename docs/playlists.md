@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-**Estado:** recurso implementado no código Windows, com adição direta e localização de arquivos. Os [instaladores de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a adição direta. Aceitação nativa e instalada da localização permanecem pendentes.
+**Estado:** recurso implementado no Windows, com adição direta e localização de arquivos nos [instaladores de `35e999d`](windows-installer.md#setups-de-35e999d). A navegação por teclado foi validada no build local posterior. A aceitação nativa e instalada segue pendente.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 
@@ -13,6 +13,8 @@ O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6.
 5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
 
 Listas e entradas possuem IDs próprios: nomes iguais e faixas repetidas são permitidos. Nomes e paths são apresentados como texto simples. Trocar a seleção ou alterar o alvo de uma confirmação não deve redirecionar a ação para outra lista.
+
+Em cada lista, use **↑** e **↓** para mover o foco. **Home** e **End** vão à primeira ou última linha. **Enter** ou **Espaço** seleciona a linha em foco e **Tab** leva aos controles seguintes. A seleção usa o ID da ocorrência, inclusive quando a lista muda de ordem.
 
 ## Adicionar músicas à fila
 
@@ -82,3 +84,7 @@ O Red do painel teve **14 passagens e 4 falhas** pela ausência do botão. O Red
 ### Localização de arquivo na playlist
 
 O Red confirmou a ausência da substituição no núcleo, no binding, no restart e no painel. O fechamento passou **307 casos do núcleo**, **4/4 CTest selecionados com 66 casos Qt**, **19 casos Quick**, build Release e `all_qmllint`. A regressão de symlink do núcleo registrou a limitação de permissões deste Windows. Um segundo processo leu o novo caminho Unicode do catálogo real com os mesmos IDs e ordem. Os hashes das três fixtures de áudio foram preservados e a fila ficou intacta. O diálogo foi simulado nessa jornada. Logs em `out/product/test-runs/playlist-locate-20261111/`.
+
+### Navegação por teclado
+
+O teste Quick do painel reproduziu a falha de **End** na versão anterior. A regressão agora navega até listas e faixas fora da área visível, reordena as entradas entre o movimento do foco e a seleção e verifica o ID enviado à ação **Mover para cima**. A reprodução, o volume e a fila conservam o estado durante a navegação. O painel passou **20 casos Qt Quick**, além do build Release e lint QML. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.

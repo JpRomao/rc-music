@@ -938,6 +938,8 @@ O incremento de 2026-11-10 acrescenta **Adicionar arquivos…** à playlist sele
 
 **Localizar arquivo…** atualiza o caminho de uma entrada da playlist após confirmar o salvamento. A edição preserva IDs, ordem, duplicatas e a fila em reprodução. [Playlists](playlists.md#criar-e-organizar)
 
+O painel de playlists aceita navegação por teclado até linhas fora da área visível. A seleção explícita conserva o ID da lista ou faixa em foco, inclusive após reordenação, e preserva a reprodução. [Navegação por teclado](playlists.md#navegação-por-teclado)
+
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr
