@@ -18,6 +18,7 @@ test('popup uses external scripts, labelled controls, plaintext DOM and an hones
   assert.match(html, /lang="pt-BR"/u);
   for (const id of ['selected', 'title', 'artist', 'lyrics-page', 'fetch-lyrics', 'send', 'status']) assert.match(html, new RegExp(`id="${id}"`, 'u'));
   assert.match(html, /type="module" src="popup.mjs"/u);
-  assert.match(html, /Pedido aceito não significa download concluído/u);
+  assert.match(html, /Requer os opcionais Ferramentas de download e Preparar extensão YouTube do RC Music/u);
+  assert.match(html, /Pedido aceito confirma a entrada na fila\. Acompanhe o progresso e a conclusão no painel Downloads do RC Music/u);
   assert.doesNotMatch(script, /innerHTML|eval\(|new Function|fetch\(/u);
 });
