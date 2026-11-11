@@ -187,6 +187,8 @@ Foram removidos **968 arquivos de build (179.047.853 bytes)**. A lista inclui 15
 
 A limpeza conferiu por SHA-256 o trabalho em andamento, os dois instaladores atuais, os manifestos e executáveis dos respectivos runtimes, uma DLL do SDK Qt, o executável de testes do núcleo e o recibo do ensaio nativo adiado. O inventário e o resultado ficam em `out/product/cleanup-20261110/`. Nenhum build, teste ou instalador foi executado durante a limpeza.
 
+Uma segunda limpeza removeu **882 arquivos (330.217.885 bytes)** declarados nos grafos Ninja. Foram 427 objetos e 99 bibliotecas estáticas dos builds de empacotamento de `r1-src` e `r2`, além de 356 arquivos de estatísticas de compilação QML dos builds históricos de M0. A operação preservou os executáveis e perfis de empacotamento, os instaladores, o SDK Qt e os caches de desenvolvimento ativos. Foram conferidos por SHA-256 **200 arquivos protegidos** e foi confirmada a leitura de **nove grafos Ninja**, sem recompilar. O plano e o resultado estão em `out/product/cleanup-cache-20261110/`.
+
 ## Limpeza de artefatos gerados — 2026-11-05
 
 A limpeza solicitada removeu **50.238 arquivos / 2.776.863.058 bytes** (aproximadamente **2,78 GB**, ou 2,59 GiB), sem novo backup de binários descartáveis:
