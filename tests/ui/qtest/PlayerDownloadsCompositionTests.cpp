@@ -17,6 +17,7 @@
 #include "presentation/WindowsPlayerDownloads.hpp"
 
 #ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+#include "../../qt/support/YoutubeRuntimeReceipt.hpp"
 #include "NativeHostBuildConfiguration.hpp"
 #include "adapters/NativeMessageFrame.hpp"
 #include "adapters/YoutubeAudioCodec.hpp"
@@ -97,14 +98,14 @@ QStringList entries(const QString& directory) {
     return QDir{directory}.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
 }
 
-bool waitFor(const std::function<bool()>& ready) {
+bool waitFor(const std::function<bool()>& ready, const qint64 timeout_ms = 15'000) {
     QElapsedTimer timer;
     timer.start();
     do {
         if (ready())
             return true;
         QTest::qWait(5);
-    } while (timer.elapsed() < 15'000);
+    } while (timer.elapsed() < timeout_ms);
     return ready();
 }
 
@@ -442,6 +443,39 @@ bool publishedAndClean(const Files& files, const std::string& id) {
            result.journal->records.front().cleanup_complete && entries(files.staging).isEmpty();
 }
 #ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+std::optional<WindowsYoutubeDownloadProfile>
+offlineYoutubeProfile(const QString& manifest, const QString& runtime_parent, std::atomic<int>& resolver_ticks) {
+    constexpr auto manifest_sha256 = "206e80aba4c6356a7ed938c50274c73aa0afcdc6a79ea3c3ed69c0ebb13f92d4";
+    const auto path = test_support::youtube_receipt_detail::localPath(manifest);
+    if (!path)
+        return {};
+    QFile file{*path};
+    const auto maximum = test_support::youtube_runtime_receipt_max_bytes;
+    if (!file.open(QIODevice::ReadOnly) || file.size() <= 0 || file.size() > maximum)
+        return {};
+    const auto bytes = file.read(maximum + 1);
+    if (file.error() != QFileDevice::NoError || !file.atEnd() ||
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex() != manifest_sha256)
+        return {};
+    auto decoded = test_support::decodeYoutubeRuntimeReceipt(bytes);
+    if (!decoded.receipt)
+        return {};
+    auto& config = decoded.receipt->config;
+    config.runtime_parent = runtime_parent;
+
+    std::array<wchar_t, MAX_PATH> windows{};
+    const auto length = GetWindowsDirectoryW(windows.data(), static_cast<UINT>(windows.size()));
+    if (length == 0 || length >= windows.size())
+        return {};
+    QProcessEnvironment environment;
+    environment.insert(QStringLiteral("PATH"), QString{});
+    environment.insert(QStringLiteral("SystemRoot"), QString::fromWCharArray(windows.data(), length));
+    return WindowsYoutubeDownloadProfile{std::move(config), std::move(environment), [&resolver_ticks] {
+                                             ++resolver_ticks;
+                                             return qint64{1'900'000'000};
+                                         }};
+}
+
 class BrowserHost final {
   public:
     QProcess process;
@@ -481,25 +515,53 @@ class PlayerDownloadsCompositionTests final : public QObject {
 
   private slots:
 #ifdef RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH
+    void nativeYoutubeHostUsesOwnedIngressAndCommitsBothSavedAcknowledgements_data() {
+        QTest::addColumn<QString>("manifest");
+        QTest::newRow("resolver-contract") << QString{};
+        const auto manifest = qEnvironmentVariable("RC_MUSIC_OFFLINE_YOUTUBE_TEST_MANIFEST");
+        if (!manifest.isEmpty())
+            QTest::newRow("authenticated-offline") << manifest;
+    }
     void nativeYoutubeHostUsesOwnedIngressAndCommitsBothSavedAcknowledgements() {
+        QFETCH(QString, manifest);
         Files files;
         QVERIFY(files.initialize());
         QVERIFY(QFileInfo::exists(QString::fromUtf8(RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH)));
         const auto profile = nativeHostBuildConfiguration();
         QVERIFY(isValidNativeHostConfiguration(profile));
         const WindowsPlayerNativeIngressOptions profiles{.youtube = profile};
-        const YoutubeAudioRequest selected{"01234567-89ab-4cde-8fab-0123456789ab",
-                                           {{"aB0-_Cd1EF2", "Synthetic song", "Synthetic artist", "", false}}};
+        const bool authenticated = !manifest.isEmpty();
+        const auto youtube_parent = files.temporary.filePath(QStringLiteral("youtube runtimes"));
+        std::atomic<int> resolver_ticks{};
+        std::optional<WindowsDownloadExecutionProfile> configured;
+        if (authenticated) {
+            auto youtube = offlineYoutubeProfile(manifest, youtube_parent, resolver_ticks);
+            QVERIFY2(youtube, "Provide the reviewed offline runtime source receipt with its pinned hash.");
+            QVERIFY(QDir{}.mkdir(youtube_parent));
+            const auto helper = QString::fromUtf8(RC_MUSIC_TEST_YOUTUBE_FIXTURE_IO_HELPER_PATH);
+            files.network.artifacts.front() = {helper, fileHash(helper)};
+            QCOMPARE(files.network.artifacts.front().sha256.size(), 64);
+            configured = WindowsDownloadExecutionProfile{.network = files.network,
+                                                         .media = files.media,
+                                                         .job = files.job,
+                                                         .journal_directory = files.documents,
+                                                         .youtube = std::move(youtube)};
+        }
+        const YoutubeAudioRequest selected{
+            "01234567-89ab-4cde-8fab-0123456789ab",
+            {{authenticated ? "testVideo01" : "aB0-_Cd1EF2", "Synthetic song", "Synthetic artist", "", false}}};
         const auto frame = encodeNativeMessageFrame(encodeYoutubeAudioRequest(selected));
         QVERIFY(!frame.isEmpty());
         std::vector<std::string> original_ids;
         SessionSnapshot committed;
         QByteArray final_hash;
+        int ticks_after_import = 0;
         for (int run = 0; run < 2; ++run) {
             auto observation = std::make_shared<Observation>();
             if (run != 0)
                 observation->release();
-            Player player{files, observation, profiles, true};
+            Player player{files, observation, profiles, true, configured};
+            QVERIFY(player.owner);
             QVERIFY(player.ready());
             BrowserHost browser;
             QVERIFY(browser.start(frame));
@@ -511,6 +573,9 @@ class PlayerDownloadsCompositionTests final : public QObject {
                 QCOMPARE(browser.process.state(), QProcess::Running);
                 QCOMPARE(observation->resolvers.load(), 0);
                 QCOMPARE(observation->factories.load(), 0);
+                QCOMPARE(resolver_ticks.load(), 0);
+                QVERIFY(entries(youtube_parent).isEmpty());
+                QVERIFY(files.transientParentsEmpty());
                 QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
                 WindowsDownloadCheckpointStore checkpoint{files.documents};
                 const auto saved_bytes = checkpoint.load();
@@ -539,13 +604,25 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QCOMPARE(admitted->job_ids, original_ids);
             QCOMPARE(original_ids.size(), std::size_t{1});
             if (run == 0) {
-                QVERIFY(waitFor([&] { return observation->session_ack.entered.load(); }));
-                QCOMPARE(observation->resolvers.load(), 1);
-                QCOMPARE(observation->factories.load(), 1);
-                QVERIFY(!observation->resolver_before_saved);
-                QVERIFY(!observation->resolver_on_ui);
-                QVERIFY(!observation->factory_before_saved);
-                QVERIFY(!observation->factory_on_ui);
+                QVERIFY2(waitFor(
+                             [&] {
+                                 return observation->session_ack.entered.load() ||
+                                        player.state() == QStringLiteral("failed");
+                             },
+                             authenticated ? 75'000 : 15'000),
+                         "The native download must complete or report its failure.");
+                QVERIFY2(
+                    observation->session_ack.entered.load(),
+                    qPrintable(
+                        player.jobs()->data(player.jobs()->index(0, 0), DownloadJobsModel::ErrorTextRole).toString()));
+                if (!authenticated) {
+                    QCOMPARE(observation->resolvers.load(), 1);
+                    QCOMPARE(observation->factories.load(), 1);
+                    QVERIFY(!observation->resolver_before_saved);
+                    QVERIFY(!observation->resolver_on_ui);
+                    QVERIFY(!observation->factory_before_saved);
+                    QVERIFY(!observation->factory_on_ui);
+                }
                 QVERIFY(!observation->checkpoint_on_ui);
                 QCOMPARE(player.state(), QStringLiteral("importing"));
                 QCOMPARE(player.presenter.queueModelObject()->rowCount(), 1);
@@ -553,6 +630,7 @@ class PlayerDownloadsCompositionTests final : public QObject {
                 QtJsonWindowsSessionStore fresh_session{files.documents};
                 const auto bytes_without_ack = fresh_session.load();
                 QCOMPARE(bytes_without_ack.status, SessionLoadStatus::Loaded);
+                QCOMPARE(bytes_without_ack.snapshot.queue.items.size(), std::size_t{1});
                 QCOMPARE(bytes_without_ack.snapshot.download_import_receipts.size(), std::size_t{1});
                 QCOMPARE(bytes_without_ack.snapshot.download_import_receipts.front().job_id, original_ids.front());
                 QVERIFY(publishedAndClean(files, original_ids.front()));
@@ -564,11 +642,24 @@ class PlayerDownloadsCompositionTests final : public QObject {
                 QCOMPARE(committed, bytes_without_ack.snapshot);
                 const auto final =
                     QString::fromStdWString(committed.download_import_receipts.front().source_path.wstring());
+                QCOMPARE(committed.queue.items.front().source_path,
+                         committed.download_import_receipts.front().source_path);
                 QCOMPARE(QFileInfo{final}.absolutePath(), files.publication);
                 QVERIFY(final.endsWith(QStringLiteral(".mp3")));
                 QVERIFY(QFileInfo{final}.size() > 0);
                 final_hash = fileHash(final);
                 QCOMPARE(final_hash.size(), 64);
+                if (authenticated) {
+                    ticks_after_import = resolver_ticks.load();
+                    QVERIFY(ticks_after_import > 0);
+                    const auto saved = WindowsDownloadOwnershipStore{files.documents}.load();
+                    QCOMPARE(saved.status, DownloadCheckpointLoadStatus::Loaded);
+                    QVERIFY(saved.journal && saved.journal->records.size() == 1);
+                    const auto& record = saved.journal->records.front();
+                    QCOMPARE(record.input_bytes, std::uint64_t{33'400});
+                    QCOMPARE(record.output_bytes, static_cast<std::uint64_t>(QFileInfo{final}.size()));
+                    QCOMPARE(QByteArray::fromStdString(record.output_sha256), final_hash);
+                }
             } else {
                 QCOMPARE(player.loaded.snapshot.download_import_receipts, committed.download_import_receipts);
                 QCOMPARE(observation->resolvers.load(), 0);
@@ -597,8 +688,10 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QVERIFY(repeated);
             QCOMPARE(repeated->error, DownloadSubmissionError::None);
             QCOMPARE(repeated->job_ids, original_ids);
-            QCOMPARE(observation->resolvers.load(), run == 0 ? 1 : 0);
-            QCOMPARE(observation->factories.load(), run == 0 ? 1 : 0);
+            if (!authenticated) {
+                QCOMPARE(observation->resolvers.load(), run == 0 ? 1 : 0);
+                QCOMPARE(observation->factories.load(), run == 0 ? 1 : 0);
+            }
             QCOMPARE(player.jobs()->rowCount(), 1);
             QCOMPARE(player.presenter.queueModelObject()->rowCount(), run == 0 ? 1 : 0);
             QCOMPARE(player.audio.loads, 0);
@@ -616,9 +709,16 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QVERIFY(player.drain());
             QVERIFY(player.owner->stopped());
             QVERIFY(observation->checkpoint_destroyed);
+            QCOMPARE(resolver_ticks.load(), ticks_after_import);
         }
         QVERIFY(files.transientParentsEmpty());
         QVERIFY(files.sourcesPreserved());
+        QVERIFY(entries(youtube_parent).isEmpty());
+        if (configured) {
+            QVERIFY(std::ranges::all_of(configured->youtube->runtime.artifacts, [](const auto& artifact) {
+                return fileHash(artifact.source_path) == artifact.sha256;
+            }));
+        }
     }
 #endif
     void realPreparedWorkersImportOnlyAfterDurableAdmissionAndSessionSaved_data() {

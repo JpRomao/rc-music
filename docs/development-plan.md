@@ -824,6 +824,8 @@ O player Windows configurado liga a revisão, o descarte confirmado e a importa�
 
 O painel pode encerrar um item interrompido após confirmar a limpeza dos temporários. Se a limpeza já foi registrada antes de o app fechar, uma nova verificação e confirmação permitem encerrar ao reabrir. Pedidos inteiros passam a ser arquiváveis quando todos os seus itens estão encerrados. [Encerrar recuperação](download-jobs.md#descarte-confirmado-de-temporários-interrompidos)
 
+O fluxo YouTube do player Windows configurado passou do host nativo e resolvedor autenticado até conversão AAC→MP3, salvamento da fila e reenvio após reabrir, com transferência local de fixture. Falhas específicas do destino são preservadas após a parada. [Jornada offline e checks](youtube-audio-and-lyrics.md#resolução-autenticada-e-importação-offline-no-player-configurado)
+
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
 ### Checkpoint anterior — extensões opcionais no instalador

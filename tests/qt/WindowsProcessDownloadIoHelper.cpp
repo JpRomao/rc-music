@@ -44,6 +44,25 @@ int main(int argc, char* argv[]) {
     const auto request = decodeDownloadWorkerRequest(bytes);
     if (!request)
         return 81;
+    const QHostAddress fixture_address{QStringLiteral("93.184.215.14")};
+#ifdef RC_MUSIC_TEST_OFFLINE_YOUTUBE_FIXTURE
+    // This separately built test helper cannot serve any other source.
+    const auto fixture_host = QLatin1String("r1.googlevideo.com");
+    const bool youtube_fixture = request->mode == DownloadWorkerMode::Stream;
+    if (youtube_fixture) {
+        const auto& endpoint = request->endpoint;
+        if (!endpoint.tls || endpoint.port != 443 || endpoint.host != fixture_host ||
+            endpoint.address != fixture_address ||
+            endpoint.request_target != "/videoplayback?expire=2000000000&sig=RCMUSIC_OFFLINE")
+            return 81;
+    } else if (request->host != fixture_host) {
+        return 81;
+    }
+#else
+    constexpr bool youtube_fixture = false;
+    if (request->mode == DownloadWorkerMode::Stream && request->endpoint.request_target.contains("RCMUSIC_OFFLINE"))
+        return 81;
+#endif
     const auto scenario = request->mode == DownloadWorkerMode::Resolve
                               ? request->host
                               : QString::fromLatin1(request->endpoint.request_target);
@@ -58,7 +77,7 @@ int main(int argc, char* argv[]) {
     if (request->mode == DownloadWorkerMode::Resolve) {
         DownloadWorkerFrame reply;
         reply.kind = DownloadWorkerFrameKind::Addresses;
-        reply.addresses = {QHostAddress{"93.184.215.14"}};
+        reply.addresses = {fixture_address};
         if (scenario.contains("mixed"))
             reply.addresses.push_back(QHostAddress{"127.0.0.1"});
         if (scenario.contains("bad-order"))
@@ -74,12 +93,12 @@ int main(int argc, char* argv[]) {
             static_cast<void>(writeBytes(length));
             return 0;
         }
-        const QByteArray content = scenario.contains("synthetic") ? [&] {
-            QFile fixture(
-                QString::fromUtf8(scenario.contains("mp4") ? RC_MUSIC_TEST_MP4_FIXTURE : RC_MUSIC_TEST_MP3_FIXTURE));
-            return fixture.open(QIODevice::ReadOnly) ? fixture.read(256 * 1024) : QByteArray{};
-        }()
-                                                                  : QByteArray("audio");
+        QByteArray content{"audio"};
+        if (youtube_fixture || scenario.contains("synthetic")) {
+            const bool use_aac = youtube_fixture || scenario.contains("mp4");
+            QFile fixture(QString::fromUtf8(use_aac ? RC_MUSIC_TEST_MP4_FIXTURE : RC_MUSIC_TEST_MP3_FIXTURE));
+            content = fixture.open(QIODevice::ReadOnly) ? fixture.read(256 * 1024) : QByteArray{};
+        }
         const auto response =
             scenario.contains("eof")
                 ? QByteArray("HTTP/1.1 200 OK\r\n\r\n") + content

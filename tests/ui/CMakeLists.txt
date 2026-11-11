@@ -219,8 +219,10 @@ if(WIN32 AND TARGET rc_music_player_downloads)
             target_include_directories(rc_music_player_downloads_composition_tests PRIVATE "${player_youtube_native_config}")
             target_compile_definitions(rc_music_player_downloads_composition_tests PRIVATE
                 RC_MUSIC_TEST_PLAYER_NATIVE_INGRESS
-                RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH="$<TARGET_FILE:rc_music_youtube_owner_native_host_test>")
-            add_dependencies(rc_music_player_downloads_composition_tests rc_music_youtube_owner_native_host_test)
+                RC_MUSIC_TEST_YOUTUBE_OWNER_HOST_PATH="$<TARGET_FILE:rc_music_youtube_owner_native_host_test>"
+                RC_MUSIC_TEST_YOUTUBE_FIXTURE_IO_HELPER_PATH="$<TARGET_FILE:rc_music_download_youtube_fixture_io_helper>")
+            add_dependencies(rc_music_player_downloads_composition_tests
+                rc_music_youtube_owner_native_host_test rc_music_download_youtube_fixture_io_helper)
         endif()
         add_test(NAME rc_music.ui.player-downloads-composition COMMAND rc_music_player_downloads_composition_tests -o -,txt)
         set_tests_properties(rc_music.ui.player-downloads-composition PROPERTIES

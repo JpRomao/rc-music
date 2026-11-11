@@ -19,6 +19,7 @@ struct State final {
         direct_starts{};
     std::atomic_bool resolve{true}, resolver_ack{true}, destination_ack{true}, worker{false};
     std::atomic_bool malformed{}, false_destination_start{};
+    std::atomic<DownloadFailure> destination_failure{DownloadFailure::None};
     std::atomic_bool block_preparation{}, preparation_entered{}, preparation_released{};
     std::atomic_int transfer_starts{};
     std::atomic_bool invalid_destination_state{}, await_destination_cancel{}, throw_destination_cancel_once{};
@@ -102,10 +103,15 @@ class Destination final : public WindowsDownloadTask {
     DownloadExecutionUpdate poll(qint64) override {
         if (state_->force_destination_terminal)
             return {.job_id = id_, .state = DownloadExecutionState::Cancelled};
-        if (cancelled_)
+        if (cancelled_) {
+            if (!state_->destination_ack)
+                return {.job_id = id_};
+            const auto error = state_->destination_failure.load();
             return {.job_id = id_,
-                    .state =
-                        state_->destination_ack ? DownloadExecutionState::Cancelled : DownloadExecutionState::Running};
+                    .state = error == DownloadFailure::None ? DownloadExecutionState::Cancelled
+                                                            : DownloadExecutionState::Failed,
+                    .error = error};
+        }
         if (state_->invalid_destination_state) {
             ++state_->invalid_destination_polls;
             if (state_->invalid_destination_kind == 1)
@@ -281,6 +287,30 @@ class YoutubeDownloadExecutionTests final : public QObject {
         state->destination_ack = true;
         QTRY_COMPARE(value->poll("job_1").state, DownloadExecutionState::Failed);
         QCOMPARE(value->poll("job_1").error, DownloadFailure::Unavailable);
+        stop(*value);
+    }
+    void refusedDestinationStartPreservesMatchingFailureAfterDrain_data() {
+        QTest::addColumn<int>("error");
+        QTest::newRow("journal refusal") << static_cast<int>(DownloadFailure::InvalidResult);
+        QTest::newRow("publication failure") << static_cast<int>(DownloadFailure::Publication);
+    }
+    void refusedDestinationStartPreservesMatchingFailureAfterDrain() {
+        QFETCH(int, error);
+        auto state = std::make_shared<State>();
+        state->false_destination_start = true;
+        state->destination_failure = static_cast<DownloadFailure>(error);
+        state->destination_ack = false;
+        auto value = execution(state);
+        QVERIFY(value);
+        ReleaseAcks cleanup{state};
+        QVERIFY(value->start("job_1", watch));
+        QTRY_VERIFY(state->destination_cancels > 0);
+        QCOMPARE(value->poll("job_1").state, DownloadExecutionState::Running);
+        QVERIFY(!value->start("job_2", watch));
+        state->destination_ack = true;
+        QTRY_COMPARE(value->poll("job_1").state, DownloadExecutionState::Failed);
+        QCOMPARE(value->poll("job_1").error, static_cast<DownloadFailure>(error));
+        QCOMPARE(state->transfer_starts.load(), 0);
         stop(*value);
     }
     void cancellationDuringPreparationPrecedesTheFirstTransferPoll() {

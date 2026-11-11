@@ -70,13 +70,17 @@ if(BUILD_TESTING)
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask WindowsConfiguredDownloadExecution)
-        add_executable(rc_music_download_io_helper
-            "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
-        target_link_libraries(rc_music_download_io_helper PRIVATE rc_music_download_network)
-        target_compile_definitions(rc_music_download_io_helper PRIVATE
-            RC_MUSIC_TEST_MP3_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-unicode-tags.mp3"
-            RC_MUSIC_TEST_MP4_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/m4a-aac-lc.m4a")
-        rc_music_configure_cpp(rc_music_download_io_helper)
+        set(rc_music_download_io_helper_source "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsProcessDownloadIoHelper.cpp")
+        add_executable(rc_music_download_io_helper "${rc_music_download_io_helper_source}")
+        add_executable(rc_music_download_youtube_fixture_io_helper EXCLUDE_FROM_ALL "${rc_music_download_io_helper_source}")
+        foreach(helper IN ITEMS rc_music_download_io_helper rc_music_download_youtube_fixture_io_helper)
+            target_link_libraries(${helper} PRIVATE rc_music_download_network)
+            target_compile_definitions(${helper} PRIVATE
+                RC_MUSIC_TEST_MP3_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/mp3-unicode-tags.mp3"
+                RC_MUSIC_TEST_MP4_FIXTURE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid/m4a-aac-lc.m4a")
+            rc_music_configure_cpp(${helper})
+        endforeach()
+        target_compile_definitions(rc_music_download_youtube_fixture_io_helper PRIVATE RC_MUSIC_TEST_OFFLINE_YOUTUBE_FIXTURE)
         add_executable(rc_music_download_process_helper
             "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsDownloadProcessHelper.cpp")
         target_link_libraries(rc_music_download_process_helper PRIVATE Qt6::Core advapi32)

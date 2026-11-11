@@ -125,20 +125,20 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
                 fail(DownloadFailure::Unavailable);
                 return update_;
             }
-            bool accepted{};
+            // A refused start still needs the destination's terminal ACK.
             try {
-                accepted = destination_->startResolvedYoutube(resolution.audio, now_ms, utc);
+                destination_start_refused_ = !destination_->startResolvedYoutube(resolution.audio, now_ms, utc);
             } catch (...) {
-            }
-            if (!accepted) {
                 stop_error_ = DownloadFailure::Unavailable;
-                stopDestination();
             }
+            if (destination_start_refused_ || stop_error_ != DownloadFailure::None)
+                stopDestination();
             // Preparation may block. Return to the executor so cancellation
             // is observed before any transfer poll, with fresh clocks.
             return update_;
         }
-        if (cancelled_ || stop_error_ != DownloadFailure::None)
+        const bool stopping = cancelled_ || destination_start_refused_ || stop_error_ != DownloadFailure::None;
+        if (stopping)
             stopDestination();
         DownloadExecutionUpdate child;
         try {
@@ -154,7 +154,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             return update_; // A malformed DTO cannot acknowledge this owner.
         }
         if (!terminal(child.state)) {
-            if (!cancelled_ && stop_error_ == DownloadFailure::None)
+            if (!stopping)
                 update_ = child;
             return update_;
         }
@@ -164,6 +164,8 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             retained_ = child.published_mp3;
         if (stop_error_ != DownloadFailure::None)
             fail(stop_error_);
+        else if (destination_start_refused_ && child.state != DownloadExecutionState::Failed)
+            fail(DownloadFailure::Unavailable);
         else
             update_ = std::move(child);
         return update_;
@@ -200,7 +202,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     DownloadExecutionUpdate update_;
     std::filesystem::path retained_;
     DownloadFailure stop_error_{DownloadFailure::None};
-    bool started_{}, cancelled_{}, destination_stop_requested_{};
+    bool started_{}, cancelled_{}, destination_stop_requested_{}, destination_start_refused_{};
 };
 class RoutedSessionTask final : public WindowsDownloadTask {
   public:
