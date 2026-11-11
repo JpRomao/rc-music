@@ -820,7 +820,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — candidatos Windows atualizados
 
-Os instaladores Lite e Completa experimental de `6d7ae8b` incorporam edição de letras pela fila, melhorias de playlists e buscas, arquivamento após revisão de letras e limites de metadados. As extensões incluem a reconferência da aba focada. Release, lint QML, inventários, hashes, PE e arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de 6d7ae8b](windows-installer.md#setups-de-6d7ae8b)
+Os instaladores Lite e Completa experimental de `8982c60` incorporam o seletor de saída de áudio, reconexão no Lidarr, descarte de tentativas inválidas de guardar letras e proteção ao copiar uma fila vazia para playlists. Release, lint QML, inventários, hashes, PE e leitura de arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de 8982c60](windows-installer.md#setups-de-8982c60)
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)
 
