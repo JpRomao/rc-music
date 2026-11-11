@@ -723,6 +723,7 @@ class PlayerPresenterTests final : public QObject {
     void rejectsPersistedWindowPlacementWithNonPositiveSize();
     void loadsPersistedPreferencesBeforePresentationWithoutAutosavingAValidDocument();
     void restoresPersistedSessionPausedBeforePresentationWithoutAutoplay();
+    void retryRestoresThePausedSessionAfterTheSavedSourceReturns();
     void acceptsAnApproximateConfirmedPositionWhenRestoring();
     void waitsForRestorableDurationBeforeApplyingThePersistedPosition();
     void userSelectionCancelsPendingRestoreWithoutApplyingItsPosition();
@@ -6882,6 +6883,64 @@ void PlayerPresenterTests::restoresPersistedSessionPausedBeforePresentationWitho
                          false);
     QCoreApplication::processEvents();
     QCOMPARE(presenter.confirmedPositionMs(), qint64{42'000});
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+}
+
+void PlayerPresenterTests::retryRestoresThePausedSessionAfterTheSavedSourceReturns() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter preferences_writer;
+    PresenterSessionWriter session_writer;
+    PresenterPreferencesClock clock;
+    const Preferences preferences{};
+    PreferencesAutosave preferences_autosave{
+        preferences_writer, preferences, {.now = [&clock] { return clock.now(); }}};
+    const auto persisted = persistedSessionSnapshot();
+    SessionAutosave session_autosave{session_writer, persisted, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.initial = preferences,
+                                   .autosave = &preferences_autosave,
+                                   .session = {.initial = persisted,
+                                               .load_status = SessionLoadStatus::Loaded,
+                                               .autosave = &session_autosave,
+                                               .now = [&clock] { return clock.now(); }}});
+
+    const auto occurrence = presenter.currentOccurrenceId();
+    QCOMPARE(occurrence, QStringLiteral("local-42"));
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QVERIFY(presenter.retryQueueOccurrence(occurrence));
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+
+    const PlaybackSnapshot failed_retry{
+        .status = PlaybackStatus::Error, .generation = 2, .error = PlaybackErrorCode::AccessDenied};
+    backend.publish(failed_retry);
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QVERIFY(presenter.retryQueueOccurrence(occurrence));
+    QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
+
+    backend.publishEvent(PlaybackEventType::SnapshotChanged, failed_retry, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 60'000, .seekable = true, .generation = 3});
+    QTRY_COMPARE(backend.pause_calls, 1);
+    QTRY_COMPARE(backend.seek_positions, std::vector<std::int64_t>{persisted.position_ms});
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = persisted.position_ms,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = 3});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{persisted.position_ms});
+
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.playlistQueueSnapshot(), persisted.queue);
+    QVERIFY(presenter.queueModelObject()
+                ->data(presenter.queueModelObject()->index(1, 0), QueueListModel::AvailableRole)
+                .toBool());
+    QCOMPARE(backend.play_calls, 0);
     QCOMPARE(session_autosave.latestRevision(), SessionRevision{0});
 }
 

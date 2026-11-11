@@ -128,7 +128,7 @@ Em um item interrompido, use **Verificar arquivos**. Se aparecer **Encerrar recu
 
 ## Resolver problemas
 
-**Arquivo não encontrado, movido ou acesso negado:** verifique se o arquivo ou drive está disponível. Use **Tentar reproduzir novamente** para reabrir o mesmo caminho; essa ação explícita pode iniciar a reprodução. Se o arquivo mudou de lugar, use **Localizar arquivo…** na ocorrência afetada. A localização preserva sua posição na fila: se for a faixa atual em erro, tenta recuperá-la pausada e restaurar a posição; se for outra linha, não interrompe a faixa atual e pede uma tentativa de reprodução para verificar a nova origem. Cancelar a localização não troca o caminho. **Abrir outro áudio** continua sendo uma alternativa.
+**Arquivo não encontrado, movido ou acesso negado.** Verifique se o arquivo ou drive está disponível. **Tentar reproduzir novamente** reabre o mesmo caminho. Se a faixa fazia parte de uma restauração interrompida, ela volta pausada na posição salva, quando o áudio permite seek. As demais retentativas podem iniciar a reprodução. Se o arquivo mudou de lugar, use **Localizar arquivo…** na ocorrência afetada. A localização preserva a ordem da fila. Para a faixa atual em erro, tenta recuperar a posição com a reprodução pausada. Para outra linha, a faixa atual continua tocando e uma nova tentativa verifica o arquivo localizado. **Abrir outro áudio** também está disponível.
 
 **A unidade da faixa foi desconectada:** reconecte a unidade e use **Tentar reproduzir novamente**. O app mantém a faixa na fila e a recupera pausada, na posição anterior quando o arquivo permite. Se o Windows atribuir outra letra à unidade, use **Localizar arquivo…** para indicar o novo caminho.
 

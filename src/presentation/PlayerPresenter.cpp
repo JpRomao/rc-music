@@ -2177,18 +2177,21 @@ bool PlayerPresenter::retryQueueOccurrence(const QString& occurrence_id) {
         return false;
 
     const auto id = local_queue_.items()[*target].occurrence_id;
-    const bool restore_volume = local_queue_.currentOccurrenceId() == std::optional{id} && hasSourceVolumeRecovery();
-    const auto position = restore_volume ? restored_position_->target_ms : 0;
-    const auto intent = restore_volume ? LocalTrackStartIntent::RestorePaused : LocalTrackStartIntent::Autoplay;
+    auto pending_restore = restored_position_;
+    if (local_queue_.currentOccurrenceId() != std::optional{id} ||
+        (pending_restore && pending_restore->generation != local_track_session_->playbackGeneration()))
+        pending_restore.reset();
+    const auto intent = pending_restore ? LocalTrackStartIntent::RestorePaused : LocalTrackStartIntent::Autoplay;
     if (!local_track_session_->open(local_queue_.items()[*target].source_path, intent))
         return false;
     if (!local_queue_.selectUnavailableForRetry(*target))
         throw std::logic_error{"an accepted unavailable occurrence retry could not be selected"};
     const auto generation = local_track_session_->playbackGeneration();
     occurrence_retry_ = OccurrenceRetry{id, generation};
-    if (restore_volume) {
-        restored_position_ =
-            RestoredPosition{.generation = generation, .target_ms = position, .source_volume_recovery = true};
+    if (pending_restore) {
+        pending_restore->generation = generation;
+        pending_restore->seek_requested = false;
+        restored_position_ = pending_restore;
         restored_eof_generation_.reset();
     }
     if (file_location_error_ == id)
