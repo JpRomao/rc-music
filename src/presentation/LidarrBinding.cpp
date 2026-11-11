@@ -83,6 +83,16 @@ QVariantList LidarrBinding::results() const {
                                      {"existingId", item.existing_id}});
     return result;
 }
+QString LidarrBinding::tracksKey() const { return service_.tracksKey(); }
+bool LidarrBinding::tracksReady() const { return service_.tracksReady(); }
+QVariantList LidarrBinding::tracks() const {
+    QVariantList result;
+    result.reserve(service_.tracks().size());
+    for (const auto& track : service_.tracks())
+        result.push_back(QVariantMap{
+            {"title", track.title}, {"number", track.number}, {"medium", track.medium}, {"hasFile", track.has_file}});
+    return result;
+}
 QStringList LidarrBinding::rootFolders() const { return service_.rootFolders(); }
 QVariantList LidarrBinding::qualityProfiles() const { return profiles(service_.qualityProfiles()); }
 QVariantList LidarrBinding::metadataProfiles() const { return profiles(service_.metadataProfiles()); }
@@ -98,6 +108,12 @@ bool LidarrBinding::search(const QString& term, const QString& kind) {
         return false;
     return service_.search(term, kind == QStringLiteral("album") ? QtLidarrService::Kind::Album
                                                                  : QtLidarrService::Kind::Artist);
+}
+bool LidarrBinding::listArtistAlbums(const QString& key) {
+    return interactionAllowed() && service_.listArtistAlbums(key);
+}
+bool LidarrBinding::listAlbumTracks(const QString& key) {
+    return interactionAllowed() && service_.listAlbumTracks(key);
 }
 bool LidarrBinding::requestDownload(const QString& key, const QString& root, const int quality_id,
                                     const int metadata_id) {

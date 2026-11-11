@@ -854,6 +854,8 @@ Os setups privados com a receita de `cea27cf` incluem os avisos de Qt Declarativ
 
 Em R1.11, a lista de resultados do Lidarr agora permite alcançar e selecionar por teclado linhas fora da área visível. A solicitação mantém confirmação explícita. O recorte passou em 14/14 casos Qt Quick com serviço simulado. A aceitação autenticada permanece pendente. [Evidência do Lidarr](lidarr-integration.md#evidência-de-implementação)
 
+Em R1.11, resultados cadastrados no Lidarr permitem abrir os álbuns de um artista e filtrar pelo título as faixas de um álbum. O pedido continua sujeito à confirmação do álbum completo. [Rotas e evidência](lidarr-integration.md#conexão-e-api)
+
 Em M3.9, a lista de versões da letra passou a navegar até itens fora da área visível e preservar o cursor pelo ID textual após reordenação. Passaram 22/22 casos Qt Quick do painel. A montagem Lite de `0107bf2` reúne a mudança, o teclado do Lidarr e a licença Expat no componente opcional. [Evidência das versões](lyrics-variants.md#navegação-nas-versões-por-teclado) · [Runtime e planejamento](desktop-build.md#runtime-lite-com-teclado-e-aviso-expat)
 
 Para UX-004, o painel Downloads agora indica qual cartão recebe o teclado e oferece Home e End. Tab e Shift+Tab conservam a associação entre o cartão e seus botões. A cobertura focada passou em 47/47 Qt Quick. [Testes do painel](ui-tests.md)

@@ -35,6 +35,8 @@ Todas as rotas abaixo pertencem à base `/api/v1/` da instância configurada. Os
 | Carregar escolhas para uma adição | `GET rootfolder`, `GET qualityprofile`, `GET metadataprofile` |
 | Pesquisar catálogo de artistas | `GET artist/lookup?term=...` |
 | Pesquisar catálogo de álbuns | `GET album/lookup?term=...` |
+| Listar álbuns de artista cadastrado | `GET album?artistId=...` |
+| Consultar faixas de álbum cadastrado | `GET track?albumId=...` |
 | Adicionar um álbum escolhido e solicitar busca | `POST album`, com o artista/perfis/diretório e `addOptions.searchForNewAlbum: true` |
 | Solicitar busca de álbum já cadastrado | `POST command`, com `name: "AlbumSearch"` e `albumIds` contendo somente o ID escolhido |
 

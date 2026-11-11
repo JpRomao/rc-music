@@ -104,6 +104,8 @@ class LidarrBindingTests final : public QObject {
         QVERIFY(binding.prepareExit());
         QVERIFY(!binding.connectServer("http://localhost:8686", "test-key"));
         QVERIFY(!binding.search("Album", "album"));
+        QVERIFY(!binding.listArtistAlbums("key"));
+        QVERIFY(!binding.listAlbumTracks("key"));
         QVERIFY(!binding.requestDownload("key", "C:/Music", 1, 1));
         QVERIFY(changed.count() > 0);
         QCOMPARE(network.calls, 0);
@@ -206,8 +208,23 @@ class LidarrBindingTests final : public QObject {
         QCOMPARE(network.calls, 5); // Projection itself cannot enqueue a download.
         QVERIFY(!binding.requestDownload("unrecognized-selection", {}, 0, 0));
         QCOMPARE(network.calls, 5);
-        QVERIFY(binding.requestDownload(key, {}, 0, 0));
+        QVERIFY(binding.listAlbumTracks(key));
         QCOMPARE(network.calls, 6);
+        QCOMPARE(network.requests.back().operation, QNetworkAccessManager::GetOperation);
+        QCOMPARE(network.requests.back().request.url().path(), "/api/v1/track");
+        QCOMPARE(network.requests.back().request.url().query(), "albumId=23");
+        QVERIFY(!binding.tracksReady());
+        network.replies.back()->finish(
+            200, R"([{"id":19,"artistId":8,"albumId":23,"title":"Faixa 日本","trackNumber":"2","mediumNumber":1,
+                      "hasFile":true,"trackFile":{"path":"C:/Private/song.mp3"}}])");
+        QVERIFY(binding.tracksReady());
+        QCOMPARE(binding.tracksKey(), key);
+        QCOMPARE(
+            binding.tracks(),
+            QVariantList({QVariantMap{{"title", "Faixa 日本"}, {"number", "2"}, {"medium", 1}, {"hasFile", true}}}));
+        QVERIFY(binding.requestDownload(key, {}, 0, 0));
+        QCOMPARE(network.calls, 7);
+        QVERIFY(binding.tracks().isEmpty());
         QCOMPARE(network.requests.back().operation, QNetworkAccessManager::PostOperation);
         QCOMPARE(network.requests.back().request.url().path(), "/api/v1/command");
         const auto command = QJsonDocument::fromJson(network.requests.back().body).object();
@@ -218,7 +235,7 @@ class LidarrBindingTests final : public QObject {
         QVERIFY(!binding.busy());
         QVERIFY(!binding.statusText().isEmpty());
         QVERIFY(!binding.requestDownload(key, {}, 0, 0));
-        QCOMPARE(network.calls, 6);
+        QCOMPARE(network.calls, 7);
         QVERIFY(changed.count() > 0);
     }
     void authenticationFailureNeverProjectsServerBodyOrCredentials() {

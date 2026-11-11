@@ -50,6 +50,13 @@ class QtLidarrService final : public QObject {
         int existing_id{};
         friend bool operator==(const ResultItem&, const ResultItem&) = default;
     };
+    struct TrackItem final {
+        QString title;
+        QString number;
+        int medium{};
+        bool has_file{};
+        friend bool operator==(const TrackItem&, const TrackItem&) = default;
+    };
     static constexpr qint64 maximum_response_bytes = 4 * 1024 * 1024;
     static constexpr qsizetype maximum_results = 500;
 
@@ -63,6 +70,8 @@ class QtLidarrService final : public QObject {
     [[nodiscard]] bool connectServer(QString address, QString api_key);
     void disconnectServer();
     [[nodiscard]] bool search(QString term, Kind kind);
+    [[nodiscard]] bool listArtistAlbums(const QString& result_key);
+    [[nodiscard]] bool listAlbumTracks(const QString& result_key);
     // Requests a full album through Lidarr, not individual tracks. An existing
     // album uses AlbumSearch; a new one is added with explicit server choices.
     [[nodiscard]] bool requestAlbum(const QString& result_key, const QString& root_folder, int quality_profile_id,
@@ -76,6 +85,9 @@ class QtLidarrService final : public QObject {
     [[nodiscard]] Error error() const noexcept;
     [[nodiscard]] QString serverAddress() const;
     [[nodiscard]] const QVector<ResultItem>& results() const noexcept;
+    [[nodiscard]] QString tracksKey() const;
+    [[nodiscard]] bool tracksReady() const noexcept;
+    [[nodiscard]] const QVector<TrackItem>& tracks() const noexcept;
     [[nodiscard]] const QStringList& rootFolders() const noexcept;
     [[nodiscard]] const QVector<Profile>& qualityProfiles() const noexcept;
     [[nodiscard]] const QVector<Profile>& metadataProfiles() const noexcept;

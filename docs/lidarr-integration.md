@@ -16,9 +16,13 @@ Esse fluxo descreve a integração em desenvolvimento, sem alegação de valida�
 
 Uma consulta concluída sem correspondências exibe **Nenhum resultado para esta busca** e permite outra pesquisa. O painel identifica álbuns de catálogo e álbuns já cadastrados, inclusive no nome acessível do resultado. A confirmação explica se o Lidarr vai cadastrar o álbum ou buscar o cadastro existente. Se a consulta ou a conexão mudar enquanto a confirmação estiver aberta, escolha o álbum novamente.
 
+**Ver álbuns cadastrados** lista os álbuns de um artista já registrado na instância. Selecione um álbum para abrir **Ver faixas**, filtrar pelo título e ver se o Lidarr indica um arquivo para a faixa. Feche a lista para voltar ao álbum selecionado e solicitar a busca, se desejar.
+
 ## Conexão e API
 
 A conexão explícita consulta `system/status` e carrega `rootfolder`, `qualityprofile` e `metadataprofile` sob `/api/v1/`. A pesquisa usa `artist/lookup` ou `album/lookup` com o termo informado. Os resultados e as escolhas são ligados à conexão e à consulta vigentes.
+
+A navegação da biblioteca consulta `album?artistId=…` e `track?albumId=…` apenas ao acionar o controle de um resultado cadastrado. O filtro de títulos roda no RC Music, e os dados de arquivo da API são reduzidos à indicação de presença no Lidarr. [Álbuns na API Lidarr](https://github.com/Lidarr/Lidarr/blob/develop/src/Lidarr.Api.V1/Albums/AlbumController.cs) · [Faixas na API Lidarr](https://github.com/Lidarr/Lidarr/blob/develop/src/Lidarr.Api.V1/Tracks/TrackController.cs)
 
 O termo enviado preserva sinais de mais e sequências literais como `%2B` nos nomes pesquisados.
 
@@ -30,7 +34,7 @@ As escolhas de pasta/perfis são usadas no cadastro de um artista novo. O Lidarr
 
 ## Catálogo, biblioteca e downloads
 
-O Lidarr consulta metadata de artistas e lançamentos e procura releases nos indexadores configurados. O download é encaminhado ao cliente configurado no servidor. Uma linha de catálogo não prova disponibilidade de áudio, presença na biblioteca ou conclusão de um download. A pesquisa desta integração recebe nome de artista ou álbum; o lookup não oferece uma busca global de faixas pelo título. Para procurar uma música, use seu artista ou o álbum correspondente. Não há promessa de download de uma faixa isolada do álbum.
+O Lidarr consulta metadata de artistas e lançamentos e procura releases nos indexadores configurados. O download é encaminhado ao cliente configurado no servidor. A pesquisa de catálogo recebe nome de artista ou álbum. A pesquisa por título de faixa se aplica à lista de um álbum cadastrado. Os pedidos são feitos por álbum completo.
 
 Perfis, diretório de biblioteca, indexadores e clientes pertencem à configuração do Lidarr. O RC Music deve informar o que falta e usar valores existentes escolhidos pelo usuário, sem cadastrar fontes ou preencher paths fictícios. A [documentação oficial de início rápido](https://wiki.servarr.com/lidarr/quick-start-guide) explica essa configuração.
 
@@ -64,6 +68,8 @@ Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a f
 Cinco regressões reproduziram recusas de acesso durante busca ou pedido de álbum, incluindo um 403 com resposta acima do limite. Após a correção, passaram **40 casos Qt do serviço**, o binding e **13 casos Qt Quick** do painel. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/`.
 
 Na regressão de teclado, End deixou o cursor no segundo de 40 resultados. O Green passou em **14/14 Qt Quick** do Lidarr, incluindo navegação até uma linha fora da área visível, preservação do cursor pela chave após reordenação, seleção por teclado e passagem de foco para o botão de solicitação. O build Release do alvo Quick, o lint e o formato dos QML alterados passaram. Os testes usam um serviço simulado. Logs em `out/product/test-runs/lidarr-keyboard-results-20261111/`. [Controles no manual](user-guide.md#pesquisar-e-solicitar-álbuns-no-lidarr)
+
+A navegação da biblioteca passou em **43 casos Qt do serviço**, **9 do binding** e **16 Qt Quick**. A resposta precisa corresponder ao artista ou álbum selecionado. Os testes verificaram a revogação após mudança de contexto, a ausência de caminhos de arquivos na projeção e a confirmação separada do álbum após consultar suas faixas. Logs em `out/product/test-runs/lidarr-library-tracks-20261111/`.
 
 ## Referências
 

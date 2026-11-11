@@ -41,6 +41,9 @@ TestCase {
         property string serverAddress: "http://localhost:8686"
         property string statusText: "Lidarr desconectado"
         property var results: []
+        property string tracksKey: ""
+        property bool tracksReady: false
+        property var tracks: []
         property var rootFolders: ["D:/Lidarr Music"]
         property var qualityProfiles: [
             {
@@ -58,6 +61,8 @@ TestCase {
         property int searches: 0
         property int downloads: 0
         property int cancels: 0
+        property string browsedArtist: ""
+        property string browsedAlbum: ""
         property string submittedAddress: ""
         property string submittedKey: ""
         property string submittedTerm: ""
@@ -89,6 +94,15 @@ TestCase {
             };
             return true;
         }
+        function listArtistAlbums(key) {
+            browsedArtist = key;
+            return true;
+        }
+        function listAlbumTracks(key) {
+            browsedAlbum = key;
+            tracksKey = key;
+            return true;
+        }
         function cancel() {
             cancels++;
             busy = false;
@@ -112,6 +126,11 @@ TestCase {
         backend.downloads = 0;
         backend.cancels = 0;
         backend.results = [];
+        backend.tracksKey = "";
+        backend.tracksReady = false;
+        backend.tracks = [];
+        backend.browsedArtist = "";
+        backend.browsedAlbum = "";
         backend.rootFolders = ["D:/Lidarr Music"];
         backend.qualityProfiles = [
             {
@@ -166,6 +185,79 @@ TestCase {
             return list.itemAtIndex(index) !== null;
         });
         return list.itemAtIndex(index);
+    }
+    function test_registeredArtistBrowsesAlbumsWithoutRequestingDownload() {
+        showResults([
+            {
+                key: "artist-catalog",
+                kind: "artist",
+                title: "Artista do catálogo",
+                artist: "Artista do catálogo",
+                year: "",
+                existingId: 0
+            },
+            {
+                key: "artist-library",
+                kind: "artist",
+                title: "Artista cadastrado",
+                artist: "Artista cadastrado",
+                year: "",
+                existingId: 7
+            }
+        ]);
+        const browse = findChild(shell, "lidarr-browse-library");
+        verify(browse !== null);
+        mouseClick(resultAt(0));
+        verify(!browse.visible);
+        mouseClick(resultAt(1));
+        verify(browse.visible && browse.enabled);
+        compare(backend.browsedArtist, "");
+        browse.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(backend.browsedArtist, "artist-library");
+        compare(backend.downloads, 0);
+    }
+
+    function test_registeredAlbumTracksCanBeFilteredAndAreRevokedWithTheResult() {
+        showResults([album("library", 31)]);
+        mouseClick(resultAt(0));
+        const browse = findChild(shell, "lidarr-browse-library");
+        verify(browse !== null && browse.visible);
+        compare(backend.browsedAlbum, "");
+        mouseClick(browse);
+        compare(backend.browsedAlbum, "library");
+        const dialog = findChild(shell, "lidarr-tracks-dialog");
+        tryCompare(dialog, "opened", true);
+        const list = findChild(dialog, "lidarr-tracks-results");
+        backend.tracks = [
+            {
+                title: "<b>Silhouette</b>",
+                number: "1",
+                medium: 1,
+                hasFile: false
+            },
+            {
+                title: "Outra faixa",
+                number: "2",
+                medium: 1,
+                hasFile: true
+            }
+        ];
+        backend.tracksReady = true;
+        tryCompare(list, "count", 2);
+        const filter = findChild(dialog, "lidarr-tracks-filter");
+        filter.text = "SILHOUETTE";
+        tryCompare(list, "count", 1);
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        const title = findChild(list.itemAtIndex(0), "lidarr-track-title-0");
+        verify(title !== null);
+        compare(title.text, "<b>Silhouette</b>");
+        compare(title.textFormat, Text.PlainText);
+        compare(backend.downloads, 0);
+
+        backend.results = [album("other", 32)];
+        tryCompare(dialog, "visible", false);
+        compare(backend.downloads, 0);
     }
     function album(key, existingId) {
         return {

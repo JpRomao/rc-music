@@ -83,11 +83,17 @@ bool containsProfile(const QVector<Service::Profile>& profiles, const int id) {
 } // namespace
 
 struct QtLidarrService::Impl final {
-    enum class Step { Status, Roots, Quality, Metadata, Lookup, Mutation };
+    enum class Step { Status, Roots, Quality, Metadata, Lookup, ArtistAlbums, AlbumTracks, Mutation };
     struct Lookup final {
         ResultItem item;
         QString foreign_id;
         QString artist_foreign_id;
+    };
+    struct TrackList final {
+        QString key;
+        int album_id{};
+        bool ready{};
+        QVector<TrackItem> items;
     };
     QtLidarrService& owner;
     QPointer<QNetworkAccessManager> network;
@@ -98,6 +104,8 @@ struct QtLidarrService::Impl final {
     QByteArray response;
     QVector<ResultItem> results;
     QVector<Lookup> lookups;
+    std::optional<Lookup> library_artist;
+    TrackList track_list;
     QStringList roots;
     QVector<Profile> quality;
     QVector<Profile> metadata;
@@ -145,6 +153,19 @@ struct QtLidarrService::Impl final {
         ++selection_generation;
         results.clear();
         lookups.clear();
+        library_artist.reset();
+        track_list = {};
+    }
+    void discardPendingDetails() {
+        library_artist.reset();
+        if (!track_list.ready)
+            track_list = {};
+    }
+    const Lookup* registeredResult(const QString& key, const Kind kind) const {
+        const auto found = std::find_if(lookups.cbegin(), lookups.cend(), [&](const auto& lookup) {
+            return lookup.item.key == key && lookup.item.kind == kind && lookup.item.existing_id > 0;
+        });
+        return found == lookups.cend() ? nullptr : &*found;
     }
     bool notify(const quint64 expected_generation) {
         const QPointer<QtLidarrService> alive(&owner);
@@ -156,6 +177,7 @@ struct QtLidarrService::Impl final {
     }
     void fail(const Error failure) {
         cancelReply();
+        discardPendingDetails();
         error = failure;
         status = Status::Error;
         if (failure == Error::Authentication) {
@@ -237,6 +259,13 @@ struct QtLidarrService::Impl final {
             finish(operation_generation, result);
         return true;
     }
+    bool startLookup(const Step next, const QString& endpoint, const QUrlQuery& query) {
+        revoke();
+        error = Error::None;
+        status = Status::Searching;
+        const auto current = generation;
+        return notify(current) && request(next, endpoint, query);
+    }
     bool parseRoots(const QJsonDocument& document) {
         if (!document.isArray())
             return false;
@@ -279,7 +308,7 @@ struct QtLidarrService::Impl final {
         target = std::move(parsed);
         return true;
     }
-    bool parseLookup(const QJsonDocument& document) {
+    bool parseLookup(const QJsonDocument& document, const Lookup* selected_artist = nullptr) {
         if (!document.isArray())
             return false;
         const auto array = document.array();
@@ -289,34 +318,43 @@ struct QtLidarrService::Impl final {
         }
         QVector<Lookup> parsed;
         QVector<ResultItem> projected;
+        const auto kind = selected_artist ? Kind::Album : lookup_kind;
         for (const auto& entry : array) {
             if (!entry.isObject())
                 return false;
             const auto object = entry.toObject();
             const auto id = integer(object.value(QStringLiteral("id")), true);
             const auto title =
-                object.value(lookup_kind == Kind::Album ? QStringLiteral("title") : QStringLiteral("artistName"));
-            const auto foreign = object.value(lookup_kind == Kind::Album ? QStringLiteral("foreignAlbumId")
-                                                                         : QStringLiteral("foreignArtistId"));
+                object.value(kind == Kind::Album ? QStringLiteral("title") : QStringLiteral("artistName"));
+            const auto foreign = object.value(kind == Kind::Album ? QStringLiteral("foreignAlbumId")
+                                                                  : QStringLiteral("foreignArtistId"));
             if (!id || !title.isString() || !validText(title.toString()) || !foreign.isString() ||
                 !validId(foreign.toString()))
                 return false;
             Lookup value;
-            value.item.kind = lookup_kind;
+            value.item.kind = kind;
             value.item.title = owned(title.toString());
             value.item.existing_id = *id;
             value.foreign_id = owned(foreign.toString());
-            if (lookup_kind == Kind::Album) {
-                const auto artist = object.value(QStringLiteral("artist"));
-                if (!artist.isObject())
-                    return false;
-                const auto name = artist.toObject().value(QStringLiteral("artistName"));
-                const auto artist_foreign = artist.toObject().value(QStringLiteral("foreignArtistId"));
-                if (!name.isString() || !validText(name.toString()) || !artist_foreign.isString() ||
-                    !validId(artist_foreign.toString()))
-                    return false;
-                value.item.artist = owned(name.toString());
-                value.artist_foreign_id = owned(artist_foreign.toString());
+            if (kind == Kind::Album) {
+                if (selected_artist) {
+                    const auto artist_id = integer(object.value(QStringLiteral("artistId")));
+                    if (*id <= 0 || artist_id != selected_artist->item.existing_id)
+                        return false;
+                    value.item.artist = selected_artist->item.artist;
+                    value.artist_foreign_id = selected_artist->artist_foreign_id;
+                } else {
+                    const auto artist = object.value(QStringLiteral("artist"));
+                    if (!artist.isObject())
+                        return false;
+                    const auto name = artist.toObject().value(QStringLiteral("artistName"));
+                    const auto artist_foreign = artist.toObject().value(QStringLiteral("foreignArtistId"));
+                    if (!name.isString() || !validText(name.toString()) || !artist_foreign.isString() ||
+                        !validId(artist_foreign.toString()))
+                        return false;
+                    value.item.artist = owned(name.toString());
+                    value.artist_foreign_id = owned(artist_foreign.toString());
+                }
                 const auto date = object.value(QStringLiteral("releaseDate"));
                 if (!date.isUndefined() && !date.isNull()) {
                     if (!date.isString() || !validText(date.toString(), 64, true))
@@ -336,6 +374,34 @@ struct QtLidarrService::Impl final {
         }
         lookups = std::move(parsed);
         results = std::move(projected);
+        return true;
+    }
+    bool parseTracks(const QJsonDocument& document) {
+        if (!document.isArray())
+            return false;
+        const auto array = document.array();
+        if (array.size() > maximum_results) {
+            error = Error::Limit;
+            return false;
+        }
+        QVector<TrackItem> parsed;
+        for (const auto& entry : array) {
+            if (!entry.isObject())
+                return false;
+            const auto object = entry.toObject();
+            const auto album_id = integer(object.value(QStringLiteral("albumId")));
+            const auto title = object.value(QStringLiteral("title"));
+            const auto number = object.value(QStringLiteral("trackNumber"));
+            const auto medium = integer(object.value(QStringLiteral("mediumNumber")));
+            const auto has_file = object.value(QStringLiteral("hasFile"));
+            if (album_id != track_list.album_id || !title.isString() || !validText(title.toString()) ||
+                (!number.isUndefined() && !number.isNull() && !number.isString()) ||
+                !validText(number.toString(), 64, true) || !medium || !has_file.isBool())
+                return false;
+            parsed.push_back({owned(title.toString()), owned(number.toString()), *medium, has_file.toBool()});
+        }
+        track_list.items = std::move(parsed);
+        track_list.ready = true;
         return true;
     }
     void finish(const quint64 operation_generation, QNetworkReply* expected_reply) {
@@ -381,6 +447,13 @@ struct QtLidarrService::Impl final {
         case Step::Lookup:
             valid = parseLookup(document);
             break;
+        case Step::ArtistAlbums:
+            valid = library_artist && parseLookup(document, &*library_artist);
+            library_artist.reset();
+            break;
+        case Step::AlbumTracks:
+            valid = parseTracks(document);
+            break;
         case Step::Mutation: {
             const auto object = document.object();
             const auto id = integer(object.value(QStringLiteral("id")));
@@ -399,8 +472,10 @@ struct QtLidarrService::Impl final {
         if (completed == Step::Metadata) {
             connected = true;
             status = Status::Ready;
-        } else if (completed == Step::Lookup) {
+        } else if (completed == Step::Lookup || completed == Step::ArtistAlbums) {
             status = results.isEmpty() ? Status::NoResults : Status::Ready;
+        } else if (completed == Step::AlbumTracks) {
+            status = Status::Ready;
         } else if (completed == Step::Mutation) {
             status = Status::Requested;
         }
@@ -474,18 +549,39 @@ bool QtLidarrService::search(QString term, const Kind kind) {
         return false;
     if (kind != Kind::Album && kind != Kind::Artist)
         return false;
-    value.revoke();
     value.clearResults();
     value.lookup_kind = kind;
-    value.error = Error::None;
-    value.status = Status::Searching;
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("term"), QString::fromLatin1(QUrl::toPercentEncoding(term)));
-    const auto generation = value.generation;
-    if (!value.notify(generation))
+    return value.startLookup(Impl::Step::Lookup,
+                             kind == Kind::Album ? QStringLiteral("album/lookup") : QStringLiteral("artist/lookup"),
+                             query);
+}
+bool QtLidarrService::listArtistAlbums(const QString& result_key) {
+    auto& value = *impl_;
+    if (value.stopping || !value.connected || value.busy())
         return false;
-    return value.request(Impl::Step::Lookup,
-                         kind == Kind::Album ? QStringLiteral("album/lookup") : QStringLiteral("artist/lookup"), query);
+    const auto* artist = value.registeredResult(result_key, Kind::Artist);
+    if (!artist)
+        return false;
+    auto selected = *artist;
+    value.clearResults();
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("artistId"), QString::number(selected.item.existing_id));
+    value.library_artist = std::move(selected);
+    return value.startLookup(Impl::Step::ArtistAlbums, QStringLiteral("album"), query);
+}
+bool QtLidarrService::listAlbumTracks(const QString& result_key) {
+    auto& value = *impl_;
+    if (value.stopping || !value.connected || value.busy())
+        return false;
+    const auto* album = value.registeredResult(result_key, Kind::Album);
+    if (!album)
+        return false;
+    value.track_list = {album->item.key, album->item.existing_id, false, {}};
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("albumId"), QString::number(album->item.existing_id));
+    return value.startLookup(Impl::Step::AlbumTracks, QStringLiteral("track"), query);
 }
 bool QtLidarrService::requestAlbum(const QString& result_key, const QString& root_folder, const int quality_id,
                                    const int metadata_id) {
@@ -527,6 +623,8 @@ bool QtLidarrService::requestAlbum(const QString& result_key, const QString& roo
     value.results.erase(std::remove_if(value.results.begin(), value.results.end(),
                                        [&](const auto& result) { return result.key == selected.item.key; }),
                         value.results.end());
+    if (value.track_list.key == selected.item.key)
+        value.track_list = {};
     value.revoke();
     value.mutation_is_add = !existing;
     value.mutation_foreign_id = selected.foreign_id;
@@ -543,6 +641,7 @@ void QtLidarrService::cancel() {
     if (!value.busy())
         return;
     value.revoke();
+    value.discardPendingDetails();
     value.error = Error::Cancelled;
     value.status = Status::Error;
     emit changed();
@@ -560,6 +659,9 @@ QtLidarrService::Status QtLidarrService::status() const noexcept { return impl_-
 QtLidarrService::Error QtLidarrService::error() const noexcept { return impl_->error; }
 QString QtLidarrService::serverAddress() const { return impl_->base.toString(); }
 const QVector<QtLidarrService::ResultItem>& QtLidarrService::results() const noexcept { return impl_->results; }
+QString QtLidarrService::tracksKey() const { return impl_->track_list.key; }
+bool QtLidarrService::tracksReady() const noexcept { return impl_->track_list.ready; }
+const QVector<QtLidarrService::TrackItem>& QtLidarrService::tracks() const noexcept { return impl_->track_list.items; }
 const QStringList& QtLidarrService::rootFolders() const noexcept { return impl_->roots; }
 const QVector<QtLidarrService::Profile>& QtLidarrService::qualityProfiles() const noexcept { return impl_->quality; }
 const QVector<QtLidarrService::Profile>& QtLidarrService::metadataProfiles() const noexcept { return impl_->metadata; }

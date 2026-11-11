@@ -17,6 +17,9 @@ class LidarrBinding final : public QObject {
     Q_PROPERTY(QString serverAddress READ serverAddress NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     Q_PROPERTY(QVariantList results READ results NOTIFY changed)
+    Q_PROPERTY(QString tracksKey READ tracksKey NOTIFY changed)
+    Q_PROPERTY(bool tracksReady READ tracksReady NOTIFY changed)
+    Q_PROPERTY(QVariantList tracks READ tracks NOTIFY changed)
     Q_PROPERTY(QStringList rootFolders READ rootFolders NOTIFY changed)
     Q_PROPERTY(QVariantList qualityProfiles READ qualityProfiles NOTIFY changed)
     Q_PROPERTY(QVariantList metadataProfiles READ metadataProfiles NOTIFY changed)
@@ -28,12 +31,17 @@ class LidarrBinding final : public QObject {
     [[nodiscard]] QString serverAddress() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QVariantList results() const;
+    [[nodiscard]] QString tracksKey() const;
+    [[nodiscard]] bool tracksReady() const;
+    [[nodiscard]] QVariantList tracks() const;
     [[nodiscard]] QStringList rootFolders() const;
     [[nodiscard]] QVariantList qualityProfiles() const;
     [[nodiscard]] QVariantList metadataProfiles() const;
     Q_INVOKABLE bool connectServer(const QString& address, const QString& api_key);
     Q_INVOKABLE void disconnectServer();
     Q_INVOKABLE bool search(const QString& term, const QString& kind);
+    Q_INVOKABLE bool listArtistAlbums(const QString& key);
+    Q_INVOKABLE bool listAlbumTracks(const QString& key);
     Q_INVOKABLE bool requestDownload(const QString& key, const QString& root, int quality_id, int metadata_id);
     Q_INVOKABLE void cancel();
     [[nodiscard]] bool prepareExit();

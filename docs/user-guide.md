@@ -32,7 +32,9 @@ Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mous
 
 Clique em **Lidarr**, informe o endereço da sua instância (inicialmente `http://localhost:8686`) e a chave de API obtida nas configurações do Lidarr, depois escolha **Conectar**. A chave é mascarada, fica somente em memória e precisa ser informada novamente ao reiniciar o player. Se o Lidarr recusar o acesso durante o uso, confira a chave e conecte novamente. O painel mantém o endereço. Abrir o painel não se conecta automaticamente. HTTP não criptografa a conexão; prefira HTTPS fora deste computador.
 
-Digite o artista ou álbum, escolha o tipo de pesquisa e clique em **Buscar**. Se não houver correspondências, o painel informa **Nenhum resultado para esta busca**. Os álbuns aparecem como **No catálogo do Lidarr** ou **Já cadastrado no Lidarr**. Selecione um deles e use **Solicitar download**. Para um álbum novo, escolha uma pasta e perfis já configurados no servidor. A confirmação explica o que será cadastrado ou buscado. Só **Solicitar** envia o pedido. Para encontrar uma faixa, procure o artista ou o álbum correspondente.
+Digite o artista ou álbum, escolha o tipo de pesquisa e clique em **Buscar**. Os resultados aparecem como **No catálogo do Lidarr** ou **Já cadastrado no Lidarr**. Em um artista cadastrado, **Ver álbuns cadastrados** abre sua lista. Em um álbum cadastrado, **Ver faixas** mostra os títulos e quais faixas têm arquivo no Lidarr. Use o filtro para localizar uma música pelo título dentro desse álbum.
+
+Selecione um álbum e use **Solicitar download**. Para um álbum novo, escolha uma pasta e perfis configurados no servidor. A confirmação explica o que será cadastrado ou buscado. Só **Solicitar** envia o pedido do álbum completo.
 
 Use **Tab** para entrar nos resultados, **↑/↓** para mover o cursor e **Home/End** para chegar ao início ou ao fim da lista. **Enter** ou **Espaço** selecionam o resultado. Depois, vá até **Solicitar download** para abrir a confirmação.
 

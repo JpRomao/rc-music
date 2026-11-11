@@ -95,6 +95,20 @@ QJsonObject album(int existing_id = 0) {
             {"releaseDate", "2026-05-01T00:00:00Z"},
             {"artist", QJsonObject{{"artistName", "Artist 日本"}, {"foreignArtistId", artist_id}, {"id", 0}}}};
 }
+QJsonObject libraryAlbum(int existing_id = 23, int existing_artist = 31) {
+    auto result = album(existing_id);
+    result.remove("artist");
+    result.insert("artistId", existing_artist);
+    return result;
+}
+QJsonObject track(int existing_album = 23) {
+    return {{"id", 51},
+            {"albumId", existing_album},
+            {"title", "Track 日本"},
+            {"trackNumber", "A1"},
+            {"mediumNumber", 2},
+            {"hasFile", true}};
+}
 bool ready(Service& service, Network& network, const QString& base = QStringLiteral("http://localhost:8686/"),
            const QString& key = api_key) {
     if (!service.connectServer(base, key) || network.requests.isEmpty())
@@ -120,6 +134,13 @@ QString lookup(Service& service, Network& network, int existing_id = 0) {
     if (!service.search("Album", Service::Kind::Album))
         return {};
     network.replies.back()->finish(200, json(QJsonArray{album(existing_id)}));
+    return service.results().isEmpty() ? QString{} : service.results().front().key;
+}
+QString lookupArtist(Service& service, Network& network, int existing_id = 31) {
+    if (!service.search("Artist", Service::Kind::Artist))
+        return {};
+    const QJsonObject artist{{"id", existing_id}, {"artistName", "Artist 日本"}, {"foreignArtistId", artist_id}};
+    network.replies.back()->finish(200, json(QJsonArray{artist}));
     return service.results().isEmpty() ? QString{} : service.results().front().key;
 }
 } // namespace
@@ -216,6 +237,106 @@ class QtLidarrServiceTests final : public QObject {
         const auto url = network.requests.back().request.url();
         QCOMPARE(url.query(QUrl::FullyEncoded), QStringLiteral("term=A%2BB%20%252B%20%26%20%E6%97%A5%E6%9C%AC"));
         QCOMPARE(QUrlQuery(url).queryItemValue(QStringLiteral("term"), QUrl::FullyDecoded), term);
+    }
+    void registeredArtistListsAlbumsAndKeepsExactAlbumConfirmation() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        const auto catalog_key = lookupArtist(service, network, 0);
+        QVERIFY(!catalog_key.isEmpty());
+        QVERIFY(!service.listArtistAlbums(catalog_key));
+        const auto artist_key = lookupArtist(service, network);
+        QVERIFY(!artist_key.isEmpty());
+        QVERIFY(service.listArtistAlbums(artist_key));
+        const auto request = network.requests.back();
+        QCOMPARE(request.operation, QNetworkAccessManager::GetOperation);
+        QCOMPARE(request.request.url().path(), "/api/v1/album");
+        QCOMPARE(request.request.url().query(), "artistId=31");
+        QVERIFY(request.body.isEmpty());
+        network.replies.back()->finish(200, json(QJsonArray{libraryAlbum()}));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QCOMPARE(service.results().size(), 1);
+        const auto item = service.results().front();
+        QCOMPARE(item.kind, Service::Kind::Album);
+        QCOMPARE(item.title, "Album & 日本");
+        QCOMPARE(item.artist, "Artist 日本");
+        QCOMPARE(item.year, "2026");
+        QCOMPARE(item.existing_id, 23);
+        QVERIFY(item.key != artist_key);
+        QVERIFY(!service.listArtistAlbums(artist_key));
+        QVERIFY(service.requestAlbum(item.key, {}, 0, 0));
+        QCOMPARE(network.requests.back().operation, QNetworkAccessManager::PostOperation);
+        QCOMPARE(network.requests.back().request.url().path(), "/api/v1/command");
+        const QJsonObject expected{{"name", "AlbumSearch"}, {"albumIds", QJsonArray{23}}};
+        QCOMPARE(QJsonDocument::fromJson(network.requests.back().body).object(), expected);
+    }
+    void registeredAlbumTracksAreBoundToSelectionAndKeepTheAlbumResults() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        const auto catalog_key = lookup(service, network);
+        QVERIFY(!catalog_key.isEmpty());
+        QVERIFY(!service.listAlbumTracks(catalog_key));
+        const auto album_key = lookup(service, network, 23);
+        QVERIFY(!album_key.isEmpty());
+        const auto previous_results = service.results();
+        QVERIFY(service.listAlbumTracks(album_key));
+        const auto request = network.requests.back();
+        QCOMPARE(request.operation, QNetworkAccessManager::GetOperation);
+        QCOMPARE(request.request.url().path(), "/api/v1/track");
+        QCOMPARE(request.request.url().query(), "albumId=23");
+        QVERIFY(request.body.isEmpty());
+        QCOMPARE(service.tracksKey(), album_key);
+        QVERIFY(!service.tracksReady());
+        network.replies.back()->finish(200, json(QJsonArray{track()}));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QVERIFY(service.tracksReady());
+        QCOMPARE(service.tracksKey(), album_key);
+        QCOMPARE(service.results(), previous_results);
+        const QVector<Service::TrackItem> expected{{"Track 日本", "A1", 2, true}};
+        QCOMPARE(service.tracks(), expected);
+        QVERIFY(service.search("Other", Service::Kind::Album));
+        QVERIFY(service.tracksKey().isEmpty());
+        QVERIFY(!service.tracksReady());
+        QVERIFY(service.tracks().isEmpty());
+        network.replies.back()->finish(200, json(QJsonArray{album(23)}));
+        QVERIFY(!service.listAlbumTracks(album_key));
+        QVERIFY(service.listAlbumTracks(service.results().front().key));
+        network.replies.back()->finish(200, "[]");
+        QVERIFY(service.tracksReady());
+        QVERIFY(service.tracks().isEmpty());
+        service.disconnectServer();
+        QVERIFY(!service.tracksReady());
+        QVERIFY(service.tracksKey().isEmpty());
+    }
+    void libraryResponseMustMatchTheSelectedArtistOrAlbum() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        QVERIFY(service.listArtistAlbums(lookupArtist(service, network)));
+        network.replies.back()->finish(200, json(QJsonArray{libraryAlbum(), libraryAlbum(24, 99)}));
+        QCOMPARE(service.error(), Service::Error::Response);
+        QVERIFY(service.results().isEmpty());
+
+        const auto album_key = lookup(service, network, 23);
+        const auto previous_results = service.results();
+        QVERIFY(service.listAlbumTracks(album_key));
+        network.replies.back()->finish(200, json(QJsonArray{track(), track(99)}));
+        QCOMPARE(service.error(), Service::Error::Response);
+        QVERIFY(!service.tracksReady());
+        QVERIFY(service.tracksKey().isEmpty());
+        QVERIFY(service.tracks().isEmpty());
+        QCOMPARE(service.results(), previous_results);
+
+        QVERIFY(service.listAlbumTracks(album_key));
+        QJsonArray too_many;
+        for (qsizetype index = 0; index <= Service::maximum_results; ++index)
+            too_many.append(track());
+        network.replies.back()->finish(200, json(too_many));
+        QCOMPARE(service.error(), Service::Error::Limit);
+        QVERIFY(!service.tracksReady());
+        QVERIFY(service.tracks().isEmpty());
+        QCOMPARE(service.results(), previous_results);
     }
     void emptyLookupIsDistinctFromIdleFailureAndReconnect() {
         Network network;

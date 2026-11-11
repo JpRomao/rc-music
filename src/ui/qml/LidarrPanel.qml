@@ -12,11 +12,13 @@ Dialog {
     property var lidarr: null
     property string selectedKey: ""
     property var confirmationRow: null
+    property var tracksContext: null
     readonly property bool connected: lidarr !== null && lidarr.connected
     readonly property bool busy: lidarr !== null && lidarr.busy
     readonly property bool interactionAllowed: enabled && lidarr !== null && lidarr.interactionAllowed
     readonly property var selectedResult: resultForKey(selectedKey)
     readonly property bool confirmationCurrent: confirmationRow !== null && confirmationMatches()
+    readonly property bool tracksContextCurrent: tracksContext !== null && lidarr === tracksContext.owner && interactionAllowed && connected && selectedResult !== null && selectedResult.kind === "album" && selectedResult.key === tracksContext.key && selectedResult.existingId === tracksContext.existingId
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(820, parent ? parent.width - contract.spacingUnit * 8 : 820)
@@ -39,6 +41,7 @@ Dialog {
     onClosed: {
         keyField.text = "";
         confirmation.close();
+        tracksDialog.close();
         confirmationRow = null;
     }
     onLidarrChanged: selectedKey = ""
@@ -54,6 +57,13 @@ Dialog {
             if (visible)
                 close();
         }
+    }
+    onTracksContextCurrentChanged: {
+        if (!tracksContextCurrent && tracksDialog.visible)
+            Qt.callLater(() => {
+                if (!root.tracksContextCurrent)
+                    tracksDialog.close();
+            });
     }
 
     function resultForKey(key) {
@@ -91,6 +101,25 @@ Dialog {
     function submitSearch() {
         if (interactionAllowed && connected && !busy && queryField.text.trim().length > 0)
             lidarr.search(queryField.text.trim(), kindChoice.currentIndex === 1 ? "artist" : "album");
+    }
+    function browseLibraryResult() {
+        if (!browseButton.enabled)
+            return;
+        const owner = lidarr;
+        const row = selectedResult;
+        if (row.kind === "artist") {
+            if (owner.listArtistAlbums(row.key) && lidarr === owner)
+                kindChoice.currentIndex = 0;
+        } else if (owner.listAlbumTracks(row.key) && lidarr === owner && interactionAllowed && connected && selectedKey === row.key) {
+            tracksContext = {
+                owner: owner,
+                key: row.key,
+                title: row.title,
+                existingId: row.existingId
+            };
+            trackFilter.text = "";
+            tracksDialog.open();
+        }
     }
     function submitConnection() {
         if (!interactionAllowed || busy || addressField.text.trim().length === 0 || keyField.text.length === 0)
@@ -364,7 +393,7 @@ Dialog {
                 id: rowDelegate
                 required property var modelData
                 required property int index
-                readonly property string libraryStatus: modelData.kind !== "album" ? "" : (modelData.existingId > 0 ? qsTr("Já cadastrado no Lidarr") : qsTr("No catálogo do Lidarr"))
+                readonly property string libraryStatus: modelData.existingId > 0 ? qsTr("Já cadastrado no Lidarr") : qsTr("No catálogo do Lidarr")
                 readonly property bool cursorFocused: resultsList.activeFocus && ListView.isCurrentItem
                 objectName: "lidarr-result-" + index
                 width: resultsList.width
@@ -449,10 +478,146 @@ Dialog {
                 onClicked: root.requestConfirmation()
             }
             AccessibleTransportButton {
+                id: browseButton
+                objectName: "lidarr-browse-library"
+                contract: root.contract
+                text: root.selectedResult !== null && root.selectedResult.kind === "artist" ? qsTr("Ver álbuns cadastrados") : qsTr("Ver faixas")
+                visible: root.connected && root.selectedResult !== null && root.selectedResult.existingId > 0
+                enabled: visible && root.interactionAllowed && !root.busy
+                onClicked: root.browseLibraryResult()
+            }
+            AccessibleTransportButton {
                 objectName: "lidarr-close"
                 contract: root.contract
                 text: qsTr("Fechar")
                 onClicked: root.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: tracksDialog
+        objectName: "lidarr-tracks-dialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(620, parent ? parent.width - root.contract.spacingUnit * 8 : 620)
+        height: Math.min(440, parent ? parent.height - root.contract.spacingUnit * 8 : 440)
+        modal: true
+        focus: true
+        popupType: Popup.Item
+        closePolicy: Popup.CloseOnEscape
+        padding: root.contract.spacingUnit * 3
+        readonly property bool tracksReady: root.tracksContextCurrent && root.lidarr.tracksKey === root.tracksContext.key && root.lidarr.tracksReady
+        readonly property var rows: tracksReady ? root.lidarr.tracks : []
+        onOpened: trackFilter.forceActiveFocus(Qt.TabFocusReason)
+        onClosed: {
+            root.tracksContext = null;
+            if (root.opened && browseButton.enabled)
+                browseButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+        background: Rectangle {
+            color: root.contract.surfaceRaisedColor
+            radius: root.contract.radiusMedium
+            border.width: 1
+            border.color: root.contract.borderColor
+        }
+        contentItem: ColumnLayout {
+            spacing: root.contract.spacingUnit * 2
+            Accessible.role: Accessible.Dialog
+            Accessible.name: qsTr("Faixas no Lidarr")
+            Text {
+                Layout.fillWidth: true
+                text: root.tracksContextCurrent ? root.tracksContext.title : ""
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                font.bold: true
+                color: root.contract.textPrimaryColor
+            }
+            TextField {
+                id: trackFilter
+                objectName: "lidarr-tracks-filter"
+                Layout.fillWidth: true
+                implicitHeight: root.contract.controlTargetPreferred
+                placeholderText: qsTr("Filtrar faixas por título")
+                maximumLength: 512
+                Accessible.name: placeholderText
+            }
+            ListView {
+                id: trackList
+                objectName: "lidarr-tracks-results"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                activeFocusOnTab: count > 0
+                Accessible.role: Accessible.List
+                Accessible.name: qsTr("Faixas do álbum")
+                model: {
+                    const term = trackFilter.text.trim().toLocaleLowerCase();
+                    return term.length === 0 ? tracksDialog.rows : tracksDialog.rows.filter(track => track.title.toLocaleLowerCase().includes(term));
+                }
+                ScrollBar.vertical: AccessibleScrollBar {
+                    contract: root.contract
+                }
+                delegate: Column {
+                    id: trackRow
+                    required property var modelData
+                    required property int index
+                    width: trackList.width
+                    padding: root.contract.spacingUnit
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: trackTitle.text + " · " + trackDetail.text
+                    Accessible.focused: trackList.activeFocus && ListView.isCurrentItem
+                    Text {
+                        id: trackTitle
+                        objectName: "lidarr-track-title-" + trackRow.index
+                        width: trackRow.width - trackRow.leftPadding - trackRow.rightPadding
+                        text: trackRow.modelData.title
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: root.contract.textPrimaryColor
+                        Accessible.ignored: true
+                    }
+                    Text {
+                        id: trackDetail
+                        width: trackTitle.width
+                        text: {
+                            const track = trackRow.modelData;
+                            const parts = [];
+                            if (track.medium > 0)
+                                parts.push(qsTr("Disco %1").arg(track.medium));
+                            if (track.number.length > 0)
+                                parts.push(qsTr("Faixa %1").arg(track.number));
+                            parts.push(track.hasFile ? qsTr("Com arquivo no Lidarr") : qsTr("Sem arquivo no Lidarr"));
+                            return parts.join(" · ");
+                        }
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: root.contract.textSecondaryColor
+                        Accessible.ignored: true
+                    }
+                }
+                highlight: Rectangle {
+                    visible: trackList.activeFocus
+                    color: "transparent"
+                    border.width: 3
+                    border.color: root.contract.focusColor
+                    radius: root.contract.radiusSmall
+                    Accessible.ignored: true
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: !root.tracksContextCurrent ? "" : (!tracksDialog.tracksReady ? root.lidarr.statusText : (trackList.count > 0 ? "" : (tracksDialog.rows.length > 0 ? qsTr("Nenhuma faixa corresponde ao filtro.") : qsTr("O Lidarr não retornou faixas para este álbum."))))
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                color: root.contract.textPrimaryColor
+            }
+            AccessibleTransportButton {
+                Layout.alignment: Qt.AlignRight
+                contract: root.contract
+                text: qsTr("Voltar")
+                onClicked: tracksDialog.close()
             }
         }
     }
