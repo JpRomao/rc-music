@@ -1563,7 +1563,7 @@ TEST_CASE("FR-023 preserves the unsigned MP4 binary track pair across the TagLib
             TagLib::MP4::File reopened{source.path().c_str()};
             REQUIRE(reopened.isValid());
             const auto pair = reopened.tag()->item("trkn").toIntPair();
-            // TagLib 2.3.1 reads the unsigned 16-bit atom through toShort().
+            // TagLib reads the unsigned 16-bit atom through toShort().
             REQUIRE(static_cast<std::uint16_t>(pair.first) == static_cast<std::uint16_t>(track));
             REQUIRE(static_cast<std::uint16_t>(pair.second) == 65'535);
         }

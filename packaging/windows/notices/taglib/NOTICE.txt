@@ -1,0 +1,16 @@
+RC Music Windows x64 TagLib notices
+
+RC Music uses the TagLib 2.3.2 shared library tag.dll to read audio metadata.
+TagLib is offered under LGPL 2.1 or MPL 1.1. See TagLib-COPYING.LGPL.txt,
+TagLib-COPYING.MPL.txt and TagLib-AUTHORS.txt.
+
+TagLib bundles utf8cpp 4.2.0, copyright 2006 Nemanja Trifunovic, under the
+Boost Software License 1.0. See utfcpp-LICENSE.txt.
+
+Source: https://github.com/taglib/taglib/releases/download/v2.3.2/taglib-2.3.2.tar.gz
+SHA-256 3ca2d8afaa7f1cf7f6ed10e511ebc368bfacd6dcaa3dbfa690b89e502e8963dc
+The Windows x64 build uses the upstream source, MSVC 19.44, Windows SDK
+10.0.26100.0, shared libraries, the dynamic MSVC runtime and zlib disabled.
+
+Audited RC Music tag.dll
+SHA-256 bdecdae7817d6a504cbbc63f04c467396f7e7c22fb2418d16bd411edb79bd191

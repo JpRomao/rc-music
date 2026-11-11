@@ -5,7 +5,7 @@ if(NOT BUILD_TESTING OR NOT RC_MUSIC_BUILD_DESKTOP OR NOT WIN32)
 endif()
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS
     Core Gui Network Qml Quick QuickControls2 QuickLayouts Svg Widgets Multimedia Test)
-find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
+find_package(TagLib 2.3.2 EXACT CONFIG REQUIRED)
 qt_standard_project_setup(REQUIRES 6.11)
 set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/ui/qml")
 include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicShell.cmake")

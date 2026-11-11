@@ -3304,6 +3304,10 @@
           "marker": "## Avisos incluídos no runtime"
         },
         {
+          "path": "docs/desktop-build.md",
+          "marker": "## TagLib no runtime Windows"
+        },
+        {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
           "marker": "Distribuição permanece privada/experimental até seus próprios gates"
         }

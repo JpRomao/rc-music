@@ -22,7 +22,10 @@ foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPY
         'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
         'notices/qt-multimedia/NOTICE.txt', 'notices/qt-multimedia/Signalsmith-Stretch-LICENSE.txt',
         'notices/qt-multimedia/Signalsmith-DSP-LICENSE.txt', 'notices/qt-multimedia/dr-libs-LICENSE.txt',
-        'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt')) {
+        'notices/qt-multimedia/dr-wav-NOTICE.txt', 'notices/qt-multimedia/TLSF-LICENSE.txt',
+        'notices/taglib/NOTICE.txt', 'notices/taglib/TagLib-AUTHORS.txt',
+        'notices/taglib/TagLib-COPYING.LGPL.txt', 'notices/taglib/TagLib-COPYING.MPL.txt',
+        'notices/taglib/utfcpp-LICENSE.txt')) {
     $entry = @($manifest.files | Where-Object relative_path -CEQ $relative)
     $recipe = @($manifest.recipe_files | Where-Object path -CEQ ('packaging/windows/' + $relative))
     if ($entry.Count -ne 1 -or $recipe.Count -ne 1 -or $entry[0].sha256 -cne $recipe[0].sha256) {

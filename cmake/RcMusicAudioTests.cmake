@@ -8,7 +8,7 @@ function(rc_music_add_audio_tests corpus_root)
         return()
     endif()
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Gui Multimedia Quick Test Widgets)
-    find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
+    find_package(TagLib 2.3.2 EXACT CONFIG REQUIRED)
 
     set(audio_common_definitions
         M0_TEST_AUDIO_WAV_FILE="${corpus_root}/fixtures/valid/wav-pcm-mono.wav"

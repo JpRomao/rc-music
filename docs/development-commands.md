@@ -25,7 +25,7 @@ O primeiro comando cria um SDK separado em `out/product/qt-multimedia-6.11.2-rcm
 Versões desta receita:
 
 - clang-format **19.1.1** e qmlformat **6.11.2**, conferidos por `--version` antes de formatar;
-- Qt **6.11.2** e TagLib **2.3.1**, exigidos exatamente pelo CMake; Catch2 **3.15.3** somente para testes;
+- Qt **6.11.2** e TagLib **2.3.2**, exigidos exatamente pelo CMake. Catch2 **3.15.3** somente para testes. [Proveniência do TagLib](desktop-build.md#taglib-no-runtime-windows)
 - MSVC/toolset **14.44**, SDK Windows **10.0.22621.0**, CMake **3.31+** e gerador Ninja.
 
 Nas ações que compilam, o script entra no ambiente de desenvolvimento x64 do Visual Studio configurado. Não é necessário preparar manualmente o ambiente de compilação para esses comandos.

@@ -30,8 +30,8 @@ Enter-VsDevShell -VsInstallPath $rcVsRoot -SkipAutomaticLocation -DevCmdArgument
 $rcRepo = (Resolve-Path .).Path
 $rcNinja = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
 $rcQt = Join-Path $rcRepo 'q/f75eb9bea8280844c6d1a2b3f4/sdk'
-$rcTagLib = Join-Path $rcRepo 'out/m0/taglib-2.3.1-msvc144-probe-20260829-01/install'
-$rcMultimedia = Join-Path $rcRepo 'out/m0/qt-multimedia-archive-probe-20260829-01/stage/lib/cmake/Qt6Multimedia'
+$rcTagLib = Join-Path $rcRepo 'out/product/taglib-2.3.2-msvc144/install'
+$rcMultimedia = Join-Path $rcRepo 'out/product/qt-multimedia-6.11.2-rcmusic2/lib/cmake/Qt6Multimedia'
 $rcQtHost = Join-Path $rcRepo 'out/m0/toolchains/qt-6.11.2-msvc2022_64'
 $rcCatch2 = Join-Path $rcRepo 'out/m0/toolchains/Catch2-3.15.3'
 $rcConfigure = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DRC_MUSIC_BUILD_DESKTOP=ON',
@@ -56,9 +56,17 @@ cmake --build out/product/desktop-tests --target all_qmllint
 if ($LASTEXITCODE -ne 0) { throw 'QML lint falhou.' }
 ```
 
-Qt **6.11.2** e TagLib **2.3.1** são exigidos exatamente; Catch2 **3.15.3** só entra com testes. `RC_MUSIC_BUILD_DESKTOP=OFF` é o default e conserva os comandos core-only. O desktop raiz recusa plataformas diferentes de Windows neste incremento, sem alegar validação Linux.
+Qt **6.11.2** e TagLib **2.3.2** são exigidos exatamente. Catch2 **3.15.3** só entra com testes. `RC_MUSIC_BUILD_DESKTOP=OFF` é o default e conserva os comandos core-only. O desktop raiz recusa plataformas diferentes de Windows neste incremento, sem alegar validação Linux.
 
 O executável produzido fica diretamente no diretório de build, mas não é um pacote autossuficiente: precisa das DLLs/plugins Qt/FFmpeg/TagLib existentes ou de runtime montado pelo builder local. O builder reconhece explicitamente os entrypoints raiz e histórico, usa o QML promovido e inclui `assets`/`tools` na proveniência. Não foi gerado novo runtime/instalador por esta promoção.
+
+## TagLib no runtime Windows
+
+O build de produto e os alvos de teste exigem TagLib 2.3.2. A versão traz validações de entrada em MP3, MP4, FLAC e Ogg, entre outros formatos. O adaptador conserva a recuperação do valor de faixa MP4 de 16 bits sem sinal. [Release upstream](https://github.com/taglib/taglib/releases/tag/v2.3.2)
+
+O SDK em `out/product/taglib-2.3.2-msvc144/install` foi compilado a partir do asset oficial SHA-256 `3ca2d8afaa7f1cf7f6ed10e511ebc368bfacd6dcaa3dbfa690b89e502e8963dc`. O build Release x64 usa MSVC 19.44, Windows SDK 10.0.26100.0 e CRT dinâmico, com zlib desabilitado. O recibo em `out/product/taglib-2.3.2-msvc144/receipt.json` registra os comandos de configuração, o pacote-fonte e os hashes. A receita de runtime inclui cinco avisos com os termos do TagLib e do utf8cpp 4.2.0. [Aviso do TagLib](../packaging/windows/notices/taglib/NOTICE.txt)
+
+O configure anterior rejeitou o SDK 2.3.2 pelo pin 2.3.1. Com o novo pin, o build dos alvos focados e o CTest passaram em 52 casos de metadados, incluindo capas e a faixa MP4, e uma jornada real de áudio. A inspeção do processo de áudio confirmou `tag.dll` SHA-256 `bdecdae7817d6a504cbbc63f04c467396f7e7c22fb2418d16bd411edb79bd191`. Logs e recibo do módulo em `out/product/r9/out/product/taglib-232-*`. A receita de empacotamento passou 25 testes após incluir os cinco avisos.
 
 ## Validação do incremento
 

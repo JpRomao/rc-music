@@ -550,7 +550,7 @@ void recordValueDiagnostic(std::vector<MetadataDiagnostic>& diagnostics, const M
 
     auto properties = tag.properties();
     if (const auto* mp4 = dynamic_cast<const TagLib::MP4::Tag*>(&tag); mp4 != nullptr && mp4->contains("trkn")) {
-        // The MP4 trkn atom stores unsigned 16-bit number/total. TagLib 2.3.1
+        // The MP4 trkn atom stores unsigned 16-bit number/total. TagLib
         // parseIntPair reads both using ByteVector::toShort(), projecting the top
         // half to negative int values. Recover only this known binary format.
         const auto pair = mp4->item("trkn").toIntPair();

@@ -217,7 +217,7 @@ endif()
 
 if(RC_MUSIC_DESKTOP_AUDIO_SUPPORT)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Gui Multimedia)
-    find_package(TagLib 2.3.1 EXACT CONFIG REQUIRED)
+    find_package(TagLib 2.3.2 EXACT CONFIG REQUIRED)
 
     add_library(m0_qt_audio_adapters STATIC
         "${RC_MUSIC_SOURCE_ROOT}/include/m0/adapters/QtMultimediaPlaybackBackend.hpp"
