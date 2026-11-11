@@ -608,6 +608,8 @@ O [registro central de localização](../experiments/m0/candidates/qt/README.md#
 | M5.8 | Changelog, manual, troubleshooting, versão, pacote e RC | critérios MVP 1–11 | `CHK-PACKAGE`, `CHK-RELEASE`, `CHK-DOC`, `CHK-CLOSE` | RC instalada/atualizada/removida em ambiente limpo |
 | M5.9 | Tag e artefatos finais; publicação somente após autorização | todos os gates | `CHK-RELEASE`, `CHK-CLOSE` | tag aponta ao commit validado; hashes após assinatura/pacote final |
 
+Em M5.3, a fila mantém reservados durante a sessão os IDs do snapshot restaurado. Depois que o contador retorna ao início, um comando atrasado para uma ocorrência removida continua sem efeito, inclusive após limpar e repovoar a fila. A regressão em [SessionSnapshotTests.cpp](../tests/core/SessionSnapshotTests.cpp) reproduziu a remoção indevida nos três cenários antes da correção. O núcleo Release passou **305/305 CTest** após a correção. O recorte cobre FR-016 e FR-043 e deixa abertos os demais checks de M5.3. Evidência local em `out/product/test-runs/queue-id-wrap-20261110/`.
+
 ### Gate M5 / release
 
 - Bugs P0/P1 bloqueadores abertos: zero.

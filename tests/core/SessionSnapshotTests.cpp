@@ -258,6 +258,39 @@ TEST_CASE("append after wrapped restored ids chooses only free positive occurren
     CHECK(queue.currentOccurrenceId() == persisted.current_occurrence_id);
 }
 
+TEST_CASE("wrapped allocation after restore never revives a removed occurrence id",
+          "[m0][qt][core][session][FR-016][FR-043]") {
+    constexpr auto largest = std::numeric_limits<std::uint64_t>::max();
+    constexpr LocalQueueOccurrenceId removed{1};
+    const std::filesystem::path duplicate{LR"(C:\Music\Duplicate.wav)"};
+    LocalFileQueue queue;
+
+    SECTION("removing a restored row before inserting at the front") {
+        REQUIRE(queue.restore({{{removed, duplicate}, {{largest}, duplicate}}, LocalQueueOccurrenceId{largest}}));
+        REQUIRE(queue.remove(removed));
+        REQUIRE(queue.insert({duplicate}, 0));
+        CHECK(queue.currentOccurrenceId() == LocalQueueOccurrenceId{largest});
+    }
+
+    SECTION("clearing restored rows before replacing the queue") {
+        REQUIRE(queue.restore({{{removed, duplicate}, {{largest}, duplicate}}, std::nullopt}));
+        REQUIRE(queue.clear());
+        REQUIRE(queue.replace({duplicate}));
+    }
+
+    SECTION("removing a restored row before the next allocation wraps") {
+        REQUIRE(queue.restore({{{removed, duplicate}, {{largest - 1}, duplicate}}, std::nullopt}));
+        REQUIRE(queue.remove(removed));
+        REQUIRE(queue.append({duplicate, duplicate}));
+        REQUIRE(queue.size() == 3);
+        CHECK(queue.items()[1].occurrence_id == LocalQueueOccurrenceId{largest});
+    }
+
+    const auto before_stale_action = queue.snapshot();
+    CHECK_FALSE(queue.remove(removed));
+    CHECK(queue.snapshot() == before_stale_action);
+}
+
 TEST_CASE("queue snapshot omits runtime availability and restore revalidates every source",
           "[m0][qt][core][session][FR-043]") {
     LocalFileQueue source;

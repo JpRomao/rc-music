@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 namespace music_player::m0 {
@@ -65,6 +66,9 @@ class LocalFileQueue final {
   private:
     std::vector<LocalFileQueueItem> items_{};
     std::optional<LocalQueueOccurrenceId> current_occurrence_id_{};
+    // Restored IDs remain reserved when their rows are removed during this session.
+    std::unordered_set<std::uint64_t> restored_occurrence_ids_{};
+    std::uint64_t first_occurrence_id_{1};
     std::uint64_t next_occurrence_id_{1};
 };
 

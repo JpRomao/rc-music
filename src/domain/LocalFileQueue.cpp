@@ -16,27 +16,18 @@ using OccurrenceIdValues = std::unordered_set<std::uint64_t>;
     return occurrence_id == std::numeric_limits<std::uint64_t>::max() ? 1 : occurrence_id + 1;
 }
 
-[[nodiscard]] OccurrenceIdValues occupiedOccurrenceIds(const std::span<const LocalFileQueueItem> items,
-                                                       const std::size_t additional_capacity) {
-    OccurrenceIdValues result;
-    result.reserve(items.size() + additional_capacity);
-    for (const auto& item : items) {
-        result.insert(item.occurrence_id.value);
-    }
-    return result;
-}
-
-[[nodiscard]] LocalQueueOccurrenceId nextOccurrenceId(std::uint64_t& candidate, OccurrenceIdValues& occupied_ids) {
-    for (;;) {
-        if (candidate == 0) {
-            candidate = 1;
-        }
+[[nodiscard]] std::optional<LocalQueueOccurrenceId> nextOccurrenceId(std::uint64_t& candidate,
+                                                                     const std::uint64_t first_candidate,
+                                                                     const OccurrenceIdValues& restored_ids) {
+    while (candidate != 0) {
         const LocalQueueOccurrenceId result{candidate};
-        candidate = followingOccurrenceId(candidate);
-        if (occupied_ids.insert(result.value).second) {
+        const auto following = followingOccurrenceId(candidate);
+        candidate = following == first_candidate ? 0 : following;
+        if (!restored_ids.contains(result.value)) {
             return result;
         }
     }
+    return std::nullopt;
 }
 
 } // namespace
@@ -69,9 +60,12 @@ bool LocalFileQueue::replace(std::vector<std::filesystem::path> source_paths) {
     std::vector<LocalFileQueueItem> replacement;
     replacement.reserve(source_paths.size());
     auto candidate = next_occurrence_id_;
-    auto occupied_ids = occupiedOccurrenceIds(items_, source_paths.size());
     for (auto& source_path : source_paths) {
-        replacement.push_back({nextOccurrenceId(candidate, occupied_ids), std::move(source_path), true});
+        const auto id = nextOccurrenceId(candidate, first_occurrence_id_, restored_occurrence_ids_);
+        if (!id) {
+            return false;
+        }
+        replacement.push_back({*id, std::move(source_path), true});
     }
 
     items_ = std::move(replacement);
@@ -94,9 +88,12 @@ bool LocalFileQueue::insert(std::vector<std::filesystem::path> source_paths, con
     std::vector<LocalFileQueueItem> appended_items;
     appended_items.reserve(source_paths.size());
     auto candidate = next_occurrence_id_;
-    auto occupied_ids = occupiedOccurrenceIds(items_, source_paths.size());
     for (auto& source_path : source_paths) {
-        appended_items.push_back({nextOccurrenceId(candidate, occupied_ids), std::move(source_path), true});
+        const auto id = nextOccurrenceId(candidate, first_occurrence_id_, restored_occurrence_ids_);
+        if (!id) {
+            return false;
+        }
+        appended_items.push_back({*id, std::move(source_path), true});
     }
 
     items_.reserve(items_.size() + appended_items.size());
@@ -221,8 +218,11 @@ bool LocalFileQueue::restore(LocalFileQueueSnapshot snapshot) {
 
     std::vector<LocalFileQueueItem> restored_items;
     restored_items.reserve(snapshot.items.size());
+    OccurrenceIdValues restored_ids;
+    restored_ids.reserve(snapshot.items.size());
     std::uint64_t highest_occurrence_id = 0;
     for (auto& item : snapshot.items) {
+        restored_ids.insert(item.occurrence_id.value);
         highest_occurrence_id = std::max(highest_occurrence_id, item.occurrence_id.value);
         restored_items.push_back({item.occurrence_id, std::move(item.source_path), true});
     }
@@ -231,6 +231,8 @@ bool LocalFileQueue::restore(LocalFileQueueSnapshot snapshot) {
         highest_occurrence_id == 0 ? 1 : followingOccurrenceId(highest_occurrence_id);
     items_ = std::move(restored_items);
     current_occurrence_id_ = snapshot.current_occurrence_id;
+    restored_occurrence_ids_ = std::move(restored_ids);
+    first_occurrence_id_ = restored_next_occurrence_id;
     next_occurrence_id_ = restored_next_occurrence_id;
     return true;
 }
