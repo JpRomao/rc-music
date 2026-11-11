@@ -76,12 +76,15 @@ foreach ($argument in @('/INPUTCHARSET', 'UTF8', '/V2', '/WX',
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 $started = $false
+$compileTimeoutSeconds = 180
 try {
     $started = $process.Start()
     if (-not $started) { throw 'Could not start NSIS compiler' }
     $stdout = $process.StandardOutput.ReadToEndAsync()
     $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(60000)) { throw 'Installer compilation exceeded 60 seconds' }
+    if (-not $process.WaitForExit($compileTimeoutSeconds * 1000)) {
+        throw "Installer compilation exceeded $compileTimeoutSeconds seconds"
+    }
     $output = $stdout.GetAwaiter().GetResult()
     $errorText = $stderr.GetAwaiter().GetResult()
     if ($process.ExitCode -ne 0 -or -not [string]::IsNullOrWhiteSpace($errorText)) {
