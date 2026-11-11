@@ -18,6 +18,8 @@ Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / bu
 
 Os rótulos descrevem o formato recebido. Idioma, escrita e forma são informados ao salvar.
 
+A consulta preserva sinais de mais e sequências literais como `%2B` no título, no artista e no álbum.
+
 O player exibe a versão salva selecionada acima da barra de progresso. Se a opção, o resultado da busca ou a faixa mudar com o formulário aberto, reabra o formulário para confirmar a letra atual.
 
 ## Salvamento e recuperação

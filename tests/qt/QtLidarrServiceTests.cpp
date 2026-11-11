@@ -205,6 +205,16 @@ class QtLidarrServiceTests final : public QObject {
         QCOMPARE(result.existing_id, 0);
         QCOMPARE(network.requests.size(), 5); // Displaying results never adds or downloads.
     }
+    void lookupPreservesLiteralPlusAndPercentSequences() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        const auto term = QStringLiteral("A+B %2B & 日本");
+        QVERIFY(service.search(term, Service::Kind::Album));
+        const auto url = network.requests.back().request.url();
+        QCOMPARE(url.query(QUrl::FullyEncoded), QStringLiteral("term=A%2BB%20%252B%20%26%20%E6%97%A5%E6%9C%AC"));
+        QCOMPARE(QUrlQuery(url).queryItemValue(QStringLiteral("term"), QUrl::FullyDecoded), term);
+    }
     void emptyLookupIsDistinctFromIdleFailureAndReconnect() {
         Network network;
         Service service(&network);

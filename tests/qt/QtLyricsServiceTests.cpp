@@ -223,6 +223,23 @@ class QtLyricsServiceTests final : public QObject {
         QCOMPARE(service.status(), Service::Status::Error);
         QVERIFY(service.onlineDocuments().empty());
     }
+    void lookupPreservesLiteralPlusAndPercentSequencesInEveryTextField() {
+        Network network;
+        Service service(&network);
+        const auto title = QStringLiteral("Song+A %2B");
+        const auto artist = QStringLiteral("Artist+B %26");
+        const auto album = QStringLiteral("日本+C %20");
+        service.setLookupTrack("C:/published/song.mp3", title, artist, album, 120000);
+        QVERIFY(service.searchOnline());
+        const auto url = network.requests.back().url();
+        QCOMPARE(url.query(QUrl::FullyEncoded),
+                 QStringLiteral("track_name=Song%2BA%20%252B&artist_name=Artist%2BB%20%2526&"
+                                "album_name=%E6%97%A5%E6%9C%AC%2BC%20%2520&duration=120"));
+        const QUrlQuery query(url);
+        QCOMPARE(query.queryItemValue(QStringLiteral("track_name"), QUrl::FullyDecoded), title);
+        QCOMPARE(query.queryItemValue(QStringLiteral("artist_name"), QUrl::FullyDecoded), artist);
+        QCOMPARE(query.queryItemValue(QStringLiteral("album_name"), QUrl::FullyDecoded), album);
+    }
     void currentTrackNeverStartsANetworkRequestAndReadsSiblingLrc() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

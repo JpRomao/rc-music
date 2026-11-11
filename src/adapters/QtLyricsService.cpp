@@ -431,10 +431,11 @@ bool QtLyricsService::searchOnline(QString title_override, QString artist_overri
     const auto generation = value.generation;
     QUrl endpoint(QStringLiteral("https://lrclib.net/api/get"));
     QUrlQuery query;
-    query.addQueryItem(QStringLiteral("track_name"), title);
-    query.addQueryItem(QStringLiteral("artist_name"), artist);
+    query.addQueryItem(QStringLiteral("track_name"), QString::fromLatin1(QUrl::toPercentEncoding(title)));
+    query.addQueryItem(QStringLiteral("artist_name"), QString::fromLatin1(QUrl::toPercentEncoding(artist)));
     if (!value.album.trimmed().isEmpty() && validMetadata(value.album))
-        query.addQueryItem(QStringLiteral("album_name"), value.album.trimmed());
+        query.addQueryItem(QStringLiteral("album_name"),
+                           QString::fromLatin1(QUrl::toPercentEncoding(value.album.trimmed())));
     if (value.duration_ms >= 1000 && value.duration_ms <= 3'600'000)
         query.addQueryItem(QStringLiteral("duration"), QString::number(value.duration_ms / 1000));
     endpoint.setQuery(query);

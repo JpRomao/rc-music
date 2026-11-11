@@ -472,7 +472,7 @@ bool QtLidarrService::search(QString term, const Kind kind) {
     value.error = Error::None;
     value.status = Status::Searching;
     QUrlQuery query;
-    query.addQueryItem(QStringLiteral("term"), term.trimmed());
+    query.addQueryItem(QStringLiteral("term"), QString::fromLatin1(QUrl::toPercentEncoding(term)));
     const auto generation = value.generation;
     if (!value.notify(generation))
         return false;
