@@ -88,13 +88,25 @@ As alterações válidas são salvas automaticamente; não há botão Aplicar.
 
 O menu da bandeja oferece **Mostrar/Ocultar**, transporte e **Sair**. Para encerrar de verdade, use **Sair**, `Ctrl+Q` ou feche a janela com **Ao fechar → Encerrar** selecionado; mudar essa preferência não encerra o app naquele instante. Ocultar a janela não encerra o processo. A saída aguarda as gravações necessárias e pode ser cancelada se houver falha ao salvar.
 
-**Abrir Aplicativos Padrão**, quando disponível em Geral, abre a tela oficial do Windows; não muda o aplicativo padrão sozinho. A presença do RC Music entre as opções depende do artefato e de seu registro. Este manual não instrui instalar ou registrar o app; veja as limitações do [instalador](windows-installer.md).
+**Abrir Aplicativos Padrão**, quando disponível em Geral, abre a tela oficial do Windows, onde você escolhe o aplicativo padrão. A presença do RC Music entre as opções depende do artefato e de seu registro. Consulte as opções e os limites dos [instaladores experimentais](windows-installer.md).
 
 ## Navegação experimental
 
-O botão **Navegar** existe somente na [compilação experimental com navegador](embedded-browser.md), ainda fora do instalador local/Lite. Ele abre uma janela própria do RC Music: informe um endereço HTTPS e use Voltar, Avançar, Recarregar ou Parar. Fechar essa janela não encerra o player. Falha de abertura mostra orientação para tentar novamente, preservando a reprodução.
+A edição Completa experimental inclui o botão **Navegar** e requer o WebView2 Evergreen x64 já instalado para abrir a janela de navegação. Informe um endereço HTTPS e use **Voltar**, **Avançar**, **Recarregar** ou **Parar**. Fechar essa janela mantém o player aberto. Em caso de falha ao abrir, o app orienta como tentar novamente e preserva a reprodução. Veja o [navegador integrado](embedded-browser.md).
 
-Nessa composição, use **Mídia → Detectar mídia** para listar áudio/vídeo da página principal e de componentes acessíveis. Marque até 20 itens e use **Conferir seleção** para verificar se as fontes escolhidas continuam iguais; mudança de página ou fonte exige nova escolha. **Baixar selecionados** permanece indisponível nesta versão. Perfis do Brave não são importados; permissões, popups e downloads nativos ficam recusados. Frames internos, execução real e pacote da Completa ainda precisam de validação; o build opt-in não é uma release aprovada.
+Na janela de navegação, use **Mídia → Detectar mídia** para listar áudio e vídeo da página principal e de componentes acessíveis. Marque até 20 itens e use **Conferir seleção** para verificar se as fontes escolhidas continuam iguais. Mudança de página ou fonte exige nova escolha. **Baixar selecionados** permanece indisponível no navegador integrado. A janela usa perfil próprio e bloqueia permissões, popups e downloads nativos.
+
+## Extensões para Brave e Chromium
+
+Os candidatos preparados para Lite e Completa experimental oferecem **Preparar extensão principal** para detectar mídia em páginas e **Preparar extensão YouTube** para o fluxo separado do YouTube. As duas opções começam desmarcadas. Ao escolher qualquer uma, o instalador seleciona as ferramentas compartilhadas.
+
+Após instalar o candidato com a opção escolhida, abra `brave://extensions`, `chrome://extensions` ou `edge://extensions`. Ative **Modo desenvolvedor**, escolha **Carregar sem compactação** e selecione a pasta indicada na tela final do instalador. Use `browser-extensions\main` para a principal e `browser-extensions\youtube` para a de YouTube. Após atualizar o RC Music, carregue a pasta da nova versão. A instalação, a conexão com o Brave e o download público ainda aguardam validação. Veja [opções, caminhos e estado do instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas).
+
+## Downloads
+
+Quando o componente de downloads está ativo, abra **Downloads** no player para acompanhar pedidos, progresso e histórico. Use **Cancelar** em um pedido que ainda permite cancelamento e **Tentar importar novamente** se o MP3 já estiver pronto e a importação para a fila falhar. As opções de repetir o carregamento ou o salvamento aparecem conforme o erro.
+
+**Recuperar histórico** aparece quando o app pode restaurar registros preservados e reservar outra identificação para futuros pedidos. Se houver divergência entre o histórico e as confirmações da fila, os dados ficam preservados para revisão. Repetir a leitura não resolve essa divergência. Veja os [estados e ações de recuperação](download-jobs.md#painel-compartilhado-e-preparação-de-saída).
 
 ## Resolver problemas
 
@@ -111,10 +123,6 @@ Nessa composição, use **Mídia → Detectar mídia** para listar áudio/vídeo
 **Dados de uma versão mais recente:** leia se a ação é **Substituir preferências**, **Substituir sessão** ou **Substituir dados locais**. Só confirme se quiser realmente substituir os dados indicados; a confirmação avisa que isso não pode ser desfeito. Cancelar os preserva. Se o aviso mudar, uma confirmação anterior deixa de valer.
 
 **O app não inicia ou o Windows bloqueia o artefato:** registre a mensagem exata e consulte os [pré-requisitos e limites do runtime](windows-runtime.md) e do [instalador](windows-installer.md). Não desative antivírus/SmartScreen, não baixe DLLs avulsas e não apague configurações ou entradas de Registry para contornar o problema. Encaminhe a mensagem ao mantenedor.
-
-## Histórico de downloads instrumentados
-
-Na composição instrumentada de downloads, **Recuperar histórico** aparece quando é possível restaurar os registros preservados e reservar outra identificação para futuros pedidos. A ação não baixa, importa, apaga ou grava arquivos. Quando o aviso informa divergência entre histórico e confirmações da fila, os dados ficam preservados e precisam de revisão; repetir a leitura não resolve essa divergência. Downloads continuam desligados no player e no instalador Lite de produção.
 
 ## Diagnóstico local opcional
 
