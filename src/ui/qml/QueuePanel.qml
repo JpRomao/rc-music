@@ -220,7 +220,8 @@ FocusScope {
         const revision = queueFocusRevision;
         if (visible && !presenter.selectingAudioFiles && !addingFilesPending)
             Qt.callLater(function () {
-                if (revision === root.queueFocusRevision && !root.presenter.selectingAudioFiles && !root.addingFilesPending)
+                // Keep the keyboard action target while the list owns focus.
+                if (revision === root.queueFocusRevision && !root.presenter.selectingAudioFiles && !root.addingFilesPending && (!queueList.activeFocus || !queueList.currentItem))
                     root.syncCurrent();
             });
     }
@@ -379,6 +380,11 @@ FocusScope {
                     const offset = event.key === Qt.Key_Up ? -1 : 1;
                     queueList.currentIndex = Math.max(0, Math.min(queueList.count - 1, queueList.currentIndex + offset));
                     queueList.positionViewAtIndex(queueList.currentIndex, ListView.Contain);
+                    event.accepted = true;
+                    return;
+                }
+                if (queueList.count > 0 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.KeypadModifier) && (event.key === Qt.Key_Home || event.key === Qt.Key_End)) {
+                    root.selectFocusOccurrence(event.key === Qt.Key_Home ? 0 : queueList.count - 1);
                     event.accepted = true;
                     return;
                 }

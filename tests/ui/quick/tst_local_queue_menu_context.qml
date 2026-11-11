@@ -56,11 +56,11 @@ TestCase {
         return ids.join(",");
     }
 
-    function seedQueue(unavailableTarget) {
-        driver.enqueueLocalSelection(["C:/Music/A.mp3", "C:/Music/B.mp3", "C:/Music/C.mp3", "C:/Music/D.mp3"]);
+    function seedQueue(unavailableTarget, paths = ["C:/Music/A.mp3", "C:/Music/B.mp3", "C:/Music/C.mp3", "C:/Music/D.mp3"]) {
+        driver.enqueueLocalSelection(paths);
         verify(presenter.openAudio());
         const list = findChild(shell, "queue-list");
-        tryCompare(list, "count", 4);
+        tryCompare(list, "count", paths.length);
         confirmPlaying();
         shell.setQueueOpen(true);
         tryVerify(function () {
@@ -281,5 +281,50 @@ TestCase {
         verify(action.activeFocus);
         verify(!queue.list.activeFocus);
         compare(queue.list.currentItem.occurrenceId, queue.ids[2]);
+    }
+
+    function test_keyboardRemovalKeepsTheSelectedOccurrenceDuringPlaybackAdvance() {
+        const queue = seedQueue(false);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
+        keyClick(Qt.Key_Down, Qt.ControlModifier);
+        compare(queue.list.currentItem.occurrenceId, queue.ids[2]);
+
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "currentOccurrenceId", queue.ids[1]);
+        confirmPlaying();
+        wait(0);
+
+        verify(queue.list.activeFocus);
+        keyClick(Qt.Key_Delete);
+        compare(queueOrder(queue.list), [queue.ids[0], queue.ids[1], queue.ids[3]].join(","));
+        compare(presenter.currentOccurrenceId, queue.ids[1]);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+    }
+
+    function test_homeAndEndRevealQueueBoundariesWithoutChangingPlayback() {
+        const paths = Array.from({
+            length: 20
+        }, (_, index) => "C:/Music/Track-" + index + ".mp3");
+        const queue = seedQueue(false, paths);
+        const firstId = queue.ids[0];
+        const lastId = queue.ids[queue.ids.length - 1];
+        queue.list.positionViewAtBeginning();
+        verify(queue.list.contentHeight > queue.list.height);
+
+        keyClick(Qt.Key_End);
+        compare(queue.list.currentItem.occurrenceId, lastId);
+        verify(queue.list.atYEnd);
+        compare(presenter.currentOccurrenceId, firstId);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+
+        keyClick(Qt.Key_Home);
+        compare(queue.list.currentItem.occurrenceId, firstId);
+        verify(queue.list.atYBeginning);
+        compare(presenter.currentOccurrenceId, firstId);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+
+        keyClick(Qt.Key_End);
+        keyClick(Qt.Key_Return);
+        compare(presenter.currentOccurrenceId, lastId);
     }
 }

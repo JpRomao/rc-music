@@ -38,6 +38,8 @@ Quick passou de **258 passagens/8 falhas** para **266/266**. Consentimento exige
 
 ## Atalhos principais e modos de fila
 
+O [teste de navegação na fila](../tests/ui/quick/tst_local_queue_menu_context.qml) reproduziu a remoção da faixa que acabara de começar enquanto outra ocorrência estava selecionada. Com a lista em foco, o avanço da reprodução mantém a ocorrência selecionada como alvo de `Delete`. `Home` e `End` revelam os extremos de uma lista rolável e `Enter` toca a ocorrência selecionada. O build incremental Release e os 396 casos Qt Quick passaram. Logs em `out/product/test-runs/queue-cursor-20261111/`.
+
 Pedido funcional confirmado em 2026-09-06 (`FR-037`/`FR-019`): Espaço controla reprodução inclusive depois de clicar em Mudo ou outro botão; setas usam saltos configurados/volume e Shift+setas navega. F1 alterna modo aleatório persistido e F2 repetição da fila, com estado textual e acessível. Editor, menus e modais mantêm suas teclas; Enter ativa controles e Ctrl+↑/↓ seleciona linhas. O [manual](user-guide.md) contém o contrato completo, incluindo seguir a ordem exibida ao desligar aleatório.
 
 Os testes usam o presenter real com portas falsas, relógios controlados e IDs de ocorrências, sem arquivos pessoais ou dispositivo. Cobrem rodada aleatória sem reposição, Next/EOF, prefixo já percorrido, duplicatas, metadata/modelo preservados, rotação para o fim, faixa única, indisponíveis, remoções, carga recusada, autosave e eventos antigos. A regressão de destruição durante `rowsMoved` reproduziu acesso inválido no reindex posterior do modelo; a guarda local evita continuar após destruição. Desligar F1 num observador também invalida a permutação pendente.

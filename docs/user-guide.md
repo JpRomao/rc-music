@@ -47,9 +47,9 @@ Use **Tab** para entrar nos resultados, **↑/↓** para mover o cursor e **Home
 
 O seletor inclui MP3, M4A/MP4, FLAC, WAV e OGG/OGA, além de todos os arquivos para diagnóstico. A extensão sozinha não garante suporte: por exemplo, M4A com AAC não equivale a M4A com ALAC. Consulte a declaração específica do artefato no guia do instalador; não há suporte irrestrito prometido a qualquer arquivo desses contêineres. URLs de sites não são fontes de reprodução nesta versão.
 
-Abra ou oculte **Fila** com `Ctrl+L`. Um clique ou `Ctrl+↑`/`Ctrl+↓` seleciona uma linha; duplo clique, `Enter` ou **Tocar agora** reproduzem essa ocorrência. Arquivos repetidos são permitidos e cada linha é independente. `Espaço` pausa/continua a faixa atual, mesmo com foco na fila.
+Abra ou oculte **Fila** com `Ctrl+L`. Um clique ou `Ctrl+↑`/`Ctrl+↓` seleciona uma linha. Com a lista em foco, `Home` e `End` selecionam e revelam a primeira e a última faixa. Duplo clique, `Enter` ou **Tocar agora** reproduzem a ocorrência selecionada. Arquivos repetidos são permitidos e cada linha é independente. `Espaço` pausa ou continua a faixa atual, mesmo com foco na fila.
 
-Use **Mover para cima/baixo** ou `Alt+↑`/`Alt+↓`. **Remover** (`Delete` com foco na fila) retira somente a ocorrência escolhida; **Limpar fila** pede confirmação. Nenhuma dessas ações apaga arquivos do disco. Remover a faixa atual pode selecionar a próxima disponível; sem sucessora, a reprodução é descarregada, preservando as linhas anteriores.
+Use **Mover para cima/baixo** ou `Alt+↑`/`Alt+↓`. **Remover** (`Delete` com foco na fila) retira somente a ocorrência escolhida, mesmo quando a reprodução avança enquanto você navega pela lista. **Limpar fila** pede confirmação. Nenhuma dessas ações apaga arquivos do disco. Remover a faixa atual pode selecionar a próxima disponível. Sem sucessora, a reprodução é descarregada e as linhas anteriores são preservadas.
 
 O menu de uma linha abre com botão direito, tecla Menu ou `Shift+F10`. Ele oferece também recuperação de ocorrências indisponíveis. Se a mesma música aparece duas vezes, remover ou localizar uma delas não altera automaticamente a outra.
 
