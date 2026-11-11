@@ -10,7 +10,7 @@ ColumnLayout {
     required property PlayerPresenter presenter
     required property ErrorText labels
     property string titleText: presenter.usesFrozenFixture ? contract.errorTitle : labels.titleFor(presenter.errorMessageKey)
-    property string bodyText: presenter.usesFrozenFixture ? contract.errorBody : labels.messageFor(presenter.errorMessageKey)
+    property string bodyText: presenter.usesFrozenFixture ? contract.errorBody : labels.messageFor(presenter.errorMessageKey, presenter.audioOutputSelectionSupported)
     property string actionText: presenter.usesFrozenFixture ? contract.actionSkip : labels.actionFor(presenter.errorActionId)
     readonly property bool outputRecovery: !presenter.usesFrozenFixture && presenter.errorActionId === "recover-audio-output"
     property bool locationFocusRestoreAllowed: true

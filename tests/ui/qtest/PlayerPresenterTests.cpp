@@ -4,6 +4,7 @@
 #include "m0/domain/ArtworkLimits.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
+#include "m0/ports/AudioOutputSelection.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -26,7 +27,9 @@
 #include <QTest>
 #include <QTimer>
 #include <QVariant>
+#include <QVariantMap>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -147,7 +150,7 @@ class AvailableTrayPlatform final : public PlatformIntegration {
     std::function<void()> on_exit;
 };
 
-class PresenterPlaybackBackend final : public PlaybackBackend {
+class PresenterPlaybackBackend : public PlaybackBackend {
   public:
     [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
     void setEventCallback(PlaybackEventCallback callback) override {
@@ -253,6 +256,42 @@ class PresenterPlaybackBackend final : public PlaybackBackend {
 
   private:
     std::uint64_t last_generation_{0};
+};
+
+class PresenterAudioOutputBackend final : public PresenterPlaybackBackend, public AudioOutputSelection {
+  public:
+    [[nodiscard]] std::vector<AudioOutputDevice> audioOutputs() const override { return outputs_; }
+    [[nodiscard]] std::string selectedAudioOutputId() const override { return selected_; }
+    bool selectAudioOutput(const std::string_view id) override {
+        if (!id.empty() && std::ranges::none_of(outputs_, [id](const auto& device) { return device.id == id; }))
+            return false;
+        if (selected_ == id)
+            return true;
+        selected_ = id;
+        if (snapshot().status == PlaybackStatus::Playing)
+            interruptOutput(PlaybackErrorCode::AudioOutputChanged);
+        if (changed_)
+            changed_();
+        return true;
+    }
+    void setAudioOutputsChangedCallback(std::function<void()> callback) override { changed_ = std::move(callback); }
+    void setOutputs(std::vector<AudioOutputDevice> outputs) {
+        outputs_ = std::move(outputs);
+        if (changed_)
+            changed_();
+    }
+    void interruptOutput(const PlaybackErrorCode code) {
+        auto interrupted = snapshot();
+        interrupted.status = PlaybackStatus::Error;
+        interrupted.error = code;
+        interrupted.seekable = false;
+        publish(interrupted);
+    }
+
+  private:
+    std::vector<AudioOutputDevice> outputs_;
+    std::string selected_;
+    std::function<void()> changed_;
 };
 
 class PresenterMetadataReader final : public MetadataReader {
@@ -618,6 +657,7 @@ class PlayerPresenterTests final : public QObject {
     void pickerCancellationMayDestroyThePresenter();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay_data();
     void audioOutputRecoveryPreservesOccurrenceAndPositionWithoutAutoplay();
+    void manualAudioOutputSwitchRestoresPausedAndTopologyAloneNeverResumes();
     void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused_data();
     void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused();
     void sourceVolumeRemovalDoesNotAutoplayLaterDiscoveryBatches();
@@ -3571,6 +3611,77 @@ void PlayerPresenterTests::audioOutputRecoveryPreservesOccurrenceAndPositionWith
     QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
     QVERIFY(!presenter.hasError());
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(model->rowCount(), 2);
+    QCOMPARE(resets.size(), 0);
+}
+
+void PlayerPresenterTests::manualAudioOutputSwitchRestoresPausedAndTopologyAloneNeverResumes() {
+    AvailableTrayPlatform platform;
+    PresenterAudioOutputBackend backend;
+    PresenterMetadataReader metadata;
+    const AudioOutputDevice speakers{"output-a", "Speakers"};
+    const AudioOutputDevice headphones{"output-b", "Headphones"};
+    backend.setOutputs({speakers, headphones});
+    const auto source = localTestPath(u8"Saída manual.wav");
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source}; });
+    QVERIFY(presenter.openAudio());
+    const auto occurrence = presenter.currentOccurrenceId();
+    auto* const model = presenter.queueModelObject();
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 1});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+    QVERIFY(presenter.property("audioOutputSelectionSupported").toBool());
+    const auto devices = presenter.property("audioOutputDevices").toList();
+    QVERIFY(std::ranges::any_of(devices, [](const QVariant& item) {
+        const auto row = item.toMap();
+        return row.value("id").toString() == "output-b" && row.value("label").toString() == "Headphones";
+    }));
+    QVERIFY(presenter.property("selectedAudioOutputId").toString().isEmpty());
+    QSignalSpy output_changes(&presenter, SIGNAL(audioOutputsChanged()));
+    QVERIFY(output_changes.isValid());
+
+    bool accepted{};
+    QVERIFY(QMetaObject::invokeMethod(&presenter, "selectAudioOutput", Qt::DirectConnection,
+                                      Q_RETURN_ARG(bool, accepted), Q_ARG(QString, QStringLiteral("stale"))));
+    QVERIFY(!accepted);
+    QVERIFY(presenter.property("selectedAudioOutputId").toString().isEmpty());
+    QCOMPARE(backend.loaded_paths, (std::vector{source}));
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+
+    QVERIFY(QMetaObject::invokeMethod(&presenter, "selectAudioOutput", Qt::DirectConnection,
+                                      Q_RETURN_ARG(bool, accepted), Q_ARG(QString, QStringLiteral("output-b"))));
+    QVERIFY(accepted);
+    QCOMPARE(presenter.property("selectedAudioOutputId").toString(), QStringLiteral("output-b"));
+    QTRY_COMPARE(backend.loaded_paths, (std::vector{source, source}));
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.seek_positions, (std::vector<std::int64_t>{750}));
+    QCOMPARE(backend.pause_calls, 1);
+    QCOMPARE(backend.play_calls, 0);
+    backend.publish({.status = PlaybackStatus::Paused,
+                     .position_ms = 750,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{750});
+
+    backend.interruptOutput(PlaybackErrorCode::AudioOutputUnavailable);
+    backend.setOutputs({speakers});
+    QTRY_VERIFY(presenter.hasError());
+    QCOMPARE(presenter.property("selectedAudioOutputId").toString(), QStringLiteral("output-b"));
+    output_changes.clear();
+    backend.setOutputs({speakers, headphones});
+    QTRY_VERIFY(!output_changes.isEmpty());
+    QVERIFY(presenter.hasError());
+    QCOMPARE(presenter.errorActionId(), QStringLiteral("recover-audio-output"));
+    QCOMPARE(backend.loaded_paths, (std::vector{source, source}));
+    QCOMPARE(backend.play_calls, 0);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
     QCOMPARE(model->rowCount(), 2);
     QCOMPARE(resets.size(), 0);
 }
@@ -8511,6 +8622,17 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
     QVERIFY(!fixture_mode.isWritable());
     QVERIFY(fixture_mode.isConstant());
     QVERIFY(!fixture_mode.hasNotifySignal());
+    QVERIFY(!presenter.audioOutputSelectionSupported());
+    QVERIFY(presenter.audioOutputDevices().isEmpty());
+    QVERIFY(!presenter.selectAudioOutput({}));
+    for (const char* name : {"audioOutputDevices", "selectedAudioOutputId"}) {
+        const int index = meta->indexOfProperty(name);
+        QVERIFY(index >= 0);
+        const QMetaProperty property = meta->property(index);
+        QVERIFY(property.isReadable());
+        QVERIFY(!property.isWritable());
+        QCOMPARE(property.notifySignal().methodSignature(), QByteArray("audioOutputsChanged()"));
+    }
     const QSet<QByteArray> expected{"openAudio",
                                     "addAudio",
                                     "importDroppedUrls",
@@ -8536,6 +8658,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "updateSeekPreview",
                                     "commitSeekPreview",
                                     "setVolume",
+                                    "selectAudioOutput",
                                     "toggleMute",
                                     "setThemePreference",
                                     "setMotionPreference",

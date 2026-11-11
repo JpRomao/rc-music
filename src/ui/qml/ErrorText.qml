@@ -13,8 +13,10 @@ QtObject {
     readonly property string backendFailureMessage: qsTr("Escolha outro áudio para continuar.")
     readonly property string audioOutputUnavailableTitle: qsTr("Saída de áudio indisponível")
     readonly property string audioOutputUnavailableMessage: qsTr("Conecte uma saída de áudio ou selecione outra nas configurações de som do Windows. Depois, tente novamente. A faixa será recuperada pausada.")
+    readonly property string audioOutputUnavailableInAppMessage: qsTr("Reconecte a saída de áudio e tente novamente, ou escolha outra em Preferências > Reprodução. A faixa será recuperada pausada.")
     readonly property string audioOutputChangedTitle: qsTr("A saída de áudio mudou")
     readonly property string audioOutputChangedMessage: qsTr("A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.")
+    readonly property string audioOutputChangedInAppMessage: qsTr("A saída de áudio mudou e a reprodução foi interrompida. Tente novamente ou escolha outra saída em Preferências > Reprodução. A faixa será recuperada pausada. A posição será restaurada quando o arquivo permitir.")
     readonly property string unknownErrorTitle: qsTr("Não foi possível reproduzir esta faixa")
     readonly property string unknownErrorMessage: qsTr("Escolha outro áudio para continuar.")
     readonly property string openAudioAction: qsTr("Abrir outro áudio")
@@ -47,7 +49,7 @@ QtObject {
         }
     }
 
-    function messageFor(messageKey) {
+    function messageFor(messageKey, canChooseAudioOutput = false) {
         switch (messageKey) {
         case "source_unavailable":
         case "source_unavailable_error":
@@ -64,9 +66,9 @@ QtObject {
         case "backend_failure_error":
             return backendFailureMessage;
         case "audio_output_unavailable_error":
-            return audioOutputUnavailableMessage;
+            return canChooseAudioOutput ? audioOutputUnavailableInAppMessage : audioOutputUnavailableMessage;
         case "audio_output_changed_error":
-            return audioOutputChangedMessage;
+            return canChooseAudioOutput ? audioOutputChangedInAppMessage : audioOutputChangedMessage;
         default:
             return unknownErrorMessage;
         }

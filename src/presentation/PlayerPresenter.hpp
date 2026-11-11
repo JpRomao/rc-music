@@ -44,6 +44,7 @@
 
 namespace music_player::m0 {
 class ArtworkImageCache;
+class AudioOutputSelection;
 class PlayerDownloadImport;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 namespace experiment {
@@ -174,6 +175,9 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(qulonglong sourceImportInspectedCount READ sourceImportInspectedCount NOTIFY sourceImportChanged)
     Q_PROPERTY(double volume READ volume NOTIFY preferencesChanged)
     Q_PROPERTY(bool muted READ muted NOTIFY preferencesChanged)
+    Q_PROPERTY(bool audioOutputSelectionSupported READ audioOutputSelectionSupported CONSTANT)
+    Q_PROPERTY(QVariantList audioOutputDevices READ audioOutputDevices NOTIFY audioOutputsChanged)
+    Q_PROPERTY(QString selectedAudioOutputId READ selectedAudioOutputId NOTIFY audioOutputsChanged)
     Q_PROPERTY(int skipBackwardSeconds READ skipBackwardSeconds NOTIFY preferencesChanged)
     Q_PROPERTY(int skipForwardSeconds READ skipForwardSeconds NOTIFY preferencesChanged)
     Q_PROPERTY(ThemePreference themePreference READ themePreference NOTIFY preferencesChanged)
@@ -358,6 +362,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] const Preferences& preferences() const noexcept;
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
+    [[nodiscard]] bool audioOutputSelectionSupported() const noexcept;
+    [[nodiscard]] QVariantList audioOutputDevices() const;
+    [[nodiscard]] QString selectedAudioOutputId() const;
     [[nodiscard]] int skipBackwardSeconds() const noexcept;
     [[nodiscard]] int skipForwardSeconds() const noexcept;
     [[nodiscard]] ThemePreference themePreference() const;
@@ -433,6 +440,7 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool updateSeekPreview(qint64 position_ms);
     Q_INVOKABLE bool commitSeekPreview();
     Q_INVOKABLE bool setVolume(double volume);
+    Q_INVOKABLE bool selectAudioOutput(const QString& id);
     Q_INVOKABLE bool toggleMute();
     Q_INVOKABLE bool setThemePreference(ThemePreference theme);
     Q_INVOKABLE bool setMotionPreference(MotionPreference motion);
@@ -452,6 +460,7 @@ class PlayerPresenter final : public QObject {
   signals:
     void stateChanged();
     void preferencesChanged();
+    void audioOutputsChanged();
     void preferencePersistenceChanged();
     void playbackChanged();
     void occurrenceAutomaticallySkipped(QString title, QString errorCode);
@@ -570,6 +579,7 @@ class PlayerPresenter final : public QObject {
     std::unique_ptr<DeterministicPlaybackBackend> owned_backend_;
 #endif
     PlaybackBackend& backend_;
+    AudioOutputSelection* audio_output_selection_{};
     PlayerController controller_;
     LocalFileQueue local_queue_;
     std::mt19937 queue_shuffle_random_;

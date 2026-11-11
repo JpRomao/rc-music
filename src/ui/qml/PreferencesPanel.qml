@@ -10,6 +10,15 @@ Popup {
     required property PlayerPresenter presenter
     property int section: 0
     property string announcedDefaultAppsSettingsFeedback: ""
+    property bool audioOutputSelectionRejected: false
+    readonly property var audioOutputDevices: presenter.audioOutputSelectionSupported ? presenter.audioOutputDevices : []
+    readonly property int selectedAudioOutputIndex: {
+        const id = presenter.selectedAudioOutputId;
+        if (id.length === 0)
+            return 0;
+        const index = audioOutputDevices.findIndex(device => device.id === id);
+        return index < 0 ? -1 : index + 1;
+    }
     modal: true
     dim: false
     focus: true
@@ -24,6 +33,12 @@ Popup {
     function focusFirst() {
         generalButton.forceActiveFocus(Qt.TabFocusReason);
     }
+    function selectAudioOutput(index) {
+        if (!opened || section !== 1 || !presenter.audioOutputSelectionSupported || presenter.exiting || index < 0 || index > audioOutputDevices.length)
+            return;
+        const id = index === 0 ? "" : audioOutputDevices[index - 1].id;
+        audioOutputSelectionRejected = !presenter.selectAudioOutput(id);
+    }
     function announceDefaultAppsSettingsFeedback() {
         const feedback = defaultAppsSettingsFeedback.visible ? defaultAppsSettingsFeedback.text : "";
         if (feedback.length === 0) {
@@ -37,6 +52,7 @@ Popup {
     }
     onAboutToShow: {
         section = 0;
+        audioOutputSelectionRejected = false;
         backwardField.resetDraft();
         forwardField.resetDraft();
     }
@@ -247,6 +263,33 @@ Popup {
                     options: [labels.keepSelection, labels.clearSelection]
                     selected: root.presenter.queueEndPreference === PlayerPresenter.StopClearSelection ? 1 : 0
                     onValueActivated: index => root.presenter.setQueueEndPreference(index === 1 ? PlayerPresenter.StopClearSelection : PlayerPresenter.StopKeepSelection)
+                }
+                PreferenceChoice {
+                    Layout.fillWidth: true
+                    contract: root.contract
+                    controlId: "audio-output-device"
+                    label: labels.audioOutput
+                    options: [labels.systemDefaultAudioOutput].concat(root.audioOutputDevices.map(device => device.label))
+                    selected: root.selectedAudioOutputIndex
+                    unselectedText: labels.missingAudioOutput
+                    accessibleDescription: audioOutputFeedback.text
+                    visible: root.presenter.audioOutputSelectionSupported
+                    enabled: !root.presenter.exiting
+                    onValueActivated: index => root.selectAudioOutput(index)
+                }
+                Text {
+                    id: audioOutputFeedback
+                    objectName: "audio-output-device-feedback"
+                    Layout.fillWidth: true
+                    text: root.audioOutputSelectionRejected ? labels.audioOutputSelectionFailed : root.selectedAudioOutputIndex < 0 ? labels.missingAudioOutputMessage : root.audioOutputDevices.length === 0 ? labels.noAudioOutputs : ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 12
+                    color: root.audioOutputSelectionRejected ? root.contract.errorColor : root.contract.textSecondaryColor
+                    visible: root.presenter.audioOutputSelectionSupported && text.length > 0
+                    Accessible.role: Accessible.StaticText
+                    Accessible.id: objectName
+                    Accessible.name: text
                 }
                 Item {
                     Layout.fillHeight: true

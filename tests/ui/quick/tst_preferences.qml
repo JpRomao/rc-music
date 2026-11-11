@@ -6,12 +6,21 @@ TestCase {
     id: testCase
     name: "ShellPreferences"
     when: windowShown
+    readonly property var driver: testScenarioDriver // qmllint disable unqualified
+    readonly property PlayerPresenter localPresenter: testLocalPlayerPresenter // qmllint disable unqualified
 
     Component {
         id: shellComponent
         Main {
             uiContract: testShellUiContract // qmllint disable unqualified
             presenter: testPlayerPresenter // qmllint disable unqualified
+        }
+    }
+    Component {
+        id: localShellComponent
+        Main {
+            uiContract: testShellUiContract // qmllint disable unqualified
+            presenter: testCase.localPresenter
         }
     }
 
@@ -37,16 +46,20 @@ TestCase {
     function verifyChoiceContrast(control) {
         const list = control.popup.contentItem;
         for (let index = 0; index < control.count; ++index) {
+            list.positionViewAtIndex(index, ListView.Contain);
+            list.forceLayout();
+            tryVerify(() => list.itemAtIndex(index) !== null);
             const row = list.itemAtIndex(index);
-            verify(row);
             verify(row.height >= 40, control.objectName + " option " + index + " height: " + row.height);
+            compare(row.contentItem.textFormat, Text.PlainText);
             const foreground = luminance(row.contentItem.color);
             const background = luminance(row.background.visible ? row.background.color : control.popup.background.color);
             const ratio = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
             verify(ratio >= 4.5, control.objectName + " option " + index + " contrast: " + ratio);
         }
+        list.positionViewAtIndex(control.highlightedIndex, ListView.Contain);
     }
-    function selectChoice(control, index) {
+    function selectChoice(control, index, confirmedIndex = index) {
         control.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         tryVerify(function () {
@@ -60,7 +73,7 @@ TestCase {
         tryVerify(function () {
             return !control.popup.visible;
         });
-        compare(control.currentIndex, index);
+        compare(control.currentIndex, confirmedIndex);
     }
     function verifyControl(control, name) {
         verify(control);
@@ -88,6 +101,64 @@ TestCase {
             tryVerify(function () {
                 return expected.activeFocus;
             });
+        }
+    }
+    function test_audioOutputChoiceUsesConfirmedIdentityAcrossTopologyChanges() {
+        driver.resetLocalScenario();
+        shell = createTemporaryObject(localShellComponent, null);
+        verify(shell);
+        shell.width = shell.minimumWidth;
+        shell.height = shell.minimumHeight;
+        shell.requestActivate();
+        tryCompare(shell, "active", true);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        const panel = findChild(shell, "preferences-panel");
+        tryCompare(panel, "opened", true);
+        mouseClick(findChild(shell, "preferences-playback"));
+        const choice = findChild(shell, "audio-output-device");
+        verify(choice && choice.visible, "Playback preferences expose a supported audio output choice");
+        verifyControl(choice, "Saída de áudio");
+        compare(choice.currentIndex, 0);
+        compare(choice.currentText, "Padrão do sistema");
+        const feedback = findChild(shell, "audio-output-device-feedback");
+        verify(feedback);
+        try {
+            verify(driver.setLocalAudioOutputs(["first", "second"], ["<b>Saída A</b>", "Saída B"]));
+            tryCompare(choice, "count", 3);
+            compare(choice.textAt(1), "<b>Saída A</b>");
+            verify(!feedback.visible);
+            verifyFocusCycle([findChild(shell, "preferences-general"), findChild(shell, "preferences-playback"), findChild(shell, "preferences-appearance"), findChild(shell, "skip-backward-seconds"), findChild(shell, "skip-forward-seconds"), findChild(shell, "queue-end-behavior"), choice, findChild(shell, "preferences-close")]);
+            selectChoice(choice, 2);
+            compare(localPresenter.selectedAudioOutputId, "second");
+            compare(driver.localAudioOutputSelectionCount(), 1);
+
+            verify(driver.setLocalAudioOutputs(["second", "first"], ["Saída B", "<b>Saída A</b>"]));
+            tryCompare(choice, "currentIndex", 1);
+            compare(choice.currentText, "Saída B");
+            verify(driver.setLocalAudioOutputs(["first"], ["<b>Saída A</b>"]));
+            tryCompare(choice, "currentIndex", -1);
+            compare(localPresenter.selectedAudioOutputId, "second");
+            compare(choice.displayText, "Saída indisponível");
+            verify(feedback.visible);
+            verifyControl(choice, "Saída de áudio");
+            compare(driver.localAudioOutputSelectionCount(), 1);
+            verify(driver.setLocalAudioOutputs(["first", "third"], ["<b>Saída A</b>", "Saída C"]));
+            tryCompare(choice, "count", 3);
+            tryCompare(choice, "currentIndex", -1);
+            compare(choice.displayText, "Saída indisponível");
+            compare(driver.localAudioOutputSelectionCount(), 1);
+
+            selectChoice(choice, 0);
+            compare(localPresenter.selectedAudioOutputId, "");
+            compare(driver.localAudioOutputSelectionCount(), 2);
+            verify(!feedback.visible);
+            driver.rejectNextLocalAudioOutputSelection();
+            selectChoice(choice, 1, 0);
+            compare(localPresenter.selectedAudioOutputId, "");
+            verify(feedback.visible);
+            verify(feedback.text.includes("Não foi possível"));
+        } finally {
+            driver.resetLocalScenario();
         }
     }
 
@@ -271,6 +342,7 @@ TestCase {
         verifyControl(backward, "Segundos para retroceder");
         verifyControl(forward, "Segundos para avançar");
         verifyControl(queueEnd, "Ao terminar a fila");
+        verify(!findChild(shell, "audio-output-device").visible);
         compare(backward.Accessible.role, Accessible.EditableText);
         compare(forward.Accessible.role, Accessible.EditableText);
         verifyFocusCycle([general, playback, appearance, backward, forward, queueEnd, close]);

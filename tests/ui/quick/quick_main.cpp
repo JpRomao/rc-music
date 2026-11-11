@@ -2,6 +2,7 @@
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
+#include "m0/ports/AudioOutputSelection.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
@@ -33,6 +34,7 @@
 #include <QtQuickTest/quicktest.h>
 #include <QtTest/qtestkeyboard.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -92,7 +94,7 @@ class PendingPreferencesWriter final : public music_player::m0::PreferencesWrite
     std::optional<music_player::m0::PreferencesWriteRequest> active_{};
 };
 
-class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend {
+class QuickTestPlaybackBackend : public music_player::m0::PlaybackBackend {
   public:
     [[nodiscard]] const music_player::m0::PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
     void setEventCallback(music_player::m0::PlaybackEventCallback callback) override {
@@ -160,6 +162,48 @@ class QuickTestPlaybackBackend final : public music_player::m0::PlaybackBackend 
 
   private:
     std::uint64_t generation_{0};
+};
+
+class QuickTestSelectablePlaybackBackend final : public QuickTestPlaybackBackend,
+                                                 public music_player::m0::AudioOutputSelection {
+  public:
+    [[nodiscard]] std::vector<music_player::m0::AudioOutputDevice> audioOutputs() const override { return devices_; }
+    [[nodiscard]] std::string selectedAudioOutputId() const override { return selected_id_; }
+    bool selectAudioOutput(std::string_view id) override {
+        ++selection_calls;
+        if (std::exchange(reject_next_selection, false) ||
+            (!id.empty() && std::ranges::none_of(devices_, [&](const auto& device) { return device.id == id; }))) {
+            return false;
+        }
+        selected_id_ = id;
+        if (outputs_changed_)
+            outputs_changed_();
+        return true;
+    }
+    void setAudioOutputsChangedCallback(std::function<void()> callback) override {
+        outputs_changed_ = std::move(callback);
+    }
+    void setDevices(std::vector<music_player::m0::AudioOutputDevice> devices) {
+        devices_ = std::move(devices);
+        if (outputs_changed_)
+            outputs_changed_();
+    }
+    void resetSelection() {
+        selection_calls = 0;
+        reject_next_selection = false;
+        if (!selected_id_.empty() || !devices_.empty()) {
+            selected_id_.clear();
+            setDevices({});
+        }
+    }
+
+    int selection_calls{0};
+    bool reject_next_selection{false};
+
+  private:
+    std::vector<music_player::m0::AudioOutputDevice> devices_{};
+    std::string selected_id_{};
+    std::function<void()> outputs_changed_{};
 };
 
 class QuickTestAudioFileLocator final : public QObject, public music_player::m0::AudioFileLocator {
@@ -401,6 +445,7 @@ class ScenarioDriver final : public QObject {
         : QObject(parent), presenter_(presenter), platform_(platform), appearance_(appearance),
           appearance_state_(std::move(appearance_state)), local_selections_(local_selections),
           local_presenter_(local_presenter), local_backend_(local_backend),
+          local_output_backend_(dynamic_cast<QuickTestSelectablePlaybackBackend*>(&local_backend)),
           local_metadata_reader_(local_metadata_reader), local_source_discovery_(local_source_discovery),
           local_file_locator_(local_file_locator), local_files_picker_(local_files_picker) {}
     Q_INVOKABLE QObject* createDownloadsScenario();
@@ -528,6 +573,23 @@ class ScenarioDriver final : public QObject {
         local_backend_.snapshot_.position_ms = 47'000;
         local_backend_.publish(music_player::m0::PlaybackStatus::Error);
     }
+    Q_INVOKABLE bool setLocalAudioOutputs(const QStringList& ids, const QStringList& labels) {
+        if (!local_output_backend_ || ids.size() != labels.size())
+            return false;
+        std::vector<music_player::m0::AudioOutputDevice> devices;
+        devices.reserve(static_cast<std::size_t>(ids.size()));
+        for (qsizetype index = 0; index < ids.size(); ++index)
+            devices.push_back({ids[index].toStdString(), labels[index].toStdString()});
+        local_output_backend_->setDevices(std::move(devices));
+        return true;
+    }
+    Q_INVOKABLE int localAudioOutputSelectionCount() const noexcept {
+        return local_output_backend_ ? local_output_backend_->selection_calls : 0;
+    }
+    Q_INVOKABLE void rejectNextLocalAudioOutputSelection() {
+        if (local_output_backend_)
+            local_output_backend_->reject_next_selection = true;
+    }
     Q_INVOKABLE void publishCompleteLocalMetadata() { publishLocalMetadata(false); }
     Q_INVOKABLE void publishArtworkLocalMetadata() { publishLocalMetadata(true); }
     Q_INVOKABLE void publishSanitizedLocalMetadata(const bool valid_numeric_fallback) {
@@ -605,6 +667,8 @@ class ScenarioDriver final : public QObject {
         local_source_discovery_.reset();
         local_metadata_reader_.reset();
         local_backend_.resetObservations();
+        if (local_output_backend_)
+            local_output_backend_->resetSelection();
         drag_mime_.reset();
         clearAccessibleAnnouncements();
     }
@@ -847,6 +911,7 @@ class ScenarioDriver final : public QObject {
     std::deque<std::vector<std::filesystem::path>>& local_selections_;
     music_player::m0::PlayerPresenter& local_presenter_;
     QuickTestPlaybackBackend& local_backend_;
+    QuickTestSelectablePlaybackBackend* local_output_backend_;
     QuickTestMetadataReader& local_metadata_reader_;
     FakeLocalSourceDiscovery& local_source_discovery_;
     QuickTestAudioFileLocator& local_file_locator_;
@@ -1007,7 +1072,7 @@ class EmptyShellQuickTestSetup final : public QObject {
     PendingPreferencesWriter pending_exit_writer_{};
     std::unique_ptr<music_player::m0::PreferencesAutosave> pending_exit_autosave_{};
     music_player::m0::PreferencesAutosave::TimePoint pending_exit_now_{};
-    QuickTestPlaybackBackend local_backend_{};
+    QuickTestSelectablePlaybackBackend local_backend_{};
     QuickTestMetadataReader local_metadata_reader_{};
     FakeLocalSourceDiscovery local_source_discovery_{};
     QuickTestAudioFileLocator local_file_locator_{};

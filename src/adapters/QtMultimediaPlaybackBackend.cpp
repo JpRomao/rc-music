@@ -27,7 +27,17 @@ class SystemQtAudioOutputDevices final : public QtAudioOutputDevices {
 
     [[nodiscard]] QtAudioOutputDevice defaultDevice() const override {
         const auto device = QMediaDevices::defaultAudioOutput();
-        return {device.isNull() ? QByteArray{} : device.id(), device};
+        return device.isNull() ? QtAudioOutputDevice{} : QtAudioOutputDevice{device.id(), device, device.description()};
+    }
+
+    [[nodiscard]] QList<QtAudioOutputDevice> devices() const override {
+        const auto outputs = QMediaDevices::audioOutputs();
+        QList<QtAudioOutputDevice> devices;
+        devices.reserve(outputs.size());
+        for (const auto& device : outputs) {
+            devices.append({device.id(), device, device.description()});
+        }
+        return devices;
     }
 
     void applyDevice(QAudioOutput& output, const QtAudioOutputDevice& device) override {
@@ -99,7 +109,7 @@ QtMultimediaPlaybackBackend::QtMultimediaPlaybackBackend(std::unique_ptr<QtAudio
     connect(&audio_track_validation_timer_, &QTimer::timeout, this, [this] { validateLoadedAudioTrack(); });
     audio_devices_->setChangeHandler([guard = QPointer<QtMultimediaPlaybackBackend>{this}] {
         if (guard) {
-            guard->interruptIfDefaultOutputChanged();
+            guard->reconcileAudioOutputs();
         }
     });
 }
@@ -146,6 +156,50 @@ void QtMultimediaPlaybackBackend::setEventCallback(PlaybackEventCallback callbac
     event_callback_ = std::move(callback);
 }
 
+std::vector<AudioOutputDevice> QtMultimediaPlaybackBackend::audioOutputs() const {
+    std::vector<AudioOutputDevice> result;
+    const auto devices = audio_devices_->devices();
+    result.reserve(static_cast<std::size_t>(devices.size()));
+    for (const auto& device : devices) {
+        if (!device.id.isEmpty()) {
+            result.push_back({device.id.toHex().toStdString(), device.description.toUtf8().toStdString()});
+        }
+    }
+    return result;
+}
+
+std::string QtMultimediaPlaybackBackend::selectedAudioOutputId() const {
+    return selected_output_id_.toHex().toStdString();
+}
+
+bool QtMultimediaPlaybackBackend::selectAudioOutput(const std::string_view id) {
+    if (shutdown_ || QThread::currentThread() != thread()) {
+        return false;
+    }
+
+    QByteArray selected;
+    if (!id.empty()) {
+        const auto devices = audio_devices_->devices();
+        const auto found = std::find_if(devices.cbegin(), devices.cend(),
+                                        [id](const auto& device) { return device.id.toHex().toStdString() == id; });
+        if (found == devices.cend()) {
+            return false;
+        }
+        selected = found->id;
+    }
+    if (selected_output_id_ != selected) {
+        selected_output_id_ = std::move(selected);
+        reconcileAudioOutputs();
+    }
+    return true;
+}
+
+void QtMultimediaPlaybackBackend::setAudioOutputsChangedCallback(std::function<void()> callback) {
+    if (!shutdown_) {
+        audio_outputs_changed_ = std::move(callback);
+    }
+}
+
 void QtMultimediaPlaybackBackend::sourceVolumeRemoved(const std::uint32_t drive_mask) {
     if (QThread::currentThread() != thread() || shutdown_ || player_ == nullptr || source_volume_removal_pending_ ||
         (drive_mask & source_drive_mask_) == 0)
@@ -187,7 +241,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::load(const std::filesystem::p
     ended_emitted_ = false;
     repositioning_from_end_ = false;
     missing_audio_rejected_ = false;
-    const auto output_device = audio_devices_->defaultDevice();
+    const auto output_device = configuredOutputDevice();
     active_output_id_ = output_device.id;
     if (active_output_id_.isEmpty()) {
         publishSnapshot({PlaybackStatus::Error, 0, 0, false, generation_, PlaybackErrorCode::AudioOutputUnavailable});
@@ -211,7 +265,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::play() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status == PlaybackStatus::Playing) {
@@ -243,7 +297,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::pause() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status == PlaybackStatus::Paused) {
@@ -269,7 +323,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::seekTo(const std::int64_t pos
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
     }
-    if (source_volume_removal_pending_ || interruptIfDefaultOutputChanged()) {
+    if (source_volume_removal_pending_ || interruptIfOutputChanged()) {
         return PlaybackCommandResult::NotReady;
     }
     if (snapshot_.status != PlaybackStatus::Ready && snapshot_.status != PlaybackStatus::Paused &&
@@ -343,6 +397,7 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::shutdown() {
 
     shutdown_ = true;
     audio_devices_->setChangeHandler({});
+    audio_outputs_changed_ = {};
     invalidateCurrentSource();
     advanceGeneration();
     ended_emitted_ = false;
@@ -351,12 +406,37 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::shutdown() {
     return PlaybackCommandResult::Accepted;
 }
 
-bool QtMultimediaPlaybackBackend::interruptIfDefaultOutputChanged() {
+QtAudioOutputDevice QtMultimediaPlaybackBackend::configuredOutputDevice() const {
+    if (selected_output_id_.isEmpty()) {
+        return audio_devices_->defaultDevice();
+    }
+    const auto devices = audio_devices_->devices();
+    const auto found = std::find_if(devices.cbegin(), devices.cend(),
+                                    [this](const auto& device) { return device.id == selected_output_id_; });
+    return found == devices.cend() ? QtAudioOutputDevice{} : *found;
+}
+
+void QtMultimediaPlaybackBackend::reconcileAudioOutputs() {
+    if (shutdown_) {
+        return;
+    }
+    const QPointer<QtMultimediaPlaybackBackend> guard{this};
+    // Publish the route's transport outcome before observers update the choices.
+    interruptIfOutputChanged();
+    if (guard && !shutdown_) {
+        const auto callback = audio_outputs_changed_;
+        if (callback) {
+            callback();
+        }
+    }
+}
+
+bool QtMultimediaPlaybackBackend::interruptIfOutputChanged() {
     if (shutdown_ || source_volume_removal_pending_ || player_ == nullptr ||
         snapshot_.status == PlaybackStatus::Empty || snapshot_.status == PlaybackStatus::Error) {
         return false;
     }
-    const auto current_device = audio_devices_->defaultDevice();
+    const auto current_device = configuredOutputDevice();
     if (current_device.id == active_output_id_) {
         return false;
     }
@@ -402,7 +482,7 @@ void QtMultimediaPlaybackBackend::refreshSnapshot(const QMediaPlayer* const sign
         signal_generation != generation_) {
         return;
     }
-    if (interruptIfDefaultOutputChanged()) {
+    if (interruptIfOutputChanged()) {
         return;
     }
 

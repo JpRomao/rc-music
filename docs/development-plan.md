@@ -576,7 +576,7 @@ Esse segundo recorte não encerra M4.7 nem `NFR-REL-005`. Perda de dispositivo d
 
 O terceiro recorte funcional local de M4.7 detecta ausência ou mudança da saída padrão no adapter Qt e produz `AudioOutputUnavailable`/`AudioOutputChanged`. A interrupção retira o player anterior, conserva a posição confirmada e não marca o arquivo indisponível nem avança a fila. Reconexão é inerte até uma ação explícita; “Tentar novamente” reutiliza a ocorrência corrente em `RestorePaused`, restaura a posição quando há seek e preserva “Abrir outro áudio”. Identidade da fila, geração, rejeição do load, repetição da falha, mudança posterior de seleção e UI acessível pertencem aos contratos de teste do recorte.
 
-O [registro central do terceiro recorte](../experiments/m0/candidates/qt/README.md#audio-output-m47) reúne Reds, checks e a integração com decoder real/saída mutada e topologia injetada. Essa evidência não comprova reconexão física ou áudio audível; drive físico, arquivo relocalizado, Explorer, sleep físico, pacote/E2E nativo, acessibilidade manual e Linux permanecem pendentes. M4.7, `FR-038` e `NFR-REL-005` continuam parciais, e a seleção manual de dispositivo dentro do app permanece em `FR-018`/M6.1. Nenhum benchmark integra o recorte.
+O [registro central do terceiro recorte](../experiments/m0/candidates/qt/README.md#audio-output-m47) reúne Reds, checks e a integração com decoder real, saída silenciada e topologia injetada. Reconexão física, áudio audível, drive físico, arquivo relocalizado, Explorer, sleep físico, pacote/E2E nativo, acessibilidade manual e Linux permanecem pendentes. M4.7, `FR-038` e `NFR-REL-005` continuam parciais. A escolha manual de saída é acompanhada em `FR-018`/M6.1.
 
 O quarto recorte funcional local de M4.7 acrescenta `WindowsTaskbarEvents` e a recuperação da janela após `TaskbarCreated`. Um receptor top-level privado recebe a mensagem dirigida a seu próprio `HWND` e a entrega enfileirada; monitor não pronto impede ocultação e permite retry por refresh explícito. O Qt continua responsável por registrar novamente seu ícone, enquanto o adapter torna visível/minimizada, sem ativação ou comandos de áudio, somente a janela ocultada por ele para a bandeja. Saída pendente adia essa recuperação; bootstrap, rebind e retorno do shell não reaplicam `startMinimized`.
 
@@ -641,7 +641,7 @@ O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prior
 
 | ID | Candidato | Requisito | Checks mínimos |
 |---|---|---|---|
-| M6.1 | Escolha de dispositivo e recuperação de troca | FR-018 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE`; capabilities e device lost |
+| M6.1 | Escolha de dispositivo e recuperação de troca — implementada e validada com topologia simulada no Windows. Aceitação física e empacotada pendente | FR-018 | `CHK-TDD`, `CHK-WIN`, `CHK-LINUX`, `CHK-E2E`, `CHK-CLOSE`; capabilities e device lost |
 | M6.2 | Shuffle | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; property tests de ordem/IDs |
 | M6.3 | Repeat | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; modos off/faixa/fila e fim |
 | M6.4 | Velocidade de reprodução | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE`; precisão, áudio/CPU e reset |
@@ -649,6 +649,10 @@ O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prior
 | M6.6 | Playlists locais nomeadas — recorte automatizado implementado; criar/renomear/excluir, salvar fila, organizar e persistir; aceitação nativa/pacote pendente e M3U8 posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
+
+Em M6.1, **Preferências → Reprodução → Saída de áudio** permite seguir o padrão do sistema ou fixar uma saída para a sessão. A troca explícita de rota recupera a ocorrência pausada e restaura a posição quando possível. Uma saída selecionada e desconectada mantém sua identidade. Reconecte-a e use **Tentar novamente**, ou escolha outra. [Uso e recuperação](user-guide.md#reprodução-e-teclado)
+
+O build Windows Release e o lint QML passaram. Os alvos CTest de lifecycle do backend, integração com o decoder, presenter e Quick passaram em duas seleções. A suíte do presenter registrou **310 passagens** e Quick, **382**, incluindo a escolha por teclado, a lista atualizada e a orientação acessível quando uma saída fica indisponível. Os testes de troca usam dispositivos simulados. Logs em `out/product/test-runs/audio-output-selection-20261111/`.
 
 Em 2026-09-06, o mantenedor antecipou o recorte de M6.2/M6.3 e confirmou F1 como modo ligado/desligado: sorteio entre próximas ocorrências sem trocar a faixa atual, seguindo a ordem exibida ao desligar. F2 alterna repetição da fila com rotação da ocorrência concluída ao fim; ambos os modos são persistidos. A autorização não inclui velocidade, repeat-one ou as demais evoluções M6. O refinamento de `FR-037` reserva Espaço para reprodução, setas para seek/volume e Shift+setas para transporte; os contratos vigentes estão no [manual](user-guide.md) e nos [requisitos](product/requirements.md), substituindo as antigas regras de prioridade de Espaço/setas dos controles na janela principal.
 

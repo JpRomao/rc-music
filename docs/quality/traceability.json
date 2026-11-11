@@ -452,9 +452,22 @@
     {
       "id": "FR-018",
       "plan": "M6.1",
-      "status": "planejado",
-      "verification": "future",
-      "tests": [],
+      "status": "em andamento",
+      "verification": "mixed",
+      "tests": [
+        {
+          "path": "tests/qt/QtMultimediaPlaybackBackendTests.cpp",
+          "marker": "missingSelectedOutputDoesNotFallBackOrResumeOnReturn"
+        },
+        {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "manualAudioOutputSwitchRestoresPausedAndTopologyAloneNeverResumes"
+        },
+        {
+          "path": "tests/ui/quick/tst_preferences.qml",
+          "marker": "test_audioOutputChoiceUsesConfirmedIdentityAcrossTopologyChanges"
+        }
+      ],
       "evidence": [
         {
           "path": "docs/development-plan.md",
@@ -462,11 +475,11 @@
         },
         {
           "path": "docs/product/requirements.md",
-          "marker": "Em evolução futura, permitir escolher um dispositivo de saída"
+          "marker": "Permitir escolher um dispositivo de saída para a sessão"
         }
       ],
       "remaining": [
-        "Refinar e autorizar M6.1; implementar escolha explícita de dispositivo/capabilities e sua UX. Recuperar a saída padrão atual não implementa o seletor futuro."
+        "Validar troca e desconexão físicas, áudio audível, acessibilidade e aceitação empacotada no Windows. Validar o comportamento no Linux quando houver ambiente."
       ]
     },
     {

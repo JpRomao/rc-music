@@ -61,6 +61,8 @@ Clique ou arraste **Posição da faixa** para avançar ou voltar. Durante o arra
 
 Os botões de salto começam em 5 segundos para cada direção. Altere-os separadamente em **Preferências → Reprodução**, usando inteiros de 1 a 300. Os valores válidos atualizam os botões e os atalhos e são salvos localmente.
 
+Em **Preferências → Reprodução → Saída de áudio**, escolha uma saída conectada ou **Padrão do sistema**. A escolha vale até fechar o RC Music. Ao trocar a saída durante uma faixa, a fila é preservada e a faixa volta pausada na posição anterior quando o arquivo permite seek.
+
 | Ação na janela | Atalho |
 |---|---|
 | Abrir arquivos | `Ctrl+O` |
@@ -126,7 +128,7 @@ Em um item interrompido, use **Verificar arquivos**. Se aparecer **Encerrar recu
 
 **Arquivo inválido ou não suportado:** consulte Detalhes da faixa e tente outro arquivo conhecido. O erro pode vir do conteúdo, não apenas da extensão; renomear a extensão não converte o áudio. Não altere o original para tentar contornar o erro.
 
-**Saída de áudio indisponível ou alterada:** conecte uma saída ou escolha a saída padrão nas configurações de som do Windows. Depois use **Tentar novamente** no aviso. A recuperação é pausada e conserva a fila; a posição é restaurada quando possível. Reconectar o dispositivo não reinicia o áudio automaticamente. Ainda não há seletor de dispositivo dentro do RC Music. Se não houver som sem aviso de erro, confira o volume/mudo do player e a saída e o volume do Windows.
+Se a saída de áudio escolhida for desconectada, reconecte-a e use **Tentar novamente** no aviso ou escolha outra em **Preferências → Reprodução**. A recuperação preserva a fila e volta pausada na posição anterior quando possível. Se estiver usando **Padrão do sistema**, confira a saída padrão nas configurações de som do Windows. Se não houver som sem aviso de erro, confira o volume e o mudo no player e no Windows.
 
 **Preferências ou sessão recuperadas:** revise o aviso, confira preferências/fila e retome quando desejar. Se os dados anteriores eram inválidos e não havia backup válido, o app usa valores seguros ou uma sessão vazia. **Dispensar aviso** apenas fecha o aviso.
 

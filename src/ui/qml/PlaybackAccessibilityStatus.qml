@@ -35,7 +35,7 @@ Item {
     }
 
     function errorBody() {
-        return presenter.usesFrozenFixture ? contract.errorBody : errorLabels.messageFor(presenter.errorMessageKey);
+        return presenter.usesFrozenFixture ? contract.errorBody : errorLabels.messageFor(presenter.errorMessageKey, presenter.audioOutputSelectionSupported);
     }
 
     function errorAction() {

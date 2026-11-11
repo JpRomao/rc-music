@@ -11,8 +11,14 @@ ColumnLayout {
     required property string label
     required property var options
     required property int selected
+    property string unselectedText: ""
+    property string accessibleDescription: ""
     signal valueActivated(int index)
     spacing: contract.spacingUnit
+    onOptionsChanged: {
+        if (control.popup && control.popup.visible)
+            control.popup.close();
+    }
 
     Text {
         text: root.label
@@ -27,13 +33,23 @@ ColumnLayout {
         implicitHeight: root.contract.controlTargetPreferred
         model: root.options
         currentIndex: root.selected
+        displayText: currentIndex < 0 ? root.unselectedText : currentText
         activeFocusOnTab: true
         Accessible.role: Accessible.ComboBox
         Accessible.id: objectName
         Accessible.name: root.label
+        Accessible.description: root.accessibleDescription
         Accessible.focusable: enabled
         Accessible.focused: activeFocus
-        onActivated: index => root.valueActivated(index)
+        function restoreConfirmedSelection() {
+            if (currentIndex !== root.selected)
+                currentIndex = Qt.binding(() => root.selected);
+        }
+        onModelChanged: Qt.callLater(control.restoreConfirmedSelection)
+        onActivated: index => {
+            root.valueActivated(index);
+            restoreConfirmedSelection();
+        }
         palette.base: root.contract.surfaceColor
         palette.button: root.contract.surfaceColor
         palette.buttonText: root.contract.highContrast && down ? root.contract.accentTextColor : root.contract.textPrimaryColor
@@ -55,6 +71,14 @@ ColumnLayout {
             font.weight: control.currentIndex === index ? Font.DemiBold : Font.Normal
             highlighted: control.highlightedIndex === index
             hoverEnabled: control.hoverEnabled
+            contentItem: Text {
+                text: option.text
+                textFormat: Text.PlainText
+                color: option.highlighted ? option.palette.highlightedText : option.palette.text
+                font: option.font
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
             background: Rectangle {
                 color: option.highlighted ? control.palette.highlight : control.palette.base
                 border.width: option.visualFocus ? 3 : 0

@@ -21,10 +21,12 @@ namespace {
 class FakeAudioOutputDevices final : public QtAudioOutputDevices {
   public:
     QByteArray default_id{"output-a"};
+    QList<QtAudioOutputDevice> available_devices;
     QList<QByteArray> applied_ids;
     std::function<void()> handler;
 
     [[nodiscard]] QtAudioOutputDevice defaultDevice() const override { return {default_id, {}}; }
+    [[nodiscard]] QList<QtAudioOutputDevice> devices() const override { return available_devices; }
     void applyDevice(QAudioOutput&, const QtAudioOutputDevice& device) override { applied_ids.append(device.id); }
     void setChangeHandler(std::function<void()> next) override { handler = std::move(next); }
     void notify() {
@@ -336,6 +338,105 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
         QCoreApplication::processEvents();
         QVERIFY(backend.snapshot() == confirmed);
         QCOMPARE(topology->applied_ids, QList<QByteArray>{"output-a"});
+    }
+
+    void selectingTheEffectiveOutputDoesNotRestartPlaybackAndPinsThatDevice() {
+        auto devices = std::make_unique<FakeAudioOutputDevices>();
+        auto* const topology = devices.get();
+        topology->available_devices = {{"output-a", {}, "Speakers"}, {"output-b", {}, "Headphones"}};
+        QtMultimediaPlaybackBackend backend{std::move(devices)};
+        QCOMPARE(backend.setMuted(true), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(backend.play(), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Playing, 2'000);
+        const auto generation = backend.snapshot().generation;
+        const auto outputs = backend.audioOutputs();
+        QCOMPARE(outputs.size(), std::size_t{2});
+        QCOMPARE(outputs.front().description, "Speakers");
+        QVERIFY(!outputs.front().id.empty());
+        QVERIFY(backend.selectedAudioOutputId().empty());
+
+        QVERIFY(!backend.selectAudioOutput("unknown"));
+        QVERIFY(backend.selectedAudioOutputId().empty());
+        QVERIFY(backend.selectAudioOutput(outputs.front().id));
+        QCOMPARE(backend.selectedAudioOutputId(), outputs.front().id);
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+        QCOMPARE(backend.snapshot().generation, generation);
+
+        topology->default_id = "output-b";
+        topology->notify();
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+        QCOMPARE(backend.snapshot().generation, generation);
+        QCOMPARE(topology->applied_ids, QList<QByteArray>{"output-a"});
+    }
+
+    void selectingAnotherOutputPreservesPositionUntilExplicitReload() {
+        auto devices = std::make_unique<FakeAudioOutputDevices>();
+        auto* const topology = devices.get();
+        topology->available_devices = {{"output-a", {}, "Speakers"}, {"output-b", {}, "Headphones"}};
+        QtMultimediaPlaybackBackend backend{std::move(devices)};
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(backend.seekTo(500), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().position_ms, std::int64_t{500}, 2'000);
+        const auto before = backend.snapshot();
+
+        const auto headphones = backend.audioOutputs().at(1).id;
+        QVERIFY(backend.selectAudioOutput(headphones));
+        QCOMPARE(backend.selectedAudioOutputId(), headphones);
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Error);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::AudioOutputChanged);
+        QCOMPARE(backend.snapshot().position_ms, before.position_ms);
+        QCOMPARE(backend.snapshot().generation, before.generation);
+        QCOMPARE(topology->applied_ids, QList<QByteArray>{"output-a"});
+        QCOMPARE(backend.play(), PlaybackCommandResult::NotReady);
+
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(topology->applied_ids, (QList<QByteArray>{"output-a", "output-b"}));
+    }
+
+    void missingSelectedOutputDoesNotFallBackOrResumeOnReturn() {
+        auto devices = std::make_unique<FakeAudioOutputDevices>();
+        auto* const topology = devices.get();
+        const QByteArray native_id{"usb\0headphones", 14};
+        const QtAudioOutputDevice headphones{native_id, {}, "Fones 日本"};
+        topology->available_devices = {{"output-a", {}, "Speakers"}, headphones};
+        QtMultimediaPlaybackBackend backend{std::move(devices)};
+        const auto available = backend.audioOutputs();
+        QCOMPARE(available.at(1).description, "Fones 日本");
+        const auto selected = available.at(1).id;
+        QVERIFY(!selected.empty());
+        QCOMPARE(selected.find('\0'), std::string::npos);
+        QVERIFY(backend.selectAudioOutput(selected));
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        int topology_changes = 0;
+        backend.setAudioOutputsChangedCallback([&] { ++topology_changes; });
+
+        topology->available_devices.removeLast();
+        topology->notify();
+        QCOMPARE(topology_changes, 1);
+        QCOMPARE(backend.audioOutputs().size(), std::size_t{1});
+        QCOMPARE(backend.selectedAudioOutputId(), selected);
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Error);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::AudioOutputUnavailable);
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.snapshot().error, PlaybackErrorCode::AudioOutputUnavailable);
+        QCOMPARE(topology->applied_ids, QList<QByteArray>{native_id});
+        const auto failed = backend.snapshot();
+
+        topology->available_devices.append(headphones);
+        topology->notify();
+        QCOMPARE(topology_changes, 2);
+        QCOMPARE(backend.audioOutputs().at(1).id, selected);
+        QVERIFY(backend.snapshot() == failed);
+        QCOMPARE(topology->applied_ids, QList<QByteArray>{native_id});
+
+        QCOMPARE(backend.load(std::filesystem::path{M0_TEST_AUDIO_WAV_FILE}), PlaybackCommandResult::Accepted);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Ready, 2'000);
+        QCOMPARE(topology->applied_ids, (QList<QByteArray>{native_id, native_id}));
     }
 
     void mediaSignalReconcilesTheCurrentDefaultBeforePublishingAFileFailure() {

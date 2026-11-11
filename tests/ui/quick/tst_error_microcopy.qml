@@ -135,6 +135,11 @@ TestCase {
         compare(expandedLabels.messageFor("audio_output_unavailable_error"), "Conecte uma saída de áudio ou selecione outra nas configurações de som do Windows. Depois, tente novamente. A faixa será recuperada pausada.");
         compare(expandedLabels.titleFor("audio_output_changed_error"), "A saída de áudio mudou");
         compare(expandedLabels.messageFor("audio_output_changed_error"), "A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.");
+        for (const key of ["audio_output_unavailable_error", "audio_output_changed_error"]) {
+            const message = expandedLabels.messageFor(key, true);
+            verify(message.includes("Preferências > Reprodução"));
+            verify(message.includes("pausada"));
+        }
         compare(expandedLabels.actionFor("recover-audio-output"), "Tentar novamente");
     }
 
@@ -205,7 +210,12 @@ TestCase {
         verify(recovery.Accessible.description.includes("quando o arquivo permitir"));
         compare(findChild(state, "error-title").text, data.changed ? "A saída de áudio mudou" : "Saída de áudio indisponível");
         compare(findChild(state, "error-context-title").text, "Saída interrompida 日本語");
-        verify(findChild(state, "error-body").text.includes("pausada"));
+        const body = findChild(state, "error-body").text;
+        verify(body.includes("pausada"));
+        verify(body.includes("Preferências > Reprodução"));
+        tryVerify(function () {
+            return testScenarioDriver.lastAccessibleAnnouncement().includes("Preferências > Reprodução"); // qmllint disable unqualified
+        });
         verify(!retryFile.visible);
         verify(openAnother.visible && openAnother.enabled);
         compare(openAnother.Accessible.name, "Abrir outro áudio");

@@ -2,6 +2,7 @@
 
 #include "boundary/FilesystemPath.hpp"
 #include "m0/adapters/SingleWorkerLocalSourceDiscovery.hpp"
+#include "m0/ports/AudioOutputSelection.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 
 #include <QDateTime>
@@ -510,6 +511,11 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
         const PlaybackEvent copy = event;
         QMetaObject::invokeMethod(this, [this, copy] { handlePlaybackEvent(copy); }, Qt::QueuedConnection);
     });
+    audio_output_selection_ = dynamic_cast<AudioOutputSelection*>(&backend_);
+    if (audio_output_selection_ != nullptr) {
+        audio_output_selection_->setAudioOutputsChangedCallback(
+            [this] { QMetaObject::invokeMethod(this, [this] { emit audioOutputsChanged(); }, Qt::QueuedConnection); });
+    }
     if (preferences != nullptr)
         initializePersistedSession(*preferences);
     initializeShuffleRound();
@@ -527,6 +533,8 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
 }
 
 PlayerPresenter::~PlayerPresenter() {
+    if (audio_output_selection_ != nullptr)
+        audio_output_selection_->setAudioOutputsChangedCallback({});
     file_dialog_cancellation_active_ = true;
     cancelAudioFileSelection();
     cancelFileLocation();
@@ -1608,6 +1616,21 @@ bool PlayerPresenter::setExitPreparationCallbacks(ExitPreparationCallbacks callb
 const Preferences& PlayerPresenter::preferences() const noexcept { return controller_.preferences(); }
 double PlayerPresenter::volume() const noexcept { return controller_.preferences().volume; }
 bool PlayerPresenter::muted() const noexcept { return controller_.preferences().muted; }
+bool PlayerPresenter::audioOutputSelectionSupported() const noexcept { return audio_output_selection_ != nullptr; }
+QVariantList PlayerPresenter::audioOutputDevices() const {
+    QVariantList devices;
+    if (audio_output_selection_ != nullptr) {
+        for (const auto& device : audio_output_selection_->audioOutputs()) {
+            devices.push_back(QVariantMap{{QStringLiteral("id"), QString::fromStdString(device.id)},
+                                          {QStringLiteral("label"), QString::fromStdString(device.description)}});
+        }
+    }
+    return devices;
+}
+QString PlayerPresenter::selectedAudioOutputId() const {
+    return audio_output_selection_ != nullptr ? QString::fromStdString(audio_output_selection_->selectedAudioOutputId())
+                                              : QString{};
+}
 int PlayerPresenter::skipBackwardSeconds() const noexcept { return controller_.preferences().skip_backward_seconds; }
 int PlayerPresenter::skipForwardSeconds() const noexcept { return controller_.preferences().skip_forward_seconds; }
 PlayerPresenter::ThemePreference PlayerPresenter::themePreference() const {
@@ -3935,6 +3958,32 @@ bool PlayerPresenter::executeErrorAction() {
     if (errorActionId() == QStringLiteral("recover-audio-output"))
         return recoverAudioOutput();
     return errorActionId() == QStringLiteral("open-audio") && openAudio();
+}
+bool PlayerPresenter::selectAudioOutput(const QString& id) {
+    if (QThread::currentThread() != thread() || audio_output_selection_ == nullptr || exiting_ ||
+        download_append_in_progress_)
+        return false;
+    const auto requested = id.toStdString();
+    const bool changed = audio_output_selection_->selectedAudioOutputId() != requested;
+    if (!audio_output_selection_->selectAudioOutput(requested))
+        return false;
+
+    const auto occurrence = local_queue_.currentOccurrenceId();
+    const auto snapshot = backend_.snapshot();
+    if (changed && occurrence && isAudioOutputError(snapshot.error)) {
+        // Process the backend's queued output error before recovering the same track.
+        QMetaObject::invokeMethod(
+            this,
+            [this, id, occurrence, generation = snapshot.generation] {
+                if (!exiting_ && local_queue_.currentOccurrenceId() == occurrence &&
+                    backend_.snapshot().generation == generation && selectedAudioOutputId() == id &&
+                    isAudioOutputError(backend_.snapshot().error) &&
+                    isAudioOutputError(controller_.confirmedSnapshot().error))
+                    static_cast<void>(recoverAudioOutput());
+            },
+            Qt::QueuedConnection);
+    }
+    return true;
 }
 bool PlayerPresenter::recoverAudioOutput() {
     if (download_append_in_progress_)
