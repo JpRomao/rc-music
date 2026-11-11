@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza complementar de builds antigos
+
+Foram removidos **1.695 arquivos (240.392.710 bytes)**, entre saídas regeneráveis do Ninja, caches de dependências, metadados e fontes geradas pelo Qt, três bibliotecas órfãs e dois temporários do NSIS. Os builds históricos de M0 afetados precisarão de nova configuração CMake se forem retomados.
+
+A conferência por SHA-256 preservou **1.305 arquivos**, incluindo os instaladores e runtimes de `ebb093a`, as dependências dos builds atuais, os recibos e as 24 alterações locais. Cinco grafos Ninja foram lidos após a remoção. A lista de arquivos e o resultado ficam em `out/product/cleanup-generated-20261111/`. O checkout usa CMake/Ninja e não tem saídas Cargo locais.
+
 ### Limpeza após a entrega de ebb093a
 
 Foram removidos **1.528 arquivos (689.521.835 bytes)**. A seleção retirou os dois setups de `a469f8d` e seus payloads substituídos, 314 fontes geradas pelo Qt em builds antigos, três entradas sintéticas de testes de limite e duas páginas temporárias de download do NSIS.
