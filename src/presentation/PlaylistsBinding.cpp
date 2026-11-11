@@ -1,4 +1,5 @@
 #include "PlaylistsBinding.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaylistStore.hpp"
 
@@ -6,6 +7,7 @@
 #include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 
@@ -39,6 +41,7 @@ struct Job final {
 struct FileSelection final {
     std::uint64_t generation;
     std::uint64_t playlist_id;
+    std::optional<std::uint64_t> entry_id{};
 };
 } // namespace
 struct PlaylistsBinding::Impl final {
@@ -47,6 +50,7 @@ struct PlaylistsBinding::Impl final {
     QueueReader reader;
     QueueAppender appender;
     AudioFilesPicker* picker;
+    AudioFileLocator* locator;
     PlaylistLibrary library;
     std::optional<PlaylistLibrary> pending;
     QFutureWatcher<Job> watcher;
@@ -56,14 +60,20 @@ struct PlaylistsBinding::Impl final {
     std::optional<FileSelection> file_selection;
     bool busy{}, ready{}, loading{}, exiting{}, stopping{}, callback_active{};
     Impl(PlaylistsBinding& q, std::shared_ptr<PlaylistStore> source, QueueReader read, QueueAppender append,
-         AudioFilesPicker* file_picker)
-        : owner(q), store(std::move(source)), reader(std::move(read)), appender(std::move(append)),
-          picker(file_picker) {
+         AudioFilesPicker* file_picker, AudioFileLocator* file_locator)
+        : owner(q), store(std::move(source)), reader(std::move(read)), appender(std::move(append)), picker(file_picker),
+          locator(file_locator) {
         QObject::connect(&watcher, &QFutureWatcher<Job>::finished, &owner, [this] { finished(); });
     }
     bool allowed() const { return !exiting && !stopping && !callback_active; }
     bool catalogEditable() const { return allowed() && ready && !busy && !pending; }
     bool editable() const { return catalogEditable() && !file_selection; }
+    const NamedPlaylist* replaceablePlaylist() const {
+        if (!locator || !editable())
+            return nullptr;
+        const auto* playlist = library.find(selected);
+        return playlist && !playlist->entries.empty() ? playlist : nullptr;
+    }
     bool invalid() {
         notice = PlaylistsBinding::tr("Confira o nome, a seleção e os limites da playlist.");
         emit owner.changed();
@@ -145,8 +155,23 @@ struct PlaylistsBinding::Impl final {
     bool isCurrentFileSelection(std::uint64_t generation) const {
         return file_selection && file_selection->generation == generation;
     }
+    template <typename Result>
+    auto selectionCompletion(std::uint64_t generation, void (Impl::*finish)(std::uint64_t, Result)) {
+        const QPointer<PlaylistsBinding> alive(&owner);
+        return [alive, generation, finish](Result result) {
+            if (alive) {
+                QMetaObject::invokeMethod(
+                    alive,
+                    [alive, generation, finish, result = std::move(result)]() mutable {
+                        if (alive)
+                            (alive->impl_.get()->*finish)(generation, std::move(result));
+                    },
+                    Qt::QueuedConnection);
+            }
+        };
+    }
     void finishFileSelection(std::uint64_t generation, AudioFilesSelectionResult result) {
-        if (!isCurrentFileSelection(generation))
+        if (!isCurrentFileSelection(generation) || file_selection->entry_id)
             return;
         const auto target = file_selection->playlist_id;
         file_selection.reset();
@@ -159,8 +184,34 @@ struct PlaylistsBinding::Impl final {
             notice = PlaylistsBinding::tr("Não foi possível selecionar os arquivos. Tente novamente.");
         emit owner.changed();
     }
+    void finishFileReplacement(std::uint64_t generation, AudioFileLocationResult result) {
+        if (!isCurrentFileSelection(generation) || !file_selection->entry_id)
+            return;
+        const auto selection = *std::exchange(file_selection, std::nullopt);
+        if (editable() && selected == selection.playlist_id) {
+            if (result.status == AudioFileLocationStatus::Selected && result.source_path.is_absolute() &&
+                !result.source_path.filename().empty()) {
+                static_cast<void>(mutate(
+                    [&](auto& candidate) {
+                        return candidate.replaceEntrySource(selection.playlist_id, *selection.entry_id,
+                                                            std::move(result.source_path));
+                    },
+                    selection.playlist_id));
+                return;
+            }
+            if (result.status != AudioFileLocationStatus::Cancelled)
+                notice =
+                    PlaylistsBinding::tr("Não foi possível selecionar o arquivo de substituição. Tente novamente.");
+        }
+        emit owner.changed();
+    }
     void cancelFileSelection() noexcept {
-        if (std::exchange(file_selection, std::nullopt))
+        const auto selection = std::exchange(file_selection, std::nullopt);
+        if (!selection)
+            return;
+        if (selection->entry_id)
+            locator->cancel();
+        else
             picker->cancel();
     }
     std::optional<Paths> readQueue() {
@@ -179,9 +230,9 @@ struct PlaylistsBinding::Impl final {
     }
 };
 PlaylistsBinding::PlaylistsBinding(std::shared_ptr<PlaylistStore> store, QueueReader reader, QueueAppender appender,
-                                   QObject* parent, AudioFilesPicker* picker)
+                                   QObject* parent, AudioFilesPicker* picker, AudioFileLocator* locator)
     : QObject(parent),
-      impl_(std::make_unique<Impl>(*this, std::move(store), std::move(reader), std::move(appender), picker)) {}
+      impl_(std::make_unique<Impl>(*this, std::move(store), std::move(reader), std::move(appender), picker, locator)) {}
 PlaylistsBinding::~PlaylistsBinding() { impl_->cancelFileSelection(); }
 bool PlaylistsBinding::busy() const { return impl_->busy || impl_->file_selection.has_value(); }
 bool PlaylistsBinding::ready() const { return impl_->ready; }
@@ -209,6 +260,7 @@ QVariantList PlaylistsBinding::entries() const {
     return result;
 }
 bool PlaylistsBinding::canAddFiles() const { return impl_->picker && impl_->selected != 0 && impl_->editable(); }
+bool PlaylistsBinding::canReplaceFile() const { return impl_->replaceablePlaylist() != nullptr; }
 bool PlaylistsBinding::canRetrySave() const { return impl_->allowed() && impl_->pending && !busy(); }
 bool PlaylistsBinding::hasPendingChange() const { return impl_->pending.has_value(); }
 bool PlaylistsBinding::selectPlaylist(const QString& value) {
@@ -284,23 +336,41 @@ bool PlaylistsBinding::requestAddFiles(const QString& value) {
     const QPointer<PlaylistsBinding> alive(this);
     bool accepted = false;
     try {
-        accepted = impl_->picker->pick([alive, generation](AudioFilesSelectionResult result) {
-            if (alive) {
-                QMetaObject::invokeMethod(
-                    alive,
-                    [alive, generation, result = std::move(result)]() mutable {
-                        if (alive)
-                            alive->impl_->finishFileSelection(generation, std::move(result));
-                    },
-                    Qt::QueuedConnection);
-            }
-        });
+        accepted = impl_->picker->pick(impl_->selectionCompletion(generation, &Impl::finishFileSelection));
     } catch (...) {
     }
     if (!alive || !impl_->isCurrentFileSelection(generation))
         return false;
     if (!accepted) {
         impl_->finishFileSelection(generation, {.status = AudioFilesSelectionStatus::Failed});
+        return false;
+    }
+    emit changed();
+    return true;
+}
+bool PlaylistsBinding::requestReplaceFile(const QString& playlist_value, const QString& entry_value) {
+    const auto playlist_id = identifier(playlist_value), entry_id = identifier(entry_value);
+    const auto* playlist = impl_->replaceablePlaylist();
+    if (!playlist || !playlist_id || *playlist_id != playlist->id || !entry_id)
+        return false;
+    const auto entry = std::ranges::find(playlist->entries, *entry_id, &PlaylistEntry::id);
+    if (entry == playlist->entries.end())
+        return false;
+
+    const auto original = entry->source_path;
+    const auto generation = ++impl_->file_selection_generation;
+    impl_->file_selection = FileSelection{generation, *playlist_id, *entry_id};
+    const QPointer<PlaylistsBinding> alive(this);
+    bool accepted = false;
+    try {
+        accepted =
+            impl_->locator->locate(original, impl_->selectionCompletion(generation, &Impl::finishFileReplacement));
+    } catch (...) {
+    }
+    if (!alive || !impl_->isCurrentFileSelection(generation))
+        return false;
+    if (!accepted) {
+        impl_->finishFileReplacement(generation, {.status = AudioFileLocationStatus::Failed});
         return false;
     }
     emit changed();

@@ -170,6 +170,24 @@ bool PlaylistLibrary::append(const std::uint64_t playlist_id, std::vector<std::f
     next_entry_id_ = next;
     return true;
 }
+bool PlaylistLibrary::replaceEntrySource(const std::uint64_t playlist_id, const std::uint64_t entry_id,
+                                         std::filesystem::path source_path) {
+    if (!validPath(source_path))
+        return false;
+    const auto* playlist = find(playlist_id);
+    if (!playlist)
+        return false;
+    const auto entry = std::ranges::find(playlist->entries, entry_id, &PlaylistEntry::id);
+    if (entry == playlist->entries.end() || entry->source_path == source_path)
+        return false;
+    const auto index = static_cast<std::size_t>(std::distance(playlist->entries.begin(), entry));
+    auto candidate = snapshot_;
+    findPlaylist(candidate, playlist_id)->entries[index].source_path = std::move(source_path);
+    if (!isValidPlaylistLibrarySnapshot(candidate))
+        return false;
+    snapshot_ = std::move(candidate);
+    return true;
+}
 bool PlaylistLibrary::removeEntry(const std::uint64_t playlist_id, const std::uint64_t entry_id) {
     auto found = findPlaylist(snapshot_, playlist_id);
     if (found == snapshot_.playlists.end())

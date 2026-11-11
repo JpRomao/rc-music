@@ -472,9 +472,13 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_COMBINED_AUDIO
         music_player::m0::QtAudioFilesPicker playlist_audio_picker(
             music_player::m0::ApplicationText::playlistAudioDialogTitle(), localAudioDialogFilter());
+        music_player::m0::QtAudioFileLocator playlist_audio_locator(
+            music_player::m0::ApplicationText::locateAudioDialogTitle(), localAudioDialogFilter());
         auto* const playlist_picker = &playlist_audio_picker;
+        auto* const playlist_locator = &playlist_audio_locator;
 #else
         music_player::m0::AudioFilesPicker* const playlist_picker = nullptr;
+        music_player::m0::AudioFileLocator* const playlist_locator = nullptr;
 #endif
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
 #ifdef M0_QT_COMBINED_AUDIO
@@ -756,7 +760,8 @@ int main(int argc, char* argv[]) {
                     paths.push_back(std::move(item.source_path));
                 return paths;
             },
-            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker);
+            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker,
+            playlist_locator);
         static_cast<void>(playlists_binding->retryLoad());
         QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, playlists_binding.get(), [&] {
             if (presenter.exiting())
@@ -826,6 +831,7 @@ int main(int argc, char* argv[]) {
         audio_files_picker.bindWindow(*window);
         presenter.setAudioFilesPicker(&audio_files_picker);
         playlist_audio_picker.bindWindow(*window);
+        playlist_audio_locator.bindWindow(*window);
 #endif
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;

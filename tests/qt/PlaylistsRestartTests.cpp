@@ -1,4 +1,5 @@
 #include "adapters/QtJsonPlaylistStore.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
 #include "presentation/PlaylistsBinding.hpp"
 
@@ -48,6 +49,29 @@ class RestartFilesPicker final : public AudioFilesPicker {
 
   private:
     AudioFilesSelectionCompletion completion_;
+};
+
+class RestartFileLocator final : public AudioFileLocator {
+  public:
+    bool locate(const std::filesystem::path& source, AudioFileLocationCompletion completion) override {
+        if (completion_)
+            return false;
+        requested_source = source;
+        completion_ = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override { completion_ = {}; }
+    bool select(std::filesystem::path source) {
+        auto completion = std::exchange(completion_, {});
+        if (!completion)
+            return false;
+        completion({AudioFileLocationStatus::Selected, std::move(source)});
+        return true;
+    }
+    std::filesystem::path requested_source;
+
+  private:
+    AudioFileLocationCompletion completion_;
 };
 
 struct ChildResult final {
@@ -133,6 +157,9 @@ QString initialName() { return QStringLiteral("Aberturas 日本"); }
 QString finalName() { return QStringLiteral("Aberturas 日本 — favoritas"); }
 QString firstAudio(const QString& directory) { return QDir(directory).filePath(QStringLiteral("Abertura 日本.mp3")); }
 QString secondAudio(const QString& directory) { return QDir(directory).filePath(QStringLiteral("Segunda faixa.flac")); }
+QString relocatedAudio(const QString& directory) {
+    return QDir(directory).filePath(QStringLiteral("Novo local 日本.mp3"));
+}
 std::filesystem::path sourcePath(const QString& text) {
 #ifdef Q_OS_WIN
     return std::filesystem::path{text.toStdWString()};
@@ -175,7 +202,8 @@ bool drained(PlaylistsBinding& binding, QDeadlineTimer& deadline) {
     binding.beginShutdown();
     return !binding.interactionAllowed() && !binding.busy() && !binding.hasPendingChange();
 }
-std::optional<QJsonObject> observedPlaylist(const PlaylistsBinding& binding, const QString& directory) {
+std::optional<QJsonObject> observedPlaylist(const PlaylistsBinding& binding, const QString& directory,
+                                            const bool relocated) {
     const auto playlists = binding.playlists();
     if (playlists.size() != 1)
         return {};
@@ -198,7 +226,8 @@ std::optional<QJsonObject> observedPlaylist(const PlaylistsBinding& binding, con
         entry_ids.push_back(entry_id);
         paths.push_back(fields.value("path").toString());
     }
-    if (paths != QJsonArray({firstAudio(directory), firstAudio(directory), secondAudio(directory)}))
+    const auto middle_path = relocated ? relocatedAudio(directory) : firstAudio(directory);
+    if (paths != QJsonArray({firstAudio(directory), middle_path, secondAudio(directory)}))
         return {};
     return QJsonObject{{"playlist_id", id},
                        {"playlist_name", row.value("name").toString()},
@@ -220,6 +249,7 @@ int childMode(const QString& mode, const QString& directory) {
         return 2;
     const bool write_direct = mode == QStringLiteral("--write-direct");
     const bool write = write_direct || mode == QStringLiteral("--write");
+    const bool relocated = write_direct || mode == QStringLiteral("--read-relocated");
     const auto primary = QDir(directory).filePath(QStringLiteral("playlists.json"));
     const auto backup = QDir(directory).filePath(QStringLiteral("playlists.json.bak"));
     if (write && (QFileInfo::exists(primary) || QFileInfo::exists(backup)))
@@ -230,6 +260,7 @@ int childMode(const QString& mode, const QString& directory) {
     const auto unchanged_queue = queue;
     int reads{}, appends{};
     RestartFilesPicker picker;
+    RestartFileLocator locator;
     PlaylistsBinding binding(
         store,
         [&] {
@@ -241,7 +272,7 @@ int childMode(const QString& mode, const QString& directory) {
             queue.insert(queue.end(), paths.begin(), paths.end());
             return true;
         },
-        nullptr, write_direct ? &picker : nullptr);
+        nullptr, write_direct ? &picker : nullptr, write_direct ? &locator : nullptr);
     if (!loaded(binding, deadline))
         return 3;
     if (reads != 0 || appends != 0 || !binding.selectedPlaylistId().isEmpty())
@@ -277,6 +308,18 @@ int childMode(const QString& mode, const QString& directory) {
             after[1].toMap().value("id") != original_entries[0].toMap().value("id") ||
             after[2].toMap().value("id") != original_entries[1].toMap().value("id"))
             return 7;
+        if (write_direct) {
+            const auto entry = after[1].toMap().value("id").toString();
+            if (!binding.canReplaceFile() || !binding.requestReplaceFile(id, entry) ||
+                locator.requested_source != sourcePath(firstAudio(directory)) ||
+                !locator.select(sourcePath(relocatedAudio(directory))) || binding.entries() != after ||
+                !saved(binding, deadline))
+                return 11;
+            const auto replaced = binding.entries();
+            if (replaced.size() != after.size() || replaced[0] != after[0] || replaced[2] != after[2] ||
+                replaced[1].toMap().value("id").toString() != entry)
+                return 11;
+        }
     } else {
         const auto rows = binding.playlists();
         if (rows.size() != 1 || !binding.selectPlaylist(rows.first().toMap().value("id").toString()))
@@ -284,7 +327,7 @@ int childMode(const QString& mode, const QString& directory) {
         if (reads != 0 || appends != 0)
             return 8; // Loading and selecting never invoke playback callbacks.
     }
-    const auto observed = observedPlaylist(binding, directory);
+    const auto observed = observedPlaylist(binding, directory, relocated);
     if (!observed || queue != unchanged_queue)
         return 9;
     if (!drained(binding, deadline))
@@ -315,6 +358,8 @@ class PlaylistsRestartTests final : public QObject {
         const auto second_audio = QDir(directory).filePath(QStringLiteral("Segunda faixa.flac"));
         QVERIFY(writeFixture(first_audio, "synthetic audio-path sentinel A"));
         QVERIFY(writeFixture(second_audio, "synthetic audio-path sentinel B"));
+        if (direct_files)
+            QVERIFY(writeFixture(relocatedAudio(directory), "synthetic relocated audio-path sentinel C"));
 
         const auto write_mode = direct_files ? QStringLiteral("--write-direct") : QStringLiteral("--write");
         const auto written = runChild(write_mode, directory, write_cwd);
@@ -336,6 +381,13 @@ class PlaylistsRestartTests final : public QObject {
 
         const auto before = fingerprint(directory);
         QVERIFY(before);
+        QCOMPARE(before->value(QFileInfo(first_audio).fileName()),
+                 QCryptographicHash::hash("synthetic audio-path sentinel A", QCryptographicHash::Sha256));
+        QCOMPARE(before->value(QFileInfo(second_audio).fileName()),
+                 QCryptographicHash::hash("synthetic audio-path sentinel B", QCryptographicHash::Sha256));
+        if (direct_files)
+            QCOMPARE(before->value(QFileInfo(relocatedAudio(directory)).fileName()),
+                     QCryptographicHash::hash("synthetic relocated audio-path sentinel C", QCryptographicHash::Sha256));
         QVERIFY(before->contains(QStringLiteral("playlists.json")));
         QVERIFY(before->contains(QStringLiteral("playlists.json.bak")));
         QVERIFY(!before->contains(QStringLiteral("playlists.json.lock")));
@@ -353,7 +405,8 @@ class PlaylistsRestartTests final : public QObject {
         const auto paths = write_receipt->value("paths").toArray();
         QCOMPARE(saved_entries.size(), 3);
         QCOMPARE(entry_ids.size(), 3);
-        QCOMPARE(paths, QJsonArray({first_audio, first_audio, second_audio}));
+        const auto middle_path = direct_files ? relocatedAudio(directory) : first_audio;
+        QCOMPARE(paths, QJsonArray({first_audio, middle_path, second_audio}));
         for (qsizetype index = 0; index < saved_entries.size(); ++index) {
             const auto entry = saved_entries.at(index).toObject();
             QCOMPARE(entry.value("id"), entry_ids.at(index));
@@ -361,7 +414,8 @@ class PlaylistsRestartTests final : public QObject {
         }
         QVERIFY(entry_ids[0] != entry_ids[1]);
 
-        const auto read = runChild(QStringLiteral("--read"), directory, read_cwd);
+        const auto read_mode = direct_files ? QStringLiteral("--read-relocated") : QStringLiteral("--read");
+        const auto read = runChild(read_mode, directory, read_cwd);
         if (!read.stopped)
             temporary.setAutoRemove(false);
         QVERIFY(read.started);
@@ -391,7 +445,7 @@ int main(int argc, char** argv) {
     const auto arguments = application.arguments();
     if (arguments.size() > 1 &&
         (arguments[1] == QStringLiteral("--write") || arguments[1] == QStringLiteral("--write-direct") ||
-         arguments[1] == QStringLiteral("--read"))) {
+         arguments[1] == QStringLiteral("--read") || arguments[1] == QStringLiteral("--read-relocated"))) {
         if (arguments.size() != 3 || !QFileInfo(arguments[2]).isAbsolute())
             return 2;
         return childMode(arguments[1], arguments[2]);

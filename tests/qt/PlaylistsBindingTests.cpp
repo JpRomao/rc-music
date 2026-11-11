@@ -1,3 +1,4 @@
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaylistStore.hpp"
 #include "presentation/PlaylistsBinding.hpp"
@@ -62,6 +63,26 @@ class Picker final : public AudioFilesPicker {
         pending = {};
     }
     AudioFilesSelectionCompletion takeCompletion() { return std::exchange(pending, {}); }
+};
+class Locator final : public AudioFileLocator {
+  public:
+    AudioFileLocationCompletion pending;
+    std::filesystem::path original;
+    bool accepts{true};
+    int cancellations{};
+
+    bool locate(const std::filesystem::path& source, AudioFileLocationCompletion completion) override {
+        if (!accepts || pending)
+            return false;
+        original = source;
+        pending = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancellations;
+        pending = {};
+    }
+    AudioFileLocationCompletion takeCompletion() { return std::exchange(pending, {}); }
 };
 std::filesystem::path path(const char* name) {
 #ifdef _WIN32
@@ -221,6 +242,116 @@ class PlaylistsBindingTests final : public QObject {
         QVERIFY(binding.entries().isEmpty());
         QCOMPARE(binding.selectedPlaylistId(), first);
         QVERIFY(binding.canAddFiles());
+    }
+    void replacingOneSourceKeepsTheEntryAndProjectionUntilSaved() {
+        auto store = std::make_shared<Store>();
+        Locator locator;
+        int reads{}, appends{};
+        const PlaylistsBinding::Paths sources{path("old.mp3"), path("old.mp3")};
+        PlaylistsBinding::Paths appended;
+        PlaylistsBinding binding(
+            store,
+            [&] {
+                ++reads;
+                return sources;
+            },
+            [&](auto paths) {
+                ++appends;
+                appended = std::move(paths);
+                return true;
+            },
+            nullptr, nullptr, &locator);
+        load(binding);
+        QVERIFY(!binding.canReplaceFile());
+        QVERIFY(binding.saveQueueAsPlaylist("Playlist"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto playlist_id = binding.selectedPlaylistId();
+        const auto before = binding.entries();
+        const auto entry_id = before[1].toMap().value("id").toString();
+        QVERIFY(binding.canReplaceFile());
+        QVERIFY(!binding.requestReplaceFile(playlist_id, "999"));
+        QVERIFY(binding.requestReplaceFile(playlist_id, entry_id));
+        QVERIFY(locator.original == sources[1]);
+        QVERIFY(!binding.canReplaceFile());
+        QVERIFY(!binding.requestReplaceFile(playlist_id, entry_id));
+        QVERIFY(!binding.removeEntry(playlist_id, entry_id));
+
+        store->setOutcome(PlaylistSaveStatus::Failed);
+        store->release = false;
+        const auto replacement = path("new.flac");
+        locator.takeCompletion()({AudioFileLocationStatus::Selected, replacement});
+        QVERIFY(binding.busy());
+        QVERIFY(!binding.hasPendingChange());
+        QTRY_COMPARE_WITH_TIMEOUT(store->saves.load(), 2, 1000);
+        QCOMPARE(binding.entries(), before);
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.entries(), before);
+        QVERIFY(binding.canRetrySave());
+        QVERIFY(!binding.canReplaceFile());
+
+        store->setOutcome(PlaylistSaveStatus::Saved);
+        QVERIFY(binding.retrySave());
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.entries().size(), 2);
+        QCOMPARE(binding.entries()[0], before[0]);
+        QCOMPARE(binding.entries()[1].toMap().value("id").toString(), entry_id);
+        QCOMPARE(binding.entries()[1].toMap().value("title").toString(), QStringLiteral("new.flac"));
+        QVERIFY(store->load().snapshot.playlists.front().entries[1].source_path == replacement);
+        QCOMPARE(reads, 1);
+        QCOMPARE(appends, 0);
+        QVERIFY(binding.enqueuePlaylist(playlist_id));
+        QCOMPARE(appends, 1);
+        QVERIFY(appended == (PlaylistsBinding::Paths{sources[0], replacement}));
+    }
+    void replaceSelectionCannotChangeTargetOrSurviveExit() {
+        auto store = std::make_shared<Store>();
+        Picker picker;
+        Locator locator;
+        PlaylistsBinding binding(
+            store, [] { return PlaylistsBinding::Paths{path("original.mp3")}; }, {}, nullptr, &picker, &locator);
+        load(binding);
+        QVERIFY(binding.saveQueueAsPlaylist("First"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto first = binding.selectedPlaylistId();
+        const auto first_entry = binding.entries().front().toMap().value("id").toString();
+        QVERIFY(binding.saveQueueAsPlaylist("Second"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto second = binding.selectedPlaylistId();
+        const auto second_entry = binding.entries().front().toMap().value("id").toString();
+        QVERIFY(!binding.requestReplaceFile(first, first_entry));
+        QVERIFY(!binding.requestReplaceFile(second, first_entry));
+
+        QVERIFY(binding.requestReplaceFile(second, second_entry));
+        QVERIFY(!binding.requestAddFiles(second));
+        auto stale = locator.takeCompletion();
+        QVERIFY(binding.selectPlaylist(first));
+        QCOMPARE(locator.cancellations, 1);
+        QVERIFY(binding.requestReplaceFile(first, first_entry));
+        stale({AudioFileLocationStatus::Selected, path("stale.mp3")});
+        QCoreApplication::processEvents();
+        QVERIFY(binding.busy());
+        locator.takeCompletion()({AudioFileLocationStatus::Cancelled, path("ignored.mp3")});
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+
+        locator.accepts = false;
+        QVERIFY(!binding.requestReplaceFile(first, first_entry));
+        QVERIFY(!binding.busy());
+        locator.accepts = true;
+        QVERIFY(binding.requestReplaceFile(first, first_entry));
+        locator.takeCompletion()({AudioFileLocationStatus::Selected, "relative.mp3"});
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(binding.requestReplaceFile(first, first_entry));
+        locator.takeCompletion()({AudioFileLocationStatus::Selected, path("after-exit.mp3")});
+        QVERIFY(!binding.prepareExit());
+        QCOMPARE(locator.cancellations, 2);
+        QVERIFY(binding.prepareExit());
+        binding.resume();
+        QCoreApplication::processEvents();
+        QCOMPARE(binding.selectedPlaylistId(), first);
+        QCOMPARE(binding.entries().front().toMap().value("title").toString(), QStringLiteral("original.mp3"));
+        QCOMPARE(store->saves.load(), 2);
+        QVERIFY(binding.canReplaceFile());
     }
     void savingTheQueueKeepsDuplicatePathsAndStableEntriesUntilExplicitEnqueue() {
         auto store = std::make_shared<Store>();

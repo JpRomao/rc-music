@@ -21,6 +21,7 @@ TestCase {
         property var playlists: []
         property var entries: []
         property bool canAddFiles: true
+        property bool canReplaceFile: true
         property bool canRetrySave: false
         property bool hasPendingChange: false
         property var calls: []
@@ -54,6 +55,9 @@ TestCase {
         }
         function requestAddFiles(id) {
             return record("addFiles", [id]);
+        }
+        function requestReplaceFile(id, entry) {
+            return record("replaceFile", [id, entry]);
         }
         function removeEntry(id, entry) {
             return record("removeEntry", [id, entry]);
@@ -122,6 +126,7 @@ TestCase {
         backend.busy = false;
         backend.interactionAllowed = true;
         backend.canAddFiles = true;
+        backend.canReplaceFile = true;
         backend.canRetrySave = false;
         backend.hasPendingChange = false;
         backend.statusText = "Playlists salvas";
@@ -312,6 +317,41 @@ TestCase {
         backend.selectedPlaylistId = "";
         verify(!addFiles.enabled);
         compare(backend.calls.length, 0);
+    }
+    function test_locateFileUsesTheSelectedOccurrenceAndRejectsStaleActions() {
+        const playback = presenter.playbackState;
+        openPanel();
+        const panel = findChild(shell, "playlists-panel");
+        const locate = findChild(shell, "playlist-locate-file");
+        verify(locate && locate.visible, "The playlist panel exposes Localizar arquivo");
+        verify(!locate.enabled);
+        mouseClick(rowAt("playlist-entries", 1));
+        verify(locate.enabled);
+        compare(locate.Accessible.name, "Localizar arquivo…");
+        verify(locate.width >= 40 && locate.height >= 40);
+        const point = locate.mapToItem(panel.contentItem, 0, 0);
+        verify(point.x >= 0 && point.y >= 0);
+        verify(point.x + locate.width <= panel.contentItem.width + 1);
+        verify(point.y + locate.height <= panel.contentItem.height + 1);
+        findChild(shell, "playlist-remove-entry").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(locate, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(lastCall("replaceFile").args, ["1", "12"]);
+        compare(presenter.playbackState, playback);
+
+        backend.busy = true;
+        verify(!locate.enabled);
+        locate.Accessible.pressAction();
+        backend.busy = false;
+        backend.canReplaceFile = false;
+        verify(!locate.enabled);
+        locate.Accessible.pressAction();
+        backend.canReplaceFile = true;
+        backend.selectedPlaylistId = "2";
+        verify(!locate.enabled);
+        locate.Accessible.pressAction();
+        compare(backend.calls.length, 1);
     }
     function test_busyAndUnconfirmedSaveKeepEditsClosedButOfferRecovery() {
         openPanel();

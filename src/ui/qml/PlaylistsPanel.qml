@@ -316,6 +316,17 @@ Dialog {
                         enabled: root.canEdit && root.selectedEntry !== null
                         onClicked: root.playlists.removeEntry(root.selectedPlaylistId, root.selectedEntryId)
                     }
+                    AccessibleTransportButton {
+                        objectName: "playlist-locate-file"
+                        contract: root.contract
+                        text: qsTr("Localizar arquivo…")
+                        enabled: root.canEdit && root.selectedPlaylist !== null && root.selectedEntry !== null && root.playlists.canReplaceFile === true
+                        onClicked: {
+                            if (!enabled || !root.opened || nameDialog.visible || deleteDialog.visible)
+                                return;
+                            root.playlists.requestReplaceFile(root.selectedPlaylistId, root.selectedEntryId);
+                        }
+                    }
                     Item {
                         Layout.fillWidth: true
                     }

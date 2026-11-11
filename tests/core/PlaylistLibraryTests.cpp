@@ -125,6 +125,21 @@ TEST_CASE("playlists remove a duplicate by entry identity without removing the o
     CHECK_FALSE(library.removeEntry(*id, before.entries[1].id));
 }
 
+TEST_CASE("playlists replace a single source while keeping entry identity and order", "[core][playlists][FR-056]") {
+    PlaylistLibrary library;
+    const auto first = library.create("Repeated", {source(), source(), source(1)});
+    REQUIRE(first);
+    REQUIRE(library.create("Other", {source()}));
+    auto expected = library.snapshot();
+    auto& target = expected.playlists.front().entries[1];
+    const Path replacement{u8"C:/Música/Localizada 日本 🎵.mp3"};
+    REQUIRE(library.replaceEntrySource(*first, target.id, replacement));
+    target.source_path = replacement;
+    CHECK(library.snapshot() == expected);
+    CHECK_FALSE(library.replaceEntrySource(*first, target.id, replacement));
+    CHECK(library.snapshot() == expected);
+}
+
 TEST_CASE("playlists move an entry to its final index in either direction", "[core][playlists][FR-056]") {
     PlaylistLibrary library;
     const auto id = library.create("Order", {source(), source(1), source(2), source(3)});
@@ -203,6 +218,7 @@ TEST_CASE("playlists reject invalid path batches atomically", "[core][playlists]
     for (const auto& path : {Path{}, with_nul, too_long}) {
         CHECK_FALSE(library.create("Invalid", {source(), path}));
         CHECK_FALSE(library.append(7, {source(), path}));
+        CHECK_FALSE(library.replaceEntrySource(7, 15, path));
         CHECK(library.snapshot() == before);
     }
     CHECK_FALSE(library.append(7, {}));
@@ -224,6 +240,8 @@ TEST_CASE("playlists reject unknown ids without mutating any list", "[core][play
     CHECK_FALSE(library.removeEntry(7, 18)); // Entry belongs to another playlist.
     CHECK_FALSE(library.moveEntry(100, 15, 0));
     CHECK_FALSE(library.moveEntry(7, 18, 0));
+    CHECK_FALSE(library.replaceEntrySource(100, 15, source(3)));
+    CHECK_FALSE(library.replaceEntrySource(7, 18, source(3)));
     CHECK(library.snapshot() == before);
 }
 
@@ -345,10 +363,19 @@ TEST_CASE("playlists bound retained payload inclusively before accepting a snaps
     CHECK(library.snapshot() == before);
     auto path = boundary.playlists.front().entries.back().source_path.native();
     path.push_back(static_cast<Path::value_type>('x'));
+    const auto entry_id = boundary.playlists.front().entries.back().id;
+    CHECK_FALSE(library.replaceEntrySource(1, entry_id, Path{path}));
+    CHECK(library.snapshot() == before);
     boundary.playlists.front().entries.back().source_path = Path{std::move(path)};
     CHECK_FALSE(isValidPlaylistLibrarySnapshot(boundary));
     CHECK_FALSE(library.restore(boundary));
     CHECK(library.snapshot() == before);
+    auto equal_size = before.playlists.front().entries.back().source_path.native();
+    equal_size.back() = static_cast<Path::value_type>('y');
+    const Path replacement{std::move(equal_size)};
+    REQUIRE(library.replaceEntrySource(1, entry_id, replacement));
+    CHECK(library.find(1)->entries.back() == PlaylistEntry{entry_id, replacement});
+    CHECK(isValidPlaylistLibrarySnapshot(library.snapshot()));
 }
 
 TEST_CASE("playlists domain edits do not mutate the source queue snapshot used to create a list",

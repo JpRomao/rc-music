@@ -930,6 +930,8 @@ O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra domínio/p
 
 O incremento de 2026-11-10 acrescenta **Adicionar arquivos…** à playlist selecionada. O seletor assíncrono preserva a fila e a reprodução e descarta resultados de pedidos invalidados pela troca de alvo ou saída. O [registro de validação](playlists.md#adição-direta-de-arquivos--2026-11-10) cobre o painel, a persistência e o restart em dois processos.
 
+**Localizar arquivo…** atualiza o caminho de uma entrada da playlist após confirmar o salvamento. A edição preserva IDs, ordem, duplicatas e a fila em reprodução. [Playlists](playlists.md#criar-e-organizar)
+
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr

@@ -51,6 +51,8 @@ class PlaylistLibrary final {
     [[nodiscard]] bool rename(std::uint64_t playlist_id, std::string name);
     [[nodiscard]] bool remove(std::uint64_t playlist_id);
     [[nodiscard]] bool append(std::uint64_t playlist_id, std::vector<std::filesystem::path> source_paths);
+    [[nodiscard]] bool replaceEntrySource(std::uint64_t playlist_id, std::uint64_t entry_id,
+                                          std::filesystem::path source_path);
     [[nodiscard]] bool removeEntry(std::uint64_t playlist_id, std::uint64_t entry_id);
     // destination_index is the entry's final zero-based position.
     [[nodiscard]] bool moveEntry(std::uint64_t playlist_id, std::uint64_t entry_id, std::size_t destination_index);

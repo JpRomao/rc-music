@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-**Estado:** recurso implementado no código Windows, com adição direta de arquivos validada automaticamente em 2026-11-10. Os [instaladores atuais](windows-installer.md#setups-atualizados-em-2026-11-11) incluem o recurso. Aceitação nativa e instalada permanecem pendentes.
+**Estado:** recurso implementado no código Windows, com adição direta e localização de arquivos. Os [instaladores de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a adição direta. Aceitação nativa e instalada da localização permanecem pendentes.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 
@@ -9,7 +9,7 @@ O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6.
 1. Abra **Playlists** no player e escolha **Nova playlist** para criar uma lista vazia. Informe o nome e confirme **Salvar**.
 2. Para copiar a fila que está no player, escolha **Salvar fila como…** e informe o nome da nova lista. A fila e a música atual são preservadas.
 3. Selecione uma playlist e use **Adicionar arquivos…** para escolher faixas locais diretamente. Use **Adicionar fila atual** para copiar as faixas que já estão no player. As duas ações acrescentam as faixas na ordem recebida e permitem duplicatas.
-4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. A edição afeta a playlist salva; não muda a fila em reprodução nem remove arquivos do disco.
+4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. Se o arquivo mudou de lugar, use **Localizar arquivo…** e selecione o novo caminho. A ação atualiza só a entrada selecionada e mantém sua posição e as duplicatas. A edição preserva a fila em reprodução e os arquivos de áudio.
 5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
 
 Listas e entradas possuem IDs próprios: nomes iguais e faixas repetidas são permitidos. Nomes e paths são apresentados como texto simples. Trocar a seleção ou alterar o alvo de uma confirmação não deve redirecionar a ação para outra lista.
@@ -25,6 +25,8 @@ Abrir uma playlist apenas mostra seu conteúdo. Salvar, editar, renomear ou excl
 O painel mostra a operação de salvamento e só publica a edição nas listas após o reconhecimento **Saved** do store. Enquanto há trabalho ativo, a operação de arquivos roda em um worker e novas edições ficam indisponíveis até sua conclusão; o áudio conserva seu fluxo normal.
 
 O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlist escolhida. Cancelar o diálogo, trocar o alvo ou iniciar a saída invalida a seleção pendente. Após a confirmação dos arquivos, o salvamento segue o mesmo fluxo das outras edições.
+
+**Localizar arquivo…** abre um seletor de um único arquivo e vincula o resultado à entrada escolhida. O novo caminho só aparece após a confirmação do salvamento. Use **Adicionar à fila** para incluir as faixas com os caminhos atualizados.
 
 Se o salvamento falhar, **Tentar salvar** submete novamente o mesmo candidato. A opção de recarregar do disco abandona esse candidato em memória e consulta o estado realmente armazenado. Uma falha de confirmação pode acontecer depois da gravação física; por isso, recarregar pode reencontrar a alteração e não promete desfazê-la.
 
@@ -76,3 +78,7 @@ Não houve instalação, registro no host, uso de perfis AppContainer, benchmark
 ### Adição direta de arquivos — 2026-11-10
 
 O Red do painel teve **14 passagens e 4 falhas** pela ausência do botão. O Red do binding falhou ao compilar pela ausência da porta na composição e das operações de seleção. Após a implementação, o build Windows Release do player e `all_qmllint` passaram. A seleção final passou **4/4 CTest**, com **358 casos Quick**, **17 do binding**, **4 de restart** e **35 do store**. O caso de restart abre um catálogo salvo em outro processo e confere Unicode, ordem, IDs e duplicatas com zero leituras ou alterações da fila. Os logs estão em `out/product/test-runs/playlist-direct-files-20261110/`. A validação automatizada usa um seletor falso e mantém pendentes a interação com o diálogo nativo e a aceitação instalada.
+
+### Localização de arquivo na playlist
+
+O Red confirmou a ausência da substituição no núcleo, no binding, no restart e no painel. O fechamento passou **307 casos do núcleo**, **4/4 CTest selecionados com 66 casos Qt**, **19 casos Quick**, build Release e `all_qmllint`. A regressão de symlink do núcleo registrou a limitação de permissões deste Windows. Um segundo processo leu o novo caminho Unicode do catálogo real com os mesmos IDs e ordem. Os hashes das três fixtures de áudio foram preservados e a fila ficou intacta. O diálogo foi simulado nessa jornada. Logs em `out/product/test-runs/playlist-locate-20261111/`.
