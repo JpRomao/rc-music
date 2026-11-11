@@ -1,9 +1,9 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
+**Estado:** setups privados Lite e Completa experimental de `35e999d` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
-A [limpeza após a entrega de `ebb093a`](development-commands.md#limpeza-após-a-entrega-de-ebb093a) retirou os setups de `a469f8d`. Os setups de `cf34cd8` e `26cc641` foram retirados na [limpeza anterior](development-commands.md#remoção-de-versões-substituídas-e-caches). Os recibos, as configurações e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
+A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os setups de `ebb093a`. As limpezas anteriores retiraram os setups de `a469f8d`, `cf34cd8` e `26cc641`. Os recibos, configurações e evidências foram preservados. Os registros históricos abaixo documentam a geração original.
 
 A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
 
@@ -91,6 +91,17 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups de 35e999d
+
+O par inclui o encerramento de downloads interrompidos após confirmar a limpeza, a recuperação após reabrir, o reaproveitamento de vagas após arquivamento e a preservação de falhas específicas do fluxo YouTube. Ferramentas e cada extensão são opcionais, inicialmente desmarcadas. [Runtimes de 35e999d](windows-runtime.md#runtimes-de-35e999d)
+
+| Edição | Pasta em `out/product/rc-music-installer` | Bytes do setup | SHA-256 |
+| --- | --- | ---: | --- |
+| Lite | `rc-music-35e999d-extensions-Lite-20261111` | 90.038.575 | `3ed2a1181c4fda689a4da930da8763bdc5f0f9d09671dad206b84e03c897fe4d` |
+| Completa experimental | `rc-music-35e999d-extensions-CompleteExperimental-20261111` | 90.107.885 | `cf338d6e08411123ce2545b77add1c2812c1c12886202a896b767f84b3f4fb6b` |
+
+A inspeção conferiu os inventários de 619 e 622 arquivos, cinco combinações de seleção, associações OFF e setups PE x86 GUI sem assinatura. A leitura com 7-Zip verificou 21 arquivos embutidos na Lite e 24 na Completa, incluindo o player, os hosts, seus manifestos, os 16 arquivos das extensões e os três avisos WebView2 da Completa. Os recibos da inspeção estática ficam em `out/product/test-runs/windows-candidates-35e999d-20261111/`. Os testes do setup instalado e da integração com Brave seguem pendentes.
 
 ### Setups de ebb093a
 

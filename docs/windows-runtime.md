@@ -1,8 +1,8 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtimes privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtimes privados Lite e Completa experimental de `35e999d` conferidos em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 
-A [limpeza após a entrega de `ebb093a`](development-commands.md#limpeza-após-a-entrega-de-ebb093a) retirou os payloads de `a469f8d`, preservando os executáveis usados para comparação e os manifestos. Os payloads de `7601247` e `26cc641` foram retirados na [limpeza anterior](development-commands.md#remoção-de-versões-substituídas-e-caches). Os registros históricos abaixo documentam a geração original.
+A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os payloads substituídos de `ebb093a`, preservando os executáveis usados para comparação e os manifestos. As limpezas anteriores retiraram os payloads de `a469f8d`, `7601247` e `26cc641`. Os registros históricos abaixo documentam a geração original.
 **Data:** 2026-11-05.
 
 Os [runtimes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados, montados e conferidos em worktree isolada. A edição Lite tinha 554 arquivos, e a Completa experimental, 557.
@@ -52,6 +52,17 @@ Os hosts são copiados ao lado de `RCMusic.exe`, com dependências verificadas p
 O instalador conserva esses quatro arquivos sob a mesma escolha desmarcada das ferramentas, exige metadados correspondentes e verifica os hashes dos manifestos canônicos. Ausência de metadados não pode promover um host a arquivo obrigatório. Não registra o host no Windows, carrega a extensão ou publica o marcador durante a montagem. As [identidades públicas locais](youtube-extension-package.md#identidades-públicas-estáveis) já estão definidas; registro, seleção independente das extensões e aceitação instalada continuam pendentes. Os setups anteriores permanecem intactos.
 
 TDD e fechamento proporcional: reader **14 passados/7 falhos → 21/21**, componente **0/13 → 13/13**, configuração **142/8 → 150/150**, receita **12/8 → 20/20**, instalador/componente **17/2 → 19/19**, mais **97/97** do plano e **6/6** da receita do instalador. São **326 casos PowerShell** verdes, além dos checks documentais/rastreabilidade. Evidências em `out/product/test-runs/native-host-packaging-20261105/`. As fixtures usam IDs sintéticos e arquivos próprios, sem executar hosts, setup, GUI, rede ou Registro. Não houve nova montagem física ou compilação do app; C++/QML não foram alterados. Esses checks não qualificam aquisição pública ou um runtime instalado no Brave.
+
+### Runtimes de 35e999d
+
+As duas edições foram compiladas em Release/x64 na worktree limpa de `35e999d613f1cc123c9b8c3a14948e3476064243`, com lint QML aprovado e zero testes registrados nos builds de produção. A Lite exclui WebView2. A Completa requer o WebView2 Evergreen x64 já disponível. Os perfis mantêm desligados o provisionamento AppContainer e o envio pelo navegador integrado. [Setups de 35e999d](windows-installer.md#setups-de-35e999d)
+
+| Pasta em `out/product/rc-music-local` | Arquivos / bytes do payload | SHA-256 do manifesto |
+| --- | ---: | --- |
+| `rc-music-35e999d-native-Lite-20261111` | 603 / 232.102.110 | `0bbbe364c978fbd51fd3c7c307a8759f67e35dc018534ccd29d9e3cbabda7e53` |
+| `rc-music-35e999d-native-CompleteExperimental-20261111` | 606 / 232.323.317 | `ab5dcccc42258b3399751296051c00bf17aaf397b7179dbb3aeb16ce0e2acadd` |
+
+A inspeção comparou cada arquivo físico com seu manifesto e conferiu os PEs, a identidade dos dois hosts e a ausência do marcador de ativação no runtime. Os pacotes Chromium e de ferramentas foram reaproveitados com os hashes pinados. Recibos em `out/product/test-runs/windows-candidates-35e999d-20261111/`.
 
 ### Runtimes de ebb093a
 

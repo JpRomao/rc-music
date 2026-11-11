@@ -810,7 +810,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — candidatos Windows atualizados
 
-Os instaladores Lite e Completa experimental de `ebb093a` incorporam localização de arquivos em playlists, recuperação após remoção da unidade, arquivamento do histórico e colagem de letras. Release, lint, inventários, hashes, PE e arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de ebb093a](windows-installer.md#setups-de-ebb093a)
+Os instaladores Lite e Completa experimental de `35e999d` incorporam o encerramento de recuperação de downloads, o reaproveitamento de vagas após arquivamento e a correção de erros do fluxo YouTube. Release, lint QML, inventários, hashes, PE e arquivos embutidos passaram. A aceitação instalada e os gates de release permanecem pendentes. [Setups de 35e999d](windows-installer.md#setups-de-35e999d)
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)
 

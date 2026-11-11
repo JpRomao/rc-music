@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza após a entrega de 35e999d
+
+Após verificar os [dois novos setups](windows-installer.md#setups-de-35e999d), foram removidos **1.705 arquivos (910.896.023 bytes lógicos)**. A seleção incluiu os dois setups e 1.207 arquivos dos runtimes substituídos de `ebb093a`, além de 496 objetos e bibliotecas intermediárias declarados pelo Ninja nos builds de `r5`.
+
+Foram conferidos **2.835 arquivos** por tamanho e SHA-256, incluindo os novos pacotes, os executáveis de comparação, os recibos e as alterações locais. Os dois grafos Ninja de `r5` continuaram legíveis. A seleção revisada e o resultado ficam em `out/product/cleanup-retired-35e999d-20261111/`.
+
 ### Limpeza complementar de builds antigos
 
 Foram removidos **1.695 arquivos (240.392.710 bytes)**, entre saídas regeneráveis do Ninja, caches de dependências, metadados e fontes geradas pelo Qt, três bibliotecas órfãs e dois temporários do NSIS. Os builds históricos de M0 afetados precisarão de nova configuração CMake se forem retomados.
