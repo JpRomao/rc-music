@@ -15,6 +15,8 @@ Antes de propor RC, ainda faltam evidências de cobertura/CI e dos gates de corp
 
 O [inventário e rascunho de notices do runtime 3f22fda](runtime-3f22fda-notices.md) já vinculam os arquivos atuais aos componentes identificados e preservam textos locais de terceiros. São entregas parciais de M5.7, fora do payload existente: divergências de fornecedor e atribuições/fontes faltantes continuam explícitas, sem alegação de SBOM completo ou conformidade de distribuição.
 
+Os [SBOMs dos setups f8a593b](windows-f8a593b-sbom.md) vinculam as edições Lite e Completa aos seus hashes e às cinco combinações do instalador. A investigação de dependências transitivas, advisories e licenças permanece aberta.
+
 ## 1. Princípios
 
 - release é resultado reproduzível de um commit/tag verde;

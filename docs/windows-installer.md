@@ -110,6 +110,8 @@ Cada runtime passou 17 cenários de áudio com 19 casos Qt aprovados e zero skip
 
 Os setups foram compilados com a receita de `8785938`. A verificação independente conferiu os PEs, as sete associações e as cinco combinações das opções. O 7-Zip conferiu por hash 21 arquivos embutidos na Lite e 24 na Completa, incluindo os hosts, as extensões e os avisos WebView2 da Completa. Os recibos estão em `out/product/test-runs/windows-candidates-f8a593b-20261111/`. A confirmação de instalação, atualização, remoção, escolha de padrão e integração com Brave segue pendente.
 
+Os [SBOMs das duas edições](delivery/windows-f8a593b-sbom.md) registram os arquivos previstos para cada seleção e as evidências disponíveis sobre componentes e licenças.
+
 ### Setups de 8982c60
 
 As duas edições incluem escolha da saída de áudio para a sessão, reconexão no Lidarr após rejeição de acesso, descarte de uma tentativa inválida de guardar letra e desativação da cópia de uma fila vazia para playlists. As extensões principal e YouTube usam os pacotes de `9a3e257`. Ferramentas e extensões são opções inicialmente desmarcadas. [Runtimes de 8982c60](windows-runtime.md#runtimes-de-8982c60)

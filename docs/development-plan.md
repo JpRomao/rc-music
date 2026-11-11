@@ -824,6 +824,8 @@ Os instaladores Lite e Completa experimental de `f8a593b` incorporam recuperaç�
 
 Em M4.6, cada runtime de `f8a593b` passou os 17 cenários de áudio. As declarações v2 vinculam sete extensões ao resultado de cada edição, e os setups com associações passaram pela inspeção estática. A confirmação no Registro, no Explorer e em Aplicativos Padrão permanece pendente. [Evidência dos candidatos](windows-installer.md#setups-de-f8a593b)
 
+Em M5.7, os dois setups de `f8a593b` têm SBOMs CycloneDX com arquivos e totais conferidos para cada combinação de opções. A revisão de dependências transitivas, licenças e advisories segue aberta. [Inventário dos setups](delivery/windows-f8a593b-sbom.md)
+
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)
