@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-**Estado:** recurso implementado no código Windows, com adição direta de arquivos validada automaticamente em 2026-11-10. Os [instaladores atualizados](windows-installer.md#setups-atualizados-em-2026-11-10) incluem o recurso. Aceitação nativa e instalada permanecem pendentes.
+**Estado:** recurso implementado no código Windows, com adição direta de arquivos validada automaticamente em 2026-11-10. Os [instaladores atuais](windows-installer.md#setups-atualizados-em-2026-11-11) incluem o recurso. Aceitação nativa e instalada permanecem pendentes.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 

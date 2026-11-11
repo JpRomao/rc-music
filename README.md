@@ -110,7 +110,7 @@ Os [comandos locais consolidados](docs/development-commands.md) oferecem `format
 
 A [rastreabilidade executável](docs/quality/traceability.md) integra `check` e `validate`: os 83 requisitos têm destinos, evidências e lacunas explícitas, consultáveis também por teste. Ela não substitui a execução dos testes nem transforma gates pendentes em funcionalidades ausentes.
 
-Os [instaladores atuais Lite e Completa experimental de `26cc641`](docs/windows-installer.md#setups-atualizados-em-2026-11-10) incluem a adição direta de arquivos às playlists e a correção dos IDs da fila restaurada. Os runtimes Release/x64 usam testes desligados, e os setups mantêm associações OFF e extensões opcionais. Inventários, hashes, PE e arquivos embutidos foram conferidos. Aceitação nativa e instalada permanecem pendentes.
+Os [instaladores atuais Lite e Completa experimental de `a469f8d`](docs/windows-installer.md#setups-atualizados-em-2026-11-11) incluem a seleção dos formatos de letra online, o indicador de capacidade dos downloads e os avisos atualizados das extensões. Os runtimes são Release/x64, e os setups oferecem as extensões como opcionais com associações OFF. Aceitação nativa e instalada permanecem pendentes.
 
 A [receita de runtime Windows](docs/windows-runtime.md) está em `packaging/windows`. O player mantém subsistema GUI sem console. Os registros dos guias conservam a proveniência dos candidatos anteriores, e o [histórico de limpeza](docs/development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) identifica os binários substituídos removidos. O [smoke automatizado 18/18](docs/windows-runtime.md#smoke-automatizado-do-runtime) pertence a `3f22fda`; a validação dos candidatos atuais está registrada separadamente.
 

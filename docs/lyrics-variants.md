@@ -1,6 +1,6 @@
 # Letras e versões por música
 
-**Estado:** recurso implementado e validado automaticamente no Windows em 2026-11-04. Aceitação nativa e instalador atualizado permanecem pendentes.
+**Estado:** recurso validado automaticamente no Windows. Os [setups de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a escolha dos formatos online. Aceitação nativa e instalada pendentes.
 
 O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evolução de FR-054: guardar várias formas de uma letra e adicionar outras depois, sem duplicar áudio. Original e romanizada conservam o idioma; tradução e geração por LLM continuam como ideias futuras. Não há integração de download com Letras.mus.br nesta entrega.
 
@@ -55,4 +55,4 @@ Não houve instalação, registro no host, nova execução AppContainer, benchma
 
 Red observado no binding por ausência da seleção/revisão e no painel Quick com **16 casos aprovados/4 falhos**. O Green passou **6/6 CTest** em 49,70 s, incluindo serviço, store, binding, lookup de downloads, binding de downloads e a suíte Quick completa com **361 casos**. O build Release do player e `all_qmllint` passaram. Uma regressão adicional mostrou que a posição de reprodução notificava a lista de formatos; após separar essa notificação, o fechamento dos dois bindings passou **2/2 CTest**, com **49 casos Qt**, e o player foi recompilado.
 
-Os casos novos usam resposta de rede falsa e armazenamento temporário. Conferem uma única busca, prévia e salvamento dos dois conteúdos, tempos preservados, seleção salva, áudio sentinela e rejeição de formulários de outra escolha, busca ou faixa. Recibos em `out/product/test-runs/online-lyrics-variants-20261110/`. O incremento mantém as pendências de aceitação nativa e de atualização do instalador.
+Os casos novos usam resposta de rede falsa e armazenamento temporário. Conferem uma única busca, prévia e salvamento dos dois conteúdos, tempos preservados, seleção salva, áudio sentinela e rejeição de formulários de outra escolha, busca ou faixa. Recibos em `out/product/test-runs/online-lyrics-variants-20261110/`.

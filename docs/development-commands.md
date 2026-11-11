@@ -181,6 +181,12 @@ O [incremento Windows seguinte](windows-integration-tests.md) promoveu oito suit
 
 A [promoção dos processos](process-tests.md) registra os cinco drivers em sete jornadas, mais uma guarda de ABI/recursos, usando dois shells instrumentados exclusivos de testes. Os gates de build/testes estão validados: `test` passou **296/296**, com build OFF, lint e formato executados separadamente, sem novo `validate` neste incremento. Após configure/build, `ctest --test-dir out/product/desktop-tests --output-on-failure --no-tests=error -L process` seleciona oito registros; `-L windows` passa a selecionar 19, incluindo as 12 integrações anteriores. Os quatro smokes QPA Windows continuam fora do runner diário, e o executável real permanece sem hooks em ON/OFF.
 
+## Limpeza de artefatos gerados — 2026-11-11
+
+Após conferir os [setups de `a469f8d`](windows-installer.md#setups-atualizados-em-2026-11-11), a limpeza removeu **494 objetos e bibliotecas intermediárias**, somando **260.727.866 bytes**. A seleção se limitou às saídas `.obj` e `.lib` declaradas pelos grafos Ninja dos dois builds de empacotamento em `out/product/r3/out/product/{l,c}`.
+
+A operação conferiu **1.771 arquivos protegidos** por tamanho e SHA-256, incluindo o trabalho em andamento, os executáveis, instaladores e recibos. Os dois grafos Ninja continuam legíveis. Os próximos builds desses caches recriam os intermediários removidos. Plano e resultado em `out/product/test-runs/windows-candidates-a469f8d-20261111/`.
+
 ## Limpeza de artefatos gerados — 2026-11-10
 
 Foram removidos **968 arquivos de build (179.047.853 bytes)**. A lista inclui 150 objetos do núcleo, 49 bibliotecas estáticas de builds auxiliares antigos e 769 fontes geradas pelo Qt em builds históricos. Os grafos CMake/Ninja, logs e recibos foram mantidos. Um build futuro recompila as saídas removidas.

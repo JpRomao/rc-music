@@ -91,6 +91,15 @@ O ciclo original do gerador YouTube foi Red com 14 casos, Red com 15 após acres
 
 O candidato local `out/product/youtube-extension-20261105-01/` foi gerado após o commit da receita `de73e985ab4729fcc4f3b412932fee6910404660`: **7 assets/21.197 bytes**, com `extension_dirty`, `recipe_dirty` e `source_dirty` falsos no recorte declarado. A conferência independente confirmou inventário, tamanhos e hashes contra as fontes, incluindo as duas receitas. O SHA-256 de `package-receipt.json` é `e9aa509677051485298c3afcb5720bbd18f4f77d70ec1c92776587b065eae626`. Plano e verificação ficam em `out/product/test-runs/download-bootstrap-20261105/`. O candidato é preservado como `identity_pending`; não é setup ou integração instalada.
 
+## Pacotes atualizados em 2026-11-11
+
+A revisão limpa `a469f8d` gerou os dois pacotes-fonte usados pelos [setups atualizados](windows-installer.md#setups-atualizados-em-2026-11-11). Os inventários físicos, os avisos e os IDs públicos dos dois canais foram conferidos.
+
+| Canal | Diretório em `out/product/` | Arquivos | SHA-256 de `package-receipt.json` |
+|---|---|---:|---|
+| Principal | `chromium-main-a469f8d-20261111` | 9 | `3bf5c085988c0184a8543caac7b96ba5b59bdfebfd6d418aaa1d44c96b063502` |
+| YouTube | `chromium-youtube-a469f8d-20261111` | 7 | `b093a8cd04e3182147a5778487fdaf1457b559c1c914ff4223e305070288a892` |
+
 ## Candidatos com identidade fixa
 
 O commit `7601247dc3291b8c5919b1167473011887b5d1eb` gerou e teve seus pacotes conferidos por inventário físico, tamanhos/hashes, identidade derivada e fontes. Os três indicadores `dirty` são falsos. Os candidatos antigos permanecem intactos.
