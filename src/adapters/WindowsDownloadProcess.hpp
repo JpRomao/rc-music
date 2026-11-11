@@ -59,6 +59,9 @@ struct WindowsDownloadProcessConfig final {
     // Initial bytes count against both limits. The default one-shot mode and
     // its 256 KiB initial-input ceiling are unchanged.
     std::optional<WindowsDownloadInteractiveInputLimits> interactive_input{};
+    // Use the Win32 extended path for the application name at launch.
+    // Trusted callers must supply a canonical executable path on a fixed drive.
+    bool use_extended_executable_path{false};
 };
 
 enum class WindowsDownloadProcessState { Idle, Running, Stopping, Exited, Failed, Cancelled };

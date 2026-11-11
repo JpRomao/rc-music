@@ -56,6 +56,7 @@ struct Report final {
     QJsonObject validated_audit{};
 #ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
     int preparations{}, handoffs{}, direct_starts{};
+    qsizetype lease_path_units{};
     bool prepare_on_worker{}, consumer_on_worker{}, worker_stopped{}, lease_released_at_handoff{};
     QString consumer_terminal{}, consumer_error{};
 #endif
@@ -81,6 +82,7 @@ struct Report final {
                 {"preparations", preparations},
                 {"handoffs", handoffs},
                 {"direct_starts", direct_starts},
+                {"lease_path_units", lease_path_units},
                 {"prepare_on_worker", prepare_on_worker},
                 {"consumer_on_worker", consumer_on_worker},
                 {"worker_stopped", worker_stopped},
@@ -405,6 +407,10 @@ std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot) {
     report.error = QStringLiteral("none");
 }
 #ifdef RC_MUSIC_YOUTUBE_WORKER_SMOKE
+// At 241 UTF-16 units both child executable paths exceed the legacy MAX_PATH.
+constexpr qsizetype minimum_worker_lease_path_units = 241;
+constexpr qsizetype worker_lease_suffix_units = 53; // Slash, lease prefix and UUID.
+
 struct WorkerObservations final {
     std::atomic_int preparations{}, handoffs{}, direct_starts{};
     std::atomic_bool prepare_on_worker{true}, consumer_on_worker{true}, prepared_sizes{true},
@@ -412,9 +418,12 @@ struct WorkerObservations final {
     std::mutex mutex;
     std::weak_ptr<const WindowsYoutubeRuntime> lease{};
     QJsonObject validated_audit{};
+    qsizetype lease_path_units{};
     void observe(const std::shared_ptr<const WindowsYoutubeRuntime>& files) {
         std::lock_guard lock(mutex);
         lease = files;
+        if (files)
+            lease_path_units = files->directory().size();
     }
     bool expired() {
         std::lock_guard lock(mutex);
@@ -501,7 +510,13 @@ void runWorker(const Options& input, YoutubeRuntimeReceipt receipt, Report& repo
         report.error = QStringLiteral("unavailable");
         return;
     }
-    QTemporaryDir temporary(QDir::tempPath() + QStringLiteral("/RCMusic-real-youtube-worker-offline-XXXXXX"));
+    auto temporary_template = QDir::tempPath() + QStringLiteral("/RCMusic-real-youtube-worker-offline-");
+    const auto suffix = QStringLiteral("XXXXXX");
+    const auto padding =
+        minimum_worker_lease_path_units - worker_lease_suffix_units - temporary_template.size() - suffix.size();
+    if (padding > 0)
+        temporary_template += QString(padding, u'x');
+    QTemporaryDir temporary(temporary_template + suffix);
     if (!temporary.isValid()) {
         report.stage = QStringLiteral("temporary");
         report.error = QStringLiteral("unavailable");
@@ -600,6 +615,7 @@ void runWorker(const Options& input, YoutubeRuntimeReceipt receipt, Report& repo
     {
         std::lock_guard lock(observations->mutex);
         report.validated_audit = observations->validated_audit;
+        report.lease_path_units = observations->lease_path_units;
     }
     report.state = workerStateName(final.state);
     report.consumer_terminal = report.state;
@@ -623,8 +639,10 @@ void runWorker(const Options& input, YoutubeRuntimeReceipt receipt, Report& repo
     report.error = QStringLiteral("unexpected_handoff");
     if (!admitted || !observed_terminal || final.job_id != job_id || final.state != DownloadExecutionState::Failed ||
         final.error != DownloadFailure::UnsupportedMedia || !final.published_mp3.empty() || report.preparations != 1 ||
-        report.handoffs != 1 || report.direct_starts != 0 || !report.prepare_on_worker || !report.consumer_on_worker ||
-        !report.lease_released_at_handoff || !observations->prepared_sizes || report.validated_audit.isEmpty())
+        report.handoffs != 1 || report.direct_starts != 0 ||
+        report.lease_path_units < minimum_worker_lease_path_units || !report.prepare_on_worker ||
+        !report.consumer_on_worker || !report.lease_released_at_handoff || !observations->prepared_sizes ||
+        report.validated_audit.isEmpty())
         return;
     report.stage = QStringLiteral("source_verify");
     report.error = QStringLiteral("source_changed");

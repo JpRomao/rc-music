@@ -1,5 +1,7 @@
 #include "WindowsDownloadProcess.hpp"
+
 #include "WindowsDownloadAppContainer.hpp"
+#include "WindowsDownloadArtifactPins.hpp"
 #include "WindowsDownloadNativeUseFence.hpp"
 #include "WindowsDownloadReadInput.hpp"
 
@@ -509,6 +511,11 @@ class NativeInput final {
         config.arguments.size() > 128 || config.standard_input.size() > download_process_max_input_bytes ||
         !validEnvironment(config.environment))
         return false;
+    if (config.use_extended_executable_path) {
+        QString normalized;
+        if (!download_artifacts::validPath(config.executable, normalized))
+            return false;
+    }
     if (config.interactive_input) {
         const auto& limits = *config.interactive_input;
         if (limits.max_buffered_bytes <= 0 || limits.max_buffered_bytes > download_process_max_input_bytes ||
@@ -818,7 +825,9 @@ bool WindowsDownloadProcess::start(const WindowsDownloadProcessConfig& config, q
         value.update.error = WindowsDownloadProcessError::Isolation;
         return false;
     }
-    value.native_executable = QDir::toNativeSeparators(config.executable).toStdWString();
+    value.native_executable = config.use_extended_executable_path
+                                  ? download_artifacts::nativePath(config.executable)
+                                  : QDir::toNativeSeparators(config.executable).toStdWString();
     value.process = std::make_unique<QProcess>();
     value.process->setProgram(config.executable);
     value.process->setArguments(config.arguments);

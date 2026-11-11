@@ -854,6 +854,8 @@ Em M3, a fila mantém a ocorrência selecionada durante o avanço da reproduçã
 
 Em R1.8 e M5.7, o perfil privado YouTube usa CPython 3.14.10 com o backport oficial do Expat 2.10.0. A regressão sintética preservou o áudio direto via DASH e os 38 PEs passaram na inspeção estática. A aquisição pública e a qualificação de distribuição seguem pendentes. [Runtime e checks](youtube-audio-and-lyrics.md#backport-do-expat-2100)
 
+Em R1.8, o broker inicia o extractor e o Node com o caminho Win32 estendido. O smoke offline validou o handoff e a limpeza com raiz temporária de 241 unidades UTF-16. [Caminhos temporários longos](youtube-audio-and-lyrics.md#caminhos-temporários-longos-no-windows)
+
 Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer por trabalho. O conversor precisa receber a credencial do owner e o perfil só é retirado após a drenagem. A opção permanece desligada no perfil instalável enquanto a qualificação física estiver pendente. [Composição e validação do worker](download-conversion.md#perfil-appcontainer-por-trabalho)
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)

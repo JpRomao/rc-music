@@ -177,6 +177,8 @@ struct WindowsYoutubeBrokerProcess::Impl final {
     WindowsDownloadProcessConfig configuration(const WindowsYoutubeRuntimeRole role, const qint64 now_ms) const {
         WindowsDownloadProcessConfig config;
         config.executable = owned(retained->files->artifactPath(role));
+        // Both children live under the same authenticated, potentially deep lease.
+        config.use_extended_executable_path = true;
         config.arguments = role == WindowsYoutubeRuntimeRole::Extractor
                                ? QStringList{owned(video_id)}
                                : QStringList{QStringLiteral("--permission"), QStringLiteral("-")};

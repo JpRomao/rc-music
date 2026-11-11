@@ -218,6 +218,12 @@ Recibos deste incremento: `out/product/test-runs/youtube-worker-20261105/`. O al
 
 O loader de manifesto/recibo continua exclusivo do ensaio offline em testes; a factory não transforma um recibo JSON, flag ou configuração do navegador em autoridade de execução. Essa composição não habilita o app normal, registra host, autentica a origem da extensão ou instala runtime. Aquisição pública, qualificação de segurança/distribuição e Letras primário continuam nos gates anteriores; produção permanece **OFF**.
 
+### Caminhos temporários longos no Windows
+
+O broker passa um caminho Win32 estendido como nome do aplicativo para o extractor e o Node. Os dois executáveis vêm da mesma árvore temporária autenticada e recebem os argumentos e o diretório de trabalho usuais. O smoke offline mede o comprimento da raiz temporária e exige pelo menos 241 unidades UTF-16, com ambos os executáveis além do limite legado de caminho.
+
+Com o manifesto offline autenticado de CPython 3.14.10 e Expat 2.9.0, o Red falhou com uma raiz de 216 unidades. Com a correção, o mesmo manifesto completou cinco vetores e um handoff a 241 unidades, recebeu os ACKs e liberou a árvore temporária. As quatro suítes CTest afetadas passaram em 164 casos Qt. A suíte de identidade das cópias usa TEMP curto por causa de seu helper Win32 legado. Evidências em `out/product/deep-temp-diagnosis-20261111/`.
+
 ## Host e canal Native Messaging YouTube
 
 **Estado deste incremento:** cliente/servidor e host separados implementados, com seleção integrada, build Release sem testes e formato verdes. Não houve instalação/registro ou ativação de aquisição no app.
