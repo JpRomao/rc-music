@@ -54,32 +54,47 @@ namespace {
 constexpr std::size_t minimum_container_header_size = 12;
 constexpr std::size_t container_header_size = 512;
 constexpr std::size_t maximum_metadata_read_bytes = 32U * 1024U * 1024U;
+constexpr std::size_t maximum_metadata_total_bytes = 64U * 1024U * 1024U;
+constexpr std::size_t maximum_metadata_read_calls = 65'536U;
 constexpr std::array flac_marker{'f', 'L', 'a', 'C'};
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
 
-struct MetadataReadLimitExceeded final {};
+enum class MetadataReadLimit { SingleRead, TotalBytes, ReadCalls };
 
 class MetadataFileStream final : public TagLib::FileStream {
   public:
     explicit MetadataFileStream(const std::filesystem::path& path) : FileStream(path.c_str(), true) {}
 
     TagLib::ByteVector readBlock(std::size_t requested_bytes) override {
-        if (requested_bytes > maximum_metadata_read_bytes) {
+        if (remaining_calls_ == 0)
+            throw MetadataReadLimit::ReadCalls;
+        --remaining_calls_;
+        if (requested_bytes > std::min(maximum_metadata_read_bytes, remaining_bytes_)) {
             // TagLib would cap its allocation to the whole file, even when
             // the request starts near EOF. Preserve short reads from there.
             const auto position = tell();
             const auto file_size = length();
             if (position < 0 || file_size < 0)
-                throw MetadataReadLimitExceeded{};
+                throw requested_bytes > maximum_metadata_read_bytes ? MetadataReadLimit::SingleRead
+                                                                    : MetadataReadLimit::TotalBytes;
             const auto available = file_size > position ? static_cast<std::uintmax_t>(file_size - position) : 0U;
-            if (available > maximum_metadata_read_bytes)
-                throw MetadataReadLimitExceeded{};
-            requested_bytes = static_cast<std::size_t>(available);
+            const auto readable = std::min<std::uintmax_t>(requested_bytes, available);
+            if (readable > maximum_metadata_read_bytes)
+                throw MetadataReadLimit::SingleRead;
+            if (readable > remaining_bytes_)
+                throw MetadataReadLimit::TotalBytes;
+            requested_bytes = static_cast<std::size_t>(readable);
         }
-        return FileStream::readBlock(requested_bytes);
+        auto bytes = FileStream::readBlock(requested_bytes);
+        remaining_bytes_ -= bytes.size();
+        return bytes;
     }
+
+  private:
+    std::size_t remaining_bytes_{maximum_metadata_total_bytes};
+    std::size_t remaining_calls_{maximum_metadata_read_calls};
 };
 
 [[nodiscard]] MetadataReadError error(const MetadataReadErrorCode code, std::string message) {
@@ -788,7 +803,11 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return readMetadata(readMp3);
         }
         return error(MetadataReadErrorCode::UnsupportedFormat, "metadata source container is not supported");
-    } catch (const MetadataReadLimitExceeded&) {
+    } catch (const MetadataReadLimit limit) {
+        if (limit == MetadataReadLimit::TotalBytes)
+            return error(MetadataReadErrorCode::InvalidData, "metadata extraction exceeds 64 MiB of input");
+        if (limit == MetadataReadLimit::ReadCalls)
+            return error(MetadataReadErrorCode::InvalidData, "metadata extraction exceeds 65536 input reads");
         return error(MetadataReadErrorCode::InvalidData, "metadata container requests a read larger than 32 MiB");
     } catch (const std::exception&) {
         return error(MetadataReadErrorCode::ReadFailed, "metadata reader failed safely");

@@ -618,7 +618,7 @@ Em M5.3, a fila mantém reservados durante a sessão os IDs do snapshot restaura
 
 Em M5.2, o corpus Windows inclui [FLAC com ID3 inicial e extensão enganosa](audio-tests.md#flac-precedido-por-id3). A jornada real verifica a leitura dos metadados durante a reprodução. Dois casos com tamanhos adulterados verificam o erro tipado do extrator.
 
-Em M5.2/M5.3, o leitor de metadados usa a mesma abertura somente leitura para identificar e interpretar o arquivo. O adaptador impõe um [limite por leitura do TagLib](audio-tests.md#limite-por-leitura-de-metadados) e a jornada Windows verifica a reprodução quando a tag excede esse teto.
+Em M5.2/M5.3, o leitor de metadados usa a mesma abertura somente leitura para identificar e interpretar o arquivo. O adaptador impõe [limites de bytes e chamadas de leitura do TagLib](audio-tests.md#limite-por-leitura-de-metadados). A jornada Windows verifica a reprodução com o nome do arquivo como título quando uma tag ou um conjunto de blocos ultrapassa esses tetos.
 
 ### Gate M5 / release
 

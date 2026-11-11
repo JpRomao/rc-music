@@ -1,3 +1,4 @@
+#include "FlacApplicationBlocksFixture.hpp"
 #include "Id3PaddedMp3Fixture.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
@@ -720,6 +721,94 @@ TEST_CASE("FR-023 rejects an ID3 tag body one byte over the metadata read limit 
 
     const auto recovered = reader.read(authenticated);
     CHECK(requireMetadata(recovered).audio.codec == "MPEG-1 Audio Layer III");
+}
+
+TEST_CASE("FR-023 accepts several FLAC application blocks within the cumulative metadata read budget",
+          "[m0][qt][metadata][taglib][flac][metadata-read-budget][FR-023]") {
+    constexpr std::size_t block_bytes = 15U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile augmented{temporaryPath(directory, "flac-within-read-budget.flac")};
+    const auto authenticated = fixture("fixtures/valid/flac-16-stereo.flac");
+    REQUIRE(writeFlacWithApplicationBlocks(authenticated, augmented.path(), 4, block_bytes));
+
+    const TagLibMetadataExtractor reader;
+    const auto baseline_result = reader.read(authenticated);
+    const auto& baseline = requireMetadata(baseline_result);
+    const auto result = reader.read(augmented.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.file_size_bytes == std::filesystem::file_size(augmented.path()));
+    CHECK(metadata.audio.codec == baseline.audio.codec);
+    CHECK(metadata.audio.duration_ms == baseline.audio.duration_ms);
+    CHECK(metadata.audio.sample_rate_hz == baseline.audio.sample_rate_hz);
+    CHECK(metadata.audio.channels == baseline.audio.channels);
+    CHECK(metadata.tags.title == baseline.tags.title);
+    CHECK(metadata.tags.artist == baseline.tags.artist);
+}
+
+TEST_CASE("FR-023 rejects FLAC application blocks over the cumulative metadata read budget and recovers",
+          "[m0][qt][metadata][taglib][flac][hostile][metadata-read-budget][FR-023]") {
+    constexpr std::size_t block_bytes = 15U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile augmented{temporaryPath(directory, "flac-above-read-budget.flac")};
+    const auto authenticated = fixture("fixtures/valid/flac-16-stereo.flac");
+    REQUIRE(writeFlacWithApplicationBlocks(authenticated, augmented.path(), 5, block_bytes));
+    const auto augmented_size = std::filesystem::file_size(augmented.path());
+    const auto augmented_timestamp = std::filesystem::last_write_time(augmented.path());
+
+    const TagLibMetadataExtractor reader;
+    const auto result = reader.read(augmented.path());
+    const auto& error = requireError(result);
+    CHECK(error.code == MetadataReadErrorCode::InvalidData);
+    CHECK(error.message.find("64 MiB") != std::string::npos);
+    CHECK(std::filesystem::file_size(augmented.path()) == augmented_size);
+    CHECK(std::filesystem::last_write_time(augmented.path()) == augmented_timestamp);
+
+    const auto recovered = reader.read(authenticated);
+    CHECK(requireMetadata(recovered).audio.codec == "FLAC");
+}
+
+TEST_CASE("FR-023 rejects numerous tiny FLAC application blocks over the metadata read count",
+          "[m0][qt][metadata][taglib][flac][hostile][metadata-read-budget][FR-023]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile augmented{temporaryPath(directory, "flac-above-read-count.flac")};
+    const auto authenticated = fixture("fixtures/valid/flac-16-stereo.flac");
+    REQUIRE(writeFlacWithApplicationBlocks(authenticated, augmented.path(), 33'000, 4));
+    REQUIRE(std::filesystem::file_size(augmented.path()) < 1024U * 1024U);
+
+    const TagLibMetadataExtractor reader;
+    const auto result = reader.read(augmented.path());
+    const auto& error = requireError(result);
+    CHECK(error.code == MetadataReadErrorCode::InvalidData);
+    CHECK(error.message.find("65536") != std::string::npos);
+
+    const auto recovered = reader.read(authenticated);
+    CHECK(requireMetadata(recovered).audio.codec == "FLAC");
+}
+
+TEST_CASE("FR-023 reads metadata for a PCM WAV larger than the cumulative metadata read budget",
+          "[m0][qt][metadata][taglib][wav][metadata-read-budget][FR-023]") {
+    constexpr std::uint32_t pcm_bytes = 65U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile extended{temporaryPath(directory, "large-pcm.wav")};
+    auto bytes = readBytes(fixture("fixtures/valid/wav-pcm-mono.wav"));
+    REQUIRE(bytes.size() == 96'044);
+    REQUIRE(std::equal(bytes.begin() + 36, bytes.begin() + 40, "data"));
+    const auto write_size = [&](const std::size_t offset, const std::uint32_t size) {
+        for (std::size_t index = 0; index < 4; ++index) {
+            bytes[offset + index] = static_cast<std::uint8_t>(size >> (index * 8U));
+        }
+    };
+    write_size(4, pcm_bytes + 36);
+    write_size(40, pcm_bytes);
+    writeBytes(extended.path(), bytes);
+    std::filesystem::resize_file(extended.path(), pcm_bytes + 44);
+
+    const auto result = TagLibMetadataExtractor{}.read(extended.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.file_size_bytes == pcm_bytes + 44);
+    CHECK(metadata.audio.sample_rate_hz == std::optional<std::uint32_t>{48'000});
+    CHECK(metadata.audio.channels == std::optional<std::uint16_t>{1});
+    CHECK(metadata.audio.duration_ms == std::optional<std::int64_t>{static_cast<std::int64_t>(pcm_bytes) / 96});
 }
 
 TEST_CASE("MR-103 returns typed errors for empty and truncated input without crashing",

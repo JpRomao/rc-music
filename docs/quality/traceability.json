@@ -3092,6 +3092,18 @@
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-023 rejects FLAC application blocks over the cumulative metadata read budget and recovers"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-023 rejects numerous tiny FLAC application blocks over the metadata read count"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-023 reads metadata for a PCM WAV larger than the cumulative metadata read budget"
         }
       ],
       "evidence": [
@@ -3102,6 +3114,10 @@
         {
           "path": "docs/audio-tests.md",
           "marker": "## FLAC precedido por ID3"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "### Total por extração"
         }
       ],
       "remaining": [
@@ -3271,7 +3287,7 @@
         }
       ],
       "remaining": [
-        "Cobrir alocações internas e cumulativas do parser TagLib e demais perfis hostis; o teto por leitura cobre os buffers de entrada.",
+        "Cobrir alocações internas e demais perfis hostis. Os tetos de leitura cobrem o tamanho dos buffers de entrada, o total lido e o número de chamadas.",
         "Completar a validação integrada de placeholder sem impedir playback para o corpus declarado."
       ]
     },

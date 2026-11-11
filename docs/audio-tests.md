@@ -112,6 +112,14 @@ O teto acomoda tags com várias capas no limite individual de 10 MiB. Os limites
 
 Os testes expandem com preenchimento a tag de um MP3 sintético autenticado e preservam seus frames de áudio. Uma tag de 32 MiB continua legível. O Red aceitou uma tag um byte maior e a jornada real recebeu os metadados em vez do erro. No Green, o extrator devolve o erro, lê um MP3 válido em seguida e, na jornada Qt, o mesmo áudio toca até o fim com o nome do arquivo como título. Passaram o build Release do player e **47/47 CTest**, incluindo a matriz dos cinco leitores, a jornada Qt e a integridade do corpus. Os arquivos de teste são gerados em diretórios temporários. Logs em `out/product/test-runs/bounded-metadata-read-20261111/`.
 
+### Total por extração
+
+Cada abertura do TagLib tem um orçamento de **64 MiB lidos** e **65.536 chamadas de leitura**, contando a detecção do formato e leituras repetidas. O adaptador confere o pedido antes de alocar o próximo buffer e desconta os bytes efetivamente retornados. Se o próximo pedido exceder um teto, encerra a extração com `InvalidData`. A próxima abertura começa com contadores novos. Faixas com metadados excepcionalmente volumosos podem usar o nome do arquivo como título mesmo quando seus blocos são válidos.
+
+As regressões inserem blocos APPLICATION depois dos metadados do FLAC canônico, preservando os frames de áudio. O controle com quatro blocos de 15 MiB conserva os metadados. Cinco blocos acionam o limite de bytes e 33.000 blocos pequenos acionam o de chamadas com um arquivo abaixo de 1 MiB. O Red aceitou os dois casos acima do limite. A jornada Qt reproduz até o fim o FLAC cujos metadados foram recusados e confirma o título derivado do nome do arquivo. Um WAV com 65 MiB de PCM conserva duração e propriedades de áudio. Passaram **50/50 CTest**, o caso adicional de compatibilidade WAV e o build Release do player. Logs em `out/product/test-runs/cumulative-metadata-read-20261111/`.
+
+O orçamento cobre a entrada via `readBlock`. Cópias, montagem de pacotes e outras alocações internas do TagLib podem elevar o pico de memória. O decoder de reprodução usa seu próprio caminho.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.

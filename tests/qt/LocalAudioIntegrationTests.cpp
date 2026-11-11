@@ -1,3 +1,4 @@
+#include "../audio/FlacApplicationBlocksFixture.hpp"
 #include "../audio/Id3PaddedMp3Fixture.hpp"
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
@@ -255,13 +256,26 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback_data() {
+        QTest::addColumn<bool>("cumulative");
+        QTest::newRow("mp3-single-read") << false;
+        QTest::newRow("flac-cumulative-reads") << true;
+    }
+
     void metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback() {
+        QFETCH(bool, cumulative);
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
-        const auto filename = directory.filePath(QStringLiteral("Faixa 日本語.mp3"));
+        const auto filename =
+            directory.filePath(cumulative ? QStringLiteral("Faixa 日本語.flac") : QStringLiteral("Faixa 日本語.mp3"));
         const auto source = nativePath(filename);
-        QVERIFY(writeMp3WithPaddedId3(nativePath(QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE)), source,
-                                      32U * 1024U * 1024U + 1U));
+        if (cumulative) {
+            QVERIFY(writeFlacWithApplicationBlocks(nativePath(QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE)), source, 5,
+                                                   15U * 1024U * 1024U));
+        } else {
+            QVERIFY(writeMp3WithPaddedId3(nativePath(QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE)), source,
+                                          32U * 1024U * 1024U + 1U));
+        }
 
         TestPlatform platform;
         QtMultimediaPlaybackBackend engine;
