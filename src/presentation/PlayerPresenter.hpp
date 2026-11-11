@@ -356,6 +356,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] qulonglong sourceImportIssueCount() const noexcept;
     [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
     void setSourceExitDrainedProbe(std::function<bool()> probe);
+    void setPlaylistExitPreparationProbe(std::function<ExitPreparationState()> probe);
     // A complete pair or an empty pair is accepted before its first begin only.
     // An active/used gate cannot be detached or replaced to bypass preparation.
     [[nodiscard]] bool setExitPreparationCallbacks(ExitPreparationCallbacks callbacks);
@@ -468,6 +469,7 @@ class PlayerPresenter final : public QObject {
     void platformChanged();
     void defaultAppsSettingsChanged();
     void lifecycleChanged();
+    void playlistExitRecoveryRequested();
     void fileLocationFinished(QString occurrence_id, bool changed);
     void audioFileSelectionFinished(bool changed);
     void queueFocusRequested(int index);
@@ -512,6 +514,8 @@ class PlayerPresenter final : public QObject {
     void projectPersistenceWarning();
     void advancePersistenceWarningRevision() noexcept;
     [[nodiscard]] bool sourceExitDrained() const;
+    [[nodiscard]] ExitPreparationState playlistExitPreparation() const;
+    void showPlaylistExitRecovery();
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     [[nodiscard]] bool beginPersistenceExit();
     void completeExit();
@@ -648,6 +652,7 @@ class PlayerPresenter final : public QObject {
     bool exit_preparation_call_in_progress_{false};
     std::optional<SystemPowerEvent> last_system_power_event_{};
     std::function<bool()> source_exit_drained_probe_{};
+    std::function<ExitPreparationState()> playlist_exit_preparation_probe_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};
@@ -678,6 +683,7 @@ class PlayerPresenter final : public QObject {
     std::function<PlayerPresenterPreferences::TimePoint()> preference_now_{
         [] { return std::chrono::steady_clock::now(); }};
     std::optional<PlayerPresenterPreferences::TimePoint> preference_exit_deadline_{};
+    std::optional<PlayerPresenterPreferences::TimePoint> playlist_exit_deadline_{};
     std::function<SessionAutosave::TimePoint()> session_now_{};
     struct RestoredPosition final {
         std::uint64_t generation{0};

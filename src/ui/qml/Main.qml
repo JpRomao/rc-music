@@ -70,6 +70,8 @@ ApplicationWindow {
     property bool audioSelectionPending: false
     property bool audioSelectionTerminalObserved: false
     property int audioSelectionFocusRevision: 0
+    property bool playlistExitRecoveryPending: false
+    readonly property bool playlistsOpeningAllowed: playlists !== null && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
 
     Component.onCompleted: {
         previousPlaybackState = presenter.playbackState;
@@ -150,6 +152,10 @@ ApplicationWindow {
 
         function onPlaybackChanged() {
             window.repairPlaybackStateFocus();
+        }
+        function onPlaylistExitRecoveryRequested() {
+            window.playlistExitRecoveryPending = true;
+            window.revealPlaylistExitRecovery();
         }
         function onStateChanged() {
             window.revealDownloadFinalSaveFailure();
@@ -283,7 +289,7 @@ ApplicationWindow {
         lidarrPanel.open();
     }
     function openPlaylists() {
-        if (playlists === null || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+        if (!playlistsOpeningAllowed)
             return;
         queueOpen = false;
         preferencesPanel.close();
@@ -292,6 +298,16 @@ ApplicationWindow {
         lidarrPanel.close();
         playlistsPanel.open();
     }
+    function revealPlaylistExitRecovery() {
+        if (!playlistExitRecoveryPending || !playlistsOpeningAllowed)
+            return;
+        playlistExitRecoveryPending = false;
+        const alreadyOpen = playlistsPanel.opened;
+        openPlaylists();
+        if (alreadyOpen)
+            playlistsPanel.focusSaveRecovery();
+    }
+    onPlaylistsOpeningAllowedChanged: revealPlaylistExitRecovery()
     function revealDownloadFinalSaveFailure() {
         if (downloadsPanel && presenter.exiting && downloadFinalSaveDecisionRequired && !downloadsPanel.visible)
             openDownloads();

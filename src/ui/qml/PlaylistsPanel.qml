@@ -49,6 +49,8 @@ Dialog {
         }
     }
     onOpened: {
+        if (focusSaveRecovery())
+            return;
         if (playlistList.count > 0)
             playlistList.forceActiveFocus(Qt.TabFocusReason);
         else
@@ -57,6 +59,12 @@ Dialog {
     onClosed: {
         nameDialog.close();
         deleteDialog.close();
+    }
+    function focusSaveRecovery(): bool {
+        if (!retrySaveButton.visible || !retrySaveButton.enabled)
+            return false;
+        retrySaveButton.forceActiveFocus(Qt.TabFocusReason);
+        return true;
     }
     function playlistForId(id) {
         if (playlists === null || id.length === 0)
@@ -470,6 +478,7 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             AccessibleTransportButton {
+                id: retrySaveButton
                 objectName: "playlists-retry-save"
                 contract: root.contract
                 text: qsTr("Tentar salvar")

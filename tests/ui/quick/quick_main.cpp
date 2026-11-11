@@ -919,8 +919,8 @@ class ScenarioDriver final : public QObject {
     std::unique_ptr<QMimeData> drag_mime_{};
 };
 
-// OptionalDownloads exercises real exit. Every case therefore owns a fresh
-// presenter plus all borrowed fakes; no production lifecycle state is reset.
+// Tests that exercise real exit own a fresh presenter and all borrowed fakes.
+// No production lifecycle state is reset.
 class DownloadsQuickScenario final : public QObject {
     Q_OBJECT
     Q_PROPERTY(music_player::m0::PlayerPresenter* presenter READ presenter CONSTANT)
@@ -944,6 +944,18 @@ class DownloadsQuickScenario final : public QObject {
     [[nodiscard]] music_player::m0::PlayerPresenter* presenter() const noexcept { return presenter_.get(); }
     [[nodiscard]] QObject* driver() const noexcept { return driver_.get(); }
     Q_INVOKABLE int localExitCalls() const noexcept { return platform_.exit_calls; }
+    Q_INVOKABLE void bindPlaylistExitState(QObject* playlists) {
+        const QPointer<QObject> binding{playlists};
+        presenter_->setPlaylistExitPreparationProbe([binding] {
+            using music_player::m0::ExitPreparationState;
+            if (!binding)
+                return ExitPreparationState::Ready;
+            if (binding->property("busy").toBool())
+                return ExitPreparationState::Pending;
+            return binding->property("hasPendingChange").toBool() ? ExitPreparationState::Failed
+                                                                  : ExitPreparationState::Ready;
+        });
+    }
 
   private:
     [[nodiscard]] std::vector<std::filesystem::path> takeSelection() {

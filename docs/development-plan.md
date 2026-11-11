@@ -646,7 +646,7 @@ O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prior
 | M6.3 | Repeat | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-E2E`, `CHK-CLOSE`; modos off/faixa/fila e fim |
 | M6.4 | Velocidade de reprodução | FR-019 | `CHK-TDD`, `CHK-UI`, `CHK-PERF`, `CHK-E2E`, `CHK-CLOSE`; precisão, áudio/CPU e reset |
 | M6.5 | Editor de tema limitado a tokens | FR-041 | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-SEC`, `CHK-CLOSE`; contraste e recovery |
-| M6.6 | Playlists locais nomeadas — recorte automatizado implementado; criar/renomear/excluir, salvar fila, organizar e persistir; aceitação nativa/pacote pendente e M3U8 posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
+| M6.6 | Playlists locais nomeadas — criar, renomear, excluir, salvar fila, organizar, persistir e recuperar falha ao sair no Windows; aceitação nativa/pacote pendente e M3U8 posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
 
@@ -957,6 +957,8 @@ O incremento de 2026-11-10 acrescenta **Adicionar arquivos…** à playlist sele
 **Localizar arquivo…** atualiza o caminho de uma entrada da playlist após confirmar o salvamento. A edição preserva IDs, ordem, duplicatas e a fila em reprodução. [Playlists](playlists.md#criar-e-organizar)
 
 O painel de playlists aceita navegação por teclado até linhas fora da área visível. A seleção explícita conserva o ID da lista ou faixa em foco, inclusive após reordenação, e preserva a reprodução. [Navegação por teclado](playlists.md#navegação-por-teclado)
+
+O player aguarda a confirmação do salvamento da playlist antes de preparar a saída. Falha ou prazo vencido restauram a janela e devolvem o usuário ao painel, com a edição pendente preservada. [Recuperação ao sair](playlists.md#recuperação-ao-sair)
 
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 

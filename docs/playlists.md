@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-**Estado:** recurso implementado no Windows, com adição direta e localização de arquivos nos [instaladores de `35e999d`](windows-installer.md#setups-de-35e999d). A navegação por teclado foi validada no build local posterior. A aceitação nativa e instalada segue pendente.
+O recurso está implementado no Windows. Os [instaladores de `8982c60`](windows-installer.md#setups-de-8982c60) incluem adição direta, localização de arquivos e navegação por teclado. A recuperação ao sair está no build local posterior. A aceitação nativa e instalada segue pendente.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 
@@ -32,7 +32,7 @@ O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlis
 
 Se o salvamento falhar, **Tentar salvar** submete novamente o mesmo candidato. A opção de recarregar do disco abandona esse candidato em memória e consulta o estado realmente armazenado. Uma falha de confirmação pode acontecer depois da gravação física; por isso, recarregar pode reencontrar a alteração e não promete desfazê-la.
 
-Durante a preparação de saída, o app fecha novas admissões e aguarda o trabalho pendente. Uma alteração sem confirmação precisa ser resolvida; a saída cancelada devolve as ações do painel. Fechar o processo não é uma confirmação de salvamento.
+Ao escolher **Sair** durante um salvamento, o app aguarda a confirmação por até 2 segundos antes de iniciar o encerramento. Se a gravação falhar ou o prazo acabar, o player reabre **Playlists** e conserva a edição em memória. Quando a falha já é conhecida, o painel abre imediatamente com foco em **Tentar salvar**. Também é possível escolher **Recarregar do disco**. Se a gravação terminar depois do prazo, escolha **Sair** novamente quando quiser encerrar.
 
 Quando não for possível carregar o catálogo, use **Tentar abrir novamente** depois de conferir a disponibilidade dos arquivos na pasta de configuração. Versão futura e dados inválidos são preservados; o app não grava uma lista vazia sobre esses documentos por consequência do erro.
 
@@ -90,3 +90,7 @@ O Red confirmou a ausência da substituição no núcleo, no binding, no restart
 O teste Quick do painel reproduziu a falha de **End** na versão anterior. A regressão agora navega até listas e faixas fora da área visível, reordena as entradas entre o movimento do foco e a seleção e verifica o ID enviado à ação **Mover para cima**. A reprodução, o volume e a fila conservam o estado durante a navegação. O painel passou **20 casos Qt Quick**, além do build Release e lint QML. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
 
 O teste de cópia da fila reproduziu o botão ativo com a fila vazia. O painel passou **20 casos Qt Quick**, incluindo a transição de fila vazia para preenchida e de volta a vazia. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/quick-registered-playlists.log`.
+
+### Recuperação ao sair
+
+No Red, três regressões do presenter e três do painel falharam porque a saída avançava antes da confirmação da gravação. O Green verificou a falha já conhecida, a falha durante a espera, a saída após salvamento confirmado e o vencimento do prazo sem encerrar o app após um resultado tardio. O teste do painel conserva a faixa em reprodução e confirma o foco e a ação por teclado em **Tentar salvar**. Os checks passaram **3/3 CTest**, com **313 casos do presenter**, **19 do binding** e **388 Quick**. O build Release do player, o lint QML e a inspeção do grafo de produção também passaram. Logs em `out/product/test-runs/playlist-exit-20261111/`. A jornada instalada e a validação com leitor de tela permanecem pendentes.

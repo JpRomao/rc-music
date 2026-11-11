@@ -593,6 +593,9 @@ class PlayerPresenterTests final : public QObject {
     void exitDrainsActiveAndAcceptedSourceImportsBeforeCommit();
     void exitCancelsANonIpcSourceImportWhenAcceptedIpcWorkIsDrained();
     void sourceDrainTimeoutCancelsExitWithoutDiscardingAcceptedWork();
+    void playlistSaveFailureStopsExitBeforeOtherPreparation();
+    void playlistSaveSuccessContinuesAnAcceptedExit();
+    void playlistSaveExitTimeoutCannotCommitAfterLateSuccess();
     void exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady();
     void exitPreparationDoesNotReplaceAcceptedSourceDrain();
     void exitPreparationFailureIsReversibleWithoutDetachingTheGate_data();
@@ -2115,6 +2118,103 @@ void PlayerPresenterTests::sourceDrainTimeoutCancelsExitWithoutDiscardingAccepte
     QVERIFY(presenter.requestExit());
     QVERIFY(presenter.exitCommitted());
     QCOMPARE(platform.exit_calls, 1);
+}
+
+void PlayerPresenterTests::playlistSaveFailureStopsExitBeforeOtherPreparation() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    auto playlist = ExitPreparationState::Pending;
+    int begins = 0;
+    int source_polls = 0;
+    presenter.setPlaylistExitPreparationProbe([&] { return playlist; });
+    presenter.setSourceExitDrainedProbe([&] {
+        ++source_polls;
+        return true;
+    });
+    QVERIFY(presenter.setExitPreparationCallbacks(
+        {.begin = [&] { ++begins; }, .poll = [] { return ExitPreparationState::Ready; }}));
+    QSignalSpy recovery(&presenter, &PlayerPresenter::playlistExitRecoveryRequested);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(recovery.size(), 0);
+    QCOMPARE(begins, 0);
+    QCOMPARE(source_polls, 0);
+
+    playlist = ExitPreparationState::Failed;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(recovery.size(), 1);
+    QCOMPARE(platform.restore_calls, 1);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QVERIFY(presenter.setVolume(0.35));
+
+    QVERIFY(!presenter.requestExit());
+    QCOMPARE(recovery.size(), 2);
+    QCOMPARE(begins, 0);
+    QCOMPARE(source_polls, 0);
+    QCOMPARE(platform.exit_calls, 0);
+}
+
+void PlayerPresenterTests::playlistSaveSuccessContinuesAnAcceptedExit() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    auto playlist = ExitPreparationState::Pending;
+    int begins = 0;
+    presenter.setPlaylistExitPreparationProbe([&] { return playlist; });
+    QVERIFY(presenter.setExitPreparationCallbacks(
+        {.begin = [&] { ++begins; }, .poll = [] { return ExitPreparationState::Ready; }}));
+    QSignalSpy recovery(&presenter, &PlayerPresenter::playlistExitRecoveryRequested);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!presenter.exiting());
+    QCOMPARE(begins, 0);
+    QCOMPARE(platform.exit_calls, 0);
+
+    playlist = ExitPreparationState::Ready;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(begins, 1);
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(recovery.size(), 0);
+}
+
+void PlayerPresenterTests::playlistSaveExitTimeoutCannotCommitAfterLateSuccess() {
+    AvailableTrayPlatform platform;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter writer;
+    PreferencesAutosave autosave(writer, {}, {.now = [&clock] { return clock.now(); }});
+    const auto timeout = std::chrono::milliseconds{100};
+    PlayerPresenter presenter(
+        frozenBundle(), platform,
+        {.autosave = &autosave, .exit_flush_timeout = timeout, .now = [&clock] { return clock.now(); }});
+    auto playlist = ExitPreparationState::Pending;
+    int begins = 0;
+    presenter.setPlaylistExitPreparationProbe([&] { return playlist; });
+    QVERIFY(presenter.setExitPreparationCallbacks(
+        {.begin = [&] { ++begins; }, .poll = [] { return ExitPreparationState::Ready; }}));
+    QSignalSpy recovery(&presenter, &PlayerPresenter::playlistExitRecoveryRequested);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!presenter.exiting());
+    clock.advance(timeout);
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QCOMPARE(recovery.size(), 1);
+    QCOMPARE(platform.restore_calls, 1);
+    QVERIFY(!presenter.exiting());
+
+    playlist = ExitPreparationState::Ready;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(begins, 0);
+    QCOMPARE(platform.exit_calls, 0);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(begins, 1);
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(recovery.size(), 1);
 }
 
 void PlayerPresenterTests::exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady() {

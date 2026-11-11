@@ -2444,13 +2444,16 @@
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedSaveRetainsTheCandidateForExplicitRetryAndBlocksExit" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "exitDuringTheQueueCallbackCannotCreateAnUnsaveablePendingChange" },
         { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue" },
-        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "name: \"PlaylistsPanel\"" }
+        { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistSaveExitTimeoutCannotCommitAfterLateSuccess" },
+        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_failedPlaylistSaveBlocksExitAndOpensRecovery" },
+        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_playlistSaveFailureDuringExitRestoresRecovery" }
       ],
       "evidence": [
         { "path": "docs/product/requirements.md", "marker": "### 2.9 Playlists nomeadas" },
         { "path": "docs/development-plan.md", "marker": "### Próxima prioridade — playlists" },
         { "path": "docs/architecture/decisions/0015-named-playlists.md", "marker": "## Decisão" },
-        { "path": "docs/playlists.md", "marker": "## Evidência de implementação" }
+        { "path": "docs/playlists.md", "marker": "## Evidência de implementação" },
+        { "path": "docs/playlists.md", "marker": "### Recuperação ao sair" }
       ],
       "remaining": [
         "Concluir aceitação Windows nativa/NVDA e empacotamento atualizado. Domínio, store, binding, painel, restart em dois processos e append sem autoplay têm testes próprios; fakes/offscreen e falhas injetadas não comprovam filesystem sob perda física de energia ou instalação atualizada. M3U8 permanece evolução posterior."

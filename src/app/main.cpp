@@ -760,6 +760,12 @@ int main(int argc, char* argv[]) {
             [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker,
             playlist_locator);
         static_cast<void>(playlists_binding->retryLoad());
+        presenter.setPlaylistExitPreparationProbe([&] {
+            if (!playlists_binding->hasPendingChange())
+                return music_player::m0::ExitPreparationState::Ready;
+            return playlists_binding->busy() ? music_player::m0::ExitPreparationState::Pending
+                                             : music_player::m0::ExitPreparationState::Failed;
+        });
         QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, playlists_binding.get(), [&] {
             if (presenter.exiting())
                 static_cast<void>(playlists_binding->prepareExit());

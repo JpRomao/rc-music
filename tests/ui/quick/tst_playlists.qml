@@ -7,10 +7,21 @@ TestCase {
     id: testCase
     name: "PlaylistsPanel"
     when: windowShown
-    readonly property var driver: testScenarioDriver // qmllint disable unqualified
-    readonly property PlayerPresenter presenter: testLocalPlayerPresenter // qmllint disable unqualified
+    readonly property var scenarioFactory: testScenarioDriver // qmllint disable unqualified
+    property var scenario: null
+    readonly property var driver: scenario ? scenario.driver : null
+    readonly property PlayerPresenter presenter: scenario ? scenario.presenter : null
     readonly property var backend: playlistsBackend
     property var shell
+    property bool exitObserved: false
+    readonly property string saveFailure: "Não foi possível confirmar o salvamento. Tente salvar novamente ou recarregue as listas do disco."
+    Connections {
+        target: testCase.presenter
+        function onLifecycleChanged() {
+            if (testCase.presenter.exiting)
+                testCase.exitObserved = true;
+        }
+    }
     QtObject {
         id: playlistsBackend
         property bool ready: true
@@ -22,8 +33,8 @@ TestCase {
         property var entries: []
         property bool canAddFiles: true
         property bool canReplaceFile: true
-        property bool canRetrySave: false
         property bool hasPendingChange: false
+        readonly property bool canRetrySave: hasPendingChange && !busy && interactionAllowed && testCase.presenter !== null && !testCase.presenter.exiting
         property var calls: []
         function record(action, args) {
             calls = calls.concat([
@@ -121,13 +132,16 @@ TestCase {
         }
     }
     function init() {
+        scenario = scenarioFactory.createDownloadsScenario();
+        verify(scenario && driver && presenter);
+        scenario.bindPlaylistExitState(backend);
+        exitObserved = false;
         driver.resetLocalScenario();
         backend.ready = true;
         backend.busy = false;
         backend.interactionAllowed = true;
         backend.canAddFiles = true;
         backend.canReplaceFile = true;
-        backend.canRetrySave = false;
         backend.hasPendingChange = false;
         backend.statusText = "Playlists salvas";
         backend.selectedPlaylistId = "1";
@@ -175,7 +189,9 @@ TestCase {
             shell.destroy();
         shell = null;
         wait(0);
-        driver.resetLocalScenario();
+        if (scenario)
+            verify(scenarioFactory.releaseDownloadsScenario(scenario));
+        scenario = null;
     }
     function openPanel() {
         const opener = findChild(shell, "playlists");
@@ -371,7 +387,6 @@ TestCase {
         for (const name of ["playlist-create", "playlist-save-queue", "playlist-rename", "playlist-delete", "playlist-add-files", "playlist-add-queue", "playlist-enqueue"])
             verify(!findChild(shell, name).enabled);
         backend.busy = false;
-        backend.canRetrySave = true;
         backend.hasPendingChange = true;
         const retry = findChild(shell, "playlists-retry-save");
         const reload = findChild(shell, "playlists-discard-pending");
@@ -391,6 +406,74 @@ TestCase {
         lastCall("retrySave");
         mouseClick(reload);
         lastCall("discardPending");
+    }
+    function playTrackForExit() {
+        driver.enqueueLocalSelection(["C:/Music/playing.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        return presenter.currentOccurrenceId;
+    }
+    function verifyExitRecovery(occurrence) {
+        tryCompare(findChild(shell, "playlists-panel"), "opened", true, 1000);
+        compare(presenter.exiting, false);
+        compare(presenter.exitCommitted, false);
+        compare(scenario.localExitCalls(), 0);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        compare(presenter.currentOccurrenceId, occurrence);
+        compare(backend.hasPendingChange, true);
+        compare(findChild(shell, "playlists-status").text, saveFailure);
+        const retry = findChild(shell, "playlists-retry-save");
+        const reload = findChild(shell, "playlists-discard-pending");
+        verify(retry.visible && retry.enabled && reload.visible && reload.enabled);
+        tryCompare(retry, "activeFocus", true);
+        compare(backend.calls.length, 0);
+    }
+    function test_failedPlaylistSaveBlocksExitAndOpensRecovery() {
+        const occurrence = playTrackForExit();
+        backend.hasPendingChange = true;
+        backend.statusText = saveFailure;
+        verify(!findChild(shell, "playlists-panel").visible);
+
+        verify(!presenter.requestExit());
+
+        verifyExitRecovery(occurrence);
+        compare(exitObserved, false);
+        keyClick(Qt.Key_Space);
+        lastCall("retrySave");
+        compare(backend.calls.length, 1);
+    }
+    function test_playlistSaveFailureDuringExitRestoresRecovery() {
+        const occurrence = playTrackForExit();
+        backend.hasPendingChange = true;
+        backend.busy = true;
+
+        verify(presenter.requestExit());
+        verify(!presenter.exiting && !presenter.exitCommitted && !exitObserved);
+        compare(scenario.localExitCalls(), 0);
+        verify(!findChild(shell, "playlists-panel").visible);
+        backend.statusText = saveFailure;
+        backend.busy = false;
+
+        verifyExitRecovery(occurrence);
+        compare(exitObserved, false);
+    }
+    function test_confirmedPlaylistSaveAllowsExit() {
+        backend.hasPendingChange = true;
+        backend.busy = true;
+
+        verify(presenter.requestExit());
+        verify(!presenter.exiting && !presenter.exitCommitted && !exitObserved);
+        compare(scenario.localExitCalls(), 0);
+        backend.hasPendingChange = false;
+        backend.busy = false;
+
+        tryCompare(presenter, "exitCommitted", true, 1000);
+        compare(exitObserved, true);
+        compare(scenario.localExitCalls(), 1);
+        verify(!findChild(shell, "playlists-panel").visible);
+        compare(backend.calls.length, 0);
     }
     function test_unreadableLibraryOffersReloadWithoutCreatingOrDiscardingLists() {
         openPanel();

@@ -1606,6 +1606,10 @@ void PlayerPresenter::setSourceExitDrainedProbe(std::function<bool()> probe) {
     source_exit_drained_probe_ = std::move(probe);
 }
 
+void PlayerPresenter::setPlaylistExitPreparationProbe(std::function<ExitPreparationState()> probe) {
+    playlist_exit_preparation_probe_ = std::move(probe);
+}
+
 bool PlayerPresenter::setExitPreparationCallbacks(ExitPreparationCallbacks callbacks) {
     if (QThread::currentThread() != thread() || exiting_ || exit_preparation_started_ ||
         exit_preparation_call_in_progress_ || static_cast<bool>(callbacks.begin) != static_cast<bool>(callbacks.poll))
@@ -2900,10 +2904,27 @@ bool PlayerPresenter::requestExit() {
         return false;
     if (download_append_in_progress_)
         return false;
-    if (exiting_ || file_dialog_cancellation_active_)
+    if (exiting_ || playlist_exit_deadline_.has_value() || file_dialog_cancellation_active_)
         return false;
 
     const QPointer<PlayerPresenter> guard{this};
+    const auto playlist_preparation = playlistExitPreparation();
+    if (!guard)
+        return false;
+    if (playlist_preparation == ExitPreparationState::Pending) {
+        try {
+            playlist_exit_deadline_ = preference_now_() + preference_exit_flush_timeout_;
+        } catch (...) {
+            return false;
+        }
+        reconcileTimer();
+        return true;
+    }
+    if (playlist_preparation != ExitPreparationState::Ready) {
+        showPlaylistExitRecovery();
+        return false;
+    }
+
     const bool selection_was_pending = selectingAudioFiles() || file_location_request_.has_value();
     cancelAudioFileSelection();
     if (!guard)
@@ -2971,6 +2992,22 @@ bool PlayerPresenter::sourceExitDrained() const {
     } catch (...) {
         return false;
     }
+}
+
+ExitPreparationState PlayerPresenter::playlistExitPreparation() const {
+    try {
+        const auto probe = playlist_exit_preparation_probe_;
+        return probe ? probe() : ExitPreparationState::Ready;
+    } catch (...) {
+        return ExitPreparationState::Failed;
+    }
+}
+
+void PlayerPresenter::showPlaylistExitRecovery() {
+    const QPointer<PlayerPresenter> guard{this};
+    controller_.requestRestore();
+    if (guard)
+        emit playlistExitRecoveryRequested();
 }
 
 ExitPreparationState PlayerPresenter::pollExitPreparation() {
@@ -3704,6 +3741,24 @@ void PlayerPresenter::pollPersistence() {
     commitSavedDownloadImportRetirements();
     synchronizePreferenceWarning();
 
+    if (playlist_exit_deadline_.has_value()) {
+        const QPointer<PlayerPresenter> guard{this};
+        const auto preparation = playlistExitPreparation();
+        if (!guard)
+            return;
+        const bool expired = preference_now_() >= *playlist_exit_deadline_;
+        if (preparation == ExitPreparationState::Pending && !expired)
+            return;
+        playlist_exit_deadline_.reset();
+        if (preparation == ExitPreparationState::Ready && !expired)
+            static_cast<void>(requestExit());
+        else
+            showPlaylistExitRecovery();
+        if (guard && !exit_committed_)
+            reconcileTimer();
+        return;
+    }
+
     if (source_exit_drain_active_) {
         const QPointer<PlayerPresenter> guard{this};
         const auto preparation = pollExitPreparation();
@@ -4084,13 +4139,14 @@ bool PlayerPresenter::applicationPollingEnabled() const noexcept {
 void PlayerPresenter::reconcileTimer() {
     const bool application_needed =
         applicationPollingEnabled() &&
-        (uses_frozen_fixture_
-             ? source_exit_drain_active_ ||
-                   (!exit_committed_ && queueLoaded() &&
-                    (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending()))
-             : source_exit_drain_active_ ||
-                   (!exiting_ && (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending ||
-                                  sourceImportActive())));
+        (playlist_exit_deadline_.has_value() ||
+         (uses_frozen_fixture_
+              ? source_exit_drain_active_ ||
+                    (!exit_committed_ && queueLoaded() &&
+                     (controller_.confirmedSnapshot().status == PlaybackStatus::Playing || controller_.seekPending()))
+              : source_exit_drain_active_ ||
+                    (!exiting_ && (local_track_session_->metadataStatus() == LocalTrackMetadataStatus::Pending ||
+                                   sourceImportActive()))));
     const bool preferences_needed = preferences_autosave_ != nullptr && preferences_autosave_->needsPolling();
     const bool session_needed = session_autosave_ != nullptr && session_autosave_->needsPolling();
     const bool needed = application_needed || preferences_needed || session_needed;
