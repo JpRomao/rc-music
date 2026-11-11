@@ -181,6 +181,12 @@ O [incremento Windows seguinte](windows-integration-tests.md) promoveu oito suit
 
 A [promoção dos processos](process-tests.md) registra os cinco drivers em sete jornadas, mais uma guarda de ABI/recursos, usando dois shells instrumentados exclusivos de testes. Os gates de build/testes estão validados: `test` passou **296/296**, com build OFF, lint e formato executados separadamente, sem novo `validate` neste incremento. Após configure/build, `ctest --test-dir out/product/desktop-tests --output-on-failure --no-tests=error -L process` seleciona oito registros; `-L windows` passa a selecionar 19, incluindo as 12 integrações anteriores. Os quatro smokes QPA Windows continuam fora do runner diário, e o executável real permanece sem hooks em ON/OFF.
 
+## Limpeza de artefatos gerados — 2026-11-10
+
+Foram removidos **968 arquivos de build (179.047.853 bytes)**. A lista inclui 150 objetos do núcleo, 49 bibliotecas estáticas de builds auxiliares antigos e 769 fontes geradas pelo Qt em builds históricos. Os grafos CMake/Ninja, logs e recibos foram mantidos. Um build futuro recompila as saídas removidas.
+
+A limpeza conferiu por SHA-256 o trabalho em andamento, os dois instaladores atuais, os manifestos e executáveis dos respectivos runtimes, uma DLL do SDK Qt, o executável de testes do núcleo e o recibo do ensaio nativo adiado. O inventário e o resultado ficam em `out/product/cleanup-20261110/`. Nenhum build, teste ou instalador foi executado durante a limpeza.
+
 ## Limpeza de artefatos gerados — 2026-11-05
 
 A limpeza solicitada removeu **50.238 arquivos / 2.776.863.058 bytes** (aproximadamente **2,78 GB**, ou 2,59 GiB), sem novo backup de binários descartáveis:
