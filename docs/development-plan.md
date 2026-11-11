@@ -616,6 +616,8 @@ O Red reproduziu a falta de tratamento no receptor, no backend, na fila, no diag
 
 Em M5.3, a fila mantém reservados durante a sessão os IDs do snapshot restaurado. Depois que o contador retorna ao início, um comando atrasado para uma ocorrência removida continua sem efeito, inclusive após limpar e repovoar a fila. A regressão em [SessionSnapshotTests.cpp](../tests/core/SessionSnapshotTests.cpp) reproduziu a remoção indevida nos três cenários antes da correção. O núcleo Release passou **305/305 CTest** após a correção. O recorte cobre FR-016 e FR-043 e deixa abertos os demais checks de M5.3. Evidência local em `out/product/test-runs/queue-id-wrap-20261110/`.
 
+Em M5.2, o corpus Windows inclui [FLAC com ID3 inicial e extensão enganosa](audio-tests.md#flac-precedido-por-id3). A jornada real verifica a leitura dos metadados durante a reprodução. Dois casos com tamanhos adulterados verificam o erro tipado do extrator.
+
 ### Gate M5 / release
 
 - Bugs P0/P1 bloqueadores abertos: zero.

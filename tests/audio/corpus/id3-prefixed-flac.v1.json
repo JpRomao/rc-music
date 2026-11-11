@@ -1,0 +1,146 @@
+{
+  "schema_id": "rcmusic.id3-prefixed-flac.v1",
+  "schema_version": 1,
+  "purpose": "canonical-metadata-inputs-for-id3-prefixed-flac",
+  "license": "LicenseRef-MusicPlayer-M0-Private",
+  "license_path": "LICENSE.assets.txt",
+  "hash_algorithm": "sha256",
+  "recipe": {
+    "id": "id3-prefixed-flac-v1",
+    "source": {
+      "relative_path": "fixtures/valid/flac-16-stereo.flac",
+      "size_bytes": 60531,
+      "sha256": "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c"
+    },
+    "header_hex": "49443303000000000458",
+    "id3v23_title_frame_hex": "544954320000000b000000664c6143206465636f79",
+    "id3v23_title_frame_text": "fLaC decoy",
+    "zero_padding_bytes": 579,
+    "declared_tag_body_bytes": 600,
+    "flac_suffix_offset_zero_based": 610,
+    "instructions": "Concatenate header_hex, id3v23_title_frame_hex, zero padding and the complete source bytes. Apply each fixture replacement to the resulting file, if specified. The .mp3 extension is intentional."
+  },
+  "fixtures": [
+    {
+      "id": "id3-prefixed-flac-as-mp3",
+      "relative_path": "fixtures/edge/id3-prefixed-flac-as-mp3.mp3",
+      "size_bytes": 61141,
+      "sha256": "0b17021282d201c6015be2b5fe53dc097ae44e734228329b5ae4257334149089",
+      "source_or_generation_recipe": {
+        "recipe_id": "id3-prefixed-flac-v1",
+        "replace_bytes": null
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "FLAC",
+      "codec_and_profile": "FLAC 16-bit compression level 5 (unchanged suffix)",
+      "duration_ms": 2000,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bit_depth_if_known": 16,
+      "bitrate_mode": "lossless",
+      "expected_tags": {
+        "state": "present",
+        "title": "Canção determinística 日本語 🎵",
+        "artist": "João – Codex",
+        "album": "Álbum de teste Ω",
+        "track": null,
+        "year": 2026
+      },
+      "expected_artwork": {
+        "state": "absent"
+      },
+      "expected_capabilities": {
+        "metadata_read": true
+      },
+      "expected_outcome": "TrackMetadata",
+      "expected_error_code": null,
+      "expected_exception": false,
+      "expectation_basis": "FLAC marker immediately after the complete ID3v2.3 tag, with FLAC properties and original Vorbis comments",
+      "requirement_ids": [
+        "FR-005",
+        "FR-023",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "id3-prefixed-flac-size-past-eof",
+      "relative_path": "fixtures/hostile/id3-prefixed-flac-size-past-eof.mp3",
+      "size_bytes": 61141,
+      "sha256": "c2936417186134b46364f8b3cf480575033e73a23e99ee97030a1a66f8ed45be",
+      "source_or_generation_recipe": {
+        "recipe_id": "id3-prefixed-flac-v1",
+        "replace_bytes": {
+          "offset_zero_based": 6,
+          "expected_hex": "00000458",
+          "replacement_hex": "7f7f7f7f"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "FLAC with invalid leading ID3v2 header",
+      "codec_and_profile": "FLAC 16-bit compression level 5 (unchanged suffix)",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published"
+      },
+      "expected_artwork": {
+        "state": "not_published"
+      },
+      "expected_capabilities": {
+        "metadata_read": false
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expectation_basis": "ID3v2 tag body length exceeds the file",
+      "requirement_ids": [
+        "FR-005",
+        "FR-023",
+        "NFR-REL-001"
+      ]
+    },
+    {
+      "id": "id3-prefixed-flac-invalid-size-byte",
+      "relative_path": "fixtures/hostile/id3-prefixed-flac-invalid-size-byte.mp3",
+      "size_bytes": 61141,
+      "sha256": "6357f74c842fc512837a5040d73d7ac8a27b10745f7f7fe3abeda7a558173844",
+      "source_or_generation_recipe": {
+        "recipe_id": "id3-prefixed-flac-v1",
+        "replace_bytes": {
+          "offset_zero_based": 9,
+          "expected_hex": "58",
+          "replacement_hex": "d8"
+        }
+      },
+      "license": "LicenseRef-MusicPlayer-M0-Private",
+      "container": "FLAC with invalid leading ID3v2 header",
+      "codec_and_profile": "FLAC 16-bit compression level 5 (unchanged suffix)",
+      "duration_ms": null,
+      "sample_rate_hz": null,
+      "channels": null,
+      "bit_depth_if_known": null,
+      "bitrate_mode": null,
+      "expected_tags": {
+        "state": "not_published"
+      },
+      "expected_artwork": {
+        "state": "not_published"
+      },
+      "expected_capabilities": {
+        "metadata_read": false
+      },
+      "expected_outcome": "MetadataReadError",
+      "expected_error_code": "InvalidData",
+      "expected_exception": false,
+      "expectation_basis": "ID3v2 size byte has its high bit set",
+      "requirement_ids": [
+        "FR-005",
+        "FR-023",
+        "NFR-REL-001"
+      ]
+    }
+  ]
+}

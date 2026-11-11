@@ -148,6 +148,10 @@
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-103 rejects structurally recognizable truncated codec fixtures safely"
+        },
+        {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "id3-prefixed-flac-with-mp3-extension"
         }
       ],
       "evidence": [
@@ -158,6 +162,10 @@
         {
           "path": "docs/development-plan.md",
           "marker": "| M5.2 | Corpus/matriz final e regressões de cada crash/bug encontrado"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## FLAC precedido por ID3"
         }
       ],
       "remaining": [
@@ -614,6 +622,10 @@
         {
           "path": "tests/qt/LocalAudioIntegrationTests.cpp",
           "marker": "invalidTagsAreSanitizedWithoutInterruptingRealDecodedPlayback"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature"
         }
       ],
       "evidence": [
@@ -624,6 +636,10 @@
         {
           "path": "docs/product/requirements.md",
           "marker": "O recorte não fecha `FR-023`, `CHK-SEC` ou o corpus hostil canônico"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## FLAC precedido por ID3"
         }
       ],
       "remaining": [
@@ -3064,12 +3080,20 @@
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-103 returns typed errors for empty and truncated input without crashing"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature"
         }
       ],
       "evidence": [
         {
           "path": "docs/audio-tests.md",
           "marker": "## Limites"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## FLAC precedido por ID3"
         }
       ],
       "remaining": [

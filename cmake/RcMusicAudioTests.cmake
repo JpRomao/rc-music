@@ -49,7 +49,9 @@ function(rc_music_add_audio_tests corpus_root)
         rc_music.audio.local-integration LocalAudioIntegrationTests.cpp
         m0_qt_shell_support m0_qt_shell_ui m0_qt_audio_adapters m0_taglib_metadata_extractor
         Qt6::Gui Qt6::Widgets TagLib::TagLib)
-    target_compile_definitions(rc_music_local_audio_integration_tests PRIVATE ${audio_common_definitions})
+    target_compile_definitions(rc_music_local_audio_integration_tests PRIVATE
+        ${audio_common_definitions}
+        M0_TEST_AUDIO_ID3_PREFIXED_FLAC_FILE="${corpus_root}/fixtures/edge/id3-prefixed-flac-as-mp3.mp3")
     add_custom_command(TARGET rc_music_local_audio_integration_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:TagLib::tag>"

@@ -530,6 +530,85 @@ TEST_CASE("Opus and ALAC candidates return explicit unsupported metadata outcome
     }
 }
 
+TEST_CASE("FR-005 recognizes FLAC beyond a leading ID3 tag despite its MP3 extension",
+          "[m0][qt][metadata][taglib][content-detection][id3-prefixed-flac][FR-005]") {
+    constexpr std::size_t flac_offset = 610;
+    const auto canonical = productFixture("fixtures/valid/flac-16-stereo.flac");
+    const auto source = productFixture("fixtures/edge/id3-prefixed-flac-as-mp3.mp3");
+    const auto canonical_bytes = readBytes(canonical);
+    const auto source_bytes = readBytes(source);
+    REQUIRE(source_bytes.size() == flac_offset + canonical_bytes.size());
+    CHECK(std::equal(source_bytes.begin() + flac_offset, source_bytes.end(), canonical_bytes.begin()));
+    const std::vector<std::uint8_t> marker{'f', 'L', 'a', 'C'};
+    const auto tag_end = source_bytes.begin() + flac_offset;
+    REQUIRE(std::search(source_bytes.begin(), tag_end, marker.begin(), marker.end()) != tag_end);
+
+    const TagLibMetadataExtractor reader;
+    const auto canonical_result = reader.read(canonical);
+    const auto& baseline = requireMetadata(canonical_result);
+    const auto result = reader.read(source);
+    const auto& metadata = requireMetadata(result);
+
+    CHECK(metadata.source_path == source);
+    CHECK(metadata.file_size_bytes == source_bytes.size());
+    CHECK(metadata.audio.container == "FLAC");
+    CHECK(metadata.audio.codec == "FLAC");
+    CHECK(metadata.audio.duration_ms == baseline.audio.duration_ms);
+    CHECK(metadata.audio.sample_rate_hz == baseline.audio.sample_rate_hz);
+    CHECK(metadata.audio.channels == baseline.audio.channels);
+    CHECK(metadata.audio.bit_depth == baseline.audio.bit_depth);
+    CHECK(metadata.tags.title == baseline.tags.title);
+    CHECK(metadata.tags.artist == baseline.tags.artist);
+    CHECK(metadata.tags.album == baseline.tags.album);
+    CHECK(metadata.display_title == baseline.display_title);
+    CHECK(readBytes(source) == source_bytes);
+}
+
+TEST_CASE("FR-005 respects the ID3v2.4 footer before a FLAC stream",
+          "[m0][qt][metadata][taglib][content-detection][id3-prefixed-flac][FR-005]") {
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile source{temporaryPath(directory, "id3-footer-flac.audio")};
+    const auto canonical = readBytes(productFixture("fixtures/valid/flac-16-stereo.flac"));
+    std::vector<std::uint8_t> bytes{
+        'I', 'D', '3', 4,   0,   0x10, 0,   0,   0,   20,  // ID3v2.4 header
+        'P', 'R', 'I', 'V', 0,   0,    0,   10,  0,   0,   // PRIV frame header
+        'o', 'w', 'n', 'e', 'r', 0,    'f', 'L', 'a', 'C', // owner and private bytes
+        '3', 'D', 'I', 4,   0,   0x10, 0,   0,   0,   20,  // ID3v2.4 footer
+    };
+    bytes.insert(bytes.end(), canonical.begin(), canonical.end());
+    writeBytes(source.path(), bytes);
+
+    const TagLibMetadataExtractor reader;
+    const auto result = reader.read(source.path());
+    const auto& metadata = requireMetadata(result);
+
+    CHECK(metadata.audio.container == "FLAC");
+    CHECK(metadata.audio.codec == "FLAC");
+    CHECK(metadata.audio.sample_rate_hz == std::optional<std::uint32_t>{48'000});
+    CHECK(readBytes(source.path()) == bytes);
+}
+
+TEST_CASE("MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature",
+          "[m0][qt][metadata][taglib][hostile][id3-prefixed-flac][MR-103]") {
+    const TagLibMetadataExtractor reader;
+    for (const auto& relative_path : {
+             std::filesystem::path{"fixtures/hostile/id3-prefixed-flac-size-past-eof.mp3"},
+             std::filesystem::path{"fixtures/hostile/id3-prefixed-flac-invalid-size-byte.mp3"},
+         }) {
+        CAPTURE(relative_path.string());
+        const auto source = productFixture(relative_path);
+        const auto bytes = readBytes(source);
+        const auto result = reader.read(source);
+        const auto& read_error = requireError(result);
+        CHECK(read_error.code == MetadataReadErrorCode::InvalidData);
+        CHECK_FALSE(read_error.message.empty());
+        CHECK(readBytes(source) == bytes);
+    }
+
+    const auto valid = reader.read(productFixture("fixtures/valid/flac-16-stereo.flac"));
+    CHECK(requireMetadata(valid).audio.codec == "FLAC");
+}
+
 TEST_CASE("ISO BMFF content with an extended ftyp size is recognized before metadata validation",
           "[m0][qt][metadata][taglib][content-detection][extended-ftyp]") {
     const ScopedTemporaryDirectory directory;

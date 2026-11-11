@@ -1111,6 +1111,7 @@ if(M0_QT_AUDIO_SUPPORT)
                 M0_TEST_AUDIO_MP3_UNICODE_FILE="${M0_AUDIO_CORPUS_MP3_UNICODE_FILE}"
                 M0_TEST_AUDIO_M4A_AAC_FILE="${M0_AUDIO_CORPUS_M4A_AAC_FILE}"
                 M0_TEST_AUDIO_FLAC_FILE="${M0_AUDIO_CORPUS_FLAC_FILE}"
+                M0_TEST_AUDIO_ID3_PREFIXED_FLAC_FILE="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/edge/id3-prefixed-flac-as-mp3.mp3"
                 M0_TEST_AUDIO_OGG_VORBIS_FILE="${M0_AUDIO_CORPUS_OGG_VORBIS_FILE}"
                 M0_TEST_AUDIO_TRUNCATED_WAV_FILE="${M0_AUDIO_CORPUS_TRUNCATED_WAV_FILE}"
             )
@@ -1147,6 +1148,7 @@ if(BUILD_TESTING)
     if(M0_QT_AUDIO_SUPPORT)
         include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicAudioFixtures.cmake")
         rc_music_validate_truncated_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
+        rc_music_validate_id3_prefixed_flac_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         rc_music_validate_artwork_audio_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         rc_music_validate_canonical_metadata_corpus("${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus")
         add_executable(m0_taglib_metadata_extractor_tests

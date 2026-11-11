@@ -53,6 +53,7 @@ namespace {
 
 constexpr std::size_t minimum_container_header_size = 12;
 constexpr std::size_t container_header_size = 512;
+constexpr std::array flac_marker{'f', 'L', 'a', 'C'};
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
@@ -71,7 +72,18 @@ enum class OggCodec { Unknown, Vorbis, Opus };
 }
 
 [[nodiscard]] bool isFlac(const ContainerHeader& header) noexcept {
-    return header[0] == 'f' && header[1] == 'L' && header[2] == 'a' && header[3] == 'C';
+    return std::equal(flac_marker.begin(), flac_marker.end(), header.begin());
+}
+
+[[nodiscard]] bool hasFlacMarkerAt(std::ifstream& stream, const ContainerHeader& header, const std::size_t bytes_read,
+                                   const std::uintmax_t offset) {
+    if (offset <= bytes_read && flac_marker.size() <= bytes_read - offset) {
+        return std::equal(flac_marker.begin(), flac_marker.end(), header.data() + offset);
+    }
+    std::array<char, flac_marker.size()> marker{};
+    stream.clear(); // The initial probe may have reached EOF.
+    stream.seekg(static_cast<std::streamoff>(offset));
+    return stream.read(marker.data(), static_cast<std::streamsize>(marker.size())) && marker == flac_marker;
 }
 
 [[nodiscard]] std::uint32_t bigEndian32(const ContainerHeader& header) noexcept {
@@ -145,19 +157,16 @@ enum class OggCodec { Unknown, Vorbis, Opus };
     return header[0] == 'I' && header[1] == 'D' && header[2] == '3';
 }
 
-[[nodiscard]] bool hasValidId3v2Header(const ContainerHeader& header, const std::uintmax_t file_size) noexcept {
-    if (!hasId3v2Signature(header)) {
-        return false;
-    }
-
+[[nodiscard]] std::optional<std::uintmax_t> id3v2EndOffset(const ContainerHeader& header,
+                                                           const std::uintmax_t file_size) noexcept {
     const auto major_version = byteAt(header, 3);
     const auto revision = byteAt(header, 4);
     if (major_version < 2 || major_version > 4 || revision == 0xffU) {
-        return false;
+        return std::nullopt;
     }
     for (std::size_t index = 6; index < 10; ++index) {
         if ((byteAt(header, index) & 0x80U) != 0) {
-            return false;
+            return std::nullopt;
         }
     }
 
@@ -167,10 +176,12 @@ enum class OggCodec { Unknown, Vorbis, Opus };
                           static_cast<std::uintmax_t>(byteAt(header, 9));
     const bool has_footer = (byteAt(header, 5) & 0x10U) != 0;
     if (has_footer && major_version != 4) {
-        return false;
+        return std::nullopt;
     }
     const std::uintmax_t fixed_size = 10U + (has_footer ? 10U : 0U);
-    return file_size >= fixed_size && tag_size <= file_size - fixed_size;
+    if (file_size < fixed_size || tag_size > file_size - fixed_size)
+        return std::nullopt;
+    return fixed_size + tag_size;
 }
 
 [[nodiscard]] bool hasMpegLayer3FrameSync(const ContainerHeader& header) noexcept {
@@ -726,8 +737,14 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             break;
         }
         if (hasId3v2Signature(header)) {
-            if (!hasValidId3v2Header(header, file_size)) {
+            const auto tag_end = id3v2EndOffset(header, file_size);
+            if (!tag_end) {
                 return error(MetadataReadErrorCode::InvalidData, "metadata source has an invalid ID3v2 header");
+            }
+            // A leading ID3 tag does not identify the codec. Probe only at its
+            // validated end, so a marker in the tag cannot masquerade as FLAC.
+            if (file_size - *tag_end >= flac_marker.size() && hasFlacMarkerAt(stream, header, bytes_read, *tag_end)) {
+                return completed(readFlac(source_path, file_size));
             }
             return completed(readMp3(source_path, file_size));
         }

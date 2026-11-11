@@ -493,6 +493,9 @@ class LocalAudioIntegrationTests final : public QObject {
         QTest::newRow("flac-neutral-extension")
             << QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE) << QStringLiteral(".audio") << qint64{2'000} << qint64{20}
             << QStringLiteral("Canção determinística 日本語 🎵");
+        QTest::newRow("id3-prefixed-flac-with-mp3-extension")
+            << QString::fromUtf8(M0_TEST_AUDIO_ID3_PREFIXED_FLAC_FILE) << QStringLiteral(".mp3") << qint64{2'000}
+            << qint64{20} << QStringLiteral("Canção determinística 日本語 🎵");
         QTest::newRow("ogg-vorbis-neutral-extension")
             << QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE) << QStringLiteral(".audio") << qint64{2'000}
             << qint64{20} << QStringLiteral("Canção determinística 日本語 🎵");

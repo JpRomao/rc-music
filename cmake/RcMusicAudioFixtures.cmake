@@ -35,6 +35,19 @@ function(rc_music_validate_truncated_audio_corpus corpus)
         "520134b5a783f2b0676fc870ce9aae7e54be5fe80c7e83fdfa8487971a5f5479")
 endfunction()
 
+function(rc_music_validate_id3_prefixed_flac_corpus corpus)
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/valid/flac-16-stereo.flac" 60531
+        "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c")
+    _rc_music_require_audio_fixture("${corpus}" "id3-prefixed-flac.v1.json" 5047
+        "be398b414ee4e62d556ea22a9560cccee7d14a30d877f364d5ebbbf0bb3fc7ff")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/edge/id3-prefixed-flac-as-mp3.mp3" 61141
+        "0b17021282d201c6015be2b5fe53dc097ae44e734228329b5ae4257334149089")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/id3-prefixed-flac-size-past-eof.mp3" 61141
+        "c2936417186134b46364f8b3cf480575033e73a23e99ee97030a1a66f8ed45be")
+    _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/id3-prefixed-flac-invalid-size-byte.mp3" 61141
+        "6357f74c842fc512837a5040d73d7ac8a27b10745f7f7fe3abeda7a558173844")
+endfunction()
+
 function(rc_music_validate_artwork_audio_corpus corpus)
     _rc_music_require_audio_fixture("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/.." "scripts/fixtures/generate_artwork_corpus.py" 12184
         "777a490529fb493b26ff166658baa7d38e20ac070e57eaf31cd1a40072ae8a2a")
@@ -111,12 +124,11 @@ function(rc_music_validate_audio_corpus corpus)
     rc_music_validate_canonical_metadata_corpus("${corpus}")
     rc_music_validate_artwork_audio_corpus("${corpus}")
     rc_music_validate_truncated_audio_corpus("${corpus}")
+    rc_music_validate_id3_prefixed_flac_corpus("${corpus}")
     _rc_music_require_audio_fixture("${corpus}" "LICENSE.assets.txt" 663
         "54b7a0cbbf8050b2ac4e24cf8afd74c68a2c6d6c6b22c0487599dd84d23b8b13")
     _rc_music_require_audio_fixture("${corpus}" "fixtures/hostile/empty.bin" 0
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-    _rc_music_require_audio_fixture("${corpus}" "fixtures/valid/flac-16-stereo.flac" 60531
-        "103577f9c6b37eea391b86f9a085dc7fb9b0a26571aa907b9d37e47d0b543a1c")
     _rc_music_require_audio_fixture("${corpus}" "fixtures/valid/m4a-aac-lc.m4a" 33400
         "aefe894a1a9277bf4795d421c97d4780fa342eef300819a459ca45329a614558")
     _rc_music_require_audio_fixture("${corpus}" "fixtures/candidate/m4a-alac-candidate.m4a" 78938

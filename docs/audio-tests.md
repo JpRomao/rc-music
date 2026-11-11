@@ -96,6 +96,14 @@ Duas gerações reproduziram os 13 binários e dois manifestos; cinco tentativas
 
 Este incremento altera corpus e testes. O código do player e os instaladores permanecem nos seus commits anteriores; seus checks não foram repetidos. Parser/isolamento, outros perfis hostis, budgets, catálogo global e aceitação nativa mantêm seus próprios gates; `M0.5`/`M2.6`/`M5.2` não são encerrados por esta cobertura.
 
+## FLAC precedido por ID3
+
+O extrator agora procura o marcador FLAC no fim indicado por uma tag ID3v2 inicial, mesmo quando a extensão é `.mp3`. A leitura usa quatro bytes no deslocamento calculado e inclui o rodapé quando sinalizado pelo cabeçalho ID3v2.4. Um marcador dentro da tag não identifica o áudio. O leitor usa os metadados Vorbis e as propriedades do FLAC no arquivo original. [Estrutura do ID3v2.4](https://id3.org/id3v2.4.0-structure)
+
+O [manifesto do corpus](../tests/audio/corpus/id3-prefixed-flac.v1.json) fixa a receita e os hashes de três arquivos sintéticos. Todos preservam o FLAC canônico byte a byte. O caso válido começa o áudio no byte 610 e inclui um marcador enganoso dentro da tag. As duas variantes adulteram o comprimento declarado para ultrapassar o arquivo ou usar um bit reservado. Ambas retornam `InvalidData` na leitura de metadados.
+
+O Red reproduziu a perda dos metadados em dois testes do extrator e na jornada Qt com caminho Unicode. O Green passou **45/45 CTest**, incluindo o catálogo de metadados, a integridade do corpus e a reprodução Qt com busca de posição e decodificação até o fim. O build Release do player passou. Logs em `out/product/test-runs/id3-prefixed-flac-20261111/`. Os limites de alocação internos do TagLib e a aceitação instalada permanecem pendentes.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.
