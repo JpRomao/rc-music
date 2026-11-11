@@ -11,8 +11,14 @@ import ntpath
 import re
 
 
+EXPAT_MODULES = {
+    "pyexpat": "extractor/_internal/pyexpat.pyd",
+    "elementtree": "extractor/_internal/_elementtree.pyd",
+}
 SOURCE_PINS = {
     "python": "3.14.10",
+    "pyexpat": "2.10.0",
+    "elementtree": "2.10.0",
     "node": "24.20.0",
     "altgraph": "0.17.5",
     "packaging": "26.3",
@@ -130,6 +136,9 @@ def _sources(values, repository_root, artifact_root, work_root, mode):
         elif name in ("python", "node"):
             if ntpath.basename(path).casefold() != name + ".exe":
                 raise ValueError("unexpected interpreter source")
+        elif name in EXPAT_MODULES:
+            if ntpath.basename(path).casefold() != ntpath.basename(EXPAT_MODULES[name]):
+                raise ValueError("unexpected Expat module source")
         elif name in SOURCE_PINS and not path.lower().endswith(".whl"):
             raise ValueError("expected pinned wheel")
         result.append({"name": name, "version": version, "path": path, "sha256": _digest(value["sha256"]),
@@ -246,6 +255,13 @@ def validate_inventory(entries):
     return sorted(result, key=lambda value: value["path"])
 
 
+def verify_expat_modules(source_hashes, inventory):
+    artifact_hashes = {row["path"]: row["sha256"] for row in inventory}
+    for name, path in EXPAT_MODULES.items():
+        if artifact_hashes.get(path) != source_hashes[name]:
+            raise ValueError("frozen Expat module does not match its reviewed source: " + name)
+
+
 def source_auth_receipt(plan, inventory):
     """Return schemaVersion=1 data for the caller to save outside artifacts.
 
@@ -258,5 +274,7 @@ def source_auth_receipt(plan, inventory):
     canonical = make_build_plan(**{key: plan[key] for key in _PLAN_INPUTS})
     if plan != canonical:
         raise ValueError("build plan was changed")
+    artifacts = validate_inventory(inventory)
+    verify_expat_modules({source["name"]: source["sha256"] for source in canonical["sources"]}, artifacts)
     return {"schemaVersion": 1, "purpose": canonical["purpose"], "artifact_root": canonical["artifact_root"],
-            "sources": canonical["sources"], "artifacts": validate_inventory(inventory)}
+            "sources": canonical["sources"], "artifacts": artifacts}

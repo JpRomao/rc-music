@@ -24,6 +24,8 @@ RECIPE = ROOT / "tools/youtube-resolver/rcmusic_youtube.spec"
 HOOK = ROOT / "tools/youtube-resolver/hooks/hook-yt_dlp.py"
 SHA = "0123456789abcdef" * 4
 REPOSITORY = "C:/rcmusic project"
+EXPAT_MODULE_PATHS = {"pyexpat": "extractor/_internal/pyexpat.pyd",
+                      "elementtree": "extractor/_internal/_elementtree.pyd"}
 PROJECT_PATHS = {
     "entrypoint": "tools/youtube-resolver/rcmusic_youtube.py",
     "spec": "tools/youtube-resolver/rcmusic_youtube.spec",
@@ -39,6 +41,7 @@ def inputs(mode="prod"):
         {"name": name, "version": version,
          "path": ("C:/Python314/python.exe" if name == "python" else
                   "C:/Program Files/nodejs/node.exe" if name == "node" else
+                  f"C:/Python314/DLLs/{EXPAT_MODULE_PATHS[name].split('/')[-1]}" if name in EXPAT_MODULE_PATHS else
                   f"{REPOSITORY}/out/product/wheels/{name}-{version}.whl"),
          "sha256": SHA, "provenance": f"reviewed official source: {name}"}
         for name, version in planner.SOURCE_PINS.items()
@@ -63,6 +66,10 @@ def entry(role, path, size=1):
 def inventory():
     return ([entry(role, path) for role, path in planner.ROLE_PATHS.items()] +
             [entry("Support", path) for path in planner.REQUIRED_NOTICE_PATHS])
+
+
+def build_inventory():
+    return inventory() + [entry("Support", path) for path in EXPAT_MODULE_PATHS.values()]
 
 
 class OnedirPlanTests(unittest.TestCase):
@@ -313,7 +320,7 @@ class OnedirPlanTests(unittest.TestCase):
         for mode, purpose in (("prod", "production-candidate-v1"), ("offline", "offline-synthetic-v1")):
             with self.subTest(mode=mode):
                 plan = planner.make_build_plan(**inputs(mode))
-                artifacts = inventory()
+                artifacts = build_inventory()
                 receipt = planner.source_auth_receipt(plan, artifacts)
                 self.assertEqual(set(receipt), {"schemaVersion", "purpose", "artifact_root", "sources", "artifacts"})
                 self.assertEqual(receipt.get("schemaVersion"), 1)
@@ -326,6 +333,18 @@ class OnedirPlanTests(unittest.TestCase):
                 artifacts[0]["bytes"] = 99
                 self.assertEqual(receipt.get("sources", [{}])[0].get("sha256"), SHA)
                 self.assertEqual(next(row for row in receipt.get("artifacts", []) if row["role"] == "Extractor")["bytes"], 1)
+
+    def test_receipt_binds_both_expat_module_sources_to_the_frozen_files(self):
+        plan = planner.make_build_plan(**inputs())
+        for name, path in EXPAT_MODULE_PATHS.items():
+            with self.subTest(name=name):
+                self.assertIn(name, {source["name"] for source in plan["sources"]})
+                absent = [row for row in build_inventory() if row["path"] != path]
+                with self.assertRaisesRegex(ValueError, "Expat module"):
+                    planner.source_auth_receipt(plan, absent)
+                changed = absent + [entry("Support", path) | {"sha256": "f" * 64}]
+                with self.assertRaisesRegex(ValueError, "Expat module"):
+                    planner.source_auth_receipt(plan, changed)
 
     def test_receipt_revalidates_plan_instead_of_blessing_mutated_argv_or_purpose(self):
         plan = planner.make_build_plan(**inputs())
@@ -342,7 +361,7 @@ class OnedirPlanTests(unittest.TestCase):
                 planner.source_auth_receipt(invalid, inventory())
 
     def test_pure_functions_do_not_open_scan_hash_download_or_spawn(self):
-        values, artifacts = inputs(), inventory()
+        values, artifacts = inputs(), build_inventory()
         deny = mock.Mock(side_effect=AssertionError("pure planner attempted I/O"))
         with mock.patch.object(builtins, "open", deny), mock.patch.object(Path, "open", deny), \
                 mock.patch.object(Path, "stat", deny), mock.patch.object(Path, "iterdir", deny):
@@ -353,7 +372,7 @@ class OnedirPlanTests(unittest.TestCase):
 
 
 class RecipeContracts(unittest.TestCase):
-    def execute_recipe(self, mode, *, python_version=(3, 14, 10), expat_version=(2, 9, 0)):
+    def execute_recipe(self, mode, *, python_version=(3, 14, 10), expat_version=(2, 10, 0)):
         captured = {}
 
         def analysis(scripts, **kwargs):
@@ -403,10 +422,12 @@ class RecipeContracts(unittest.TestCase):
     def test_recipe_rejects_legacy_python_and_outdated_expat(self):
         old_python = self.execute_recipe("prod", python_version=(3, 13, 1))
         self.assertEqual(old_python.get("exit"), "expected reviewed CPython 3.14.10 Windows x64 build interpreter")
-        old_expat = self.execute_recipe("prod", expat_version=(2, 8, 5))
-        self.assertEqual(old_expat.get("exit"), "expected reviewed Expat 2.9.0 build dependency")
         self.assertNotIn("analysis", old_python)
-        self.assertNotIn("analysis", old_expat)
+        for version in ((2, 8, 5), (2, 9, 0)):
+            with self.subTest(version=version):
+                old_expat = self.execute_recipe("prod", expat_version=version)
+                self.assertEqual(old_expat.get("exit"), "expected reviewed Expat 2.10.0 build dependency")
+                self.assertNotIn("analysis", old_expat)
 
     def test_recipe_selects_only_known_entrypoints_and_keeps_onedir_console_io(self):
         for mode, relative in (("prod", PROJECT_PATHS["entrypoint"]), ("offline", PROJECT_PATHS["offline-entry"])):

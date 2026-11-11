@@ -186,7 +186,17 @@ O PyInstaller gerou 36 arquivos no candidato de produção e 42 no ensaio offlin
 
 Passaram 100 testes Python do resolver/builder, 26 do perfil e 64 casos Qt do leitor do recibo offline. O smoke C++ com os 42 artefatos autenticados validou cinco vetores, entregou a capability ao consumidor de teste e encerrou os processos com ACK. O recibo registra zero tentativas de HTTP, socket ou inicialização remota pelo extractor. A primeira execução falhou com um TEMP mais profundo. A repetição passou com o mesmo executável e manifesto e um TEMP mais curto. Os dois recibos ficam em `out/product/youtube-runtime-python31410-20261111/cpp-receipt-checks/`.
 
-O candidato de produção permanece privado. As correções posteriores de Expat 2.10.0, o comportamento com caminhos temporários mais profundos e a aquisição pública seguem em aberto. [Expat 2.10.0](https://github.com/libexpat/libexpat/blob/R_2_10_0/expat/Changes)
+Esse candidato permanece como referência histórica do Expat 2.9.0.
+
+### Backport do Expat 2.10.0
+
+O Expat 2.10.0 corrige CVE-2026-113351, CVE-2026-115506, CVE-2026-117610 e CVE-2026-118370. A integração DASH usa ElementTree, que ativa expansão de entidades. O backport oficial do CPython atualiza o Expat embutido em `pyexpat.pyd`. `_elementtree.pyd` também precisa ser recompilado, pois exige a mesma versão exata pela API C. [Backport do CPython 3.14](https://github.com/python/cpython/commit/79c504454a52990bfa02374fdb625fdce32844b0) · [Changelog do Expat](https://github.com/libexpat/libexpat/blob/R_2_10_0/expat/Changes)
+
+Para reproduzir, confira `Python-3.14.10.tar.xz` contra o SHA-256 oficial `de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032`. Confira o patch de `79c5044` contra `cb302c375b917f3730f0c13ffcc14a18f6d16754e762d22f889c821c928c77e6`. Extraia o tarball em uma pasta nova e aplique o patch a partir da raiz extraída com `git apply --include='Modules/expat/**' --include='PCbuild/**' <patch>`. Use a [receita MSVC](../tools/youtube-resolver/Build-PatchedExpatModules.ps1) com os fontes preparados e o runtime x64 oficial. O candidato usou MSVC 14.43.34808 e Windows SDK 10.0.26100.0. Copie os dois `.pyd` juntos para `DLLs` em uma cópia do runtime e use essa cópia para criar o venv do builder. [Fontes oficiais do CPython](https://www.python.org/downloads/release/python-31410/) · [Patch oficial](https://github.com/python/cpython/commit/79c504454a52990bfa02374fdb625fdce32844b0.patch)
+
+O runtime isolado carregou os dois módulos x64, informou CPython 3.14.10, Expat 2.10.0 e OpenSSL 3.5.9, e passou na extração sintética de AAC/M4A direto com o wheel fixado. Os módulos originais permaneceram no ZIP e no runtime de referência. Os `COPYING` upstream de Expat 2.9.0 e 2.10.0 têm o mesmo SHA-256. Logs e hashes em `out/product/cpython-expat210-20261111/`. [Aviso de licença upstream](https://raw.githubusercontent.com/libexpat/libexpat/R_2_10_0/expat/COPYING)
+
+O PyInstaller gerou 36 arquivos para o candidato privado e 42 para o ensaio offline. O recibo de cada build vincula `pyexpat.pyd` e `_elementtree.pyd` às cópias recompiladas. `python314.dll` conserva o hash do ZIP oficial. O perfil privado em `out/product/download-tools-expat210-20261111/` tem 47 arquivos, 38 PEs conferidos e recibo SHA-256 `f5eef9fe27fb543c1e8aaf4cb93fc3963ba6d759221094f64add337063752011`. Passaram 101 testes Python do resolver e 27 do perfil. Recibos e inspeção em `out/product/youtube-runtime-expat210-20261111/`. Os dois módulos locais estão sem assinatura, e a validação pública e a qualificação de distribuição seguem pendentes.
 
 ## Factory de runtime na worker
 

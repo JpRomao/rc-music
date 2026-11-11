@@ -19,6 +19,7 @@ ONEDIR = ROOT / "tools/youtube-resolver/onedir_plan.py"
 EXPAT_NOTICE_PATH = "notices/Expat-COPYING.txt"
 EXPAT_LICENSES = {
     "3.13.1": ("Expat-COPYING.txt", 1144, "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"),
+    # The upstream 2.9.0 and 2.10.0 COPYING files have identical bytes.
     "3.14.10": ("Expat-2.9.0-COPYING.txt", 1144, "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"),
 }
 NETWORK = (
@@ -264,31 +265,41 @@ def _youtube(value):
         "entrypoint", "spec", "hook", "build-lock", "python-license", "node-license",
         "yt-dlp-license", "ejs-license", "pyinstaller-license")}}
     values = receipt["sources"]
+    expat_names = planner.EXPAT_MODULES.keys()
+    if type(values) is list and len(values) == len(required) - len(expat_names):
+        # Older source receipts predate the separately rebuilt modules.
+        for name in expat_names:
+            del required[name]
     if type(values) is not list or len(values) != len(required):
         raise ValueError("incorrect production source list")
-    seen, paths = set(), set()
+    source_hashes, paths = {}, set()
+    python_version = None
     for source in values:
         _closed(source, ("name", "version", "path", "sha256", "provenance"))
         name = _text(source["name"], 64)
         allowed_versions = EXPAT_LICENSES if name == "python" else (required.get(name),)
-        if (name not in required or name in seen or type(source["version"]) is not str or
+        if (name not in required or name in source_hashes or type(source["version"]) is not str or
                 source["version"] not in allowed_versions):
             raise ValueError("unknown, duplicate or unreviewed production source")
-        seen.add(name)
+        if name == "python":
+            python_version = source["version"]
         path = _local(source["path"])
         if _key(path) in paths:
             raise ValueError("duplicate historical source path")
         paths.add(_key(path))
-        _digest(source["sha256"])
+        source_hashes[name] = _digest(source["sha256"])
         _text(source["provenance"], 2048)
         # Historical observations are metadata from the trusted producer, not
         # fresh filesystem authority. Do not reopen the build's original inputs.
     inventory = planner.validate_inventory(receipt["artifacts"])
+    if expat_names <= required.keys():
+        if python_version != planner.SOURCE_PINS["python"]:
+            raise ValueError("Expat modules require the reviewed CPython version")
+        planner.verify_expat_modules(source_hashes, inventory)
     root = _local(receipt["artifact_root"])
     _tree(root, inventory)
     artifact_sources = {row["path"]: root / row["path"] for row in inventory}
     if any(path.casefold() == "extractor/_internal/pyexpat.pyd" for path in artifact_sources):
-        python_version = next(source["version"] for source in values if source["name"] == "python")
         license_name, license_size, license_sha = EXPAT_LICENSES[python_version]
         notice = {"role": "Support", "path": EXPAT_NOTICE_PATH, "bytes": license_size, "sha256": license_sha}
         existing = next((row for row in inventory if row["path"].casefold() == EXPAT_NOTICE_PATH.casefold()), None)

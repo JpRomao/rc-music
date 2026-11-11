@@ -301,6 +301,28 @@ class BuildProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Expat notice"):
             self.module.plan(self.config)
 
+    def test_patched_expat_profile_requires_both_matching_module_hashes(self):
+        yt = self.add_youtube()
+        next(source for source in yt.receipt["sources"] if source["name"] == "python")["version"] = "3.14.10"
+        for name, leaf in (("pyexpat", "pyexpat.pyd"), ("elementtree", "_elementtree.pyd")):
+            relative = "extractor/_internal/" + leaf
+            self.add_youtube_support(relative, b"synthetic patched module " + leaf.encode())
+            yt.receipt["sources"].append({"name": name, "version": "2.10.0", "sha256": digest(yt.tree / relative),
+                                          "path": str(self.root / "historical-inputs" / leaf),
+                                          "provenance": "Owned historical Expat 2.10.0 module"})
+        self.save_youtube()
+        candidate = self.module.plan(self.config)
+        rows = [row for row in candidate["files"] if row["relative_path"].endswith("/" + EXPAT_NOTICE)]
+        self.assertEqual([row["sha256"] for row in rows], [EXPAT_290_SHA256])
+
+        module = yt.receipt["sources"].pop()
+        self.save_youtube()
+        self.rejected()
+        yt.receipt["sources"].append(module | {"sha256": "f" * 64})
+        self.save_youtube()
+        with self.assertRaisesRegex(ValueError, "Expat module"):
+            self.module.plan(self.config)
+
     def test_youtube_profile_rejects_a_substituted_expat_notice_for_pyexpat(self):
         self.add_youtube()
         self.add_youtube_support("extractor/_internal/pyexpat.pyd", b"synthetic reviewed CPython extension")

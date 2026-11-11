@@ -24,7 +24,7 @@ Checks nativos do broker passaram **36/36 Qt**, após Red **2 passados/34 falhos
 
 A composição C++ usa `makeWindowsYoutubeBrokerResolverFactory` com `WindowsYoutubeRuntimeConfig` revisado e ambiente explícito, seguida de `makeWindowsMediaAndYoutubeExecution`. A factory faz cópias próprias dos dados e permanece passiva. Cada job prepara seu runtime na worker; `broker.start()` retorna após preparar e validar, e o primeiro `poll()` válido lança o extractor. Assim o executor pode observar cancelamento/shutdown recebido durante a cópia antes do lançamento. O manifesto JSON do ensaio continua exclusivo de testes.
 
-O ambiente de build é um venv Windows x64 separado, com CPython 3.14.10, Expat 2.9.0 e os nove wheels fixados em `requirements-build.lock`. Node 24.20.0 é um input separado. A spec confere as versões efetivas de CPython e Expat antes de empacotar. [Proveniência e validação do candidato](../../docs/youtube-audio-and-lyrics.md#candidato-com-cpython-31410)
+O ambiente de build é um venv Windows x64 separado, com CPython 3.14.10, Expat 2.10.0 e os nove wheels fixados em `requirements-build.lock`. Prepare o par `pyexpat.pyd` e `_elementtree.pyd` com o backport oficial antes de criar o venv. Node 24.20.0 é um input separado. A spec confere as versões efetivas de CPython e Expat. O recibo exige que os dois módulos empacotados correspondam aos hashes declarados. [Proveniência e preparação do runtime](../../docs/youtube-audio-and-lyrics.md#backport-do-expat-2100)
 
 Instale os wheels previamente obtidos e conferidos no venv usando `pip install --no-index --find-links <diretório-de-wheels> --require-hashes --only-binary=:all: -r tools/youtube-resolver/requirements-build.lock`. O builder não instala nem baixa dependências.
 
@@ -34,7 +34,7 @@ O JSON de configuração tem exatamente estes campos:
 - `venv_python`: `python.exe` do venv privado, abaixo de `out`;
 - `artifact_root`, `work_root`, `receipt_path`: destinos absolutos novos, disjuntos e abaixo de `out`; recibo fora das duas árvores;
 - `mode`: `prod` ou `offline`;
-- `sources`: observações `{name, version, path, sha256, provenance}` dos onze pins em `onedir_plan.SOURCE_PINS`, dos arquivos fixos do projeto e dos cinco textos de licença.
+- `sources`: observações `{name, version, path, sha256, provenance}` dos pins em `onedir_plan.SOURCE_PINS`, dos arquivos fixos do projeto e dos cinco textos de licença. `pyexpat` e `elementtree` identificam os dois arquivos `.pyd` de Expat 2.10.0 instalados no runtime do venv.
 
 Os fontes do projeto são `entrypoint`, `spec`, `hook`, `build-lock`, e, somente em offline, `fixture` e `offline-entry`; a versão desses registros é `project`. O builder exige também `python-license`, `node-license`, `yt-dlp-license`, `ejs-license` e `pyinstaller-license`. SHA-256 deve ser hexadecimal minúsculo observado dos bytes locais; procedência é um texto explícito, sem descoberta automática. Inputs não podem atravessar reparse points; para um Node instalado por symlink, conferir e declarar o alvo canônico.
 
