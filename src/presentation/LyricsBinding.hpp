@@ -74,6 +74,7 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
                                             bool keep_distinct_versions = false);
     [[nodiscard]] AcquiredLyricsSaveSnapshot acquiredLyricsSave() const;
+    [[nodiscard]] bool discardInvalidAcquiredLyrics(const std::string& ticket, const QString& target);
     void beginShutdown();
     [[nodiscard]] bool prepareExit();
     [[nodiscard]] bool stopped() const;

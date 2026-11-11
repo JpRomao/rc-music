@@ -150,6 +150,12 @@ bool savePasted(DownloadLyricsBinding& binding, const QString& token, const QStr
                                      Q_ARG(QString, language), Q_ARG(QString, script), Q_ARG(QString, kind)) &&
            accepted;
 }
+bool discardPendingSave(DownloadLyricsBinding& binding, const QString& request_token, const QString& discard_token) {
+    bool accepted{};
+    return QMetaObject::invokeMethod(&binding, "discardPendingSave", Qt::DirectConnection, Q_RETURN_ARG(bool, accepted),
+                                     Q_ARG(QString, request_token), Q_ARG(QString, discard_token)) &&
+           accepted;
+}
 struct Harness final {
     QTemporaryDir directory;
     Network network, playback_network;
@@ -528,6 +534,8 @@ class DownloadLyricsBindingTests final : public QObject {
         const auto pending = h.writer.acquiredLyricsSave();
         QVERIFY(!h.binding.busy());
         QVERIFY(h.binding.canRetrySave());
+        QVERIFY(h.binding.property("pendingDiscardToken").toString().isEmpty());
+        QVERIFY(!discardPendingSave(h.binding, h.binding.requestToken(), QString::fromStdString(pending.ticket)));
         QVERIFY(!h.binding.canSave());
         QVERIFY(!h.binding.canDismiss());
         QVERIFY(!h.binding.dismiss());
@@ -568,6 +576,58 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(h.writer.acquiredLyricsSave().ticket, ticket);
         QCOMPARE(h.network.requests.size(), 1);
     }
+    void discardingAnInvalidAttemptPreservesTheFullCatalogueAndKeepsTheReviewOpen() {
+        Harness h;
+        auto request = h.request();
+        request.artist.clear();
+        LyricsVariants existing;
+        for (std::size_t i = 0; i < maximum_lyrics_variants; ++i) {
+            const auto suffix = std::to_string(i + 1);
+            existing.push_back({i + 1, "Existing " + suffix, "", "", "manual", "Saved verse " + suffix,
+                                LyricsVariantKind::Original, false});
+        }
+        QCOMPARE(h.store->save(nativePath(request.final_mp3), existing), LyricsVariantsSaveStatus::Saved);
+        const auto initial_saves = h.store->saves.load();
+        QVERIFY(h.binding.offerPublished(request));
+        const auto request_token = h.binding.requestToken();
+        QSignalSpy finished(&h.binding, &DownloadLyricsBinding::reviewFinished);
+        QVERIFY(finished.isValid());
+
+        QVERIFY(savePasted(h.binding, request_token, "New lyrics", "Another version"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Invalid);
+        QVERIFY(!h.binding.canDismiss());
+        const auto first_discard_token = h.binding.property("pendingDiscardToken").toString();
+        QVERIFY(!first_discard_token.isEmpty());
+        QVERIFY(!discardPendingSave(h.binding, "stale request", first_discard_token));
+        QVERIFY(!discardPendingSave(h.binding, request_token, "stale attempt"));
+        QVERIFY(h.writer.variantsHasPendingChange());
+        QVERIFY(discardPendingSave(h.binding, request_token, first_discard_token));
+        QCOMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Abandoned);
+        QCOMPARE(h.binding.requestToken(), request_token);
+        QVERIFY(h.binding.hasRequest());
+        QVERIFY(h.binding.canSavePasted());
+        QVERIFY(h.binding.canDismiss());
+        QVERIFY(h.binding.property("pendingDiscardToken").toString().isEmpty());
+        QVERIFY(finished.isEmpty());
+
+        QVERIFY(savePasted(h.binding, request_token, "Different lyrics", "Another attempt"));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Invalid);
+        const auto second_discard_token = h.binding.property("pendingDiscardToken").toString();
+        QVERIFY(!second_discard_token.isEmpty());
+        QVERIFY(second_discard_token != first_discard_token);
+        QVERIFY(!discardPendingSave(h.binding, request_token, first_discard_token));
+        QVERIFY(h.writer.variantsHasPendingChange());
+        QVERIFY(discardPendingSave(h.binding, request_token, second_discard_token));
+        QVERIFY(!h.writer.variantsHasPendingChange());
+        QCOMPARE(h.store->read(request.final_mp3), existing);
+        QCOMPARE(h.store->saves.load(), initial_saves);
+        QVERIFY(h.network.requests.isEmpty());
+        QVERIFY(h.playback_network.requests.isEmpty());
+        QVERIFY(finished.isEmpty());
+        QVERIFY(h.binding.dismiss());
+        QCOMPARE(finished.size(), 1);
+        QCOMPARE(finished.front().front().toString(), QString::fromStdString(request.job_id));
+    }
     void dismissingAPreviewNeverAbandonsAnUnrelatedPendingWrite() {
         Harness h;
         const auto foreign = h.directory.filePath("foreign.mp3");
@@ -603,8 +663,7 @@ class DownloadLyricsBindingTests final : public QObject {
         QVERIFY(h.binding.saveCandidate(0, "Owned", "", "", "original"));
         QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
         const auto owned_ticket = h.writer.acquiredLyricsSave().ticket;
-        // An explicit action in the writer resolves/abandons its own pending
-        // candidate; this binding must never perform that abandonment itself.
+        // The writer can abandon a failed write through its explicit reload action.
         QVERIFY(h.writer.reloadVariants());
         h.store->save_status = LyricsVariantsSaveStatus::Saved;
         QVERIFY(h.writer.appendAcquiredLyrics("foreign", h.request().final_mp3, foreignDraft(), true));

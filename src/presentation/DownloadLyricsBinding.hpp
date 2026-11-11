@@ -21,6 +21,7 @@ class DownloadLyricsBinding final : public QObject {
     Q_PROPERTY(bool canSavePasted READ canSavePasted NOTIFY changed)
     Q_PROPERTY(bool canRetry READ canRetry NOTIFY changed)
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
+    Q_PROPERTY(QString pendingDiscardToken READ pendingDiscardToken NOTIFY changed)
     Q_PROPERTY(bool canDismiss READ canDismiss NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString artist READ artist NOTIFY changed)
@@ -37,6 +38,7 @@ class DownloadLyricsBinding final : public QObject {
     [[nodiscard]] bool canSavePasted() const;
     [[nodiscard]] bool canRetry() const;
     [[nodiscard]] bool canRetrySave() const;
+    [[nodiscard]] QString pendingDiscardToken() const;
     [[nodiscard]] bool canDismiss() const;
     [[nodiscard]] QString title() const;
     [[nodiscard]] QString artist() const;
@@ -49,6 +51,7 @@ class DownloadLyricsBinding final : public QObject {
     Q_INVOKABLE bool savePasted(const QString& expected_request_token, const QString& content, const QString& name,
                                 const QString& language, const QString& script, const QString& kind);
     Q_INVOKABLE bool retrySave();
+    Q_INVOKABLE bool discardPendingSave(const QString& expected_request_token, const QString& expected_discard_token);
     Q_INVOKABLE bool dismiss();
     [[nodiscard]] bool prepareExit();
     void resume();

@@ -477,6 +477,23 @@ bool LyricsBinding::appendAcquiredLyrics(std::string ticket, QString target, Lyr
     return variants_->append(std::move(ticket), std::move(target), std::move(drafts), keep_distinct_versions);
 }
 AcquiredLyricsSaveSnapshot LyricsBinding::acquiredLyricsSave() const { return variants_->acquired; }
+bool LyricsBinding::discardInvalidAcquiredLyrics(const std::string& ticket, const QString& target) {
+    auto& value = *variants_;
+    if (!value.allowed() || value.busy || !value.acquired_pending || value.pending ||
+        value.acquired.state != AcquiredLyricsSaveState::Invalid || value.acquired.ticket != ticket ||
+        value.acquired.target != target)
+        return false;
+    value.acquired.state = AcquiredLyricsSaveState::Abandoned;
+    value.acquired_pending = false;
+    value.acquired_drafts.reset();
+    value.pending_path.clear();
+    value.notice = tr("Tentativa de guardar a letra descartada.");
+    if (!value.ready && !path_.isEmpty())
+        static_cast<void>(value.load());
+    else
+        emit changed();
+    return true;
+}
 QVariantList LyricsBinding::variants() const {
     QVariantList result;
     for (const auto& item : variants_->library)

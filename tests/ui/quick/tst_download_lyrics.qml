@@ -23,6 +23,7 @@ TestCase {
             property bool canRetry: true
             property bool canRetrySave: false
             property bool canDismiss: true
+            property string pendingDiscardToken: ""
             property string title: "Original 日本語"
             property string artist: "Synthetic artist"
             property string requestToken: "request-a"
@@ -45,6 +46,7 @@ TestCase {
             property int saveCalls: 0
             property int pasteCalls: 0
             property int retrySaveCalls: 0
+            property int discardCalls: 0
             property int dismissCalls: 0
             property string submittedTitle: ""
             property string submittedArtist: ""
@@ -54,6 +56,7 @@ TestCase {
             property string submittedScript: ""
             property string submittedKind: ""
             property string submittedToken: ""
+            property string submittedDiscardToken: ""
             property string submittedContent: ""
             property bool retryAccepted: true
             property bool pasteAccepted: true
@@ -90,6 +93,13 @@ TestCase {
             }
             function retrySave() {
                 fake.retrySaveCalls++;
+                return true;
+            }
+            function discardPendingSave(requestToken, discardToken) {
+                ++fake.discardCalls;
+                fake.submittedToken = requestToken;
+                fake.submittedDiscardToken = discardToken;
+                fake.pendingDiscardToken = "";
                 return true;
             }
             function dismiss() {
@@ -275,6 +285,80 @@ TestCase {
         compare(backend.retrySaveCalls, 1);
         compare(backend.retryCalls, 0);
         compare(backend.saveCalls, 0);
+    }
+    function test_discardDraftRequiresKeyboardConfirmationAndKeepsReviewOpen() {
+        const discard = field("discard");
+        verify(!discard.visible && !discard.enabled);
+        backend.pendingDiscardToken = "draft-a";
+        verify(discard.visible && discard.enabled);
+        compare(discard.Accessible.name, "Descartar tentativa");
+        discard.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const confirmation = field("discard-confirmation");
+        const cancel = field("discard-cancel");
+        const confirm = field("discard-confirm");
+        tryCompare(confirmation, "opened", true);
+        tryCompare(cancel, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(confirmation, "visible", false);
+        tryCompare(discard, "activeFocus", true);
+        compare(backend.discardCalls, 0);
+        keyClick(Qt.Key_Return);
+        tryCompare(cancel, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(confirm, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(confirmation, "visible", false);
+        tryCompare(field("title"), "activeFocus", true);
+        verify(shell.panel.opened && backend.hasRequest);
+        compare(backend.discardCalls, 1);
+        compare(backend.submittedToken, "request-a");
+        compare(backend.submittedDiscardToken, "draft-a");
+        compare(backend.dismissCalls, 0);
+        compare(backend.retrySaveCalls, 0);
+    }
+    function test_staleDraftConfirmationCannotDiscard(data) {
+        backend.pendingDiscardToken = "draft-a";
+        press(field("discard"));
+        const confirmation = field("discard-confirmation");
+        const confirm = field("discard-confirm");
+        tryCompare(confirmation, "opened", true);
+        switch (data.change) {
+        case "new draft":
+            backend.pendingDiscardToken = "draft-b";
+            break;
+        case "new request":
+            backend.requestToken = "request-b";
+            break;
+        case "new backend":
+            {
+                const replacement = createTemporaryObject(backendComponent, testCase);
+                verify(replacement);
+                replacement.pendingDiscardToken = "draft-a";
+                currentBackend = replacement;
+                break;
+            }
+        case "busy":
+            backend.busy = true;
+            break;
+        case "disabled":
+            shell.panel.enabled = false;
+            break;
+        case "closed":
+            shell.panel.close();
+            break;
+        }
+        confirm.Accessible.pressAction();
+        tryCompare(confirmation, "visible", false);
+        compare(backend.discardCalls, 0);
+        compare(currentBackend.discardCalls, 0);
+        compare(backend.dismissCalls, 0);
+    }
+    function test_staleDraftConfirmationCannotDiscard_data() {
+        return ["new draft", "new request", "new backend", "busy", "disabled", "closed"].map(change => ({
+                    tag: change,
+                    change: change
+                }));
     }
     function test_busyAndBackendCapabilitiesGateEveryMutatingAction() {
         prepareVersion(0);

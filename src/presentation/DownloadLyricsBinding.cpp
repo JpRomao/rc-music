@@ -86,6 +86,13 @@ struct DownloadLyricsBinding::Impl final {
         const auto snapshot = writer.acquiredLyricsSave();
         return allowed() && !writing_call && own(snapshot) && pending(snapshot.state) && writer.variantsCanRetrySave();
     }
+    QString pendingDiscardToken() const {
+        const auto snapshot = writer.acquiredLyricsSave();
+        if (!allowed() || !request || writing_call || !own(snapshot) ||
+            snapshot.state != AcquiredLyricsSaveState::Invalid || !writer.variantsCanRetrySave())
+            return {};
+        return QString::fromStdString(snapshot.ticket);
+    }
     bool canDismiss() const { return allowed() && request && !ownPending(); }
     void refreshLookup() {
         const auto& result = lookup.result();
@@ -153,12 +160,16 @@ struct DownloadLyricsBinding::Impl final {
             case AcquiredLyricsSaveState::SaveFailed:
             case AcquiredLyricsSaveState::BlockedByFutureVersion:
             case AcquiredLyricsSaveState::Conflict:
-            case AcquiredLyricsSaveState::Invalid:
                 action = DownloadLyricsBinding::tr(
                     "O salvamento está pendente. Tente guardar novamente; o áudio foi preservado.");
                 break;
-            case AcquiredLyricsSaveState::Idle:
+            case AcquiredLyricsSaveState::Invalid:
+                action = DownloadLyricsBinding::tr("A versão excede os limites do catálogo ou contém dados inválidos.");
+                break;
             case AcquiredLyricsSaveState::Abandoned:
+                action = DownloadLyricsBinding::tr("Tentativa de guardar a letra descartada.");
+                break;
+            case AcquiredLyricsSaveState::Idle:
                 break;
             }
         }
@@ -212,6 +223,7 @@ bool DownloadLyricsBinding::canSave() const { return impl_->canSave(); }
 bool DownloadLyricsBinding::canSavePasted() const { return impl_->canSavePasted(); }
 bool DownloadLyricsBinding::canRetry() const { return impl_->canRetry(); }
 bool DownloadLyricsBinding::canRetrySave() const { return impl_->canRetrySave(); }
+QString DownloadLyricsBinding::pendingDiscardToken() const { return impl_->pendingDiscardToken(); }
 bool DownloadLyricsBinding::canDismiss() const { return impl_->canDismiss(); }
 QString DownloadLyricsBinding::title() const { return impl_->request ? impl_->request->title : QString{}; }
 QString DownloadLyricsBinding::artist() const { return impl_->request ? impl_->request->artist : QString{}; }
@@ -297,6 +309,15 @@ bool DownloadLyricsBinding::retrySave() {
     value.writing_call = false;
     emit changed();
     return accepted;
+}
+bool DownloadLyricsBinding::discardPendingSave(const QString& expected_request_token,
+                                               const QString& expected_discard_token) {
+    auto& value = *impl_;
+    if (expected_request_token != value.token || expected_discard_token.isEmpty() ||
+        expected_discard_token != value.pendingDiscardToken())
+        return false;
+    const auto snapshot = value.writer.acquiredLyricsSave();
+    return value.writer.discardInvalidAcquiredLyrics(snapshot.ticket, snapshot.target);
 }
 bool DownloadLyricsBinding::dismiss() {
     auto& value = *impl_;

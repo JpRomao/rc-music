@@ -16,8 +16,12 @@ Dialog {
     property string queryArtist: ""
     property bool initializing: false
     property bool pasteMode: false
+    property var discardTarget: null
+    property bool discardRevoked: false
     readonly property bool requestCurrent: requestOwner !== null && requestOwner === backend && previewToken.length > 0 && requestOwner.hasRequest && requestOwner.requestToken === previewToken
     readonly property bool actionsCurrent: opened && enabled && requestCurrent
+    readonly property string pendingDiscardToken: requestCurrent && !requestOwner.busy && typeof requestOwner.pendingDiscardToken === "string" ? requestOwner.pendingDiscardToken : ""
+    readonly property bool discardTargetCurrent: actionsCurrent && discardTarget !== null && discardTarget.owner === requestOwner && discardTarget.requestToken === previewToken && discardTarget.token === pendingDiscardToken
     readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
     readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !requestOwner.busy)
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
@@ -100,6 +104,24 @@ Dialog {
             requestOwner.saveCandidate(selectedCandidate.index, name, language, script, kind);
         }
     }
+    function openDiscardConfirmation() {
+        if (!discardButton.enabled || discardConfirmation.visible)
+            return;
+        discardRevoked = false;
+        discardTarget = {
+            owner: requestOwner,
+            requestToken: previewToken,
+            token: pendingDiscardToken
+        };
+        discardConfirmation.open();
+    }
+    function confirmDiscard() {
+        if (!discardConfirmation.opened || !discardTargetCurrent || discardRevoked)
+            return;
+        const target = discardTarget;
+        if (target.owner.discardPendingSave(target.requestToken, target.token) === true)
+            discardConfirmation.close();
+    }
     onBackendChanged: {
         if (visible && !initializing)
             revokePreview();
@@ -118,7 +140,18 @@ Dialog {
         if (!enabled)
             revokePreview();
     }
+    onDiscardTargetCurrentChanged: {
+        if (!discardTargetCurrent && discardConfirmation.visible) {
+            discardRevoked = true;
+            const target = discardTarget;
+            Qt.callLater(function () {
+                if (root.discardTarget === target && discardConfirmation.visible)
+                    discardConfirmation.close();
+            });
+        }
+    }
     onAboutToShow: capturePreview()
+    onAboutToHide: discardConfirmation.close()
     onOpened: {
         if (!requestCurrent) {
             revokePreview();
@@ -413,11 +446,21 @@ Dialog {
                 text: qsTr("Tentar guardar novamente")
                 visible: root.requestCurrent && root.requestOwner.canRetrySave
                 enabled: root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetrySave
-                KeyNavigation.tab: dismissButton
+                KeyNavigation.tab: discardButton.enabled ? discardButton : dismissButton
                 onClicked: {
                     if (enabled && root.actionsCurrent)
                         root.requestOwner.retrySave();
                 }
+            }
+            AccessibleTransportButton {
+                id: discardButton
+                objectName: "download-lyrics-discard"
+                contract: root.contract
+                text: qsTr("Descartar tentativa")
+                visible: root.pendingDiscardToken.length > 0
+                enabled: visible && root.actionsCurrent
+                KeyNavigation.tab: dismissButton
+                onClicked: root.openDiscardConfirmation()
             }
             Item {
                 Layout.fillWidth: true
@@ -455,8 +498,84 @@ Dialog {
                 contract: root.contract
                 text: qsTr("Guardar como nova versão")
                 enabled: root.versionFieldsEditable && nameField.text.trim().length > 0 && (kindField.currentIndex === 0 || kindField.currentIndex === 1) && (root.pasteMode ? pastedField.text.trim().length > 0 : root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null)
-                KeyNavigation.tab: retrySaveButton.visible ? retrySaveButton : dismissButton
+                KeyNavigation.tab: retrySaveButton.enabled ? retrySaveButton : discardButton.enabled ? discardButton : dismissButton
                 onClicked: root.saveVersion()
+            }
+        }
+    }
+    Popup {
+        id: discardConfirmation
+        objectName: "download-lyrics-discard-confirmation"
+        parent: root.parent
+        anchors.centerIn: parent
+        width: Math.min(root.width, 480)
+        height: discardContent.implicitHeight + padding * 2
+        padding: root.contract.spacingUnit * 3
+        closePolicy: Popup.CloseOnEscape
+        modal: true
+        dim: false
+        focus: true
+        popupType: Popup.Item
+        onOpened: cancelDiscardButton.forceActiveFocus(Qt.TabFocusReason)
+        onClosed: {
+            const target = root.discardTarget;
+            root.discardTarget = null;
+            Qt.callLater(function () {
+                if (!root.actionsCurrent || target === null || root.requestOwner !== target.owner || root.previewToken !== target.requestToken || discardConfirmation.visible)
+                    return;
+                const focusItem = discardButton.enabled ? discardButton : root.pasteMode ? pastedField : titleField;
+                if (focusItem.visible && focusItem.enabled)
+                    focusItem.forceActiveFocus(Qt.TabFocusReason);
+            });
+        }
+        background: Rectangle {
+            color: root.contract.surfaceRaisedColor
+            radius: root.contract.radiusMedium
+            border.width: root.contract.highContrast ? 2 : 1
+            border.color: root.contract.borderColor
+        }
+        contentItem: ColumnLayout {
+            id: discardContent
+            spacing: root.contract.spacingUnit * 2
+            Accessible.role: Accessible.Dialog
+            Accessible.name: qsTr("Descartar tentativa de guardar letra")
+            FieldLabel {
+                text: qsTr("Descartar tentativa de guardar letra?")
+                font.bold: true
+            }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("O áudio e as versões já guardadas serão preservados. Você pode continuar esta revisão.")
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                color: root.contract.textPrimaryColor
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                AccessibleTransportButton {
+                    id: cancelDiscardButton
+                    objectName: "download-lyrics-discard-cancel"
+                    contract: root.contract
+                    text: qsTr("Cancelar")
+                    KeyNavigation.tab: confirmDiscardButton
+                    KeyNavigation.backtab: confirmDiscardButton
+                    onClicked: discardConfirmation.close()
+                }
+                AccessibleTransportButton {
+                    id: confirmDiscardButton
+                    objectName: "download-lyrics-discard-confirm"
+                    contract: root.contract
+                    text: qsTr("Descartar tentativa")
+                    enabled: root.discardTargetCurrent && !root.discardRevoked
+                    KeyNavigation.tab: cancelDiscardButton
+                    KeyNavigation.backtab: cancelDiscardButton
+                    onClicked: root.confirmDiscard()
+                }
             }
         }
     }
