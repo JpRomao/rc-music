@@ -36,8 +36,9 @@ export function createPopupController({
   };
 
   function getState() {
-    return structuredClone({ ...state,
-      canSend: state.status === 'ready' && !checkingSnapshot && !pendingSnapshot
+    const checkingSelection = checkingSnapshot || pendingSnapshot !== null;
+    return structuredClone({ ...state, checkingSelection,
+      canSend: state.status === 'ready' && !checkingSelection
         && state.authorized && state.selectedUrls.length > 0,
     });
   }
@@ -98,8 +99,12 @@ export function createPopupController({
   async function verifyCurrent(token) {
     const expected = binding;
     if (!live(token) || !expected) throw staleError();
-    const tab = await chrome.tabs.get(expected.tabId);
-    if (!live(token) || tab.id !== expected.tabId || tab.url !== expected.pageUrl || tab.active !== true || tab.status === 'loading') {
+    const [tab, window] = await Promise.all([
+      chrome.tabs.get(expected.tabId), chrome.windows.getLastFocused(),
+    ]);
+    if (!live(token) || tab.id !== expected.tabId || tab.windowId !== expected.windowId
+      || tab.url !== expected.pageUrl || tab.active !== true || tab.status === 'loading' || tab.pendingUrl
+      || window?.id !== expected.windowId || window.focused !== true) {
       throw staleError();
     }
     const result = await chrome.scripting.executeScript({
@@ -134,6 +139,7 @@ export function createPopupController({
     if (checkingSnapshot || !pendingSnapshot || !live(token)) return;
     checkingSnapshot = true;
     publish({});
+    if (!live(token)) return;
     armDeadline(token, 'inspection_timeout');
     try {
       while (pendingSnapshot && live(token) && state.status !== 'sending') {
@@ -181,6 +187,11 @@ export function createPopupController({
         return;
       }
       pendingSnapshot = next;
+      // Rendering can skip intermediate snapshots. Revocation cannot skip an
+      // observed loss, replacement or ambiguous selected source.
+      if (state.authorized && currentSnapshot && !isSelectionCurrent(currentSnapshot, raw, state.selectedUrls)) {
+        publish({ authorized: false });
+      }
       void consumeSnapshots(token);
     } catch (error) {
       finish('error', messageFor(error?.code, messages.invalid_snapshot));
@@ -199,7 +210,8 @@ export function createPopupController({
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!live(token)) return;
       const tab = tabs[0];
-      if (tabs.length !== 1 || !Number.isInteger(tab?.id) || typeof tab.url !== 'string') throw staleError();
+      if (tabs.length !== 1 || !Number.isInteger(tab?.id) || !Number.isInteger(tab.windowId)
+        || typeof tab.url !== 'string') throw staleError();
       normalizeSnapshot({ type: 'snapshot', pageUrl: tab.url, candidates: [], truncated: false });
       binding = { tabId: tab.id, windowId: tab.windowId, pageUrl: tab.url, documentId: null };
       const result = await chrome.scripting.executeScript({
@@ -238,7 +250,9 @@ export function createPopupController({
   }
 
   function setAuthorized(authorized) {
-    if (!disposed && state.status === 'ready' && typeof authorized === 'boolean') publish({ authorized });
+    if (disposed || state.status !== 'ready' || typeof authorized !== 'boolean'
+      || (authorized && (checkingSnapshot || pendingSnapshot))) return;
+    publish({ authorized });
   }
 
   async function submit() {
@@ -280,9 +294,13 @@ export function createPopupController({
   const onActivated = ({ tabId, windowId }) => {
     if (binding && windowId === binding.windowId && tabId !== binding.tabId) invalidate();
   };
+  const onFocusChanged = (windowId) => {
+    if (binding && windowId !== binding.windowId) invalidate();
+  };
   chrome.tabs.onUpdated.addListener(onUpdated);
   chrome.tabs.onRemoved.addListener(onRemoved);
   chrome.tabs.onActivated.addListener(onActivated);
+  chrome.windows.onFocusChanged.addListener(onFocusChanged);
 
   function dispose() {
     if (disposed) return;
@@ -292,6 +310,7 @@ export function createPopupController({
     chrome.tabs.onUpdated.removeListener(onUpdated);
     chrome.tabs.onRemoved.removeListener(onRemoved);
     chrome.tabs.onActivated.removeListener(onActivated);
+    chrome.windows.onFocusChanged.removeListener(onFocusChanged);
   }
 
   return { refresh, submit, setSelected, setAuthorized, dispose, getState };

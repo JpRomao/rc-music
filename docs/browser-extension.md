@@ -29,6 +29,14 @@ A comparação fresca usa os dados brutos antes da deduplicação, recusando amb
 
 Frames de outra origem/sandbox inacessíveis, Shadow DOM fechado, tráfego anterior ao clique, blob/MSE, HLS/DASH, live e conteúdo protegido continuam lacunas explícitas. A concessão temporária [activeTab](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab) e as permissões do manifesto permanecem iguais. Esta cobertura incremental não encerra R1.7/FR-051–053 nem substitui validação no Brave real.
 
+### Contexto da aba e foco no popup
+
+A aba precisa continuar ativa na mesma janela, e a janela precisa estar focada. O popup compara a janela informada pela aba com a janela focada. Perda de foco, troca de aba na janela de origem ou navegação pendente revogam a seleção. [API de abas do Chromium](https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab) · [API de janelas do Chromium](https://developer.chrome.com/docs/extensions/reference/api/windows#event-onFocusChanged)
+
+Cada atualização recebida do detector pode revogar a autorização se uma fonte escolhida desaparecer, mudar ou se tornar ambígua. A revogação vale mesmo quando atualizações posteriores devolvem a fonte e a interface mostra somente a lista mais recente. Ao reordenar a lista, o teclado conserva o foco no mesmo item disponível.
+
+O fechamento passou **228 testes Node** das duas extensões. A composição com detector, popup e ponte reais em navegador simulado confirmou zero conexões nativas após perda de foco antes do envio. As regressões também cobrem navegação pendente, revogação durante atualizações sucessivas, mudança de janela durante a leitura do YouTube e foco do teclado após reordenação. Logs em `out/product/test-runs/chromium-popup-context-20261111/`. A aceitação no Brave real permanece pendente.
+
 ## Coletor compartilhado com a navegação experimental
 
 O incremento de 2026-11-04 extrai a caminhada para [media-collector.js](../extensions/chromium/main/media-collector.js), sem dependências do Chrome, timers, listeners ou retenção de documentos fora da chamada. O popup injeta **`media-collector.js` e depois `detector.js`**, na mesma ordem, somente no documento principal e no mundo `ISOLATED`. Permissões, host, protocolo nativo e identidade da extensão permanecem os mesmos.

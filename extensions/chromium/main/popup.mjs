@@ -55,7 +55,7 @@ export function mountPopup(document, controller) {
     elements.count.textContent = `${state.selectedUrls.length} de 20 selecionados`;
     elements.truncated.hidden = !state.truncated;
     elements.authorize.checked = state.authorized;
-    elements.authorize.disabled = !interactive || state.selectedUrls.length === 0;
+    elements.authorize.disabled = !interactive || state.checkingSelection || state.selectedUrls.length === 0;
     elements.refresh.disabled = busy;
     elements.send.disabled = !state.canSend || busy;
     elements.send.textContent = state.status === 'sending' ? 'Enviando…' : 'Baixar selecionados';
@@ -79,7 +79,12 @@ export function mountPopup(document, controller) {
     // Keep existing checkbox nodes attached on selection-only updates, preserving keyboard focus.
     if (elements.list.children.length !== ordered.length
       || ordered.some((row, index) => elements.list.children[index] !== row)) {
+      const focused = document.activeElement;
       elements.list.replaceChildren(...ordered);
+      if (focused !== document.activeElement
+        && [...rows.values()].some(({ checkbox }) => checkbox === focused && !checkbox.disabled)) {
+        focused.focus();
+      }
     }
     elements.list.hidden = ordered.length === 0;
   }

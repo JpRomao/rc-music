@@ -30,10 +30,12 @@ function integration(nodes, options = {}) {
   const controllers = [];
   const states = [];
   const tab = { id: 7, windowId: 3, url: env.location.href, active: true, status: "complete" };
+  const browserWindow = { id: tab.windowId, focused: true };
   const documentId = "top-document-1";
   let nextProbeGate = null;
   let nextTabGate = null;
   const chrome = {
+    windows: { getLastFocused: async () => ({ ...browserWindow }), onFocusChanged: event() },
     tabs: {
       query: async () => [{ ...tab }],
       async get(tabId) {
@@ -97,7 +99,7 @@ function integration(nodes, options = {}) {
         // replace its result with a fabricated snapshot or inspect its source.
         const result = clone(env.execute(settings.func));
         probes.push(result);
-        if (nextProbeGate) {
+        if (nextProbeGate && --nextProbeGate.remaining === 0) {
           const gate = nextProbeGate;
           nextProbeGate = null;
           gate.started = true;
@@ -149,7 +151,7 @@ function integration(nodes, options = {}) {
   }
   const controller = newController();
   return {
-    env, controller, chrome, links, injections, probes, requests, nativePorts, states, newController,
+    env, controller, chrome, browserWindow, links, injections, probes, requests, nativePorts, states, newController,
     async flush(milliseconds = 0) {
       env.clock.advance(milliseconds);
       for (let index = 0; index < 25; index += 1) {
@@ -162,10 +164,10 @@ function integration(nodes, options = {}) {
       await this.flush();
       assert.equal(target.getState().status, "ready");
     },
-    deferNextProbe() {
+    deferNextProbe(call = 1) {
       let release;
       const promise = new Promise((resolve) => { release = resolve; });
-      const gate = { promise, release, started: false };
+      const gate = { promise, release, started: false, remaining: call };
       nextProbeGate = gate;
       return gate;
     },
@@ -305,6 +307,33 @@ test("a real context stream update during final tab verification revokes only se
   }
 });
 
+test("a valid detector snapshot cannot authorize a send after its window loses focus", async (t) => {
+  const fixture = childFixture();
+  const h = integration([fixture.frame]);
+  t.after(() => h.dispose());
+  await h.ready();
+  selectAndAuthorize(h, fixture.url);
+
+  const gate = h.deferNextProbe(2);
+  const pending = h.controller.submit();
+  await h.flush();
+  assert.equal(gate.started, true);
+  assert.equal(h.probes.at(-1)?.type, "snapshot");
+  assert.equal(h.nativePorts.length, 0);
+
+  // The original tab remains active in its own window; Chromium has not
+  // delivered the focus event yet. Only the live window check can see this.
+  h.browserWindow.focused = false;
+  gate.release();
+  await pending;
+  await h.flush();
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.nativePorts.length, 0);
+  assert.equal(h.controller.getState().status, "disconnected");
+  assert.equal(h.controller.getState().authorized, false);
+  assert.equal(h.links[0].closed, true);
+});
+
 test("reopening a detector session revokes an old pending submission and ignores its queued snapshot", async (t) => {
   const url = "https://cdn.example/media/song.mp3";
   const h = integration([element("audio", { src: "song.mp3", title: "Song" })]);
@@ -370,4 +399,5 @@ test("removed roots stay retired and stopping the real composition makes queued 
   assert.equal(h.requests.length, 0);
   assertStopped(h.env, h.links[0].content);
   for (const name of ["onUpdated", "onRemoved", "onActivated"]) assert.equal(h.chrome.tabs[name].listeners.size, 0);
+  assert.equal(h.chrome.windows.onFocusChanged.listeners.size, 0);
 });

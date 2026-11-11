@@ -47,6 +47,7 @@ function harness(overrides = {}) {
   let nextTimer = 0;
   let freshSnapshot = snapshot();
   const currentTab = { id: 7, windowId: 3, url: pageUrl, active: true };
+  const focusedWindow = { id: 3, focused: true };
   const chrome = {
     tabs: {
       query: async () => [{ ...currentTab }],
@@ -62,6 +63,7 @@ function harness(overrides = {}) {
         return port;
       },
     },
+    windows: { getLastFocused: async () => ({ ...focusedWindow }), onFocusChanged: event() },
     scripting: {
       async executeScript(options) {
         injections.push(options);
@@ -95,7 +97,7 @@ function harness(overrides = {}) {
   };
   const controller = createPopupController(options);
   return {
-    controller, chrome, ports, injections, sends, states, timers, currentTab,
+    controller, chrome, ports, injections, sends, states, timers, currentTab, focusedWindow,
     get freshSnapshot() { return freshSnapshot; },
     set freshSnapshot(value) { freshSnapshot = structuredClone(value); },
     async ready(count = 2) {
@@ -431,6 +433,64 @@ test('send revalidates current tab URL even when no navigation notification arri
   h.controller.dispose();
 });
 
+test('send refuses a tab moved out of the window without a navigation event', async () => {
+  const h = harness();
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  h.currentTab.windowId = 4;
+  await h.controller.submit();
+  assert.equal(h.sends.length, 0);
+  assert.equal(h.controller.getState().status, 'disconnected');
+  h.controller.dispose();
+});
+
+test('send refuses a pending navigation while the old URL is still committed', async () => {
+  const h = harness();
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  h.currentTab.pendingUrl = h.currentTab.url;
+  await h.controller.submit();
+  assert.equal(h.sends.length, 0);
+  assert.equal(h.controller.getState().status, 'disconnected');
+  h.controller.dispose();
+});
+
+test('send requires the original window to be focused even when its tab remains active', async () => {
+  for (const change of [{ focused: false }, { id: 4 }]) {
+    const h = harness();
+    await h.ready();
+    h.controller.setSelected(media(0).url, true);
+    h.controller.setAuthorized(true);
+    Object.assign(h.focusedWindow, change);
+    await h.controller.submit();
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.controller.getState().status, 'disconnected');
+    h.controller.dispose();
+  }
+});
+
+test('focus loss invalidates a live selection and ignores a late check', async () => {
+  const h = harness();
+  await h.ready();
+  h.controller.setSelected(media(0).url, true);
+  h.controller.setAuthorized(true);
+  h.chrome.windows.onFocusChanged.emit(h.focusedWindow.id);
+  assert.equal(h.controller.getState().canSend, true);
+  const focused = deferred();
+  h.chrome.windows.getLastFocused = () => focused.promise;
+  const submit = h.controller.submit();
+  h.chrome.windows.onFocusChanged.emit(-1);
+  assert.equal(h.controller.getState().status, 'disconnected');
+  assert.equal(h.ports[0].closed, 1);
+  focused.resolve({ ...h.focusedWindow });
+  await submit;
+  assert.equal(h.sends.length, 0);
+  h.controller.dispose();
+  assert.equal(h.chrome.windows.onFocusChanged.size, 0);
+});
+
 test('send revalidates exact document identity and its live URL', async () => {
   for (const result of [
     [{ frameId: 0, documentId: 'document-2', result: pageUrl }],
@@ -514,6 +574,46 @@ test('a pending snapshot verification blocks stale submit and re-enables only th
   assert.equal(h.controller.getState().canSend, false);
   assert.equal(h.controller.getState().authorized, false);
   h.controller.dispose();
+});
+
+test('coalesced snapshots require fresh consent after any observed selected source loss or ambiguity', async () => {
+  const unchanged = snapshot();
+  const selected = unchanged.candidates[0];
+  for (const candidates of [
+    [unchanged.candidates[1]],
+    [{ ...selected, sourceId: 'c1:d2' }, unchanged.candidates[1]],
+    [...unchanged.candidates, { ...selected, sourceId: 'c1:d2' }],
+  ]) {
+    let tryDuringPublish = false;
+    let reentrantSend;
+    const h = harness({ onState(state) {
+      if (tryDuringPublish && !state.canSend) {
+        tryDuringPublish = false;
+        h.controller.setAuthorized(true);
+        reentrantSend = h.controller.submit();
+      }
+    } });
+    await h.ready();
+    h.controller.setSelected(selected.url, true);
+    h.controller.setAuthorized(true);
+    const pending = deferred();
+    h.chrome.tabs.get = () => pending.promise;
+    tryDuringPublish = true;
+    h.ports[0].onMessage.emit({ ...unchanged, candidates });
+    h.ports[0].onMessage.emit(unchanged);
+    await reentrantSend;
+    assert.equal(h.sends.length, 0);
+    pending.resolve({ ...h.currentTab });
+    await flush();
+    assert.equal(h.controller.getState().authorized, false);
+    assert.equal(h.controller.getState().canSend, false);
+    await h.controller.submit();
+    assert.equal(h.sends.length, 0);
+    h.controller.setAuthorized(true);
+    await h.controller.submit();
+    assert.equal(h.sends.length, 1);
+    h.controller.dispose();
+  }
 });
 
 test('detector disconnect consumes Chromium lastError without exposing its text', async () => {
@@ -642,6 +742,7 @@ test('dispose removes listeners/timers and makes late native responses inert', a
 });
 
 function fakeDocument() {
+  let activeElement = null;
   class Element {
     constructor(tagName) {
       this.tagName = tagName.toUpperCase(); this.children = []; this.attributes = {}; this.listeners = new Map();
@@ -649,14 +750,19 @@ function fakeDocument() {
     }
     set innerHTML(_) { throw new Error('Remote HTML must never be interpreted'); }
     append(...children) { this.children.push(...children); }
-    replaceChildren(...children) { this.children = [...children]; }
+    replaceChildren(...children) {
+      if (this.children.some((child) => descendants(child).includes(activeElement))) activeElement = null;
+      this.children = [...children];
+    }
+    focus() { if (!this.disabled) activeElement = this; }
     setAttribute(key, value) { this.attributes[key] = String(value); }
     addEventListener(name, listener) { if (!this.listeners.has(name)) this.listeners.set(name, new Set()); this.listeners.get(name).add(listener); }
     removeEventListener(name, listener) { this.listeners.get(name)?.delete(listener); }
     emit(name) { for (const listener of [...(this.listeners.get(name) ?? [])]) listener({ target: this }); }
   }
   const ids = Object.fromEntries(['status', 'page-origin', 'media-list', 'selection-count', 'truncated', 'authorize', 'refresh', 'send'].map((id) => [id, new Element(id === 'authorize' ? 'input' : 'div')]));
-  return { ids, getElementById: (id) => ids[id], createElement: (name) => new Element(name) };
+  return { ids, get activeElement() { return activeElement; },
+    getElementById: (id) => ids[id], createElement: (name) => new Element(name) };
 }
 
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
@@ -694,7 +800,10 @@ test('DOM selection and consent only issue explicit controller actions, with sta
   checkbox.checked = true;
   checkbox.emit('change');
   assert.deepEqual(actions, [['select', media(0).url, true]]);
+  view.render({ ...state, selectedUrls: [media(0).url], checkingSelection: true });
+  assert.equal(document.ids.authorize.disabled, true);
   view.render({ ...state, selectedUrls: [media(0).url] });
+  assert.equal(document.ids.authorize.disabled, false);
   assert.equal(descendants(document.ids['media-list']).find((node) => node.tagName === 'INPUT'), checkbox);
   document.ids.authorize.checked = true;
   document.ids.authorize.emit('change');
@@ -712,4 +821,21 @@ test('DOM selection and consent only issue explicit controller actions, with sta
   document.ids.send.emit('click');
   checkbox.emit('change');
   assert.equal(actions.length, actionCount);
+});
+
+test('DOM restores keyboard focus only to the same available media after reordering', () => {
+  const document = fakeDocument();
+  const state = { status: 'ready', candidates: [media(0), media(1)], selectedUrls: [], authorized: false,
+    canSend: false, pageOrigin: 'https://example.com', truncated: false, message: '' };
+  const controller = { getState: () => state, setSelected() {}, setAuthorized() {}, submit() {}, refresh() {} };
+  const view = mountPopup(document, controller);
+  const list = document.ids['media-list'];
+  const checkbox = descendants(list.children[0]).find((node) => node.tagName === 'INPUT');
+  checkbox.focus();
+  view.render({ ...state, candidates: [media(1), media(0)] });
+  assert.ok(descendants(list.children[1]).includes(checkbox));
+  assert.equal(document.activeElement, checkbox);
+  view.render({ ...state, candidates: [media(1)] });
+  assert.equal(document.activeElement, null);
+  view.dispose();
 });

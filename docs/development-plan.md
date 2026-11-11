@@ -826,6 +826,8 @@ O painel pode encerrar um item interrompido após confirmar a limpeza dos tempor
 
 O fluxo YouTube do player Windows configurado passou do host nativo e resolvedor autenticado até conversão AAC→MP3, salvamento da fila e reenvio após reabrir, com transferência local de fixture. Falhas específicas do destino são preservadas após a parada. [Jornada offline e checks](youtube-audio-and-lyrics.md#resolução-autenticada-e-importação-offline-no-player-configurado)
 
+As extensões reconferem a aba e a janela focada antes de enviar. A principal revoga autorização quando observa mudança de uma fonte selecionada, inclusive durante atualizações seguidas da lista. O YouTube invalida a seleção ao mudar a URL confirmada do vídeo. [Contexto da extensão principal](browser-extension.md#contexto-da-aba-e-foco-no-popup) · [Contexto do YouTube](youtube-audio-and-lyrics.md#contexto-do-vídeo-no-popup)
+
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
 ### Checkpoint anterior — extensões opcionais no instalador

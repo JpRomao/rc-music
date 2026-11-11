@@ -18,6 +18,10 @@ A admissão YouTube agora tem ponte assíncrona e sessão de protocolo próprias
 
 A consulta do exemplo do Letras foi bloqueada por HTTP 403, e não foi confirmado contrato de API/extração compatível. Não há parser Letras de produção nem comprovação das variantes dessa página. A [composição opcional de letras após publicação](download-lyrics.md) informa Letras indisponível e usa o LRCLIB existente, com revisão e salvamento explícitos no writer comum. Isso não habilita o provedor primário nem aquisição YouTube de produção. Não tratar retorno LRCLIB como Letras. LLM, tradução e sincronização inventada continuam fora do fluxo.
 
+### Contexto do vídeo no popup
+
+O popup guarda a aba, a janela e a URL confirmada do vídeo escolhido. Antes de enviar, confere se a aba continua ativa na janela de origem, se a janela está focada e se a página conserva a mesma URL sem navegação pendente. Uma troca observada durante a leitura revoga a seleção e invalida a resposta atrasada. Se o envio já começou, confira a fila do RC Music antes de tentar de novo. Essas verificações usam as APIs de abas e janelas do Chromium. [Aba e navegação](https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab) · [Foco da janela](https://developer.chrome.com/docs/extensions/reference/api/windows#event-onFocusChanged)
+
 ## Evidência do ingresso separado
 
 Recibos locais em `out/product/test-runs/youtube-audio-20261104/`. O Red Node passou **5 casos e falhou 18**, antes do comportamento de policy/ponte/controller. O Red Qt passou **38 casos e falhou 26**, com stubs vazios. Depois, o novo teste de montagem DOM real com browser falso teve Red **35/1**; o clique e a renderização foram implementados sem remover suas assertions.
