@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza após a entrega de 6d7ae8b
+
+Foram removidos **7.288 arquivos (840.828.555 bytes lógicos)**. A seleção incluiu os dois instaladores substituídos de `35e999d`, 1.207 arquivos dos seus runtimes conferidos pelos manifestos, 449 intermediários e bibliotecas órfãs do build desktop e 5.630 arquivos de fixtures sintéticas recriadas pelos testes de empacotamento. Os executáveis do player de `35e999d` foram preservados como referências de comparação, junto dos manifestos e recibos.
+
+Os [instaladores atuais](windows-installer.md#setups-de-6d7ae8b), seus runtimes, as extensões empacotadas, as dependências ativas e as alterações locais foram preservados. A conferência por SHA-256 da primeira etapa cobriu **7.209 arquivos**, e quatro grafos Ninja continuaram legíveis. Os planos, resultados e a remoção complementar de objetos Git somente leitura das fixtures ficam em `out/product/cleanup-request-20261111/`. Os intermediários removidos serão regenerados pelo próximo build. O checkout CMake/Ninja não possui manifesto ou cache Cargo local.
+
 ### Intermediários dos instaladores de 6d7ae8b
 
 Após conferir os [dois setups](windows-installer.md#setups-de-6d7ae8b), foram removidos **496 objetos e bibliotecas intermediárias**, somando **276.191.535 bytes**. A seleção veio dos grafos Ninja de `out/product/r6/out/product/{l,c}`. A verificação reconferiu os hashes dos dois setups, players, manifestos e artefatos de build, além da leitura dos dois grafos. A seleção e o resultado estão em `out/product/test-runs/windows-candidates-6d7ae8b-20261111/`.
