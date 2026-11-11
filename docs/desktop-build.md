@@ -72,11 +72,19 @@ A verificação física de 9.880 arquivos do SDK encontrou duas substituições,
 
 O build Release e a montagem Lite de `dd0e650` passaram pelo fluxo padrão. O manifesto SHA-256 `3c28cf0f8c5e5b3ade081d4dc79bfde6c655bb1f25a34638e81ae047114e05fa` identifica os 572 arquivos em `out/product/r9/out/product/qt-network-runtime/`. O smoke offscreen passou na inicialização e em 17 cenários de áudio, com 19 casos Qt e zero skips. O recibo fica em `out/product/test-runs/rc-music-runtime-smoke/20a1f86faea948db962114fad208b1ae/`. A verificação do instalador conferiu a DLL na seção obrigatória do plano Lite.
 
-A receita atual inclui 19 avisos do Qtbase. Os 18 textos upstream foram conferidos contra o snapshot de Qtbase e a fonte do rebuild de Qt Network. O aviso identifica o backport FreeType, as correções do Qt Network e a origem do plugin Schannel restrito do worker. As fontes correspondentes, demais atribuições e condições de distribuição continuam em revisão. [Aviso no pacote](../packaging/windows/notices/qtbase/NOTICE.txt) · [Auditoria Qtbase](delivery/runtime-3f22fda-qtbase.md) · [Condições Qt](https://www.qt.io/development/open-source-lgpl-obligations)
+A receita atual inclui 19 avisos do Qtbase. Os 18 textos upstream foram conferidos contra o snapshot de Qtbase e a fonte do rebuild de Qt Network. O aviso identifica o backport FreeType, as correções do Qt Network e a origem do plugin Schannel restrito do worker. [Aviso no pacote](../packaging/windows/notices/qtbase/NOTICE.txt) · [Auditoria Qtbase](delivery/runtime-3f22fda-qtbase.md) · [Condições Qt](https://www.qt.io/development/open-source-lgpl-obligations)
+
+### Fontes do Qt Base e Qt Network
+
+O ZIP privado `out/product/qtbase-6.11.2-source-20261111/RCMusic-QtBase-QtNetwork-6.11.2-source.zip` reúne as fontes fixadas, patches, licenças, receitas, instruções e recibos. SHA-256 `9d0c3d537962094cba0d80c960c5c23dcbe646ec96ab952a00a8833d03b6c14a`. A verificação offline conferiu 22.856 arquivos Qtbase e 53 do Vulkan-Headers e reproduziu byte a byte o arquivo alterado pelo patch FreeType e os quatro arquivos alterados pelos patches Qt Network. O recibo de proveniência conferiu dez binários de cada edição de `ba112a6`, incluindo as duas ocorrências da DLL Qt Network.
+
+O ZIP inclui um verificador e instruções de reconstrução. Equivalência de build, substituição ou relink, fontes dos demais módulos Qt e qualificação de distribuição continuam pendentes. [Fontes do plugin Schannel](packaged-download-profile.md#fontes-do-plugin-schannel-restrito)
 
 ### Avisos de Qt Declarative e Qt SVG
 
 A receita inclui quatro textos de licença sem alterações e um aviso com os créditos do JavaScriptCore Macro Assembler, Yoga, sombras Angular Material e XSVG. Os metadados de atribuição conferem com o SPDX do SDK, e os cinco binários identificados têm os mesmos hashes nas duas edições de `ba112a6`. O recibo `out/product/qt-declarative-svg-notice-inputs-20261111/provenance.json` registra os blobs Git e os SHA-256 das entradas. Os setups de `ba112a6` antecedem essa mudança. [Aviso no pacote](../packaging/windows/notices/qt-declarative-svg/NOTICE.txt) · [Qt Declarative 6.11.2](https://github.com/qt/qtdeclarative/tree/4e3399c26ec57246c08de019cfcbda8d23604cfa) · [Qt SVG 6.11.2](https://github.com/qt/qtsvg/tree/17ca512f903f935282ebeca496aac5d11ba4199a)
+
+O teste da receita detectou os cinco arquivos ausentes e passou em 26/26 casos depois da inclusão. A montagem Lite de `937ca73` conferiu os 645 arquivos no disco. O manifesto e a verificação em `out/product/r9/out/product/qt-declarative-svg-20261111/` registram os cinco avisos novos e a igualdade por SHA-256 dos 640 arquivos anteriores.
 
 ## TagLib no runtime Windows
 
