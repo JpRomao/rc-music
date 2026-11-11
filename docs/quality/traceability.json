@@ -878,10 +878,14 @@
         {
           "path": "docs/windows-installer.md",
           "marker": "## Instalador com formatos v2"
+        },
+        {
+          "path": "docs/windows-installer.md",
+          "marker": "### Declarações e setups de 8982c60 com associações"
         }
       ],
       "remaining": [
-        "Confirmar registro e escolha de padrão no Windows com o pacote promovido; perfis básicos, declaração v2 e compilação do setup ON estão verificados localmente, mas esse setup não foi executado e lifecycle/ativação nativa continuam pendentes."
+        "Confirmar registro, associação pelo Explorer e escolha de padrão no Windows com os setups de `8982c60`. Os dois runtimes, suas declarações v2 e os setups com associações têm evidência local."
       ]
     },
     {
