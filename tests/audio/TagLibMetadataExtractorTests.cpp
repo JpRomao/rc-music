@@ -1,3 +1,4 @@
+#include "Id3PaddedMp3Fixture.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 
@@ -670,6 +671,55 @@ TEST_CASE("MR-103 rejects truncated and random MP3-shaped input safely",
                read_error.code == MetadataReadErrorCode::UnsupportedFormat));
         CHECK_FALSE(read_error.message.empty());
     }
+}
+
+TEST_CASE("FR-023 accepts an ID3 tag body at the metadata read limit",
+          "[m0][qt][metadata][taglib][mp3][metadata-read-limit][FR-023]") {
+    constexpr std::size_t read_limit_bytes = 32U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile padded{temporaryPath(directory, "id3-at-read-limit.mp3")};
+    const auto authenticated = fixture("fixtures/valid/mp3-cbr-stereo.mp3");
+    REQUIRE(writeMp3WithPaddedId3(authenticated, padded.path(), read_limit_bytes));
+    const auto padded_size = std::filesystem::file_size(padded.path());
+    const auto padded_timestamp = std::filesystem::last_write_time(padded.path());
+
+    const TagLibMetadataExtractor reader;
+    const auto baseline_result = reader.read(authenticated);
+    const auto& baseline = requireMetadata(baseline_result);
+    const auto result = reader.read(padded.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.file_size_bytes == padded_size);
+    CHECK(metadata.audio.codec == baseline.audio.codec);
+    CHECK(metadata.audio.duration_ms == baseline.audio.duration_ms);
+    CHECK(metadata.audio.sample_rate_hz == baseline.audio.sample_rate_hz);
+    CHECK(metadata.audio.channels == baseline.audio.channels);
+    CHECK(metadata.tags.title == baseline.tags.title);
+    CHECK(metadata.tags.artist == baseline.tags.artist);
+    CHECK(metadata.tags.album == baseline.tags.album);
+    CHECK(std::filesystem::file_size(padded.path()) == padded_size);
+    CHECK(std::filesystem::last_write_time(padded.path()) == padded_timestamp);
+}
+
+TEST_CASE("FR-023 rejects an ID3 tag body one byte over the metadata read limit and recovers",
+          "[m0][qt][metadata][taglib][mp3][hostile][metadata-read-limit][FR-023]") {
+    constexpr std::size_t read_limit_bytes = 32U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile padded{temporaryPath(directory, "id3-above-read-limit.mp3")};
+    const auto authenticated = fixture("fixtures/valid/mp3-cbr-stereo.mp3");
+    REQUIRE(writeMp3WithPaddedId3(authenticated, padded.path(), read_limit_bytes + 1U));
+    const auto padded_size = std::filesystem::file_size(padded.path());
+    const auto padded_timestamp = std::filesystem::last_write_time(padded.path());
+
+    const TagLibMetadataExtractor reader;
+    const auto result = reader.read(padded.path());
+    const auto& error = requireError(result);
+    CHECK(error.code == MetadataReadErrorCode::InvalidData);
+    CHECK(error.message.find("32 MiB") != std::string::npos);
+    CHECK(std::filesystem::file_size(padded.path()) == padded_size);
+    CHECK(std::filesystem::last_write_time(padded.path()) == padded_timestamp);
+
+    const auto recovered = reader.read(authenticated);
+    CHECK(requireMetadata(recovered).audio.codec == "MPEG-1 Audio Layer III");
 }
 
 TEST_CASE("MR-103 returns typed errors for empty and truncated input without crashing",

@@ -127,6 +127,8 @@ Os valores normativos estão nos [requisitos](../product/requirements.md) (NFR-L
 
 Fuzzing é desejável nos wrappers e parsers próprios. Não prometer que fuzzing de uma biblioteca externa elimina o risco dela.
 
+O adaptador TagLib limita cada buffer de entrada a 32 MiB antes de ler. A mesma abertura somente leitura serve à detecção e à extração. Memória cumulativa, alocações internas e isolamento do decoder continuam em avaliação. [Testes do limite](../audio-tests.md#limite-por-leitura-de-metadados)
+
 ## 8. Persistência e privacidade
 
 Dados persistidos são mínimos:

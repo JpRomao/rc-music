@@ -624,6 +624,10 @@
           "marker": "invalidTagsAreSanitizedWithoutInterruptingRealDecodedPlayback"
         },
         {
+          "path": "tests/qt/LocalAudioIntegrationTests.cpp",
+          "marker": "metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback"
+        },
+        {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature"
         }
@@ -640,6 +644,10 @@
         {
           "path": "docs/audio-tests.md",
           "marker": "## FLAC precedido por ID3"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Limite por leitura de metadados"
         }
       ],
       "remaining": [
@@ -3256,10 +3264,14 @@
         {
           "path": "docs/audio-tests.md",
           "marker": "## Capas canônicas e bordas reais"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "## Limite por leitura de metadados"
         }
       ],
       "remaining": [
-        "Completar a proteção de pré-alocação do parser TagLib e demais perfis hostis; o gate posterior de tamanho não cobre sua materialização interna.",
+        "Cobrir alocações internas e cumulativas do parser TagLib e demais perfis hostis; o teto por leitura cobre os buffers de entrada.",
         "Completar a validação integrada de placeholder sem impedir playback para o corpus declarado."
       ]
     },

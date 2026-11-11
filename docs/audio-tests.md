@@ -104,6 +104,14 @@ O [manifesto do corpus](../tests/audio/corpus/id3-prefixed-flac.v1.json) fixa a 
 
 O Red reproduziu a perda dos metadados em dois testes do extrator e na jornada Qt com caminho Unicode. O Green passou **45/45 CTest**, incluindo o catálogo de metadados, a integridade do corpus e a reprodução Qt com busca de posição e decodificação até o fim. O build Release do player passou. Logs em `out/product/test-runs/id3-prefixed-flac-20261111/`. Os limites de alocação internos do TagLib e a aceitação instalada permanecem pendentes.
 
+## Limite por leitura de metadados
+
+A identificação do contêiner e o TagLib usam a mesma abertura somente leitura para WAV, MP3, FLAC, M4A e Ogg/Vorbis. O adaptador limita cada leitura a **32 MiB** antes da alocação do buffer de entrada. Perto do fim do arquivo, um pedido maior recebe apenas os bytes disponíveis se couberem no limite. A recusa encerra a extração com `InvalidData`. O player continua usando o nome do arquivo como título quando a reprodução está disponível.
+
+O teto acomoda tags com várias capas no limite individual de 10 MiB. Os limites de arte e de retenção de texto continuam aplicados depois da leitura. O teto cobre o buffer de cada leitura e deixa em aberto a memória cumulativa, as alocações internas dos parsers e o isolamento do decoder.
+
+Os testes expandem com preenchimento a tag de um MP3 sintético autenticado e preservam seus frames de áudio. Uma tag de 32 MiB continua legível. O Red aceitou uma tag um byte maior e a jornada real recebeu os metadados em vez do erro. No Green, o extrator devolve o erro, lê um MP3 válido em seguida e, na jornada Qt, o mesmo áudio toca até o fim com o nome do arquivo como título. Passaram o build Release do player e **47/47 CTest**, incluindo a matriz dos cinco leitores, a jornada Qt e a integridade do corpus. Os arquivos de teste são gerados em diretórios temporários. Logs em `out/product/test-runs/bounded-metadata-read-20261111/`.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.

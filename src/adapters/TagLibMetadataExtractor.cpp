@@ -24,6 +24,7 @@
 #include <mpegproperties.h>
 #include <tag.h>
 #include <tfile.h>
+#include <tfilestream.h>
 #include <tpropertymap.h>
 #include <tvariant.h>
 #include <vorbisfile.h>
@@ -38,7 +39,6 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <fstream>
 #include <initializer_list>
 #include <memory>
 #include <optional>
@@ -53,10 +53,34 @@ namespace {
 
 constexpr std::size_t minimum_container_header_size = 12;
 constexpr std::size_t container_header_size = 512;
+constexpr std::size_t maximum_metadata_read_bytes = 32U * 1024U * 1024U;
 constexpr std::array flac_marker{'f', 'L', 'a', 'C'};
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
+
+struct MetadataReadLimitExceeded final {};
+
+class MetadataFileStream final : public TagLib::FileStream {
+  public:
+    explicit MetadataFileStream(const std::filesystem::path& path) : FileStream(path.c_str(), true) {}
+
+    TagLib::ByteVector readBlock(std::size_t requested_bytes) override {
+        if (requested_bytes > maximum_metadata_read_bytes) {
+            // TagLib would cap its allocation to the whole file, even when
+            // the request starts near EOF. Preserve short reads from there.
+            const auto position = tell();
+            const auto file_size = length();
+            if (position < 0 || file_size < 0)
+                throw MetadataReadLimitExceeded{};
+            const auto available = file_size > position ? static_cast<std::uintmax_t>(file_size - position) : 0U;
+            if (available > maximum_metadata_read_bytes)
+                throw MetadataReadLimitExceeded{};
+            requested_bytes = static_cast<std::size_t>(available);
+        }
+        return FileStream::readBlock(requested_bytes);
+    }
+};
 
 [[nodiscard]] MetadataReadError error(const MetadataReadErrorCode code, std::string message) {
     return {.code = code, .message = std::move(message)};
@@ -75,15 +99,18 @@ enum class OggCodec { Unknown, Vorbis, Opus };
     return std::equal(flac_marker.begin(), flac_marker.end(), header.begin());
 }
 
-[[nodiscard]] bool hasFlacMarkerAt(std::ifstream& stream, const ContainerHeader& header, const std::size_t bytes_read,
-                                   const std::uintmax_t offset) {
+[[nodiscard]] bool hasFlacMarkerAt(TagLib::IOStream& stream, const ContainerHeader& header,
+                                   const std::size_t bytes_read, const std::uintmax_t offset) {
     if (offset <= bytes_read && flac_marker.size() <= bytes_read - offset) {
         return std::equal(flac_marker.begin(), flac_marker.end(), header.data() + offset);
     }
-    std::array<char, flac_marker.size()> marker{};
     stream.clear(); // The initial probe may have reached EOF.
-    stream.seekg(static_cast<std::streamoff>(offset));
-    return stream.read(marker.data(), static_cast<std::streamsize>(marker.size())) && marker == flac_marker;
+    const auto position = static_cast<TagLib::offset_t>(offset);
+    stream.seek(position);
+    if (stream.tell() != position)
+        return false;
+    const auto marker = stream.readBlock(flac_marker.size());
+    return marker.size() == flac_marker.size() && std::equal(flac_marker.begin(), flac_marker.end(), marker.data());
 }
 
 [[nodiscard]] std::uint32_t bigEndian32(const ContainerHeader& header) noexcept {
@@ -569,8 +596,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     }
 }
 
-[[nodiscard]] MetadataReadResult readWave(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
-    TagLib::RIFF::WAV::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+[[nodiscard]] MetadataReadResult readWave(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+                                          const std::uintmax_t file_size) {
+    TagLib::RIFF::WAV::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
     if (!file.isValid() || !hasValidAudioProperties(properties) || properties->bitsPerSample() <= 0) {
         return error(MetadataReadErrorCode::InvalidData, "WAV metadata or audio properties are invalid");
@@ -590,8 +618,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readMp3(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
-    TagLib::MPEG::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+[[nodiscard]] MetadataReadResult readMp3(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+                                         const std::uintmax_t file_size) {
+    TagLib::MPEG::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
     if (!file.isValid() || !hasValidAudioProperties(properties)) {
         return error(MetadataReadErrorCode::InvalidData, "MP3 metadata or audio properties are invalid");
@@ -614,8 +643,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readFlac(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
-    TagLib::FLAC::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+[[nodiscard]] MetadataReadResult readFlac(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+                                          const std::uintmax_t file_size) {
+    TagLib::FLAC::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
     if (!file.isValid() || !hasValidAudioProperties(properties) || properties->bitsPerSample() <= 0) {
         return error(MetadataReadErrorCode::InvalidData, "FLAC metadata or audio properties are invalid");
@@ -632,8 +662,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readM4aAac(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
-    TagLib::MP4::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+[[nodiscard]] MetadataReadResult readM4aAac(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+                                            const std::uintmax_t file_size) {
+    TagLib::MP4::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
     if (!file.isValid() || !hasValidAudioProperties(properties)) {
         return error(MetadataReadErrorCode::InvalidData, "MP4 metadata or audio properties are invalid");
@@ -653,8 +684,9 @@ void applyCommonAudioProperties(TrackMetadata& metadata, const TagLib::AudioProp
     return metadata;
 }
 
-[[nodiscard]] MetadataReadResult readVorbis(const std::filesystem::path& source_path, const std::uintmax_t file_size) {
-    TagLib::Vorbis::File file{source_path.c_str(), true, TagLib::AudioProperties::Average};
+[[nodiscard]] MetadataReadResult readVorbis(TagLib::IOStream& stream, const std::filesystem::path& source_path,
+                                            const std::uintmax_t file_size) {
+    TagLib::Vorbis::File file{&stream, true, TagLib::AudioProperties::Average};
     const auto* properties = file.audioProperties();
     if (!file.isValid() || !hasValidAudioProperties(properties)) {
         return error(MetadataReadErrorCode::InvalidData, "Ogg Vorbis metadata or audio properties are invalid");
@@ -681,13 +713,15 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return error(MetadataReadErrorCode::SourceUnavailable, "metadata source is not a readable regular file");
         }
 
-        const auto file_size = std::filesystem::file_size(source_path, file_error);
-        if (file_error) {
-            return error(MetadataReadErrorCode::SourceUnavailable, "metadata source size could not be read");
+        MetadataFileStream stream{source_path};
+        if (!stream.isOpen()) {
+            return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be opened");
         }
-        if (file_size == 0) {
-            return error(MetadataReadErrorCode::InvalidData, "metadata source is empty");
+        const auto length = stream.length();
+        if (length <= 0) {
+            return error(MetadataReadErrorCode::InvalidData, "metadata source is empty or its size is unavailable");
         }
+        const auto file_size = static_cast<std::uintmax_t>(length);
 
         std::optional<std::filesystem::file_time_type> last_modified_time;
         try {
@@ -702,35 +736,37 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             last_modified_time.reset();
         }
 
-        const auto completed = [&](MetadataReadResult result) {
+        const auto readMetadata = [&](const auto reader) -> MetadataReadResult {
+            stream.clear();
+            stream.seek(0);
+            if (stream.tell() != 0)
+                return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be rewound");
+            auto result = reader(stream, source_path, file_size);
             if (auto* metadata = std::get_if<TrackMetadata>(&result); metadata != nullptr) {
                 metadata->last_modified_time = last_modified_time;
             }
             return result;
         };
 
-        std::ifstream stream{source_path, std::ios::binary};
-        if (!stream) {
-            return error(MetadataReadErrorCode::SourceUnavailable, "metadata source could not be opened");
-        }
         ContainerHeader header{};
-        stream.read(header.data(), static_cast<std::streamsize>(header.size()));
-        const auto bytes_read = static_cast<std::size_t>(stream.gcount());
+        const auto probe = stream.readBlock(header.size());
+        const auto bytes_read = static_cast<std::size_t>(probe.size());
         if (bytes_read < minimum_container_header_size) {
             return error(MetadataReadErrorCode::InvalidData, "metadata source has a truncated container header");
         }
+        std::copy_n(probe.data(), bytes_read, header.data());
         if (isRiffWave(header)) {
-            return completed(readWave(source_path, file_size));
+            return readMetadata(readWave);
         }
         if (isFlac(header)) {
-            return completed(readFlac(source_path, file_size));
+            return readMetadata(readFlac);
         }
         if (isIsoBaseMedia(header, file_size, bytes_read)) {
-            return completed(readM4aAac(source_path, file_size));
+            return readMetadata(readM4aAac);
         }
         switch (oggCodec(header, bytes_read)) {
         case OggCodec::Vorbis:
-            return completed(readVorbis(source_path, file_size));
+            return readMetadata(readVorbis);
         case OggCodec::Opus:
             return error(MetadataReadErrorCode::UnsupportedFormat, "Ogg Opus remains a candidate format");
         case OggCodec::Unknown:
@@ -744,14 +780,16 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             // A leading ID3 tag does not identify the codec. Probe only at its
             // validated end, so a marker in the tag cannot masquerade as FLAC.
             if (file_size - *tag_end >= flac_marker.size() && hasFlacMarkerAt(stream, header, bytes_read, *tag_end)) {
-                return completed(readFlac(source_path, file_size));
+                return readMetadata(readFlac);
             }
-            return completed(readMp3(source_path, file_size));
+            return readMetadata(readMp3);
         }
         if (hasMpegLayer3FrameSync(header)) {
-            return completed(readMp3(source_path, file_size));
+            return readMetadata(readMp3);
         }
         return error(MetadataReadErrorCode::UnsupportedFormat, "metadata source container is not supported");
+    } catch (const MetadataReadLimitExceeded&) {
+        return error(MetadataReadErrorCode::InvalidData, "metadata container requests a read larger than 32 MiB");
     } catch (const std::exception&) {
         return error(MetadataReadErrorCode::ReadFailed, "metadata reader failed safely");
     } catch (...) {

@@ -1,3 +1,4 @@
+#include "../audio/Id3PaddedMp3Fixture.hpp"
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
@@ -254,6 +255,34 @@ class LocalAudioIntegrationTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto filename = directory.filePath(QStringLiteral("Faixa 日本語.mp3"));
+        const auto source = nativePath(filename);
+        QVERIFY(writeMp3WithPaddedId3(nativePath(QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE)), source,
+                                      32U * 1024U * 1024U + 1U));
+
+        TestPlatform platform;
+        QtMultimediaPlaybackBackend engine;
+        RecordingPlaybackBackend playback{engine};
+        SingleWorkerMetadataReader worker{std::make_unique<TagLibMetadataExtractor>()};
+        RecordingMetadataReader metadata{worker};
+        PlayerPresenter presenter{platform, playback, metadata, [source] { return std::vector{source}; }};
+        QVERIFY(presenter.setVolume(0.0));
+        if (!presenter.muted())
+            QVERIFY(presenter.toggleMute());
+        QVERIFY(presenter.openAudio());
+        QTRY_VERIFY_WITH_TIMEOUT(playback.observed(PlaybackStatus::Playing), 5'000);
+        QTRY_COMPARE_WITH_TIMEOUT(metadata.lastPollStatus(), MetadataPollStatus::Completed, 5'000);
+        QVERIFY(metadata.metadataError().has_value());
+        QCOMPARE(*metadata.metadataError(), MetadataReadErrorCode::InvalidData);
+        QCOMPARE(presenter.currentTitle(), QStringLiteral("Faixa 日本語"));
+        QTRY_COMPARE_WITH_TIMEOUT(playback.eventCount(PlaybackEventType::Ended), std::size_t{1}, 5'000);
+        QVERIFY(!playback.observed(PlaybackStatus::Error));
+        QVERIFY(!presenter.hasError());
+    }
+
     void invalidTagsAreSanitizedWithoutInterruptingRealDecodedPlayback() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
