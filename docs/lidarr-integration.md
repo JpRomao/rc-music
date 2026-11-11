@@ -37,6 +37,7 @@ Perfis, diretório de biblioteca, indexadores e clientes pertencem à configura�
 ## Privacidade e limites
 
 - Endereço e chave são fornecidos no próprio app. A chave fica somente em memória nesta primeira versão e precisa ser informada novamente em outra execução. É enviada no cabeçalho `X-Api-Key`, sem aparecer em URLs, arquivos de preferências, diagnósticos, resultados ou mensagens de erro.
+- Respostas HTTP 401 e 403 encerram a sessão e descartam a chave, os resultados e os perfis carregados. O painel conserva o endereço para uma nova conexão explícita. Para tentar outro pedido, faça uma nova busca, selecione o álbum e confirme.
 - Pesquisa e mutações exigem ação explícita; não há envio automático ao abrir o painel ou trocar de música.
 - Os resultados são texto simples e dados de catálogo, sem execução de HTML ou conteúdo remoto.
 - Um timeout de escrita pode deixar o resultado desconhecido; não autoriza repetir automaticamente o comando.
@@ -59,6 +60,8 @@ A conferência real separada enviou somente `GET http://localhost:8686/api/v1/sy
 Os testes automáticos devem usar respostas próprias e transporte falso, sem internet ou instância pessoal. O smoke com servidor real deve registrar versão, ações e resultados, mantendo credenciais fora da evidência. Instalação, alteração de configuração no servidor e download real exigem seus próprios escopos; não decorrem da simples validação do cliente.
 
 Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a falta de distinção nos resultados e o envio indevido de uma confirmação a um serviço substituto. Passaram **34 casos do serviço, 9 do binding e 13 Qt Quick** do painel, além do build Release e lint QML. Os casos usam respostas sintéticas. A instância local respondeu 401 sem chave e a aceitação autenticada continua pendente. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
+
+Cinco regressões reproduziram recusas de acesso durante busca ou pedido de álbum, incluindo um 403 com resposta acima do limite. Após a correção, passaram **40 casos Qt do serviço**, o binding e **13 casos Qt Quick** do painel. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/`.
 
 ## Referências
 

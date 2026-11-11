@@ -158,6 +158,11 @@ struct QtLidarrService::Impl final {
         cancelReply();
         error = failure;
         status = Status::Error;
+        if (failure == Error::Authentication) {
+            connected = false;
+            api_key.clear();
+            clearResults();
+        }
         if (!connected) {
             roots.clear();
             quality.clear();
@@ -168,6 +173,11 @@ struct QtLidarrService::Impl final {
     bool consume() {
         if (!reply)
             return false;
+        const auto http_status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (http_status == 401 || http_status == 403) {
+            fail(Error::Authentication);
+            return false;
+        }
         const auto remaining = maximum_response_bytes - response.size();
         const auto chunk = reply->read(remaining + 1);
         if (chunk.size() > remaining || reply->bytesAvailable() > 0) {
@@ -330,10 +340,6 @@ struct QtLidarrService::Impl final {
         if (!matches(operation_generation, expected_reply) || !consume())
             return;
         const auto http_status = expected_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (http_status == 401 || http_status == 403) {
-            fail(Error::Authentication);
-            return;
-        }
         if (http_status < 200 || http_status >= 300) {
             fail(http_status == 0 ? Error::Network : Error::Http);
             return;

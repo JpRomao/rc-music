@@ -95,8 +95,9 @@ QJsonObject album(int existing_id = 0) {
             {"releaseDate", "2026-05-01T00:00:00Z"},
             {"artist", QJsonObject{{"artistName", "Artist 日本"}, {"foreignArtistId", artist_id}, {"id", 0}}}};
 }
-bool ready(Service& service, Network& network, const QString& base = QStringLiteral("http://localhost:8686/")) {
-    if (!service.connectServer(base, api_key) || network.requests.isEmpty())
+bool ready(Service& service, Network& network, const QString& base = QStringLiteral("http://localhost:8686/"),
+           const QString& key = api_key) {
+    if (!service.connectServer(base, key) || network.requests.isEmpty())
         return false;
     auto prefix = QUrl(base).path();
     if (prefix.endsWith('/'))
@@ -385,6 +386,68 @@ class QtLidarrServiceTests final : public QObject {
         QVERIFY(!service.connected());
         QVERIFY(!service.busy());
         QCOMPARE(network.requests.size(), 1);
+    }
+    void authenticationFailureRequiresExplicitReconnect_data() {
+        QTest::addColumn<int>("http_status");
+        QTest::addColumn<bool>("during_album_request");
+        QTest::addColumn<bool>("oversized_body");
+        QTest::newRow("lookup-unauthorized") << 401 << false << false;
+        QTest::newRow("lookup-forbidden") << 403 << false << false;
+        QTest::newRow("album-request-unauthorized") << 401 << true << false;
+        QTest::newRow("album-request-forbidden") << 403 << true << false;
+        QTest::newRow("lookup-forbidden-oversized-body") << 403 << false << true;
+    }
+    void authenticationFailureRequiresExplicitReconnect() {
+        QFETCH(int, http_status);
+        QFETCH(bool, during_album_request);
+        QFETCH(bool, oversized_body);
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network, "http://localhost:8686/lidarr/"));
+        const auto address = service.serverAddress();
+
+        QVERIFY(service.search("Album", Service::Kind::Album));
+        auto second_album = album(27);
+        second_album.insert("title", "Another album");
+        second_album.insert("foreignAlbumId", "f2a1ec0e-6592-4d00-a5a7-1be679cd7ad5");
+        network.replies.back()->finish(200, json(QJsonArray{album(23), second_album}));
+        QCOMPARE(service.results().size(), 2);
+        const auto stale_key = service.results().back().key;
+        if (during_album_request) {
+            QVERIFY(service.requestAlbum(service.results().front().key, {}, 0, 0));
+            QCOMPARE(service.results().size(), 1);
+        } else {
+            QVERIFY(service.search("Another album", Service::Kind::Album));
+        }
+        const auto calls = network.requests.size();
+        const auto response =
+            oversized_body ? QByteArray(Service::maximum_response_bytes + 1, 'x') : QByteArray("{}\n");
+        network.replies.back()->finish(http_status, response);
+
+        QCOMPARE(service.status(), Service::Status::Error);
+        QCOMPARE(service.error(), Service::Error::Authentication);
+        QVERIFY(!service.connected());
+        QVERIFY(!service.busy());
+        QVERIFY(service.drained());
+        QCOMPARE(service.serverAddress(), address);
+        QVERIFY(service.results().isEmpty());
+        QVERIFY(service.rootFolders().isEmpty());
+        QVERIFY(service.qualityProfiles().isEmpty());
+        QVERIFY(service.metadataProfiles().isEmpty());
+        QVERIFY(!service.search("Album", Service::Kind::Album));
+        QVERIFY(!service.requestAlbum(stale_key, {}, 0, 0));
+        QCOMPARE(network.requests.size(), calls);
+
+        const auto new_key = QStringLiteral("abcdef0123456789abcdef0123456789");
+        QVERIFY(ready(service, network, address, new_key));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QCOMPARE(service.error(), Service::Error::None);
+        QVERIFY(!lookup(service, network, 27).isEmpty());
+        QVERIFY(!service.requestAlbum(stale_key, {}, 0, 0));
+        QCOMPARE(network.requests.size(), calls + 5);
+        for (qsizetype i = calls; i < network.requests.size(); ++i) {
+            QCOMPARE(network.requests[i].request.rawHeader("X-Api-Key"), new_key.toUtf8());
+        }
     }
     void limitsRejectWholeLookupInsteadOfPublishingPartialChoices() {
         Network network;
