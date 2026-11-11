@@ -1,6 +1,8 @@
 # Instalador Windows — receita de produto
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
+
+As duas edições também têm setups privados com o FFmpeg `7.1.5-rcmusic1`, com sete formatos validados por edição e os hashes das DLLs conferidos por leitura estática dos instaladores. [Setups com FFmpeg corrigido](delivery/windows-f8a593b-ffmpeg.md#setups-privados-com-ffmpeg-corrigido)
 **Data:** 2026-11-05.
 
 A [limpeza após a entrega de `35e999d`](development-commands.md#limpeza-após-a-entrega-de-35e999d) retirou os setups de `ebb093a`. As limpezas anteriores retiraram os setups de `a469f8d`, `cf34cd8` e `26cc641`. Os recibos, configurações e evidências foram preservados. Os registros históricos abaixo documentam a geração original.

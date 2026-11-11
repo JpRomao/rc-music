@@ -36,3 +36,22 @@ A inspeção estática dos PEs confirmou os registros dos decodificadores e demu
 Os três patches upstream passaram em `git apply --check` nas fontes das tags `n7.1.5` e `v1.3.1`. A validação foi restrita à aplicação dos patches. A receita publicada para Qt 6.11.3 também fixa `n7.1.5`. A substituição ainda exige DLLs Windows x64 com as ABIs acima e verificação dos formatos nas duas edições. [Receita Qt 6.11.3](https://github.com/qt/qt5/blob/v6.11.3/coin/provisioning/common/windows/install-ffmpeg.ps1) · [Compatibilidade do FFmpeg no Qt](https://doc.qt.io/qt-6/qtmultimedia-building-ffmpeg.html)
 
 A auditoria leu os arquivos sem executá-los. Os scripts, recibos JSON e arquivos fonte autenticados estão em `out/product/test-runs/windows-ffmpeg-f8a593b-20261111/`. A análise de alcance usou a implementação do RC Music e as fontes upstream. A exploração no player e a cobertura dos demais avisos permanecem sem verificação. Os candidatos atuais seguem privados e M5.7 fica em andamento.
+
+## Build Windows x64 com os três patches
+
+O build partiu das duas fontes autenticadas acima e aplicou os patches ADX, VobSub e `inflateSync` antes da compilação. Usou MSVC 19.44.35228, Windows SDK 10.0.22621.0, GNU Make 4.4.1 e NASM 3.02. O FFmpeg preservou as cinco ABIs, os módulos compartilhados e as opções da receita Qt. O zlib foi compilado com CRT estático (`/MT`) para eliminar o conflito de CRT detectado na primeira ligação. A receita fixa `REVISION=7.1.5` e `EXTRA_VERSION=rcmusic1`, pois a compilação dentro da árvore do RC Music havia incorporado o commit do player como versão. Os cinco PEs finais declaram `7.1.5-rcmusic1`. O recibo `out/product/fffix/build-receipt.json` fixa as fontes, os patches, as ferramentas, a configuração e o SHA-256 de cada DLL. [Receita de referência do Qt](https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/install-ffmpeg.ps1)
+
+Os checks de regressão usaram uma transição legal estéreo → mono no ADX, três entradas com um ID repetido no VobSub e uma retomada `inflateSync` com alocador de teste. O ADX passou de rejeição para 32 amostras mono. O VobSub passou de três streams para dois. O zlib corrigido produziu `ab` e solicitou a janela de 32.768 bytes, que na versão original era de 1 byte. Os PEs finais preservaram os exports nomeados e resolveram 882 símbolos em 16 relações de importação, incluindo os plugins Qt das duas edições. Os relatórios `patch-regression-*.json` estão na pasta de evidências acima.
+
+## Validação dos runtimes corrigidos
+
+Cada cópia isolada de `f8a593b` substituiu as cinco DLLs e vinculou seus hashes ao recibo do build. A conferência cobriu 603 arquivos na Lite e 606 na Completa. Cada edição passou nos 17 cenários de áudio, com 19 casos Qt aprovados e zero skips. O Windows confirmou que o probe de cada edição carregou as cinco DLLs corrigidas e o plugin Qt a partir da cópia isolada. O diagnóstico informou `7.1.5-rcmusic1`. Os manifestos, resultados e declarações dos sete formatos estão em `out/product/fffix/qa/v2/`. A promoção do FFmpeg corrigido para o fluxo padrão de build e os demais requisitos de M5.7 continuam pendentes.
+
+## Setups privados com FFmpeg corrigido
+
+Os setups em `out/product/fffix/setups/` foram montados com os runtimes corrigidos e as declarações de formatos validadas para os novos hashes. A leitura direta dos dois instaladores conferiu os hashes do player e das cinco DLLs. Os recibos confirmam as cinco combinações de opções, as associações e que apenas as cinco DLLs diferem no inventário dos arquivos empacotados. Os dois SBOMs em `out/product/fffix/sbom/` registram os patches e o recibo do build. A verificação do instalador foi estática. O resultado está em `out/product/fffix/setup-verification.json`.
+
+| Edição | Bytes do setup | SHA-256 |
+| --- | ---: | --- |
+| Lite | 90.019.051 | `3cde05503a5bfe4b52005559421e23cb1f83e2c42c4329403b83e54ae7d882e4` |
+| Completa experimental | 90.090.411 | `f56f85baec26279d033b4cdab9e7f4d223ae329850b6a0b7e9658c164dd70605` |
