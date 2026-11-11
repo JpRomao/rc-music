@@ -205,6 +205,40 @@ class QtLidarrServiceTests final : public QObject {
         QCOMPARE(result.existing_id, 0);
         QCOMPARE(network.requests.size(), 5); // Displaying results never adds or downloads.
     }
+    void emptyLookupIsDistinctFromIdleFailureAndReconnect() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QVERIFY(service.search("No matching album", Service::Kind::Album));
+        QCOMPARE(service.status(), Service::Status::Searching);
+        network.replies.back()->finish(200, "[]");
+        QCOMPARE(service.status(), Service::Status::NoResults);
+        QCOMPARE(service.error(), Service::Error::None);
+        QVERIFY(service.results().isEmpty());
+        QVERIFY(service.connected());
+        QVERIFY(!service.busy());
+        QVERIFY(service.drained());
+
+        QVERIFY(!lookup(service, network, 23).isEmpty());
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QVERIFY(service.search("Unavailable artist", Service::Kind::Artist));
+        network.replies.back()->finish(503, "[]");
+        QCOMPARE(service.status(), Service::Status::Error);
+        QCOMPARE(service.error(), Service::Error::Http);
+        QVERIFY(service.connected());
+        QVERIFY(service.search("No matching artist", Service::Kind::Artist));
+        network.replies.back()->finish(200, "[]");
+        QCOMPARE(service.status(), Service::Status::NoResults);
+        QCOMPARE(service.error(), Service::Error::None);
+
+        service.disconnectServer();
+        QCOMPARE(service.status(), Service::Status::Disconnected);
+        QVERIFY(!service.connected());
+        QVERIFY(ready(service, network, "https://music.example.test/lidarr/"));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QVERIFY(service.results().isEmpty());
+    }
     void artistLookupDoesNotBecomeAnAlbumDownload() {
         Network network;
         Service service(&network);
@@ -239,6 +273,7 @@ class QtLidarrServiceTests final : public QObject {
         QVERIFY(!service.requestAlbum(key, {}, 0, 0));
         network.replies.back()->finish(201, "{\"id\":91,\"name\":\"AlbumSearch\",\"status\":\"queued\"}");
         QCOMPARE(service.status(), Service::Status::Requested);
+        QVERIFY(service.results().isEmpty());
         QVERIFY(service.connected());
         QVERIFY(!service.requestAlbum(key, {}, 0, 0)); // Successful selection consumed; no duplicate command.
         QCOMPARE(network.requests.size(), 6);

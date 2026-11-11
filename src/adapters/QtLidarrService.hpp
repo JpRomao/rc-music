@@ -18,7 +18,7 @@ class QtLidarrService final : public QObject {
     Q_OBJECT
   public:
     enum class Kind { Album, Artist };
-    enum class Status { Disconnected, Connecting, Ready, Searching, Requesting, Requested, Error };
+    enum class Status { Disconnected, Connecting, Ready, Searching, NoResults, Requesting, Requested, Error };
     enum class Error {
         None,
         Configuration,

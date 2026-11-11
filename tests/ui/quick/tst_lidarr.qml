@@ -210,11 +210,16 @@ TestCase {
     }
     function test_albumDownloadNeedsConfirmationAndServerChoices() {
         showResults([album("lookup-1", 0)]);
-        const title = findChild(resultAt(0), "lidarr-result-title-0");
+        const row = resultAt(0);
+        const title = findChild(row, "lidarr-result-title-0");
         verify(title);
         compare(title.text, "<b>Album original</b>");
         compare(title.textFormat, Text.PlainText);
-        mouseClick(resultAt(0));
+        verify(row.Accessible.name.includes("No catálogo do Lidarr"));
+        const detail = findChild(row, "lidarr-result-detail-0");
+        verify(detail.text.includes("No catálogo do Lidarr"));
+        compare(detail.textFormat, Text.PlainText);
+        mouseClick(row);
         compare(backend.downloads, 0);
         mouseClick(findChild(shell, "lidarr-request"));
         compare(backend.downloads, 0);
@@ -222,6 +227,7 @@ TestCase {
         tryCompare(confirmation, "visible", true);
         compare(findChild(shell, "lidarr-confirm-title").text, "<b>Album original</b>");
         compare(findChild(shell, "lidarr-confirm-title").textFormat, Text.PlainText);
+        verify(findChild(shell, "lidarr-confirm-advice").text.includes("cadastrará este álbum"));
         mouseClick(findChild(shell, "lidarr-confirm-submit"));
         compare(backend.downloads, 1);
         compare(backend.submittedDownload.key, "lookup-1");
@@ -242,13 +248,49 @@ TestCase {
         verify(!confirmation.visible || !submit.enabled);
         compare(backend.downloads, 0);
     }
+    function test_confirmationCannotBeReusedWithAnotherLidarrConnection() {
+        const rows = [album("same-key", 42)];
+        showResults(rows);
+        mouseClick(resultAt(0));
+        mouseClick(findChild(shell, "lidarr-request"));
+        const confirmation = findChild(shell, "lidarr-confirmation");
+        tryCompare(confirmation, "visible", true);
+        const submit = findChild(shell, "lidarr-confirm-submit");
+        verify(submit.enabled);
+        let replacementRequests = 0;
+        shell.lidarr = {
+            connected: true,
+            busy: false,
+            interactionAllowed: true,
+            serverAddress: "http://localhost:8686",
+            results: rows,
+            rootFolders: [],
+            qualityProfiles: [],
+            metadataProfiles: [],
+            statusText: "Conectado",
+            requestDownload: function () {
+                replacementRequests++;
+            }
+        };
+        wait(0);
+        if (confirmation.visible && submit.enabled)
+            mouseClick(submit);
+        compare(replacementRequests, 0);
+        compare(backend.downloads, 0);
+    }
     function test_existingAlbumDoesNotRequireNewArtistOptions() {
         showResults([album("managed-42", 42)]);
         backend.rootFolders = [];
         backend.qualityProfiles = [];
         backend.metadataProfiles = [];
-        mouseClick(resultAt(0));
+        const row = resultAt(0);
+        verify(row.Accessible.name.includes("Já cadastrado no Lidarr"));
+        verify(findChild(row, "lidarr-result-detail-0").text.includes("Já cadastrado no Lidarr"));
+        mouseClick(row);
         mouseClick(findChild(shell, "lidarr-request"));
+        const advice = findChild(shell, "lidarr-confirm-advice");
+        verify(advice.text.includes("álbum completo já cadastrado"));
+        compare(advice.textFormat, Text.PlainText);
         const submit = findChild(shell, "lidarr-confirm-submit");
         verify(submit.enabled);
         mouseClick(submit);

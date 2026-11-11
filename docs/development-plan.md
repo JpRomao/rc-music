@@ -946,6 +946,8 @@ O incremento implementado passou **263/263 CTest**, incluindo **33 casos Qt do s
 
 O mantenedor priorizou [R1.11/FR-055](lidarr-integration.md): conectar à instância indicada, pesquisar artistas/álbuns e solicitar downloads após confirmação. Cliente, projeção, painel e checks automatizados estão implementados; a próxima conferência é autenticada na instância real, com chave informada no app, seguida de aceitação nativa/empacotamento atualizados. Nenhuma busca/download é disparada apenas por abrir o player ou o painel. A API pesquisa artistas/álbuns e solicita álbuns completos; não promete lookup global de faixas. Os seis arquivos pendentes de integração AppContainer ficam preservados enquanto esta prioridade avança.
 
+O painel agora distingue uma busca vazia, um álbum de catálogo e um álbum já cadastrado. O pedido confirmado fica vinculado à conexão e ao álbum selecionados. [Fluxo Lidarr](lidarr-integration.md#fluxo-de-produto)
+
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 
 ### Inventário autorizado com Storage ausente

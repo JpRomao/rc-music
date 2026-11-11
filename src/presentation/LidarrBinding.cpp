@@ -58,6 +58,8 @@ QString LidarrBinding::statusText() const {
         return tr("Conectando ao Lidarr…");
     case Status::Searching:
         return tr("Pesquisando no Lidarr…");
+    case Status::NoResults:
+        return tr("Nenhum resultado para esta busca.");
     case Status::Requesting:
         return tr("Solicitando busca do álbum no Lidarr…");
     case Status::Requested:

@@ -392,7 +392,7 @@ struct QtLidarrService::Impl final {
             connected = true;
             status = Status::Ready;
         } else if (completed == Step::Lookup) {
-            status = Status::Ready;
+            status = results.isEmpty() ? Status::NoResults : Status::Ready;
         } else if (completed == Step::Mutation) {
             status = Status::Requested;
         }

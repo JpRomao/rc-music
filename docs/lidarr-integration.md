@@ -14,6 +14,8 @@ O [ADR-0014](architecture/decisions/0014-lidarr-integration.md) registra o escop
 
 Esse fluxo descreve a integração em desenvolvimento, sem alegação de validação com servidor real. **Busca solicitada no Lidarr** confirma a aceitação de um pedido, sem afirmar que houve resultado, download ou importação. A primeira integração não transfere o áudio para o RC Music nem altera a fila ou inicia reprodução.
 
+Uma consulta concluída sem correspondências exibe **Nenhum resultado para esta busca** e permite outra pesquisa. O painel identifica álbuns de catálogo e álbuns já cadastrados, inclusive no nome acessível do resultado. A confirmação explica se o Lidarr vai cadastrar o álbum ou buscar o cadastro existente. Se a consulta ou a conexão mudar enquanto a confirmação estiver aberta, escolha o álbum novamente.
+
 ## Conexão e API
 
 A conexão explícita consulta `system/status` e carrega `rootfolder`, `qualityprofile` e `metadataprofile` sob `/api/v1/`. A pesquisa usa `artist/lookup` ou `album/lookup` com o termo informado. Os resultados e as escolhas são ligados à conexão e à consulta vigentes.
@@ -53,6 +55,8 @@ Builds Release Lite com testes ON/OFF e Completa experimental OFF passaram; `all
 A conferência real separada enviou somente `GET http://localhost:8686/api/v1/system/status`, sem chave: o servidor respondeu **401**. Isso comprova alcance do endpoint e exigência de autenticação, sem comprovar versão, catálogo, configuração ou downloads. Nenhuma chave foi extraída de arquivos pessoais; não houve POST no servidor real, importação, mudança da fila pessoal, instalação ou regeneração de instaladores. A chave deve ser informada no próprio app para a aceitação autenticada.
 
 Os testes automáticos devem usar respostas próprias e transporte falso, sem internet ou instância pessoal. O smoke com servidor real deve registrar versão, ações e resultados, mantendo credenciais fora da evidência. Instalação, alteração de configuração no servidor e download real exigem seus próprios escopos; não decorrem da simples validação do cliente.
+
+Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a falta de distinção nos resultados e o envio indevido de uma confirmação a um serviço substituto. Passaram **34 casos do serviço, 9 do binding e 13 Qt Quick** do painel, além do build Release e lint QML. Os casos usam respostas sintéticas. A instância local respondeu 401 sem chave e a aceitação autenticada continua pendente. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
 
 ## Referências
 

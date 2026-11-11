@@ -41,6 +41,7 @@ Dialog {
         confirmation.close();
         confirmationRow = null;
     }
+    onLidarrChanged: selectedKey = ""
     onConnectedChanged: {
         if (!connected) {
             selectedKey = "";
@@ -66,6 +67,8 @@ Dialog {
         return null;
     }
     function confirmationMatches() {
+        if (lidarr !== confirmationRow.owner)
+            return false;
         const row = resultForKey(confirmationRow.key);
         return interactionAllowed && connected && !busy && row !== null && row.kind === "album" && row.title === confirmationRow.title && row.artist === confirmationRow.artist && row.existingId === confirmationRow.existingId;
     }
@@ -74,6 +77,7 @@ Dialog {
         if (!interactionAllowed || !connected || busy || row === null || row.kind !== "album")
             return;
         confirmationRow = {
+            owner: lidarr,
             key: row.key,
             title: row.title,
             artist: row.artist,
@@ -291,13 +295,14 @@ Dialog {
                 id: rowDelegate
                 required property var modelData
                 required property int index
+                readonly property string libraryStatus: modelData.kind !== "album" ? "" : (modelData.existingId > 0 ? qsTr("Já cadastrado no Lidarr") : qsTr("No catálogo do Lidarr"))
                 objectName: "lidarr-result-" + index
                 width: resultsList.width
                 implicitHeight: 62
                 highlighted: root.selectedKey === modelData.key
                 enabled: root.interactionAllowed && !root.busy
                 activeFocusOnTab: true
-                Accessible.name: modelData.title + (modelData.artist.length > 0 ? " · " + modelData.artist : "")
+                Accessible.name: modelData.title + (modelData.artist.length > 0 ? " · " + modelData.artist : "") + (libraryStatus.length > 0 ? " · " + libraryStatus : "")
                 onClicked: root.selectedKey = modelData.key
                 background: Rectangle {
                     color: rowDelegate.highlighted ? root.contract.surfaceColor : "transparent"
@@ -318,8 +323,9 @@ Dialog {
                         Accessible.ignored: true
                     }
                     Text {
+                        objectName: "lidarr-result-detail-" + rowDelegate.index
                         width: parent.width
-                        text: rowDelegate.modelData.artist + (rowDelegate.modelData.year.length > 0 ? " · " + rowDelegate.modelData.year : "")
+                        text: rowDelegate.modelData.artist + (rowDelegate.modelData.year.length > 0 ? " · " + rowDelegate.modelData.year : "") + (rowDelegate.libraryStatus.length > 0 ? " · " + rowDelegate.libraryStatus : "")
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
                         color: root.contract.textSecondaryColor
@@ -426,8 +432,9 @@ Dialog {
                 Accessible.name: text
             }
             Text {
+                objectName: "lidarr-confirm-advice"
                 Layout.fillWidth: true
-                text: qsTr("O Lidarr adicionará este álbum e seu artista à biblioteca, se necessário, e procurará o álbum completo. Isso pode iniciar um download. Acompanhe o resultado no Lidarr.")
+                text: root.confirmationRow === null ? "" : (root.confirmationRow.existingId > 0 ? qsTr("O Lidarr buscará o álbum completo já cadastrado. Isso pode iniciar um download.") : qsTr("O Lidarr cadastrará este álbum e, se necessário, seu artista. A busca do álbum completo pode iniciar um download."))
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor
@@ -522,7 +529,8 @@ Dialog {
                         const quality = qualityChoice.currentValue === undefined ? 0 : qualityChoice.currentValue;
                         const metadata = metadataChoice.currentValue === undefined ? 0 : metadataChoice.currentValue;
                         confirmation.accept();
-                        root.lidarr.requestDownload(row.key, folder, quality, metadata);
+                        if (root.lidarr === row.owner)
+                            row.owner.requestDownload(row.key, folder, quality, metadata);
                     }
                 }
             }

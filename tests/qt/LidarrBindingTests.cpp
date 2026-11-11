@@ -129,6 +129,33 @@ class LidarrBindingTests final : public QObject {
         QVERIFY(!binding.search("Album", "unexpected"));
         QCOMPARE(network.calls, 0);
     }
+    void distinguishesSuccessfulEmptySearchFromIdleAndError() {
+        Network network;
+        QtLidarrService service(&network);
+        LidarrBinding binding(service);
+        const auto no_results = QStringLiteral("Nenhum resultado para esta busca.");
+        QVERIFY(binding.connectServer("http://localhost:8686/", "private-api-key"));
+        network.replies.back()->finish(200, "{\"version\":\"3.1.0\"}");
+        for (int step = 0; step < 3; ++step)
+            network.replies.back()->finish(200, "[]");
+        QVERIFY(binding.connected());
+        QVERIFY(binding.statusText() != no_results);
+        QSignalSpy changed(&binding, &LidarrBinding::changed);
+        QVERIFY(binding.search("No matches", "artist"));
+        QVERIFY(binding.statusText() != no_results);
+        network.replies.back()->finish(200, "[]");
+        QCOMPARE(binding.statusText(), no_results);
+        QVERIFY(binding.connected());
+        QVERIFY(!binding.busy());
+        QVERIFY(binding.results().isEmpty());
+        QVERIFY(changed.count() >= 2);
+
+        QVERIFY(binding.search("Temporarily unavailable", "album"));
+        QVERIFY(binding.statusText() != no_results);
+        network.replies.back()->finish(503, "[]");
+        QVERIFY(binding.statusText() != no_results);
+        QVERIFY(binding.connected());
+    }
     void projectsCurrentAlbumAndConsumesExactDownloadSelection() {
         Network network;
         QtLidarrService service(&network);
