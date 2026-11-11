@@ -2,19 +2,21 @@
 
 **Estado:** fluxo opcional de consulta, revisão e gravação implementado e validado no recorte automatizado. Downloads de produção no app normal continuam OFF. Runtime YouTube autenticado, host instalado e provedor primário Letras permanecem pendentes.
 
-Este incremento liga um MP3 com publicação reconhecida ao catálogo de [versões locais de letras](lyrics-variants.md). O pedido [YouTube em MP3 com letra](youtube-audio-and-lyrics.md) continua separado da extensão principal. A consulta usa o LRCLIB existente e informa explicitamente **Letras indisponível nesta versão**. Não há parser Letras, leitura de seu player ou nova prova de acesso online neste ensaio.
+Este fluxo liga um MP3 com publicação reconhecida ao catálogo de [versões locais de letras](lyrics-variants.md). O pedido [YouTube em MP3 com letra](youtube-audio-and-lyrics.md) continua separado da extensão principal. A busca automática usa o LRCLIB.
 
 ## Fluxo de uso na composição opcional
 
 1. O pedido YouTube deve conter a opção de buscar letra. Depois de reconhecida a publicação do MP3, a composição oferece a consulta usando o contexto original daquele job. Não usa paths ou metadados reconstruídos de histórico recuperado.
 2. Título e artista disponíveis iniciam a busca no LRCLIB. Se faltarem, a revisão pede seu preenchimento; **Buscar letra** permite corrigir esses campos e tentar novamente. A abertura do app ou de um histórico não inicia uma consulta.
-3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente. A ação **Colar letra** aceita texto simples ou LRC, inclusive quando a busca falha ou não encontra uma versão.
+3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente. Quando o pedido trouxer uma página do Letras, **Abrir no Letras.mus.br** envia esse endereço ao navegador padrão por ação explícita. **Colar letra** aceita texto simples ou LRC, inclusive quando a busca falha ou não encontra uma versão.
 4. Informe o nome e escolha explicitamente **Original** ou **Romanizada**. Idioma e escrita são opcionais. O app não detecta idioma/alfabeto, não converte a escrita e não traduz o texto.
-5. **Guardar como nova versão** grava uma letra por vez no catálogo do arquivo publicado. Versões existentes são preservadas. Conteúdo canônico já guardado para a mesma forma não é duplicado.
+5. **Guardar como nova versão** grava uma letra por vez no catálogo do arquivo publicado. Para texto colado daquela página, marque **Usar página do Letras como origem** antes de guardar. A escolha vale para a versão atual. Versões existentes são preservadas. Conteúdo canônico já guardado para a mesma forma não é duplicado.
 6. Após a confirmação, outra versão encontrada pode ser guardada. Quando o catálogo recusar uma versão inválida ou acima dos limites, confirme **Descartar tentativa** para voltar à mesma revisão com o áudio e as versões guardadas preservados. **Fechar** deixa a revisão disponível para reabrir. **Concluir revisão** encerra essa revisão e libera sua reserva de arquivamento. O próximo job elegível pode então aparecer.
 7. Para selecionar ou acrescentar uma versão mais tarde, abra o mesmo MP3 e use **Versões** junto à letra. O catálogo fica associado ao arquivo e as versões guardadas continuam disponíveis após arquivar o pedido ou reiniciar o RC Music.
 
 Falha, ausência ou resultado instrumental da letra conservam o MP3 e a importação de áudio. Repetir a consulta não pede novo download de áudio. **Tentar guardar novamente** repete somente a gravação do candidato retido, sem HTTP e sem adquirir áudio novamente.
+
+Na verificação de 2026-11-11, a API pública do LRCLIB respondeu HTTP 200 a uma consulta direta por **Silhouette — KANA-BOON**, com texto simples e sincronizado em escrita japonesa. A página de exemplo do Letras respondeu 403 no ambiente de teste. O acesso automatizado ao Letras depende de um contrato compatível. [API LRCLIB](https://lrclib.net/docs.txt) · [Termos que abrangem Letras.mus.br](https://www.ouvirmusica.com.br/aviso-legal/)
 
 ## Contratos de execução e persistência
 
@@ -26,7 +28,7 @@ O teste do owner Windows confirmou o arquivamento na mesma sessão, preservou a 
 
 `DownloadLyricsLookup` usa um `QtLyricsService` exclusivo, separado da letra da faixa em reprodução. `setLookupTrack` configura somente metadados: não abre o áudio nem lê um `.lrc` irmão. O mesmo serviço permanece entre consultas, preservando cooldown, limites e cancelamento; resultados antigos são revogados por geração. A página Letras não é consultada enquanto esse adapter estiver indisponível. A origem dos candidatos deste incremento é LRCLIB.
 
-`DownloadLyricsBinding` conserva a identidade do alvo e o `requestToken` da revisão. Ações antigas são revogadas quando a identidade muda. Para versões encontradas, o diálogo também confere os metadados usados na busca. O texto colado passa pelo mesmo parser LRC e recebe origem manual no catálogo. Seus tempos, quando fornecidos, são preservados.
+`DownloadLyricsBinding` conserva a identidade do alvo e o `requestToken` da revisão. Ações antigas são revogadas quando a identidade muda. Para versões encontradas, o diálogo também confere os metadados usados na busca. O texto colado passa pelo mesmo parser LRC. A origem padrão é manual, e o endereço validado do pedido fica no catálogo somente após seleção explícita. Os tempos fornecidos são preservados.
 
 O alvo é validado antes de aparecer no diálogo. Cancelar a saída restaura a edição manual da revisão válida e mantém a busca parada até uma nova ação do usuário.
 
@@ -68,3 +70,7 @@ Não foram executados yt-dlp/Node como runtime, mídia pública, perfis AppConta
 ### Inclusão manual na revisão
 
 O Red confirmou a ausência da ação em três casos do binding e dois do painel. Uma regressão adicional reproduziu a perda da edição manual ao cancelar a saída durante a busca inicial. O fechamento passou **4/4 alvos CTest com 111 casos Qt** e **90 casos Quick** nas quatro suítes de downloads e letras, sem falhas ou skips. Build Release, `all_qmllint` e formato passaram. Os testes usaram rede e catálogo de teste para conferir letras japonesas e romanizadas, tempos de LRC, falha de consulta, deduplicação, retry da escrita e proteção do alvo. Recibos em `out/product/test-runs/download-lyrics-paste-20261111/`.
+
+### Página do Letras informada no pedido
+
+Os testes interceptaram a abertura no navegador e confirmaram que apenas o endereço validado da revisão atual é entregue. Guardar uma letra colada exige escolha explícita para gravar esse endereço como origem. O controle é alcançável pelo teclado e volta desmarcado após a admissão de cada versão. Passaram 61 casos Qt em dois alvos CTest e 30 casos Qt Quick. Logs em `out/product/test-runs/letras-page-review-20261111/`.

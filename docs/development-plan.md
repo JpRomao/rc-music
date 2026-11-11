@@ -876,6 +876,8 @@ As extensões reconferem a aba e a janela focada antes de enviar. A principal re
 
 A revisão de letras do download aceita texto simples ou LRC colado diretamente. Cada versão guarda a forma escolhida no catálogo do MP3 publicado, inclusive quando o LRCLIB não retorna uma letra. **Descartar tentativa** permite retomar a revisão após uma recusa antes da gravação. **Concluir revisão** libera o pedido para arquivamento na sessão atual. O provedor automático Letras.mus.br continua pendente. [Letras associadas ao áudio adquirido](download-lyrics.md)
 
+A revisão abre no navegador a página do Letras informada no pedido e permite atribuir esse endereço a cada versão colada. A busca automática continua pelo LRCLIB. [Página informada e checks](download-lyrics.md#página-do-letras-informada-no-pedido)
+
 Em M3.9, o menu da fila permite adicionar uma letra a uma faixa disponível mantendo a reprodução atual. A gravação revalida a ocorrência e seu caminho e usa o catálogo assíncrono compartilhado. [Letras e versões](lyrics-variants.md#usar-as-versões)
 
 ### Checkpoint anterior — extensões opcionais no instalador

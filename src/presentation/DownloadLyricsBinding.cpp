@@ -1,7 +1,9 @@
 #include "DownloadLyricsBinding.hpp"
 #include "LyricsBinding.hpp"
 
+#include <QDesktopServices>
 #include <QPointer>
+#include <QUrl>
 #include <QUuid>
 #include <QVariantMap>
 
@@ -23,7 +25,7 @@ PublishedLyricsRequest owned(const PublishedLyricsRequest& request) {
             request.duration_ms};
 }
 QString providerNotice() {
-    return DownloadLyricsBinding::tr("Letras indisponível nesta versão; letras consultadas no LRCLIB.");
+    return DownloadLyricsBinding::tr("Consulta automática do Letras indisponível. Busca no LRCLIB.");
 }
 QString newToken() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 bool pending(const AcquiredLyricsSaveState state) {
@@ -227,6 +229,9 @@ QString DownloadLyricsBinding::pendingDiscardToken() const { return impl_->pendi
 bool DownloadLyricsBinding::canDismiss() const { return impl_->canDismiss(); }
 QString DownloadLyricsBinding::title() const { return impl_->request ? impl_->request->title : QString{}; }
 QString DownloadLyricsBinding::artist() const { return impl_->request ? impl_->request->artist : QString{}; }
+bool DownloadLyricsBinding::hasLyricsPage() const {
+    return impl_->allowed() && impl_->request && !impl_->request->lyrics_page.isEmpty();
+}
 QString DownloadLyricsBinding::requestToken() const { return impl_->token; }
 QString DownloadLyricsBinding::statusText() const { return impl_->statusText(); }
 QVariantList DownloadLyricsBinding::candidates() const {
@@ -244,6 +249,20 @@ QVariantList DownloadLyricsBinding::candidates() const {
             {"synced", !document.lines.empty()}});
     }
     return result;
+}
+bool DownloadLyricsBinding::openLyricsPage(const QString& expected_request_token) {
+    auto& value = *impl_;
+    if (!hasLyricsPage() || expected_request_token != value.token)
+        return false;
+    // The request already passed validPublication. The view supplies only its identity.
+    const QUrl page(value.request->lyrics_page, QUrl::StrictMode);
+    if (QDesktopServices::openUrl(page))
+        return true;
+    if (value.allowed() && expected_request_token == value.token) {
+        value.notice = tr("Não foi possível abrir a página no navegador.");
+        emit changed();
+    }
+    return false;
 }
 bool DownloadLyricsBinding::retry(const QString& title, const QString& artist) {
     auto& value = *impl_;
@@ -282,9 +301,11 @@ bool DownloadLyricsBinding::saveCandidate(const int index, const QString& name, 
 }
 bool DownloadLyricsBinding::savePasted(const QString& expected_request_token, const QString& content,
                                        const QString& name, const QString& language, const QString& script,
-                                       const QString& kind) {
+                                       const QString& kind, const bool from_lyrics_page) {
     auto& value = *impl_;
     if (!value.canSavePasted() || expected_request_token != value.token)
+        return false;
+    if (from_lyrics_page && !hasLyricsPage())
         return false;
     if (content.size() > static_cast<qsizetype>(lyrics_max_input_bytes))
         return value.invalidSave();
@@ -298,7 +319,8 @@ bool DownloadLyricsBinding::savePasted(const QString& expected_request_token, co
         !lyricsDocumentAsLrc(parsed.document))
         return value.invalidSave();
     // Keep the user's source text. The shared writer compares canonical lyrics for duplicates.
-    return value.saveVersion(std::move(pasted), "manual", name, language, script, kind);
+    auto source = from_lyrics_page ? value.request->lyrics_page.toUtf8().toStdString() : std::string{"manual"};
+    return value.saveVersion(std::move(pasted), std::move(source), name, language, script, kind);
 }
 bool DownloadLyricsBinding::retrySave() {
     auto& value = *impl_;

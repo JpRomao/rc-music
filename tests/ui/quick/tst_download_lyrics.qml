@@ -23,6 +23,7 @@ TestCase {
             property bool canRetry: true
             property bool canRetrySave: false
             property bool canDismiss: true
+            property bool hasLyricsPage: false
             property string pendingDiscardToken: ""
             property string title: "Original 日本語"
             property string artist: "Synthetic artist"
@@ -48,6 +49,7 @@ TestCase {
             property int retrySaveCalls: 0
             property int discardCalls: 0
             property int dismissCalls: 0
+            property int openLyricsPageCalls: 0
             property string submittedTitle: ""
             property string submittedArtist: ""
             property int submittedIndex: -1
@@ -58,6 +60,7 @@ TestCase {
             property string submittedToken: ""
             property string submittedDiscardToken: ""
             property string submittedContent: ""
+            property bool submittedLyricsPageSource: false
             property bool retryAccepted: true
             property bool pasteAccepted: true
             signal changed
@@ -81,7 +84,7 @@ TestCase {
                 fake.submittedKind = kind;
                 return true;
             }
-            function savePasted(token, content, name, language, script, kind) {
+            function savePasted(token, content, name, language, script, kind, lyricsPageSource) {
                 ++fake.pasteCalls;
                 fake.submittedToken = token;
                 fake.submittedContent = content;
@@ -89,7 +92,13 @@ TestCase {
                 fake.submittedLanguage = language;
                 fake.submittedScript = script;
                 fake.submittedKind = kind;
+                fake.submittedLyricsPageSource = lyricsPageSource === true;
                 return fake.pasteAccepted;
+            }
+            function openLyricsPage(token) {
+                ++fake.openLyricsPageCalls;
+                fake.submittedToken = token;
+                return true;
             }
             function retrySave() {
                 fake.retrySaveCalls++;
@@ -161,6 +170,41 @@ TestCase {
     function prepareVersion(kindIndex) {
         field("version-name").text = "Versão revisada";
         field("kind").currentIndex = kindIndex;
+    }
+    function test_linkAndAttributionRequireExplicitActions() {
+        const link = field("open-letras-page");
+        const attribution = field("pasted-letras-source");
+        verify(!link.visible);
+        backend.hasLyricsPage = true;
+        verify(link.visible);
+        compare(backend.openLyricsPageCalls, 0);
+        link.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(backend.openLyricsPageCalls, 1);
+        compare(backend.submittedToken, "request-a");
+
+        shell.panel.togglePaste();
+        verify(attribution.visible);
+        verify(!attribution.checked);
+        const content = field("pasted-content");
+        tryVerify(() => content.activeFocus);
+        content.text = "Synthetic romaji";
+        prepareVersion(1);
+        keyClick(Qt.Key_Tab);
+        verify(attribution.activeFocus);
+        keyClick(Qt.Key_Space);
+        verify(attribution.checked);
+        shell.panel.saveVersion();
+        compare(backend.pasteCalls, 1);
+        verify(backend.submittedLyricsPageSource);
+        verify(!attribution.checked);
+        shell.panel.saveVersion();
+        compare(backend.pasteCalls, 2);
+        verify(!backend.submittedLyricsPageSource);
+
+        backend.requestToken = "request-b";
+        link.clicked();
+        compare(backend.openLyricsPageCalls, 1);
     }
     function press(item) {
         verify(item.enabled);

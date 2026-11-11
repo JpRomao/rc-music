@@ -16,6 +16,7 @@ Dialog {
     property string queryArtist: ""
     property bool initializing: false
     property bool pasteMode: false
+    property bool pasteFromLetras: false
     property var discardTarget: null
     property bool discardRevoked: false
     readonly property bool requestCurrent: requestOwner !== null && requestOwner === backend && previewToken.length > 0 && requestOwner.hasRequest && requestOwner.requestToken === previewToken
@@ -23,10 +24,12 @@ Dialog {
     readonly property string pendingDiscardToken: requestCurrent && !requestOwner.busy && typeof requestOwner.pendingDiscardToken === "string" ? requestOwner.pendingDiscardToken : ""
     readonly property bool discardTargetCurrent: actionsCurrent && discardTarget !== null && discardTarget.owner === requestOwner && discardTarget.requestToken === previewToken && discardTarget.token === pendingDiscardToken
     readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
+    readonly property bool hasLyricsPage: requestCurrent && requestOwner.hasLyricsPage === true
     readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !requestOwner.busy)
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
     readonly property var candidateRows: requestCurrent ? requestOwner.candidates : []
     readonly property var selectedCandidate: candidateField.currentIndex >= 0 && candidateField.currentIndex < candidateRows.length ? candidateRows[candidateField.currentIndex] : null
+    readonly property Item afterPageLink: pasteMode ? pastedField : candidateField.enabled ? candidateField : previewField
 
     objectName: "download-lyrics-panel"
     parent: Overlay.overlay
@@ -57,6 +60,7 @@ Dialog {
         languageField.text = "";
         scriptField.text = "";
         pasteMode = false;
+        pasteFromLetras = false;
         pastedField.text = "";
         kindField.currentIndex = -1;
         candidateField.currentIndex = candidateRows.length > 0 ? 0 : -1;
@@ -98,8 +102,10 @@ Dialog {
         const language = languageField.text.trim();
         const script = scriptField.text.trim();
         if (pasteMode) {
-            if (pasteAvailable)
-                requestOwner.savePasted(previewToken, pastedField.text, name, language, script, kind);
+            const owner = requestOwner;
+            const token = previewToken;
+            if (pasteAvailable && owner.savePasted(token, pastedField.text, name, language, script, kind, hasLyricsPage && pasteFromLetras) && requestOwner === owner && previewToken === token)
+                pasteFromLetras = false;
         } else if (metadataCurrent && selectedCandidate !== null) {
             requestOwner.saveCandidate(selectedCandidate.index, name, language, script, kind);
         }
@@ -163,6 +169,7 @@ Dialog {
         requestOwner = null;
         previewToken = "";
         pasteMode = false;
+        pasteFromLetras = false;
         pastedField.text = "";
         const target = restoreFocusItem;
         Qt.callLater(function () {
@@ -317,7 +324,7 @@ Dialog {
                     maximumLength: 512
                     visible: !root.pasteMode
                     Accessible.name: qsTr("Artista")
-                    KeyNavigation.tab: searchButton.enabled ? searchButton : pasteButton.enabled ? pasteButton : candidateField
+                    KeyNavigation.tab: searchButton.enabled ? searchButton : pasteButton.enabled ? pasteButton : pageButton.enabled ? pageButton : root.afterPageLink
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -329,7 +336,7 @@ Dialog {
                         text: qsTr("Buscar letra")
                         visible: !root.pasteMode
                         enabled: visible && root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetry && titleField.text.trim().length > 0 && artistField.text.trim().length > 0
-                        KeyNavigation.tab: pasteButton.enabled ? pasteButton : candidateField
+                        KeyNavigation.tab: pasteButton.enabled ? pasteButton : pageButton.enabled ? pageButton : root.afterPageLink
                         onClicked: root.search()
                     }
                     AccessibleTransportButton {
@@ -339,8 +346,21 @@ Dialog {
                         text: root.pasteMode ? qsTr("Voltar à busca") : qsTr("Colar letra")
                         visible: root.pasteMode || root.pasteAvailable
                         enabled: visible && root.actionsCurrent
-                        KeyNavigation.tab: root.pasteMode ? pastedField : candidateField.enabled ? candidateField : previewField
+                        KeyNavigation.tab: pageButton.enabled ? pageButton : root.afterPageLink
                         onClicked: root.togglePaste()
+                    }
+                    AccessibleTransportButton {
+                        id: pageButton
+                        objectName: "download-lyrics-open-letras-page"
+                        contract: root.contract
+                        text: qsTr("Abrir no Letras.mus.br")
+                        visible: root.hasLyricsPage
+                        enabled: visible && root.actionsCurrent
+                        KeyNavigation.tab: root.afterPageLink
+                        onClicked: {
+                            if (enabled && root.actionsCurrent)
+                                root.requestOwner.openLyricsPage(root.previewToken);
+                        }
                     }
                 }
                 FieldLabel {
@@ -382,6 +402,19 @@ Dialog {
                     readOnly: !root.pasteAvailable
                     placeholderText: qsTr("Cole a letra aqui")
                     Accessible.name: qsTr("Letra em texto ou LRC")
+                    KeyNavigation.priority: KeyNavigation.BeforeItem
+                    KeyNavigation.tab: pageSource.enabled ? pageSource : nameField
+                }
+                PreferenceToggle {
+                    id: pageSource
+                    Layout.fillWidth: true
+                    contract: root.contract
+                    controlId: "download-lyrics-pasted-letras-source"
+                    text: qsTr("Usar página do Letras como origem")
+                    value: root.pasteFromLetras
+                    visible: root.pasteMode && root.hasLyricsPage
+                    enabled: visible && root.versionFieldsEditable
+                    onValueEdited: checked => root.pasteFromLetras = checked
                     KeyNavigation.tab: nameField
                 }
                 FieldLabel {

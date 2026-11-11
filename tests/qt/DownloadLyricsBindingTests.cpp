@@ -3,6 +3,7 @@
 #include "presentation/DownloadLyricsBinding.hpp"
 #include "presentation/LyricsBinding.hpp"
 
+#include <QDesktopServices>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaMethod>
@@ -26,6 +27,16 @@
 
 using namespace music_player::m0;
 namespace {
+class ExternalUrlCapture final : public QObject {
+    Q_OBJECT
+  public:
+    ExternalUrlCapture() { QDesktopServices::setUrlHandler("https", this, "capture"); }
+    ~ExternalUrlCapture() override { QDesktopServices::unsetUrlHandler("https"); }
+    QList<QUrl> urls;
+  public slots:
+    void capture(const QUrl& url) { urls.push_back(url); }
+};
+
 class Reply final : public QNetworkReply {
   public:
     Reply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
@@ -412,6 +423,55 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(h.writer.artist(), QStringLiteral("Current artist"));
         QCOMPARE(h.network.requests.size(), 1);
         QVERIFY(h.playback_network.requests.isEmpty());
+    }
+
+    void linksAndPastedAttributionBelongToTheCurrentPublishedReview() {
+        ExternalUrlCapture browser;
+        Harness h;
+        auto request = h.request();
+        QVERIFY(h.binding.offerPublished(request));
+        const auto token = h.binding.requestToken();
+        QVERIFY(h.binding.property("hasLyricsPage").toBool());
+        QVERIFY(browser.urls.isEmpty());
+        const auto openPage = [&](const QString& expected) {
+            bool accepted{};
+            return QMetaObject::invokeMethod(&h.binding, "openLyricsPage", Qt::DirectConnection,
+                                             Q_RETURN_ARG(bool, accepted), Q_ARG(QString, expected)) &&
+                   accepted;
+        };
+        const auto saveWithPage = [&](const QString& expected) {
+            bool accepted{};
+            return QMetaObject::invokeMethod(&h.binding, "savePasted", Qt::DirectConnection,
+                                             Q_RETURN_ARG(bool, accepted), Q_ARG(QString, expected),
+                                             Q_ARG(QString, QStringLiteral("Synthetic romaji")),
+                                             Q_ARG(QString, QStringLiteral("Romanizada")), Q_ARG(QString, QString{}),
+                                             Q_ARG(QString, QStringLiteral("Latn")),
+                                             Q_ARG(QString, QStringLiteral("romanized")), Q_ARG(bool, true)) &&
+                   accepted;
+        };
+        QVERIFY(!openPage(QStringLiteral("stale")));
+        QVERIFY(openPage(token));
+        QCOMPARE(browser.urls, QList<QUrl>{QUrl(request.lyrics_page)});
+        h.network.replies.back()->finish(404, "{}");
+        QVERIFY(!saveWithPage(QStringLiteral("stale")));
+        QVERIFY(saveWithPage(token));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        const auto saved = h.store->read(request.final_mp3);
+        QCOMPARE(saved.size(), std::size_t{1});
+        QCOMPARE(saved.front().source, request.lyrics_page.toStdString());
+        QCOMPARE(saved.front().kind, LyricsVariantKind::Romanized);
+        QCOMPARE(h.network.requests.size(), 1);
+
+        QVERIFY(h.binding.dismiss());
+        auto next = h.request("published_2");
+        next.lyrics_page.clear();
+        QVERIFY(h.binding.offerPublished(next));
+        QVERIFY(!h.binding.property("hasLyricsPage").toBool());
+        QVERIFY(!openPage(token));
+        QVERIFY(!openPage(h.binding.requestToken()));
+        QVERIFY(!saveWithPage(h.binding.requestToken()));
+        QCOMPARE(browser.urls.size(), 1);
+        QCOMPARE(h.store->saves.load(), 1);
     }
     void pastedSaveRejectsStaleInvalidAndReentrantActionsAndRetriesOnlyTheSameDraft() {
         Harness h;

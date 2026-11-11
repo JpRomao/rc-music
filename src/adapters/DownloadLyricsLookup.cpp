@@ -43,7 +43,7 @@ PublishedLyricsRequest retained(const PublishedLyricsRequest& request) {
 }
 
 QString providerNotice() {
-    return DownloadLyricsLookup::tr("Letras indisponível nesta versão; busca alternativa no LRCLIB.");
+    return DownloadLyricsLookup::tr("Consulta automática do Letras indisponível. Busca no LRCLIB.");
 }
 } // namespace
 
