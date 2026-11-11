@@ -20,7 +20,7 @@ pwsh -NoProfile -File packaging/windows/New-RcMusicQtMultimediaSdk.ps1
 pwsh -NoProfile -File scripts/develop.ps1 build -ToolchainFile tools/windows.example.psd1 -BuildDirectory out/product/desktop-ffmpeg-release
 ```
 
-O primeiro comando cria um SDK separado em `out/product/qt-multimedia-6.11.2-rcmusic1` a partir do Qt Multimedia 6.11.2 e dos binários de `out/product/fffix/install/bin`. A cópia ocupa cerca de 485 MB. Em outro host, forneça os caminhos dos dois insumos com `-VendorSdkRoot` e `-FfmpegBinDirectory`. Se já houver `.tools/windows.psd1`, atualize `QtMultimediaPackage` para o caminho retornado pelo primeiro comando e use um diretório de build novo. Ações `build`, `test`, `lint` e `validate` exigem os hashes qualificados das cinco DLLs e do plugin do Qt antes de configurar ou compilar. [Proveniência e montagem do runtime](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
+O primeiro comando cria um SDK separado em `out/product/qt-multimedia-6.11.2-rcmusic2` a partir do Qt Multimedia 6.11.2 e dos binários de `out/product/fffix2/install/bin`. A cópia ocupa cerca de 485 MB. Em outro host, forneça os caminhos dos dois insumos com `-VendorSdkRoot` e `-FfmpegBinDirectory`. Se já houver `.tools/windows.psd1`, atualize `QtMultimediaPackage` para o caminho retornado pelo primeiro comando e use um diretório de build novo. Ações `build`, `test`, `lint` e `validate` exigem os hashes qualificados das cinco DLLs e do plugin do Qt antes de configurar ou compilar. [Proveniência e montagem do runtime](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
 
 Versões desta receita:
 

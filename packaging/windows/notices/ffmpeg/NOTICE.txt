@@ -1,6 +1,6 @@
 RC Music Windows x64 multimedia notices
 
-FFmpeg 7.1.5-rcmusic1
+FFmpeg 7.1.5-rcmusic2
 
 RC Music uses the FFmpeg libraries avcodec-61.dll, avformat-61.dll,
 avutil-59.dll, swresample-5.dll and swscale-8.dll through Qt Multimedia.
@@ -14,7 +14,7 @@ The upstream source is FFmpeg n7.1.5, commit
 https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1.5
 SHA-256 e3963a50831c985933e1a625ed566ec4c7adb5c012c34fa9f84438e1d61bdacc
 
-The RC Music build applies two upstream changes to that source.
+The RC Music build applies four upstream changes to that source.
 
 - The ADX decoder syncs its channel state when reading a new header and clears
   its predictor state when the channel count changes.
@@ -23,10 +23,18 @@ The RC Music build applies two upstream changes to that source.
 - The VobSub demuxer reuses subtitle streams by ID and caps the stream count.
   CVE-2026-64830, libavformat/mpeg.c
   https://github.com/FFmpeg/FFmpeg/commit/dbd495f066a85ba96b17433f4306582aa37c3951
+- The RASC decoder checks that 32-bit delta accesses fit in the row.
+  CVE-2026-58049, libavcodec/rasc.c
+  https://github.com/FFmpeg/FFmpeg/commit/11ff18a6c80187405fc492f9bb07ba9f2f663f76
+- The IAMF parser checks the label count against the available bytes before
+  allocating the label array.
+  CVE-2026-66037, libavformat/iamf_parse.c
+  https://github.com/FFmpeg/FFmpeg/commit/86708357d126af84c16f80d9c57335d1e8c845c5
 
 The Windows x64 build uses MSVC 19.44.35228, Windows SDK 10.0.22621.0,
 GNU Make 4.4.1 and NASM 3.02. It follows the Qt 6.11.2 Windows FFmpeg recipe,
-with REVISION=7.1.5 and EXTRA_VERSION=rcmusic1 set for the build.
+with REVISION=7.1.5 and EXTRA_VERSION=rcmusic2 set for the build. The install
+prefix and zlib build paths in the configuration are relative.
 https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/install-ffmpeg.ps1
 
 Independent JPEG Group
@@ -67,5 +75,6 @@ static library is built with the MSVC /MT option.
 https://github.com/madler/zlib/commit/8179479c6274c0041189882b8746a33e2376eaf0
 https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/zlib.ps1
 
-This notice accompanies a private development build. The complete
-corresponding source package and its distribution are pending.
+This notice accompanies a private development build. The matching source
+archives, patches and build recipe for FFmpeg and zlib are included in
+RCMusic-FFmpeg-7.1.5-rcmusic2-source.zip.

@@ -10,7 +10,7 @@
     QmlFormat = 'out/m0/toolchains/qt-6.11.2-msvc2022_64/bin/qmlformat.exe'
     VisualStudioRoot = 'C:/Program Files/Microsoft Visual Studio/18/BuildTools'
     QtPrefix = 'q/f75eb9bea8280844c6d1a2b3f4/sdk'
-    QtMultimediaPackage = 'out/product/qt-multimedia-6.11.2-rcmusic1/lib/cmake/Qt6Multimedia'
+    QtMultimediaPackage = 'out/product/qt-multimedia-6.11.2-rcmusic2/lib/cmake/Qt6Multimedia'
     QtHost = 'out/m0/toolchains/qt-6.11.2-msvc2022_64'
     TagLibPrefix = 'out/m0/taglib-2.3.1-msvc144-probe-20260829-01/install'
     Catch2Source = 'out/m0/toolchains/Catch2-3.15.3'

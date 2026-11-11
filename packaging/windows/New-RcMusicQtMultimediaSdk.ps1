@@ -2,8 +2,8 @@
 [CmdletBinding()]
 param(
     [string] $VendorSdkRoot = 'out/m0/qt-multimedia-archive-probe-20260829-01/stage',
-    [string] $FfmpegBinDirectory = 'out/product/fffix/install/bin',
-    [string] $OutputDirectory = 'out/product/qt-multimedia-6.11.2-rcmusic1'
+    [string] $FfmpegBinDirectory = 'out/product/fffix2/install/bin',
+    [string] $OutputDirectory = 'out/product/qt-multimedia-6.11.2-rcmusic2'
 )
 
 Set-StrictMode -Version Latest
