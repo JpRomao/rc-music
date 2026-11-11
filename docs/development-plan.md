@@ -846,7 +846,7 @@ Os setups privados com a receita de `cea27cf` incluem os avisos de Qt Declarativ
 
 Em R1.11, a lista de resultados do Lidarr agora permite alcançar e selecionar por teclado linhas fora da área visível. A solicitação mantém confirmação explícita. O recorte passou em 14/14 casos Qt Quick com serviço simulado. A aceitação autenticada permanece pendente. [Evidência do Lidarr](lidarr-integration.md#evidência-de-implementação)
 
-Em M3.9, a lista de versões da letra passou a navegar até itens fora da área visível e preservar o cursor pelo ID textual após reordenação. Passaram 22/22 casos Qt Quick do painel. [Evidência das versões](lyrics-variants.md#navegação-nas-versões-por-teclado)
+Em M3.9, a lista de versões da letra passou a navegar até itens fora da área visível e preservar o cursor pelo ID textual após reordenação. Passaram 22/22 casos Qt Quick do painel. A montagem Lite de `0107bf2` reúne a mudança, o teclado do Lidarr e a licença Expat no componente opcional. [Evidência das versões](lyrics-variants.md#navegação-nas-versões-por-teclado) · [Runtime e planejamento](desktop-build.md#runtime-lite-com-teclado-e-aviso-expat)
 
 Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer por trabalho. O conversor precisa receber a credencial do owner e o perfil só é retirado após a drenagem. A opção permanece desligada no perfil instalável enquanto a qualificação física estiver pendente. [Composição e validação do worker](download-conversion.md#perfil-appcontainer-por-trabalho)
 

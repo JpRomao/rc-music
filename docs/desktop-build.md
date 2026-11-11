@@ -86,6 +86,12 @@ A receita inclui quatro textos de licença sem alterações e um aviso com os cr
 
 O teste da receita detectou os cinco arquivos ausentes e passou em 26/26 casos depois da inclusão. A montagem Lite de `937ca73` conferiu os 645 arquivos no disco. O manifesto e a verificação em `out/product/r9/out/product/qt-declarative-svg-20261111/` registram os cinco avisos novos e a igualdade por SHA-256 dos 640 arquivos anteriores.
 
+### Runtime Lite com teclado e aviso Expat
+
+A montagem Release de `0107bf2` inclui a navegação por teclado nas listas de [Lidarr](lidarr-integration.md#evidência-de-implementação) e [versões de letras](lyrics-variants.md#navegação-nas-versões-por-teclado). A conferência dos 646 arquivos encontrou o novo executável, a licença Expat no componente opcional e 644 arquivos com os hashes anteriores. O planejador vinculou a licença à opção de downloads nas cinco combinações e a configuração de produção registrou zero testes. Manifesto e recibos em `out/product/r9/out/product/keyboard-expat-20261111/`.
+
+Essa montagem gera um runtime local. Os setups privados continuam na [entrega com receita de cea27cf](windows-installer.md#setups-privados-com-a-receita-de-cea27cf). A requalificação do parser XML do componente YouTube continua pendente. [Aviso e alcance do Expat](packaged-download-profile.md#aviso-expat-no-perfil-youtube)
+
 ## TagLib no runtime Windows
 
 O build de produto e os alvos de teste exigem TagLib 2.3.2. A versão traz validações de entrada em MP3, MP4, FLAC e Ogg, entre outros formatos. O adaptador conserva a recuperação do valor de faixa MP4 de 16 bits sem sinal. [Release upstream](https://github.com/taglib/taglib/releases/tag/v2.3.2)
