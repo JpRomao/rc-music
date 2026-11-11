@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Intermediários dos builds desktop
+
+Foram removidos **700 arquivos (384.928.200 bytes lógicos)** dos builds desktop ON e OFF. A seleção incluiu objetos, bibliotecas estáticas e estatísticas QML declaradas pelo Ninja, além de duas bibliotecas antigas que ficaram no diretório raiz do build OFF depois de os alvos passarem para `src/`. O próximo build regenera os intermediários em uso. O checkout atual usa CMake/Ninja e não tem um projeto Cargo.
+
+A verificação posterior leu **28 grafos Ninja** e conferiu **1.323 arquivos** por SHA-256, incluindo os dois instaladores e runtimes de `35e999d`, os pacotes Chromium e as seis alterações locais. SDKs, executáveis e recibos ficaram preservados. Os inventários da operação ficam em `out/product/cleanup-build-intermediates-20261111/`. A limpeza não executou builds, testes ou instaladores.
+
 ### Limpeza após a entrega de 35e999d
 
 Após verificar os [dois novos setups](windows-installer.md#setups-de-35e999d), foram removidos **1.705 arquivos (910.896.023 bytes lógicos)**. A seleção incluiu os dois setups e 1.207 arquivos dos runtimes substituídos de `ebb093a`, além de 496 objetos e bibliotecas intermediárias declarados pelo Ninja nos builds de `r5`.
