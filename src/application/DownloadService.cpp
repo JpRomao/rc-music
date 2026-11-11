@@ -787,6 +787,16 @@ std::vector<DownloadJobSnapshot> DownloadService::snapshot() const {
     return result;
 }
 
+DownloadServiceCapacity DownloadService::capacity() const noexcept {
+    const auto& state = *impl_;
+    return {.jobs = state.jobs.size(),
+            .max_jobs = state.limits.max_jobs,
+            .requests = state.receipts.size(),
+            .max_requests = state.limits.max_requests,
+            .retained_request_bytes = state.retained_request_bytes,
+            .max_retained_request_bytes = state.limits.max_retained_request_bytes};
+}
+
 void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()>& allow_start) {
     auto& state = *impl_;
     if (state.calling_port || !state.valid_configuration)

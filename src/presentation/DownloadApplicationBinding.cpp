@@ -93,6 +93,7 @@ struct DownloadApplicationBinding::Impl {
     struct Projection final {
         QString status;
         QString warning;
+        QString capacity;
         bool retry_startup{false};
         bool renew_namespace{false};
         bool retry_admission{false};
@@ -528,6 +529,7 @@ void DownloadApplicationBinding::setLyrics(QObject* value) {
 }
 QString DownloadApplicationBinding::statusText() const { return impl_->projection.status; }
 QString DownloadApplicationBinding::warningText() const { return impl_->projection.warning; }
+QString DownloadApplicationBinding::historyCapacityText() const { return impl_->projection.capacity; }
 bool DownloadApplicationBinding::canRetryStartup() const { return impl_->projection.retry_startup; }
 bool DownloadApplicationBinding::canRenewNamespace() const { return impl_->projection.renew_namespace; }
 bool DownloadApplicationBinding::canRetryAdmission() const { return impl_->projection.retry_admission; }
@@ -1225,6 +1227,28 @@ void DownloadApplicationBinding::refreshProjection() {
     else if (impl_->validation_unavailable)
         next.warning = tr("A validação do MP3 foi interrompida. Reinicie o RC Music para verificar novamente; "
                           "não há confirmação de importação ou liberação do arquivo.");
+    next.capacity = impl_->projection.capacity;
+    if (state == DownloadAdmissionControllerState::Ready ||
+        state == DownloadAdmissionControllerState::AdmissionPending ||
+        state == DownloadAdmissionControllerState::AdmissionFailed) {
+        const auto capacity = impl_->download_service.capacity();
+        next.capacity = tr("%1/%2 pedidos · %3/%4 itens · %5/%6 bytes de pedidos")
+                            .arg(static_cast<qulonglong>(capacity.requests))
+                            .arg(static_cast<qulonglong>(capacity.max_requests))
+                            .arg(static_cast<qulonglong>(capacity.jobs))
+                            .arg(static_cast<qulonglong>(capacity.max_jobs))
+                            .arg(static_cast<qulonglong>(capacity.retained_request_bytes))
+                            .arg(static_cast<qulonglong>(capacity.max_retained_request_bytes));
+        if (state == DownloadAdmissionControllerState::Ready && next.warning.isEmpty()) {
+            if (capacity.requests >= capacity.max_requests)
+                next.warning = tr("O histórico atingiu o limite de pedidos. Novos pedidos estão indisponíveis.");
+            else if (capacity.jobs >= capacity.max_jobs)
+                next.warning = tr("O histórico atingiu o limite de itens. Novos pedidos estão indisponíveis.");
+            else if (capacity.retained_request_bytes >= capacity.max_retained_request_bytes)
+                next.warning =
+                    tr("O histórico atingiu o limite de dados dos pedidos. Novos pedidos estão indisponíveis.");
+        }
+    }
     next.retry_startup = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RetryCheckpoint;
     next.renew_namespace = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RenewNamespace;
     next.retry_admission = !impl_->closing && state == DownloadAdmissionControllerState::AdmissionFailed;

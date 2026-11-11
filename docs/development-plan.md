@@ -814,6 +814,8 @@ Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer po
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)
 
+O painel comum projeta a capacidade real do histórico por pedidos, itens e bytes, incluindo reservas pendentes de gravação. O aviso identifica a cota esgotada. Liberação de registros entre os históricos e a política de reconhecimento de pedidos antigos continuam pendentes. [Capacidade do histórico](download-jobs.md#capacidade-do-histórico)
+
 ### Checkpoint anterior — extensões opcionais no instalador
 
 O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual. Os [setups reais de `cf34cd8`](windows-installer.md#setups-com-extensões-preparados-em-2026-11-05), Lite/Completa, foram compilados/conferidos sem executar, preservando os runtimes de `7601247`. O fechamento tem 165 casos estáticos/de compilação; o ensaio nativo preparado exige autorização própria. Instalação, Registro, Brave, aquisição pública e demais gates continuam pendentes; não retoma AppContainer ou benchmarks.

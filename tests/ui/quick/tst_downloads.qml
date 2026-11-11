@@ -124,6 +124,47 @@ TestCase {
         verify(shell.windowShortcutsEnabled);
         compare(presenter.playbackState, PlayerPresenter.Unloaded);
     }
+    function test_historyCapacityReportsExactCountersAtMinimumWindow() {
+        downloads.historyCapacityText = "Histórico: 3/64 pedidos · 5/128 itens · 2048/1048576 bytes de pedidos";
+        const panel = openDownloads();
+        const capacity = findChild(shell, "downloads-capacity");
+        verify(capacity, "Downloads must expose the retained history usage and limits");
+        verify(capacity.visible);
+        compare(capacity.text, downloads.historyCapacityText);
+        compare(capacity.textFormat, Text.PlainText);
+        compare(capacity.wrapMode, Text.Wrap);
+        compare(capacity.Accessible.role, Accessible.StaticText);
+        compare(capacity.Accessible.name, capacity.text);
+        downloads.historyCapacityText = "Histórico: 64/64 pedidos · 128/128 itens · 1048576/1048576 bytes de pedidos";
+        tryCompare(capacity, "text", downloads.historyCapacityText);
+        verify(waitForPolish(shell));
+        verify(panel.width <= 672 && panel.height <= 472);
+        const position = capacity.mapToItem(shell.contentItem, 0, 0);
+        verify(position.x >= 0 && position.y >= 0);
+        verify(position.x + capacity.width <= shell.width + 0.5);
+        verify(position.y + capacity.height <= shell.height + 0.5);
+        verify(capacity.height >= capacity.implicitHeight);
+        verifyTarget(findChild(shell, "downloads-close"));
+    }
+    function test_historyCapacityHiddenWhenUnavailable() {
+        openDownloads();
+        const capacity = findChild(shell, "downloads-capacity");
+        verify(capacity);
+        verify(!capacity.visible);
+        shell.downloads = {
+            "statusText": "Downloads disponíveis",
+            "warningText": "",
+            "canCloseAfterFinalSaveFailure": false,
+            "canRetryAdmission": false,
+            "canRetryFinalSave": false,
+            "canRetryStartup": false,
+            "canRenewNamespace": false,
+            "jobsModel": jobs
+        };
+        verify(waitForPolish(shell));
+        compare(capacity.text, "");
+        verify(!capacity.visible, "Backends without capacity support must keep the existing panel usable");
+    }
     function test_finalSaveFailureRequiresExplicitSeparateConfirmation() {
         downloads.warningText = "Não foi possível salvar o histórico de downloads.";
         downloads.canCloseAfterFinalSaveFailure = true;
@@ -1077,6 +1118,7 @@ TestCase {
             property string discardConsentJobId: ""
             property string discardConsentToken: ""
             property int discardRevision: 0
+            property string historyCapacityText: ""
             property string statusText: "Downloads disponíveis"
             property int unsafeCloses: 0
             property string warningText: ""

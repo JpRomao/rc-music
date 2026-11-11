@@ -253,6 +253,17 @@ Popup {
             Accessible.name: text
             Accessible.role: Accessible.StaticText
             Layout.fillWidth: true
+            color: root.contract.textSecondaryColor
+            objectName: "downloads-capacity"
+            text: root.downloads !== null && typeof root.downloads.historyCapacityText !== "undefined" ? root.downloads.historyCapacityText : ""
+            textFormat: Text.PlainText
+            visible: text.length > 0
+            wrapMode: Text.Wrap
+        }
+        Text {
+            Accessible.name: text
+            Accessible.role: Accessible.StaticText
+            Layout.fillWidth: true
             color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.warningColor
             objectName: "downloads-warning"
             text: root.warning

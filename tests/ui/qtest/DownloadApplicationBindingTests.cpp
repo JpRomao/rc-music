@@ -293,11 +293,12 @@ struct Harness final {
     int before_shutdown_calls{0};
     std::function<void()> on_before_shutdown{};
     DownloadApplicationBinding binding;
-    explicit Harness(SessionLoadResult session = {}, bool with_review = false, bool with_validation = false)
+    explicit Harness(SessionLoadResult session = {}, bool with_review = false, bool with_validation = false,
+                     DownloadServiceLimits limits = {})
         : presenter(
               FixtureRepository{}.load(QString::fromUtf8(M0_TEST_FIXTURE_FILE), QString::fromUtf8(M0_TEST_QUEUE_FILE)),
               platform),
-          service(execution, importer, "fresh", {}, &identity),
+          service(execution, importer, "fresh", limits, &identity),
           controller(service, io, session, DownloadFinalSavePolicy::HoldForDecision),
           binding(presenter, controller, service,
                   {.shutdown = [&] { execution.shutdown(); },
@@ -360,6 +361,68 @@ struct Harness final {
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void historyCapacityCountsStagedRequestsAndUpdatesWithoutExposingTheirContents() {
+        Harness h({}, false, false, {.max_jobs = 2, .max_requests = 3, .max_retained_request_bytes = 1024});
+        QVERIFY(h.binding.historyCapacityText().isEmpty());
+        QVERIFY(h.ready());
+        QCOMPARE(h.binding.historyCapacityText(), QStringLiteral("0/3 pedidos · 0/2 itens · 0/1024 bytes de pedidos"));
+        const auto request = input();
+        const auto bytes =
+            request.request_id.size() + request.items.front().url.size() + request.items.front().title.size();
+        QSignalSpy changed(&h.binding, &DownloadApplicationBinding::stateChanged);
+        QCOMPARE(h.controller.begin(request).state, DownloadAdmissionState::Pending);
+        h.binding.poll();
+        QCOMPARE(h.binding.historyCapacityText(),
+                 QStringLiteral("1/3 pedidos · 1/2 itens · %1/1024 bytes de pedidos").arg(bytes));
+        QVERIFY(!changed.isEmpty());
+        QVERIFY(!h.binding.historyCapacityText().contains(QStringLiteral("never-display")));
+        QVERIFY(!h.binding.historyCapacityText().contains(QStringLiteral("synthetic.example")));
+        QCOMPARE(h.execution.starts, 0);
+        const auto before = h.binding.historyCapacityText();
+        QCOMPARE(h.controller.begin(request).state, DownloadAdmissionState::Pending);
+        h.binding.poll();
+        QCOMPARE(h.binding.historyCapacityText(), before);
+        QCOMPARE(h.importer.calls, 0);
+    }
+    void historyCapacityWarningsIdentifyTheExhaustedQuota_data() {
+        QTest::addColumn<int>("jobs");
+        QTest::addColumn<int>("requests");
+        QTest::addColumn<bool>("exact_bytes");
+        QTest::addColumn<QString>("reason");
+        QTest::newRow("requests") << 4 << 1 << false << QStringLiteral("limite de pedidos");
+        QTest::newRow("jobs") << 1 << 3 << false << QStringLiteral("limite de itens");
+        QTest::newRow("bytes") << 4 << 3 << true << QStringLiteral("limite de dados dos pedidos");
+    }
+    void historyCapacityWarningsIdentifyTheExhaustedQuota() {
+        QFETCH(int, jobs);
+        QFETCH(int, requests);
+        QFETCH(bool, exact_bytes);
+        QFETCH(QString, reason);
+        const auto request = input();
+        const auto bytes =
+            request.request_id.size() + request.items.front().url.size() + request.items.front().title.size();
+        Harness h({}, false, false,
+                  {.max_jobs = static_cast<std::size_t>(jobs),
+                   .max_requests = static_cast<std::size_t>(requests),
+                   .max_retained_request_bytes = exact_bytes ? bytes : 1024});
+        QVERIFY(h.ready());
+        QVERIFY(h.binding.warningText().isEmpty());
+        QCOMPARE(h.controller.begin(request).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QVERIFY2(h.binding.warningText().contains(reason), qPrintable(h.binding.warningText()));
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.binding.jobsModel()->rowCount(), 1);
+    }
+    void unknownHistoryDoesNotAdvertiseEmptyCapacity() {
+        Harness h;
+        QVERIFY(h.binding.start());
+        QVERIFY(h.binding.historyCapacityText().isEmpty());
+        h.io.loaded({.status = DownloadCheckpointLoadStatus::Unreadable});
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
+        QVERIFY(h.binding.historyCapacityText().isEmpty());
+    }
     void recoveredImportRequiresCurrentOneShotConsentAndNativePreparationBeforeHandoff() {
         Harness h({}, true, true);
         QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));

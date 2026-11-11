@@ -307,6 +307,16 @@ TDD da política de falha final: Red **2 passagens/7 falhas**, depois regressão
 
 Composição real de UI/serviço/importador e dos dois stores/workers em TEMP próprio reconhece admissão/importação duráveis, reprodução explícita, restart sem autoplay/duplicação e saída Saved+drenada. Só a publicação usa fixture confiável falsa, sem rede/conversão ou prova de ownership. Release ON, `all_qmllint` e **463/463 CTest em 35,20 s** passaram após correção do isolamento Quick que causou a primeira execução **462/463** e reforço do oráculo com commit de saída/contador da plataforma correta; Quick final **248/248**. Oito skips internos históricos de symlink permanecem. Release default/OFF compila sem engine/serviço/helper/capability de teste, lista zero testes e recusa o hook antes de criar configuração. Formato dos 17 C++/4 QML, docs/rastreabilidade/diff e revisão independente passaram. Não gerou runtime/instalador, instalou/registrou componentes ou reexecutou JS/rede/TLS/conversão. Estados amplos não foram promovidos; os limites e próximos passos estão no [checkpoint atual](development-plan.md#checkpoint-atual--painel-comum-e-saída-segura-dos-downloads).
 
+## Capacidade do histórico
+
+O painel **Downloads** mostra a ocupação e os limites de pedidos, itens e bytes dos pedidos retidos pelo serviço. Um pedido pode conter vários itens. A contagem inclui pedidos reservados enquanto aguardam confirmação de gravação e conserva os terminais, pois seus recibos também reconhecem reenvios. Um reenvio reconhecido usa a mesma reserva.
+
+Os valores descrevem os metadados do histórico. O tamanho dos arquivos de áudio, os recibos de importação da sessão e o journal dos arquivos têm suas próprias cotas. Enquanto o histórico ainda está sendo carregado ou exige recuperação, o painel aguarda sua confirmação antes de exibir a capacidade.
+
+Ao esgotar uma dessas cotas, o aviso identifica o limite atingido. Os downloads já aceitos conservam progresso, cancelamento e conclusão. A recuperação de espaço nesse histórico exige também tratar os registros de importação e de ownership e definir o reconhecimento dos pedidos antigos após sua retirada.
+
+O recorte de 2026-11-11 teve Red por API/projeção ausente e dois casos Quick falhos pela ausência do indicador. O serviço passou **173 casos/4.434 assertions**, incluindo três casos novos com 96 assertions sobre limites, contabilização tipada, reenvio e restauração. A seleção de UI passou **2/2 CTest**, com **100 casos Qt do binding** e **363 Quick**, sem falhas/skips, além do build Release do player e `all_qmllint`. Os testes usam portas falsas e fixtures próprias. Evidências em `out/product/test-runs/download-capacity-20261111/` e `out/product/test-runs/download-history-capacity-20261111/`.
+
 ## Pendências funcionais
 
 1. Promover host/IPC Native Messaging e reserva cooperativa já implementados para composição/prefixo/identidade instalados e ownership de produção.

@@ -51,6 +51,7 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(QObject* lyrics READ lyrics NOTIFY stateChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
     Q_PROPERTY(QString warningText READ warningText NOTIFY stateChanged)
+    Q_PROPERTY(QString historyCapacityText READ historyCapacityText NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryStartup READ canRetryStartup NOTIFY stateChanged)
     Q_PROPERTY(bool canRenewNamespace READ canRenewNamespace NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryAdmission READ canRetryAdmission NOTIFY stateChanged)
@@ -72,6 +73,7 @@ class DownloadApplicationBinding final : public QObject {
     void setLyrics(QObject* lyrics);
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString warningText() const;
+    [[nodiscard]] QString historyCapacityText() const;
     [[nodiscard]] bool canRetryStartup() const;
     [[nodiscard]] bool canRenewNamespace() const;
     [[nodiscard]] bool canRetryAdmission() const;

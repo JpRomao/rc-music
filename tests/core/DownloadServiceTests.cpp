@@ -156,8 +156,23 @@ struct Harness {
 };
 
 struct RecoveryIdentity final : DownloadRequestIdentity {
-    std::string fingerprint(const DownloadRequest&) override { return std::string(64, 'a'); }
+    std::size_t calls{0};
+    std::string fingerprint(const DownloadRequest&) override {
+        ++calls;
+        return std::string(64, 'a');
+    }
 };
+
+void requireCapacity(const DownloadService& service, const DownloadServiceCapacity expected) {
+    STATIC_REQUIRE(noexcept(service.capacity()));
+    const auto actual = service.capacity();
+    REQUIRE(actual.jobs == expected.jobs);
+    REQUIRE(actual.max_jobs == expected.max_jobs);
+    REQUIRE(actual.requests == expected.requests);
+    REQUIRE(actual.max_requests == expected.max_requests);
+    REQUIRE(actual.retained_request_bytes == expected.retained_request_bytes);
+    REQUIRE(actual.max_retained_request_bytes == expected.max_retained_request_bytes);
+}
 
 DownloadCheckpoint interruptedCheckpoint(bool with_candidate = false) {
     return {.receipts = {{.request_id = request().request_id,
@@ -787,6 +802,103 @@ TEST_CASE("Download retained request byte budget is exact and overflow safe", "[
         Harness h({.max_retained_request_bytes = std::numeric_limits<std::size_t>::max()});
         REQUIRE(h.service.submit(input).error == DownloadSubmissionError::None);
     }
+}
+
+TEST_CASE("Download capacity observes an empty ledger and configured limits without invoking ports",
+          "[download][capacity]") {
+    const DownloadServiceLimits limits{.max_jobs = 7, .max_requests = 3, .max_retained_request_bytes = 4096};
+    Harness h(limits);
+    requireCapacity(h.service, {.max_jobs = 7, .max_requests = 3, .max_retained_request_bytes = 4096});
+    requireCapacity(h.service, {.max_jobs = 7, .max_requests = 3, .max_retained_request_bytes = 4096});
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.polls.empty());
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.importer.import_polls.empty());
+    REQUIRE(h.importer.capability_queries == 0);
+}
+
+TEST_CASE("Download capacity retains exact request accounting through replay rejection and cancellation",
+          "[download][capacity]") {
+    Harness h({.max_jobs = 3, .max_requests = 2, .max_retained_request_bytes = 4096});
+    const auto direct = request(1, 2);
+    const auto typed = youtubeRequest(2);
+    const auto direct_bytes = direct.request_id.size() + direct.items[0].url.size() + direct.items[0].title.size() +
+                              direct.items[1].url.size() + direct.items[1].title.size();
+    const auto& source = *typed.items[0].youtube;
+    const auto typed_bytes = typed.request_id.size() + typed.items[0].url.size() + typed.items[0].title.size() +
+                             source.video_id.size() + source.title.size() + source.artist.size() +
+                             source.lyrics_page.size() + 1;
+    const auto first = h.service.submit(direct);
+    REQUIRE(first.error == DownloadSubmissionError::None);
+    requireCapacity(h.service, {.jobs = 2,
+                                .max_jobs = 3,
+                                .requests = 1,
+                                .max_requests = 2,
+                                .retained_request_bytes = direct_bytes,
+                                .max_retained_request_bytes = 4096});
+    REQUIRE(h.service.submit(typed).error == DownloadSubmissionError::None);
+    const DownloadServiceCapacity retained{.jobs = 3,
+                                           .max_jobs = 3,
+                                           .requests = 2,
+                                           .max_requests = 2,
+                                           .retained_request_bytes = direct_bytes + typed_bytes,
+                                           .max_retained_request_bytes = 4096};
+    requireCapacity(h.service, retained);
+    REQUIRE(h.service.submit(direct).job_ids == first.job_ids);
+    REQUIRE(h.service.submit(request(3)).error == DownloadSubmissionError::LimitExceeded);
+    auto invalid = request(4);
+    invalid.request_id = "invalid";
+    REQUIRE(h.service.submit(invalid).error == DownloadSubmissionError::InvalidRequest);
+    requireCapacity(h.service, retained);
+    REQUIRE(h.service.cancel(first.job_ids.front()));
+    h.service.shutdown();
+    REQUIRE(h.service.stopped());
+    requireCapacity(h.service, retained);
+    REQUIRE(h.execution.starts.empty());
+    REQUIRE(h.execution.polls.empty());
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.importer.imports.empty());
+    REQUIRE(h.importer.import_polls.empty());
+    REQUIRE(h.importer.capability_queries == 0);
+}
+
+TEST_CASE("Download capacity commits only accepted restored accounting and preserves recovered replay",
+          "[download][capacity]") {
+    const DownloadServiceLimits limits{.max_jobs = 5, .max_requests = 2, .max_retained_request_bytes = 500};
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "fresh", limits, &identity);
+    auto history = interruptedCheckpoint();
+    history.receipts[0].retained_request_bytes = 501;
+    REQUIRE_FALSE(service.restore(history));
+    requireCapacity(service, {.max_jobs = 5, .max_requests = 2, .max_retained_request_bytes = 500});
+    history.receipts[0].retained_request_bytes = 100;
+    REQUIRE(service.restore(history));
+    const DownloadServiceCapacity retained{.jobs = 1,
+                                           .max_jobs = 5,
+                                           .requests = 1,
+                                           .max_requests = 2,
+                                           .retained_request_bytes = 100,
+                                           .max_retained_request_bytes = 500};
+    const auto before = service.snapshot();
+    const auto identity_calls = identity.calls;
+    requireCapacity(service, retained);
+    REQUIRE(identity.calls == identity_calls);
+    REQUIRE(service.snapshot() == before);
+    REQUIRE(service.submit(request()).job_ids == std::vector<std::string>{"old-1"});
+    REQUIRE_FALSE(service.restore(history));
+    service.shutdown();
+    requireCapacity(service, retained);
+    REQUIRE(service.snapshot() == before);
+    REQUIRE(execution.starts.empty());
+    REQUIRE(execution.polls.empty());
+    REQUIRE(execution.cancellations.empty());
+    REQUIRE(importer.imports.empty());
+    REQUIRE(importer.import_polls.empty());
+    REQUIRE(importer.capability_queries == 0);
 }
 
 TEST_CASE("Published YouTube context requires a live publication and survives pending or failed queue import",

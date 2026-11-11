@@ -18,6 +18,15 @@ struct DownloadServiceLimits final {
     std::int64_t job_timeout_ms{30 * 60 * 1000};
 };
 
+struct DownloadServiceCapacity final {
+    std::size_t jobs{0};
+    std::size_t max_jobs{0};
+    std::size_t requests{0};
+    std::size_t max_requests{0};
+    std::size_t retained_request_bytes{0};
+    std::size_t max_retained_request_bytes{0};
+};
+
 enum class DownloadRecoveryStatus { NotRequested, Ready, InvalidHistory, NamespaceConflict, ReceiptConflict };
 enum class DownloadRecoveryDisposition { Imported, Unconfirmed, Interrupted, Unchanged };
 
@@ -60,6 +69,9 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] DownloadSubmissionResult submitStaged(const DownloadRequest& request);
     [[nodiscard]] bool confirmStaged(std::string_view request_id);
     [[nodiscard]] std::vector<DownloadJobSnapshot> snapshot() const;
+    // Current ledger usage, including terminal history, and configured limits.
+    // A pure observation: no I/O or dependency callbacks, and no quota release.
+    [[nodiscard]] DownloadServiceCapacity capacity() const noexcept;
     // Live, matching publication acknowledgement plus original typed source
     // only. Historical candidate paths/receipts never authorize a new lookup.
     [[nodiscard]] std::optional<PublishedYoutubeAudio> publishedYoutubeAudio(std::string_view job_id) const;
