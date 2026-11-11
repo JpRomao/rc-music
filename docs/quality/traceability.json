@@ -780,6 +780,10 @@
           "marker": "exitWaitsForBothPreferenceAndSessionPersistence"
         },
         {
+          "path": "tests/ui/qtest/PlayerPresenterTests.cpp",
+          "marker": "discardingPlaylistEditRequiresANewExitRequest"
+        },
+        {
           "path": "tests/process/qtest/ShellExecutableSmokeTests.cpp",
           "marker": "runsWithAnIsolatedTemporaryConfigRoot"
         }
@@ -2447,11 +2451,13 @@
         { "path": "tests/qt/PlaylistsRestartTests.cpp", "marker": "namedPlaylistsSurviveTwoProcessesWithoutAutomaticQueueActions" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedSaveRetainsTheCandidateForExplicitRetryAndBlocksExit" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedReloadRetainsTheConfirmedCatalogAndOriginalEdit" },
+        { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "discardingAnUnsavedEditAllowsExitWithoutReadingOrWritingTheCatalog" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "exitDuringTheQueueCallbackCannotCreateAnUnsaveablePendingChange" },
         { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue" },
         { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistSaveExitTimeoutCannotCommitAfterLateSuccess" },
         { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_failedPlaylistSaveBlocksExitAndOpensRecovery" },
-        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_playlistSaveFailureDuringExitRestoresRecovery" }
+        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_playlistSaveFailureDuringExitRestoresRecovery" },
+        { "path": "tests/ui/quick/tst_playlists.qml", "marker": "test_pendingPlaylistDiscardRequiresExplicitConfirmation" }
       ],
       "evidence": [
         { "path": "docs/product/requirements.md", "marker": "### 2.9 Playlists nomeadas" },
@@ -2460,6 +2466,7 @@
         { "path": "docs/playlists.md", "marker": "## Evidência de implementação" },
         { "path": "docs/playlists.md", "marker": "### Recuperação ao sair" },
         { "path": "docs/playlists.md", "marker": "### Recarga após falha de salvamento" },
+        { "path": "docs/playlists.md", "marker": "### Descarte de edição pendente" },
         { "path": "docs/windows-installer.md", "marker": "### Setups de f8a593b" }
       ],
       "remaining": [

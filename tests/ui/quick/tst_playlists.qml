@@ -85,6 +85,14 @@ TestCase {
         function discardPending() {
             return record("discardPending", []);
         }
+        function discardUnsavedChange() {
+            record("discardUnsavedChange", []);
+            if (!canRetrySave)
+                return false;
+            hasPendingChange = false;
+            ready = false;
+            return true;
+        }
         function retryLoad() {
             return record("retryLoad", []);
         }
@@ -406,6 +414,90 @@ TestCase {
         lastCall("retrySave");
         mouseClick(reload);
         lastCall("discardPending");
+    }
+    function openAbandonDialog() {
+        const opener = findChild(shell, "playlists-abandon-pending");
+        verify(opener);
+        tryVerify(function () {
+            return opener.visible && opener.enabled;
+        });
+        verify(waitForPolish(shell));
+        mouseClick(opener);
+        const dialog = findChild(shell, "playlist-abandon-dialog");
+        tryCompare(dialog, "opened", true);
+        return dialog;
+    }
+    function test_pendingPlaylistDiscardRequiresExplicitConfirmation() {
+        openPanel();
+        const opener = findChild(shell, "playlists-abandon-pending");
+        verify(opener);
+        verify(!opener.visible || !opener.enabled);
+        backend.busy = true;
+        backend.hasPendingChange = true;
+        verify(!opener.visible || !opener.enabled);
+        backend.busy = false;
+
+        const confirmedPlaylists = backend.playlists;
+        const confirmedEntries = backend.entries;
+        const selection = backend.selectedPlaylistId;
+        const dialog = openAbandonDialog();
+        const cancel = findChild(shell, "playlist-abandon-cancel");
+        const confirm = findChild(shell, "playlist-abandon-confirm");
+        tryCompare(cancel, "activeFocus", true);
+        compare(backend.calls.length, 0);
+        keyClick(Qt.Key_Escape);
+        tryCompare(dialog, "visible", false);
+        verify(backend.hasPendingChange);
+        compare(backend.calls.length, 0);
+
+        openAbandonDialog();
+        mouseClick(cancel);
+        tryCompare(dialog, "visible", false);
+        verify(backend.hasPendingChange);
+        compare(backend.calls.length, 0);
+
+        openAbandonDialog();
+        mouseClick(confirm);
+        tryCompare(dialog, "visible", false);
+        lastCall("discardUnsavedChange");
+        compare(backend.calls.length, 1);
+        verify(!backend.hasPendingChange);
+        compare(backend.playlists, confirmedPlaylists);
+        compare(backend.entries, confirmedEntries);
+        compare(backend.selectedPlaylistId, selection);
+        verify(!findChild(shell, "playlist-create").enabled);
+        verify(findChild(shell, "playlists-retry-load").visible);
+        verify(!presenter.exiting && !presenter.exitCommitted && !exitObserved);
+        compare(scenario.localExitCalls(), 0);
+        verify(presenter.requestExit());
+        tryCompare(presenter, "exitCommitted", true);
+        compare(scenario.localExitCalls(), 1);
+    }
+    function test_pendingPlaylistDiscardRevokesUnavailableConfirmation_data() {
+        return [
+            {
+                tag: "busy",
+                field: "busy",
+                value: true
+            },
+            {
+                tag: "resolved",
+                field: "hasPendingChange",
+                value: false
+            }
+        ];
+    }
+    function test_pendingPlaylistDiscardRevokesUnavailableConfirmation(data) {
+        openPanel();
+        backend.hasPendingChange = true;
+        const dialog = openAbandonDialog();
+        const confirm = findChild(shell, "playlist-abandon-confirm");
+        verify(confirm.enabled);
+        backend[data.field] = data.value;
+        tryVerify(function () {
+            return !dialog.visible || !confirm.enabled;
+        });
+        compare(backend.calls.length, 0);
     }
     function playTrackForExit() {
         driver.enqueueLocalSelection(["C:/Music/playing.mp3"]);

@@ -61,11 +61,13 @@ class PlaylistsBinding final : public QObject {
     Q_INVOKABLE bool retrySave();
     // Reloads the document after an uncertain write; never claims a rollback.
     Q_INVOKABLE void discardPending();
+    Q_INVOKABLE bool discardUnsavedChange();
     Q_INVOKABLE bool retryLoad();
     [[nodiscard]] bool prepareExit();
     void resume();
     void beginShutdown();
   signals:
+    void unsavedChangeDiscarded();
     void changed();
 
   private:

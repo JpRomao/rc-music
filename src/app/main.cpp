@@ -766,6 +766,8 @@ int main(int argc, char* argv[]) {
             return playlists_binding->busy() ? music_player::m0::ExitPreparationState::Pending
                                              : music_player::m0::ExitPreparationState::Failed;
         });
+        QObject::connect(playlists_binding.get(), &music_player::m0::PlaylistsBinding::unsavedChangeDiscarded,
+                         &presenter, &PlayerPresenter::cancelPendingPlaylistExit, Qt::DirectConnection);
         QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, playlists_binding.get(), [&] {
             if (presenter.exiting())
                 static_cast<void>(playlists_binding->prepareExit());

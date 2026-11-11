@@ -32,6 +32,8 @@ O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlis
 
 Se o salvamento falhar, **Tentar salvar** submete novamente a mesma edição. **Recarregar do disco** só substitui o catálogo exibido e descarta a edição pendente após uma leitura válida. Se a leitura falhar, a edição continua disponível em memória e o catálogo confirmado permanece visível com a seleção atual. Uma gravação sem confirmação pode já estar no disco e reaparecer após uma recarga bem-sucedida.
 
+Para abrir mão da edição em memória, escolha **Descartar edição…** e confirme. O descarte mantém os arquivos e a fila como estão. Use **Tentar abrir novamente** para voltar a editar a partir do catálogo no disco. Se havia uma saída em espera, escolha **Sair** novamente para encerrar.
+
 Ao escolher **Sair** durante o salvamento ou a recarga de uma edição pendente, o app aguarda o resultado por até 2 segundos antes de iniciar o encerramento. Se a operação falhar ou o prazo acabar, o player reabre **Playlists** e conserva a edição em memória. Quando a falha já é conhecida, o painel abre imediatamente com foco em **Tentar salvar**. Também é possível escolher **Recarregar do disco**. Se a operação terminar depois do prazo, escolha **Sair** novamente quando quiser encerrar.
 
 Quando não for possível carregar o catálogo, use **Tentar abrir novamente** depois de conferir a disponibilidade dos arquivos na pasta de configuração. Versão futura e dados inválidos são preservados; o app não grava uma lista vazia sobre esses documentos por consequência do erro.
@@ -98,3 +100,7 @@ No Red, três regressões do presenter e três do painel falharam porque a saíd
 ### Recarga após falha de salvamento
 
 Quatro regressões reproduziram o descarte prematuro da edição no início da leitura. O binding agora mantém o catálogo confirmado, a seleção e a edição enquanto a recarga está ativa. Uma leitura indisponível, inválida ou de versão futura conserva a edição e mantém disponível a tentativa explícita de salvar. A recarga válida substitui o catálogo e encerra a edição pendente. Passaram **22 casos Qt** do binding e o build Release Windows. Logs em `out/product/test-runs/playlist-reload-20261111/`. Esta correção está no build local posterior aos setups de `f8a593b`.
+
+### Descarte de edição pendente
+
+Os Reds reproduziram a ausência da ação no binding e no painel e a saída automática quando a edição era removida entre duas consultas do presenter. O Green passou **24 casos do binding, 314 do presenter e 26 do painel Qt Quick**, incluindo confirmação, Escape, recusa durante operação ativa e descarte sem acesso ao catálogo ou à fila. A regressão do presenter exige um novo **Sair**, mesmo quando o descarte acontece antes da próxima consulta. O build Release Windows e o lint QML passaram. Logs em `out/product/test-runs/playlist-discard-20261111/`. A correção está no build local posterior aos setups de `f8a593b`.

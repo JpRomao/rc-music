@@ -446,6 +446,19 @@ void PlaylistsBinding::discardPending() {
     if (impl_->pending)
         static_cast<void>(impl_->load());
 }
+bool PlaylistsBinding::discardUnsavedChange() {
+    if (!impl_->allowed() || busy() || !impl_->pending)
+        return false;
+    impl_->pending.reset();
+    // An unconfirmed write can have reached disk. Reload before using the cached catalog again.
+    impl_->ready = false;
+    impl_->notice = tr("Edição descartada. Recarregue as playlists para voltar a editar.");
+    const QPointer<PlaylistsBinding> alive(this);
+    emit unsavedChangeDiscarded();
+    if (alive)
+        emit changed();
+    return true;
+}
 bool PlaylistsBinding::retryLoad() { return !impl_->pending && impl_->load(); }
 bool PlaylistsBinding::prepareExit() {
     if (!impl_->exiting) {

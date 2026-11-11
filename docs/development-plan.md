@@ -962,6 +962,8 @@ O player aguarda a confirmação do salvamento da playlist antes de preparar a s
 
 **Recarregar do disco** conserva a edição pendente, o catálogo confirmado e a seleção até obter uma leitura válida. Uma falha de leitura mantém a recuperação disponível. [Recarga após falha de salvamento](playlists.md#recarga-após-falha-de-salvamento)
 
+**Descartar edição…** oferece recuperação quando a leitura continua inacessível. Após confirmação, remove a edição em memória e exige um novo pedido de saída. O catálogo precisa ser recarregado antes de novas edições. [Descarte de edição pendente](playlists.md#descarte-de-edição-pendente)
+
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr

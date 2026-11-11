@@ -596,6 +596,7 @@ class PlayerPresenterTests final : public QObject {
     void playlistSaveFailureStopsExitBeforeOtherPreparation();
     void playlistSaveSuccessContinuesAnAcceptedExit();
     void playlistSaveExitTimeoutCannotCommitAfterLateSuccess();
+    void discardingPlaylistEditRequiresANewExitRequest();
     void exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady();
     void exitPreparationDoesNotReplaceAcceptedSourceDrain();
     void exitPreparationFailureIsReversibleWithoutDetachingTheGate_data();
@@ -2215,6 +2216,37 @@ void PlayerPresenterTests::playlistSaveExitTimeoutCannotCommitAfterLateSuccess()
     QCOMPARE(begins, 1);
     QCOMPARE(platform.exit_calls, 1);
     QCOMPARE(recovery.size(), 1);
+}
+
+void PlayerPresenterTests::discardingPlaylistEditRequiresANewExitRequest() {
+    AvailableTrayPlatform platform;
+    PlayerPresenter presenter(frozenBundle(), platform);
+    auto playlist = ExitPreparationState::Pending;
+    int begins = 0;
+    presenter.setPlaylistExitPreparationProbe([&] { return playlist; });
+    QVERIFY(presenter.setExitPreparationCallbacks(
+        {.begin = [&] { ++begins; }, .poll = [] { return ExitPreparationState::Ready; }}));
+    QSignalSpy recovery(&presenter, &PlayerPresenter::playlistExitRecoveryRequested);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!presenter.exiting());
+    QCOMPARE(platform.exit_calls, 0);
+
+    // The write failed and the user abandoned the edit before the next poll.
+    playlist = ExitPreparationState::Failed;
+    presenter.cancelPendingPlaylistExit();
+    playlist = ExitPreparationState::Ready;
+    PlayerPresenterTestAccess::pollPersistence(presenter);
+    QVERIFY(!presenter.exiting());
+    QVERIFY(!presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 0);
+    QCOMPARE(begins, 0);
+    QCOMPARE(recovery.size(), 0);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(presenter.exitCommitted());
+    QCOMPARE(platform.exit_calls, 1);
+    QCOMPARE(begins, 1);
 }
 
 void PlayerPresenterTests::exitPreparationPublishesFreezeBeforeBeginAndWaitsForReady() {

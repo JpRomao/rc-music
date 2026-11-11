@@ -1610,6 +1610,13 @@ void PlayerPresenter::setPlaylistExitPreparationProbe(std::function<ExitPreparat
     playlist_exit_preparation_probe_ = std::move(probe);
 }
 
+void PlayerPresenter::cancelPendingPlaylistExit() {
+    if (playlist_exit_deadline_.has_value()) {
+        playlist_exit_deadline_.reset();
+        reconcileTimer();
+    }
+}
+
 bool PlayerPresenter::setExitPreparationCallbacks(ExitPreparationCallbacks callbacks) {
     if (QThread::currentThread() != thread() || exiting_ || exit_preparation_started_ ||
         exit_preparation_call_in_progress_ || static_cast<bool>(callbacks.begin) != static_cast<bool>(callbacks.poll))

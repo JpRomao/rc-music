@@ -17,18 +17,21 @@ Dialog {
     property var nameOwner: null
     property var deleteTarget: null
     property var deleteOwner: null
+    property var abandonOwner: null
     property bool nameRejected: false
     property bool deleteRejected: false
     readonly property bool ready: playlists !== null && playlists.ready
     readonly property bool busy: playlists !== null && playlists.busy
     readonly property bool interactionAllowed: enabled && playlists !== null && playlists.interactionAllowed
     readonly property bool canEdit: ready && interactionAllowed && !busy && !playlists.hasPendingChange
+    readonly property bool canAbandonPending: interactionAllowed && !busy && playlists.hasPendingChange
     readonly property string selectedPlaylistId: playlists !== null ? playlists.selectedPlaylistId : ""
     readonly property var selectedPlaylist: playlistForId(selectedPlaylistId)
     readonly property var selectedEntry: entryForId(selectedEntryId)
     readonly property int selectedEntryIndex: entryIndex(selectedEntryId)
     readonly property bool nameTargetCurrent: nameOwner === playlists && canEdit && (nameMode === "create" || nameMode === "saveQueue" || (nameMode === "rename" && snapshotCurrent(nameTarget)))
     readonly property bool deleteTargetCurrent: deleteOwner === playlists && canEdit && snapshotCurrent(deleteTarget)
+    readonly property bool abandonTargetCurrent: abandonOwner !== null && abandonOwner === playlists && canAbandonPending
     readonly property string nameDialogTitle: nameMode === "rename" ? qsTr("Renomear playlist") : (nameMode === "saveQueue" ? qsTr("Salvar fila como playlist") : qsTr("Nova playlist"))
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -40,6 +43,10 @@ Dialog {
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
     onSelectedPlaylistIdChanged: selectedEntryId = ""
+    onAbandonTargetCurrentChanged: {
+        if (!abandonTargetCurrent && abandonDialog.visible)
+            abandonDialog.close();
+    }
     onInteractionAllowedChanged: {
         if (!interactionAllowed) {
             nameDialog.close();
@@ -51,7 +58,9 @@ Dialog {
     onOpened: {
         if (focusSaveRecovery())
             return;
-        if (playlistList.count > 0)
+        if (retryLoadButton.visible && retryLoadButton.enabled)
+            retryLoadButton.forceActiveFocus(Qt.TabFocusReason);
+        else if (playlistList.count > 0)
             playlistList.forceActiveFocus(Qt.TabFocusReason);
         else
             createButton.forceActiveFocus(Qt.TabFocusReason);
@@ -59,6 +68,7 @@ Dialog {
     onClosed: {
         nameDialog.close();
         deleteDialog.close();
+        abandonDialog.close();
     }
     function focusSaveRecovery(): bool {
         if (!retrySaveButton.visible || !retrySaveButton.enabled)
@@ -302,7 +312,7 @@ Dialog {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: root.playlists !== null ? root.playlists.playlists : []
-                    selectionAllowed: root.interactionAllowed && !root.busy && !root.playlists.hasPendingChange
+                    selectionAllowed: root.canEdit
                     selectedId: root.selectedPlaylistId
                     Accessible.name: qsTr("Playlists salvas")
                     onRowActivated: rowId => root.playlists.selectPlaylist(rowId)
@@ -426,7 +436,7 @@ Dialog {
                         text: qsTr("Localizar arquivo…")
                         enabled: root.canEdit && root.selectedPlaylist !== null && root.selectedEntry !== null && root.playlists.canReplaceFile === true
                         onClicked: {
-                            if (!enabled || !root.opened || nameDialog.visible || deleteDialog.visible)
+                            if (!enabled || !root.opened || nameDialog.visible || deleteDialog.visible || abandonDialog.visible)
                                 return;
                             root.playlists.requestReplaceFile(root.selectedPlaylistId, root.selectedEntryId);
                         }
@@ -495,6 +505,21 @@ Dialog {
                 onClicked: root.playlists.discardPending()
             }
             AccessibleTransportButton {
+                id: abandonButton
+                objectName: "playlists-abandon-pending"
+                contract: root.contract
+                text: qsTr("Descartar edição…")
+                visible: root.playlists !== null && root.playlists.hasPendingChange
+                enabled: root.canAbandonPending
+                onClicked: {
+                    if (root.opened && root.canAbandonPending) {
+                        root.abandonOwner = root.playlists;
+                        abandonDialog.open();
+                    }
+                }
+            }
+            AccessibleTransportButton {
+                id: retryLoadButton
                 objectName: "playlists-retry-load"
                 contract: root.contract
                 text: qsTr("Tentar abrir novamente")
@@ -668,6 +693,74 @@ Dialog {
                             deleteDialog.accept();
                         else
                             root.deleteRejected = true;
+                    }
+                }
+            }
+        }
+    }
+    Dialog {
+        id: abandonDialog
+        objectName: "playlist-abandon-dialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(480, parent ? parent.width - root.contract.spacingUnit * 8 : 480)
+        modal: true
+        focus: true
+        popupType: Popup.Item
+        closePolicy: Popup.CloseOnEscape
+        padding: root.contract.spacingUnit * 3
+        onOpened: abandonCancel.forceActiveFocus(Qt.TabFocusReason)
+        onClosed: {
+            Qt.callLater(function () {
+                if (abandonDialog.visible)
+                    return;
+                root.abandonOwner = null;
+                if (!root.opened || !root.interactionAllowed)
+                    return;
+                if (abandonButton.visible && abandonButton.enabled)
+                    abandonButton.forceActiveFocus(Qt.TabFocusReason);
+                else if (retryLoadButton.visible && retryLoadButton.enabled)
+                    retryLoadButton.forceActiveFocus(Qt.TabFocusReason);
+            });
+        }
+        contentItem: ColumnLayout {
+            spacing: root.contract.spacingUnit * 2
+            Accessible.role: Accessible.Dialog
+            Accessible.name: qsTr("Descartar edição pendente")
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("Descartar edição pendente?")
+                textFormat: Text.PlainText
+                color: root.contract.textPrimaryColor
+                font.bold: true
+            }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("A edição em memória será descartada. Uma tentativa de salvamento anterior pode já ter gravado a edição no disco.")
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                color: root.contract.textSecondaryColor
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item {
+                    Layout.fillWidth: true
+                }
+                AccessibleTransportButton {
+                    id: abandonCancel
+                    objectName: "playlist-abandon-cancel"
+                    contract: root.contract
+                    text: qsTr("Cancelar")
+                    onClicked: abandonDialog.reject()
+                }
+                AccessibleTransportButton {
+                    objectName: "playlist-abandon-confirm"
+                    contract: root.contract
+                    text: qsTr("Descartar edição")
+                    enabled: root.abandonTargetCurrent
+                    onClicked: {
+                        if (abandonDialog.opened && root.abandonTargetCurrent)
+                            root.abandonOwner.discardUnsavedChange();
                     }
                 }
             }

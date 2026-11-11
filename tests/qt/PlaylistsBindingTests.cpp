@@ -4,6 +4,7 @@
 #include "presentation/PlaylistsBinding.hpp"
 
 #include <QSignalSpy>
+#include <QStringList>
 #include <QTest>
 #include <QThread>
 
@@ -484,6 +485,105 @@ class PlaylistsBindingTests final : public QObject {
         QCOMPARE(binding.playlists().size(), 1);
         QCOMPARE(binding.playlists().front().toMap().value("name").toString(), "Actual disk");
         QVERIFY(!binding.hasPendingChange());
+    }
+    void discardingAnUnsavedEditAllowsExitWithoutReadingOrWritingTheCatalog() {
+        const PlaylistLibrarySnapshot confirmed{{{7, "Confirmed", {{21, path("a.mp3")}}}}};
+        auto store = std::make_shared<Store>();
+        store->disk = {confirmed, PlaylistLoadStatus::Loaded};
+        int queue_reads{}, queue_appends{};
+        PlaylistsBinding binding(
+            store,
+            [&] {
+                ++queue_reads;
+                return PlaylistsBinding::Paths{path("playing.flac")};
+            },
+            [&](auto) {
+                ++queue_appends;
+                return true;
+            });
+        load(binding);
+        QVERIFY(binding.selectPlaylist("7"));
+        const auto lists = binding.playlists();
+        const auto entries = binding.entries();
+        QSignalSpy discards(&binding, &PlaylistsBinding::unsavedChangeDiscarded);
+        QVERIFY(!binding.discardUnsavedChange());
+
+        store->setOutcome(PlaylistSaveStatus::Failed);
+        QVERIFY(binding.renamePlaylist("7", "Unsaved edit"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(binding.hasPendingChange());
+        {
+            const std::lock_guard lock(store->mutex);
+            store->disk.status = PlaylistLoadStatus::Unavailable;
+        }
+        binding.discardPending();
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(!binding.prepareExit());
+        QVERIFY(!binding.discardUnsavedChange());
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(discards.isEmpty());
+        binding.resume();
+
+        QStringList notifications;
+        connect(&binding, &PlaylistsBinding::unsavedChangeDiscarded, &binding, [&] {
+            QVERIFY(!binding.hasPendingChange());
+            notifications.append("discarded");
+        });
+        connect(&binding, &PlaylistsBinding::changed, &binding, [&] { notifications.append("changed"); });
+        QVERIFY(binding.discardUnsavedChange());
+        QCOMPARE(notifications, (QStringList{"discarded", "changed"}));
+        QVERIFY(!binding.hasPendingChange());
+        QVERIFY(!binding.canRetrySave());
+        QVERIFY(!binding.busy());
+        QVERIFY(!binding.ready());
+        QCOMPARE(binding.selectedPlaylistId(), "7");
+        QCOMPARE(binding.playlists(), lists);
+        QCOMPARE(binding.entries(), entries);
+        QVERIFY(!binding.discardUnsavedChange());
+        QVERIFY(!binding.retrySave());
+        QVERIFY(!binding.renamePlaylist("7", "Stale edit"));
+        QVERIFY(!binding.saveQueueAsPlaylist("Stale queue copy"));
+        QVERIFY(!binding.enqueuePlaylist("7"));
+        QCOMPARE(queue_reads, 0);
+        QCOMPARE(queue_appends, 0);
+        QCOMPARE(store->loads.load(), 2);
+        QCOMPARE(store->saves.load(), 1);
+        QVERIFY(!binding.prepareExit());
+        QVERIFY(binding.prepareExit());
+
+        binding.resume();
+        auto restored = confirmed;
+        restored.playlists[0].name = "Recovered from disk";
+        {
+            const std::lock_guard lock(store->mutex);
+            store->disk = {restored, PlaylistLoadStatus::Loaded};
+        }
+        load(binding);
+        QCOMPARE(binding.playlists().front().toMap().value("name").toString(), "Recovered from disk");
+        store->setOutcome(PlaylistSaveStatus::Saved);
+        QVERIFY(binding.renamePlaylist("7", "Fresh edit"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.playlists().front().toMap().value("name").toString(), "Fresh edit");
+        QCOMPARE(store->loads.load(), 3);
+        QCOMPARE(store->saves.load(), 2);
+        QCOMPARE(discards.size(), 1);
+    }
+    void discardingCannotInterruptAnActiveSave() {
+        auto store = std::make_shared<Store>();
+        PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
+        load(binding);
+        store->release = false;
+        QVERIFY(binding.createPlaylist("Saving"));
+        QVERIFY(binding.busy());
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(!binding.discardUnsavedChange());
+        QVERIFY(binding.hasPendingChange());
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.playlists().front().toMap().value("name").toString(), "Saving");
+        QCOMPARE(store->loads.load(), 1);
+        QCOMPARE(store->saves.load(), 1);
     }
     void invalidFutureOrUnavailableDocumentsCannotBeOverwritten_data() {
         QTest::addColumn<PlaylistLoadStatus>("status");

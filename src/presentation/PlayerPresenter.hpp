@@ -357,6 +357,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
     void setSourceExitDrainedProbe(std::function<bool()> probe);
     void setPlaylistExitPreparationProbe(std::function<ExitPreparationState()> probe);
+    void cancelPendingPlaylistExit();
     // A complete pair or an empty pair is accepted before its first begin only.
     // An active/used gate cannot be detached or replaced to bypass preparation.
     [[nodiscard]] bool setExitPreparationCallbacks(ExitPreparationCallbacks callbacks);
