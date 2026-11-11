@@ -64,9 +64,11 @@ O executável produzido fica diretamente no diretório de build, mas não é um 
 
 O build de produto e os alvos de teste exigem TagLib 2.3.2. A versão traz validações de entrada em MP3, MP4, FLAC e Ogg, entre outros formatos. O adaptador conserva a recuperação do valor de faixa MP4 de 16 bits sem sinal. [Release upstream](https://github.com/taglib/taglib/releases/tag/v2.3.2)
 
-O SDK em `out/product/taglib-2.3.2-msvc144/install` foi compilado a partir do asset oficial SHA-256 `3ca2d8afaa7f1cf7f6ed10e511ebc368bfacd6dcaa3dbfa690b89e502e8963dc`. O build Release x64 usa MSVC 19.44, Windows SDK 10.0.26100.0 e CRT dinâmico, com zlib desabilitado. O recibo em `out/product/taglib-2.3.2-msvc144/receipt.json` registra os comandos de configuração, o pacote-fonte e os hashes. A receita de runtime inclui cinco avisos com os termos do TagLib e do utf8cpp 4.2.0. [Aviso do TagLib](../packaging/windows/notices/taglib/NOTICE.txt)
+O SDK em `out/product/taglib-2.3.2-msvc144/install` foi compilado a partir do asset oficial SHA-256 `3ca2d8afaa7f1cf7f6ed10e511ebc368bfacd6dcaa3dbfa690b89e502e8963dc`. O build Release x64 usa MSVC 19.44, Windows SDK 10.0.26100.0 e CRT dinâmico, com zlib desabilitado. O recibo em `out/product/taglib-2.3.2-msvc144/receipt.json` registra as opções de configuração, o pacote-fonte e os hashes. A receita de runtime inclui cinco avisos com os termos do TagLib e do utf8cpp 4.2.0. [Aviso do TagLib](../packaging/windows/notices/taglib/NOTICE.txt)
 
 O configure anterior rejeitou o SDK 2.3.2 pelo pin 2.3.1. Com o novo pin, o build dos alvos focados e o CTest passaram em 52 casos de metadados, incluindo capas e a faixa MP4, e uma jornada real de áudio. A inspeção do processo de áudio confirmou `tag.dll` SHA-256 `bdecdae7817d6a504cbbc63f04c467396f7e7c22fb2418d16bd411edb79bd191`. Logs e recibo do módulo em `out/product/r9/out/product/taglib-232-*`. A receita de empacotamento passou 25 testes após incluir os cinco avisos.
+
+O build Release e a montagem Lite de `837ec6a` passaram. O runtime tem 572 arquivos com hashes conferidos, incluindo a DLL TagLib acima, FFmpeg `7.1.5-rcmusic2` e os cinco avisos em `notices/taglib/`. A conferência do instalador verificou a DLL e os avisos na seção obrigatória do plano gerado. O manifesto SHA-256 `90e11a87197e6d7e8560a4392203da3d258a0848344f600ebec0730f5037688e` e o recibo `taglib-verification.json` estão em `out/product/r9/out/product/taglib-232-runtime/`.
 
 ## Validação do incremento
 
