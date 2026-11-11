@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza após a entrega de ebb093a
+
+Foram removidos **1.528 arquivos (689.521.835 bytes)**. A seleção retirou os dois setups de `a469f8d` e seus payloads substituídos, 314 fontes geradas pelo Qt em builds antigos, três entradas sintéticas de testes de limite e duas páginas temporárias de download do NSIS.
+
+Foram preservados os runtimes e instaladores de `ebb093a`, as dependências ativas, os pacotes Chromium reutilizados e os manifestos, recibos e dois executáveis usados como referência de `a469f8d`. Os intermediários removidos serão regenerados se os builds antigos forem retomados. A limpeza conferiu **1.284 arquivos** por tamanho e SHA-256, incluindo as seis alterações locais, e confirmou a leitura de **dez grafos Ninja**. A seleção e o resultado estão em `out/product/cleanup-retired-ebb093a-20261111/`.
+
 ### Builds dos instaladores de ebb093a
 
 Após a inspeção dos [setups de `ebb093a`](windows-installer.md#setups-de-ebb093a), foram removidos **496 objetos e bibliotecas intermediárias**, totalizando **265.959.934 bytes**. A seleção usou as saídas `.obj` e `.lib` declaradas nos grafos Ninja de `out/product/r4/out/product/{l,c}`.

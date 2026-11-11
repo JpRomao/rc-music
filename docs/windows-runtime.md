@@ -2,7 +2,7 @@
 
 **Estado:** runtimes privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 
-A [limpeza de 2026-11-11](development-commands.md#remoção-de-versões-substituídas-e-caches) preservou os dois runtimes de `a469f8d` e retirou os payloads substituídos de `7601247` e `26cc641`. Os manifestos e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
+A [limpeza após a entrega de `ebb093a`](development-commands.md#limpeza-após-a-entrega-de-ebb093a) retirou os payloads de `a469f8d`, preservando os executáveis usados para comparação e os manifestos. Os payloads de `7601247` e `26cc641` foram retirados na [limpeza anterior](development-commands.md#remoção-de-versões-substituídas-e-caches). Os registros históricos abaixo documentam a geração original.
 **Data:** 2026-11-05.
 
 Os [runtimes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados, montados e conferidos em worktree isolada. A edição Lite tinha 554 arquivos, e a Completa experimental, 557.

@@ -3,7 +3,7 @@
 **Estado:** setups privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
-A [limpeza de 2026-11-11](development-commands.md#remoção-de-versões-substituídas-e-caches) preservou os dois setups de `a469f8d` e retirou os executáveis substituídos de `cf34cd8` e `26cc641`. Os recibos, as configurações e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
+A [limpeza após a entrega de `ebb093a`](development-commands.md#limpeza-após-a-entrega-de-ebb093a) retirou os setups de `a469f8d`. Os setups de `cf34cd8` e `26cc641` foram retirados na [limpeza anterior](development-commands.md#remoção-de-versões-substituídas-e-caches). Os recibos, as configurações e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
 
 A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta os dois setups privados, Lite e Completa experimental, gerados de worktree limpa e conferidos antes da limpeza dos artefatos descartáveis. Nenhum setup foi executado ou instalado.
 
